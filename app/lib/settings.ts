@@ -6,6 +6,9 @@ export type ReaderLayout = "single" | "spread" | "scroll";
 export interface Settings {
   theme: Theme;
   readerLayout: ReaderLayout;
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
 }
 
 const STORAGE_KEY = "app-settings";
@@ -13,6 +16,9 @@ const STORAGE_KEY = "app-settings";
 const defaultSettings: Settings = {
   theme: "system",
   readerLayout: "single",
+  fontFamily: "Literata",
+  fontSize: 100,
+  lineHeight: 1.6,
 };
 
 export function getSettings(): Settings {

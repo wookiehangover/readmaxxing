@@ -5,7 +5,7 @@ import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Book } from "~/lib/book-store";
-import { useSettings } from "~/lib/settings";
+import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 
@@ -51,6 +51,25 @@ export function BookReader({ book }: BookReaderProps) {
     });
     renditionRef.current = rendition;
 
+    // Register light and dark themes for epub iframe content
+    rendition.themes.register("light", {
+      body: { color: "#1a1a1a !important", background: "#ffffff !important" },
+      a: { color: "inherit !important" },
+    });
+    rendition.themes.register("dark", {
+      body: { color: "#e0e0e0 !important", background: "#1a1a1a !important" },
+      a: { color: "inherit !important" },
+    });
+
+    // Select the appropriate theme
+    const effectiveTheme = resolveTheme(settings.theme);
+    rendition.themes.select(effectiveTheme);
+
+    // Apply typography overrides
+    rendition.themes.override("font-family", `"${settings.fontFamily}", serif`);
+    rendition.themes.override("font-size", `${settings.fontSize}%`);
+    rendition.themes.override("line-height", `${settings.lineHeight}`);
+
     rendition.display();
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -73,6 +92,23 @@ export function BookReader({ book }: BookReaderProps) {
     };
   }, [book.id, book.data, settings.readerLayout]);
 
+  // React to theme changes without recreating the rendition
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+    const effectiveTheme = resolveTheme(settings.theme);
+    rendition.themes.select(effectiveTheme);
+  }, [settings.theme]);
+
+  // React to typography changes without recreating the rendition
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+    rendition.themes.override("font-family", `"${settings.fontFamily}", serif`);
+    rendition.themes.override("font-size", `${settings.fontSize}%`);
+    rendition.themes.override("line-height", `${settings.lineHeight}`);
+  }, [settings.fontFamily, settings.fontSize, settings.lineHeight]);
+
   const handlePrev = useCallback(() => {
     renditionRef.current?.prev();
   }, []);
@@ -81,25 +117,24 @@ export function BookReader({ book }: BookReaderProps) {
     renditionRef.current?.next();
   }, []);
 
-  const handleLayoutChange = useCallback(
-    (layout: ReaderLayout) => {
-      if (layout === settings.readerLayout) return;
+  const handleUpdateSettings = useCallback(
+    (update: Partial<typeof settings>) => {
+      // If layout is changing, save current location before switching
+      if (update.readerLayout && update.readerLayout !== settings.readerLayout) {
+        const currentLocation = renditionRef.current?.location;
+        const cfi = currentLocation?.start?.cfi;
 
-      // Save current location before switching
-      const currentLocation = renditionRef.current?.location;
-      const cfi =
-        currentLocation?.start?.cfi;
+        updateSettings(update);
 
-      updateSettings({ readerLayout: layout });
-
-      // Position will be restored when the rendition is recreated via the useEffect
-      // by displaying the saved CFI after the new rendition mounts
-      if (cfi) {
-        // Use a microtask to wait for the new rendition to be created
-        queueMicrotask(() => {
-          renditionRef.current?.display(cfi);
-        });
+        if (cfi) {
+          queueMicrotask(() => {
+            renditionRef.current?.display(cfi);
+          });
+        }
+        return;
       }
+
+      updateSettings(update);
     },
     [settings.readerLayout, updateSettings],
   );
@@ -123,8 +158,8 @@ export function BookReader({ book }: BookReaderProps) {
           </>
         )}
         <ReaderSettingsMenu
-          layout={settings.readerLayout}
-          onLayoutChange={handleLayoutChange}
+          settings={settings}
+          onUpdateSettings={handleUpdateSettings}
         />
       </div>
     </div>
