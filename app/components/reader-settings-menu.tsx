@@ -23,6 +23,8 @@ const fontOptions = [
   { value: "Inter", label: "Inter" },
   { value: "Lora", label: "Lora" },
   { value: "Source Serif 4", label: "Source Serif 4" },
+  { value: "Geist", label: "Geist" },
+  { value: "Geist Mono", label: "Geist Mono" },
 ];
 
 export function ReaderSettingsMenu({
@@ -70,7 +72,7 @@ export function ReaderSettingsMenu({
                 <Check className="size-4" />
               )}
             </span>
-            <span style={{ fontFamily: `"${option.value}", serif` }}>
+            <span style={{ fontFamily: `"${option.value}", ${option.value === "Geist" ? "sans-serif" : option.value === "Geist Mono" ? "monospace" : "serif"}` }}>
               {option.label}
             </span>
           </button>
