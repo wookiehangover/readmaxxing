@@ -9,18 +9,33 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import { ThemeToggle } from "~/components/theme-toggle";
+
+// Inline script to set the theme class before React hydrates, preventing FOUC.
+const themeScript = `
+(function() {
+  try {
+    var s = JSON.parse(localStorage.getItem('app-settings') || '{}');
+    var t = s.theme || 'system';
+    var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+    if (dark) document.documentElement.classList.add('dark');
+  } catch(e) {}
+})();
+`;
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <Meta />
         <Links />
       </head>
       <body>
         {children}
+        <ThemeToggle />
         <ScrollRestoration />
         <Scripts />
       </body>

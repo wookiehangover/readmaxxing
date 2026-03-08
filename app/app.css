@@ -3,7 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --font-sans:
@@ -14,10 +14,10 @@
 html,
 body {
   @apply bg-white dark:bg-gray-950;
+}
 
-  @media (prefers-color-scheme: dark) {
-    color-scheme: dark;
-  }
+.dark {
+  color-scheme: dark;
 }
 
 :root {
