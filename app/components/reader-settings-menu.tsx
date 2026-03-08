@@ -36,14 +36,14 @@ export function ReaderSettingsMenu({
         <span className="sr-only">Reader settings</span>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-52 p-1">
-        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+        <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
           Layout
         </div>
         {layoutOptions.map((option) => (
           <button
             key={option.value}
             onClick={() => onUpdateSettings({ readerLayout: option.value })}
-            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent hover:text-accent-foreground"
           >
             <span className="w-4">
               {settings.readerLayout === option.value && (
@@ -54,16 +54,16 @@ export function ReaderSettingsMenu({
           </button>
         ))}
 
-        <div className="my-1 border-t" />
+        <div className="my-0.5 border-t" />
 
-        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+        <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
           Font
         </div>
         {fontOptions.map((option) => (
           <button
             key={option.value}
             onClick={() => onUpdateSettings({ fontFamily: option.value })}
-            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-sm hover:bg-accent hover:text-accent-foreground"
           >
             <span className="w-4">
               {settings.fontFamily === option.value && (
@@ -76,12 +76,12 @@ export function ReaderSettingsMenu({
           </button>
         ))}
 
-        <div className="my-1 border-t" />
+        <div className="my-0.5 border-t" />
 
-        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+        <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
           Size & Spacing
         </div>
-        <div className="flex items-center justify-between px-2 py-1.5">
+        <div className="flex items-center justify-between px-2 py-1">
           <span className="text-sm">Size</span>
           <div className="flex items-center gap-1">
             <button
@@ -111,7 +111,7 @@ export function ReaderSettingsMenu({
             </button>
           </div>
         </div>
-        <div className="flex items-center justify-between px-2 py-1.5">
+        <div className="flex items-center justify-between px-2 py-1">
           <span className="text-sm">Spacing</span>
           <div className="flex items-center gap-1">
             <button
