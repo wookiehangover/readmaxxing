@@ -1,87 +1,47 @@
-# Welcome to React Router!
+# Ebook Reader
 
-A modern, production-ready template for building full-stack React applications using React Router.
-
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+A browser-based ebook reader. Drag and drop `.epub` files to load them, and read with customizable typography and layout settings. Books are stored locally in IndexedDB — no server or account required.
 
 ## Features
 
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
+- **Drag-and-drop loading** — drop `.epub` files anywhere on the page
+- **Local persistence** — books and reading positions stored in IndexedDB
+- **Inbox-style layout** — book list sidebar with reader pane
+- **Dark mode** — system-aware with manual toggle
+- **Layout modes** — single page, two-page spread, continuous scroll
+- **Typography controls** — font family, size, and line height
+- **Reading progress** — chapter and overall progress indicators
+- **Position memory** — resumes where you left off per book
+
+## Tech Stack
+
+- [React Router v7](https://reactrouter.com/) (framework mode)
+- [TypeScript](https://www.typescriptlang.org/)
+- [Tailwind CSS v4](https://tailwindcss.com/)
+- [shadcn/ui](https://ui.shadcn.com/)
+- [epubjs](https://github.com/futurepress/epub.js) — epub parsing and rendering
+- [idb-keyval](https://github.com/nickersk/idb-keyval) — IndexedDB storage
 
 ## Getting Started
 
-### Installation
-
-Install the dependencies:
-
 ```bash
-npm install
+pnpm install
+pnpm run dev
 ```
 
-### Development
+Open [http://localhost:5173](http://localhost:5173) and drop an `.epub` file to get started.
 
-Start the development server with HMR:
+## Scripts
 
-```bash
-npm run dev
-```
+| Command | Description |
+|---------|-------------|
+| `pnpm run dev` | Start development server |
+| `pnpm run build` | Production build |
+| `pnpm run start` | Serve production build |
+| `pnpm run typecheck` | Run TypeScript type checking |
+| `pnpm run lint` | Lint with oxlint |
+| `pnpm run format` | Format with oxfmt |
 
-Your application will be available at `http://localhost:5173`.
+## License
 
-## Building for Production
-
-Create a production build:
-
-```bash
-npm run build
-```
-
-## Deployment
-
-### Docker Deployment
-
-To build and run using Docker:
-
-```bash
-docker build -t my-app .
-
-# Run the container
-docker run -p 3000:3000 my-app
-```
-
-The containerized application can be deployed to any platform that supports Docker, including:
-
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
-
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
-
-## Styling
-
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
-
----
-
-Built with ❤️ using React Router.
+MIT
