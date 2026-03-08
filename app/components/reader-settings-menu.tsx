@@ -2,6 +2,7 @@ import { MoreHorizontal, Minus, Plus } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
@@ -46,19 +47,21 @@ export function ReaderSettingsMenu({
         <span className="sr-only">Reader settings</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuLabel>Layout</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={settings.readerLayout}
-          onValueChange={(value) =>
-            onUpdateSettings({ readerLayout: value as ReaderLayout })
-          }
-        >
-          {layoutOptions.map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>
-              {option.label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Layout</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={settings.readerLayout}
+            onValueChange={(value) =>
+              onUpdateSettings({ readerLayout: value as ReaderLayout })
+            }
+          >
+            {layoutOptions.map((option) => (
+              <DropdownMenuRadioItem key={option.value} value={option.value}>
+                {option.label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
 
         <DropdownMenuSeparator />
 
@@ -84,6 +87,7 @@ export function ReaderSettingsMenu({
 
         <DropdownMenuSeparator />
 
+        <DropdownMenuGroup>
         <DropdownMenuLabel>Size &amp; Spacing</DropdownMenuLabel>
         <DropdownMenuItem
           closeOnClick={false}
@@ -157,6 +161,7 @@ export function ReaderSettingsMenu({
             </button>
           </div>
         </DropdownMenuItem>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
