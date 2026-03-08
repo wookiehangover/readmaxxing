@@ -5,7 +5,7 @@ import { getBooks, type Book } from "~/lib/book-store";
 import { DropZone } from "~/components/drop-zone";
 import { BookList } from "~/components/book-list";
 
-export function meta({}: Route.MetaArgs) {
+export function meta(_args: Route.MetaArgs) {
   return [
     { title: "eBook Reader" },
     { name: "description", content: "A browser-based ebook reader" },

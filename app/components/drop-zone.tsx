@@ -58,7 +58,7 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
             id: crypto.randomUUID(),
             title: metadata.title,
             author: metadata.author,
-            coverUrl: metadata.coverUrl,
+            coverImage: metadata.coverImage,
             data: arrayBuffer,
           };
 

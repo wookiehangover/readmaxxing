@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import type { Book } from "~/lib/book-store";
@@ -5,6 +6,26 @@ import { cn } from "~/lib/utils";
 
 interface BookListProps {
   books: Book[];
+}
+
+function BookCover({ coverImage }: { coverImage: Blob }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(coverImage);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [coverImage]);
+
+  if (!url) return null;
+
+  return (
+    <img
+      src={url}
+      alt=""
+      className="h-12 w-8 shrink-0 rounded object-cover"
+    />
+  );
 }
 
 export function BookList({ books }: BookListProps) {
@@ -34,12 +55,8 @@ export function BookList({ books }: BookListProps) {
               )
             }
           >
-            {book.coverUrl ? (
-              <img
-                src={book.coverUrl}
-                alt=""
-                className="h-12 w-8 shrink-0 rounded object-cover"
-              />
+            {book.coverImage ? (
+              <BookCover coverImage={book.coverImage} />
             ) : (
               <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted">
                 <span className="text-xs text-muted-foreground">📖</span>

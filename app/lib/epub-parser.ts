@@ -3,7 +3,7 @@ import ePub from "epubjs";
 export interface EpubMetadata {
   title: string;
   author: string;
-  coverUrl: string | null;
+  coverImage: Blob | null;
 }
 
 export async function parseEpub(data: ArrayBuffer): Promise<EpubMetadata> {
@@ -12,10 +12,17 @@ export async function parseEpub(data: ArrayBuffer): Promise<EpubMetadata> {
   await book.ready;
 
   const metadata = await book.loaded.metadata;
-  let coverUrl: string | null = null;
+  let coverImage: Blob | null = null;
 
   try {
-    coverUrl = await book.coverUrl();
+    const coverHref = await book.loaded.cover;
+    if (coverHref) {
+      // Use the archive to get the actual image data as a Blob
+      const blob = await book.archive.getBlob(coverHref);
+      if (blob && blob.size > 0) {
+        coverImage = blob;
+      }
+    }
   } catch {
     // cover may not exist in all epubs
   }
@@ -23,7 +30,7 @@ export async function parseEpub(data: ArrayBuffer): Promise<EpubMetadata> {
   const result: EpubMetadata = {
     title: metadata.title || "Untitled",
     author: metadata.creator || "Unknown Author",
-    coverUrl,
+    coverImage,
   };
 
   book.destroy();
