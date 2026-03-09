@@ -175,20 +175,45 @@ export function BookReader({ book }: BookReaderProps) {
             hl.cfiRange,
             {},
             (e: MouseEvent) => {
-              // Look up highlight by CFI range from the ref
+              e.preventDefault();
+              e.stopPropagation();
               const stored = highlightsRef.current.get(hl.cfiRange);
               if (!stored) return;
 
-              // Calculate position using the highlight element's bounding rect
-              const target = e.target as HTMLElement;
-              const hlElement = target.closest(".epubjs-hl") || target;
-              const iframe = containerRef.current?.querySelector("iframe");
-              if (!iframe) return;
-              const iframeRect = iframe.getBoundingClientRect();
-              const hlRect = hlElement.getBoundingClientRect();
-              // hlRect is relative to the iframe viewport
-              const x = iframeRect.left + hlRect.left + hlRect.width / 2;
-              const y = iframeRect.top + hlRect.bottom;
+              const target = e.target as Element;
+              const targetRect = target.getBoundingClientRect();
+              let x: number;
+              let y: number;
+
+              if (targetRect.width > 0 && targetRect.height > 0) {
+                // Check if callback fired in parent context or iframe context
+                const isParentContext = e.view === window;
+                if (isParentContext) {
+                  // targetRect is already in parent coordinates
+                  x = targetRect.left + targetRect.width / 2;
+                  y = targetRect.bottom;
+                } else {
+                  // targetRect is iframe-relative, need to offset
+                  const iframe = containerRef.current?.querySelector("iframe");
+                  if (!iframe) return;
+                  const iframeRect = iframe.getBoundingClientRect();
+                  x = iframeRect.left + targetRect.left + targetRect.width / 2;
+                  y = iframeRect.top + targetRect.bottom;
+                }
+              } else {
+                // Fallback to mouse coordinates
+                const iframe = containerRef.current?.querySelector("iframe");
+                if (!iframe) return;
+                const iframeRect = iframe.getBoundingClientRect();
+                const isParentContext = e.view === window;
+                if (isParentContext) {
+                  x = e.clientX;
+                  y = e.clientY;
+                } else {
+                  x = iframeRect.left + e.clientX;
+                  y = iframeRect.top + e.clientY;
+                }
+              }
 
               setEditPopover({
                 position: { x, y },
@@ -315,6 +340,15 @@ export function BookReader({ book }: BookReaderProps) {
     });
   }, [settings.fontFamily, settings.fontSize, settings.lineHeight]);
 
+  // Resize rendition when annotations panel opens/closes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      (renditionRef.current as any)?.resize();
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [annotationsPanelOpen]);
+
+
   const handlePrev = useCallback(() => {
     renditionRef.current?.prev();
   }, []);
@@ -374,19 +408,43 @@ export function BookReader({ book }: BookReaderProps) {
         cfiRange,
         {},
         (e: MouseEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
           const stored = highlightsRef.current.get(cfiRange);
           if (!stored) return;
-          const target = e.target as HTMLElement;
-          const hlElement = target.closest(".epubjs-hl") || target;
-          const iframe = containerRef.current?.querySelector("iframe");
-          if (!iframe) return;
-          const iframeRect = iframe.getBoundingClientRect();
-          const hlRect = hlElement.getBoundingClientRect();
+          const target = e.target as Element;
+          const targetRect = target.getBoundingClientRect();
+          let x: number;
+          let y: number;
+
+          if (targetRect.width > 0 && targetRect.height > 0) {
+            const isParentContext = e.view === window;
+            if (isParentContext) {
+              x = targetRect.left + targetRect.width / 2;
+              y = targetRect.bottom;
+            } else {
+              const iframe = containerRef.current?.querySelector("iframe");
+              if (!iframe) return;
+              const iframeRect = iframe.getBoundingClientRect();
+              x = iframeRect.left + targetRect.left + targetRect.width / 2;
+              y = iframeRect.top + targetRect.bottom;
+            }
+          } else {
+            const iframe = containerRef.current?.querySelector("iframe");
+            if (!iframe) return;
+            const iframeRect = iframe.getBoundingClientRect();
+            const isParentContext = e.view === window;
+            if (isParentContext) {
+              x = e.clientX;
+              y = e.clientY;
+            } else {
+              x = iframeRect.left + e.clientX;
+              y = iframeRect.top + e.clientY;
+            }
+          }
+
           setEditPopover({
-            position: {
-              x: iframeRect.left + hlRect.left + hlRect.width / 2,
-              y: iframeRect.top + hlRect.bottom,
-            },
+            position: { x, y },
             highlight: stored,
           });
           setSelectionPopover(null);
