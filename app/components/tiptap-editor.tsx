@@ -1,12 +1,20 @@
-import { useEditor, EditorContent, NodeViewWrapper } from "@tiptap/react";
-import type { ReactNodeViewProps } from "@tiptap/react";
+import {
+  useEditor,
+  EditorContent,
+  NodeViewWrapper,
+} from "@tiptap/react";
+import type { ReactNodeViewProps, JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import {
   HighlightReference,
   type HighlightReferenceAttrs,
+  type HighlightReferenceStorage,
 } from "~/lib/tiptap-highlight-node";
-import type { JSONContent } from "@tiptap/react";
+
+export interface TiptapEditorHandle {
+  appendHighlightReference: (attrs: HighlightReferenceAttrs) => void;
+}
 
 interface TiptapEditorProps {
   content?: JSONContent;
@@ -14,14 +22,12 @@ interface TiptapEditorProps {
   onNavigateToHighlight?: (cfi: string) => void;
 }
 
-function HighlightReferenceView({ node }: ReactNodeViewProps) {
+function HighlightReferenceView({ node, extension }: ReactNodeViewProps) {
   const { text, cfiRange } = node.attrs as HighlightReferenceAttrs;
+  const storage = extension.storage as HighlightReferenceStorage;
 
   const handleClick = () => {
-    // Dispatch a custom event that the panel can listen for
-    window.dispatchEvent(
-      new CustomEvent("navigate-to-highlight", { detail: { cfi: cfiRange } }),
-    );
+    storage.onNavigateToHighlight?.(cfiRange);
   };
 
   return (
@@ -37,84 +43,64 @@ function HighlightReferenceView({ node }: ReactNodeViewProps) {
   );
 }
 
-export function TiptapEditor({
-  content,
-  onUpdate,
-  onNavigateToHighlight,
-}: TiptapEditorProps) {
-  const onUpdateRef = useRef(onUpdate);
-  onUpdateRef.current = onUpdate;
+export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
+  function TiptapEditor({ content, onUpdate, onNavigateToHighlight }, ref) {
+    const onUpdateRef = useRef(onUpdate);
+    onUpdateRef.current = onUpdate;
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      HighlightReference.configure({
-        component: HighlightReferenceView,
-      }),
-    ],
-    content: content || {
-      type: "doc",
-      content: [{ type: "paragraph" }],
-    },
-    onUpdate: ({ editor }) => {
-      onUpdateRef.current?.(editor.getJSON());
-    },
-    immediatelyRender: true,
-  });
+    const editor = useEditor({
+      extensions: [
+        StarterKit,
+        HighlightReference.configure({
+          component: HighlightReferenceView,
+        }),
+      ],
+      content: content || {
+        type: "doc",
+        content: [{ type: "paragraph" }],
+      },
+      onUpdate: ({ editor }) => {
+        onUpdateRef.current?.(editor.getJSON());
+      },
+      immediatelyRender: true,
+    });
 
-  // Listen for highlight navigation events
-  useEffect(() => {
-    if (!onNavigateToHighlight) return;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      onNavigateToHighlight(detail.cfi);
-    };
-    window.addEventListener("navigate-to-highlight", handler);
-    return () => window.removeEventListener("navigate-to-highlight", handler);
-  }, [onNavigateToHighlight]);
+    // Keep the navigate callback in extension storage so HighlightReferenceView can access it
+    useEffect(() => {
+      if (!editor) return;
+      const storage = editor.extensionManager.extensions.find(
+        (ext) => ext.name === "highlightReference",
+      )?.storage as HighlightReferenceStorage | undefined;
+      if (storage) {
+        storage.onNavigateToHighlight = onNavigateToHighlight ?? null;
+      }
+    }, [editor, onNavigateToHighlight]);
 
-  // Listen for insert-highlight-reference events from the panel
-  useEffect(() => {
-    if (!editor) return;
-    const handler = (e: Event) => {
-      const attrs = (e as CustomEvent).detail as HighlightReferenceAttrs;
-      editor.chain().focus().insertHighlightReference(attrs).run();
-    };
-    window.addEventListener("insert-highlight-reference", handler);
-    return () =>
-      window.removeEventListener("insert-highlight-reference", handler);
-  }, [editor]);
-
-  // Listen for append-highlight-reference events (auto-insert on new highlight)
-  useEffect(() => {
-    if (!editor) return;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      const { note, ...attrs } = detail;
-      const nodes: any[] = [
-        { type: "highlightReference", attrs },
-        {
-          type: "paragraph",
-          content: note ? [{ type: "text", text: note }] : [],
+    // Expose imperative handle for appending highlight references
+    useImperativeHandle(
+      ref,
+      () => ({
+        appendHighlightReference(attrs: HighlightReferenceAttrs) {
+          if (!editor) return;
+          const nodes: JSONContent[] = [
+            { type: "highlightReference", attrs },
+            { type: "paragraph" },
+          ];
+          const endPos = editor.state.doc.content.size;
+          editor.chain().focus().insertContentAt(endPos, nodes).run();
         },
-      ];
-      const endPos = editor.state.doc.content.size;
-      editor.chain().focus().insertContentAt(endPos, nodes).run();
-    };
-    window.addEventListener("append-highlight-reference", handler);
-    return () =>
-      window.removeEventListener("append-highlight-reference", handler);
-  }, [editor]);
+      }),
+      [editor],
+    );
 
-  return (
-    <div className="tiptap-editor">
-      <EditorContent
-        editor={editor}
-        className="prose prose-sm dark:prose-invert max-w-none px-4 py-3 focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none"
-      />
-    </div>
-  );
-}
-
-export type { TiptapEditorProps };
+    return (
+      <div className="tiptap-editor">
+        <EditorContent
+          editor={editor}
+          className="prose prose-sm dark:prose-invert max-w-none px-4 py-3 focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none"
+        />
+      </div>
+    );
+  },
+);
 

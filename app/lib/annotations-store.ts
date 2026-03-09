@@ -1,4 +1,5 @@
 import { createStore, get, set, del, keys } from "idb-keyval";
+import type { JSONContent } from "@tiptap/react";
 
 // --- Types ---
 
@@ -7,14 +8,13 @@ export interface Highlight {
   bookId: string;
   cfiRange: string;
   text: string;
-  note: string;
   color: string;
   createdAt: number;
 }
 
 export interface Notebook {
   bookId: string;
-  content: any; // tiptap JSON document
+  content: JSONContent;
   updatedAt: number;
 }
 

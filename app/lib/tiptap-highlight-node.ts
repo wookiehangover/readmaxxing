@@ -16,10 +16,23 @@ declare module "@tiptap/react" {
   }
 }
 
-export const HighlightReference = Node.create({
+export interface HighlightReferenceStorage {
+  onNavigateToHighlight: ((cfi: string) => void) | null;
+}
+
+export const HighlightReference = Node.create<
+  { component: ComponentType<any> },
+  HighlightReferenceStorage
+>({
   name: "highlightReference",
   group: "block",
   atom: true,
+
+  addStorage() {
+    return {
+      onNavigateToHighlight: null,
+    };
+  },
 
   addAttributes() {
     return {

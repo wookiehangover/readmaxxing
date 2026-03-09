@@ -1,15 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
-import { X, BookMarked, Download } from "lucide-react";
-import { TiptapEditor } from "~/components/tiptap-editor";
-import {
-  getNotebook,
-  saveNotebook,
-  getHighlightsByBook,
-  type Highlight,
-} from "~/lib/annotations-store";
-import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
+import { X, Download } from "lucide-react";
+import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
+import { getNotebook, saveNotebook } from "~/lib/annotations-store";
 import type { JSONContent } from "@tiptap/react";
 import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
 
@@ -19,6 +13,7 @@ interface AnnotationsPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigateToCfi: (cfi: string) => void;
+  editorRef: React.RefObject<TiptapEditorHandle | null>;
 }
 
 export function AnnotationsPanel({
@@ -27,81 +22,27 @@ export function AnnotationsPanel({
   isOpen,
   onClose,
   onNavigateToCfi,
+  editorRef,
 }: AnnotationsPanelProps) {
   const [content, setContent] = useState<JSONContent | undefined>(undefined);
-  const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [showHighlights, setShowHighlights] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const editorRef = useRef<any>(null);
 
-  // Collect highlightIds from notebook JSON content
-  const collectHighlightIds = useCallback((doc: JSONContent): Set<string> => {
-    const ids = new Set<string>();
-    function walk(node: JSONContent) {
-      if (node.type === "highlightReference" && node.attrs?.highlightId) {
-        ids.add(node.attrs.highlightId as string);
-      }
-      if (node.content) {
-        for (const child of node.content) walk(child);
-      }
-    }
-    walk(doc);
-    return ids;
-  }, []);
-
-  // Load notebook and highlights on mount
+  // Load notebook on mount
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [notebook, bookHighlights] = await Promise.all([
-        getNotebook(bookId),
-        getHighlightsByBook(bookId),
-      ]);
+      const notebook = await getNotebook(bookId);
       if (cancelled) return;
-      const notebookContent = notebook?.content;
-      if (notebookContent) {
-        setContent(notebookContent);
+      if (notebook?.content) {
+        setContent(notebook.content);
       }
-      setHighlights(bookHighlights);
       setLoaded(true);
-
-      // Reconcile: append any highlights missing from the notebook
-      const existingIds = notebookContent
-        ? collectHighlightIds(notebookContent)
-        : new Set<string>();
-      const missing = bookHighlights.filter((h) => !existingIds.has(h.id));
-      if (missing.length > 0) {
-        // Delay to let the editor mount before dispatching
-        requestAnimationFrame(() => {
-          if (cancelled) return;
-          for (const h of missing) {
-            window.dispatchEvent(
-              new CustomEvent("append-highlight-reference", {
-                detail: {
-                  highlightId: h.id,
-                  cfiRange: h.cfiRange,
-                  text: h.text,
-                  note: h.note || "",
-                },
-              }),
-            );
-          }
-        });
-      }
     }
     load();
-    return () => { cancelled = true; };
-  }, [bookId, collectHighlightIds]);
-
-  // Refresh highlights list when a highlight is deleted or changed
-  useEffect(() => {
-    const handler = async () => {
-      const bookHighlights = await getHighlightsByBook(bookId);
-      setHighlights(bookHighlights);
+    return () => {
+      cancelled = true;
     };
-    window.addEventListener("highlights-changed", handler);
-    return () => window.removeEventListener("highlights-changed", handler);
   }, [bookId]);
 
   // Debounced save
@@ -143,26 +84,6 @@ export function AnnotationsPanel({
     URL.revokeObjectURL(url);
   }, [content, bookTitle]);
 
-  const handleInsertHighlight = useCallback(
-    (highlight: Highlight) => {
-      const attrs: HighlightReferenceAttrs = {
-        highlightId: highlight.id,
-        cfiRange: highlight.cfiRange,
-        text: highlight.text,
-      };
-      // Find the editor instance and insert
-      const editorEl = document.querySelector(".tiptap-editor .tiptap");
-      if (editorEl) {
-        // Use the custom event pattern
-        window.dispatchEvent(
-          new CustomEvent("insert-highlight-reference", { detail: attrs }),
-        );
-      }
-      setShowHighlights(false);
-    },
-    [],
-  );
-
   return (
     <div
       className={`flex h-full shrink-0 flex-col border-l bg-card transition-all duration-300 ease-in-out ${
@@ -174,16 +95,6 @@ export function AnnotationsPanel({
           <div className="flex items-center justify-between border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Notebook</h2>
             <div className="flex items-center gap-1">
-              {highlights.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => setShowHighlights(!showHighlights)}
-                  title="Insert highlight reference"
-                >
-                  <BookMarked className="size-3.5" />
-                </Button>
-              )}
               <Button
                 variant="ghost"
                 size="icon-xs"
@@ -199,33 +110,10 @@ export function AnnotationsPanel({
             </div>
           </div>
 
-          {showHighlights && highlights.length > 0 && (
-            <div className="border-b">
-              <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
-                Click a highlight to insert it
-              </div>
-              <div className="max-h-[200px] overflow-y-auto">
-                {highlights.map((h) => (
-                  <button
-                    key={h.id}
-                    type="button"
-                    onClick={() => handleInsertHighlight(h)}
-                    className="w-full border-b border-border/50 px-4 py-2 text-left text-xs transition-colors last:border-b-0 hover:bg-muted"
-                  >
-                    <span
-                      className="mr-1.5 inline-block size-2 rounded-full"
-                      style={{ backgroundColor: h.color }}
-                    />
-                    <span className="line-clamp-2 italic">"{h.text}"</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           <ScrollArea className="flex-1">
             {loaded && (
               <TiptapEditor
+                ref={editorRef}
                 content={content}
                 onUpdate={handleUpdate}
                 onNavigateToHighlight={onNavigateToCfi}

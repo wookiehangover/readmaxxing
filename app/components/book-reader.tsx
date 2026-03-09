@@ -11,14 +11,9 @@ import type { ReaderLayout } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { RadialProgress } from "~/components/radial-progress";
 import { AnnotationsPanel } from "~/components/annotations-panel";
-import {
-  saveHighlight,
-  getHighlightsByBook,
-  updateHighlight,
-  deleteHighlight,
-  type Highlight,
-} from "~/lib/annotations-store";
 import { HighlightPopover } from "~/components/highlight-popover";
+import { useHighlights } from "~/lib/use-highlights";
+import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 
 interface BookReaderProps {
   book: Book;
@@ -77,26 +72,21 @@ export function BookReader({ book }: BookReaderProps) {
   const [bookProgress, setBookProgress] = useState(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
+  const editorRef = useRef<TiptapEditorHandle>(null);
 
   const navigateToCfi = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi);
   }, []);
 
-  // Highlight storage ref for click-callback lookups
-  const highlightsRef = useRef<Map<string, Highlight>>(new Map());
-
-  // Highlight selection state (for creating new highlights)
-  const [selectionPopover, setSelectionPopover] = useState<{
-    position: { x: number; y: number };
-    cfiRange: string;
-    text: string;
-  } | null>(null);
-
-  // Edit popover state (for editing/deleting existing highlights)
-  const [editPopover, setEditPopover] = useState<{
-    position: { x: number; y: number };
-    highlight: Highlight;
-  } | null>(null);
+  const {
+    selectionPopover,
+    editPopover,
+    saveHighlight: saveHighlightFromPopover,
+    deleteHighlightFromPopover,
+    dismissPopovers,
+    loadAndApplyHighlights,
+    registerSelectionHandler,
+  } = useHighlights({ bookId: book.id, renditionRef, containerRef });
 
   // Keep layoutRef in sync
   layoutRef.current = settings.readerLayout;
@@ -126,13 +116,11 @@ export function BookReader({ book }: BookReaderProps) {
         "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Source+Serif+4:wght@400;500;600;700&display=swap";
       doc.head.appendChild(link);
 
-      // Typography style injection
       const style = doc.createElement("style");
       style.id = "reader-typography";
       style.textContent = getTypographyCss(typographyRef.current.fontFamily, typographyRef.current.fontSize, typographyRef.current.lineHeight);
       doc.head.appendChild(style);
 
-      // Highlight overlay styles
       const highlightStyle = doc.createElement("style");
       highlightStyle.id = "reader-highlights";
       highlightStyle.textContent = `
@@ -144,7 +132,6 @@ export function BookReader({ book }: BookReaderProps) {
       doc.head.appendChild(highlightStyle);
     });
 
-    // Register light and dark themes for epub iframe content
     rendition.themes.register("light", {
       body: { color: "#1a1a1a !important", background: "#ffffff !important" },
       a: { color: "inherit !important" },
@@ -154,111 +141,27 @@ export function BookReader({ book }: BookReaderProps) {
       a: { color: "inherit !important" },
     });
 
-    // Async setup: ensure proper ordering of book ready, display, themes, and locations
     (async () => {
       await epubBook.ready;
 
       const savedCfi = await getPosition(book.id);
       await rendition.display(savedCfi || undefined);
 
-      // Apply theme and typography AFTER content is rendered
       const effectiveTheme = resolveTheme(settings.theme);
       rendition.themes.select(effectiveTheme);
 
-      // Load and re-apply existing highlights
-      try {
-        const existingHighlights = await getHighlightsByBook(book.id);
-        const hlMap = new Map<string, Highlight>();
-        for (const hl of existingHighlights) {
-          hlMap.set(hl.cfiRange, hl);
-          rendition.annotations.highlight(
-            hl.cfiRange,
-            {},
-            (e: MouseEvent) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const stored = highlightsRef.current.get(hl.cfiRange);
-              if (!stored) return;
+      // Load and apply existing highlights via the hook
+      await loadAndApplyHighlights(rendition);
 
-              const target = e.target as Element;
-              const targetRect = target.getBoundingClientRect();
-              let x: number;
-              let y: number;
+      // Register selection handler via the hook
+      registerSelectionHandler(rendition);
 
-              if (targetRect.width > 0 && targetRect.height > 0) {
-                // Check if callback fired in parent context or iframe context
-                const isParentContext = e.view === window;
-                if (isParentContext) {
-                  // targetRect is already in parent coordinates
-                  x = targetRect.left + targetRect.width / 2;
-                  y = targetRect.bottom;
-                } else {
-                  // targetRect is iframe-relative, need to offset
-                  const iframe = containerRef.current?.querySelector("iframe");
-                  if (!iframe) return;
-                  const iframeRect = iframe.getBoundingClientRect();
-                  x = iframeRect.left + targetRect.left + targetRect.width / 2;
-                  y = iframeRect.top + targetRect.bottom;
-                }
-              } else {
-                // Fallback to mouse coordinates
-                const iframe = containerRef.current?.querySelector("iframe");
-                if (!iframe) return;
-                const iframeRect = iframe.getBoundingClientRect();
-                const isParentContext = e.view === window;
-                if (isParentContext) {
-                  x = e.clientX;
-                  y = e.clientY;
-                } else {
-                  x = iframeRect.left + e.clientX;
-                  y = iframeRect.top + e.clientY;
-                }
-              }
-
-              setEditPopover({
-                position: { x, y },
-                highlight: stored,
-              });
-              setSelectionPopover(null);
-            },
-            "epubjs-hl",
-            { fill: hl.color || "rgba(255, 213, 79, 0.4)" },
-          );
-        }
-        highlightsRef.current = hlMap;
-      } catch {
-        // Highlight loading can fail silently
-      }
-
-      // Listen for text selection in the epub iframe
-      rendition.on("selected", (cfiRange: string, contents: any) => {
-        if (!renditionRef.current) return;
-
-        // Get the selected text
-        const range = contents.range(cfiRange);
-        const text = range?.toString() || "";
-        if (!text.trim()) return;
-
-        // Calculate position relative to the parent window
-        const iframe = contents.document?.defaultView?.frameElement;
-        if (!iframe) return;
-        const iframeRect = iframe.getBoundingClientRect();
-        const rangeRect = range.getBoundingClientRect();
-
-        const x = iframeRect.left + rangeRect.left + rangeRect.width / 2;
-        const y = iframeRect.top + rangeRect.bottom;
-
-        setSelectionPopover({ position: { x, y }, cfiRange, text });
-      });
-
-      // Generate locations in background for progress tracking
       try {
         epubBook.locations.generate(1024);
       } catch {
-        // locations generation can fail silently — progress will show 0%
+        // locations generation can fail silently
       }
 
-      // Track progress and save position on navigation
       rendition.on(
         "relocated",
         (location: {
@@ -269,18 +172,10 @@ export function BookReader({ book }: BookReaderProps) {
           };
         }) => {
           if (!renditionRef.current) return;
-
-          // Chapter progress
           const { page, total } = location.start.displayed;
           setChapterProgress(total > 0 ? (page / total) * 100 : 0);
-
-          // Overall book progress (available once locations are generated)
           setBookProgress(location.start.percentage * 100);
-
-          // Debounce-save position to IndexedDB
-          if (saveTimerRef.current) {
-            clearTimeout(saveTimerRef.current);
-          }
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
             savePosition(book.id, location.start.cfi);
           }, 1000);
@@ -290,42 +185,32 @@ export function BookReader({ book }: BookReaderProps) {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (layoutRef.current === "scroll") return;
-      if (e.key === "ArrowLeft") {
-        rendition.prev();
-      } else if (e.key === "ArrowRight") {
-        rendition.next();
-      }
+      if (e.key === "ArrowLeft") rendition.prev();
+      else if (e.key === "ArrowRight") rendition.next();
     };
 
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-      }
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       rendition.destroy();
       epubBook.destroy();
       bookRef.current = null;
       renditionRef.current = null;
     };
-  }, [book.id, book.data, settings.readerLayout]);
+  }, [book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler]);
 
-  // React to theme changes without recreating the rendition
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
-    const effectiveTheme = resolveTheme(settings.theme);
-    rendition.themes.select(effectiveTheme);
+    rendition.themes.select(resolveTheme(settings.theme));
   }, [settings.theme]);
 
-  // React to typography changes by updating injected style tags in rendered iframes
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
     const css = getTypographyCss(settings.fontFamily, settings.fontSize, settings.lineHeight);
-
-    // Update style in all currently rendered content views
     const contents = (rendition as any).getContents() as any[];
     contents.forEach((content: any) => {
       const doc = content.document;
@@ -340,7 +225,6 @@ export function BookReader({ book }: BookReaderProps) {
     });
   }, [settings.fontFamily, settings.fontSize, settings.lineHeight]);
 
-  // Resize rendition when annotations panel opens/closes
   useEffect(() => {
     const timer = setTimeout(() => {
       (renditionRef.current as any)?.resize();
@@ -348,169 +232,34 @@ export function BookReader({ book }: BookReaderProps) {
     return () => clearTimeout(timer);
   }, [annotationsPanelOpen]);
 
-
-  const handlePrev = useCallback(() => {
-    renditionRef.current?.prev();
-  }, []);
-
-  const handleNext = useCallback(() => {
-    renditionRef.current?.next();
-  }, []);
+  const handlePrev = useCallback(() => renditionRef.current?.prev(), []);
+  const handleNext = useCallback(() => renditionRef.current?.next(), []);
 
   const handleUpdateSettings = useCallback(
     (update: Partial<typeof settings>) => {
-      // If layout is changing, save current location before switching
       if (update.readerLayout && update.readerLayout !== settings.readerLayout) {
-        const currentLocation = renditionRef.current?.location;
-        const cfi = currentLocation?.start?.cfi;
-
+        const cfi = renditionRef.current?.location?.start?.cfi;
         updateSettings(update);
-
-        if (cfi) {
-          queueMicrotask(() => {
-            renditionRef.current?.display(cfi);
-          });
-        }
+        if (cfi) queueMicrotask(() => renditionRef.current?.display(cfi));
         return;
       }
-
       updateSettings(update);
     },
     [settings.readerLayout, updateSettings],
   );
 
-  const isScrollMode = settings.readerLayout === "scroll";
-
-  const handleSaveHighlight = useCallback(
-    async (note: string) => {
-      if (!selectionPopover || !renditionRef.current) return;
-
-      const { cfiRange, text } = selectionPopover;
-      const color = "rgba(255, 213, 79, 0.4)";
-
-      const highlight: Highlight = {
-        id: crypto.randomUUID(),
-        bookId: book.id,
-        cfiRange,
-        text,
-        note,
-        color,
-        createdAt: Date.now(),
-      };
-
-      await saveHighlight(highlight);
-
-      // Store in ref for click-callback lookups
-      highlightsRef.current.set(cfiRange, highlight);
-
-      // Render the highlight in the epub with click callback
-      renditionRef.current.annotations.highlight(
-        cfiRange,
-        {},
-        (e: MouseEvent) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const stored = highlightsRef.current.get(cfiRange);
-          if (!stored) return;
-          const target = e.target as Element;
-          const targetRect = target.getBoundingClientRect();
-          let x: number;
-          let y: number;
-
-          if (targetRect.width > 0 && targetRect.height > 0) {
-            const isParentContext = e.view === window;
-            if (isParentContext) {
-              x = targetRect.left + targetRect.width / 2;
-              y = targetRect.bottom;
-            } else {
-              const iframe = containerRef.current?.querySelector("iframe");
-              if (!iframe) return;
-              const iframeRect = iframe.getBoundingClientRect();
-              x = iframeRect.left + targetRect.left + targetRect.width / 2;
-              y = iframeRect.top + targetRect.bottom;
-            }
-          } else {
-            const iframe = containerRef.current?.querySelector("iframe");
-            if (!iframe) return;
-            const iframeRect = iframe.getBoundingClientRect();
-            const isParentContext = e.view === window;
-            if (isParentContext) {
-              x = e.clientX;
-              y = e.clientY;
-            } else {
-              x = iframeRect.left + e.clientX;
-              y = iframeRect.top + e.clientY;
-            }
-          }
-
-          setEditPopover({
-            position: { x, y },
-            highlight: stored,
-          });
-          setSelectionPopover(null);
-        },
-        "epubjs-hl",
-        { fill: color },
-      );
-
-      setSelectionPopover(null);
-
-      // Clear the selection in the iframe
-      const contents = (renditionRef.current as any).getContents() as any[];
-      contents.forEach((content: any) => {
-        const win = content.document?.defaultView;
-        if (win) win.getSelection()?.removeAllRanges();
+  const handleSaveHighlight = useCallback(async () => {
+    const highlight = await saveHighlightFromPopover();
+    if (highlight) {
+      editorRef.current?.appendHighlightReference({
+        highlightId: highlight.id,
+        cfiRange: highlight.cfiRange,
+        text: highlight.text,
       });
+    }
+  }, [saveHighlightFromPopover]);
 
-      // Auto-insert highlight reference into the notebook
-      window.dispatchEvent(
-        new CustomEvent("append-highlight-reference", {
-          detail: {
-            highlightId: highlight.id,
-            cfiRange: highlight.cfiRange,
-            text: highlight.text,
-            note,
-          },
-        }),
-      );
-    },
-    [selectionPopover, book.id],
-  );
-
-  const handleDismissPopover = useCallback(() => {
-    setSelectionPopover(null);
-    setEditPopover(null);
-  }, []);
-
-  const handleUpdateHighlight = useCallback(
-    async (newNote: string) => {
-      if (!editPopover) return;
-      const { highlight } = editPopover;
-      await updateHighlight(highlight.id, { note: newNote });
-      // Update the ref
-      highlightsRef.current.set(highlight.cfiRange, { ...highlight, note: newNote });
-      setEditPopover(null);
-    },
-    [editPopover],
-  );
-
-  const handleDeleteHighlight = useCallback(async () => {
-    if (!editPopover || !renditionRef.current) return;
-    const { highlight } = editPopover;
-
-    await deleteHighlight(highlight.id);
-
-    // Remove annotation overlay from epub
-    renditionRef.current.annotations.remove(highlight.cfiRange, "highlight");
-
-    // Remove from ref
-    highlightsRef.current.delete(highlight.cfiRange);
-
-    setEditPopover(null);
-
-    // Notify the annotations panel to refresh
-    window.dispatchEvent(new CustomEvent("highlights-changed"));
-  }, [editPopover]);
+  const isScrollMode = settings.readerLayout === "scroll";
 
   return (
     <div className="flex h-full">
@@ -554,7 +303,7 @@ export function BookReader({ book }: BookReaderProps) {
             position={selectionPopover.position}
             selectedText={selectionPopover.text}
             onSave={handleSaveHighlight}
-            onDismiss={handleDismissPopover}
+            onDismiss={dismissPopovers}
           />
         )}
         {editPopover && (
@@ -562,10 +311,8 @@ export function BookReader({ book }: BookReaderProps) {
             mode="edit"
             position={editPopover.position}
             selectedText={editPopover.highlight.text}
-            initialNote={editPopover.highlight.note}
-            onUpdate={handleUpdateHighlight}
-            onDelete={handleDeleteHighlight}
-            onDismiss={handleDismissPopover}
+            onDelete={deleteHighlightFromPopover}
+            onDismiss={dismissPopovers}
           />
         )}
       </div>
@@ -575,6 +322,7 @@ export function BookReader({ book }: BookReaderProps) {
         isOpen={annotationsPanelOpen}
         onClose={() => setAnnotationsPanelOpen(false)}
         onNavigateToCfi={navigateToCfi}
+        editorRef={editorRef}
       />
     </div>
   );
