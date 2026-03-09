@@ -85,6 +85,25 @@ export function TiptapEditor({
       window.removeEventListener("insert-highlight-reference", handler);
   }, [editor]);
 
+  // Listen for append-highlight-reference events (auto-insert on new highlight)
+  useEffect(() => {
+    if (!editor) return;
+    const handler = (e: Event) => {
+      const attrs = (e as CustomEvent).detail as HighlightReferenceAttrs;
+      const endPos = editor.state.doc.content.size;
+      editor
+        .chain()
+        .insertContentAt(endPos, {
+          type: "highlightReference",
+          attrs,
+        })
+        .run();
+    };
+    window.addEventListener("append-highlight-reference", handler);
+    return () =>
+      window.removeEventListener("append-highlight-reference", handler);
+  }, [editor]);
+
   return (
     <div className="tiptap-editor">
       <EditorContent

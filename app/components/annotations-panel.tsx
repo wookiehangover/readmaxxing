@@ -54,6 +54,16 @@ export function AnnotationsPanel({
     return () => { cancelled = true; };
   }, [bookId]);
 
+  // Refresh highlights list when a highlight is deleted or changed
+  useEffect(() => {
+    const handler = async () => {
+      const bookHighlights = await getHighlightsByBook(bookId);
+      setHighlights(bookHighlights);
+    };
+    window.addEventListener("highlights-changed", handler);
+    return () => window.removeEventListener("highlights-changed", handler);
+  }, [bookId]);
+
   // Debounced save
   const handleUpdate = useCallback(
     (newContent: JSONContent) => {

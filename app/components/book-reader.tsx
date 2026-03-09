@@ -14,6 +14,8 @@ import { AnnotationsPanel } from "~/components/annotations-panel";
 import {
   saveHighlight,
   getHighlightsByBook,
+  updateHighlight,
+  deleteHighlight,
   type Highlight,
 } from "~/lib/annotations-store";
 import { HighlightPopover } from "~/components/highlight-popover";
@@ -80,11 +82,20 @@ export function BookReader({ book }: BookReaderProps) {
     renditionRef.current?.display(cfi);
   }, []);
 
-  // Highlight selection state
+  // Highlight storage ref for click-callback lookups
+  const highlightsRef = useRef<Map<string, Highlight>>(new Map());
+
+  // Highlight selection state (for creating new highlights)
   const [selectionPopover, setSelectionPopover] = useState<{
     position: { x: number; y: number };
     cfiRange: string;
     text: string;
+  } | null>(null);
+
+  // Edit popover state (for editing/deleting existing highlights)
+  const [editPopover, setEditPopover] = useState<{
+    position: { x: number; y: number };
+    highlight: Highlight;
   } | null>(null);
 
   // Keep layoutRef in sync
@@ -157,15 +168,35 @@ export function BookReader({ book }: BookReaderProps) {
       // Load and re-apply existing highlights
       try {
         const existingHighlights = await getHighlightsByBook(book.id);
+        const hlMap = new Map<string, Highlight>();
         for (const hl of existingHighlights) {
+          hlMap.set(hl.cfiRange, hl);
           rendition.annotations.highlight(
             hl.cfiRange,
             {},
-            undefined,
+            (e: MouseEvent) => {
+              // Look up highlight by CFI range from the ref
+              const stored = highlightsRef.current.get(hl.cfiRange);
+              if (!stored) return;
+
+              // Calculate position for the edit popover
+              const iframe = containerRef.current?.querySelector("iframe");
+              if (!iframe) return;
+              const iframeRect = iframe.getBoundingClientRect();
+              const x = iframeRect.left + e.clientX;
+              const y = iframeRect.top + e.clientY;
+
+              setEditPopover({
+                position: { x, y },
+                highlight: stored,
+              });
+              setSelectionPopover(null);
+            },
             "epubjs-hl",
             { fill: hl.color || "rgba(255, 213, 79, 0.4)" },
           );
         }
+        highlightsRef.current = hlMap;
       } catch {
         // Highlight loading can fail silently
       }
@@ -331,11 +362,28 @@ export function BookReader({ book }: BookReaderProps) {
 
       await saveHighlight(highlight);
 
-      // Render the highlight in the epub
+      // Store in ref for click-callback lookups
+      highlightsRef.current.set(cfiRange, highlight);
+
+      // Render the highlight in the epub with click callback
       renditionRef.current.annotations.highlight(
         cfiRange,
         {},
-        undefined,
+        (e: MouseEvent) => {
+          const stored = highlightsRef.current.get(cfiRange);
+          if (!stored) return;
+          const iframe = containerRef.current?.querySelector("iframe");
+          if (!iframe) return;
+          const iframeRect = iframe.getBoundingClientRect();
+          setEditPopover({
+            position: {
+              x: iframeRect.left + e.clientX,
+              y: iframeRect.top + e.clientY,
+            },
+            highlight: stored,
+          });
+          setSelectionPopover(null);
+        },
         "epubjs-hl",
         { fill: color },
       );
@@ -348,13 +396,55 @@ export function BookReader({ book }: BookReaderProps) {
         const win = content.document?.defaultView;
         if (win) win.getSelection()?.removeAllRanges();
       });
+
+      // Auto-insert highlight reference into the notebook
+      window.dispatchEvent(
+        new CustomEvent("append-highlight-reference", {
+          detail: {
+            highlightId: highlight.id,
+            cfiRange: highlight.cfiRange,
+            text: highlight.text,
+          },
+        }),
+      );
     },
     [selectionPopover, book.id],
   );
 
   const handleDismissPopover = useCallback(() => {
     setSelectionPopover(null);
+    setEditPopover(null);
   }, []);
+
+  const handleUpdateHighlight = useCallback(
+    async (newNote: string) => {
+      if (!editPopover) return;
+      const { highlight } = editPopover;
+      await updateHighlight(highlight.id, { note: newNote });
+      // Update the ref
+      highlightsRef.current.set(highlight.cfiRange, { ...highlight, note: newNote });
+      setEditPopover(null);
+    },
+    [editPopover],
+  );
+
+  const handleDeleteHighlight = useCallback(async () => {
+    if (!editPopover || !renditionRef.current) return;
+    const { highlight } = editPopover;
+
+    await deleteHighlight(highlight.id);
+
+    // Remove annotation overlay from epub
+    renditionRef.current.annotations.remove(highlight.cfiRange, "highlight");
+
+    // Remove from ref
+    highlightsRef.current.delete(highlight.cfiRange);
+
+    setEditPopover(null);
+
+    // Notify the annotations panel to refresh
+    window.dispatchEvent(new CustomEvent("highlights-changed"));
+  }, [editPopover]);
 
   return (
     <div className="flex h-full">
@@ -398,6 +488,17 @@ export function BookReader({ book }: BookReaderProps) {
             position={selectionPopover.position}
             selectedText={selectionPopover.text}
             onSave={handleSaveHighlight}
+            onDismiss={handleDismissPopover}
+          />
+        )}
+        {editPopover && (
+          <HighlightPopover
+            mode="edit"
+            position={editPopover.position}
+            selectedText={editPopover.highlight.text}
+            initialNote={editPopover.highlight.note}
+            onUpdate={handleUpdateHighlight}
+            onDelete={handleDeleteHighlight}
             onDismiss={handleDismissPopover}
           />
         )}

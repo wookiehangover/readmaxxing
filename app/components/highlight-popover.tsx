@@ -1,20 +1,34 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "~/components/ui/button";
 
-interface HighlightPopoverProps {
+interface HighlightPopoverBaseProps {
   position: { x: number; y: number };
   selectedText: string;
-  onSave: (note: string) => void;
   onDismiss: () => void;
 }
 
-export function HighlightPopover({
-  position,
-  selectedText,
-  onSave,
-  onDismiss,
-}: HighlightPopoverProps) {
-  const [note, setNote] = useState("");
+interface HighlightPopoverCreateProps extends HighlightPopoverBaseProps {
+  mode?: "create";
+  onSave: (note: string) => void;
+  onUpdate?: never;
+  onDelete?: never;
+  initialNote?: never;
+}
+
+interface HighlightPopoverEditProps extends HighlightPopoverBaseProps {
+  mode: "edit";
+  onUpdate: (note: string) => void;
+  onDelete: () => void;
+  initialNote: string;
+  onSave?: never;
+}
+
+type HighlightPopoverProps = HighlightPopoverCreateProps | HighlightPopoverEditProps;
+
+export function HighlightPopover(props: HighlightPopoverProps) {
+  const { position, selectedText, onDismiss } = props;
+  const isEdit = props.mode === "edit";
+  const [note, setNote] = useState(isEdit ? props.initialNote : "");
   const popoverRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -66,7 +80,11 @@ export function HighlightPopover({
   }, [onDismiss]);
 
   const handleSave = () => {
-    onSave(note);
+    if (isEdit) {
+      props.onUpdate(note);
+    } else {
+      props.onSave(note);
+    }
     setNote("");
   };
 
@@ -101,16 +119,25 @@ export function HighlightPopover({
         value={note}
         onChange={(e) => setNote(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Add a note (optional)"
+        placeholder={isEdit ? "Edit note" : "Add a note (optional)"}
         rows={2}
         className="mb-2 w-full resize-none rounded-md border bg-background px-2 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
       />
       <div className="flex justify-end gap-2">
+        {isEdit && (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={props.onDelete}
+          >
+            Delete
+          </Button>
+        )}
         <Button variant="ghost" size="sm" onClick={onDismiss}>
           Cancel
         </Button>
         <Button size="sm" onClick={handleSave}>
-          Save
+          {isEdit ? "Update" : "Save"}
         </Button>
       </div>
     </div>
