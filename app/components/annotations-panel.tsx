@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -8,6 +8,7 @@ import { AnnotationService } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import type { JSONContent } from "@tiptap/react";
 import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
+import { useEffectQuery } from "~/lib/use-effect-query";
 
 interface AnnotationsPanelProps {
   bookId: string;
@@ -26,30 +27,14 @@ export function AnnotationsPanel({
   onNavigateToCfi,
   editorRef,
 }: AnnotationsPanelProps) {
-  const [content, setContent] = useState<JSONContent | undefined>(undefined);
-  const [loaded, setLoaded] = useState(false);
+  const { data: notebook, isLoading } = useEffectQuery(
+    () =>
+      AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))),
+    [bookId],
+  );
+  const content = notebook?.content;
+  const loaded = !isLoading;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Load notebook on mount
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const program = Effect.gen(function* () {
-        const svc = yield* AnnotationService;
-        return yield* svc.getNotebook(bookId);
-      });
-      const notebook = await AppRuntime.runPromise(program);
-      if (cancelled) return;
-      if (notebook?.content) {
-        setContent(notebook.content);
-      }
-      setLoaded(true);
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [bookId]);
 
   // Debounced save
   const handleUpdate = useCallback(
