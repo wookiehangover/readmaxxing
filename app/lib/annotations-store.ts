@@ -1,4 +1,4 @@
-import { createStore, get, set, del, keys } from "idb-keyval";
+import { createStore, get, set, del, entries } from "idb-keyval";
 import { Context, Effect, Layer } from "effect";
 import type { JSONContent } from "@tiptap/react";
 import { HighlightError, NotebookError } from "~/lib/errors";
@@ -53,28 +53,29 @@ export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
   getHighlightsByBook: (bookId) =>
     Effect.tryPromise({
       try: async () => {
-        const allKeys = await keys(highlightStore);
-        const highlights: Highlight[] = [];
-        for (const key of allKeys) {
-          const hl = await get<Highlight>(key, highlightStore);
-          if (hl && hl.bookId === bookId) {
-            highlights.push(hl);
-          }
-        }
-        return highlights;
+        const allEntries = await entries<string, Highlight>(highlightStore);
+        return allEntries.map(([, hl]) => hl).filter((hl) => hl && hl.bookId === bookId);
       },
       catch: (cause) => new HighlightError({ operation: "getHighlightsByBook", cause }),
     }),
 
   updateHighlight: (id, updates) =>
-    Effect.tryPromise({
-      try: async () => {
-        const existing = await get<Highlight>(id, highlightStore);
-        if (!existing) return;
-        await set(id, { ...existing, ...updates }, highlightStore);
-      },
-      catch: (cause) =>
-        new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
+    Effect.gen(function* () {
+      const existing = yield* Effect.tryPromise({
+        try: () => get<Highlight>(id, highlightStore),
+        catch: (cause) =>
+          new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
+      });
+      if (!existing) {
+        return yield* Effect.fail(
+          new HighlightError({ operation: "updateHighlight", highlightId: id }),
+        );
+      }
+      yield* Effect.tryPromise({
+        try: () => set(id, { ...existing, ...updates }, highlightStore),
+        catch: (cause) =>
+          new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
+      });
     }),
 
   deleteHighlight: (id) =>

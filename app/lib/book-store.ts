@@ -1,4 +1,4 @@
-import { createStore, get, set, del, keys } from "idb-keyval";
+import { createStore, get, set, del, entries } from "idb-keyval";
 import { Context, Effect, Layer } from "effect";
 import { StorageError, BookNotFoundError, PositionError } from "~/lib/errors";
 
@@ -17,7 +17,7 @@ const positionStore = createStore("ebook-reader-positions", "positions");
 
 // --- Effect Service ---
 
-class BookService extends Context.Tag("BookService")<
+export class BookService extends Context.Tag("BookService")<
   BookService,
   {
     readonly saveBook: (book: Book) => Effect.Effect<void, StorageError>;
@@ -29,7 +29,7 @@ class BookService extends Context.Tag("BookService")<
   }
 >() {}
 
-const BookServiceLive = Layer.succeed(BookService, {
+export const BookServiceLive = Layer.succeed(BookService, {
   saveBook: (book: Book) =>
     Effect.tryPromise({
       try: () => set(book.id, book, bookStore),
@@ -39,15 +39,8 @@ const BookServiceLive = Layer.succeed(BookService, {
   getBooks: () =>
     Effect.tryPromise({
       try: async () => {
-        const allKeys = await keys(bookStore);
-        const books: Book[] = [];
-        for (const key of allKeys) {
-          const book = await get<Book>(key, bookStore);
-          if (book) {
-            books.push(book);
-          }
-        }
-        return books;
+        const allEntries = await entries<string, Book>(bookStore);
+        return allEntries.map(([, book]) => book).filter(Boolean);
       },
       catch: (cause) => new StorageError({ operation: "getBooks", cause }),
     }),
@@ -86,4 +79,4 @@ const BookServiceLive = Layer.succeed(BookService, {
     }),
 });
 
-export { BookService, BookServiceLive };
+
