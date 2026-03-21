@@ -28,8 +28,7 @@ export function AnnotationsPanel({
   editorRef,
 }: AnnotationsPanelProps) {
   const { data: notebook, isLoading } = useEffectQuery(
-    () =>
-      AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))),
+    () => AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))),
     [bookId],
   );
   const content = notebook?.content;

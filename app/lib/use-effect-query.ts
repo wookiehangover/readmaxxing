@@ -55,4 +55,3 @@ export function useEffectQuery<A, E>(
 
   return { data, error, isLoading };
 }
-

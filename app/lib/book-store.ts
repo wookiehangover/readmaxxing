@@ -88,5 +88,3 @@ export const BookServiceLive = Layer.succeed(BookService, {
       catch: (cause) => new PositionError({ operation: "getPosition", bookId, cause }),
     }),
 });
-
-

@@ -234,11 +234,7 @@ export function BookReader({ book }: BookReaderProps) {
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
-    const css = getTypographyCss(
-      settings.fontFamily,
-      settings.fontSize,
-      settings.lineHeight,
-    );
+    const css = getTypographyCss(settings.fontFamily, settings.fontSize, settings.lineHeight);
     const contents = (rendition as any).getContents() as any[];
     contents.forEach((content: any) => {
       const doc = content.document;
