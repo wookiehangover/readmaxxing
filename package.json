@@ -20,6 +20,7 @@
     "@tiptap/starter-kit": "^3.20.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "effect": "^3.21.0",
     "epubjs": "^0.3.93",
     "idb-keyval": "^6.2.2",
     "isbot": "^5.1.31",
@@ -33,6 +34,8 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "core-js",
+      "es5-ext",
       "esbuild"
     ]
   },

@@ -1,9 +1,4 @@
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "~/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
 
 interface RadialProgressProps {
   value: number; // 0-100
@@ -19,12 +14,7 @@ export function RadialProgress({ value, label }: RadialProgressProps) {
   const offset = circumference - (clamped / 100) * circumference;
 
   const svg = (
-    <svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      className="rotate-[-90deg]"
-    >
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="rotate-[-90deg]">
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -67,9 +57,7 @@ export function RadialProgress({ value, label }: RadialProgressProps) {
   return (
     <TooltipProvider delay={600}>
       <Tooltip>
-        <TooltipTrigger className="inline-flex">
-          {svg}
-        </TooltipTrigger>
+        <TooltipTrigger className="inline-flex">{svg}</TooltipTrigger>
         <TooltipContent>
           <p>{label}</p>
         </TooltipContent>
@@ -77,4 +65,3 @@ export function RadialProgress({ value, label }: RadialProgressProps) {
     </TooltipProvider>
   );
 }
-

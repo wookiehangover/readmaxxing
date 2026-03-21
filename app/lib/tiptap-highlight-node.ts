@@ -43,15 +43,11 @@ export const HighlightReference = Node.create<
   },
 
   parseHTML() {
-    return [{ tag: 'div[data-highlight-reference]' }];
+    return [{ tag: "div[data-highlight-reference]" }];
   },
 
   renderHTML({ HTMLAttributes }) {
-    return [
-      "div",
-      mergeAttributes(HTMLAttributes, { "data-highlight-reference": "" }),
-      0,
-    ];
+    return ["div", mergeAttributes(HTMLAttributes, { "data-highlight-reference": "" }), 0];
   },
 
   addCommands() {
@@ -76,4 +72,3 @@ export const HighlightReference = Node.create<
     return ReactNodeViewRenderer(component);
   },
 });
-

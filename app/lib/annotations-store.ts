@@ -46,7 +46,8 @@ export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
   saveHighlight: (highlight) =>
     Effect.tryPromise({
       try: () => set(highlight.id, highlight, highlightStore),
-      catch: (cause) => new HighlightError({ operation: "saveHighlight", highlightId: highlight.id, cause }),
+      catch: (cause) =>
+        new HighlightError({ operation: "saveHighlight", highlightId: highlight.id, cause }),
     }),
 
   getHighlightsByBook: (bookId) =>
@@ -72,19 +73,22 @@ export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
         if (!existing) return;
         await set(id, { ...existing, ...updates }, highlightStore);
       },
-      catch: (cause) => new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
+      catch: (cause) =>
+        new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
     }),
 
   deleteHighlight: (id) =>
     Effect.tryPromise({
       try: () => del(id, highlightStore),
-      catch: (cause) => new HighlightError({ operation: "deleteHighlight", highlightId: id, cause }),
+      catch: (cause) =>
+        new HighlightError({ operation: "deleteHighlight", highlightId: id, cause }),
     }),
 
   saveNotebook: (notebook) =>
     Effect.tryPromise({
       try: () => set(notebook.bookId, notebook, notebookStore),
-      catch: (cause) => new NotebookError({ operation: "saveNotebook", bookId: notebook.bookId, cause }),
+      catch: (cause) =>
+        new NotebookError({ operation: "saveNotebook", bookId: notebook.bookId, cause }),
     }),
 
   getNotebook: (bookId) =>
@@ -96,4 +100,3 @@ export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
       catch: (cause) => new NotebookError({ operation: "getNotebook", bookId, cause }),
     }),
 });
-

@@ -67,8 +67,16 @@ export function BookReader({ book }: BookReaderProps) {
   const renditionRef = useRef<Rendition | null>(null);
   const [settings, updateSettings] = useSettings();
   const layoutRef = useRef(settings.readerLayout);
-  const typographyRef = useRef({ fontFamily: settings.fontFamily, fontSize: settings.fontSize, lineHeight: settings.lineHeight });
-  typographyRef.current = { fontFamily: settings.fontFamily, fontSize: settings.fontSize, lineHeight: settings.lineHeight };
+  const typographyRef = useRef({
+    fontFamily: settings.fontFamily,
+    fontSize: settings.fontSize,
+    lineHeight: settings.lineHeight,
+  });
+  typographyRef.current = {
+    fontFamily: settings.fontFamily,
+    fontSize: settings.fontSize,
+    lineHeight: settings.lineHeight,
+  };
   const [chapterProgress, setChapterProgress] = useState(0);
   const [bookProgress, setBookProgress] = useState(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -119,7 +127,11 @@ export function BookReader({ book }: BookReaderProps) {
 
       const style = doc.createElement("style");
       style.id = "reader-typography";
-      style.textContent = getTypographyCss(typographyRef.current.fontFamily, typographyRef.current.fontSize, typographyRef.current.lineHeight);
+      style.textContent = getTypographyCss(
+        typographyRef.current.fontFamily,
+        typographyRef.current.fontSize,
+        typographyRef.current.lineHeight,
+      );
       doc.head.appendChild(style);
 
       const highlightStyle = doc.createElement("style");
@@ -146,9 +158,7 @@ export function BookReader({ book }: BookReaderProps) {
       await epubBook.ready;
 
       const savedCfi = await AppRuntime.runPromise(
-        BookService.pipe(
-          Effect.andThen((s) => s.getPosition(book.id)),
-        ),
+        BookService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
       );
       await rendition.display(savedCfi || undefined);
 
@@ -183,9 +193,7 @@ export function BookReader({ book }: BookReaderProps) {
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
             AppRuntime.runPromise(
-              BookService.pipe(
-                Effect.andThen((s) => s.savePosition(book.id, location.start.cfi)),
-              ),
+              BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, location.start.cfi))),
             );
           }, 1000);
         },
@@ -301,10 +309,7 @@ export function BookReader({ book }: BookReaderProps) {
               <NotebookPen className="size-4" />
               <span className="sr-only">Toggle notebook</span>
             </Button>
-            <ReaderSettingsMenu
-              settings={settings}
-              onUpdateSettings={handleUpdateSettings}
-            />
+            <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
           </div>
         </div>
         {selectionPopover && (
@@ -336,4 +341,3 @@ export function BookReader({ book }: BookReaderProps) {
     </div>
   );
 }
-

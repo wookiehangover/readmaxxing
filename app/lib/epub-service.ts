@@ -11,9 +11,7 @@ export interface EpubMetadata {
 export class EpubService extends Context.Tag("EpubService")<
   EpubService,
   {
-    readonly parseEpub: (
-      data: ArrayBuffer,
-    ) => Effect.Effect<EpubMetadata, EpubParseError>;
+    readonly parseEpub: (data: ArrayBuffer) => Effect.Effect<EpubMetadata, EpubParseError>;
   }
 >() {}
 
@@ -60,4 +58,3 @@ export const EpubServiceLive = Layer.succeed(EpubService, {
       catch: (cause) => new EpubParseError({ cause }),
     }),
 });
-

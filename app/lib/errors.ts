@@ -30,4 +30,3 @@ export class PositionError extends Data.TaggedError("PositionError")<{
   readonly bookId: string;
   readonly cause?: unknown;
 }> {}
-

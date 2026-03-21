@@ -1,22 +1,17 @@
-import { Layer, ManagedRuntime } from "effect"
-import { AnnotationServiceLive } from "~/lib/annotations-store"
-import { BookServiceLive } from "~/lib/book-store"
-import { EpubServiceLive } from "~/lib/epub-service"
+import { Layer, ManagedRuntime } from "effect";
+import { AnnotationServiceLive } from "~/lib/annotations-store";
+import { BookServiceLive } from "~/lib/book-store";
+import { EpubServiceLive } from "~/lib/epub-service";
 
 /**
  * Application-wide layer that composes all service layers.
  * Add service layers here as they are created.
  */
-export const AppLayer = Layer.mergeAll(
-  BookServiceLive,
-  EpubServiceLive,
-  AnnotationServiceLive,
-)
+export const AppLayer = Layer.mergeAll(BookServiceLive, EpubServiceLive, AnnotationServiceLive);
 
 /**
  * Shared ManagedRuntime for the application.
  * Use `AppRuntime.runPromise(effect)` or `AppRuntime.runSync(effect)`
  * at call sites to execute effects with all application services provided.
  */
-export const AppRuntime = ManagedRuntime.make(AppLayer)
-
+export const AppRuntime = ManagedRuntime.make(AppLayer);

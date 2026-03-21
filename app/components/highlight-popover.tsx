@@ -19,9 +19,7 @@ interface HighlightPopoverEditProps extends HighlightPopoverBaseProps {
   onSave?: never;
 }
 
-type HighlightPopoverProps =
-  | HighlightPopoverCreateProps
-  | HighlightPopoverEditProps;
+type HighlightPopoverProps = HighlightPopoverCreateProps | HighlightPopoverEditProps;
 
 export function HighlightPopover(props: HighlightPopoverProps) {
   const { position, selectedText, onDismiss } = props;
@@ -61,10 +59,7 @@ export function HighlightPopover(props: HighlightPopoverProps) {
   // Close on outside click
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (
-        popoverRef.current &&
-        !popoverRef.current.contains(e.target as Node)
-      ) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
         onDismiss();
       }
     };
@@ -78,10 +73,7 @@ export function HighlightPopover(props: HighlightPopoverProps) {
     };
   }, [onDismiss]);
 
-  const truncatedText =
-    selectedText.length > 120
-      ? selectedText.slice(0, 120) + "…"
-      : selectedText;
+  const truncatedText = selectedText.length > 120 ? selectedText.slice(0, 120) + "…" : selectedText;
 
   return (
     <div
@@ -94,9 +86,7 @@ export function HighlightPopover(props: HighlightPopoverProps) {
       }}
       className="w-72 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
     >
-      <p className="mb-2 text-xs text-muted-foreground line-clamp-3">
-        "{truncatedText}"
-      </p>
+      <p className="mb-2 text-xs text-muted-foreground line-clamp-3">"{truncatedText}"</p>
       <div className="flex justify-end gap-2">
         {isEdit && (
           <Button variant="destructive" size="sm" onClick={props.onDelete}>
@@ -115,4 +105,3 @@ export function HighlightPopover(props: HighlightPopoverProps) {
     </div>
   );
 }
-

@@ -20,13 +20,7 @@ function BookCover({ coverImage }: { coverImage: Blob }) {
 
   if (!url) return null;
 
-  return (
-    <img
-      src={url}
-      alt=""
-      className="h-12 w-8 shrink-0 rounded object-cover"
-    />
-  );
+  return <img src={url} alt="" className="h-12 w-8 shrink-0 rounded object-cover" />;
 }
 
 export function BookList({ books, collapsed = false }: BookListProps) {
@@ -36,9 +30,7 @@ export function BookList({ books, collapsed = false }: BookListProps) {
         {!collapsed && (
           <>
             <p className="text-sm text-muted-foreground">No books yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Drop an .epub file to get started
-            </p>
+            <p className="mt-1 text-xs text-muted-foreground">Drop an .epub file to get started</p>
           </>
         )}
       </div>
@@ -57,7 +49,7 @@ export function BookList({ books, collapsed = false }: BookListProps) {
                 "flex items-center rounded-lg transition-colors",
                 "hover:bg-accent",
                 isActive && "bg-accent",
-                collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2 text-left"
+                collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2 text-left",
               )
             }
           >
@@ -71,9 +63,7 @@ export function BookList({ books, collapsed = false }: BookListProps) {
             {!collapsed && (
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{book.title}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {book.author}
-                </p>
+                <p className="truncate text-xs text-muted-foreground">{book.author}</p>
               </div>
             )}
           </NavLink>
@@ -82,4 +72,3 @@ export function BookList({ books, collapsed = false }: BookListProps) {
     </ScrollArea>
   );
 }
-

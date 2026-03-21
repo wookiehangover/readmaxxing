@@ -29,4 +29,3 @@ export function HydrateFallback() {
 export default function BookRoute({ loaderData }: Route.ComponentProps) {
   return <BookReader book={loaderData.book} />;
 }
-

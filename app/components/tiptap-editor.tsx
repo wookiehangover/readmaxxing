@@ -1,8 +1,4 @@
-import {
-  useEditor,
-  EditorContent,
-  NodeViewWrapper,
-} from "@tiptap/react";
+import { useEditor, EditorContent, NodeViewWrapper } from "@tiptap/react";
 import type { ReactNodeViewProps, JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
@@ -43,64 +39,61 @@ function HighlightReferenceView({ node, extension }: ReactNodeViewProps) {
   );
 }
 
-export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(
-  function TiptapEditor({ content, onUpdate, onNavigateToHighlight }, ref) {
-    const onUpdateRef = useRef(onUpdate);
-    onUpdateRef.current = onUpdate;
+export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(function TiptapEditor(
+  { content, onUpdate, onNavigateToHighlight },
+  ref,
+) {
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
 
-    const editor = useEditor({
-      extensions: [
-        StarterKit,
-        HighlightReference.configure({
-          component: HighlightReferenceView,
-        }),
-      ],
-      content: content || {
-        type: "doc",
-        content: [{ type: "paragraph" }],
-      },
-      onUpdate: ({ editor }) => {
-        onUpdateRef.current?.(editor.getJSON());
-      },
-      immediatelyRender: true,
-    });
-
-    // Keep the navigate callback in extension storage so HighlightReferenceView can access it
-    useEffect(() => {
-      if (!editor) return;
-      const storage = editor.extensionManager.extensions.find(
-        (ext) => ext.name === "highlightReference",
-      )?.storage as HighlightReferenceStorage | undefined;
-      if (storage) {
-        storage.onNavigateToHighlight = onNavigateToHighlight ?? null;
-      }
-    }, [editor, onNavigateToHighlight]);
-
-    // Expose imperative handle for appending highlight references
-    useImperativeHandle(
-      ref,
-      () => ({
-        appendHighlightReference(attrs: HighlightReferenceAttrs) {
-          if (!editor) return;
-          const nodes: JSONContent[] = [
-            { type: "highlightReference", attrs },
-            { type: "paragraph" },
-          ];
-          const endPos = editor.state.doc.content.size;
-          editor.chain().focus().insertContentAt(endPos, nodes).run();
-        },
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      HighlightReference.configure({
+        component: HighlightReferenceView,
       }),
-      [editor],
-    );
+    ],
+    content: content || {
+      type: "doc",
+      content: [{ type: "paragraph" }],
+    },
+    onUpdate: ({ editor }) => {
+      onUpdateRef.current?.(editor.getJSON());
+    },
+    immediatelyRender: true,
+  });
 
-    return (
-      <div className="tiptap-editor">
-        <EditorContent
-          editor={editor}
-          className="prose prose-sm dark:prose-invert max-w-none px-4 py-3 focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none"
-        />
-      </div>
-    );
-  },
-);
+  // Keep the navigate callback in extension storage so HighlightReferenceView can access it
+  useEffect(() => {
+    if (!editor) return;
+    const storage = editor.extensionManager.extensions.find(
+      (ext) => ext.name === "highlightReference",
+    )?.storage as HighlightReferenceStorage | undefined;
+    if (storage) {
+      storage.onNavigateToHighlight = onNavigateToHighlight ?? null;
+    }
+  }, [editor, onNavigateToHighlight]);
 
+  // Expose imperative handle for appending highlight references
+  useImperativeHandle(
+    ref,
+    () => ({
+      appendHighlightReference(attrs: HighlightReferenceAttrs) {
+        if (!editor) return;
+        const nodes: JSONContent[] = [{ type: "highlightReference", attrs }, { type: "paragraph" }];
+        const endPos = editor.state.doc.content.size;
+        editor.chain().focus().insertContentAt(endPos, nodes).run();
+      },
+    }),
+    [editor],
+  );
+
+  return (
+    <div className="tiptap-editor">
+      <EditorContent
+        editor={editor}
+        className="prose prose-sm dark:prose-invert max-w-none px-4 py-3 focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none"
+      />
+    </div>
+  );
+});

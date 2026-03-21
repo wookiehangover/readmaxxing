@@ -22,17 +22,12 @@ function serializeNode(node: JSONContent, prefix: string): string {
       return `${prefix}${serializeInlineContent(node.content)}`;
 
     case "bulletList":
-      return (
-        node.content
-          ?.map((item) => serializeListItem(item, "- ", "  "))
-          .join("\n") ?? ""
-      );
+      return node.content?.map((item) => serializeListItem(item, "- ", "  ")).join("\n") ?? "";
 
     case "orderedList":
       return (
-        node.content
-          ?.map((item, i) => serializeListItem(item, `${i + 1}. `, "   "))
-          .join("\n") ?? ""
+        node.content?.map((item, i) => serializeListItem(item, `${i + 1}. `, "   ")).join("\n") ??
+        ""
       );
 
     case "listItem":
@@ -40,10 +35,7 @@ function serializeNode(node: JSONContent, prefix: string): string {
       return serializeListItem(node, "- ", "  ");
 
     case "blockquote":
-      return (
-        node.content?.map((child) => serializeNode(child, "> ")).join("\n") ??
-        ""
-      );
+      return node.content?.map((child) => serializeNode(child, "> ")).join("\n") ?? "";
 
     case "codeBlock": {
       const lang = node.attrs?.language ?? "";
@@ -68,11 +60,7 @@ function serializeNode(node: JSONContent, prefix: string): string {
   }
 }
 
-function serializeListItem(
-  item: JSONContent,
-  bullet: string,
-  indent: string,
-): string {
+function serializeListItem(item: JSONContent, bullet: string, indent: string): string {
   if (!item.content) return bullet;
   return item.content
     .map((child, i) => {
@@ -84,17 +72,19 @@ function serializeListItem(
 
 function serializeInlineContent(content?: JSONContent[]): string {
   if (!content) return "";
-  return content.map((node) => {
-    if (node.type === "text") {
-      return applyMarks(node.text ?? "", node.marks);
-    }
-    if (node.type === "hardBreak") {
-      return "\n";
-    }
-    // Inline nodes like highlightReference shouldn't appear here,
-    // but handle gracefully
-    return serializeNode(node, "");
-  }).join("");
+  return content
+    .map((node) => {
+      if (node.type === "text") {
+        return applyMarks(node.text ?? "", node.marks);
+      }
+      if (node.type === "hardBreak") {
+        return "\n";
+      }
+      // Inline nodes like highlightReference shouldn't appear here,
+      // but handle gracefully
+      return serializeNode(node, "");
+    })
+    .join("");
 }
 
 function applyMarks(text: string, marks?: JSONContent["marks"]): string {
@@ -121,4 +111,3 @@ function applyMarks(text: string, marks?: JSONContent["marks"]): string {
   }
   return result;
 }
-

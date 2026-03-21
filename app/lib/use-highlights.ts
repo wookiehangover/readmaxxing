@@ -1,10 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Effect } from "effect";
 import type Rendition from "epubjs/types/rendition";
-import {
-  AnnotationService,
-  type Highlight,
-} from "~/lib/annotations-store";
+import { AnnotationService, type Highlight } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 
 export interface SelectionPopover {
@@ -65,14 +62,9 @@ function computeClickPosition(
   };
 }
 
-export function useHighlights({
-  bookId,
-  renditionRef,
-  containerRef,
-}: UseHighlightsOptions) {
+export function useHighlights({ bookId, renditionRef, containerRef }: UseHighlightsOptions) {
   const highlightsRef = useRef<Map<string, Highlight>>(new Map());
-  const [selectionPopover, setSelectionPopover] =
-    useState<SelectionPopover | null>(null);
+  const [selectionPopover, setSelectionPopover] = useState<SelectionPopover | null>(null);
   const [editPopover, setEditPopover] = useState<EditPopover | null>(null);
 
   const makeClickCallback = useCallback(
@@ -212,4 +204,3 @@ export function useHighlights({
     registerSelectionHandler,
   };
 }
-

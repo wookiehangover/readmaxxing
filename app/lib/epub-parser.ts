@@ -12,4 +12,3 @@ export async function parseEpub(
 ): Promise<import("~/lib/epub-service").EpubMetadata> {
   return AppRuntime.runPromise(parseEpubEffect(data));
 }
-

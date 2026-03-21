@@ -84,9 +84,7 @@ export function AnnotationsPanel({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const filename = bookTitle
-      ? `${bookTitle}-annotations.md`
-      : "annotations.md";
+    const filename = bookTitle ? `${bookTitle}-annotations.md` : "annotations.md";
     a.download = filename;
     document.body.appendChild(a);
     a.click();
@@ -135,4 +133,3 @@ export function AnnotationsPanel({
     </div>
   );
 }
-
