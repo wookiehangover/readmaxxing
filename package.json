@@ -8,7 +8,8 @@
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc",
     "lint": "oxlint .",
-    "format": "oxfmt --write app/"
+    "format": "oxfmt --write app/",
+    "test": "vitest"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
@@ -45,11 +46,14 @@
     "@types/node": "^22",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "fake-indexeddb": "^6.2.5",
+    "happy-dom": "^20.8.4",
     "oxfmt": "^0.36.0",
     "oxlint": "^1.51.0",
     "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2",
     "vite": "^7.1.7",
-    "vite-tsconfig-paths": "^5.1.4"
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^4.1.0"
   }
 }
