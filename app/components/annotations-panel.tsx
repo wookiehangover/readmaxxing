@@ -64,7 +64,9 @@ export function AnnotationsPanel({
             updatedAt: Date.now(),
           });
         });
-        AppRuntime.runPromise(program);
+        AppRuntime.runPromise(program).catch((err) =>
+          console.error("Failed to save notebook:", err),
+        );
       }, 1000);
     },
     [bookId],

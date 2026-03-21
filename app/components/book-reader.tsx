@@ -201,7 +201,7 @@ export function BookReader({ book }: BookReaderProps) {
           saveTimerRef.current = setTimeout(() => {
             AppRuntime.runPromise(
               BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, location.start.cfi))),
-            );
+            ).catch((err) => console.error("Failed to save reading position:", err));
           }, 1000);
         },
       );
