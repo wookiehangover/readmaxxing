@@ -37,15 +37,27 @@ export class AnnotationService extends Context.Tag("AnnotationService")<
   }
 >() {}
 
-// --- Live implementation ---
+// --- idb-keyval stores (lazy-initialized for SSR safety) ---
 
-const highlightStore = createStore("ebook-reader-highlights", "highlights");
-const notebookStore = createStore("ebook-reader-notebooks", "notebooks");
+let _highlightStore: ReturnType<typeof createStore> | null = null;
+let _notebookStore: ReturnType<typeof createStore> | null = null;
+
+function getHighlightStore() {
+  if (!_highlightStore) _highlightStore = createStore("ebook-reader-highlights", "highlights");
+  return _highlightStore;
+}
+
+function getNotebookStore() {
+  if (!_notebookStore) _notebookStore = createStore("ebook-reader-notebooks", "notebooks");
+  return _notebookStore;
+}
+
+// --- Live implementation ---
 
 export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
   saveHighlight: (highlight) =>
     Effect.tryPromise({
-      try: () => set(highlight.id, highlight, highlightStore),
+      try: () => set(highlight.id, highlight, getHighlightStore()),
       catch: (cause) =>
         new HighlightError({ operation: "saveHighlight", highlightId: highlight.id, cause }),
     }),
@@ -53,7 +65,7 @@ export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
   getHighlightsByBook: (bookId) =>
     Effect.tryPromise({
       try: async () => {
-        const allEntries = await entries<string, Highlight>(highlightStore);
+        const allEntries = await entries<string, Highlight>(getHighlightStore());
         return allEntries.map(([, hl]) => hl).filter((hl) => hl && hl.bookId === bookId);
       },
       catch: (cause) => new HighlightError({ operation: "getHighlightsByBook", cause }),
@@ -62,7 +74,7 @@ export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
   updateHighlight: (id, updates) =>
     Effect.gen(function* () {
       const existing = yield* Effect.tryPromise({
-        try: () => get<Highlight>(id, highlightStore),
+        try: () => get<Highlight>(id, getHighlightStore()),
         catch: (cause) =>
           new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
       });
@@ -72,7 +84,7 @@ export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
         );
       }
       yield* Effect.tryPromise({
-        try: () => set(id, { ...existing, ...updates }, highlightStore),
+        try: () => set(id, { ...existing, ...updates }, getHighlightStore()),
         catch: (cause) =>
           new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
       });
@@ -80,14 +92,14 @@ export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
 
   deleteHighlight: (id) =>
     Effect.tryPromise({
-      try: () => del(id, highlightStore),
+      try: () => del(id, getHighlightStore()),
       catch: (cause) =>
         new HighlightError({ operation: "deleteHighlight", highlightId: id, cause }),
     }),
 
   saveNotebook: (notebook) =>
     Effect.tryPromise({
-      try: () => set(notebook.bookId, notebook, notebookStore),
+      try: () => set(notebook.bookId, notebook, getNotebookStore()),
       catch: (cause) =>
         new NotebookError({ operation: "saveNotebook", bookId: notebook.bookId, cause }),
     }),
@@ -95,7 +107,7 @@ export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
   getNotebook: (bookId) =>
     Effect.tryPromise({
       try: async () => {
-        const notebook = await get<Notebook>(bookId, notebookStore);
+        const notebook = await get<Notebook>(bookId, getNotebookStore());
         return notebook ?? null;
       },
       catch: (cause) => new NotebookError({ operation: "getNotebook", bookId, cause }),
