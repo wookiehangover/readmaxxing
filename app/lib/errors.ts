@@ -10,6 +10,7 @@ export class BookNotFoundError extends Data.TaggedError("BookNotFoundError")<{
 }> {}
 
 export class EpubParseError extends Data.TaggedError("EpubParseError")<{
+  readonly operation: string;
   readonly cause?: unknown;
 }> {}
 

@@ -33,6 +33,9 @@ export const EpubServiceLive = Layer.succeed(EpubService, {
         const metadata = await book.loaded.metadata;
         let coverImage: Blob | null = null;
 
+        // Inner try/catch is intentional: cover extraction is a non-fatal fallback
+        // within a single tryPromise. Not all epubs include cover images, and failures
+        // here should not prevent metadata extraction from succeeding.
         try {
           const coverHref = await book.loaded.cover;
           if (coverHref) {
@@ -42,7 +45,7 @@ export const EpubServiceLive = Layer.succeed(EpubService, {
             }
           }
         } catch {
-          // cover may not exist in all epubs
+          // cover may not exist in all epubs — fall through with null
         }
 
         const result: EpubMetadata = {
@@ -55,6 +58,6 @@ export const EpubServiceLive = Layer.succeed(EpubService, {
 
         return result;
       },
-      catch: (cause) => new EpubParseError({ cause }),
+      catch: (cause) => new EpubParseError({ operation: "parseEpub", cause }),
     }),
 });
