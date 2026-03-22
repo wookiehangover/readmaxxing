@@ -60,7 +60,7 @@ function getTypographyCss(fontFamily: string, fontSize: number, lineHeight: numb
 function getRenditionOptions(layout: ReaderLayout) {
   switch (layout) {
     case "spread":
-      return { spread: "always" as const, flow: "paginated" as const };
+      return { spread: "always" as const, flow: "paginated" as const, gap: 16 };
     case "scroll":
       return { spread: "none" as const, flow: "scrolled-doc" as const };
     case "single":
@@ -122,6 +122,7 @@ export function BookReader({ book }: BookReaderProps) {
       height: "100%",
       spread: opts.spread,
       flow: opts.flow,
+      ...("gap" in opts && { gap: opts.gap }),
     });
     renditionRef.current = rendition;
 
