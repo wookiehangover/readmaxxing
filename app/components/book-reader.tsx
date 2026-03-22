@@ -14,6 +14,7 @@ import { RadialProgress } from "~/components/radial-progress";
 import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
+import { useReaderNavigation, type TocEntry } from "~/lib/reader-context";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 
@@ -111,6 +112,7 @@ export function BookReader({ book }: BookReaderProps) {
   const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
   const editorRef = useRef<TiptapEditorHandle>(null);
   const [pendingHighlight, setPendingHighlight] = useState<HighlightReferenceAttrs | null>(null);
+  const { setToc, setNavigateToHref } = useReaderNavigation();
 
   const navigateToCfi = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi);
@@ -190,6 +192,23 @@ export function BookReader({ book }: BookReaderProps) {
     (async () => {
       await epubBook.ready;
 
+      // Extract TOC from epub navigation
+      const nav = epubBook.navigation;
+      if (nav && nav.toc) {
+        const mapToc = (items: any[]): TocEntry[] =>
+          items.map((item) => ({
+            label: item.label?.trim() ?? "",
+            href: item.href ?? "",
+            ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
+          }));
+        setToc(mapToc(nav.toc));
+      }
+
+      // Provide chapter navigation via rendition.display
+      setNavigateToHref((href: string) => {
+        rendition.display(href);
+      });
+
       const savedCfi = await AppRuntime.runPromise(
         BookService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
       );
@@ -244,12 +263,14 @@ export function BookReader({ book }: BookReaderProps) {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      setToc([]);
+      setNavigateToHref(() => {});
       rendition.destroy();
       epubBook.destroy();
       bookRef.current = null;
       renditionRef.current = null;
     };
-  }, [book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler]);
+  }, [book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler, setToc, setNavigateToHref]);
 
   useEffect(() => {
     const rendition = renditionRef.current;

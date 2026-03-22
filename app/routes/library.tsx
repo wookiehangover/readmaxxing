@@ -7,6 +7,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings } from "~/lib/settings";
 import { DropZone } from "~/components/drop-zone";
 import { BookList } from "~/components/book-list";
+import { ReaderNavigationProvider } from "~/lib/reader-context";
 
 export function meta(_args: Route.MetaArgs) {
   return [
@@ -51,25 +52,27 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
   }, [collapsed, updateSettings]);
 
   return (
-    <DropZone onBookAdded={handleBookAdded}>
-      <div className="flex h-screen">
-        {/* Sidebar */}
-        <aside
-          className={`flex shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out ${
-            collapsed ? "w-14" : "w-[300px]"
-          }`}
-        >
-          <div className="border-b px-4 py-3">
-            {!collapsed && <h1 className="text-lg font-semibold">Library</h1>}
-          </div>
-          <BookList books={books} collapsed={collapsed} />
-        </aside>
+    <ReaderNavigationProvider>
+      <DropZone onBookAdded={handleBookAdded}>
+        <div className="flex h-screen">
+          {/* Sidebar */}
+          <aside
+            className={`flex shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out ${
+              collapsed ? "w-14" : "w-[300px]"
+            }`}
+          >
+            <div className="border-b px-4 py-3">
+              {!collapsed && <h1 className="text-lg font-semibold">Library</h1>}
+            </div>
+            <BookList books={books} collapsed={collapsed} />
+          </aside>
 
-        {/* Main content */}
-        <main className="flex-1 overflow-hidden">
-          <Outlet />
-        </main>
-      </div>
-    </DropZone>
+          {/* Main content */}
+          <main className="flex-1 overflow-hidden">
+            <Outlet />
+          </main>
+        </div>
+      </DropZone>
+    </ReaderNavigationProvider>
   );
 }
