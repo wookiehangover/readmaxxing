@@ -4,6 +4,11 @@ import { BookService } from "~/lib/book-store";
 import { BookReader } from "~/components/book-reader";
 import { AppRuntime } from "~/lib/effect-runtime";
 
+export function meta({ data }: Route.MetaArgs) {
+  const title = data?.book?.title ?? "eBook Reader";
+  return [{ title }];
+}
+
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const book = await AppRuntime.runPromise(
     BookService.pipe(
