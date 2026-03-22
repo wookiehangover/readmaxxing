@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, useParams } from "react-router";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import {
@@ -90,6 +90,68 @@ function BookItemContent({
   );
 }
 
+function TocPopoverItem({
+  book,
+  collapsed,
+  linkClassName,
+  toc,
+  navigateToHref,
+}: {
+  book: Book;
+  collapsed: boolean;
+  linkClassName: string;
+  toc: TocEntry[];
+  navigateToHref: (href: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const suppressHoverUntil = useRef(0);
+
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean, details: { reason: string }) => {
+      // After an explicit dismiss (outside click or escape), suppress hover
+      // re-opens for a short window so the popover stays closed.
+      if (!nextOpen && (details.reason === "outside-press" || details.reason === "escape-key")) {
+        suppressHoverUntil.current = Date.now() + 400;
+        setOpen(false);
+        return;
+      }
+
+      if (nextOpen && details.reason === "trigger-hover") {
+        if (Date.now() < suppressHoverUntil.current) {
+          return; // suppress
+        }
+      }
+
+      setOpen(nextOpen);
+    },
+    [],
+  );
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger
+        openOnHover
+        delay={200}
+        closeDelay={300}
+        render={<NavLink to={`/books/${book.id}`} className={linkClassName} />}
+      >
+        <BookItemContent book={book} collapsed={collapsed} />
+      </PopoverTrigger>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={8}
+        className="max-h-80 w-56 overflow-y-auto p-1.5"
+      >
+        <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Table of Contents</p>
+        <ul>
+          <TocList entries={toc} onNavigate={navigateToHref} />
+        </ul>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function BookList({ books, collapsed = false }: BookListProps) {
   const params = useParams();
   const activeBookId = params.id;
@@ -124,32 +186,16 @@ export function BookList({ books, collapsed = false }: BookListProps) {
 
           if (showTocPopover) {
             return (
-              <Popover key={book.id}>
-                <PopoverTrigger
-                  openOnHover
-                  delay={200}
-                  closeDelay={300}
-                  render={<NavLink to={`/books/${book.id}`} className={linkClassName} />}
-                >
-                  <BookItemContent book={book} collapsed={collapsed} />
-                </PopoverTrigger>
-                <PopoverContent
-                  side="right"
-                  align="start"
-                  sideOffset={8}
-                  className="max-h-80 w-56 overflow-y-auto p-1.5"
-                >
-                  <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                    Table of Contents
-                  </p>
-                  <ul>
-                    <TocList entries={toc} onNavigate={navigateToHref} />
-                  </ul>
-                </PopoverContent>
-              </Popover>
+              <TocPopoverItem
+                key={book.id}
+                book={book}
+                collapsed={collapsed}
+                linkClassName={linkClassName}
+                toc={toc}
+                navigateToHref={navigateToHref}
+              />
             );
           }
-
           return (
             <NavLink key={book.id} to={`/books/${book.id}`} className={linkClassName}>
               <BookItemContent book={book} collapsed={collapsed} />
