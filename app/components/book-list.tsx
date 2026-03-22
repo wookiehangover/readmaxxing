@@ -127,6 +127,14 @@ function TocPopoverItem({
     [],
   );
 
+  const handleNavigate = useCallback(
+    (href: string) => {
+      navigateToHref(href);
+      setOpen(false);
+    },
+    [navigateToHref],
+  );
+
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
@@ -145,7 +153,7 @@ function TocPopoverItem({
       >
         <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Table of Contents</p>
         <ul>
-          <TocList entries={toc} onNavigate={navigateToHref} />
+          <TocList entries={toc} onNavigate={handleNavigate} />
         </ul>
       </PopoverContent>
     </Popover>
