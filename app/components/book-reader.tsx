@@ -60,7 +60,7 @@ function getTypographyCss(fontFamily: string, fontSize: number, lineHeight: numb
 function getRenditionOptions(layout: ReaderLayout) {
   switch (layout) {
     case "spread":
-      return { spread: "always" as const, flow: "paginated" as const, gap: 16 };
+      return { spread: "always" as const, flow: "paginated" as const, gap: 64 };
     case "scroll":
       return { spread: "none" as const, flow: "scrolled-doc" as const };
     case "single":
@@ -311,7 +311,7 @@ export function BookReader({ book }: BookReaderProps) {
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div ref={containerRef} className="flex-1 overflow-hidden" />
+        <div ref={containerRef} className="flex-1 overflow-hidden px-8 pt-10 pb-4 bg-sidebar" />
         <div className="relative flex items-center justify-center border-t p-2">
           <div className="absolute left-2 flex items-center gap-1.5">
             <RadialProgress value={chapterProgress} label="Chapter" />
