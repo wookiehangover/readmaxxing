@@ -18,6 +18,7 @@ import { useReaderNavigation, type TocEntry } from "~/lib/reader-context";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 import { cn } from "~/lib/utils"
+import { resolveThemeColors } from "~/lib/epub-theme-utils";
 
 interface BookReaderProps {
   book: Book;
@@ -57,26 +58,6 @@ function getTypographyCss(fontFamily: string, fontSize: number, lineHeight: numb
       line-height: ${lineHeight} !important;
     }
   `;
-}
-
-function resolveThemeColors(mode: "light" | "dark") {
-  const root = document.documentElement;
-  const currentlyDark = root.classList.contains("dark");
-  const needsDark = mode === "dark";
-
-  if (needsDark !== currentlyDark) {
-    root.classList.toggle("dark", needsDark);
-  }
-
-  const computed = getComputedStyle(root);
-  const background = computed.getPropertyValue("--background").trim();
-  const foreground = computed.getPropertyValue("--foreground").trim();
-
-  if (needsDark !== currentlyDark) {
-    root.classList.toggle("dark", currentlyDark);
-  }
-
-  return { background, foreground };
 }
 
 function getRenditionOptions(layout: ReaderLayout) {
