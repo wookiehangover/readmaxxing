@@ -21,6 +21,7 @@ function makeTestLayer() {
   const suffix = `test-${++testCounter}-${Date.now()}`;
   const bookStore = createStore(`book-db-${suffix}`, "books");
   const posStore = createStore(`pos-db-${suffix}`, "positions");
+  const locStore = createStore(`loc-db-${suffix}`, "locations");
 
   return Layer.succeed(BookService, {
     saveBook: (book: Book) =>
@@ -62,6 +63,19 @@ function makeTestLayer() {
           return cfi ?? null;
         },
         catch: (cause) => new PositionError({ operation: "getPosition", bookId, cause }),
+      }),
+    saveLocations: (bookId: string, json: string) =>
+      Effect.tryPromise({
+        try: () => set(bookId, json, locStore),
+        catch: (cause) => new StorageError({ operation: "saveLocations", cause }),
+      }),
+    getLocations: (bookId: string) =>
+      Effect.tryPromise({
+        try: async () => {
+          const loc = await get<string>(bookId, locStore);
+          return loc ?? null;
+        },
+        catch: (cause) => new StorageError({ operation: "getLocations", cause }),
       }),
   });
 }

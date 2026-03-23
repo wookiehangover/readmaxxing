@@ -109,6 +109,8 @@ export function BookReader({ book }: BookReaderProps) {
   };
   const [chapterProgress, setChapterProgress] = useState(0);
   const [bookProgress, setBookProgress] = useState(0);
+  const [totalPages, setTotalPages] = useState<number | null>(null);
+  const [currentPage, setCurrentPage] = useState<number | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
   const editorRef = useRef<TiptapEditorHandle>(null);
@@ -225,7 +227,21 @@ export function BookReader({ book }: BookReaderProps) {
       registerSelectionHandler(rendition);
 
       try {
-        epubBook.locations.generate(1024);
+        const cachedLocations = await AppRuntime.runPromise(
+          BookService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
+            Effect.catchAll(() => Effect.succeed(null))
+          )
+        );
+        if (cachedLocations) {
+          epubBook.locations.load(cachedLocations);
+        } else {
+          await epubBook.locations.generate(1500);
+          const json = (epubBook.locations as any).save() as string;
+          AppRuntime.runPromise(
+            BookService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json)))
+          ).catch(console.error);
+        }
+        setTotalPages((epubBook.locations as any).total as number);
       } catch {
         // locations generation can fail silently
       }
@@ -243,6 +259,18 @@ export function BookReader({ book }: BookReaderProps) {
           const { page, total } = location.start.displayed;
           setChapterProgress(total > 0 ? (page / total) * 100 : 0);
           setBookProgress(location.start.percentage * 100);
+          // Compute current page from locations if available
+          const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
+          if (epubLocTotal && epubLocTotal > 0) {
+            const locIndex = bookRef.current!.locations.locationFromCfi(location.start.cfi);
+            if (typeof locIndex === "number" && locIndex >= 0) {
+              setCurrentPage(locIndex + 1);
+            } else {
+              // Fallback: derive from percentage
+              setCurrentPage(Math.max(1, Math.round(location.start.percentage * epubLocTotal)));
+            }
+            setTotalPages(epubLocTotal);
+          }
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
             AppRuntime.runPromise(
@@ -360,7 +388,15 @@ export function BookReader({ book }: BookReaderProps) {
         <div className="relative flex items-center justify-center border-t px-2 h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
             <RadialProgress value={chapterProgress} label="Chapter" />
-            <RadialProgress value={bookProgress} label="Overall" />
+            {totalPages !== null && currentPage !== null ? (
+              <span className="text-muted-foreground text-xs tabular-nums">
+                Page {currentPage} of {totalPages}
+              </span>
+            ) : (
+              <span className="text-muted-foreground text-xs tabular-nums">
+                {Math.round(bookProgress)}%
+              </span>
+            )}
           </div>
           {!isScrollMode && (
             <div className="flex items-center gap-4">

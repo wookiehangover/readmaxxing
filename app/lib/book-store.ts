@@ -14,6 +14,7 @@ export interface Book {
 
 let _bookStore: ReturnType<typeof createStore> | null = null;
 let _positionStore: ReturnType<typeof createStore> | null = null;
+let _locationsStore: ReturnType<typeof createStore> | null = null;
 
 function getBookStore() {
   if (!_bookStore) _bookStore = createStore("ebook-reader-db", "books");
@@ -23,6 +24,11 @@ function getBookStore() {
 function getPositionStore() {
   if (!_positionStore) _positionStore = createStore("ebook-reader-positions", "positions");
   return _positionStore;
+}
+
+function getLocationsStore() {
+  if (!_locationsStore) _locationsStore = createStore("ebook-reader-locations", "locations");
+  return _locationsStore;
 }
 
 // --- Effect Service ---
@@ -36,6 +42,8 @@ export class BookService extends Context.Tag("BookService")<
     readonly deleteBook: (id: string) => Effect.Effect<void, StorageError>;
     readonly savePosition: (bookId: string, cfi: string) => Effect.Effect<void, PositionError>;
     readonly getPosition: (bookId: string) => Effect.Effect<string | null, PositionError>;
+    readonly saveLocations: (bookId: string, json: string) => Effect.Effect<void, StorageError>;
+    readonly getLocations: (bookId: string) => Effect.Effect<string | null, StorageError>;
   }
 >() {}
 
@@ -69,7 +77,11 @@ export const BookServiceLive = Layer.succeed(BookService, {
 
   deleteBook: (id: string) =>
     Effect.tryPromise({
-      try: () => del(id, getBookStore()),
+      try: async () => {
+        await del(id, getBookStore());
+        // Best-effort cleanup of cached locations
+        try { await del(id, getLocationsStore()); } catch { /* ignore */ }
+      },
       catch: (cause) => new StorageError({ operation: "deleteBook", cause }),
     }),
 
@@ -86,5 +98,20 @@ export const BookServiceLive = Layer.succeed(BookService, {
         return cfi ?? null;
       },
       catch: (cause) => new PositionError({ operation: "getPosition", bookId, cause }),
+    }),
+
+  saveLocations: (bookId: string, json: string) =>
+    Effect.tryPromise({
+      try: () => set(bookId, json, getLocationsStore()),
+      catch: (cause) => new StorageError({ operation: "saveLocations", cause }),
+    }),
+
+  getLocations: (bookId: string) =>
+    Effect.tryPromise({
+      try: async () => {
+        const json = await get<string>(bookId, getLocationsStore());
+        return json ?? null;
+      },
+      catch: (cause) => new StorageError({ operation: "getLocations", cause }),
     }),
 });
