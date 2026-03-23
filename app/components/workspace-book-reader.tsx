@@ -357,6 +357,21 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
+
+    // Re-resolve and re-register theme colors (they may have been stale at init time,
+    // or the CSS variables may have changed since the last theme switch)
+    const lightColors = resolveThemeColors("light");
+    const darkColors = resolveThemeColors("dark");
+
+    rendition.themes.register("light", {
+      body: { color: `${lightColors.foreground} !important`, background: `${lightColors.background} !important` },
+      a: { color: "inherit !important" },
+    });
+    rendition.themes.register("dark", {
+      body: { color: `${darkColors.foreground} !important`, background: `${darkColors.background} !important` },
+      a: { color: "inherit !important" },
+    });
+
     rendition.themes.select(resolveTheme(settings.theme));
   }, [settings.theme]);
 
@@ -390,7 +405,19 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
       const rendition = renditionRef.current;
       if (!rendition) return;
 
-      // Reapply theme (may have changed while hidden)
+      // Re-resolve and re-register theme colors before selecting
+      const lightColors = resolveThemeColors("light");
+      const darkColors = resolveThemeColors("dark");
+
+      rendition.themes.register("light", {
+        body: { color: `${lightColors.foreground} !important`, background: `${lightColors.background} !important` },
+        a: { color: "inherit !important" },
+      });
+      rendition.themes.register("dark", {
+        body: { color: `${darkColors.foreground} !important`, background: `${darkColors.background} !important` },
+        a: { color: "inherit !important" },
+      });
+
       rendition.themes.select(resolveTheme(settings.theme));
 
       // Resize in case container dimensions changed
