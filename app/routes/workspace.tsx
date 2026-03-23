@@ -24,6 +24,7 @@ import { WorkspaceService } from "~/lib/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
 import { useEffectQuery } from "~/lib/use-effect-query";
+import { cn } from "~/lib/utils";
 import { WorkspaceBookReader } from "~/components/workspace-book-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
 
@@ -573,7 +574,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
               </p>
             )
           ) : (
-            <ul className="flex flex-col gap-0.5 p-1">
+            <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
               {sortedBooks.map((book) => {
                 // tocVersion is read here to trigger re-render when TOC data changes
                 void tocVersion;
@@ -594,9 +595,14 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                       <button
                         type="button"
                         onClick={() => openBook(book)}
-                        className={`flex w-full items-center rounded-md text-left hover:bg-accent ${
-                          collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2"
-                        } ${openBookIds.has(book.id) ? "bg-accent/50" : ""}`}
+                        className={cn(
+                          "flex w-full items-center rounded-md text-left hover:bg-accent",
+                          {
+                            "justify-center p-1.5": collapsed,
+                            "gap-3 px-3 py-2": !collapsed,
+                            "bg-accent/50": openBookIds.has(book.id),
+                          },
+                        )}
                         title={book.title}
                       >
                         <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
