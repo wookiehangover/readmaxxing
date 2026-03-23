@@ -358,15 +358,19 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     });
   }, [settings.fontFamily, settings.fontSize, settings.lineHeight]);
 
-  // Force re-display when dockview panel becomes active again (tab switch).
+  // Force re-display when dockview panel becomes visible or active (tab switch).
   // When a panel is hidden, the epub iframe can lose its rendering state.
   // Calling rendition.display(cfi) re-triggers all content hooks (fonts,
   // typography CSS, highlight styles) and then we reapply the color theme.
+  //
+  // We listen to three dockview events:
+  // - onDidVisibilityChange: fires when a tab is shown/hidden within its group
+  // - onDidActiveChange: fires when the panel becomes the focused panel
+  // - onDidGroupChange: fires when the panel is dragged to a new group
   useEffect(() => {
     if (!panelApi) return;
 
-    const disposable = panelApi.onDidActiveChange((e) => {
-      if (!e.isActive) return;
+    const reapplyStyles = () => {
       const rendition = renditionRef.current;
       if (!rendition) return;
 
@@ -386,10 +390,26 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
           (rendition as any)?.resize();
         });
       }
+    };
+
+    const visDisposable = panelApi.onDidVisibilityChange((e) => {
+      if (e.isVisible) reapplyStyles();
+    });
+
+    const activeDisposable = panelApi.onDidActiveChange((e) => {
+      if (e.isActive) reapplyStyles();
+    });
+
+    // Handle group changes (panel dragged to new split) — small delay
+    // to let the DOM settle after reparenting the iframe.
+    const groupDisposable = panelApi.onDidGroupChange(() => {
+      setTimeout(reapplyStyles, 100);
     });
 
     return () => {
-      disposable.dispose();
+      visDisposable.dispose();
+      activeDisposable.dispose();
+      groupDisposable.dispose();
     };
   }, [panelApi, settings.theme]);
 
