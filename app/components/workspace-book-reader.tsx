@@ -21,6 +21,8 @@ import { cn } from "~/lib/utils";
 
 interface WorkspaceBookReaderProps {
   bookId: string;
+  onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void;
+  onUnregisterNavigation?: (bookId: string) => void;
 }
 
 function getFontFallback(fontFamily: string): string {
@@ -91,7 +93,7 @@ function getRenditionOptions(layout: ReaderLayout) {
   }
 }
 
-export function WorkspaceBookReader({ bookId }: WorkspaceBookReaderProps) {
+export function WorkspaceBookReader({ bookId, onRegisterNavigation, onUnregisterNavigation }: WorkspaceBookReaderProps) {
   // Load book data via useEffectQuery
   const { data: book, error, isLoading } = useEffectQuery(
     () =>
@@ -118,14 +120,14 @@ export function WorkspaceBookReader({ bookId }: WorkspaceBookReaderProps) {
     );
   }
 
-  return <WorkspaceBookReaderInner book={book} />;
+  return <WorkspaceBookReaderInner book={book} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} />;
 }
 
 /**
  * Inner component that renders once we have book data.
  * Manages its own epub lifecycle, TOC state, and keyboard navigation.
  */
-function WorkspaceBookReaderInner({ book }: { book: Book }) {
+function WorkspaceBookReaderInner({ book, onRegisterNavigation, onUnregisterNavigation }: { book: Book; onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (bookId: string) => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
@@ -155,6 +157,14 @@ function WorkspaceBookReaderInner({ book }: { book: Book }) {
   const navigateToCfi = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi);
   }, []);
+
+  // Register navigateToCfi with parent workspace for cross-panel coordination
+  useEffect(() => {
+    onRegisterNavigation?.(book.id, navigateToCfi);
+    return () => {
+      onUnregisterNavigation?.(book.id);
+    };
+  }, [book.id, navigateToCfi, onRegisterNavigation, onUnregisterNavigation]);
 
   const {
     selectionPopover,

@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { Effect } from "effect";
-import { Outlet } from "react-router";
+import { Link, Outlet } from "react-router";
+import { PanelsTopLeft } from "lucide-react";
 import type { Route } from "./+types/library";
 import { BookService, type Book } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -61,8 +62,15 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
               collapsed ? "w-14" : "w-[300px]"
             }`}
           >
-            <div className="border-b px-4 py-3">
+            <div className="flex items-center justify-between border-b px-4 py-3">
               {!collapsed && <h1 className="text-lg font-semibold">Library</h1>}
+              <Link
+                to="/workspace"
+                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="Open Workspace"
+              >
+                <PanelsTopLeft className="size-4" />
+              </Link>
             </div>
             <BookList books={books} collapsed={collapsed} />
           </aside>

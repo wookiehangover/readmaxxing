@@ -31,3 +31,8 @@ export class PositionError extends Data.TaggedError("PositionError")<{
   readonly bookId: string;
   readonly cause?: unknown;
 }> {}
+
+export class WorkspaceError extends Data.TaggedError("WorkspaceError")<{
+  readonly operation: string;
+  readonly cause?: unknown;
+}> {}

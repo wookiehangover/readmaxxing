@@ -2,12 +2,13 @@ import { Layer, ManagedRuntime } from "effect";
 import { AnnotationServiceLive } from "~/lib/annotations-store";
 import { BookServiceLive } from "~/lib/book-store";
 import { EpubServiceLive } from "~/lib/epub-service";
+import { WorkspaceServiceLive } from "~/lib/workspace-store";
 
 /**
  * Application-wide layer that composes all service layers.
  * Add service layers here as they are created.
  */
-export const AppLayer = Layer.mergeAll(BookServiceLive, EpubServiceLive, AnnotationServiceLive);
+export const AppLayer = Layer.mergeAll(BookServiceLive, EpubServiceLive, AnnotationServiceLive, WorkspaceServiceLive);
 
 /**
  * Shared ManagedRuntime for the application.
