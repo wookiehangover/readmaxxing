@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 
 export type Theme = "light" | "dark" | "system";
 export type ReaderLayout = "single" | "spread" | "scroll";
+export type WorkspaceSortBy = "title" | "author" | "recent";
 
 export interface Settings {
   theme: Theme;
@@ -10,6 +11,7 @@ export interface Settings {
   fontSize: number;
   lineHeight: number;
   sidebarCollapsed: boolean;
+  workspaceSortBy: WorkspaceSortBy;
 }
 
 const STORAGE_KEY = "app-settings";
@@ -21,6 +23,7 @@ const defaultSettings: Settings = {
   fontSize: 100,
   lineHeight: 1.6,
   sidebarCollapsed: false,
+  workspaceSortBy: "recent",
 };
 
 function normalizeLegacyFontSize(fontSize: unknown): number {

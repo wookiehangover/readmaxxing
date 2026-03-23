@@ -11,6 +11,7 @@ const defaultSettings: Settings = {
   fontSize: 100,
   lineHeight: 1.6,
   sidebarCollapsed: false,
+  workspaceSortBy: "recent",
 };
 
 beforeEach(() => {
@@ -30,6 +31,7 @@ describe("getSettings", () => {
       fontSize: 120,
       lineHeight: 1.8,
       sidebarCollapsed: true,
+      workspaceSortBy: "title",
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     expect(getSettings()).toEqual(stored);
@@ -111,6 +113,7 @@ describe("saveSettings", () => {
       fontSize: 110,
       lineHeight: 1.4,
       sidebarCollapsed: true,
+      workspaceSortBy: "author",
     };
     saveSettings(settings);
     expect(getSettings()).toEqual(settings);
