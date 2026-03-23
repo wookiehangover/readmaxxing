@@ -9,7 +9,6 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "~/components/ui/popover";
-import { ScrollArea } from "~/components/ui/scroll-area";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type Book } from "~/lib/book-store";
@@ -430,19 +429,17 @@ export function BookReader({ book }: BookReaderProps) {
                   <TableOfContents className="size-4" />
                   <span className="sr-only">Table of Contents</span>
                 </PopoverTrigger>
-                <PopoverContent side="top" align="end" sideOffset={8} className="max-h-80 w-64 p-1.5">
+                <PopoverContent side="top" align="end" sideOffset={8} className="max-h-80 w-64 overflow-y-auto p-1.5">
                   <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Table of Contents</p>
-                  <ScrollArea className="max-h-72">
-                    <ul>
-                      <TocList
-                        entries={toc}
-                        onNavigate={(href) => {
-                          navigateToHref(href);
-                          setTocOpen(false);
-                        }}
-                      />
-                    </ul>
-                  </ScrollArea>
+                  <ul>
+                    <TocList
+                      entries={toc}
+                      onNavigate={(href) => {
+                        navigateToHref(href);
+                        setTocOpen(false);
+                      }}
+                    />
+                  </ul>
                 </PopoverContent>
               </Popover>
             )}
