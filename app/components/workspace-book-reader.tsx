@@ -4,7 +4,7 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, NotebookPen, TableOfContents } from "lucide-react";
+import { ChevronLeft, ChevronRight, Notebook, TableOfContents } from "lucide-react";
 import {
   Popover,
   PopoverTrigger,
@@ -18,7 +18,6 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
-import { RadialProgress } from "~/components/radial-progress";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
 import { useEffectQuery } from "~/lib/use-effect-query";
@@ -161,7 +160,6 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     lineHeight: settings.lineHeight,
   };
 
-  const [chapterProgress, setChapterProgress] = useState(0);
   const [bookProgress, setBookProgress] = useState(0);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
@@ -317,7 +315,6 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
         }) => {
           if (!renditionRef.current) return;
           const { page, total } = location.start.displayed;
-          setChapterProgress(total > 0 ? (page / total) * 100 : 0);
           setBookProgress(location.start.percentage * 100);
           const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
           if (epubLocTotal && epubLocTotal > 0) {
@@ -487,7 +484,6 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
         <div ref={containerRef} className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })} />
         <div className="relative flex items-center justify-center border-t px-2 h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
-            <RadialProgress value={chapterProgress} label="Chapter" />
             {totalPages !== null && currentPage !== null ? (
               <span className="text-muted-foreground text-xs tabular-nums">
                 Page {currentPage} of {totalPages}
@@ -513,7 +509,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
           <div className="absolute right-2 flex items-center gap-1">
             {onOpenNotebook && (
               <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
-                <NotebookPen className="size-4" />
+                <Notebook className="size-4" />
                 <span className="sr-only">Open Notebook</span>
               </Button>
             )}

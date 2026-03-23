@@ -3,7 +3,7 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, NotebookPen, TableOfContents } from "lucide-react";
+import { ChevronLeft, ChevronRight, Notebook, TableOfContents } from "lucide-react";
 import {
   Popover,
   PopoverTrigger,
@@ -17,7 +17,6 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
-import { RadialProgress } from "~/components/radial-progress";
 import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
@@ -95,7 +94,6 @@ export function BookReader({ book }: BookReaderProps) {
     fontSize: settings.fontSize,
     lineHeight: settings.lineHeight,
   };
-  const [chapterProgress, setChapterProgress] = useState(0);
   const [bookProgress, setBookProgress] = useState(0);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
@@ -246,7 +244,6 @@ export function BookReader({ book }: BookReaderProps) {
         }) => {
           if (!renditionRef.current) return;
           const { page, total } = location.start.displayed;
-          setChapterProgress(total > 0 ? (page / total) * 100 : 0);
           setBookProgress(location.start.percentage * 100);
           // Compute current page from locations if available
           const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
@@ -391,7 +388,6 @@ export function BookReader({ book }: BookReaderProps) {
         <div ref={containerRef} className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })} />
         <div className="relative flex items-center justify-center border-t px-2 h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
-            <RadialProgress value={chapterProgress} label="Chapter" />
             {totalPages !== null && currentPage !== null ? (
               <span className="text-muted-foreground text-xs tabular-nums">
                 Page {currentPage} of {totalPages}
@@ -421,7 +417,7 @@ export function BookReader({ book }: BookReaderProps) {
               onClick={() => setAnnotationsPanelOpen(!annotationsPanelOpen)}
               title="Toggle notebook"
             >
-              <NotebookPen className="size-4" />
+              <Notebook className="size-4" />
               <span className="sr-only">Toggle notebook</span>
             </Button>
             {toc.length > 0 && (
