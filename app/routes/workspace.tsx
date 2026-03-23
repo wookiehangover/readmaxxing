@@ -8,8 +8,7 @@ import {
   type IWatermarkPanelProps,
   type DockviewTheme,
 } from "dockview";
-import { Link } from "react-router";
-import { BookOpen, NotebookPen, Library, Plus, ArrowUpDown } from "lucide-react";
+import { BookOpen, NotebookPen, Plus, ArrowUpDown } from "lucide-react";
 import { BookCover, TocList } from "~/components/book-list";
 import {
   Popover,
@@ -481,13 +480,6 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
             >
               <Plus className="size-4" />
             </button>
-            <Link
-              to="/"
-              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-              title="Back to Library"
-            >
-              <Library className="size-4" />
-            </Link>
           </div>
           <input
             ref={fileInputRef}

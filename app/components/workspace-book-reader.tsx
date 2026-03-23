@@ -3,7 +3,7 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, NotebookPen } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Effect } from "effect";
 import { BookService, type Book } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -11,11 +11,8 @@ import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { RadialProgress } from "~/components/radial-progress";
-import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
-import type { TiptapEditorHandle } from "~/components/tiptap-editor";
-import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
 import { resolveThemeColors } from "~/lib/epub-theme-utils";
@@ -159,9 +156,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
-  const editorRef = useRef<TiptapEditorHandle>(null);
-  const [pendingHighlight, setPendingHighlight] = useState<HighlightReferenceAttrs | null>(null);
+
 
   const navigateToCfi = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi);
@@ -440,14 +435,6 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     };
   }, [panelApi, settings.theme]);
 
-  // Resize rendition when annotations panel toggles
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      (renditionRef.current as any)?.resize();
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [annotationsPanelOpen]);
-
   const handlePrev = useCallback(() => renditionRef.current?.prev(), []);
   const handleNext = useCallback(() => renditionRef.current?.next(), []);
 
@@ -465,31 +452,8 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   );
 
   const handleSaveHighlight = useCallback(async () => {
-    const highlight = await saveHighlightFromPopover();
-    if (highlight) {
-      const attrs: HighlightReferenceAttrs = {
-        highlightId: highlight.id,
-        cfiRange: highlight.cfiRange,
-        text: highlight.text,
-      };
-
-      if (editorRef.current) {
-        editorRef.current.appendHighlightReference(attrs);
-      } else {
-        setPendingHighlight(attrs);
-      }
-
-      setAnnotationsPanelOpen(true);
-    }
+    await saveHighlightFromPopover();
   }, [saveHighlightFromPopover]);
-
-  // Flush pending highlight once the editor is mounted
-  useEffect(() => {
-    if (pendingHighlight && editorRef.current) {
-      editorRef.current.appendHighlightReference(pendingHighlight);
-      setPendingHighlight(null);
-    }
-  });
 
   const isScrollMode = settings.readerLayout === "scroll";
 
@@ -527,15 +491,6 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
             </div>
           )}
           <div className="absolute right-2 flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setAnnotationsPanelOpen(!annotationsPanelOpen)}
-              title="Toggle notebook"
-            >
-              <NotebookPen className="size-4" />
-              <span className="sr-only">Toggle notebook</span>
-            </Button>
             <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
           </div>
         </div>
@@ -557,14 +512,6 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
           />
         )}
       </div>
-      <AnnotationsPanel
-        bookId={book.id}
-        bookTitle={book.title}
-        isOpen={annotationsPanelOpen}
-        onClose={() => setAnnotationsPanelOpen(false)}
-        onNavigateToCfi={navigateToCfi}
-        editorRef={editorRef}
-      />
     </div>
   );
 }
