@@ -4,7 +4,14 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, NotebookPen } from "lucide-react";
+import { ChevronLeft, ChevronRight, NotebookPen, TableOfContents } from "lucide-react";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "~/components/ui/popover";
+import { ScrollArea } from "~/components/ui/scroll-area";
+import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type Book } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -159,7 +166,8 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  const [toc, setLocalToc] = useState<TocEntry[]>([]);
+  const [tocOpen, setTocOpen] = useState(false);
 
   const navigateToCfi = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi);
@@ -258,7 +266,9 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
             href: item.href ?? "",
             ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
           }));
-        onRegisterToc?.(book.id, mapToc(nav.toc));
+        const tocData = mapToc(nav.toc);
+        setLocalToc(tocData);
+        onRegisterToc?.(book.id, tocData);
       }
 
       // Restore saved reading position
@@ -506,6 +516,32 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
                 <NotebookPen className="size-4" />
                 <span className="sr-only">Open Notebook</span>
               </Button>
+            )}
+            {toc.length > 0 && (
+              <Popover open={tocOpen} onOpenChange={setTocOpen}>
+                <PopoverTrigger
+                  render={
+                    <Button variant="ghost" size="icon" title="Table of Contents" />
+                  }
+                >
+                  <TableOfContents className="size-4" />
+                  <span className="sr-only">Table of Contents</span>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="end" sideOffset={8} className="max-h-80 w-64 p-1.5">
+                  <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Table of Contents</p>
+                  <ScrollArea className="max-h-72">
+                    <ul>
+                      <TocList
+                        entries={toc}
+                        onNavigate={(href) => {
+                          renditionRef.current?.display(href);
+                          setTocOpen(false);
+                        }}
+                      />
+                    </ul>
+                  </ScrollArea>
+                </PopoverContent>
+              </Popover>
             )}
             <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
           </div>
