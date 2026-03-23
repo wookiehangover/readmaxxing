@@ -122,6 +122,27 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   const renditionRef = useRef<Rendition | null>(null);
   const [settings, updateSettings] = useSettings();
   const layoutRef = useRef(settings.readerLayout);
+
+  // Defer epub initialization until the panel has been visible at least once.
+  // With renderer: "always", background tabs exist in the DOM but have zero
+  // dimensions. epubjs renderTo() on a zero-sized container produces broken layout.
+  const [hasBeenVisible, setHasBeenVisible] = useState(() => panelApi ? panelApi.isVisible : true);
+
+  useEffect(() => {
+    if (!panelApi || hasBeenVisible) return;
+    // Already visible on mount (race with state init)
+    if (panelApi.isVisible) {
+      setHasBeenVisible(true);
+      return;
+    }
+    const disposable = panelApi.onDidVisibilityChange((e) => {
+      if (e.isVisible) {
+        setHasBeenVisible(true);
+        disposable.dispose();
+      }
+    });
+    return () => disposable.dispose();
+  }, [panelApi, hasBeenVisible]);
   const typographyRef = useRef({
     fontFamily: settings.fontFamily,
     fontSize: settings.fontSize,
@@ -167,8 +188,9 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   // Keep layoutRef in sync
   layoutRef.current = settings.readerLayout;
 
-  // Main epub lifecycle effect
+  // Main epub lifecycle effect — deferred until panel has been visible
   useEffect(() => {
+    if (!hasBeenVisible) return;
     const el = containerRef.current;
     if (!el) return;
 
@@ -329,7 +351,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
       bookRef.current = null;
       renditionRef.current = null;
     };
-  }, [book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler, onRegisterToc, onUnregisterToc]);
+  }, [hasBeenVisible, book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler, onRegisterToc, onUnregisterToc]);
 
   // Theme sync
   useEffect(() => {

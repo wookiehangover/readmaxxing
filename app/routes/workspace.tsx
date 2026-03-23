@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, type ChangeEvent } from "react";
 import { Effect } from "effect";
 import {
   DockviewReact,
@@ -9,7 +9,7 @@ import {
   type DockviewTheme,
 } from "dockview";
 import { Link } from "react-router";
-import { BookOpen, NotebookPen, Library } from "lucide-react";
+import { BookOpen, NotebookPen, Library, Plus, ArrowUpDown } from "lucide-react";
 import { BookCover, TocList } from "~/components/book-list";
 import {
   Popover,
@@ -18,10 +18,13 @@ import {
 } from "~/components/ui/popover";
 import type { Route } from "./+types/workspace";
 import { BookService, type Book } from "~/lib/book-store";
+import { parseEpubEffect } from "~/lib/epub-service";
+import { DropZone } from "~/components/drop-zone";
 import type { TocEntry } from "~/lib/reader-context";
 import { WorkspaceService } from "~/lib/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { useSettings } from "~/lib/settings";
+import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
+import { useEffectQuery } from "~/lib/use-effect-query";
 import { WorkspaceBookReader } from "~/components/workspace-book-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
 
@@ -238,14 +241,59 @@ function WorkspaceTocPopoverItem({
   );
 }
 
+function sortBooks(
+  books: Book[],
+  sortBy: WorkspaceSortBy,
+  lastOpenedMap: Map<string, number> | undefined,
+): Book[] {
+  const sorted = [...books];
+  switch (sortBy) {
+    case "title":
+      sorted.sort((a, b) => a.title.localeCompare(b.title));
+      break;
+    case "author":
+      sorted.sort((a, b) => a.author.localeCompare(b.author));
+      break;
+    case "recent": {
+      const map = lastOpenedMap ?? new Map<string, number>();
+      sorted.sort((a, b) => {
+        const ta = map.get(a.id) ?? 0;
+        const tb = map.get(b.id) ?? 0;
+        return tb - ta; // most recent first; never-opened (0) sink to bottom
+      });
+      break;
+    }
+  }
+  return sorted;
+}
+
+const SORT_OPTIONS: { value: WorkspaceSortBy; label: string }[] = [
+  { value: "recent", label: "Recently Opened" },
+  { value: "title", label: "Title (A–Z)" },
+  { value: "author", label: "Author (A–Z)" },
+];
+
 export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
-  const [books] = useState<Book[]>(loaderData.books);
+  const [books, setBooks] = useState<Book[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
+  const sortBy = settings.workspaceSortBy;
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // Track which books have TOC data via a version counter (triggers re-render)
   const [tocVersion, setTocVersion] = useState(0);
+
+  // Load last-opened timestamps for sorting
+  const { data: lastOpenedMap } = useEffectQuery(
+    () => WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())),
+    [],
+  );
+
+  const sortedBooks = useMemo(
+    () => sortBooks(books, sortBy, lastOpenedMap),
+    [books, sortBy, lastOpenedMap],
+  );
 
   const dockviewTheme: DockviewTheme = {
     name: "app",
@@ -354,7 +402,40 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     });
   }, []);
 
+  const handleBookAdded = useCallback((book: Book) => {
+    setBooks((prev) => [...prev, book]);
+  }, []);
+
+  const handleFileInput = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files) return;
+      for (const file of Array.from(files)) {
+        if (!file.name.endsWith(".epub")) continue;
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
+          const book: Book = {
+            id: crypto.randomUUID(),
+            title: metadata.title,
+            author: metadata.author,
+            coverImage: metadata.coverImage,
+            data: arrayBuffer,
+          };
+          await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
+          setBooks((prev) => [...prev, book]);
+        } catch (err) {
+          console.error("Failed to add book:", err);
+        }
+      }
+      // Reset input so the same file can be re-selected
+      e.target.value = "";
+    },
+    [],
+  );
+
   return (
+    <DropZone onBookAdded={handleBookAdded}>
     <div className="flex h-screen">
       {/* Sidebar */}
       <aside
@@ -364,19 +445,37 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       >
         <div className="flex items-center justify-between border-b px-4 py-3">
           {!collapsed && <h1 className="text-lg font-semibold">Books</h1>}
-          <Link
-            to="/"
-            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            title="Back to Library"
-          >
-            <Library className="size-4" />
-          </Link>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Add books"
+            >
+              <Plus className="size-4" />
+            </button>
+            <Link
+              to="/"
+              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Back to Library"
+            >
+              <Library className="size-4" />
+            </Link>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".epub"
+            multiple
+            className="hidden"
+            onChange={handleFileInput}
+          />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {books.length === 0 ? (
             !collapsed && (
               <p className="p-4 text-sm text-muted-foreground">
-                No books yet. Drop an epub file on the library page.
+                No books yet. Drop an epub or click + to add.
               </p>
             )
           ) : (
@@ -446,5 +545,6 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
         />
       </div>
     </div>
+    </DropZone>
   );
 }
