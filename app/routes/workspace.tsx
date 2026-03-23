@@ -60,6 +60,8 @@ function truncateTitle(title: string, maxLength = 30): string {
 const navigationMap = new Map<string, (cfi: string) => void>();
 // Map of bookId -> TOC entries, populated by WorkspaceBookReader panels
 const tocMap = new Map<string, TocEntry[]>();
+// Map of bookId -> appendHighlightReference callback, registered by WorkspaceNotebook panels
+const notebookCallbackMap = new Map<string, (attrs: { highlightId: string; cfiRange: string; text: string }) => void>();
 // Listeners notified when tocMap changes (so React can re-render)
 let tocChangeListener: (() => void) | null = null;
 // Module-level ref to the top-level DockviewApi for cross-panel operations
@@ -110,6 +112,17 @@ function BookReaderPanel({
     });
   }, [params.bookId, params.bookTitle]);
 
+  const handleHighlightCreated = useCallback(
+    (highlight: { highlightId: string; cfiRange: string; text: string }) => {
+      // Look up the notebook's appendHighlightReference callback
+      const appendFn = notebookCallbackMap.get(params.bookId);
+      if (appendFn) {
+        appendFn(highlight);
+      }
+    },
+    [params.bookId],
+  );
+
   return (
     <WorkspaceBookReader
       bookId={params.bookId}
@@ -119,6 +132,7 @@ function BookReaderPanel({
       onRegisterToc={handleRegisterToc}
       onUnregisterToc={handleUnregisterToc}
       onOpenNotebook={handleOpenNotebook}
+      onHighlightCreated={handleHighlightCreated}
     />
   );
 }
@@ -134,11 +148,27 @@ function NotebookPanel({
     [params.bookId],
   );
 
+  const handleRegisterAppendHighlight = useCallback(
+    (bookId: string, fn: (attrs: { highlightId: string; cfiRange: string; text: string }) => void) => {
+      notebookCallbackMap.set(bookId, fn);
+    },
+    [],
+  );
+
+  const handleUnregisterAppendHighlight = useCallback(
+    (bookId: string) => {
+      notebookCallbackMap.delete(bookId);
+    },
+    [],
+  );
+
   return (
     <WorkspaceNotebook
       bookId={params.bookId}
       bookTitle={params.bookTitle}
       onNavigateToCfi={handleNavigateToCfi}
+      onRegisterAppendHighlight={handleRegisterAppendHighlight}
+      onUnregisterAppendHighlight={handleUnregisterAppendHighlight}
     />
   );
 }
@@ -390,6 +420,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       navigationMap.clear();
       tocMap.clear();
+      notebookCallbackMap.clear();
     };
   }, []);
 

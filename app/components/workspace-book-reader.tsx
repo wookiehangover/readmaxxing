@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import { createPortal } from "react-dom";
 import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
@@ -27,6 +28,7 @@ interface WorkspaceBookReaderProps {
   onRegisterToc?: (bookId: string, toc: TocEntry[]) => void;
   onUnregisterToc?: (bookId: string) => void;
   onOpenNotebook?: () => void;
+  onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
 }
 
 function getFontFallback(fontFamily: string): string {
@@ -79,7 +81,7 @@ function getRenditionOptions(layout: ReaderLayout) {
   }
 }
 
-export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook }: WorkspaceBookReaderProps) {
+export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: WorkspaceBookReaderProps) {
   // Load book data via useEffectQuery
   const { data: book, error, isLoading } = useEffectQuery(
     () =>
@@ -106,14 +108,14 @@ export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, on
     );
   }
 
-  return <WorkspaceBookReaderInner book={book} panelApi={panelApi} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} onRegisterToc={onRegisterToc} onUnregisterToc={onUnregisterToc} onOpenNotebook={onOpenNotebook} />;
+  return <WorkspaceBookReaderInner book={book} panelApi={panelApi} onRegisterNavigation={onRegisterNavigation} onUnregisterNavigation={onUnregisterNavigation} onRegisterToc={onRegisterToc} onUnregisterToc={onUnregisterToc} onOpenNotebook={onOpenNotebook} onHighlightCreated={onHighlightCreated} />;
 }
 
 /**
  * Inner component that renders once we have book data.
  * Manages its own epub lifecycle, TOC state, and keyboard navigation.
  */
-function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook }: { book: Book; panelApi?: DockviewPanelApi; onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (bookId: string) => void; onRegisterToc?: (bookId: string, toc: TocEntry[]) => void; onUnregisterToc?: (bookId: string) => void; onOpenNotebook?: () => void }) {
+function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: { book: Book; panelApi?: DockviewPanelApi; onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (bookId: string) => void; onRegisterToc?: (bookId: string, toc: TocEntry[]) => void; onUnregisterToc?: (bookId: string) => void; onOpenNotebook?: () => void; onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
@@ -453,8 +455,15 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   );
 
   const handleSaveHighlight = useCallback(async () => {
-    await saveHighlightFromPopover();
-  }, [saveHighlightFromPopover]);
+    const highlight = await saveHighlightFromPopover();
+    if (highlight) {
+      onHighlightCreated?.({
+        highlightId: highlight.id,
+        cfiRange: highlight.cfiRange,
+        text: highlight.text,
+      });
+    }
+  }, [saveHighlightFromPopover, onHighlightCreated]);
 
   const isScrollMode = settings.readerLayout === "scroll";
 
@@ -501,23 +510,29 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
             <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
           </div>
         </div>
-        {selectionPopover && (
-          <HighlightPopover
-            position={selectionPopover.position}
-            selectedText={selectionPopover.text}
-            onSave={handleSaveHighlight}
-            onDismiss={dismissPopovers}
-          />
-        )}
-        {editPopover && (
-          <HighlightPopover
-            mode="edit"
-            position={editPopover.position}
-            selectedText={editPopover.highlight.text}
-            onDelete={deleteHighlightFromPopover}
-            onDismiss={dismissPopovers}
-          />
-        )}
+        {/* Portal popovers to document.body to escape dockview's CSS transforms,
+            which create a new containing block and break position:fixed */}
+        {selectionPopover &&
+          createPortal(
+            <HighlightPopover
+              position={selectionPopover.position}
+              selectedText={selectionPopover.text}
+              onSave={handleSaveHighlight}
+              onDismiss={dismissPopovers}
+            />,
+            document.body,
+          )}
+        {editPopover &&
+          createPortal(
+            <HighlightPopover
+              mode="edit"
+              position={editPopover.position}
+              selectedText={editPopover.highlight.text}
+              onDelete={deleteHighlightFromPopover}
+              onDismiss={dismissPopovers}
+            />,
+            document.body,
+          )}
       </div>
     </div>
   );

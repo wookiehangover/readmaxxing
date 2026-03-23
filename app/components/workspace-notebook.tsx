@@ -9,17 +9,22 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import type { JSONContent } from "@tiptap/react";
 import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
 import { useEffectQuery } from "~/lib/use-effect-query";
+import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 
 interface WorkspaceNotebookProps {
   bookId: string;
   bookTitle?: string;
   onNavigateToCfi?: (cfi: string) => void;
+  onRegisterAppendHighlight?: (bookId: string, fn: (attrs: HighlightReferenceAttrs) => void) => void;
+  onUnregisterAppendHighlight?: (bookId: string) => void;
 }
 
 export function WorkspaceNotebook({
   bookId,
   bookTitle,
   onNavigateToCfi,
+  onRegisterAppendHighlight,
+  onUnregisterAppendHighlight,
 }: WorkspaceNotebookProps) {
   const editorRef = useRef<TiptapEditorHandle | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -56,6 +61,17 @@ export function WorkspaceNotebook({
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, []);
+
+  // Register the appendHighlightReference callback so the workspace can push highlights here
+  useEffect(() => {
+    const appendFn = (attrs: HighlightReferenceAttrs) => {
+      editorRef.current?.appendHighlightReference(attrs);
+    };
+    onRegisterAppendHighlight?.(bookId, appendFn);
+    return () => {
+      onUnregisterAppendHighlight?.(bookId);
+    };
+  }, [bookId, onRegisterAppendHighlight, onUnregisterAppendHighlight]);
 
   const handleExportMarkdown = useCallback(() => {
     if (!content) return;
