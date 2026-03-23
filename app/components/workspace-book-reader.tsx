@@ -4,14 +4,20 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, NotebookPen } from "lucide-react";
+import { ChevronLeft, ChevronRight, Notebook, TableOfContents } from "lucide-react";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "~/components/ui/popover";
+import { ScrollArea } from "~/components/ui/scroll-area";
+import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type Book } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
-import { RadialProgress } from "~/components/radial-progress";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
 import { useEffectQuery } from "~/lib/use-effect-query";
@@ -154,12 +160,12 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     lineHeight: settings.lineHeight,
   };
 
-  const [chapterProgress, setChapterProgress] = useState(0);
   const [bookProgress, setBookProgress] = useState(0);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  const [toc, setLocalToc] = useState<TocEntry[]>([]);
+  const [tocOpen, setTocOpen] = useState(false);
 
   const navigateToCfi = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi);
@@ -258,7 +264,9 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
             href: item.href ?? "",
             ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
           }));
-        onRegisterToc?.(book.id, mapToc(nav.toc));
+        const tocData = mapToc(nav.toc);
+        setLocalToc(tocData);
+        onRegisterToc?.(book.id, tocData);
       }
 
       // Restore saved reading position
@@ -307,7 +315,6 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
         }) => {
           if (!renditionRef.current) return;
           const { page, total } = location.start.displayed;
-          setChapterProgress(total > 0 ? (page / total) * 100 : 0);
           setBookProgress(location.start.percentage * 100);
           const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
           if (epubLocTotal && epubLocTotal > 0) {
@@ -477,7 +484,6 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
         <div ref={containerRef} className={cn("flex-1 overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })} />
         <div className="relative flex items-center justify-center border-t px-2 h-10">
           <div className="absolute left-2 flex items-center gap-1.5">
-            <RadialProgress value={chapterProgress} label="Chapter" />
             {totalPages !== null && currentPage !== null ? (
               <span className="text-muted-foreground text-xs tabular-nums">
                 Page {currentPage} of {totalPages}
@@ -503,9 +509,35 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
           <div className="absolute right-2 flex items-center gap-1">
             {onOpenNotebook && (
               <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
-                <NotebookPen className="size-4" />
+                <Notebook className="size-4" />
                 <span className="sr-only">Open Notebook</span>
               </Button>
+            )}
+            {toc.length > 0 && (
+              <Popover open={tocOpen} onOpenChange={setTocOpen}>
+                <PopoverTrigger
+                  render={
+                    <Button variant="ghost" size="icon" title="Table of Contents" />
+                  }
+                >
+                  <TableOfContents className="size-4" />
+                  <span className="sr-only">Table of Contents</span>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="end" sideOffset={8} className="max-h-80 w-64 p-1.5">
+                  <p className="px-2 py-1 text-xs font-medium text-muted-foreground">Table of Contents</p>
+                  <ScrollArea className="max-h-72">
+                    <ul>
+                      <TocList
+                        entries={toc}
+                        onNavigate={(href) => {
+                          renditionRef.current?.display(href);
+                          setTocOpen(false);
+                        }}
+                      />
+                    </ul>
+                  </ScrollArea>
+                </PopoverContent>
+              </Popover>
             )}
             <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
           </div>
