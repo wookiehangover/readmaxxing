@@ -33,13 +33,16 @@ export function resolveThemeColors(mode: "light" | "dark") {
   probe.style.pointerEvents = "none";
   probe.style.backgroundColor = "var(--background)";
   probe.style.color = "var(--foreground)";
-  root.appendChild(probe);
+  document.body.appendChild(probe);
+
+  // Force style recalculation before reading computed values
+  probe.offsetHeight;
 
   const computed = getComputedStyle(probe);
   const background = computed.backgroundColor;
   const foreground = computed.color;
 
-  root.removeChild(probe);
+  document.body.removeChild(probe);
 
   // Restore original dark class state
   if (needsDark !== currentlyDark) {
