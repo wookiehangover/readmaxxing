@@ -13,7 +13,7 @@ import type { Route } from "./+types/workspace";
 import { BookService, type Book } from "~/lib/book-store";
 import { WorkspaceService } from "~/lib/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { useSettings, resolveTheme } from "~/lib/settings";
+import { useSettings } from "~/lib/settings";
 import { WorkspaceBookReader } from "~/components/workspace-book-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
 
@@ -116,9 +116,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const effectiveTheme = resolveTheme(settings.theme);
-  const dockviewTheme =
-    effectiveTheme === "dark" ? "dockview-theme-dark" : "dockview-theme-light";
+  const dockviewTheme = "dockview-theme-app";
 
   // Debounced layout save
   const saveLayout = useCallback(() => {
