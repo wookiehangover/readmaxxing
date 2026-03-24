@@ -222,6 +222,14 @@ body {
   outline: none !important;
 }
 
+.dockview-theme-app .dv-tab .dv-default-tab .dv-default-tab-action {
+  padding: 2px;
+}
+
+.dockview-theme-app .dv-tab .dv-default-tab .dv-default-tab-action svg {
+  width: 12px;
+  height: 12px;
+}
 
 .dockview-theme-app .dv-drop-target-container .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {
   opacity: 0;
