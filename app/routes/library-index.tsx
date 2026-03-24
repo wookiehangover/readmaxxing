@@ -1,11 +1,12 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { Effect } from "effect";
-import { BookOpen, Ellipsis, FileText, Trash2 } from "lucide-react";
+import { BookOpen, Ellipsis, FileText, Plus, Trash2 } from "lucide-react";
 import type { Route } from "./+types/library-index";
 import { BookService, type Book } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { parseEpubEffect } from "~/lib/epub-service";
 import { DropZone } from "~/components/drop-zone";
 import {
   DropdownMenu,
@@ -72,13 +73,54 @@ function CoverPlaceholder({ title, author }: { title: string; author: string }) 
   );
 }
 
+function AddBookCard({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/50 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:bg-muted"
+    >
+      <Plus className="mb-2 size-8" />
+      <span className="text-sm font-medium">Add book</span>
+    </button>
+  );
+}
+
 export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
   const [books, setBooks] = useState<Book[]>(loaderData.books);
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleBookAdded = useCallback((book: Book) => {
     setBooks((prev) => [...prev, book]);
   }, []);
+
+  const handleFileInput = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files) return;
+      for (const file of Array.from(files)) {
+        if (!file.name.endsWith(".epub")) continue;
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
+          const book: Book = {
+            id: crypto.randomUUID(),
+            title: metadata.title,
+            author: metadata.author,
+            coverImage: metadata.coverImage,
+            data: arrayBuffer,
+          };
+          await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
+          setBooks((prev) => [...prev, book]);
+        } catch (err) {
+          console.error("Failed to add book:", err);
+        }
+      }
+      e.target.value = "";
+    },
+    [],
+  );
 
   const handleDeleteBook = useCallback(
     async (bookId: string) => {
@@ -113,15 +155,19 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
 
   return (
     <DropZone onBookAdded={handleBookAdded}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".epub"
+        multiple
+        className="hidden"
+        onChange={handleFileInput}
+      />
       {books.length === 0 ? (
-        <div className="flex h-screen flex-col items-center justify-center text-center">
-          <BookOpen className="mb-4 size-12 text-muted-foreground/50" />
-          <p className="text-lg font-medium text-muted-foreground">
-            Your library is empty
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Drop an .epub file anywhere to get started
-          </p>
+        <div className="flex h-screen items-center justify-center p-6">
+          <div className="w-40">
+            <AddBookCard onClick={() => fileInputRef.current?.click()} />
+          </div>
         </div>
       ) : (
         <div className="h-screen overflow-y-auto p-6">
@@ -170,6 +216,9 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
                 </DropdownMenu>
               </div>
             ))}
+            <div>
+              <AddBookCard onClick={() => fileInputRef.current?.click()} />
+            </div>
           </div>
         </div>
       )}
