@@ -1,12 +1,17 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Effect } from "effect";
 import { ArrowLeft, BookOpen } from "lucide-react";
 import type { Route } from "./+types/book-details";
+import type { JSONContent } from "@tiptap/react";
 import { BookService, type Book } from "~/lib/book-store";
+import { AnnotationService } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { useEffectQuery } from "~/lib/use-effect-query";
+import { TiptapEditor } from "~/components/tiptap-editor";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
+import { ScrollArea } from "~/components/ui/scroll-area";
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const book = await AppRuntime.runPromise(
@@ -68,6 +73,45 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Load notebook for this book
+  const { data: notebook, isLoading: notebookLoading } = useEffectQuery(
+    () =>
+      AnnotationService.pipe(
+        Effect.andThen((svc) => svc.getNotebook(book.id)),
+      ),
+    [book.id],
+  );
+  const notebookContent = notebook?.content ?? null;
+  const hasNotebook = !notebookLoading && notebookContent !== null;
+
+  // Debounced notebook save
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleNotebookUpdate = useCallback(
+    (newContent: JSONContent) => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        const program = Effect.gen(function* () {
+          const svc = yield* AnnotationService;
+          yield* svc.saveNotebook({
+            bookId: book.id,
+            content: newContent,
+            updatedAt: Date.now(),
+          });
+        });
+        AppRuntime.runPromise(program).catch((err) =>
+          console.error("Failed to save notebook:", err),
+        );
+      }, 1000);
+    },
+    [book.id],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
   const handleSave = useCallback(async () => {
     setSaving(true);
     setSaved(false);
@@ -94,7 +138,9 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
         </Button>
       </div>
 
-      <div className="mx-auto flex max-w-2xl flex-col gap-8 sm:flex-row">
+      <div
+        className={`mx-auto flex flex-col gap-8 sm:flex-row ${hasNotebook ? "max-w-5xl" : "max-w-2xl"}`}
+      >
         <div className="shrink-0">
           {book.coverImage ? (
             <CoverImage coverImage={book.coverImage} alt={title} />
@@ -132,6 +178,18 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
             </Button>
           </div>
         </div>
+
+        {hasNotebook && (
+          <div className="flex min-w-0 flex-1 flex-col">
+            <h2 className="mb-2 text-sm font-semibold">Notebook</h2>
+            <ScrollArea className="flex-1">
+              <TiptapEditor
+                content={notebookContent}
+                onUpdate={handleNotebookUpdate}
+              />
+            </ScrollArea>
+          </div>
+        )}
       </div>
     </div>
   );
