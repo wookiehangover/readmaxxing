@@ -2,9 +2,16 @@ import { useEffect, useCallback, useRef } from "react";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
-import { Download } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
+import { Download, Ellipsis } from "lucide-react";
 import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
 import { AnnotationService } from "~/lib/annotations-store";
+import { BookService } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import type { JSONContent } from "@tiptap/react";
 import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
@@ -28,6 +35,18 @@ export function WorkspaceNotebook({
 }: WorkspaceNotebookProps) {
   const editorRef = useRef<TiptapEditorHandle | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { data: book } = useEffectQuery(
+    () =>
+      BookService.pipe(
+        Effect.andThen((s) => s.getBook(bookId)),
+        Effect.catchAll(() => Effect.succeed(null)),
+      ),
+    [bookId],
+  );
+
+  const displayTitle = book?.title ?? bookTitle;
+  const displayAuthor = book?.author;
 
   const { data: notebook, isLoading } = useEffectQuery(
     () => AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))),
@@ -98,20 +117,32 @@ export function WorkspaceNotebook({
   return (
     <div className="flex h-full flex-col bg-card">
       <div className="flex items-center justify-between border-b px-4 py-3">
-        <h2 className="truncate text-sm font-semibold">
-          {bookTitle ? `${bookTitle} — Notebook` : "Notebook"}
-        </h2>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={handleExportMarkdown}
-            title="Export as Markdown"
-            disabled={!content}
-          >
-            <Download className="size-3.5" />
-          </Button>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-semibold">
+            {displayTitle ?? "Notebook"}
+          </h2>
+          {displayAuthor && (
+            <p className="truncate text-xs text-muted-foreground">{displayAuthor}</p>
+          )}
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="ghost" size="icon-xs" />
+            }
+          >
+            <Ellipsis className="size-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={handleExportMarkdown}
+              disabled={!content}
+            >
+              <Download className="size-4" />
+              Export as Markdown
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <ScrollArea className="flex-1">
