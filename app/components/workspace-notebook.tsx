@@ -8,7 +8,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import { Download, Ellipsis } from "lucide-react";
+import { Download, Ellipsis, FileText } from "lucide-react";
+import { Link } from "react-router";
 import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
 import { AnnotationService } from "~/lib/annotations-store";
 import { BookService } from "~/lib/book-store";
@@ -134,6 +135,10 @@ export function WorkspaceNotebook({
             <Ellipsis className="size-3.5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem render={<Link to={`/books/${bookId}/details`} />}>
+              <FileText className="size-4" />
+              Details
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={handleExportMarkdown}
               disabled={!content}
