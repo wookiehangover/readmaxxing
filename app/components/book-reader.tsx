@@ -104,7 +104,9 @@ export function BookReader({ book }: BookReaderProps) {
   const [tocOpen, setTocOpen] = useState(false);
 
   const navigateToCfi = useCallback((cfi: string) => {
-    renditionRef.current?.display(cfi);
+    renditionRef.current?.display(cfi).catch((err: unknown) => {
+      console.warn("CFI navigation failed:", err);
+    });
   }, []);
 
   const {
@@ -195,7 +197,9 @@ export function BookReader({ book }: BookReaderProps) {
 
       // Provide chapter navigation via rendition.display
       setNavigateToHref((href: string) => {
-        rendition.display(href);
+        rendition.display(href).catch((err: unknown) => {
+          console.warn("TOC navigation failed:", err);
+        });
       });
 
       const savedCfi = await AppRuntime.runPromise(

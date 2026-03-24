@@ -167,7 +167,9 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   const [tocOpen, setTocOpen] = useState(false);
 
   const navigateToCfi = useCallback((cfi: string) => {
-    renditionRef.current?.display(cfi);
+    renditionRef.current?.display(cfi).catch((err: unknown) => {
+      console.warn("CFI navigation failed:", err);
+    });
   }, []);
 
   // Register navigateToCfi with parent workspace for cross-panel coordination
@@ -528,7 +530,9 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
                     <TocList
                       entries={toc}
                       onNavigate={(href) => {
-                        renditionRef.current?.display(href);
+                        renditionRef.current?.display(href).catch((err: unknown) => {
+                          console.warn("TOC navigation failed:", err);
+                        });
                         setTocOpen(false);
                       }}
                     />
