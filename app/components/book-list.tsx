@@ -141,6 +141,7 @@ function TocPopoverItem({
         openOnHover
         delay={200}
         closeDelay={300}
+        nativeButton={false}
         render={<NavLink to={`/books/${book.id}`} className={linkClassName} />}
       >
         <BookItemContent book={book} collapsed={collapsed} />
