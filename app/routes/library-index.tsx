@@ -1,11 +1,18 @@
 import { useEffect, useState, useCallback } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Effect } from "effect";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Ellipsis, FileText, Trash2 } from "lucide-react";
 import type { Route } from "./+types/library-index";
 import { BookService, type Book } from "~/lib/book-store";
+import { AnnotationService } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { DropZone } from "~/components/drop-zone";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 
 export function meta(_args: Route.MetaArgs) {
   return [
@@ -67,10 +74,42 @@ function CoverPlaceholder({ title, author }: { title: string; author: string }) 
 
 export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
   const [books, setBooks] = useState<Book[]>(loaderData.books);
+  const navigate = useNavigate();
 
   const handleBookAdded = useCallback((book: Book) => {
     setBooks((prev) => [...prev, book]);
   }, []);
+
+  const handleDeleteBook = useCallback(
+    async (bookId: string) => {
+      const confirmed = window.confirm("Are you sure you want to delete this book?");
+      if (!confirmed) return;
+
+      const program = Effect.gen(function* () {
+        const bookSvc = yield* BookService;
+        const annotationSvc = yield* AnnotationService;
+
+        // Delete all highlights for this book
+        const highlights = yield* annotationSvc.getHighlightsByBook(bookId);
+        for (const hl of highlights) {
+          yield* annotationSvc.deleteHighlight(hl.id);
+        }
+
+        // Delete the book itself
+        yield* bookSvc.deleteBook(bookId);
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to delete book:", error);
+          }),
+        ),
+      );
+
+      await AppRuntime.runPromise(program);
+      setBooks((prev) => prev.filter((b) => b.id !== bookId));
+    },
+    [],
+  );
 
   return (
     <DropZone onBookAdded={handleBookAdded}>
@@ -88,23 +127,48 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
         <div className="h-screen overflow-y-auto p-6">
           <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {books.map((book) => (
-              <Link
-                key={book.id}
-                to={`/books/${book.id}`}
-                className="group block"
-              >
-                <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
-                  {book.coverImage ? (
-                    <CoverImage coverImage={book.coverImage} alt={book.title} />
-                  ) : (
-                    <CoverPlaceholder title={book.title} author={book.author} />
-                  )}
-                </div>
-                <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {book.author}
-                </p>
-              </Link>
+              <div key={book.id} className="group relative">
+                <Link
+                  to={`/books/${book.id}`}
+                  className="block"
+                >
+                  <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
+                    {book.coverImage ? (
+                      <CoverImage coverImage={book.coverImage} alt={book.title} />
+                    ) : (
+                      <CoverPlaceholder title={book.title} author={book.author} />
+                    )}
+                  </div>
+                  <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {book.author}
+                  </p>
+                </Link>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/70 focus-visible:opacity-100 group-hover:opacity-100"
+                    render={<button type="button" />}
+                    onClick={(e) => e.preventDefault()}
+                  >
+                    <Ellipsis className="size-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => navigate(`/books/${book.id}/details`)}
+                    >
+                      <FileText className="size-4" />
+                      Details
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => handleDeleteBook(book.id)}
+                    >
+                      <Trash2 className="size-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             ))}
           </div>
         </div>
