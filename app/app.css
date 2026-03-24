@@ -219,10 +219,7 @@ body {
 }
 
 .dockview-theme-app .dv-tab.dv-active-tab {
-  position: relative;
-  z-index: 1;
-  margin-bottom: -1px;
-  border-bottom: 1px solid var(--dv-activegroup-visiblepanel-tab-background-color);
+  outline: none !important;
 }
 
 
