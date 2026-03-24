@@ -72,8 +72,8 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
     <ReaderNavigationProvider>
       <DropZone onBookAdded={handleBookAdded}>
         <div className="flex h-screen">
-          {/* Desktop sidebar */}
-          {!isMobile && (
+          {/* Desktop sidebar — shown when isMobile is undefined (SSR/initial) or false */}
+          {isMobile !== true && (
             <aside
               className={`flex shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out ${
                 collapsed ? "w-14" : "w-[300px]"
@@ -96,8 +96,8 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
             </aside>
           )}
 
-          {/* Mobile sidebar sheet */}
-          {isMobile && (
+          {/* Mobile sidebar sheet — only shown when explicitly determined to be mobile */}
+          {isMobile === true && (
             <>
               <button
                 type="button"

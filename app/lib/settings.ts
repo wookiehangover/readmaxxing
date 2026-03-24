@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 
 export type Theme = "light" | "dark" | "system";
 export type ReaderLayout = "single" | "spread" | "scroll";
@@ -56,11 +56,10 @@ export function saveSettings(settings: Settings): void {
 }
 
 export function useSettings(): [Settings, (update: Partial<Settings>) => void] {
-  const [settings, setSettings] = useState<Settings>(defaultSettings);
-
-  useEffect(() => {
-    setSettings(getSettings());
-  }, []);
+  const [settings, setSettings] = useState<Settings>(() => {
+    if (typeof window === "undefined") return defaultSettings;
+    return getSettings();
+  });
 
   const updateSettings = useCallback((update: Partial<Settings>) => {
     setSettings((prev) => {
