@@ -293,11 +293,15 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
         onRegisterToc?.(panelApi?.id ?? book.id, tocData);
       }
 
-      // Restore saved reading position
-      const savedCfi = await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
-      );
-      await rendition.display(savedCfi || undefined);
+      // Restore reading position: prefer in-memory CFI (survives effect re-runs
+      // and keeps duplicate panels independent) over IndexedDB (cross-session).
+      let startCfi = latestCfiRef.current;
+      if (!startCfi) {
+        startCfi = await AppRuntime.runPromise(
+          BookService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
+        );
+      }
+      await rendition.display(startCfi || undefined);
 
       const effectiveTheme = resolveTheme(settings.theme);
       rendition.themes.select(effectiveTheme);
