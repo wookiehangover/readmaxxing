@@ -28,10 +28,10 @@ import type { TocEntry } from "~/lib/reader-context";
 interface WorkspaceBookReaderProps {
   bookId: string;
   panelApi?: DockviewPanelApi;
-  onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void;
-  onUnregisterNavigation?: (bookId: string) => void;
-  onRegisterToc?: (bookId: string, toc: TocEntry[]) => void;
-  onUnregisterToc?: (bookId: string) => void;
+  onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void;
+  onUnregisterNavigation?: (panelId: string) => void;
+  onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
+  onUnregisterToc?: (panelId: string) => void;
   onOpenNotebook?: () => void;
   onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
 }
@@ -120,7 +120,7 @@ export function WorkspaceBookReader({ bookId, panelApi, onRegisterNavigation, on
  * Inner component that renders once we have book data.
  * Manages its own epub lifecycle, TOC state, and keyboard navigation.
  */
-function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: { book: Book; panelApi?: DockviewPanelApi; onRegisterNavigation?: (bookId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (bookId: string) => void; onRegisterToc?: (bookId: string, toc: TocEntry[]) => void; onUnregisterToc?: (bookId: string) => void; onOpenNotebook?: () => void; onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void }) {
+function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnregisterNavigation, onRegisterToc, onUnregisterToc, onOpenNotebook, onHighlightCreated }: { book: Book; panelApi?: DockviewPanelApi; onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void; onUnregisterNavigation?: (panelId: string) => void; onRegisterToc?: (panelId: string, toc: TocEntry[]) => void; onUnregisterToc?: (panelId: string) => void; onOpenNotebook?: () => void; onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
@@ -187,12 +187,14 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   }, []);
 
   // Register navigateToCfi with parent workspace for cross-panel coordination
+  // Use panelApi.id (unique per panel) so multiple copies of the same book each register independently
   useEffect(() => {
-    onRegisterNavigation?.(book.id, navigateToCfi);
+    const id = panelApi?.id ?? book.id;
+    onRegisterNavigation?.(id, navigateToCfi);
     return () => {
-      onUnregisterNavigation?.(book.id);
+      onUnregisterNavigation?.(id);
     };
-  }, [book.id, navigateToCfi, onRegisterNavigation, onUnregisterNavigation]);
+  }, [book.id, panelApi, navigateToCfi, onRegisterNavigation, onUnregisterNavigation]);
 
   const {
     selectionPopover,
@@ -288,7 +290,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
           }));
         const tocData = mapToc(nav.toc);
         setLocalToc(tocData);
-        onRegisterToc?.(book.id, tocData);
+        onRegisterToc?.(panelApi?.id ?? book.id, tocData);
       }
 
       // Restore saved reading position
@@ -373,7 +375,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
       flushPositionSave();
-      onUnregisterToc?.(book.id);
+      onUnregisterToc?.(panelApi?.id ?? book.id);
       rendition.destroy();
       epubBook.destroy();
       bookRef.current = null;

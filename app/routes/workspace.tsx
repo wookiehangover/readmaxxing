@@ -58,9 +58,9 @@ function truncateTitle(title: string, maxLength = 30): string {
 }
 
 // --- Navigation & TOC coordination ---
-// Map of bookId -> navigateToCfi callback, shared across panels
+// Map of panelId -> navigateToCfi callback, shared across panels
 const navigationMap = new Map<string, (cfi: string) => void>();
-// Map of bookId -> TOC entries, populated by WorkspaceBookReader panels
+// Map of panelId -> TOC entries, populated by WorkspaceBookReader panels
 const tocMap = new Map<string, TocEntry[]>();
 // Map of bookId -> appendHighlightReference callback, registered by WorkspaceNotebook panels
 const notebookCallbackMap = new Map<string, (attrs: { highlightId: string; cfiRange: string; text: string }) => void>();
@@ -69,27 +69,52 @@ let tocChangeListener: (() => void) | null = null;
 // Module-level ref to the top-level DockviewApi for cross-panel operations
 let dockviewApiRef: DockviewApi | null = null;
 
+// Helpers to look up panel-keyed maps by bookId
+function findNavForBook(bookId: string): ((cfi: string) => void) | undefined {
+  const dockApi = dockviewApiRef;
+  if (!dockApi) return undefined;
+  for (const panel of dockApi.panels) {
+    if (panel.id.startsWith("book-") && (panel.params as Record<string, unknown>)?.bookId === bookId) {
+      const nav = navigationMap.get(panel.id);
+      if (nav) return nav;
+    }
+  }
+  return undefined;
+}
+
+function findTocForBook(bookId: string): TocEntry[] | undefined {
+  const dockApi = dockviewApiRef;
+  if (!dockApi) return undefined;
+  for (const panel of dockApi.panels) {
+    if (panel.id.startsWith("book-") && (panel.params as Record<string, unknown>)?.bookId === bookId) {
+      const toc = tocMap.get(panel.id);
+      if (toc && toc.length > 0) return toc;
+    }
+  }
+  return undefined;
+}
+
 // --- Panel components ---
 
 function BookReaderPanel({
   params,
   api,
 }: IDockviewPanelProps<{ bookId: string; bookTitle?: string }>) {
-  const handleRegister = useCallback((bookId: string, nav: (cfi: string) => void) => {
-    navigationMap.set(bookId, nav);
+  const handleRegister = useCallback((panelId: string, nav: (cfi: string) => void) => {
+    navigationMap.set(panelId, nav);
   }, []);
 
-  const handleUnregister = useCallback((bookId: string) => {
-    navigationMap.delete(bookId);
+  const handleUnregister = useCallback((panelId: string) => {
+    navigationMap.delete(panelId);
   }, []);
 
-  const handleRegisterToc = useCallback((bookId: string, toc: TocEntry[]) => {
-    tocMap.set(bookId, toc);
+  const handleRegisterToc = useCallback((panelId: string, toc: TocEntry[]) => {
+    tocMap.set(panelId, toc);
     tocChangeListener?.();
   }, []);
 
-  const handleUnregisterToc = useCallback((bookId: string) => {
-    tocMap.delete(bookId);
+  const handleUnregisterToc = useCallback((panelId: string) => {
+    tocMap.delete(panelId);
     tocChangeListener?.();
   }, []);
 
@@ -144,8 +169,7 @@ function NotebookPanel({
 }: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
   const handleNavigateToCfi = useCallback(
     (cfi: string) => {
-      const nav = navigationMap.get(params.bookId);
-      nav?.(cfi);
+      findNavForBook(params.bookId)?.(cfi);
     },
     [params.bookId],
   );
@@ -232,7 +256,7 @@ function WorkspaceTocPopoverItem({
   book: Book;
   collapsed: boolean;
   toc: TocEntry[];
-  onOpenBook: () => void;
+  onOpenBook: (e: React.MouseEvent) => void;
   isOpen: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -257,8 +281,7 @@ function WorkspaceTocPopoverItem({
 
   const handleNavigate = useCallback(
     (href: string) => {
-      const nav = navigationMap.get(book.id);
-      nav?.(href);
+      findNavForBook(book.id)?.(href);
       setOpen(false);
     },
     [book.id],
@@ -404,7 +427,8 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
         const ids = new Set<string>();
         for (const panel of event.api.panels) {
           if (panel.id.startsWith("book-")) {
-            ids.add(panel.id.replace("book-", ""));
+            const bookId = (panel.params as Record<string, unknown>)?.bookId;
+            if (typeof bookId === "string") ids.add(bookId);
           }
         }
         setOpenBookIds(ids);
@@ -457,7 +481,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [collapsed, updateSettings]);
 
-  const openBook = useCallback((book: Book) => {
+  const openBook = useCallback((book: Book, forceNew = false) => {
     const api = apiRef.current;
     if (!api) return;
 
@@ -466,13 +490,18 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
     ).catch(console.error);
 
-    const panelId = `book-${book.id}`;
-    const existing = api.panels.find((p) => p.id === panelId);
-    if (existing) {
-      existing.focus();
-      return;
+    if (!forceNew) {
+      // Focus first existing panel for this book
+      const existing = api.panels.find(
+        (p) => p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
+      );
+      if (existing) {
+        existing.focus();
+        return;
+      }
     }
 
+    const panelId = `book-${book.id}-${crypto.randomUUID().slice(0, 8)}`;
     api.addPanel({
       id: panelId,
       component: "book-reader",
@@ -593,7 +622,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
               {sortedBooks.map((book) => {
                 // tocVersion is read here to trigger re-render when TOC data changes
                 void tocVersion;
-                const bookToc = tocMap.get(book.id);
+                const bookToc = findTocForBook(book.id);
                 const showTocPopover = bookToc && bookToc.length > 0;
 
                 return (
@@ -603,13 +632,13 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                         book={book}
                         collapsed={collapsed}
                         toc={bookToc}
-                        onOpenBook={() => openBook(book)}
+                        onOpenBook={(e) => openBook(book, e.metaKey || e.ctrlKey)}
                         isOpen={openBookIds.has(book.id)}
                       />
                     ) : (
                       <button
                         type="button"
-                        onClick={() => openBook(book)}
+                        onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
                         className={cn(
                           "flex w-full items-center rounded-md text-left hover:bg-accent",
                           {
@@ -627,7 +656,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                       <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
                         <button
                           type="button"
-                          onClick={() => openBook(book)}
+                          onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
                           className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                           title="Open book"
                         >
