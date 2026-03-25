@@ -163,6 +163,20 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestCfiRef = useRef<string | null>(null);
+
+  const flushPositionSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const cfi = latestCfiRef.current;
+    if (cfi) {
+      AppRuntime.runPromise(
+        BookService.pipe(Effect.andThen((s) => s.savePosition(book.id, cfi))),
+      ).catch((err) => console.error("Failed to flush reading position:", err));
+    }
+  }, [book.id]);
   const [toc, setLocalToc] = useState<TocEntry[]>([]);
   const [tocOpen, setTocOpen] = useState(false);
 
@@ -334,6 +348,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
             }
             setTotalPages(epubLocTotal);
           }
+          latestCfiRef.current = location.start.cfi;
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
             AppRuntime.runPromise(
@@ -357,14 +372,14 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      flushPositionSave();
       onUnregisterToc?.(book.id);
       rendition.destroy();
       epubBook.destroy();
       bookRef.current = null;
       renditionRef.current = null;
     };
-  }, [hasBeenVisible, book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler, onRegisterToc, onUnregisterToc]);
+  }, [hasBeenVisible, book.id, book.data, settings.readerLayout, loadAndApplyHighlights, registerSelectionHandler, onRegisterToc, onUnregisterToc, flushPositionSave]);
 
   // Theme sync
   useEffect(() => {
@@ -440,7 +455,11 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
     };
 
     const visDisposable = panelApi.onDidVisibilityChange((e) => {
-      if (e.isVisible) handleBecameVisible();
+      if (e.isVisible) {
+        handleBecameVisible();
+      } else {
+        flushPositionSave();
+      }
     });
 
     const activeDisposable = panelApi.onDidActiveChange((e) => {
@@ -451,7 +470,7 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
       visDisposable.dispose();
       activeDisposable.dispose();
     };
-  }, [panelApi, settings.theme]);
+  }, [panelApi, settings.theme, flushPositionSave]);
 
   const handlePrev = useCallback(() => renditionRef.current?.prev(), []);
   const handleNext = useCallback(() => renditionRef.current?.next(), []);
