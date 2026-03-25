@@ -239,6 +239,13 @@ function WorkspaceBookReaderInner({ book, panelApi, onRegisterNavigation, onUnre
         }
       `;
       doc.head.appendChild(highlightStyle);
+
+      // Forward arrow-key navigation from the epub iframe
+      doc.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (layoutRef.current === "scroll") return;
+        if (e.key === "ArrowLeft") rendition.prev();
+        else if (e.key === "ArrowRight") rendition.next();
+      });
     });
 
     const lightColors = resolveThemeColors("light");
