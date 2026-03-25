@@ -137,6 +137,7 @@ function BookReaderPanel({
       title: truncateTitle(`Notes: ${title}`),
       params: { bookId: params.bookId, bookTitle: title },
       renderer: "always",
+      position: { referencePanel: api.id, direction: "right" },
     });
   }, [params.bookId, params.bookTitle]);
 
@@ -532,12 +533,18 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       return;
     }
 
+    // Find an open book panel to position the notebook to its right
+    const bookPanel = api.panels.find(
+      (p) => p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
+    );
+
     api.addPanel({
       id: panelId,
       component: "notebook",
       title: truncateTitle(`Notes: ${book.title}`),
       params: { bookId: book.id, bookTitle: book.title },
       renderer: "always",
+      ...(bookPanel ? { position: { referencePanel: bookPanel.id, direction: "right" as const } } : {}),
     });
   }, []);
 
