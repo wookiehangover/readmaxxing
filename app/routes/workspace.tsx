@@ -8,8 +8,9 @@ import {
   type DockviewApi,
   type IWatermarkPanelProps,
   type DockviewTheme,
+  type IDockviewHeaderActionsProps,
 } from "dockview";
-import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings, Upload, Columns2, Ellipsis, Trash2, FileText } from "lucide-react";
+import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings, Upload, Columns2, Ellipsis, Trash2, FileText, PanelLeft } from "lucide-react";
 import { BookCover, TocList } from "~/components/book-list";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -421,6 +422,29 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any
   notebook: NotebookPanel,
   "new-tab": NewTabPanel,
 };
+
+function RightHeaderActions({ containerApi }: IDockviewHeaderActionsProps) {
+  const handleClick = useCallback(() => {
+    const panelId = `new-tab-${crypto.randomUUID().slice(0, 8)}`;
+    containerApi.addPanel({
+      id: panelId,
+      component: "new-tab",
+      title: "Library",
+      params: {},
+    });
+  }, [containerApi]);
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className="flex items-center justify-center px-1 text-muted-foreground hover:text-foreground"
+      title="New Library tab"
+    >
+      <Plus className="size-3.5" />
+    </button>
+  );
+}
 
 // --- Empty state watermark ---
 
@@ -881,14 +905,30 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                 </select>
               </div>
             )}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-              title="Add books"
-            >
-              <Plus className="size-4" />
-            </button>
+            {collapsed ? (
+              <button
+                type="button"
+                onClick={() => {
+                  updateSettings({ sidebarCollapsed: false });
+                  setTimeout(() => {
+                    window.dispatchEvent(new Event("resize"));
+                  }, 270);
+                }}
+                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground mx-auto"
+                title="Expand sidebar"
+              >
+                <PanelLeft className="size-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="Add books"
+              >
+                <Plus className="size-4" />
+              </button>
+            )}
             <input
               ref={fileInputRef}
               type="file"
@@ -907,7 +947,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
               )
             ) : (
               <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
-                {sortedBooks.map((book) => {
+                {(collapsed ? sortedBooks.filter((b) => openBookIds.has(b.id)) : sortedBooks).map((book) => {
                   // tocVersion is read here to trigger re-render when TOC data changes
                   void tocVersion;
                   const bookToc = findTocForBook(book.id);
@@ -995,6 +1035,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
             theme={dockviewTheme}
             components={components}
             watermarkComponent={WatermarkPanel}
+            rightHeaderActionsComponent={RightHeaderActions}
             onReady={onReady}
           />
         </div>
