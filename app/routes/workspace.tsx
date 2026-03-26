@@ -860,25 +860,27 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
           )}
         >
           <div className="flex items-center justify-between border-b h-9">
-            <div className="relative">
-              <ArrowUpDown className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <select
-                value={sortBy}
-                onChange={(e) =>
-                  updateSettings({
-                    workspaceSortBy: e.target.value as WorkspaceSortBy,
-                  })
-                }
-                className="h-7 appearance-none rounded border-none bg-transparent py-0 pr-2 pl-6 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:outline-none"
-                title="Sort books"
-              >
-                {SORT_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {!collapsed && (
+              <div className="relative">
+                <ArrowUpDown className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <select
+                  value={sortBy}
+                  onChange={(e) =>
+                    updateSettings({
+                      workspaceSortBy: e.target.value as WorkspaceSortBy,
+                    })
+                  }
+                  className="h-7 appearance-none rounded border-none bg-transparent py-0 pr-2 pl-6 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:outline-none"
+                  title="Sort books"
+                >
+                  {SORT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -898,9 +900,11 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
           </div>
           <ScrollArea className="min-h-0 flex-1" hideScrollbar>
             {sortedBooks.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">
-                No books yet. Drop an epub or click + to add.
-              </p>
+              !collapsed && (
+                <p className="p-4 text-sm text-muted-foreground">
+                  No books yet. Drop an epub or click + to add.
+                </p>
+              )
             ) : (
               <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
                 {sortedBooks.map((book) => {
@@ -936,48 +940,52 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                           <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
                         </button>
                       )}
-                      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
-                        <button
-                          type="button"
-                          onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Open book"
-                        >
-                          <BookOpen className="size-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openNotebook(book)}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Open notebook"
-                        >
-                          <NotebookPen className="size-3.5" />
-                        </button>
-                      </div>
+                      {!collapsed && (
+                        <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
+                          <button
+                            type="button"
+                            onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
+                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            title="Open book"
+                          >
+                            <BookOpen className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openNotebook(book)}
+                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            title="Open notebook"
+                          >
+                            <NotebookPen className="size-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </li>
                   );
                 })}
               </ul>
             )}
           </ScrollArea>
-          <div className="border-t h-10 flex items-center justify-between px-1 @container">
+          <div className={cn("border-t h-10 flex items-center @container", { "justify-between px-1": !collapsed, "justify-center": collapsed })}>
             <Link
               to="/settings"
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+              className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground", { "mx-auto": collapsed })}
               title="Settings"
             >
               <Settings className="size-4" />
-              <span>Settings</span>
+              {!collapsed && <span>Settings</span>}
             </Link>
-            <button
-              type="button"
-              onClick={openNewTab}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-              title="Open library panel"
-            >
-              <Plus className="size-4" />
-              <span>New tab</span>
-            </button>
+            {!collapsed && (
+              <button
+                type="button"
+                onClick={openNewTab}
+                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="Open library panel"
+              >
+                <Plus className="size-4" />
+                <span>New tab</span>
+              </button>
+            )}
           </div>
         </aside>
 
