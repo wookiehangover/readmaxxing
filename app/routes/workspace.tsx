@@ -362,30 +362,27 @@ function WatermarkPanel(_props: IWatermarkPanelProps) {
   return (
     <div className="flex h-full items-center justify-center p-8">
       <div className="flex max-w-md flex-col items-center text-center">
-        <div className="mb-6 flex items-center gap-2 text-muted-foreground/40">
-          <div className="flex h-14 w-10 items-center justify-center rounded border border-dashed border-muted-foreground/25">
-            <BookOpen className="size-5" />
+        <div className="mb-6 flex items-center gap-2 text-muted-foreground/30">
+          <div className="flex h-12 w-9 items-center justify-center rounded border border-dashed border-muted-foreground/20">
+            <BookOpen className="size-4" />
           </div>
-          <Columns2 className="size-4" />
-          <div className="flex h-14 w-10 items-center justify-center rounded border border-dashed border-muted-foreground/25">
-            <BookOpen className="size-5" />
+          <Columns2 className="size-3.5" />
+          <div className="flex h-12 w-9 items-center justify-center rounded border border-dashed border-muted-foreground/20">
+            <BookOpen className="size-4" />
           </div>
         </div>
 
         <h2 className="text-lg font-medium text-foreground">
-          Your multi-pane reading workspace
+          Drop an epub here to start reading
         </h2>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Open books side-by-side, take notes, and highlight passages — all in one place.
-        </p>
 
         <button
           type="button"
           onClick={() => fileInputRefGlobal?.current?.click()}
-          className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          className="mt-5 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
         >
           <Upload className="size-4" />
-          Upload an epub to get started
+          Upload an epub
         </button>
 
         <p className="mt-3 text-xs text-muted-foreground">
