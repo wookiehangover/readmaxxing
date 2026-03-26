@@ -602,36 +602,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   // Track total panel count for dynamic document title
   const [panelCount, setPanelCount] = useState(0);
 
-  // Hover-reveal state for collapsed sidebar
-  const [sidebarHovered, setSidebarHovered] = useState(false);
-  const hoverLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleSidebarMouseEnter = useCallback(() => {
-    if (hoverLeaveTimerRef.current) {
-      clearTimeout(hoverLeaveTimerRef.current);
-      hoverLeaveTimerRef.current = null;
-    }
-    setSidebarHovered(true);
-  }, []);
-
-  const handleSidebarMouseLeave = useCallback(() => {
-    hoverLeaveTimerRef.current = setTimeout(() => {
-      setSidebarHovered(false);
-      hoverLeaveTimerRef.current = null;
-    }, 300);
-  }, []);
-
-  // Clean up hover timer on unmount
-  useEffect(() => {
-    return () => {
-      if (hoverLeaveTimerRef.current) clearTimeout(hoverLeaveTimerRef.current);
-    };
-  }, []);
-
-  // Reset hover state when sidebar is pinned open
-  useEffect(() => {
-    if (!collapsed) setSidebarHovered(false);
-  }, [collapsed]);
 
   // Load last-opened timestamps for sorting
   const { data: lastOpenedMap } = useEffectQuery(
@@ -880,29 +851,12 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
 
   return (
     <DropZone onBookAdded={handleBookAdded}>
-      <div className="relative flex h-dvh">
-        {/* Hover trigger zone — visible only when sidebar is collapsed */}
-        {collapsed && (
-          <div
-            className="fixed top-0 left-0 z-40 h-full w-3"
-            onMouseEnter={handleSidebarMouseEnter}
-          />
-        )}
-
+      <div className="flex h-dvh">
         {/* Sidebar */}
         <aside
-          onMouseEnter={collapsed ? handleSidebarMouseEnter : undefined}
-          onMouseLeave={collapsed ? handleSidebarMouseLeave : undefined}
           className={cn(
-            "flex shrink-0 flex-col border-r bg-card transition-transform duration-250 ease-out",
-            {
-              // Collapsed: fixed overlay, slides offscreen unless hovered
-              "fixed top-0 left-0 z-50 h-full w-75 shadow-xl": collapsed,
-              "-translate-x-full": collapsed && !sidebarHovered,
-              "translate-x-0": collapsed && sidebarHovered,
-              // Expanded (pinned): static in layout
-              "w-75": !collapsed,
-            },
+            "flex shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out",
+            { "w-14": collapsed, "w-75": !collapsed },
           )}
         >
           <div className="flex items-center justify-between border-b h-9">
@@ -960,7 +914,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                       {showTocPopover ? (
                         <WorkspaceTocPopoverItem
                           book={book}
-                          collapsed={false}
+                          collapsed={collapsed}
                           toc={bookToc}
                           onOpenBook={(e) => openBook(book, e.metaKey || e.ctrlKey)}
                           isOpen={openBookIds.has(book.id)}
@@ -970,14 +924,16 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                           type="button"
                           onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
                           className={cn(
-                            "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-accent",
+                            "flex w-full items-center rounded-md text-left hover:bg-accent",
                             {
+                              "justify-center p-1.5": collapsed,
+                              "gap-3 px-3 py-2": !collapsed,
                               "bg-accent/50": openBookIds.has(book.id),
                             },
                           )}
                           title={book.title}
                         >
-                          <WorkspaceSidebarBookContent book={book} collapsed={false} />
+                          <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
                         </button>
                       )}
                       <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
