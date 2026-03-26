@@ -214,12 +214,20 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.dockview-theme-app .dv-tab {
+  border-top: none !important;
+  border-bottom: none !important;
+}
+
 .dockview-theme-app .dv-tab.dv-inactive-tab {
   border-right: 1px solid var(--border);
 }
 
 .dockview-theme-app .dv-tab.dv-active-tab {
   outline: none !important;
+  border-bottom: none !important;
+  border-top: none !important;
+  border-right: 1px solid var(--border);
 }
 
 .dockview-theme-app .dv-tab .dv-default-tab .dv-default-tab-action {
