@@ -9,14 +9,21 @@ import {
   type IWatermarkPanelProps,
   type DockviewTheme,
 } from "dockview";
-import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings, Upload, Columns2 } from "lucide-react";
+import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings, Upload, Columns2, Ellipsis, Trash2, FileText } from "lucide-react";
 import { BookCover, TocList } from "~/components/book-list";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import type { Route } from "./+types/workspace";
 import { BookService, type Book } from "~/lib/book-store";
+import { AnnotationService } from "~/lib/annotations-store";
 import { parseEpubEffect } from "~/lib/epub-service";
 import { DropZone } from "~/components/drop-zone";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import type { TocEntry } from "~/lib/reader-context";
 import { WorkspaceService } from "~/lib/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -242,6 +249,35 @@ function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
     openNotebookGlobal?.(book);
   }, []);
 
+  const handleDeleteBook = useCallback(async (bookId: string) => {
+    const confirmed = window.confirm("Are you sure you want to delete this book?");
+    if (!confirmed) return;
+
+    const program = Effect.gen(function* () {
+      const bookSvc = yield* BookService;
+      const annotationSvc = yield* AnnotationService;
+
+      // Delete all highlights for this book
+      const highlights = yield* annotationSvc.getHighlightsByBook(bookId);
+      for (const hl of highlights) {
+        yield* annotationSvc.deleteHighlight(hl.id);
+      }
+
+      // Delete the book itself
+      yield* bookSvc.deleteBook(bookId);
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error("Failed to delete book:", error);
+        }),
+      ),
+    );
+
+    await AppRuntime.runPromise(program);
+    booksRefGlobal = booksRefGlobal.filter((b) => b.id !== bookId);
+    booksChangeListener?.();
+  }, []);
+
   const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
@@ -306,44 +342,74 @@ function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 md:grid-cols-4">
-          {books.map((book) => (
-            <div key={book.id} className="group relative">
-              <button
-                type="button"
-                onClick={() => handleOpenBook(book)}
-                className="block w-full text-left"
-              >
-                <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
-                  {book.coverImage ? (
-                    <BookCover coverImage={book.coverImage} />
-                  ) : (
-                    <div className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg bg-muted p-3 text-center">
-                      <BookOpen className="mb-2 size-8 text-muted-foreground/50" />
-                      <p className="line-clamp-3 text-sm font-medium text-muted-foreground">
-                        {book.title}
-                      </p>
-                      {book.author && (
-                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/70">
-                          {book.author}
+        <div className="p-4 md:p-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            {books.map((book) => (
+              <div key={book.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => handleOpenBook(book)}
+                  className="block w-full text-left"
+                >
+                  <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
+                    {book.coverImage ? (
+                      <BookCover coverImage={book.coverImage} />
+                    ) : (
+                      <div className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg bg-muted p-3 text-center">
+                        <BookOpen className="mb-2 size-8 text-muted-foreground/50" />
+                        <p className="line-clamp-3 text-sm font-medium text-muted-foreground">
+                          {book.title}
                         </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
-                <p className="truncate text-xs text-muted-foreground">{book.author}</p>
-              </button>
+                        {book.author && (
+                          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/70">
+                            {book.author}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
+                  <p className="truncate text-xs text-muted-foreground">{book.author}</p>
+                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/70 focus-visible:opacity-100 group-hover:opacity-100"
+                    render={<button type="button" />}
+                    onClick={(e) => e.preventDefault()}
+                  >
+                    <Ellipsis className="size-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        window.location.href = `/books/${book.id}/details`;
+                      }}
+                    >
+                      <FileText className="size-4" />
+                      Details
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onClick={() => handleDeleteBook(book.id)}
+                    >
+                      <Trash2 className="size-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ))}
+            <div>
               <button
                 type="button"
-                onClick={() => handleOpenNotebook(book)}
-                className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/70 group-hover:opacity-100"
-                title="Open notes"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/50 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:bg-muted"
               >
-                <NotebookPen className="size-3.5" />
+                <Plus className="mb-2 size-8" />
+                <span className="text-sm font-medium">Add book</span>
               </button>
             </div>
-          ))}
+          </div>
         </div>
       )}
     </div>
