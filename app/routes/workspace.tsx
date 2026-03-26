@@ -10,7 +10,19 @@ import {
   type DockviewTheme,
   type IDockviewHeaderActionsProps,
 } from "dockview";
-import { BookOpen, NotebookPen, Plus, ArrowUpDown, Settings, Upload, Columns2, Ellipsis, Trash2, PanelLeft, PanelLeftClose } from "lucide-react";
+import {
+  BookOpen,
+  NotebookPen,
+  Plus,
+  ArrowUpDown,
+  Settings,
+  Upload,
+  Columns2,
+  Ellipsis,
+  Trash2,
+  PanelLeft,
+  PanelLeftClose,
+} from "lucide-react";
 import { BookCover, TocList } from "~/components/book-list";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -460,9 +472,7 @@ function WatermarkPanel(_props: IWatermarkPanelProps) {
           </div>
         </div>
 
-        <h2 className="text-lg font-medium text-foreground">
-          Drop an epub here to start reading
-        </h2>
+        <h2 className="text-lg font-medium text-foreground">Drop an epub here to start reading</h2>
 
         <button
           type="button"
@@ -623,8 +633,6 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(new Set());
   // Track total panel count for dynamic document title
   const [panelCount, setPanelCount] = useState(0);
-
-
 
   // Load last-opened timestamps for sorting
   const { data: lastOpenedMap } = useEffectQuery(
@@ -1028,61 +1036,70 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                 {!collapsed && openBooks.length > 0 && otherBooks.length > 0 && (
                   <li className="my-1 border-b border-border/50" />
                 )}
-                {!collapsed && otherBooks.map((book) => {
-                  const bookToc = findTocForBook(book.id);
-                  const showTocPopover = bookToc && bookToc.length > 0;
+                {!collapsed &&
+                  otherBooks.map((book) => {
+                    const bookToc = findTocForBook(book.id);
+                    const showTocPopover = bookToc && bookToc.length > 0;
 
-                  return (
-                    <li key={book.id} className="group/book relative">
-                      {showTocPopover ? (
-                        <WorkspaceTocPopoverItem
-                          book={book}
-                          collapsed={collapsed}
-                          toc={bookToc}
-                          onOpenBook={(e) => openBook(book, e.metaKey || e.ctrlKey)}
-                          isOpen={false}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
-                          className={cn(
-                            "flex w-full items-center rounded-md text-left hover:bg-accent",
-                            { "gap-3 px-3 py-2": !collapsed },
-                          )}
-                          title={book.title}
-                        >
-                          <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
-                        </button>
-                      )}
-                      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
-                        <button
-                          type="button"
-                          onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Open book"
-                        >
-                          <BookOpen className="size-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openNotebook(book)}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Open notebook"
-                        >
-                          <NotebookPen className="size-3.5" />
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
+                    return (
+                      <li key={book.id} className="group/book relative">
+                        {showTocPopover ? (
+                          <WorkspaceTocPopoverItem
+                            book={book}
+                            collapsed={collapsed}
+                            toc={bookToc}
+                            onOpenBook={(e) => openBook(book, e.metaKey || e.ctrlKey)}
+                            isOpen={false}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
+                            className={cn(
+                              "flex w-full items-center rounded-md text-left hover:bg-accent",
+                              { "gap-3 px-3 py-2": !collapsed },
+                            )}
+                            title={book.title}
+                          >
+                            <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
+                          </button>
+                        )}
+                        <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
+                          <button
+                            type="button"
+                            onClick={(e) => openBook(book, e.metaKey || e.ctrlKey)}
+                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            title="Open book"
+                          >
+                            <BookOpen className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openNotebook(book)}
+                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            title="Open notebook"
+                          >
+                            <NotebookPen className="size-3.5" />
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
               </ul>
             )}
           </ScrollArea>
-          <div className={cn("border-t h-10 flex items-center @container", { "justify-between px-1": !collapsed, "justify-center": collapsed })}>
+          <div
+            className={cn("border-t h-10 flex items-center @container", {
+              "justify-between px-1": !collapsed,
+              "justify-center": collapsed,
+            })}
+          >
             <Link
               to="/settings"
-              className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground", { "mx-auto": collapsed })}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground",
+                { "mx-auto": collapsed },
+              )}
               title="Settings"
             >
               <Settings className="size-4" />
