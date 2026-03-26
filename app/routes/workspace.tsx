@@ -534,11 +534,11 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       if ((e.metaKey || e.ctrlKey) && e.key === "b") {
         e.preventDefault();
         updateSettings({ sidebarCollapsed: !collapsed });
-        // After the sidebar CSS transition completes (200ms), notify dockview
+        // After the sidebar CSS transition completes, notify dockview
         // and epub renditions that the container dimensions changed.
         setTimeout(() => {
           window.dispatchEvent(new Event("resize"));
-        }, 220);
+        }, 270);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
