@@ -68,6 +68,11 @@ let tocChangeListener: (() => void) | null = null;
 let dockviewApiRef: DockviewApi | null = null;
 // Module-level ref to file input so WatermarkPanel can trigger uploads
 let fileInputRefGlobal: React.RefObject<HTMLInputElement | null> | null = null;
+// Module-level refs for NewTabPanel: books list and openBook/openNotebook callbacks
+let booksRefGlobal: Book[] = [];
+let booksChangeListener: (() => void) | null = null;
+let openBookGlobal: ((book: Book) => void) | null = null;
+let openNotebookGlobal: ((book: Book) => void) | null = null;
 
 // Helpers to look up panel-keyed maps by bookId
 function findNavForBook(bookId: string): ((cfi: string) => void) | undefined {
@@ -216,9 +221,139 @@ function NotebookPanel({ params }: IDockviewPanelProps<{ bookId: string; bookTit
   );
 }
 
+function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
+  const [books, setBooks] = useState<Book[]>(booksRefGlobal);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Subscribe to book list changes
+    const prev = booksChangeListener;
+    booksChangeListener = () => setBooks([...booksRefGlobal]);
+    return () => {
+      booksChangeListener = prev;
+    };
+  }, []);
+
+  const handleOpenBook = useCallback((book: Book) => {
+    openBookGlobal?.(book);
+  }, []);
+
+  const handleOpenNotebook = useCallback((book: Book) => {
+    openNotebookGlobal?.(book);
+  }, []);
+
+  const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      if (!file.name.endsWith(".epub")) continue;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
+        const book: Book = {
+          id: crypto.randomUUID(),
+          title: metadata.title,
+          author: metadata.author,
+          coverImage: metadata.coverImage,
+          data: arrayBuffer,
+        };
+        await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
+        // Update the module-level books and notify listeners
+        booksRefGlobal = [...booksRefGlobal, book];
+        booksChangeListener?.();
+        openBookGlobal?.(book);
+      } catch (err) {
+        console.error("Failed to add book:", err);
+      }
+    }
+    e.target.value = "";
+  }, []);
+
+  return (
+    <div className="flex h-full flex-col overflow-y-auto bg-background">
+      <div className="flex items-center justify-between border-b px-4 py-3">
+        <h2 className="text-sm font-medium text-foreground">Library</h2>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+        >
+          <Upload className="size-3.5" />
+          Add book
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".epub"
+          multiple
+          className="hidden"
+          onChange={handleFileInput}
+        />
+      </div>
+      {books.length === 0 ? (
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="flex flex-col items-center text-center">
+            <BookOpen className="mb-3 size-10 text-muted-foreground/40" />
+            <p className="text-sm text-muted-foreground">No books yet</p>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+            >
+              <Upload className="size-3.5" />
+              Upload an epub
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 md:grid-cols-4">
+          {books.map((book) => (
+            <div key={book.id} className="group relative">
+              <button
+                type="button"
+                onClick={() => handleOpenBook(book)}
+                className="block w-full text-left"
+              >
+                <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
+                  {book.coverImage ? (
+                    <BookCover coverImage={book.coverImage} />
+                  ) : (
+                    <div className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-lg bg-muted p-3 text-center">
+                      <BookOpen className="mb-2 size-8 text-muted-foreground/50" />
+                      <p className="line-clamp-3 text-sm font-medium text-muted-foreground">
+                        {book.title}
+                      </p>
+                      {book.author && (
+                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground/70">
+                          {book.author}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
+                <p className="truncate text-xs text-muted-foreground">{book.author}</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenNotebook(book)}
+                className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/70 group-hover:opacity-100"
+                title="Open notes"
+              >
+                <NotebookPen className="size-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any>>> = {
   "book-reader": BookReaderPanel,
   notebook: NotebookPanel,
+  "new-tab": NewTabPanel,
 };
 
 // --- Empty state watermark ---
@@ -393,8 +528,10 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Expose to module-level so WatermarkPanel can trigger uploads
+  // Expose to module-level so WatermarkPanel and NewTabPanel can trigger uploads
   fileInputRefGlobal = fileInputRef;
+  // Sync books to module-level so NewTabPanel can read them
+  booksRefGlobal = books;
   // Track which books have TOC data via a version counter (triggers re-render)
   const [tocVersion, setTocVersion] = useState(0);
   // Track which books currently have open panels in dockview
@@ -545,6 +682,19 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [collapsed, updateSettings]);
 
+  const openNewTab = useCallback(() => {
+    const api = apiRef.current;
+    if (!api) return;
+
+    const panelId = `new-tab-${crypto.randomUUID().slice(0, 8)}`;
+    api.addPanel({
+      id: panelId,
+      component: "new-tab",
+      title: "Library",
+      params: {},
+    });
+  }, []);
+
   const openBook = useCallback((book: Book, forceNew = false) => {
     const api = apiRef.current;
     if (!api) return;
@@ -566,6 +716,9 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       }
     }
 
+    // Check if this will be the first panel (companion new-tab logic)
+    const isFirstPanel = api.panels.length === 0;
+
     const panelId = `book-${book.id}-${crypto.randomUUID().slice(0, 8)}`;
     api.addPanel({
       id: panelId,
@@ -574,6 +727,18 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
       params: { bookId: book.id, bookTitle: book.title },
       renderer: "always",
     });
+
+    // When opening the first panel, add a companion new-tab panel to its right
+    if (isFirstPanel) {
+      const newTabId = `new-tab-${crypto.randomUUID().slice(0, 8)}`;
+      api.addPanel({
+        id: newTabId,
+        component: "new-tab",
+        title: "Library",
+        params: {},
+        position: { referencePanel: panelId, direction: "right" },
+      });
+    }
   }, []);
 
   const openNotebook = useCallback((book: Book) => {
@@ -609,34 +774,46 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
     });
   }, []);
 
-  const handleBookAdded = useCallback((book: Book) => {
-    setBooks((prev) => [...prev, book]);
-  }, []);
+  const handleBookAdded = useCallback(
+    (book: Book) => {
+      setBooks((prev) => [...prev, book]);
+      openBook(book);
+    },
+    [openBook],
+  );
 
-  const handleFileInput = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    for (const file of Array.from(files)) {
-      if (!file.name.endsWith(".epub")) continue;
-      try {
-        const arrayBuffer = await file.arrayBuffer();
-        const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
-        const book: Book = {
-          id: crypto.randomUUID(),
-          title: metadata.title,
-          author: metadata.author,
-          coverImage: metadata.coverImage,
-          data: arrayBuffer,
-        };
-        await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
-        setBooks((prev) => [...prev, book]);
-      } catch (err) {
-        console.error("Failed to add book:", err);
+  const handleFileInput = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (!files) return;
+      for (const file of Array.from(files)) {
+        if (!file.name.endsWith(".epub")) continue;
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const metadata = await AppRuntime.runPromise(parseEpubEffect(arrayBuffer));
+          const book: Book = {
+            id: crypto.randomUUID(),
+            title: metadata.title,
+            author: metadata.author,
+            coverImage: metadata.coverImage,
+            data: arrayBuffer,
+          };
+          await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(book))));
+          setBooks((prev) => [...prev, book]);
+          openBook(book);
+        } catch (err) {
+          console.error("Failed to add book:", err);
+        }
       }
-    }
-    // Reset input so the same file can be re-selected
-    e.target.value = "";
-  }, []);
+      // Reset input so the same file can be re-selected
+      e.target.value = "";
+    },
+    [openBook],
+  );
+
+  // Sync module-level callbacks so NewTabPanel can open books/notebooks
+  openBookGlobal = openBook;
+  openNotebookGlobal = openNotebook;
 
   return (
     <DropZone onBookAdded={handleBookAdded}>
@@ -764,7 +941,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
               </ul>
             )}
           </ScrollArea>
-          <div className="border-t h-10 flex items-center @container">
+          <div className="border-t h-10 flex items-center justify-between px-1 @container">
             <Link
               to="/settings"
               className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -773,6 +950,15 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
               <Settings className="size-4" />
               <span>Settings</span>
             </Link>
+            <button
+              type="button"
+              onClick={openNewTab}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Open library panel"
+            >
+              <Plus className="size-4" />
+              <span>New tab</span>
+            </button>
           </div>
         </aside>
 
