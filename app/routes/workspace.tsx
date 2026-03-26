@@ -50,6 +50,7 @@ import {
 } from "~/components/workspace-book-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
 import { truncateTitle, sortBooks } from "~/lib/workspace-utils";
+import { WorkspaceProvider, useWorkspace } from "~/lib/workspace-context";
 
 /** Delay after sidebar CSS transition before dispatching resize (ms) */
 const SIDEBAR_TRANSITION_MS = 270;
@@ -76,86 +77,47 @@ export function HydrateFallback() {
 }
 
 
-
-// --- Navigation & TOC coordination ---
-// Map of panelId -> navigateToCfi callback, shared across panels
-const navigationMap = new Map<string, (cfi: string) => void>();
-// Map of panelId -> TOC entries, populated by WorkspaceBookReader panels
-const tocMap = new Map<string, TocEntry[]>();
-// Map of bookId -> appendHighlightReference callback, registered by WorkspaceNotebook panels
-const notebookCallbackMap = new Map<
-  string,
-  (attrs: { highlightId: string; cfiRange: string; text: string }) => void
->();
-// Listeners notified when tocMap changes (so React can re-render)
-let tocChangeListener: (() => void) | null = null;
-// Module-level ref to the top-level DockviewApi for cross-panel operations
-let dockviewApiRef: DockviewApi | null = null;
-// Module-level ref to file input so WatermarkPanel can trigger uploads
-let fileInputRefGlobal: React.RefObject<HTMLInputElement | null> | null = null;
-// Module-level refs for NewTabPanel: books list and openBook/openNotebook callbacks
-let booksRefGlobal: Book[] = [];
-let booksChangeListener: (() => void) | null = null;
-let openBookGlobal: ((book: Book) => void) | null = null;
-let openNotebookGlobal: ((book: Book) => void) | null = null;
-
-// Helpers to look up panel-keyed maps by bookId
-function findNavForBook(bookId: string): ((cfi: string) => void) | undefined {
-  const dockApi = dockviewApiRef;
-  if (!dockApi) return undefined;
-  for (const panel of dockApi.panels) {
-    if (
-      panel.id.startsWith("book-") &&
-      (panel.params as Record<string, unknown>)?.bookId === bookId
-    ) {
-      const nav = navigationMap.get(panel.id);
-      if (nav) return nav;
-    }
-  }
-  return undefined;
-}
-
-function findTocForBook(bookId: string): TocEntry[] | undefined {
-  const dockApi = dockviewApiRef;
-  if (!dockApi) return undefined;
-  for (const panel of dockApi.panels) {
-    if (
-      panel.id.startsWith("book-") &&
-      (panel.params as Record<string, unknown>)?.bookId === bookId
-    ) {
-      const toc = tocMap.get(panel.id);
-      if (toc && toc.length > 0) return toc;
-    }
-  }
-  return undefined;
-}
-
 // --- Panel components ---
 
 function BookReaderPanel({
   params,
   api,
 }: IDockviewPanelProps<{ bookId: string; bookTitle?: string } & PanelTypographyParams>) {
-  const handleRegister = useCallback((panelId: string, nav: (cfi: string) => void) => {
-    navigationMap.set(panelId, nav);
-  }, []);
+  const { navigationMap, tocMap, tocChangeListener, dockviewApi, notebookCallbackMap } =
+    useWorkspace();
 
-  const handleUnregister = useCallback((panelId: string) => {
-    navigationMap.delete(panelId);
-  }, []);
+  const handleRegister = useCallback(
+    (panelId: string, nav: (cfi: string) => void) => {
+      navigationMap.current.set(panelId, nav);
+    },
+    [navigationMap],
+  );
 
-  const handleRegisterToc = useCallback((panelId: string, toc: TocEntry[]) => {
-    tocMap.set(panelId, toc);
-    tocChangeListener?.();
-  }, []);
+  const handleUnregister = useCallback(
+    (panelId: string) => {
+      navigationMap.current.delete(panelId);
+    },
+    [navigationMap],
+  );
 
-  const handleUnregisterToc = useCallback((panelId: string) => {
-    tocMap.delete(panelId);
-    tocChangeListener?.();
-  }, []);
+  const handleRegisterToc = useCallback(
+    (panelId: string, toc: TocEntry[]) => {
+      tocMap.current.set(panelId, toc);
+      tocChangeListener.current?.();
+    },
+    [tocMap, tocChangeListener],
+  );
+
+  const handleUnregisterToc = useCallback(
+    (panelId: string) => {
+      tocMap.current.delete(panelId);
+      tocChangeListener.current?.();
+    },
+    [tocMap, tocChangeListener],
+  );
 
   const handleOpenNotebook = useCallback(() => {
-    const dockApi = dockviewApiRef;
+    const dockApi = dockviewApi.current;
     if (!dockApi) return;
 
     const panelId = `notebook-${params.bookId}`;
@@ -174,17 +136,16 @@ function BookReaderPanel({
       renderer: "always",
       position: { referencePanel: api.id, direction: "right" },
     });
-  }, [params.bookId, params.bookTitle]);
+  }, [dockviewApi, params.bookId, params.bookTitle, api.id]);
 
   const handleHighlightCreated = useCallback(
     (highlight: { highlightId: string; cfiRange: string; text: string }) => {
-      // Look up the notebook's appendHighlightReference callback
-      const appendFn = notebookCallbackMap.get(params.bookId);
+      const appendFn = notebookCallbackMap.current.get(params.bookId);
       if (appendFn) {
         appendFn(highlight);
       }
     },
-    [params.bookId],
+    [notebookCallbackMap, params.bookId],
   );
 
   // Extract per-panel typography overrides from dockview params (restored layout)
@@ -214,11 +175,13 @@ function BookReaderPanel({
 }
 
 function NotebookPanel({ params }: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
+  const { findNavForBook, notebookCallbackMap } = useWorkspace();
+
   const handleNavigateToCfi = useCallback(
     (cfi: string) => {
       findNavForBook(params.bookId)?.(cfi);
     },
-    [params.bookId],
+    [findNavForBook, params.bookId],
   );
 
   const handleRegisterAppendHighlight = useCallback(
@@ -226,14 +189,17 @@ function NotebookPanel({ params }: IDockviewPanelProps<{ bookId: string; bookTit
       bookId: string,
       fn: (attrs: { highlightId: string; cfiRange: string; text: string }) => void,
     ) => {
-      notebookCallbackMap.set(bookId, fn);
+      notebookCallbackMap.current.set(bookId, fn);
     },
-    [],
+    [notebookCallbackMap],
   );
 
-  const handleUnregisterAppendHighlight = useCallback((bookId: string) => {
-    notebookCallbackMap.delete(bookId);
-  }, []);
+  const handleUnregisterAppendHighlight = useCallback(
+    (bookId: string) => {
+      notebookCallbackMap.current.delete(bookId);
+    },
+    [notebookCallbackMap],
+  );
 
   return (
     <WorkspaceNotebook
@@ -248,36 +214,49 @@ function NotebookPanel({ params }: IDockviewPanelProps<{ bookId: string; bookTit
 
 
 function NewTabPanel(_props: IDockviewPanelProps<Record<string, never>>) {
-  const [books, setBooks] = useState<Book[]>(booksRefGlobal);
+  const ws = useWorkspace();
+  const [books, setBooks] = useState<Book[]>(ws.booksRef.current);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     // Subscribe to book list changes
-    const prev = booksChangeListener;
-    booksChangeListener = () => setBooks([...booksRefGlobal]);
+    const prev = ws.booksChangeListener.current;
+    ws.booksChangeListener.current = () => setBooks([...ws.booksRef.current]);
     return () => {
-      booksChangeListener = prev;
+      ws.booksChangeListener.current = prev;
     };
-  }, []);
+  }, [ws]);
 
-  const handleOpenBook = useCallback((book: Book) => {
-    openBookGlobal?.(book);
-  }, []);
+  const handleOpenBook = useCallback(
+    (book: Book) => {
+      ws.openBookRef.current?.(book);
+    },
+    [ws],
+  );
 
-  const handleOpenNotebook = useCallback((book: Book) => {
-    openNotebookGlobal?.(book);
-  }, []);
+  const handleOpenNotebook = useCallback(
+    (book: Book) => {
+      ws.openNotebookRef.current?.(book);
+    },
+    [ws],
+  );
 
-  const handleBookAddedNewTab = useCallback((book: Book) => {
-    booksRefGlobal = [...booksRefGlobal, book];
-    booksChangeListener?.();
-    openBookGlobal?.(book);
-  }, []);
+  const handleBookAddedNewTab = useCallback(
+    (book: Book) => {
+      ws.booksRef.current = [...ws.booksRef.current, book];
+      ws.booksChangeListener.current?.();
+      ws.openBookRef.current?.(book);
+    },
+    [ws],
+  );
 
-  const handleBookDeletedNewTab = useCallback((bookId: string) => {
-    booksRefGlobal = booksRefGlobal.filter((b) => b.id !== bookId);
-    booksChangeListener?.();
-  }, []);
+  const handleBookDeletedNewTab = useCallback(
+    (bookId: string) => {
+      ws.booksRef.current = ws.booksRef.current.filter((b) => b.id !== bookId);
+      ws.booksChangeListener.current?.();
+    },
+    [ws],
+  );
 
   const { handleDeleteBook } = useBookDeletion({ onBookDeleted: handleBookDeletedNewTab });
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAddedNewTab });
@@ -386,6 +365,8 @@ function LeftHeaderActions({ containerApi }: IDockviewHeaderActionsProps) {
 // --- Empty state watermark ---
 
 function WatermarkPanel(_props: IWatermarkPanelProps) {
+  const { fileInputRef } = useWorkspace();
+
   return (
     <div className="flex h-full items-center justify-center p-8">
       <div className="flex max-w-md flex-col items-center text-center">
@@ -403,7 +384,7 @@ function WatermarkPanel(_props: IWatermarkPanelProps) {
 
         <button
           type="button"
-          onClick={() => fileInputRefGlobal?.current?.click()}
+          onClick={() => fileInputRef.current?.click()}
           className="mt-5 inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
         >
           <Upload className="size-4" />
@@ -451,6 +432,7 @@ function WorkspaceTocPopoverItem({
   onOpenBook: (e: React.MouseEvent) => void;
   isOpen: boolean;
 }) {
+  const { findNavForBook } = useWorkspace();
   const [open, setOpen] = useState(false);
   const suppressHoverUntil = useRef(0);
 
@@ -473,7 +455,7 @@ function WorkspaceTocPopoverItem({
       findNavForBook(book.id)?.(href);
       setOpen(false);
     },
-    [book.id],
+    [findNavForBook, book.id],
   );
 
   return (
@@ -519,6 +501,15 @@ const SORT_OPTIONS: { value: WorkspaceSortBy; label: string }[] = [
 ];
 
 export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
+  return (
+    <WorkspaceProvider>
+      <WorkspaceRouteInner loaderData={loaderData} />
+    </WorkspaceProvider>
+  );
+}
+
+function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps["loaderData"] }) {
+  const ws = useWorkspace();
   const [books, setBooks] = useState<Book[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
@@ -526,11 +517,8 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  // Expose to module-level so WatermarkPanel and NewTabPanel can trigger uploads
-  fileInputRefGlobal = fileInputRef;
-  // Sync books to module-level so NewTabPanel can read them
-  booksRefGlobal = books;
+  // Sync books to context ref so NewTabPanel can read them
+  ws.booksRef.current = books;
   // Track which books have TOC data via a version counter (triggers re-render)
   const [tocVersion, setTocVersion] = useState(0);
   // Track which books currently have open panels in dockview
@@ -580,7 +568,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
-      dockviewApiRef = event.api;
+      ws.dockviewApi.current = event.api;
 
       // Try to restore saved layout
       AppRuntime.runPromise(
@@ -628,22 +616,22 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
         }),
       ];
     },
-    [saveLayout],
+    [saveLayout, ws],
   );
 
   // Register TOC change listener and cleanup on unmount
   useEffect(() => {
-    tocChangeListener = () => setTocVersion((v) => v + 1);
+    ws.tocChangeListener.current = () => setTocVersion((v) => v + 1);
     return () => {
-      tocChangeListener = null;
+      ws.tocChangeListener.current = null;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       for (const d of disposablesRef.current) d.dispose();
       disposablesRef.current = [];
-      navigationMap.clear();
-      tocMap.clear();
-      notebookCallbackMap.clear();
+      ws.navigationMap.current.clear();
+      ws.tocMap.current.clear();
+      ws.notebookCallbackMap.current.clear();
     };
-  }, []);
+  }, [ws]);
 
   // Update document title with panel count
   useEffect(() => {
@@ -769,9 +757,9 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
 
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
 
-  // Sync module-level callbacks so NewTabPanel can open books/notebooks
-  openBookGlobal = openBook;
-  openNotebookGlobal = openNotebook;
+  // Sync context refs so child panels can open books/notebooks and trigger uploads
+  ws.openBookRef.current = openBook;
+  ws.openNotebookRef.current = openNotebook;
 
   return (
     <DropZone onBookAdded={handleBookAdded}>
@@ -823,7 +811,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
               <div className="flex items-center gap-0.5">
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => ws.fileInputRef.current?.click()}
                   className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                   title="Add books"
                 >
@@ -845,7 +833,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
               </div>
             )}
             <input
-              ref={fileInputRef}
+              ref={ws.fileInputRef}
               type="file"
               accept=".epub"
               multiple
@@ -865,7 +853,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                 {/* tocVersion is read here to trigger re-render when TOC data changes */}
                 {void tocVersion}
                 {openBooks.map((book) => {
-                  const bookToc = findTocForBook(book.id);
+                  const bookToc = ws.findTocForBook(book.id);
                   const showTocPopover = bookToc && bookToc.length > 0;
 
                   return (
@@ -922,7 +910,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
                 )}
                 {!collapsed &&
                   otherBooks.map((book) => {
-                    const bookToc = findTocForBook(book.id);
+                    const bookToc = ws.findTocForBook(book.id);
                     const showTocPopover = bookToc && bookToc.length > 0;
 
                     return (
