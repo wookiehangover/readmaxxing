@@ -16,4 +16,5 @@ export default [
     "api/standard-ebooks/download",
     "routes/api.standard-ebooks.download.ts",
   ),
+  route("api/chat", "routes/api.chat.ts"),
 ] satisfies RouteConfig;
