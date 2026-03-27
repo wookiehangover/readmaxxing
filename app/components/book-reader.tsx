@@ -20,7 +20,7 @@ import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 import { cn } from "~/lib/utils";
 import { registerThemeColors } from "~/lib/epub-theme-utils";
-import { EPUB_IMAGE_CONTAINMENT_CSS, isBlankPage } from "~/lib/epub-rendering-utils";
+
 
 /** Debounce delay for persisting reading position changes (ms) */
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
@@ -81,7 +81,7 @@ export function BookReader({ book }: BookReaderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
   const renditionRef = useRef<Rendition | null>(null);
-  const blankAdvanceCountRef = useRef(0);
+
   const [settings, updateSettings] = useSettings();
   const layoutRef = useRef(settings.readerLayout);
   const typographyRef = useRef({
@@ -167,12 +167,6 @@ export function BookReader({ book }: BookReaderProps) {
         }
       `;
       doc.head.appendChild(highlightStyle);
-
-      // Constrain oversized images to prevent blank page pagination issues
-      const imgStyle = doc.createElement("style");
-      imgStyle.id = "reader-image-containment";
-      imgStyle.textContent = EPUB_IMAGE_CONTAINMENT_CSS;
-      doc.head.appendChild(imgStyle);
 
       // Forward arrow-key navigation from the epub iframe
       doc.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -270,17 +264,6 @@ export function BookReader({ book }: BookReaderProps) {
             ).catch((err) => console.error("Failed to save reading position:", err));
           }, POSITION_SAVE_DEBOUNCE_MS);
 
-          // Blank page auto-advance: skip pages with no visible content
-          // (safety net for SE-style titlepages that overflow epubjs pagination)
-          if (isBlankPage(rendition)) {
-            if (blankAdvanceCountRef.current < 3) {
-              blankAdvanceCountRef.current++;
-              rendition.next();
-              return;
-            }
-          } else {
-            blankAdvanceCountRef.current = 0;
-          }
         },
       );
     })();

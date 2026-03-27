@@ -21,7 +21,7 @@ import { registerThemeColors } from "~/lib/epub-theme-utils";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { DockviewPanelApi } from "dockview";
 import type { TocEntry } from "~/lib/reader-context";
-import { getTypographyCss, getRenditionOptions, EPUB_IMAGE_CONTAINMENT_CSS, isBlankPage } from "~/lib/epub-rendering-utils";
+import { getTypographyCss, getRenditionOptions } from "~/lib/epub-rendering-utils";
 
 /** Debounce delay for persisting reading position changes (ms) */
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
@@ -134,7 +134,7 @@ function WorkspaceBookReaderInner({
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
   const renditionRef = useRef<Rendition | null>(null);
-  const blankAdvanceCountRef = useRef(0);
+
   const [settings] = useSettings();
 
   // Per-panel typography overrides: initialized from panel params (restored layout)
@@ -288,12 +288,6 @@ function WorkspaceBookReaderInner({
       `;
       doc.head.appendChild(highlightStyle);
 
-      // Constrain oversized images to prevent blank page pagination issues
-      const imgStyle = doc.createElement("style");
-      imgStyle.id = "reader-image-containment";
-      imgStyle.textContent = EPUB_IMAGE_CONTAINMENT_CSS;
-      doc.head.appendChild(imgStyle);
-
       // Forward arrow-key navigation from the epub iframe
       doc.addEventListener("keydown", (e: KeyboardEvent) => {
         if (layoutRef.current === "scroll") return;
@@ -396,17 +390,6 @@ function WorkspaceBookReaderInner({
             }).catch((err) => console.error("Failed to save reading position:", err));
           }, POSITION_SAVE_DEBOUNCE_MS);
 
-          // Blank page auto-advance: skip pages with no visible content
-          // (safety net for SE-style titlepages that overflow epubjs pagination)
-          if (isBlankPage(rendition)) {
-            if (blankAdvanceCountRef.current < 3) {
-              blankAdvanceCountRef.current++;
-              rendition.next();
-              return;
-            }
-          } else {
-            blankAdvanceCountRef.current = 0;
-          }
         },
       );
     })();
