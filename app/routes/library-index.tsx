@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { Effect } from "effect";
-import { Ellipsis, FileText, Trash2 } from "lucide-react";
+import { Ellipsis, FileText, Globe, Trash2 } from "lucide-react";
 import { CoverImage, CoverPlaceholder, AddBookCard } from "~/components/book-grid";
 import type { Route } from "./+types/library-index";
 import { BookService, type Book } from "~/lib/book-store";
@@ -15,6 +15,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { Button } from "~/components/ui/button";
+import { StandardEbooksBrowser } from "~/components/standard-ebooks-browser";
 
 export function meta(_args: Route.MetaArgs) {
   return [{ title: "Reader" }, { name: "description", content: "A browser-based ebook reader" }];
@@ -41,6 +43,7 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
   const [books, setBooks] = useState<Book[]>(loaderData.books);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [seBrowserOpen, setSeBrowserOpen] = useState(false);
 
   const handleBookAdded = useCallback((book: Book) => {
     setBooks((prev) => [...prev, book]);
@@ -64,10 +67,14 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
         onChange={handleFileInput}
       />
       {books.length === 0 ? (
-        <div className="flex h-dvh items-center justify-center p-6">
+        <div className="flex h-dvh flex-col items-center justify-center gap-4 p-6">
           <div className="w-40">
             <AddBookCard onClick={() => fileInputRef.current?.click()} />
           </div>
+          <Button variant="outline" size="sm" onClick={() => setSeBrowserOpen(true)}>
+            <Globe className="size-4" />
+            Browse Standard Ebooks
+          </Button>
         </div>
       ) : (
         <div className="h-dvh overflow-y-auto p-4 md:p-6">
@@ -112,9 +119,24 @@ export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
             <div>
               <AddBookCard onClick={() => fileInputRef.current?.click()} />
             </div>
+            <div>
+              <button
+                type="button"
+                onClick={() => setSeBrowserOpen(true)}
+                className="flex aspect-[2/3] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground"
+              >
+                <Globe className="size-6" />
+                <span className="text-xs font-medium">Standard Ebooks</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
+      <StandardEbooksBrowser
+        open={seBrowserOpen}
+        onOpenChange={setSeBrowserOpen}
+        onBookAdded={handleBookAdded}
+      />
     </DropZone>
   );
 }
