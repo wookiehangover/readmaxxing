@@ -75,6 +75,7 @@ export function registerThemeColors(rendition: {
     body: {
       color: `${lightColors.foreground} !important`,
       background: `${lightColors.background} !important`,
+      overflow: "hidden !important",
     },
     a: { color: "inherit !important" },
     img: imgContainment,
@@ -83,6 +84,7 @@ export function registerThemeColors(rendition: {
     body: {
       color: `${darkColors.foreground} !important`,
       background: `${darkColors.background} !important`,
+      overflow: "hidden !important",
     },
     a: { color: "inherit !important" },
     img: imgContainment,
