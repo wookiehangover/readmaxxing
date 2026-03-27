@@ -244,6 +244,55 @@ function WorkspaceBookReaderInner({
   const searchOpenRef = useRef(searchOpen);
   searchOpenRef.current = searchOpen;
 
+  // Intercept Cmd/Ctrl+F on the parent document (when focus is outside the iframe)
+  useEffect(() => {
+    const handleFindShortcut = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        // Only intercept if this panel (or a descendant) has focus
+        if (
+          !panelRef.current?.contains(document.activeElement) &&
+          document.activeElement !== panelRef.current
+        )
+          return;
+        e.preventDefault();
+        e.stopPropagation();
+        setSearchOpen(true);
+      }
+    };
+
+    document.addEventListener("keydown", handleFindShortcut);
+    return () => {
+      document.removeEventListener("keydown", handleFindShortcut);
+    };
+  }, []);
+
+  // Add/remove search highlight styling in the epub iframe
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+
+    const styleId = "reader-search-highlights";
+    const css = `
+      .search-highlight {
+        background-color: rgba(59, 130, 246, 0.3) !important;
+        border-bottom: 2px solid rgba(59, 130, 246, 0.8) !important;
+      }
+    `;
+
+    const contents = (rendition as any).getContents() as any[];
+    contents.forEach((content: any) => {
+      const doc = content.document;
+      if (!doc) return;
+      let style = doc.getElementById(styleId);
+      if (!style) {
+        style = doc.createElement("style");
+        style.id = styleId;
+        doc.head.appendChild(style);
+      }
+      style.textContent = searchResults.length > 0 ? css : "";
+    });
+  }, [searchResults]);
+
   const flushPositionSave = useCallback(() => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
