@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useParams } from "react-router";
+import { Search } from "lucide-react";
+import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import type { Book } from "~/lib/book-store";
@@ -148,10 +150,27 @@ function TocPopoverItem({
   );
 }
 
+export const FILTER_THRESHOLD = 9;
+
+export function filterBooks(books: Book[], query: string): Book[] {
+  const q = query.toLowerCase();
+  return books.filter(
+    (book) =>
+      book.title.toLowerCase().includes(q) || (book.author && book.author.toLowerCase().includes(q)),
+  );
+}
+
 export function BookList({ books, collapsed = false }: BookListProps) {
   const params = useParams();
   const activeBookId = params.id;
   const { toc, navigateToHref } = useReaderNavigation();
+  const [filterQuery, setFilterQuery] = useState("");
+
+  const showFilter = !collapsed && books.length > FILTER_THRESHOLD;
+  const filteredBooks = useMemo(
+    () => (filterQuery ? filterBooks(books, filterQuery) : books),
+    [books, filterQuery],
+  );
 
   if (books.length === 0) {
     return (
@@ -167,9 +186,23 @@ export function BookList({ books, collapsed = false }: BookListProps) {
   }
 
   return (
-    <ScrollArea className="min-h-0 flex-1">
-      <div className={cn("flex flex-col gap-1", collapsed ? "items-center p-1" : "p-2")}>
-        {books.map((book) => {
+    <div className="flex min-h-0 flex-1 flex-col">
+      {showFilter && (
+        <div className="px-2 pt-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              placeholder="Filter books…"
+              className="h-7 pl-7 text-xs"
+            />
+          </div>
+        </div>
+      )}
+      <ScrollArea className="min-h-0 flex-1">
+        <div className={cn("flex flex-col gap-1", collapsed ? "items-center p-1" : "p-2")}>
+          {filteredBooks.map((book) => {
           const isActive = book.id === activeBookId;
           const showTocPopover = isActive && toc.length > 0;
 
@@ -198,7 +231,8 @@ export function BookList({ books, collapsed = false }: BookListProps) {
             </NavLink>
           );
         })}
-      </div>
-    </ScrollArea>
+        </div>
+      </ScrollArea>
+    </div>
   );
 }

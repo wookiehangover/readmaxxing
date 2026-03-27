@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { Link } from "react-router";
 import {
   BookOpen,
@@ -8,8 +8,10 @@ import {
   Settings,
   PanelLeft,
   PanelLeftClose,
+  Search,
 } from "lucide-react";
-import { BookCover, TocList } from "~/components/book-list";
+import { BookCover, TocList, filterBooks, FILTER_THRESHOLD } from "~/components/book-list";
+import { Input } from "~/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import type { Book } from "~/lib/book-store";
@@ -146,6 +148,18 @@ export function WorkspaceSidebar({
   onFileInput,
 }: WorkspaceSidebarProps) {
   const ws = useWorkspace();
+  const [filterQuery, setFilterQuery] = useState("");
+
+  const totalBooks = openBooks.length + otherBooks.length;
+  const showFilter = !collapsed && totalBooks > FILTER_THRESHOLD;
+  const filteredOpenBooks = useMemo(
+    () => (filterQuery ? filterBooks(openBooks, filterQuery) : openBooks),
+    [openBooks, filterQuery],
+  );
+  const filteredOtherBooks = useMemo(
+    () => (filterQuery ? filterBooks(otherBooks, filterQuery) : otherBooks),
+    [otherBooks, filterQuery],
+  );
 
   return (
     <aside
@@ -224,6 +238,19 @@ export function WorkspaceSidebar({
           onChange={onFileInput}
         />
       </div>
+      {showFilter && (
+        <div className="px-2 pt-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              placeholder="Filter books…"
+              className="h-7 pl-7 text-xs"
+            />
+          </div>
+        </div>
+      )}
       <ScrollArea className="min-h-0 flex-1" hideScrollbar>
         {openBooks.length === 0 && otherBooks.length === 0 ? (
           !collapsed && (
@@ -235,7 +262,7 @@ export function WorkspaceSidebar({
           <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
             {/* tocVersion is read here to trigger re-render when TOC data changes */}
             {void tocVersion}
-            {openBooks.map((book) => {
+            {filteredOpenBooks.map((book) => {
               const bookToc = ws.findTocForBook(book.id);
               const showTocPopover = bookToc && bookToc.length > 0;
 
@@ -288,11 +315,11 @@ export function WorkspaceSidebar({
                 </li>
               );
             })}
-            {!collapsed && openBooks.length > 0 && otherBooks.length > 0 && (
+            {!collapsed && filteredOpenBooks.length > 0 && filteredOtherBooks.length > 0 && (
               <li className="my-1 border-b border-border/50" />
             )}
             {!collapsed &&
-              otherBooks.map((book) => {
+              filteredOtherBooks.map((book) => {
                 const bookToc = ws.findTocForBook(book.id);
                 const showTocPopover = bookToc && bookToc.length > 0;
 
