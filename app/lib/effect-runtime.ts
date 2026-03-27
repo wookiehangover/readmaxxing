@@ -4,6 +4,7 @@ import { BookServiceLive } from "~/lib/book-store";
 import { EpubServiceLive } from "~/lib/epub-service";
 import { StandardEbooksServiceLive } from "~/lib/standard-ebooks";
 import { WorkspaceServiceLive } from "~/lib/workspace-store";
+import { ChatServiceLive } from "~/lib/chat-store";
 
 /**
  * Application-wide layer that composes all service layers.
@@ -15,6 +16,7 @@ export const AppLayer = Layer.mergeAll(
   AnnotationServiceLive,
   StandardEbooksServiceLive,
   WorkspaceServiceLive,
+  ChatServiceLive,
 );
 
 /**
