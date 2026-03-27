@@ -4,6 +4,8 @@
 @import "@fontsource-variable/geist";
 @import "dockview/dist/styles/dockview.css";
 
+@plugin "@tailwindcss/typography";
+
 @font-face {
   font-family: "Geist";
   src: url("/fonts/Geist[wght].woff2") format("woff2");

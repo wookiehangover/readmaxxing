@@ -104,7 +104,7 @@ export function AnnotationsPanel({
             </div>
           </div>
 
-          <ScrollArea className="flex-1">
+          <ScrollArea className="min-h-0 flex-1">
             {loaded && (
               <TiptapEditor
                 ref={editorRef}

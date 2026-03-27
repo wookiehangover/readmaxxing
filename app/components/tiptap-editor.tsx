@@ -1,6 +1,7 @@
 import { useEditor, EditorContent, NodeViewWrapper } from "@tiptap/react";
 import type { ReactNodeViewProps, JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { Markdown } from "tiptap-markdown";
 import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import {
   HighlightReference,
@@ -49,6 +50,10 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
   const editor = useEditor({
     extensions: [
       StarterKit,
+      Markdown.configure({
+        transformPastedText: true,
+        transformCopiedText: false,
+      }),
       HighlightReference.configure({
         component: HighlightReferenceView,
       }),
