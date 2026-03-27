@@ -1,4 +1,5 @@
 import type { ReaderLayout } from "~/lib/settings";
+import type Rendition from "epubjs/types/rendition";
 
 /**
  * CSS to prevent oversized images from breaking epubjs pagination.
@@ -64,4 +65,41 @@ export function getRenditionOptions(layout: ReaderLayout) {
     default:
       return { spread: "none" as const, flow: "paginated" as const };
   }
+}
+
+/**
+ * Detect blank overflow pages by sampling the iframe viewport with
+ * `document.elementFromPoint()`. If all sample points hit only body/html/section,
+ * the page is blank. This works correctly in paginated mode where epubjs returns
+ * the same document for all pages within a spine item.
+ */
+export function isBlankPage(rendition: Rendition): boolean {
+  const contents = (rendition as any).getContents?.() as any[];
+  if (!contents || contents.length === 0) return false;
+
+  const content = contents[0];
+  const doc = content?.document as Document | undefined;
+  const win = content?.window as Window | undefined;
+  if (!doc || !win) return false;
+
+  const w = win.innerWidth;
+  const h = win.innerHeight;
+  if (w === 0 || h === 0) return false;
+
+  const samplePoints: [number, number][] = [
+    [w * 0.5, h * 0.5],
+    [w * 0.25, h * 0.25],
+    [w * 0.75, h * 0.75],
+    [w * 0.5, h * 0.25],
+    [w * 0.5, h * 0.75],
+  ];
+
+  for (const [x, y] of samplePoints) {
+    const el = doc.elementFromPoint(x, y);
+    if (el && el.tagName !== "HTML" && el.tagName !== "BODY" && el.tagName !== "SECTION") {
+      return false;
+    }
+  }
+
+  return true;
 }

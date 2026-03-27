@@ -21,7 +21,7 @@ import { registerThemeColors } from "~/lib/epub-theme-utils";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { DockviewPanelApi } from "dockview";
 import type { TocEntry } from "~/lib/reader-context";
-import { getTypographyCss, getRenditionOptions, EPUB_IMAGE_CONTAINMENT_CSS } from "~/lib/epub-rendering-utils";
+import { getTypographyCss, getRenditionOptions, EPUB_IMAGE_CONTAINMENT_CSS, isBlankPage } from "~/lib/epub-rendering-utils";
 
 /** Debounce delay for persisting reading position changes (ms) */
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
@@ -398,25 +398,14 @@ function WorkspaceBookReaderInner({
 
           // Blank page auto-advance: skip pages with no visible content
           // (safety net for SE-style titlepages that overflow epubjs pagination)
-          const contents = (rendition as any).getContents?.() as any[] | undefined;
-          if (contents && contents.length > 0) {
-            const doc = contents[0]?.document;
-            const body = doc?.body;
-            if (body) {
-              const text = body.innerText?.trim();
-              const hasVisibleImages = Array.from(body.querySelectorAll("img") as NodeListOf<HTMLImageElement>).some(
-                (img) => img.offsetHeight > 0 && img.offsetWidth > 0,
-              );
-              if (!text && !hasVisibleImages) {
-                if (blankAdvanceCountRef.current < 3) {
-                  blankAdvanceCountRef.current++;
-                  rendition.next();
-                  return;
-                }
-              } else {
-                blankAdvanceCountRef.current = 0;
-              }
+          if (isBlankPage(rendition)) {
+            if (blankAdvanceCountRef.current < 3) {
+              blankAdvanceCountRef.current++;
+              rendition.next();
+              return;
             }
+          } else {
+            blankAdvanceCountRef.current = 0;
           }
         },
       );
