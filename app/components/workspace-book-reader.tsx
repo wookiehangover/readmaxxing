@@ -256,6 +256,7 @@ function WorkspaceBookReaderInner({
       height: "100%",
       spread: opts.spread,
       flow: opts.flow,
+      allowScriptedContent: true,
       ...("gap" in opts && { gap: opts.gap }),
     });
     renditionRef.current = rendition;
