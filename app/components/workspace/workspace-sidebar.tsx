@@ -154,7 +154,7 @@ export function WorkspaceSidebar({
         { "w-14": collapsed, "w-75": !collapsed },
       )}
     >
-      <div className="flex items-center justify-between border-b h-9">
+      <div className="flex items-center justify-between border-b h-9 px-2">
         {!collapsed && (
           <div className="relative">
             <ArrowUpDown className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
