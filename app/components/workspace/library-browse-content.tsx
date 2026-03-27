@@ -41,17 +41,14 @@ export function LibraryBrowseContent() {
 
   const handleBookAdded = useCallback(
     (book: Book) => {
-      ws.booksRef.current = [...ws.booksRef.current, book];
-      ws.booksChangeListener.current?.();
-      ws.openBookRef.current?.(book);
+      ws.onBookAddedRef.current?.(book);
     },
     [ws],
   );
 
   const handleBookDeleted = useCallback(
     (bookId: string) => {
-      ws.booksRef.current = ws.booksRef.current.filter((b) => b.id !== bookId);
-      ws.booksChangeListener.current?.();
+      ws.onBookDeletedRef.current?.(bookId);
     },
     [ws],
   );

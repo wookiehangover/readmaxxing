@@ -9,9 +9,7 @@ export function StandardEbooksPanel(_props: IDockviewPanelProps<Record<string, n
 
   const handleBookAdded = useCallback(
     (book: Book) => {
-      ws.booksRef.current = [...ws.booksRef.current, book];
-      ws.booksChangeListener.current?.();
-      ws.openBookRef.current?.(book);
+      ws.onBookAddedRef.current?.(book);
     },
     [ws],
   );
