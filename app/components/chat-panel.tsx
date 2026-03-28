@@ -2,19 +2,30 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Effect } from "effect";
+import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "~/components/ui/button";
-import { SendHorizonal, Loader2, Trash2, ChevronRight } from "lucide-react";
+import {
+  SendHorizonal,
+  Loader2,
+  Trash2,
+  ChevronRight,
+  Globe,
+  Plus,
+  Check,
+  ArrowDown,
+} from "lucide-react";
 import { Streamdown } from "streamdown";
 import type { Components } from "streamdown";
 import { ChatService, type ChatMessage, type SerializedPart } from "~/lib/chat-store";
-import { BookService } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
+import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
+import { parseEpubEffect } from "~/lib/epub-service";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
 import { extractBookChapters, type BookChapter } from "~/lib/epub-text-extract";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/workspace-context";
-import { ScrollArea } from "~/components/ui/scroll-area";
 
 /** Extract a normalized tool info object from an AI SDK tool part (static or dynamic). */
 function getToolInfo(part: any): {
@@ -97,7 +108,6 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const bookDataRef = useRef<ArrayBuffer | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef("");
 
@@ -158,7 +168,6 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       initialMessages={initialMessages}
       bookContext={bookContext}
       bookDataRef={bookDataRef}
-      messagesEndRef={messagesEndRef}
       textareaRef={textareaRef}
       inputRef={inputRef}
     />
@@ -206,7 +215,6 @@ function ChatPanelInner({
   initialMessages,
   bookContext,
   bookDataRef,
-  messagesEndRef,
   textareaRef,
   inputRef,
 }: {
@@ -215,7 +223,6 @@ function ChatPanelInner({
   initialMessages: UIMessage[];
   bookContext: { title: string; author: string; chapters: BookChapter[] };
   bookDataRef: React.RefObject<ArrayBuffer | null>;
-  messagesEndRef: React.RefObject<HTMLDivElement | null>;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
 }) {
@@ -429,10 +436,7 @@ function ChatPanelInner({
     ).catch(console.error);
   }, [bookId, messages]);
 
-  // Auto-scroll on new messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, messagesEndRef, status]);
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom();
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -481,40 +485,57 @@ function ChatPanelInner({
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 px-4 py-3 h-full scroll-fog-container overflow-hidden">
-        {messages.length === 0 && (
-          <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
-        )}
-        <div className="space-y-3">
-          {messages.map((message, i) => {
-            const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
-            const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
+      <div
+        ref={scrollRef}
+        className={cn("flex-1 overflow-y-auto px-4 py-3 relative flex flex-col", {
+          "scroll-fog": messages.length > 0,
+        })}
+      >
+        <div ref={contentRef} className="flex flex-col flex-1">
+          {messages.length === 0 && (
+            <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
+          )}
+          <div className="space-y-3">
+            {messages.map((message, i) => {
+              const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
+              const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
 
-            return (
-              <div key={message.id}>
-                <ChatMessage
-                  message={message}
-                  bookId={bookId}
-                  bookDataRef={bookDataRef}
-                  isStreaming={isCurrentlyStreaming}
-                />
-                {isLastAssistant && !isLoading && (
-                  <SuggestedPrompts
-                    prompts={parseSuggestedPrompts(
-                      message.parts
-                        ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-                        .map((p) => p.text)
-                        .join("") ?? "",
-                    )}
-                    sendMessage={sendMessage}
+              return (
+                <div key={message.id}>
+                  <ChatMessage
+                    message={message}
+                    bookId={bookId}
+                    bookDataRef={bookDataRef}
+                    isStreaming={isCurrentlyStreaming}
                   />
-                )}
-              </div>
-            );
-          })}
-          <div ref={messagesEndRef} />
+                  {isLastAssistant && !isLoading && (
+                    <SuggestedPrompts
+                      prompts={parseSuggestedPrompts(
+                        message.parts
+                          ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
+                          .map((p) => p.text)
+                          .join("") ?? "",
+                      )}
+                      sendMessage={sendMessage}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </ScrollArea>
+        {!isAtBottom && (
+          <Button
+            variant="outline"
+            size="icon"
+            className="absolute bottom-2 left-1/2 z-10 size-8 -translate-x-1/2 rounded-full shadow-md"
+            onClick={() => scrollToBottom()}
+          >
+            <ArrowDown className="size-4" />
+            <span className="sr-only">Scroll to bottom</span>
+          </Button>
+        )}
+      </div>
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="px-4 py-3">
@@ -573,6 +594,7 @@ const SUGGESTION_CATEGORIES = [
     suggestions: [
       "What ideas connect across multiple chapters?",
       "What would Tyler Cowen think about this?",
+      "What else should I read after this?",
     ],
   },
 ];
@@ -628,7 +650,7 @@ function ChatEmptyState({
   sendMessage: (message: { text: string }) => void;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 px-2">
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-2">
       <p className="text-center text-sm text-muted-foreground">
         Ask about <span className="italic">{bookTitle}</span>
       </p>
@@ -661,6 +683,138 @@ function ChatEmptyState({
   );
 }
 
+/** Inline SE book card for chat results — compact horizontal layout. */
+function ChatSEBookCard({
+  book,
+  isDownloading,
+  isAdded,
+  onDownload,
+}: {
+  book: SEBook;
+  isDownloading: boolean;
+  isAdded: boolean;
+  onDownload: (book: SEBook) => void;
+}) {
+  return (
+    <div className="flex w-36 shrink-0 flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md">
+      <div className="aspect-[2/3] w-full overflow-hidden bg-muted">
+        {book.coverUrl ? (
+          <img
+            src={book.coverUrl}
+            alt={book.title}
+            className="size-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex size-full flex-col items-center justify-center p-2 text-center">
+            <Globe className="mb-1 size-6 text-muted-foreground/50" />
+            <p className="line-clamp-3 text-xs font-medium text-muted-foreground">{book.title}</p>
+          </div>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-0.5 p-1.5">
+        <a
+          href={`https://standardebooks.org${book.urlPath}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="line-clamp-2 text-xs font-medium leading-tight hover:underline"
+        >
+          {book.title}
+        </a>
+        <p className="line-clamp-1 text-[11px] text-muted-foreground">{book.author}</p>
+        <div className="mt-auto pt-1">
+          <Button
+            variant={isAdded ? "ghost" : "outline"}
+            size="sm"
+            className="h-7 w-full text-xs"
+            disabled={isDownloading || isAdded}
+            onClick={() => onDownload(book)}
+          >
+            {isDownloading ? (
+              <>
+                <Loader2 className="size-3 animate-spin" />
+                Importing…
+              </>
+            ) : isAdded ? (
+              <>
+                <Check className="size-3" />
+                Added
+              </>
+            ) : (
+              <>
+                <Plus className="size-3" />
+                Add to Library
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Renders SE search results as a horizontally scrollable row of cards in chat. */
+function SEBookCardsInChat({ books }: { books: SEBook[] }) {
+  const { onBookAddedRef } = useWorkspace();
+  const [downloadingUrls, setDownloadingUrls] = useState<Set<string>>(new Set());
+  const [addedUrls, setAddedUrls] = useState<Set<string>>(new Set());
+
+  const handleDownload = useCallback(
+    async (seBook: SEBook) => {
+      if (downloadingUrls.has(seBook.urlPath) || addedUrls.has(seBook.urlPath)) return;
+
+      setDownloadingUrls((prev) => new Set(prev).add(seBook.urlPath));
+
+      const program = Effect.gen(function* () {
+        const seSvc = yield* StandardEbooksService;
+        const arrayBuffer = yield* seSvc.downloadEpub(seBook.urlPath);
+        const metadata = yield* parseEpubEffect(arrayBuffer);
+        const book: BookMeta = {
+          id: crypto.randomUUID(),
+          title: metadata.title,
+          author: metadata.author,
+          coverImage: metadata.coverImage,
+        };
+        yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
+        return book;
+      });
+
+      try {
+        const book = await AppRuntime.runPromise(program);
+        setAddedUrls((prev) => new Set(prev).add(seBook.urlPath));
+        onBookAddedRef.current?.(book);
+      } catch (err) {
+        console.error("Failed to import book from chat:", err);
+      } finally {
+        setDownloadingUrls((prev) => {
+          const next = new Set(prev);
+          next.delete(seBook.urlPath);
+          return next;
+        });
+      }
+    },
+    [downloadingUrls, addedUrls, onBookAddedRef],
+  );
+
+  if (books.length === 0) return null;
+
+  return (
+    <div className="my-2 -mx-1 overflow-x-auto">
+      <div className="flex gap-2 px-1 pb-2">
+        {books.map((book) => (
+          <ChatSEBookCard
+            key={book.urlPath}
+            book={book}
+            isDownloading={downloadingUrls.has(book.urlPath)}
+            isAdded={addedUrls.has(book.urlPath)}
+            onDownload={handleDownload}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ChatMessage({
   message,
   bookId,
@@ -683,6 +837,33 @@ function ChatMessage({
   const rawText = textParts.map((p) => p.text).join("");
   const text = isUser ? rawText : stripSuggestedPrompts(rawText);
   const hasProcessSteps = toolParts.length > 0 || reasoningParts.length > 0;
+
+  // Extract SE book results from search_standard_ebooks tool parts
+  const seBooks = useMemo(() => {
+    const results: SEBook[] = [];
+    for (const part of toolParts) {
+      const info = getToolInfo(part);
+      if (
+        info &&
+        info.toolName === "search_standard_ebooks" &&
+        info.state === "output-available" &&
+        info.output?.books &&
+        Array.isArray(info.output.books)
+      ) {
+        for (const b of info.output.books) {
+          if (b.title && b.urlPath) {
+            results.push({
+              title: b.title,
+              author: b.author ?? "",
+              urlPath: b.urlPath,
+              coverUrl: b.coverUrl ?? null,
+            });
+          }
+        }
+      }
+    }
+    return results.slice(0, 4);
+  }, [toolParts]);
 
   const streamdownComponents = useMemo<Components>(
     () => ({
@@ -790,6 +971,7 @@ function ChatMessage({
                   if (info.toolName === "read_notes") return "Read notebook";
                   if (info.toolName === "append_to_notes") return "Added to notebook";
                   if (info.toolName === "create_highlight") return "Highlighted";
+                  if (info.toolName === "search_standard_ebooks") return "Searched Standard Ebooks";
                   return info.toolName;
                 })
                 .filter(Boolean)
@@ -837,6 +1019,13 @@ function ChatMessage({
                   label = isComplete
                     ? `Highlighted: "${snippet}"`
                     : `Highlighting: "${snippet}"...`;
+                } else if (info.toolName === "search_standard_ebooks") {
+                  const q = typeof info.input?.query === "string" ? info.input.query : "";
+                  if (isComplete && info.output?.books) {
+                    label = `Searched Standard Ebooks for "${q}" → ${(info.output.books as any[]).length} result${(info.output.books as any[]).length !== 1 ? "s" : ""}`;
+                  } else {
+                    label = `Searching Standard Ebooks for "${q}"...`;
+                  }
                 }
                 return (
                   <div key={i} className="flex items-center gap-1.5 leading-tight">
@@ -857,6 +1046,7 @@ function ChatMessage({
             </div>
           </details>
         )}
+        {seBooks.length > 0 && <SEBookCardsInChat books={seBooks} />}
         {text &&
           (isUser ? (
             <p className="whitespace-pre-wrap">{text}</p>

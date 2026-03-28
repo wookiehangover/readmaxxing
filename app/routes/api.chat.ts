@@ -1,7 +1,9 @@
 import { streamText, convertToModelMessages, type UIMessage, tool, stepCountIs } from "ai";
 import { gateway } from "@ai-sdk/gateway";
+import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import type { Route } from "./+types/api.chat";
+import { SE_BASE, parseSearchHtml } from "./api.standard-ebooks.search";
 
 interface BookChapter {
   index: number;
@@ -75,6 +77,17 @@ When the reader asks "What would [thinker] think about this?" or similar questio
 - When the reader asks you to "save this", "note that", or "add to my notes", use append_to_notes.
 - When they ask about their notes or want you to reference what they've written, use read_notes first.
 - When you find a passage that is particularly important, beautiful, or relevant to the reader's question, proactively highlight it using create_highlight. Include a brief note explaining why it's significant.
+- When the reader asks for recommendations, related reading, or "what else should I read", use BOTH search tools together as described in "Going deeper" below.
+
+## Going deeper — recommendations and related reading
+When the reader asks for recommendations, related reading, essays, podcasts, or asks "what else should I read after this?" or wants to "go deeper" on a topic, use BOTH search tools together:
+
+1. **Web search** — search for modern books, essays, articles, podcasts, and author interviews related to the topic. Always include clickable links. Prefer high-quality sources (literary reviews, academic essays, well-known podcasts, author sites).
+2. **search_standard_ebooks** — search ONCE for free public domain books on Standard Ebooks. Use a single well-chosen query — do NOT call this tool multiple times. Results are displayed as interactive cards automatically.
+
+Standard Ebooks results are automatically displayed as rich interactive cards below your response — do NOT format them as code blocks or lists. Simply mention them by name in your prose (e.g. "You might enjoy *Walden* by Thoreau, which is available on Standard Ebooks") and let the card UI handle the visual presentation.
+
+Present your response as a mix: lead with a brief thematic introduction connecting the recommendations to the current book, then weave in modern resources (with links) alongside natural mentions of any relevant Standard Ebooks titles. Group them naturally by theme rather than separating by source.
 
 ## Suggested follow-ups
 At the very end of every response, include an HTML comment with 2-3 suggested follow-up prompts the reader might want to ask next. These should be contextual and specific to what was just discussed. Format:
@@ -149,6 +162,7 @@ export async function action({ request }: Route.ActionArgs) {
     system: buildSystemPrompt(bookContext),
     messages: await convertToModelMessages(messages),
     tools: {
+      web_search: anthropic.tools.webSearch_20250305(),
       search_book: tool({
         description:
           "Search the book for passages matching a query. Returns matching excerpts with surrounding context. Use this to find specific quotes, topics, characters, or themes.",
@@ -217,6 +231,43 @@ export async function action({ request }: Route.ActionArgs) {
               ? chapter.text.slice(0, 15000) + "\n[truncated — chapter continues]"
               : chapter.text;
           return { chapterIndex: chapter.index, title: chapter.title, text };
+        },
+      }),
+      search_standard_ebooks: tool({
+        description:
+          "Search Standard Ebooks for free, beautifully formatted public domain books. Use this when the reader asks for similar books, recommendations, or wants to find other works by the same author or in a similar genre. Returns structured results the reader can browse and import.",
+        inputSchema: z.object({
+          query: z
+            .string()
+            .describe(
+              "Search query — author name, book title, genre, or keywords (e.g. 'Jane Austen', 'science fiction', 'philosophy')",
+            ),
+        }),
+        execute: async ({ query }) => {
+          const params = new URLSearchParams({
+            query,
+            "per-page": "6",
+            page: "1",
+          });
+          const res = await fetch(`${SE_BASE}/ebooks?${params.toString()}`);
+          if (!res.ok) {
+            return { error: `Standard Ebooks returned ${res.status}` };
+          }
+          const html = await res.text();
+          const data = parseSearchHtml(html, 1);
+          // Filter out unreleased/in-production books (missing urlPath or title)
+          const books = data.books
+            .filter((b) => b.urlPath && b.title && b.urlPath.startsWith("/ebooks/"))
+            .filter((b) => b.title.toLowerCase() !== bookContext.title.toLowerCase())
+            .slice(0, 4)
+            .map((b) => ({
+              title: b.title,
+              author: b.author,
+              coverUrl: b.coverUrl,
+              urlPath: b.urlPath,
+              url: `${SE_BASE}${b.urlPath}`,
+            }));
+          return { books, totalResults: data.totalPages * 12 };
         },
       }),
     },
