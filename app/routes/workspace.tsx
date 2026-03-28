@@ -294,7 +294,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     }
 
     // Check if this will be the first panel (companion new-tab logic)
-    const isFirstPanel = api.panels.length === 0;
+    const isFirstPanel = !api.panels.some((p) => p.id.startsWith("book-"));
 
     const panelId = `book-${book.id}-${crypto.randomUUID().slice(0, 8)}`;
     api.addPanel({
