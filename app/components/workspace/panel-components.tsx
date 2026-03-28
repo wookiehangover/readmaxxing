@@ -26,6 +26,7 @@ export function BookReaderPanel({
 
   const handleRegister = useCallback(
     (panelId: string, nav: (cfi: string) => void) => {
+      console.debug("[BookReaderPanel] handleRegister", { panelId });
       navigationMap.current.set(panelId, nav);
     },
     [navigationMap],

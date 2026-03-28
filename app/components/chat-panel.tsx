@@ -630,6 +630,7 @@ function ChatMessage({
         const chapterStr = typeof chapter === "string" ? chapter : "";
 
         const handleClick = async () => {
+          console.debug("[ChatPanel] handleClick", { bookId });
           const data = bookDataRef.current;
           if (!data) {
             console.warn("Ref navigation: no book data available");
