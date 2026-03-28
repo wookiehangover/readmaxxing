@@ -2,14 +2,20 @@ import { parseHTML } from "linkedom";
 import type { Route } from "./+types/api.standard-ebooks.search";
 import type { SEBook, SESearchResult } from "~/lib/standard-ebooks";
 
-const SE_BASE = "https://standardebooks.org";
+export const SE_BASE = "https://standardebooks.org";
 
-function parseSearchHtml(html: string, page: number): SESearchResult {
+export function parseSearchHtml(html: string, page: number): SESearchResult {
   const { document: doc } = parseHTML(html);
   const items = doc.querySelectorAll('li[typeof="schema:Book"]');
   const books: SEBook[] = [];
 
   items.forEach((li) => {
+    // Skip unreleased books (not-yet-public-domain or wanted/in-production)
+    // These have a <div class="placeholder-cover"> instead of an actual cover image
+    if (li.querySelector(".placeholder-cover")) {
+      return;
+    }
+
     const titleEl = li.querySelector('[property="schema:name"]');
     const authorEl = li.querySelector('[typeof="schema:Person"] [property="schema:name"]');
     const imgEl = li.querySelector("img");

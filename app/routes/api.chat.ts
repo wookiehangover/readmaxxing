@@ -77,6 +77,7 @@ When the reader asks "What would [thinker] think about this?" or similar questio
 - When the reader asks you to "save this", "note that", or "add to my notes", use append_to_notes.
 - When they ask about their notes or want you to reference what they've written, use read_notes first.
 - When you find a passage that is particularly important, beautiful, or relevant to the reader's question, proactively highlight it using create_highlight. Include a brief note explaining why it's significant.
+- When the reader asks for similar books, recommendations, or related reading, use search_standard_ebooks to find free public domain books on Standard Ebooks. Present results with title, author, and a link. These are high-quality, professionally formatted editions.
 
 ## Going deeper — web search for recommendations
 When the reader asks you to recommend related reading, essays, podcasts, articles, or asks to "go deeper" on a topic, use your web search tool to find real, current resources. Always include clickable links in your recommendations. Prefer high-quality sources (e.g. literary reviews, academic essays, author interviews, well-known podcasts). Search for specific and relevant queries rather than generic ones.
@@ -223,6 +224,41 @@ export async function action({ request }: Route.ActionArgs) {
               ? chapter.text.slice(0, 15000) + "\n[truncated — chapter continues]"
               : chapter.text;
           return { chapterIndex: chapter.index, title: chapter.title, text };
+        },
+      }),
+      search_standard_ebooks: tool({
+        description:
+          "Search Standard Ebooks for free, beautifully formatted public domain books. Use this when the reader asks for similar books, recommendations, or wants to find other works by the same author or in a similar genre. Returns structured results the reader can browse and import.",
+        inputSchema: z.object({
+          query: z
+            .string()
+            .describe(
+              "Search query — author name, book title, genre, or keywords (e.g. 'Jane Austen', 'science fiction', 'philosophy')",
+            ),
+        }),
+        execute: async ({ query }) => {
+          const params = new URLSearchParams({
+            query,
+            "per-page": "12",
+            page: "1",
+          });
+          const res = await fetch(`${SE_BASE}/ebooks?${params.toString()}`);
+          if (!res.ok) {
+            return { error: `Standard Ebooks returned ${res.status}` };
+          }
+          const html = await res.text();
+          const data = parseSearchHtml(html, 1);
+          // Filter out unreleased/in-production books (missing urlPath or title)
+          const books = data.books
+            .filter((b) => b.urlPath && b.title && b.urlPath.startsWith("/ebooks/"))
+            .map((b) => ({
+              title: b.title,
+              author: b.author,
+              coverUrl: b.coverUrl,
+              urlPath: b.urlPath,
+              url: `${SE_BASE}${b.urlPath}`,
+            }));
+          return { books, totalResults: data.totalPages * 12 };
         },
       }),
     },
