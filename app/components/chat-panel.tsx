@@ -3,8 +3,9 @@ import { useChat, type UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
-import { SendHorizonal, Loader2, Trash2, ChevronRight } from "lucide-react";
+import { SendHorizonal, Loader2, Trash2, ChevronRight, BookOpen } from "lucide-react";
 import { Streamdown } from "streamdown";
+import type { Components } from "streamdown";
 import { ChatService, type ChatMessage } from "~/lib/chat-store";
 import { BookService } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
@@ -49,6 +50,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     chapters: BookChapter[];
   } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const bookDataRef = useRef<ArrayBuffer | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef("");
@@ -73,6 +75,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         const chapters = await extractBookChapters(book.data);
         if (cancelled) return;
 
+        bookDataRef.current = book.data;
         setBookContext({ title: book.title, author: book.author, chapters });
         setInitialMessages(toUIMessages(savedMessages));
       } catch (err) {
@@ -109,6 +112,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       bookTitle={bookTitle}
       initialMessages={initialMessages}
       bookContext={bookContext}
+      bookDataRef={bookDataRef}
       messagesEndRef={messagesEndRef}
       textareaRef={textareaRef}
       inputRef={inputRef}
@@ -156,6 +160,7 @@ function ChatPanelInner({
   bookTitle,
   initialMessages,
   bookContext,
+  bookDataRef,
   messagesEndRef,
   textareaRef,
   inputRef,
@@ -164,6 +169,7 @@ function ChatPanelInner({
   bookTitle: string;
   initialMessages: UIMessage[];
   bookContext: { title: string; author: string; chapters: BookChapter[] };
+  bookDataRef: React.RefObject<ArrayBuffer | null>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
@@ -341,6 +347,8 @@ function ChatPanelInner({
             <ChatMessage
               key={message.id}
               message={message}
+              bookId={bookId}
+              bookDataRef={bookDataRef}
               isStreaming={status === "streaming" && i === messages.length - 1}
             />
           ))}
@@ -446,8 +454,19 @@ function ChatEmptyState({
   );
 }
 
-function ChatMessage({ message, isStreaming }: { message: UIMessage; isStreaming?: boolean }) {
+function ChatMessage({
+  message,
+  bookId,
+  bookDataRef,
+  isStreaming,
+}: {
+  message: UIMessage;
+  bookId: string;
+  bookDataRef: React.RefObject<ArrayBuffer | null>;
+  isStreaming?: boolean;
+}) {
   const isUser = message.role === "user";
+  const { findNavForBook } = useWorkspace();
 
   const textParts =
     message.parts?.filter(
@@ -460,6 +479,58 @@ function ChatMessage({ message, isStreaming }: { message: UIMessage; isStreaming
 
   const text = textParts.map((p) => p.text).join("");
   const hasProcessSteps = toolParts.length > 0 || reasoningParts.length > 0;
+
+  const streamdownComponents = useMemo<Components>(() => ({
+    ref: ({ children, chapter, query }: Record<string, unknown>) => {
+      const queryStr = typeof query === "string" ? query : "";
+      if (!queryStr) {
+        // No query — render as plain text
+        return <span>{children as React.ReactNode}</span>;
+      }
+
+      const handleClick = async () => {
+        const data = bookDataRef.current;
+        if (!data) return;
+
+        try {
+          const ePub = (await import("epubjs")).default;
+          const { searchBookForCfi } = await import("~/lib/epub-search");
+          const book = ePub(data);
+          try {
+            const results = await searchBookForCfi(book, queryStr);
+            if (results.length > 0) {
+              const navigate = findNavForBook(bookId);
+              if (navigate) {
+                navigate(results[0].cfi);
+              }
+            }
+          } finally {
+            book.destroy();
+          }
+        } catch (err) {
+          console.warn("Ref navigation failed:", err);
+        }
+      };
+
+      return (
+        <button
+          type="button"
+          onClick={handleClick}
+          className={cn(
+            "inline-flex items-baseline gap-0.5 rounded px-0.5",
+            "text-amber-700 dark:text-amber-400",
+            "hover:bg-amber-100 dark:hover:bg-amber-900/30",
+            "cursor-pointer underline decoration-amber-400/50 underline-offset-2",
+            "transition-colors",
+          )}
+          title={`Go to: "${queryStr}"`}
+        >
+          <BookOpen className="inline size-3 shrink-0 self-center" />
+          {children as React.ReactNode}
+        </button>
+      );
+    },
+  }), [bookId, bookDataRef, findNavForBook]);
 
   return (
     <div
@@ -529,6 +600,8 @@ function ChatMessage({ message, isStreaming }: { message: UIMessage; isStreaming
               }}
               isAnimating={isStreaming}
               className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+              allowedTags={{ ref: ["chapter", "query"] }}
+              components={streamdownComponents}
             >
               {text}
             </Streamdown>
