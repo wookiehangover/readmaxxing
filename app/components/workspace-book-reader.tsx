@@ -848,9 +848,32 @@ function WorkspaceBookReaderInner({
       if (e.isActive) handleBecameVisible();
     });
 
+    // Resize the epub rendition when the panel dimensions change (e.g. a new
+    // pane is opened or the divider is dragged). We use requestAnimationFrame
+    // to coalesce rapid resize events during drag-resize.
+    let resizeRafId: number | null = null;
+    const dimensionsDisposable = panelApi.onDidDimensionsChange(() => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+
+      if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
+
+      const cfiBeforeResize = latestCfiRef.current;
+      resizeRafId = requestAnimationFrame(() => {
+        resizeRafId = null;
+        if (!renditionRef.current) return;
+        (renditionRef.current as any).resize();
+        if (cfiBeforeResize) {
+          renditionRef.current.display(cfiBeforeResize).catch(() => {});
+        }
+      });
+    });
+
     return () => {
       visDisposable.dispose();
       activeDisposable.dispose();
+      dimensionsDisposable.dispose();
+      if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
     };
   }, [panelApi, settings.theme, flushPositionSave]);
 
