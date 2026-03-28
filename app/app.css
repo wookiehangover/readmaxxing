@@ -252,39 +252,39 @@ body {
 }
 
 @supports (animation-timeline: scroll()) {
-	:root {
-		--scroll-fog-size: 110;
-	}
-	.scroll-fog-container > div,
-	.scroll-fog {
-		animation:
-			mask-up both linear,
-			mask-down both linear;
-		animation-timeline: scroll(self);
-		animation-range:
-			0 calc(var(--scroll-fog-size) * 1px),
-			calc(100% - (var(--scroll-fog-size) * 1px)) 100%;
-		mask:
-			linear-gradient(white, transparent) 0 0 / 100% 0 no-repeat,
-			linear-gradient(white, white) 0 50% / 100% 100% no-repeat,
-			linear-gradient(transparent, white) 0 100% / 100% calc(var(--scroll-fog-size) * 1px) no-repeat;
-		mask-composite: exclude;
-	}
+  :root {
+    --scroll-fog-size: 110;
+  }
+  .scroll-fog-container > div,
+  .scroll-fog {
+    animation:
+      mask-up both linear,
+      mask-down both linear;
+    animation-timeline: scroll(self);
+    animation-range:
+      0 calc(var(--scroll-fog-size) * 1px),
+      calc(100% - (var(--scroll-fog-size) * 1px)) 100%;
+    mask:
+      linear-gradient(white, transparent) 0 0 / 100% 0 no-repeat,
+      linear-gradient(white, white) 0 50% / 100% 100% no-repeat,
+      linear-gradient(transparent, white) 0 100% / 100% calc(var(--scroll-fog-size) * 1px) no-repeat;
+    mask-composite: exclude;
+  }
 
-	@keyframes mask-up {
-		to {
-			mask-size:
-				100% calc(var(--scroll-fog-size) * 1px),
-				100% 100%;
-		}
-	}
+  @keyframes mask-up {
+    to {
+      mask-size:
+        100% calc(var(--scroll-fog-size) * 1px),
+        100% 100%;
+    }
+  }
 
-	@keyframes mask-down {
-		100% {
-			mask-size:
-				100% calc(var(--scroll-fog-size) * 1px),
-				100% 100%,
-				100% 0;
-		}
-	}
+  @keyframes mask-down {
+    100% {
+      mask-size:
+        100% calc(var(--scroll-fog-size) * 1px),
+        100% 100%,
+        100% 0;
+    }
+  }
 }

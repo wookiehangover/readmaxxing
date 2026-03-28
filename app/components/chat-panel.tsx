@@ -486,15 +486,32 @@ function ChatPanelInner({
           <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
         )}
         <div className="space-y-3">
-          {messages.map((message, i) => (
-            <ChatMessage
-              key={message.id}
-              message={message}
-              bookId={bookId}
-              bookDataRef={bookDataRef}
-              isStreaming={status === "streaming" && i === messages.length - 1}
-            />
-          ))}
+          {messages.map((message, i) => {
+            const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
+            const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
+
+            return (
+              <div key={message.id}>
+                <ChatMessage
+                  message={message}
+                  bookId={bookId}
+                  bookDataRef={bookDataRef}
+                  isStreaming={isCurrentlyStreaming}
+                />
+                {isLastAssistant && !isLoading && (
+                  <SuggestedPrompts
+                    prompts={parseSuggestedPrompts(
+                      message.parts
+                        ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
+                        .map((p) => p.text)
+                        .join("") ?? "",
+                    )}
+                    sendMessage={sendMessage}
+                  />
+                )}
+              </div>
+            );
+          })}
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
@@ -553,9 +570,55 @@ const SUGGESTION_CATEGORIES = [
   },
   {
     label: "Pull the Thread",
-    suggestions: ["What ideas connect across multiple chapters?", "What would Tyler Cowen think about this?"],
+    suggestions: [
+      "What ideas connect across multiple chapters?",
+      "What would Tyler Cowen think about this?",
+    ],
   },
 ];
+
+/** Parse suggested prompts from an HTML comment at the end of assistant text. */
+function parseSuggestedPrompts(text: string): string[] {
+  const match = text.match(/<!--\s*suggested-prompts\s*\n([\s\S]*?)-->/);
+  if (!match) return [];
+  return match[1]
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** Strip the suggested-prompts HTML comment from display text. */
+function stripSuggestedPrompts(text: string): string {
+  return text.replace(/<!--\s*suggested-prompts\s*\n[\s\S]*?-->/, "").trimEnd();
+}
+
+function SuggestedPrompts({
+  prompts,
+  sendMessage,
+}: {
+  prompts: string[];
+  sendMessage: (message: { text: string }) => void;
+}) {
+  if (prompts.length === 0) return null;
+  return (
+    <div className="mt-4 flex flex-wrap gap-2 px-5 pb-2">
+      {prompts.map((prompt) => (
+        <button
+          key={prompt}
+          type="button"
+          className={cn(
+            "text-xs text-muted-foreground text-left",
+            "hover:text-foreground transition-colors",
+            "cursor-pointer",
+          )}
+          onClick={() => sendMessage({ text: prompt })}
+        >
+          → {prompt}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function ChatEmptyState({
   bookTitle,
@@ -617,7 +680,8 @@ function ChatMessage({
   const toolParts = message.parts?.filter((p: any) => getToolInfo(p) !== null) ?? [];
   const reasoningParts = message.parts?.filter((p) => p.type === "reasoning") ?? [];
 
-  const text = textParts.map((p) => p.text).join("");
+  const rawText = textParts.map((p) => p.text).join("");
+  const text = isUser ? rawText : stripSuggestedPrompts(rawText);
   const hasProcessSteps = toolParts.length > 0 || reasoningParts.length > 0;
 
   const streamdownComponents = useMemo<Components>(
@@ -798,12 +862,6 @@ function ChatMessage({
             <p className="whitespace-pre-wrap">{text}</p>
           ) : (
             <Streamdown
-              animated={{
-                animation: "fadeIn",
-                duration: 150,
-                easing: "ease-out",
-              }}
-              isAnimating={isStreaming}
               className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ul,ol]:pl-0"
               allowedTags={{ ref: ["chapter", "query"] }}
               components={streamdownComponents}
