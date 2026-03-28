@@ -264,11 +264,7 @@ function ChatPanelInner({
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {messages.length === 0 && (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-center text-sm text-muted-foreground">
-              Ask a question about this book to start a conversation.
-            </p>
-          </div>
+          <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
         )}
         <div className="space-y-3">
           {messages.map((message) => (
@@ -307,6 +303,71 @@ function ChatPanelInner({
           )}
         </div>
       </form>
+    </div>
+  );
+}
+
+const SUGGESTION_CATEGORIES = [
+  {
+    label: "Summarize & Explore",
+    suggestions: [
+      "What is this book about?",
+      "Summarize the chapter I'm reading",
+      "What are the key themes?",
+    ],
+  },
+  {
+    label: "Examine & Debate",
+    suggestions: [
+      "What's the strongest argument in this chapter?",
+      "What would a critic say about this book's thesis?",
+    ],
+  },
+  {
+    label: "Pull the Thread",
+    suggestions: [
+      "What ideas connect across multiple chapters?",
+    ],
+  },
+];
+
+function ChatEmptyState({
+  bookTitle,
+  sendMessage,
+}: {
+  bookTitle: string;
+  sendMessage: (message: { text: string }) => void;
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-6 px-2">
+      <p className="text-center text-sm text-muted-foreground">
+        Ask about <span className="italic">{bookTitle}</span>
+      </p>
+      <div className="flex w-full max-w-sm flex-col gap-4">
+        {SUGGESTION_CATEGORIES.map((category) => (
+          <div key={category.label} className="flex flex-col gap-1.5">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">
+              {category.label}
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {category.suggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-sm text-foreground",
+                    "transition-colors hover:bg-accent hover:text-accent-foreground",
+                    "cursor-pointer",
+                  )}
+                  onClick={() => sendMessage({ text: suggestion })}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
