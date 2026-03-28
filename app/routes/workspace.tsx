@@ -215,6 +215,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       ws.navigationMap.current.clear();
       ws.tocMap.current.clear();
       ws.notebookCallbackMap.current.clear();
+      ws.tempHighlightMap.current.clear();
     };
   }, [ws]);
 

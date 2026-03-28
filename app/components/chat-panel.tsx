@@ -174,7 +174,7 @@ function ChatPanelInner({
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
 }) {
-  const { chatContextMap, notebookCallbackMap, findNavForBook } = useWorkspace();
+  const { chatContextMap, notebookCallbackMap, findNavForBook, findTocForBook } = useWorkspace();
 
   // Load notebook markdown for the AI's read_notes tool
   const [notebookMarkdown, setNotebookMarkdown] = useState<string>("");
@@ -290,7 +290,7 @@ function ChatPanelInner({
           try {
             const ePub = (await import("epubjs")).default;
             const { searchBookForCfi } = await import("~/lib/epub-search");
-            const tempBook = ePub(data);
+            const tempBook = ePub(data.slice(0));
             try {
               const results = await searchBookForCfi(tempBook, highlightText);
               if (results.length === 0) return;
@@ -536,7 +536,7 @@ function ChatMessage({
   isStreaming?: boolean;
 }) {
   const isUser = message.role === "user";
-  const { findNavForBook } = useWorkspace();
+  const { findNavForBook, findTocForBook, applyTempHighlightForBook } = useWorkspace();
 
   const textParts =
     message.parts?.filter(
@@ -558,25 +558,60 @@ function ChatMessage({
         return <span>{children as React.ReactNode}</span>;
       }
 
+      const chapterStr = typeof chapter === "string" ? chapter : "";
+
       const handleClick = async () => {
         const data = bookDataRef.current;
-        if (!data) return;
+        if (!data) {
+          console.warn("Ref navigation: no book data available");
+          return;
+        }
+
+        const navigate = findNavForBook(bookId);
+        if (!navigate) {
+          console.warn("Ref navigation: no navigate callback for book", bookId);
+          return;
+        }
 
         try {
           const ePub = (await import("epubjs")).default;
           const { searchBookForCfi } = await import("~/lib/epub-search");
-          const book = ePub(data);
+          const book = ePub(data.slice(0));
           try {
-            const results = await searchBookForCfi(book, queryStr);
+            // Try full query first
+            let results = await searchBookForCfi(book, queryStr);
+
+            // If no results, try a shorter prefix (first 40 chars)
+            if (results.length === 0 && queryStr.length > 40) {
+              const shortQuery = queryStr.slice(0, 40);
+              console.debug("Ref navigation: retrying with shorter query:", shortQuery);
+              results = await searchBookForCfi(book, shortQuery);
+            }
+
             if (results.length > 0) {
-              const navigate = findNavForBook(bookId);
-              if (navigate) {
-                navigate(results[0].cfi);
-              }
+              const cfi = results[0].cfi;
+              navigate(cfi);
+              applyTempHighlightForBook(bookId, cfi);
+              return;
             }
           } finally {
             book.destroy();
           }
+
+          // Fallback: navigate to chapter start via TOC
+          if (chapterStr) {
+            const chapterIndex = parseInt(chapterStr, 10);
+            if (!isNaN(chapterIndex)) {
+              const toc = findTocForBook(bookId);
+              if (toc && toc[chapterIndex]) {
+                console.debug("Ref navigation: falling back to chapter", chapterIndex);
+                navigate(toc[chapterIndex].href);
+                return;
+              }
+            }
+          }
+
+          console.debug("Ref navigation: no results for query:", queryStr);
         } catch (err) {
           console.warn("Ref navigation failed:", err);
         }
@@ -595,7 +630,7 @@ function ChatMessage({
         </span>
       );
     },
-  }), [bookId, bookDataRef, findNavForBook]);
+  }), [bookId, bookDataRef, findNavForBook, findTocForBook, applyTempHighlightForBook]);
 
   return (
     <div
@@ -611,46 +646,81 @@ function ChatMessage({
         })}
       >
         {hasProcessSteps && (
-          <details className="group mb-2">
-            <summary className="cursor-pointer text-xs text-muted-foreground flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden">
+          <details className="group mb-2" open={isStreaming || undefined}>
+            <summary className="cursor-pointer text-[11px] text-muted-foreground font-mono flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden">
               <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
-              {toolParts.length > 0 &&
-                `${toolParts.length} step${toolParts.length > 1 ? "s" : ""}`}
-              {reasoningParts.length > 0 &&
-                toolParts.length === 0 &&
-                "Reasoning"}
+              {toolParts.map((part) => {
+                const inv = (part as any).toolInvocation as
+                  | { toolName: string }
+                  | undefined;
+                if (!inv) return null;
+                if (inv.toolName === "search_book") return "Searched book";
+                if (inv.toolName === "read_chapter") return "Read chapter";
+                if (inv.toolName === "read_notes") return "Read notebook";
+                if (inv.toolName === "append_to_notes") return "Added to notebook";
+                if (inv.toolName === "create_highlight") return "Highlighted";
+                return inv.toolName;
+              }).filter(Boolean).join(", ")}
+              {toolParts.length > 0 && ` → ${toolParts.length} step${toolParts.length > 1 ? "s" : ""}`}
+              {reasoningParts.length > 0 && toolParts.length === 0 && "Reasoning"}
             </summary>
-            <div className="mt-1 space-y-1 pl-4 text-xs text-muted-foreground">
+            <div className={cn(
+              "mt-1 space-y-0.5 pl-4 text-[11px] font-mono text-muted-foreground",
+              { "max-h-[4.5rem] overflow-y-auto": isStreaming },
+            )}>
               {toolParts.map((part, i) => {
                 const inv = (part as any).toolInvocation as
                   | {
                       toolName: string;
                       args?: Record<string, unknown>;
+                      state?: string;
+                      result?: any;
                     }
                   | undefined;
                 if (!inv) return null;
+                const isComplete = inv.state === "result";
                 let label = inv.toolName;
-                if (inv.toolName === "search_book")
-                  label = `Searched for "${inv.args?.query}"`;
-                else if (inv.toolName === "read_chapter") {
-                  label = inv.args?.chapterTitle
-                    ? `Read chapter: ${inv.args.chapterTitle}`
-                    : `Read chapter ${inv.args?.chapterIndex}`;
+                if (inv.toolName === "search_book") {
+                  const query = typeof inv.args?.query === "string" ? inv.args.query : "";
+                  if (isComplete && Array.isArray(inv.result)) {
+                    label = `Searched for "${query}" → ${inv.result.length} result${inv.result.length !== 1 ? "s" : ""}`;
+                  } else {
+                    label = `Searching for "${query}"...`;
+                  }
+                } else if (inv.toolName === "read_chapter") {
+                  const title = inv.args?.chapterTitle
+                    ? String(inv.args.chapterTitle)
+                    : `chapter ${inv.args?.chapterIndex}`;
+                  if (isComplete && inv.result?.text) {
+                    label = `Read ${title} → ${inv.result.text.length.toLocaleString()} chars`;
+                  } else {
+                    label = `Reading ${title}...`;
+                  }
+                } else if (inv.toolName === "read_notes") {
+                  label = isComplete ? "Read notebook" : "Reading notebook...";
+                } else if (inv.toolName === "append_to_notes") {
+                  label = isComplete ? "Added to notebook" : "Adding to notebook...";
                 } else if (inv.toolName === "create_highlight") {
                   const snippet = typeof inv.args?.text === "string"
-                    ? inv.args.text.slice(0, 50) + (inv.args.text.length > 50 ? "…" : "")
+                    ? inv.args.text.slice(0, 30) + (inv.args.text.length > 30 ? "…" : "")
                     : "";
-                  label = `Highlighted: "${snippet}"`;
+                  label = isComplete
+                    ? `Highlighted: "${snippet}"`
+                    : `Highlighting: "${snippet}"...`;
                 }
                 return (
-                  <div key={i} className="flex items-center gap-1.5">
-                    <span className="size-1 rounded-full bg-muted-foreground/50" />
+                  <div key={i} className="flex items-center gap-1.5 leading-tight">
+                    {isComplete ? (
+                      <span className="size-1 rounded-full bg-muted-foreground/50 shrink-0" />
+                    ) : (
+                      <span className="size-1.5 rounded-full bg-muted-foreground/70 animate-pulse shrink-0" />
+                    )}
                     {label}
                   </div>
                 );
               })}
               {reasoningParts.map((part, i) => (
-                <div key={`r-${i}`} className="italic">
+                <div key={`r-${i}`} className="italic leading-tight">
                   {(part as any).reasoning}
                 </div>
               ))}

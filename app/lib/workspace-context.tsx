@@ -42,6 +42,10 @@ interface WorkspaceContextValue {
   >;
   /** Find TOC entries for a book by scanning dockview panels */
   findTocForBook: (bookId: string) => TocEntry[] | undefined;
+  /** panelId -> temporary highlight callback */
+  tempHighlightMap: React.MutableRefObject<Map<string, (cfi: string) => void>>;
+  /** Apply a temporary highlight in the reader for a book */
+  applyTempHighlightForBook: (bookId: string, cfi: string) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -74,6 +78,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const chatContextMap = useRef(
     new Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>(),
   );
+  const tempHighlightMap = useRef(new Map<string, (cfi: string) => void>());
 
   const findNavForBook = useCallback(
     (bookId: string): ((cfi: string) => void) | undefined => {
@@ -89,6 +94,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
       }
       return undefined;
+    },
+    [],
+  );
+
+  const applyTempHighlightForBook = useCallback(
+    (bookId: string, cfi: string): void => {
+      const api = dockviewApi.current;
+      if (!api) return;
+      for (const panel of api.panels) {
+        if (
+          panel.id.startsWith("book-") &&
+          (panel.params as Record<string, unknown>)?.bookId === bookId
+        ) {
+          const fn = tempHighlightMap.current.get(panel.id);
+          if (fn) {
+            fn(cfi);
+            return;
+          }
+        }
+      }
     },
     [],
   );
@@ -129,6 +154,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     chatContextMap,
     findNavForBook,
     findTocForBook,
+    tempHighlightMap,
+    applyTempHighlightForBook,
   };
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

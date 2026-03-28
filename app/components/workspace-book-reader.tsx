@@ -52,6 +52,8 @@ interface WorkspaceBookReaderProps {
   chatContextMap?: React.MutableRefObject<
     Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
   >;
+  onRegisterTempHighlight?: (panelId: string, fn: (cfi: string) => void) => void;
+  onUnregisterTempHighlight?: (panelId: string) => void;
 }
 
 
@@ -68,6 +70,8 @@ export function WorkspaceBookReader({
   onOpenChat,
   onHighlightCreated,
   chatContextMap,
+  onRegisterTempHighlight,
+  onUnregisterTempHighlight,
 }: WorkspaceBookReaderProps) {
   // Load book data via useEffectQuery
   const {
@@ -112,6 +116,8 @@ export function WorkspaceBookReader({
       onOpenChat={onOpenChat}
       onHighlightCreated={onHighlightCreated}
       chatContextMap={chatContextMap}
+      onRegisterTempHighlight={onRegisterTempHighlight}
+      onUnregisterTempHighlight={onUnregisterTempHighlight}
     />
   );
 }
@@ -132,6 +138,8 @@ function WorkspaceBookReaderInner({
   onOpenChat,
   onHighlightCreated,
   chatContextMap,
+  onRegisterTempHighlight,
+  onUnregisterTempHighlight,
 }: {
   book: Book;
   panelApi?: DockviewPanelApi;
@@ -146,6 +154,8 @@ function WorkspaceBookReaderInner({
   chatContextMap?: React.MutableRefObject<
     Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
   >;
+  onRegisterTempHighlight?: (panelId: string, fn: (cfi: string) => void) => void;
+  onUnregisterTempHighlight?: (panelId: string) => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -360,6 +370,36 @@ function WorkspaceBookReaderInner({
       onUnregisterNavigation?.(id);
     };
   }, [book.id, panelApi, navigateToCfi, onRegisterNavigation, onUnregisterNavigation]);
+
+  // Temporary highlight: briefly flash a CFI range in the reader
+  const applyTempHighlight = useCallback((cfi: string) => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+    try {
+      rendition.annotations.highlight(
+        cfi, {}, undefined as any, undefined as any,
+        { fill: "rgba(255, 213, 79, 0.4)", "fill-opacity": "0.4" } as any,
+      );
+      setTimeout(() => {
+        try {
+          rendition.annotations.remove(cfi, "highlight");
+        } catch {
+          // annotation may already be gone
+        }
+      }, 3000);
+    } catch (err) {
+      console.debug("Temp highlight failed:", err);
+    }
+  }, []);
+
+  // Register temp highlight callback
+  useEffect(() => {
+    const id = panelApi?.id ?? book.id;
+    onRegisterTempHighlight?.(id, applyTempHighlight);
+    return () => {
+      onUnregisterTempHighlight?.(id);
+    };
+  }, [book.id, panelApi, applyTempHighlight, onRegisterTempHighlight, onUnregisterTempHighlight]);
 
   const {
     selectionPopover,

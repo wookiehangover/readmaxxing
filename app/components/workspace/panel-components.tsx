@@ -14,7 +14,7 @@ export function BookReaderPanel({
   params,
   api,
 }: IDockviewPanelProps<{ bookId: string; bookTitle?: string } & PanelTypographyParams>) {
-  const { navigationMap, tocMap, tocChangeListener, dockviewApi, notebookCallbackMap, chatContextMap } =
+  const { navigationMap, tocMap, tocChangeListener, dockviewApi, notebookCallbackMap, chatContextMap, tempHighlightMap } =
     useWorkspace();
 
   const handleRegister = useCallback(
@@ -118,6 +118,20 @@ export function BookReaderPanel({
     [notebookCallbackMap, params.bookId],
   );
 
+  const handleRegisterTempHighlight = useCallback(
+    (panelId: string, fn: (cfi: string) => void) => {
+      tempHighlightMap.current.set(panelId, fn);
+    },
+    [tempHighlightMap],
+  );
+
+  const handleUnregisterTempHighlight = useCallback(
+    (panelId: string) => {
+      tempHighlightMap.current.delete(panelId);
+    },
+    [tempHighlightMap],
+  );
+
   // Extract per-panel typography overrides from dockview params (restored layout)
   const panelTypography: PanelTypographyParams = {
     fontFamily: typeof params.fontFamily === "string" ? params.fontFamily : undefined,
@@ -142,6 +156,8 @@ export function BookReaderPanel({
       onOpenChat={handleOpenChat}
       onHighlightCreated={handleHighlightCreated}
       chatContextMap={chatContextMap}
+      onRegisterTempHighlight={handleRegisterTempHighlight}
+      onUnregisterTempHighlight={handleUnregisterTempHighlight}
     />
   );
 }
