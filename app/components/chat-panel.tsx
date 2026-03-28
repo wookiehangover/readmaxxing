@@ -124,6 +124,7 @@ function createDynamicTransport(
   bookContext: { title: string; author: string; chapters: BookChapter[] },
   currentChapterRef: React.MutableRefObject<number | undefined>,
   notebookMarkdownRef: React.MutableRefObject<string>,
+  visibleTextRef: React.MutableRefObject<string>,
 ) {
   const originalFetch = globalThis.fetch;
   const dynamicFetch: typeof globalThis.fetch = async (input, init) => {
@@ -133,6 +134,7 @@ function createDynamicTransport(
         if (parsed.bookContext) {
           parsed.bookContext.currentChapterIndex = currentChapterRef.current;
           parsed.bookContext.notebookMarkdown = notebookMarkdownRef.current;
+          parsed.bookContext.visibleText = visibleTextRef.current;
           init = { ...init, body: JSON.stringify(parsed) };
         }
       } catch {
@@ -186,23 +188,30 @@ function ChatPanelInner({
     }).catch(console.error);
   }, [bookId]);
 
-  // Ref that stays up-to-date with the reader's current chapter index
+  // Refs that stay up-to-date with the reader's current chapter index and visible text
   const currentChapterRef = useRef<number | undefined>(undefined);
+  const visibleTextRef = useRef<string>("");
   useEffect(() => {
     // Read initial value
     const ctx = chatContextMap.current.get(bookId);
-    if (ctx) currentChapterRef.current = ctx.currentChapterIndex;
+    if (ctx) {
+      currentChapterRef.current = ctx.currentChapterIndex;
+      visibleTextRef.current = ctx.visibleText ?? "";
+    }
 
     // Poll for updates (chatContextMap is updated by the reader's relocated event)
     const interval = setInterval(() => {
       const latest = chatContextMap.current.get(bookId);
-      if (latest) currentChapterRef.current = latest.currentChapterIndex;
+      if (latest) {
+        currentChapterRef.current = latest.currentChapterIndex;
+        visibleTextRef.current = latest.visibleText ?? "";
+      }
     }, 1000);
     return () => clearInterval(interval);
   }, [bookId, chatContextMap]);
 
   const transport = useMemo(
-    () => createDynamicTransport(bookContext, currentChapterRef, notebookMarkdownRef),
+    () => createDynamicTransport(bookContext, currentChapterRef, notebookMarkdownRef, visibleTextRef),
     [bookContext],
   );
 
@@ -512,7 +521,11 @@ function ChatMessage({ message, isStreaming }: { message: UIMessage; isStreaming
             <p className="whitespace-pre-wrap">{text}</p>
           ) : (
             <Streamdown
-              animated
+              animated={{
+                animation: "blurIn",
+                duration: 250,
+                easing: "ease-out",
+              }}
               isAnimating={isStreaming}
               className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             >

@@ -16,6 +16,7 @@ interface ChatRequestBody {
     author: string;
     chapters: BookChapter[];
     currentChapterIndex?: number;
+    visibleText?: string;
     notebookMarkdown?: string;
   };
 }
@@ -30,16 +31,23 @@ function buildSystemPrompt(bookContext: ChatRequestBody["bookContext"]): string 
     const chapter = bookContext.chapters.find(
       (c) => c.index === bookContext.currentChapterIndex,
     );
-    if (chapter) {
-      const excerpt = chapter.text.slice(0, 2000);
+
+    // Prefer the actual visible text from the reader iframe
+    const pageText = bookContext.visibleText?.trim();
+
+    if (chapter || pageText) {
+      const chapterLabel = chapter
+        ? `Chapter ${chapter.index} — "${chapter.title}"`
+        : `Chapter ${bookContext.currentChapterIndex}`;
+
       currentChapterSection = `
 
 ## Current context
-The reader is currently on: Chapter ${chapter.index} — "${chapter.title}"
+The reader is currently on: ${chapterLabel}
 
-Here is the beginning of the chapter they are reading:
+Here is what they are currently looking at:
 ---
-${excerpt}${chapter.text.length > 2000 ? "\n[continues...]" : ""}
+${pageText || chapter?.text.slice(0, 2000) || "(unable to extract page text)"}
 ---`;
     }
   }

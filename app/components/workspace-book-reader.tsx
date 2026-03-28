@@ -50,7 +50,7 @@ interface WorkspaceBookReaderProps {
   onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
   /** Shared ref for tracking current chapter position per book (for chat context) */
   chatContextMap?: React.MutableRefObject<
-    Map<string, { currentChapterIndex: number; currentSpineHref: string }>
+    Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
   >;
 }
 
@@ -144,7 +144,7 @@ function WorkspaceBookReaderInner({
   onOpenChat?: () => void;
   onHighlightCreated?: (highlight: { highlightId: string; cfiRange: string; text: string }) => void;
   chatContextMap?: React.MutableRefObject<
-    Map<string, { currentChapterIndex: number; currentSpineHref: string }>
+    Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
   >;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -550,11 +550,25 @@ function WorkspaceBookReaderInner({
           }
           latestCfiRef.current = location.start.cfi;
 
-          // Update chat context with current chapter position
+          // Update chat context with current chapter position and visible text
           if (chatContextMap && location.start.index != null) {
+            let visibleText = "";
+            try {
+              const contents = (renditionRef.current as any)?.getContents?.() as any[];
+              if (contents?.length > 0) {
+                visibleText = contents
+                  .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
+                  .filter(Boolean)
+                  .join("\n\n");
+              }
+            } catch {
+              // fallback: no visible text
+            }
+
             chatContextMap.current.set(book.id, {
               currentChapterIndex: location.start.index,
               currentSpineHref: location.start.href ?? "",
+              visibleText,
             });
           }
 

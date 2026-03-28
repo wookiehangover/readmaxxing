@@ -38,7 +38,7 @@ interface WorkspaceContextValue {
   onBookDeletedRef: React.MutableRefObject<((bookId: string) => void) | null>;
   /** bookId -> current chapter context for chat */
   chatContextMap: React.MutableRefObject<
-    Map<string, { currentChapterIndex: number; currentSpineHref: string }>
+    Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
   >;
   /** Find TOC entries for a book by scanning dockview panels */
   findTocForBook: (bookId: string) => TocEntry[] | undefined;
@@ -72,7 +72,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const onBookAddedRef = useRef<((book: Book) => void) | null>(null);
   const onBookDeletedRef = useRef<((bookId: string) => void) | null>(null);
   const chatContextMap = useRef(
-    new Map<string, { currentChapterIndex: number; currentSpineHref: string }>(),
+    new Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>(),
   );
 
   const findNavForBook = useCallback(
