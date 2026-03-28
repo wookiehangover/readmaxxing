@@ -305,14 +305,15 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       renderer: "always",
     });
 
-    // When opening the first panel, add a companion new-tab panel to its right
-    if (isFirstPanel) {
-      const newTabId = `new-tab-${crypto.randomUUID().slice(0, 8)}`;
+    // When opening the first panel on a wide screen, add a companion chat panel to its right
+    if (isFirstPanel && window.innerWidth > 1000) {
+      const chatId = `chat-${book.id}`;
       api.addPanel({
-        id: newTabId,
-        component: "new-tab",
-        title: "Library",
-        params: {},
+        id: chatId,
+        component: "chat",
+        title: truncateTitle(`Chat: ${book.title}`),
+        params: { bookId: book.id, bookTitle: book.title },
+        renderer: "always",
         position: { referencePanel: panelId, direction: "right" },
       });
     }
