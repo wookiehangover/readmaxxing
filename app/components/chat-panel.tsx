@@ -174,7 +174,7 @@ function ChatPanelInner({
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
 }) {
-  const { chatContextMap } = useWorkspace();
+  const { chatContextMap, notebookCallbackMap, findNavForBook } = useWorkspace();
 
   // Load notebook markdown for the AI's read_notes tool
   const [notebookMarkdown, setNotebookMarkdown] = useState<string>("");
@@ -265,6 +265,76 @@ function ChatPanelInner({
         ).then(() => {
           setNotebookMarkdown((prev) => prev + "\n" + text);
         }).catch(console.error);
+      }
+
+      // Handle create_highlight tool calls
+      const highlightParts = msg.parts?.filter(
+        (p: any) =>
+          p.type === "tool-invocation" &&
+          p.toolInvocation?.toolName === "create_highlight" &&
+          p.toolInvocation?.state === "result",
+      ) ?? [];
+
+      for (const part of highlightParts) {
+        const args = (part as any).toolInvocation?.args as
+          | { text?: string; note?: string }
+          | undefined;
+        const highlightText = args?.text;
+        if (!highlightText || !bookId) continue;
+
+        const data = bookDataRef.current;
+        if (!data) continue;
+
+        // Search for the text in the book to get a CFI, then persist the highlight
+        (async () => {
+          try {
+            const ePub = (await import("epubjs")).default;
+            const { searchBookForCfi } = await import("~/lib/epub-search");
+            const tempBook = ePub(data);
+            try {
+              const results = await searchBookForCfi(tempBook, highlightText);
+              if (results.length === 0) return;
+
+              const cfiRange = results[0].cfi;
+              const highlight = {
+                id: crypto.randomUUID(),
+                bookId,
+                cfiRange,
+                text: highlightText,
+                color: "rgba(255, 213, 79, 0.4)",
+                createdAt: Date.now(),
+              };
+
+              // Persist highlight to IndexedDB
+              await AppRuntime.runPromise(
+                Effect.gen(function* () {
+                  const svc = yield* AnnotationService;
+                  yield* svc.saveHighlight(highlight);
+                }),
+              );
+
+              // Navigate to the highlight in the reader
+              const navigate = findNavForBook(bookId);
+              if (navigate) {
+                navigate(cfiRange);
+              }
+
+              // Add HighlightReference to the notebook
+              const appendFn = notebookCallbackMap.current.get(bookId);
+              if (appendFn) {
+                appendFn({
+                  highlightId: highlight.id,
+                  cfiRange: highlight.cfiRange,
+                  text: highlight.text,
+                });
+              }
+            } finally {
+              tempBook.destroy();
+            }
+          } catch (err) {
+            console.warn("Failed to create highlight from AI tool:", err);
+          }
+        })();
       }
     },
     onError: (err) => {
@@ -564,6 +634,11 @@ function ChatMessage({
                   label = inv.args?.chapterTitle
                     ? `Read chapter: ${inv.args.chapterTitle}`
                     : `Read chapter ${inv.args?.chapterIndex}`;
+                } else if (inv.toolName === "create_highlight") {
+                  const snippet = typeof inv.args?.text === "string"
+                    ? inv.args.text.slice(0, 50) + (inv.args.text.length > 50 ? "…" : "")
+                    : "";
+                  label = `Highlighted: "${snippet}"`;
                 }
                 return (
                   <div key={i} className="flex items-center gap-1.5">
