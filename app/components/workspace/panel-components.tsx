@@ -9,6 +9,7 @@ import { WorkspaceNotebook } from "~/components/workspace-notebook";
 import { ChatPanel as ChatPanelComponent } from "~/components/chat-panel";
 import { truncateTitle } from "~/lib/workspace-utils";
 import { useWorkspace } from "~/lib/workspace-context";
+import { useIsMobile } from "~/hooks/use-mobile";
 
 export function BookReaderPanel({
   params,
@@ -55,6 +56,8 @@ export function BookReaderPanel({
     [tocMap, tocChangeListener],
   );
 
+  const isMobile = useIsMobile();
+
   const handleOpenNotebook = useCallback(() => {
     const dockApi = dockviewApi.current;
     if (!dockApi) return;
@@ -66,14 +69,27 @@ export function BookReaderPanel({
       return;
     }
 
-    // Determine positioning: reuse an existing group to the right if one exists
+    const title = params.bookTitle ?? "Untitled";
+
+    // On mobile, open as a tab in the same group (no split)
+    if (isMobile) {
+      dockApi.addPanel({
+        id: panelId,
+        component: "notebook",
+        title: truncateTitle(`Notes: ${title}`),
+        params: { bookId: params.bookId, bookTitle: title },
+        renderer: "always",
+      });
+      return;
+    }
+
+    // Desktop: reuse an existing group to the right if one exists, otherwise split
     const bookGroup = api.group;
     const bookRect = bookGroup.element.getBoundingClientRect();
     const rightGroup = dockApi.groups.find(
       (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
     );
 
-    const title = params.bookTitle ?? "Untitled";
     dockApi.addPanel({
       id: panelId,
       component: "notebook",
@@ -84,7 +100,7 @@ export function BookReaderPanel({
         ? { referenceGroup: rightGroup }
         : { referencePanel: api.id, direction: "right" as const },
     });
-  }, [dockviewApi, params.bookId, params.bookTitle, api]);
+  }, [dockviewApi, params.bookId, params.bookTitle, api, isMobile]);
 
   const handleOpenChat = useCallback(() => {
     const dockApi = dockviewApi.current;
@@ -97,13 +113,27 @@ export function BookReaderPanel({
       return;
     }
 
+    const title = params.bookTitle ?? "Untitled";
+
+    // On mobile, open as a tab in the same group (no split)
+    if (isMobile) {
+      dockApi.addPanel({
+        id: panelId,
+        component: "chat",
+        title: truncateTitle(`Chat: ${title}`),
+        params: { bookId: params.bookId, bookTitle: title },
+        renderer: "always",
+      });
+      return;
+    }
+
+    // Desktop: reuse an existing group to the right if one exists, otherwise split
     const bookGroup = api.group;
     const bookRect = bookGroup.element.getBoundingClientRect();
     const rightGroup = dockApi.groups.find(
       (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
     );
 
-    const title = params.bookTitle ?? "Untitled";
     dockApi.addPanel({
       id: panelId,
       component: "chat",
@@ -114,7 +144,7 @@ export function BookReaderPanel({
         ? { referenceGroup: rightGroup }
         : { referencePanel: api.id, direction: "right" as const },
     });
-  }, [dockviewApi, params.bookId, params.bookTitle, api]);
+  }, [dockviewApi, params.bookId, params.bookTitle, api, isMobile]);
 
   const handleHighlightCreated = useCallback(
     (highlight: { highlightId: string; cfiRange: string; text: string }) => {
