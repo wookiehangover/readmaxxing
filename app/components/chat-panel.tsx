@@ -553,9 +553,55 @@ const SUGGESTION_CATEGORIES = [
   },
   {
     label: "Pull the Thread",
-    suggestions: ["What ideas connect across multiple chapters?", "What would Tyler Cowen think about this?"],
+    suggestions: [
+      "What ideas connect across multiple chapters?",
+      "What would Tyler Cowen think about this?",
+    ],
   },
 ];
+
+/** Parse suggested prompts from an HTML comment at the end of assistant text. */
+function parseSuggestedPrompts(text: string): string[] {
+  const match = text.match(/<!--\s*suggested-prompts\s*\n([\s\S]*?)-->/);
+  if (!match) return [];
+  return match[1]
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/** Strip the suggested-prompts HTML comment from display text. */
+function stripSuggestedPrompts(text: string): string {
+  return text.replace(/<!--\s*suggested-prompts\s*\n[\s\S]*?-->/, "").trimEnd();
+}
+
+function SuggestedPrompts({
+  prompts,
+  sendMessage,
+}: {
+  prompts: string[];
+  sendMessage: (message: { text: string }) => void;
+}) {
+  if (prompts.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 px-5 pb-2">
+      {prompts.map((prompt) => (
+        <button
+          key={prompt}
+          type="button"
+          className={cn(
+            "rounded-full border px-3 py-1 text-sm text-foreground",
+            "transition-colors hover:bg-accent hover:text-accent-foreground",
+            "cursor-pointer",
+          )}
+          onClick={() => sendMessage({ text: prompt })}
+        >
+          {prompt}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function ChatEmptyState({
   bookTitle,
@@ -798,11 +844,15 @@ function ChatMessage({
             <p className="whitespace-pre-wrap">{text}</p>
           ) : (
             <Streamdown
-              animated={{
-                animation: "fadeIn",
-                duration: 150,
-                easing: "ease-out",
-              }}
+              animated={
+                isStreaming
+                  ? {
+                      animation: "fadeIn",
+                      duration: 150,
+                      easing: "ease-out",
+                    }
+                  : false
+              }
               isAnimating={isStreaming}
               className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ul,ol]:pl-0"
               allowedTags={{ ref: ["chapter", "query"] }}
