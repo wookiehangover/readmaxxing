@@ -523,8 +523,9 @@ function ChatMessage({ message, isStreaming }: { message: UIMessage; isStreaming
             <Streamdown
               animated={{
                 animation: "blurIn",
-                duration: 250,
+                duration: 150,
                 easing: "ease-out",
+                stagger: 20,
               }}
               isAnimating={isStreaming}
               className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
