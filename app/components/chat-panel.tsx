@@ -601,7 +601,7 @@ function SuggestedPrompts({
 }) {
   if (prompts.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-1.5 px-5 pb-2">
+    <div className="mt-4 flex flex-wrap gap-1.5 px-5 pb-2">
       {prompts.map((prompt) => (
         <button
           key={prompt}
