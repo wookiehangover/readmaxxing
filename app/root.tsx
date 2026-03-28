@@ -11,14 +11,6 @@ import type { Route } from "./+types/root";
 import "./app.css";
 import { ThemeEffect } from "~/components/theme-effect";
 
-function getOrigin() {
-  const productionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  if (productionUrl) return `https://${productionUrl}`;
-  const vercelUrl = process.env.VERCEL_URL;
-  if (vercelUrl) return `https://${vercelUrl}`;
-  return "";
-}
-
 // Inline script to set the theme class before React hydrates, preventing FOUC.
 const themeScript = `
 (function() {
@@ -31,8 +23,9 @@ const themeScript = `
 })();
 `;
 
+const SITE_ORIGIN = typeof __SITE_ORIGIN__ !== "undefined" ? __SITE_ORIGIN__ : "";
+
 export function Layout({ children }: { children: React.ReactNode }) {
-  const origin = getOrigin();
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -48,12 +41,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32" />
         <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
-        <meta property="og:image" content={`${origin}/og-image.png`} />
+        <meta property="og:image" content={`${SITE_ORIGIN}/og-image.png`} />
         <meta property="og:image:width" content="1360" />
         <meta property="og:image:height" content="768" />
         <meta property="og:image:type" content="image/png" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:image" content={`${origin}/og-image.png`} />
+        <meta name="twitter:image" content={`${SITE_ORIGIN}/og-image.png`} />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <Meta />
         <Links />
