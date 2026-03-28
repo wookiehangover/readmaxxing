@@ -862,7 +862,6 @@ function ChatMessage({
             <p className="whitespace-pre-wrap">{text}</p>
           ) : (
             <Streamdown
-              className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ul,ol]:pl-0"
               allowedTags={{ ref: ["chapter", "query"] }}
               components={streamdownComponents}
             >
