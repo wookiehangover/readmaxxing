@@ -1,12 +1,13 @@
-import { type DependencyList, useEffect, useState } from "react";
-import { Effect } from "effect";
+import { type DependencyList, useEffect, useRef, useState } from "react";
+import { Cause, Effect, Fiber } from "effect";
+import type { RuntimeFiber } from "effect/Fiber";
 import { AppRuntime } from "~/lib/effect-runtime";
 
 /**
  * React hook that runs an Effect.ts effect and manages loading, error, and data states.
  *
- * The effect is re-run whenever the dependency list changes. Stale results from
- * previous runs are automatically discarded via a cancellation flag.
+ * The effect is re-run whenever the dependency list changes. In-flight fibers
+ * from previous runs are interrupted via `Fiber.interrupt` on cleanup.
  *
  * @param effectFn - Factory function returning the Effect to execute. Called on each run.
  * @param deps - React dependency list that triggers re-execution when changed.
@@ -27,28 +28,38 @@ export function useEffectQuery<A, E>(
   const [data, setData] = useState<A | undefined>(undefined);
   const [error, setError] = useState<E | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
+  const fiberRef = useRef<RuntimeFiber<A, E> | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
     setIsLoading(true);
     setError(undefined);
 
-    AppRuntime.runPromise(effectFn())
+    const fiber = AppRuntime.runFork(effectFn());
+    fiberRef.current = fiber;
+
+    AppRuntime.runPromise(Fiber.join(fiber))
       .then((result) => {
-        if (!cancelled) {
-          setData(result);
-          setIsLoading(false);
-        }
+        setData(result);
+        setIsLoading(false);
       })
-      .catch((err: E) => {
-        if (!cancelled) {
-          setError(err);
-          setIsLoading(false);
+      .catch((err: unknown) => {
+        // Ignore interruption errors — they mean cleanup cancelled this fiber
+        if (
+          err instanceof Error &&
+          Cause.InterruptedExceptionTypeId in err
+        ) {
+          return;
         }
+        setError(err as E);
+        setIsLoading(false);
       });
 
     return () => {
-      cancelled = true;
+      const f = fiberRef.current;
+      if (f) {
+        fiberRef.current = null;
+        AppRuntime.runFork(Fiber.interrupt(f));
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
