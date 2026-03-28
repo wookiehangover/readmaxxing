@@ -31,7 +31,14 @@ const SIDEBAR_TRANSITION_MS = 270;
 const LAYOUT_SAVE_DEBOUNCE_MS = 500;
 
 export function meta(_args: Route.MetaArgs) {
-  return [{ title: "Reader" }, { name: "description", content: "Multi-pane book workspace" }];
+  return [
+    { title: "Readmaxxing" },
+    {
+      name: "description",
+      content:
+        "AI-assisted ebook reader with multi-pane layout, highlights, notes, and hundreds of free books.",
+    },
+  ];
 }
 
 export async function clientLoader() {

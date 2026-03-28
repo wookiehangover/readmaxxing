@@ -41,11 +41,23 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32" />
         <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="Readmaxxing" />
+        <meta property="og:title" content="Readmaxxing" />
+        <meta
+          property="og:description"
+          content="AI-assisted ebook reader with multi-pane layout, highlights, notes, and hundreds of free books."
+        />
         <meta property="og:image" content={`${SITE_ORIGIN}/og-image.png`} />
         <meta property="og:image:width" content="1360" />
         <meta property="og:image:height" content="768" />
         <meta property="og:image:type" content="image/png" />
         <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Readmaxxing" />
+        <meta
+          name="twitter:description"
+          content="AI-assisted ebook reader with multi-pane layout, highlights, notes, and hundreds of free books."
+        />
         <meta name="twitter:image" content={`${SITE_ORIGIN}/og-image.png`} />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <Meta />

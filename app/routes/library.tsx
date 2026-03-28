@@ -20,7 +20,14 @@ import {
 } from "~/components/ui/sheet";
 
 export function meta(_args: Route.MetaArgs) {
-  return [{ title: "Reader" }, { name: "description", content: "A browser-based ebook reader" }];
+  return [
+    { title: "Readmaxxing" },
+    {
+      name: "description",
+      content:
+        "AI-assisted ebook reader with multi-pane layout, highlights, notes, and hundreds of free books.",
+    },
+  ];
 }
 
 export async function clientLoader() {

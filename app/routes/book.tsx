@@ -5,8 +5,8 @@ import { BookReader } from "~/components/book-reader";
 import { AppRuntime } from "~/lib/effect-runtime";
 
 export function meta({ data }: Route.MetaArgs) {
-  const title = data?.book?.title ?? "Reader";
-  return [{ title }];
+  const title = data?.book?.title ?? "Readmaxxing";
+  return [{ title: `${title} — Readmaxxing` }];
 }
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {

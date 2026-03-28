@@ -14,8 +14,8 @@ import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 
 export function meta({ data }: Route.MetaArgs) {
-  const title = data?.book?.title ?? "Reader";
-  return [{ title }];
+  const title = data?.book?.title ?? "Readmaxxing";
+  return [{ title: `${title} — Readmaxxing` }];
 }
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
