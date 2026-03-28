@@ -9,7 +9,7 @@ import {
   type AddPanelPositionOptions,
 } from "dockview";
 import type { Route } from "./+types/workspace";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { useBookUpload } from "~/lib/use-book-upload";
 import { DropZone } from "~/components/drop-zone";
 import { WorkspaceService } from "~/lib/workspace-store";
@@ -49,7 +49,6 @@ export function HydrateFallback() {
   );
 }
 
-
 const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any>>> = {
   "book-reader": BookReaderPanel,
   notebook: NotebookPanel,
@@ -68,7 +67,7 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
 
 function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps["loaderData"] }) {
   const ws = useWorkspace();
-  const [books, setBooks] = useState<Book[]>(loaderData.books);
+  const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
   const sortBy = settings.workspaceSortBy;
@@ -91,8 +90,8 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   );
 
   const { openBooks, otherBooks } = useMemo(() => {
-    const open: Book[] = [];
-    const other: Book[] = [];
+    const open: BookMeta[] = [];
+    const other: BookMeta[] = [];
     for (const book of books) {
       if (openBookIds.has(book.id)) {
         open.push(book);
@@ -115,9 +114,9 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     const api = apiRef.current;
     if (!api) return;
     const layout = api.toJSON();
-    AppRuntime.runPromise(
-      WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(layout))),
-    ).catch(console.error);
+    AppRuntime.runPromise(WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(layout)))).catch(
+      console.error,
+    );
   }, []);
 
   // Debounced layout save
@@ -167,14 +166,17 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       updateOpenBooks();
 
       // Store disposables for cleanup on unmount
+      // In dockview v5, onDidLayoutChange does not fire for panel add/remove/move,
+      // so we must also listen to those events to persist layout changes.
       disposablesRef.current = [
         event.api.onDidAddPanel(updatePanelCount),
         event.api.onDidRemovePanel(updatePanelCount),
         event.api.onDidAddPanel(updateOpenBooks),
         event.api.onDidRemovePanel(updateOpenBooks),
-        event.api.onDidLayoutChange(() => {
-          saveLayout();
-        }),
+        event.api.onDidAddPanel(saveLayout),
+        event.api.onDidRemovePanel(saveLayout),
+        event.api.onDidMovePanel(saveLayout),
+        event.api.onDidLayoutChange(saveLayout),
       ];
     },
     [saveLayout, ws],
@@ -204,11 +206,19 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     };
   }, [flushLayout]);
 
-  // Register TOC change listener and cleanup on unmount
+  // Register TOC change listener (safe to re-run when ws changes)
   useEffect(() => {
     ws.tocChangeListener.current = () => setTocVersion((v) => v + 1);
     return () => {
       ws.tocChangeListener.current = null;
+    };
+  }, [ws]);
+
+  // Cleanup dockview disposables and maps only on unmount —
+  // these must NOT be disposed on context value changes, because
+  // onReady only registers them once per mount.
+  useEffect(() => {
+    return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       for (const d of disposablesRef.current) d.dispose();
       disposablesRef.current = [];
@@ -217,7 +227,8 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       ws.notebookCallbackMap.current.clear();
       ws.tempHighlightMap.current.clear();
     };
-  }, [ws]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Update document title with panel count
   useEffect(() => {
@@ -254,7 +265,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     });
   }, []);
 
-  const openBook = useCallback((book: Book, forceNew = false) => {
+  const openBook = useCallback((book: BookMeta, forceNew = false) => {
     const api = apiRef.current;
     if (!api) return;
 
@@ -300,7 +311,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     }
   }, []);
 
-  const openNotebook = useCallback((book: Book) => {
+  const openNotebook = useCallback((book: BookMeta) => {
     const api = apiRef.current;
     if (!api) return;
 
@@ -361,7 +372,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     });
   }, []);
 
-  const openChat = useCallback((book: Book) => {
+  const openChat = useCallback((book: BookMeta) => {
     const api = apiRef.current;
     if (!api) return;
 
@@ -403,7 +414,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
   // Wrap setBooks to also update booksRef and notify booksChangeListener
   const updateBooks = useCallback(
-    (updater: (prev: Book[]) => Book[]) => {
+    (updater: (prev: BookMeta[]) => BookMeta[]) => {
       setBooks((prev) => {
         const next = updater(prev);
         ws.booksRef.current = next;
@@ -415,7 +426,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   );
 
   const handleBookAdded = useCallback(
-    (book: Book) => {
+    (book: BookMeta) => {
       updateBooks((prev) => [...prev, book]);
       openBook(book);
     },

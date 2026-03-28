@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { Ellipsis, FileText, Globe, Trash2 } from "lucide-react";
 import { CoverImage, CoverPlaceholder, AddBookCard } from "~/components/book-grid";
 import type { Route } from "./+types/library-index";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useBookUpload } from "~/lib/use-book-upload";
 import { useBookDeletion } from "~/lib/use-book-deletion";
@@ -16,13 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { Button } from "~/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "~/components/ui/dialog";
+import { Dialog, DialogContent } from "~/components/ui/dialog";
 import { StandardEbooksBrowser } from "~/components/standard-ebooks-browser";
 
 export function meta(_args: Route.MetaArgs) {
@@ -44,15 +38,13 @@ export function HydrateFallback() {
   );
 }
 
-
-
 export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
-  const [books, setBooks] = useState<Book[]>(loaderData.books);
+  const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [seBrowserOpen, setSeBrowserOpen] = useState(false);
 
-  const handleBookAdded = useCallback((book: Book) => {
+  const handleBookAdded = useCallback((book: BookMeta) => {
     setBooks((prev) => [...prev, book]);
   }, []);
 

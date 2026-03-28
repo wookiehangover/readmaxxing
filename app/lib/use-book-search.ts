@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type EpubBook from "epubjs/types/book";
-import { searchBookForCfi } from "~/lib/epub-search";
+import { searchBookForCfi, type SearchResult } from "~/lib/epub-search";
 
 export type { SearchResult } from "~/lib/epub-search";
 
@@ -25,9 +25,7 @@ const DEBOUNCE_MS = 300;
  * const { search, results, currentIndex, next, prev, clear } = useBookSearch(bookRef);
  * ```
  */
-export function useBookSearch(
-  bookRef: React.RefObject<EpubBook | null>,
-): UseBookSearchReturn {
+export function useBookSearch(bookRef: React.RefObject<EpubBook | null>): UseBookSearchReturn {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
@@ -104,16 +102,12 @@ export function useBookSearch(
   );
 
   const next = useCallback(() => {
-    setCurrentIndex((prev) =>
-      results.length === 0 ? 0 : (prev + 1) % results.length,
-    );
+    setCurrentIndex((prev) => (results.length === 0 ? 0 : (prev + 1) % results.length));
   }, [results.length]);
 
   const prev = useCallback(() => {
     setCurrentIndex((prev) =>
-      results.length === 0
-        ? 0
-        : (prev - 1 + results.length) % results.length,
+      results.length === 0 ? 0 : (prev - 1 + results.length) % results.length,
     );
   }, [results.length]);
 

@@ -27,9 +27,7 @@ export function useBookDeletion({ onBookDeleted }: UseBookDeletionOptions) {
 
         // Delete all highlights for this book
         const highlights = yield* annotationSvc.getHighlightsByBook(bookId);
-        for (const hl of highlights) {
-          yield* annotationSvc.deleteHighlight(hl.id);
-        }
+        yield* Effect.forEach(highlights, (hl) => annotationSvc.deleteHighlight(hl.id));
 
         // Delete the book itself
         yield* bookSvc.deleteBook(bookId);

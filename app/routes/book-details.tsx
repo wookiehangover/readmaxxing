@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { ArrowLeft, BookOpen, BookOpenText } from "lucide-react";
 import type { Route } from "./+types/book-details";
 import type { JSONContent } from "@tiptap/react";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useEffectQuery } from "~/lib/use-effect-query";
@@ -118,8 +118,10 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     setSaving(true);
     setSaved(false);
     try {
-      const updatedBook: Book = { ...book, title, author };
-      await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.saveBook(updatedBook))));
+      const updatedBook: BookMeta = { ...book, title, author };
+      await AppRuntime.runPromise(
+        BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))),
+      );
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {

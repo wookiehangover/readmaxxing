@@ -4,14 +4,23 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, MessageSquare, Notebook, Search, TableOfContents } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  MessageSquare,
+  Notebook,
+  Search,
+  TableOfContents,
+} from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { SearchBar } from "~/components/search-bar";
 import { useBookSearch } from "~/lib/use-book-search";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { LocationCacheService } from "~/lib/location-cache-store";
+import { ReadingPositionService } from "~/lib/position-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout, Settings } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
@@ -56,8 +65,6 @@ interface WorkspaceBookReaderProps {
   onUnregisterTempHighlight?: (panelId: string) => void;
 }
 
-
-
 export function WorkspaceBookReader({
   bookId,
   panelApi,
@@ -73,6 +80,76 @@ export function WorkspaceBookReader({
   onRegisterTempHighlight,
   onUnregisterTempHighlight,
 }: WorkspaceBookReaderProps) {
+  // Ref holding the real navigateToCfi from the inner component once it mounts.
+  // Before that, the placeholder callback queues CFIs into pendingCfiRef.
+  const realNavRef = useRef<((cfi: string) => void) | null>(null);
+  const pendingCfiRef = useRef<string | null>(null);
+
+  // Lifted from the inner component so the outer placeholder can force
+  // epub initialization when a navigation request arrives for a background panel.
+  const [hasBeenVisible, setHasBeenVisible] = useState(() =>
+    panelApi ? panelApi.isVisible : true,
+  );
+
+  useEffect(() => {
+    if (!panelApi || hasBeenVisible) return;
+    if (panelApi.isVisible) {
+      setHasBeenVisible(true);
+      return;
+    }
+    const disposable = panelApi.onDidVisibilityChange((e) => {
+      if (e.isVisible) {
+        setHasBeenVisible(true);
+        disposable.dispose();
+      }
+    });
+    return () => disposable.dispose();
+  }, [panelApi, hasBeenVisible]);
+
+  // Stable placeholder callback registered immediately so the navigation map
+  // has an entry even while book metadata is still loading.
+  // When the rendition isn't ready yet, queue the CFI and force the epub
+  // to start initializing by setting hasBeenVisible = true.
+  const placeholderNav = useCallback((cfi: string) => {
+    console.debug("[WorkspaceBookReader] placeholderNav called", {
+      cfi,
+      hasRealNav: !!realNavRef.current,
+    });
+    if (realNavRef.current) {
+      realNavRef.current(cfi);
+    } else {
+      pendingCfiRef.current = cfi;
+      // Force epub initialization even if the panel hasn't been visible yet
+      setHasBeenVisible(true);
+    }
+  }, []);
+
+  // Register the placeholder immediately — no waiting for book data.
+  useEffect(() => {
+    const id = panelApi?.id ?? bookId;
+    console.debug("[WorkspaceBookReader] registering placeholder nav", {
+      id,
+      bookId,
+      panelApiId: panelApi?.id,
+    });
+    onRegisterNavigation?.(id, placeholderNav);
+    return () => {
+      onUnregisterNavigation?.(id);
+    };
+  }, [bookId, panelApi, placeholderNav, onRegisterNavigation, onUnregisterNavigation]);
+
+  // Called by WorkspaceBookReaderInner once its rendition is ready
+  const onRenditionReady = useCallback((nav: (cfi: string) => void) => {
+    console.debug("[WorkspaceBookReader] onRenditionReady called, pending:", pendingCfiRef.current);
+    realNavRef.current = nav;
+    // Drain any CFI that arrived while loading
+    const pending = pendingCfiRef.current;
+    if (pending) {
+      pendingCfiRef.current = null;
+      nav(pending);
+    }
+  }, []);
+
   // Load book data via useEffectQuery
   const {
     data: book,
@@ -82,7 +159,7 @@ export function WorkspaceBookReader({
     () =>
       BookService.pipe(
         Effect.andThen((s) => s.getBook(bookId)),
-        Effect.catchTag("BookNotFoundError", () => Effect.succeed(null as Book | null)),
+        Effect.catchTag("BookNotFoundError", () => Effect.succeed(null as BookMeta | null)),
       ),
     [bookId],
   );
@@ -108,8 +185,8 @@ export function WorkspaceBookReader({
       book={book}
       panelApi={panelApi}
       panelTypography={panelTypography}
-      onRegisterNavigation={onRegisterNavigation}
-      onUnregisterNavigation={onUnregisterNavigation}
+      hasBeenVisible={hasBeenVisible}
+      onRenditionReady={onRenditionReady}
       onRegisterToc={onRegisterToc}
       onUnregisterToc={onUnregisterToc}
       onOpenNotebook={onOpenNotebook}
@@ -130,8 +207,8 @@ function WorkspaceBookReaderInner({
   book,
   panelApi,
   panelTypography,
-  onRegisterNavigation,
-  onUnregisterNavigation,
+  hasBeenVisible,
+  onRenditionReady,
   onRegisterToc,
   onUnregisterToc,
   onOpenNotebook,
@@ -141,11 +218,13 @@ function WorkspaceBookReaderInner({
   onRegisterTempHighlight,
   onUnregisterTempHighlight,
 }: {
-  book: Book;
+  book: BookMeta;
   panelApi?: DockviewPanelApi;
   panelTypography?: PanelTypographyParams;
-  onRegisterNavigation?: (panelId: string, navigateToCfi: (cfi: string) => void) => void;
-  onUnregisterNavigation?: (panelId: string) => void;
+  /** Whether the panel has been visible at least once (controlled by outer component) */
+  hasBeenVisible: boolean;
+  /** Called once the rendition is ready so the outer component can connect the real navigate callback */
+  onRenditionReady?: (navigateToCfi: (cfi: string) => void) => void;
   onRegisterToc?: (panelId: string, toc: TocEntry[]) => void;
   onUnregisterToc?: (panelId: string) => void;
   onOpenNotebook?: () => void;
@@ -181,28 +260,6 @@ function WorkspaceBookReaderInner({
 
   const layoutRef = useRef(localReaderLayout);
 
-  // Defer epub initialization until the panel has been visible at least once.
-  // With renderer: "always", background tabs exist in the DOM but have zero
-  // dimensions. epubjs renderTo() on a zero-sized container produces broken layout.
-  const [hasBeenVisible, setHasBeenVisible] = useState(() =>
-    panelApi ? panelApi.isVisible : true,
-  );
-
-  useEffect(() => {
-    if (!panelApi || hasBeenVisible) return;
-    // Already visible on mount (race with state init)
-    if (panelApi.isVisible) {
-      setHasBeenVisible(true);
-      return;
-    }
-    const disposable = panelApi.onDidVisibilityChange((e) => {
-      if (e.isVisible) {
-        setHasBeenVisible(true);
-        disposable.dispose();
-      }
-    });
-    return () => disposable.dispose();
-  }, [panelApi, hasBeenVisible]);
   const typographyRef = useRef({
     fontFamily: localFontFamily,
     fontSize: localFontSize,
@@ -271,13 +328,11 @@ function WorkspaceBookReaderInner({
       const isCurrent = i === searchIndex;
       const className = isCurrent ? "search-hl-current" : "search-hl";
       try {
-        rendition.annotations.highlight(
-          cfi,
-          {},
-          undefined,
-          className,
-          { fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)", "fill-opacity": "1", "mix-blend-mode": "multiply" },
-        );
+        rendition.annotations.highlight(cfi, {}, undefined, className, {
+          fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)",
+          "fill-opacity": "1",
+          "mix-blend-mode": "multiply",
+        });
       } catch {
         // annotation may fail for invalid CFIs
       }
@@ -348,7 +403,9 @@ function WorkspaceBookReaderInner({
         bookId: book.id,
         cfi,
         savePosition: (key, val) =>
-          AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.savePosition(key, val)))),
+          AppRuntime.runPromise(
+            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+          ),
       }).catch((err) => console.error("Failed to flush reading position:", err));
     }
   }, [book.id, panelApi?.id]);
@@ -361,23 +418,16 @@ function WorkspaceBookReaderInner({
     });
   }, []);
 
-  // Register navigateToCfi with parent workspace for cross-panel coordination
-  // Use panelApi.id (unique per panel) so multiple copies of the same book each register independently
-  useEffect(() => {
-    const id = panelApi?.id ?? book.id;
-    onRegisterNavigation?.(id, navigateToCfi);
-    return () => {
-      onUnregisterNavigation?.(id);
-    };
-  }, [book.id, panelApi, navigateToCfi, onRegisterNavigation, onUnregisterNavigation]);
-
   // Temporary highlight: briefly flash a CFI range in the reader
   const applyTempHighlight = useCallback((cfi: string) => {
     const rendition = renditionRef.current;
     if (!rendition) return;
     try {
       rendition.annotations.highlight(
-        cfi, {}, undefined as any, undefined as any,
+        cfi,
+        {},
+        undefined as any,
+        undefined as any,
         { fill: "rgba(255, 213, 79, 0.4)", "fill-opacity": "0.4" } as any,
       );
       setTimeout(() => {
@@ -420,15 +470,26 @@ function WorkspaceBookReaderInner({
     const el = containerRef.current;
     if (!el) return;
 
-    const opts = getRenditionOptions(localReaderLayout);
-    const epubBook = ePub(book.data);
-    bookRef.current = epubBook;
+    let cancelled = false;
+    let epubBook: EpubBook | null = null;
+    let rendition: Rendition | null = null;
 
-    // Inject layout fix CSS via spine hooks — must run before iframe load
-    // so epubjs textWidth() calculation sees corrected layout
-    epubBook.spine.hooks.content.register((doc: Document, _section: any) => {
-      const style = doc.createElement("style");
-      style.textContent = `
+    const init = async () => {
+      // Load binary data on demand
+      const bookData = await AppRuntime.runPromise(
+        BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))),
+      );
+      if (cancelled) return;
+
+      const opts = getRenditionOptions(localReaderLayout);
+      epubBook = ePub(bookData);
+      bookRef.current = epubBook;
+
+      // Inject layout fix CSS via spine hooks — must run before iframe load
+      // so epubjs textWidth() calculation sees corrected layout
+      epubBook.spine.hooks.content.register((doc: Document, _section: any) => {
+        const style = doc.createElement("style");
+        style.textContent = `
         /* Prevent off-screen positioned elements from inflating pagination width */
         section[class*="titlepage"] h1,
         section[class*="titlepage"] p,
@@ -443,40 +504,40 @@ function WorkspaceBookReaderInner({
           object-fit: contain !important;
         }
       `;
-      doc.head.appendChild(style);
-    });
+        doc.head.appendChild(style);
+      });
 
-    const rendition = epubBook.renderTo(el, {
-      width: "100%",
-      height: "100%",
-      spread: opts.spread,
-      flow: opts.flow,
-      allowScriptedContent: true,
-      ...("gap" in opts && { gap: opts.gap }),
-    });
-    renditionRef.current = rendition;
+      rendition = epubBook.renderTo(el, {
+        width: "100%",
+        height: "100%",
+        spread: opts.spread,
+        flow: opts.flow,
+        allowScriptedContent: true,
+        ...("gap" in opts && { gap: opts.gap }),
+      });
+      renditionRef.current = rendition;
 
-    // Inject Google Fonts and typography CSS into the epub iframe
-    rendition.hooks.content.register((contents: any) => {
-      const doc = contents.document;
-      const link = doc.createElement("link");
-      link.rel = "stylesheet";
-      link.href =
-        "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Source+Serif+4:wght@400;500;600;700&display=swap";
-      doc.head.appendChild(link);
+      // Inject Google Fonts and typography CSS into the epub iframe
+      rendition.hooks.content.register((contents: any) => {
+        const doc = contents.document;
+        const link = doc.createElement("link");
+        link.rel = "stylesheet";
+        link.href =
+          "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Source+Serif+4:wght@400;500;600;700&display=swap";
+        doc.head.appendChild(link);
 
-      const style = doc.createElement("style");
-      style.id = "reader-typography";
-      style.textContent = getTypographyCss(
-        typographyRef.current.fontFamily,
-        typographyRef.current.fontSize,
-        typographyRef.current.lineHeight,
-      );
-      doc.head.appendChild(style);
+        const style = doc.createElement("style");
+        style.id = "reader-typography";
+        style.textContent = getTypographyCss(
+          typographyRef.current.fontFamily,
+          typographyRef.current.fontSize,
+          typographyRef.current.lineHeight,
+        );
+        doc.head.appendChild(style);
 
-      const highlightStyle = doc.createElement("style");
-      highlightStyle.id = "reader-highlights";
-      highlightStyle.textContent = `
+        const highlightStyle = doc.createElement("style");
+        highlightStyle.id = "reader-highlights";
+        highlightStyle.textContent = `
         .epubjs-hl {
           background-color: rgba(255, 213, 79, 0.4) !important;
           cursor: pointer;
@@ -488,171 +549,176 @@ function WorkspaceBookReaderInner({
           background-color: rgba(59, 130, 246, 0.6) !important;
         }
       `;
-      doc.head.appendChild(highlightStyle);
+        doc.head.appendChild(highlightStyle);
 
-      // Forward arrow-key navigation and intercept Cmd/Ctrl+F from the epub iframe
-      doc.addEventListener("keydown", (e: KeyboardEvent) => {
-        // Intercept Cmd/Ctrl+F to open in-book search
-        if ((e.metaKey || e.ctrlKey) && e.key === "f") {
-          e.preventDefault();
-          e.stopPropagation();
-          setSearchOpen(true);
-          return;
-        }
-        if (layoutRef.current === "scroll") return;
-        if (e.key === "ArrowLeft") rendition.prev();
-        else if (e.key === "ArrowRight") rendition.next();
+        // Forward arrow-key navigation and intercept Cmd/Ctrl+F from the epub iframe
+        doc.addEventListener("keydown", (e: KeyboardEvent) => {
+          // Intercept Cmd/Ctrl+F to open in-book search
+          if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+            e.preventDefault();
+            e.stopPropagation();
+            setSearchOpen(true);
+            return;
+          }
+          if (layoutRef.current === "scroll") return;
+          if (e.key === "ArrowLeft") rendition!.prev();
+          else if (e.key === "ArrowRight") rendition!.next();
+        });
       });
 
-    });
+      registerThemeColors(rendition);
 
-    registerThemeColors(rendition);
+      (async () => {
+        await epubBook.ready;
 
-    (async () => {
-      await epubBook.ready;
-
-      // Extract TOC from epub navigation
-      const nav = epubBook.navigation;
-      if (nav && nav.toc) {
-        const mapToc = (items: any[]): TocEntry[] =>
-          items.map((item) => ({
-            label: item.label?.trim() ?? "",
-            href: item.href ?? "",
-            ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
-          }));
-        const tocData = mapToc(nav.toc);
-        setLocalToc(tocData);
-        onRegisterToc?.(panelApi?.id ?? book.id, tocData);
-      }
-
-      // Restore reading position: prefer in-memory CFI, then panel-specific
-      // position (for refresh with restored layout), then book-level fallback.
-      const startCfi = await resolveStartCfi({
-        latestCfi: latestCfiRef.current,
-        panelId: panelApi?.id,
-        bookId: book.id,
-        getPosition: (key) =>
-          AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getPosition(key)))),
-      });
-      await rendition.display(startCfi || undefined);
-
-      // Eagerly populate chatContextMap so the chat panel has context
-      // even before the first 'relocated' event fires.
-      if (chatContextMap) {
-        let visibleText = "";
-        try {
-          const contents = (rendition as any).getContents?.() as any[];
-          if (contents?.length > 0) {
-            visibleText = contents
-              .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
-              .filter(Boolean)
-              .join("\n\n");
-          }
-        } catch {
-          // fallback: no visible text
+        // Extract TOC from epub navigation
+        const nav = epubBook.navigation;
+        if (nav && nav.toc) {
+          const mapToc = (items: any[]): TocEntry[] =>
+            items.map((item) => ({
+              label: item.label?.trim() ?? "",
+              href: item.href ?? "",
+              ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
+            }));
+          const tocData = mapToc(nav.toc);
+          setLocalToc(tocData);
+          onRegisterToc?.(panelApi?.id ?? book.id, tocData);
         }
-        const loc = rendition.currentLocation() as any;
-        if (loc?.start) {
-          chatContextMap.current.set(book.id, {
-            currentChapterIndex: loc.start.index ?? 0,
-            currentSpineHref: loc.start.href ?? "",
-            visibleText,
-          });
-        }
-      }
 
-      const effectiveTheme = resolveTheme(settings.theme);
-      rendition.themes.select(effectiveTheme);
+        // Restore reading position: prefer in-memory CFI, then panel-specific
+        // position (for refresh with restored layout), then book-level fallback.
+        const startCfi = await resolveStartCfi({
+          latestCfi: latestCfiRef.current,
+          panelId: panelApi?.id,
+          bookId: book.id,
+          getPosition: (key) =>
+            AppRuntime.runPromise(
+              ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(key))),
+            ),
+        });
+        await rendition.display(startCfi || undefined);
 
-      // Load and apply existing highlights
-      await loadAndApplyHighlights(rendition);
-
-      // Register selection handler
-      registerSelectionHandler(rendition);
-
-      try {
-        const cachedLocations = await AppRuntime.runPromise(
-          BookService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
-            Effect.catchAll(() => Effect.succeed(null)),
-          ),
-        );
-        if (cachedLocations) {
-          epubBook.locations.load(cachedLocations);
-        } else {
-          await epubBook.locations.generate(1500);
-          const json = (epubBook.locations as any).save() as string;
-          AppRuntime.runPromise(
-            BookService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
-          ).catch(console.error);
-        }
-        setTotalPages((epubBook.locations as any).total as number);
-      } catch {
-        // locations generation can fail silently
-      }
-
-      rendition.on(
-        "relocated",
-        (location: {
-          start: {
-            cfi: string;
-            percentage: number;
-            displayed: { page: number; total: number };
-            index?: number;
-            href?: string;
-          };
-        }) => {
-          if (!renditionRef.current) return;
-          setBookProgress(location.start.percentage * 100);
-          const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
-          if (epubLocTotal && epubLocTotal > 0) {
-            const locIndex = bookRef.current!.locations.locationFromCfi(location.start.cfi);
-            if (typeof locIndex === "number" && locIndex >= 0) {
-              setCurrentPage(locIndex + 1);
-            } else {
-              setCurrentPage(Math.max(1, Math.round(location.start.percentage * epubLocTotal)));
+        // Eagerly populate chatContextMap so the chat panel has context
+        // even before the first 'relocated' event fires.
+        if (chatContextMap) {
+          let visibleText = "";
+          try {
+            const contents = (rendition as any).getContents?.() as any[];
+            if (contents?.length > 0) {
+              visibleText = contents
+                .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
+                .filter(Boolean)
+                .join("\n\n");
             }
-            setTotalPages(epubLocTotal);
+          } catch {
+            // fallback: no visible text
           }
-          latestCfiRef.current = location.start.cfi;
-
-          // Update chat context with current chapter position and visible text
-          if (chatContextMap && location.start.index != null) {
-            let visibleText = "";
-            try {
-              const contents = (renditionRef.current as any)?.getContents?.() as any[];
-              if (contents?.length > 0) {
-                visibleText = contents
-                  .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
-                  .filter(Boolean)
-                  .join("\n\n");
-              }
-            } catch {
-              // fallback: no visible text
-            }
-
+          const loc = rendition.currentLocation() as any;
+          if (loc?.start) {
             chatContextMap.current.set(book.id, {
-              currentChapterIndex: location.start.index,
-              currentSpineHref: location.start.href ?? "",
+              currentChapterIndex: loc.start.index ?? 0,
+              currentSpineHref: loc.start.href ?? "",
               visibleText,
             });
           }
+        }
 
-          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = setTimeout(() => {
-            savePositionDualKey({
-              panelId: panelApi?.id,
-              bookId: book.id,
-              cfi: location.start.cfi,
-              savePosition: (key, val) =>
-                AppRuntime.runPromise(
-                  BookService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
-                ),
-            }).catch((err) => console.error("Failed to save reading position:", err));
-          }, POSITION_SAVE_DEBOUNCE_MS);
+        const effectiveTheme = resolveTheme(settings.theme);
+        rendition.themes.select(effectiveTheme);
 
-        },
-      );
-    })();
+        // Load and apply existing highlights
+        await loadAndApplyHighlights(rendition);
+
+        // Register selection handler
+        registerSelectionHandler(rendition);
+
+        // Notify outer component that rendition is ready so any pending
+        // CFI navigation (e.g. from chat panel click during load) can drain.
+        onRenditionReady?.(navigateToCfi);
+
+        try {
+          const cachedLocations = await AppRuntime.runPromise(
+            LocationCacheService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
+              Effect.catchAll(() => Effect.succeed(null)),
+            ),
+          );
+          if (cachedLocations) {
+            epubBook.locations.load(cachedLocations);
+          } else {
+            await epubBook.locations.generate(1500);
+            const json = (epubBook.locations as any).save() as string;
+            AppRuntime.runPromise(
+              LocationCacheService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
+            ).catch(console.error);
+          }
+          setTotalPages((epubBook.locations as any).total as number);
+        } catch {
+          // locations generation can fail silently
+        }
+
+        rendition.on(
+          "relocated",
+          (location: {
+            start: {
+              cfi: string;
+              percentage: number;
+              displayed: { page: number; total: number };
+              index?: number;
+              href?: string;
+            };
+          }) => {
+            if (!renditionRef.current) return;
+            setBookProgress(location.start.percentage * 100);
+            const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
+            if (epubLocTotal && epubLocTotal > 0) {
+              const locIndex = bookRef.current!.locations.locationFromCfi(location.start.cfi);
+              if (typeof locIndex === "number" && locIndex >= 0) {
+                setCurrentPage(locIndex + 1);
+              } else {
+                setCurrentPage(Math.max(1, Math.round(location.start.percentage * epubLocTotal)));
+              }
+              setTotalPages(epubLocTotal);
+            }
+            latestCfiRef.current = location.start.cfi;
+
+            // Update chat context with current chapter position and visible text
+            if (chatContextMap && location.start.index != null) {
+              let visibleText = "";
+              try {
+                const contents = (renditionRef.current as any)?.getContents?.() as any[];
+                if (contents?.length > 0) {
+                  visibleText = contents
+                    .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
+                    .filter(Boolean)
+                    .join("\n\n");
+                }
+              } catch {
+                // fallback: no visible text
+              }
+
+              chatContextMap.current.set(book.id, {
+                currentChapterIndex: location.start.index,
+                currentSpineHref: location.start.href ?? "",
+                visibleText,
+              });
+            }
+
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = setTimeout(() => {
+              savePositionDualKey({
+                panelId: panelApi?.id,
+                bookId: book.id,
+                cfi: location.start.cfi,
+                savePosition: (key, val) =>
+                  AppRuntime.runPromise(
+                    ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+                  ),
+              }).catch((err) => console.error("Failed to save reading position:", err));
+            }, POSITION_SAVE_DEBOUNCE_MS);
+          },
+        );
+      })();
+    }; // end init()
 
     // Keyboard navigation scoped to this panel only
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -663,25 +729,29 @@ function WorkspaceBookReaderInner({
         document.activeElement !== panelRef.current
       )
         return;
-      if (e.key === "ArrowLeft") rendition.prev();
-      else if (e.key === "ArrowRight") rendition.next();
+      if (e.key === "ArrowLeft") rendition?.prev();
+      else if (e.key === "ArrowRight") rendition?.next();
     };
 
     document.addEventListener("keydown", handleKeyDown);
 
+    init().catch((err) => {
+      if (!cancelled) console.error("Failed to load book data:", err);
+    });
+
     return () => {
+      cancelled = true;
       document.removeEventListener("keydown", handleKeyDown);
       flushPositionSave();
       onUnregisterToc?.(panelApi?.id ?? book.id);
-      rendition.destroy();
-      epubBook.destroy();
+      if (rendition) rendition.destroy();
+      if (epubBook) epubBook.destroy();
       bookRef.current = null;
       renditionRef.current = null;
     };
   }, [
     hasBeenVisible,
     book.id,
-    book.data,
     localReaderLayout,
     loadAndApplyHighlights,
     registerSelectionHandler,
@@ -869,7 +939,12 @@ function WorkspaceBookReaderInner({
             </div>
           )}
           <div className="absolute right-2 flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={handleSearchOpen} title="Search in book (Cmd+F)">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleSearchOpen}
+              title="Search in book (Cmd+F)"
+            >
               <Search className="size-4" />
               <span className="sr-only">Search in book</span>
             </Button>

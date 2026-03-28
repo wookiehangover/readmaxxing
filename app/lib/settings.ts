@@ -1,18 +1,45 @@
 import { useState, useCallback } from "react";
+import { Schema } from "effect";
 
 export type Theme = "light" | "dark" | "system";
 export type ReaderLayout = "single" | "spread" | "scroll";
 export type WorkspaceSortBy = "title" | "author" | "recent";
 
-export interface Settings {
-  theme: Theme;
-  readerLayout: ReaderLayout;
-  fontFamily: string;
-  fontSize: number;
-  lineHeight: number;
-  sidebarCollapsed: boolean;
-  workspaceSortBy: WorkspaceSortBy;
-}
+// --- Schema ---
+
+/**
+ * Font size schema with legacy migration transform.
+ * Old values were pixel-based (≤40); new values are percentage-based (>40).
+ * The transform converts legacy pixel values to percentages.
+ */
+const LegacyFontSize = Schema.transform(Schema.Unknown, Schema.Number, {
+  strict: true,
+  decode: (val) => {
+    if (typeof val !== "number" || Number.isNaN(val)) return 100;
+    return val <= 40 ? Math.round(val / 0.16) : val;
+  },
+  encode: (val) => val,
+});
+
+export const SettingsSchema = Schema.Struct({
+  theme: Schema.optionalWith(Schema.Literal("light", "dark", "system"), {
+    default: () => "system" as const,
+  }),
+  readerLayout: Schema.optionalWith(Schema.Literal("single", "spread", "scroll"), {
+    default: () => "single" as const,
+  }),
+  fontFamily: Schema.optionalWith(Schema.String, { default: () => "Literata" }),
+  fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
+  lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
+  sidebarCollapsed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  workspaceSortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), {
+    default: () => "recent" as const,
+  }),
+});
+
+export type Settings = typeof SettingsSchema.Type;
+
+const decodeSettings = Schema.decodeUnknownSync(SettingsSchema);
 
 const STORAGE_KEY = "app-settings";
 
@@ -26,25 +53,13 @@ const defaultSettings: Settings = {
   workspaceSortBy: "recent",
 };
 
-function normalizeLegacyFontSize(fontSize: unknown): number {
-  if (typeof fontSize !== "number" || Number.isNaN(fontSize)) {
-    return defaultSettings.fontSize;
-  }
-
-  return fontSize <= 40 ? Math.round(fontSize / 0.16) : fontSize;
-}
-
 export function getSettings(): Settings {
   if (typeof window === "undefined") return defaultSettings;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultSettings;
-    const parsed = JSON.parse(raw) as Partial<Settings>;
-    return {
-      ...defaultSettings,
-      ...parsed,
-      fontSize: normalizeLegacyFontSize(parsed.fontSize),
-    };
+    const parsed = JSON.parse(raw);
+    return decodeSettings(parsed);
   } catch {
     return defaultSettings;
   }

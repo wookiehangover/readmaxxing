@@ -1,9 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
-import { createStore, set, get, entries } from "idb-keyval";
-import { WorkspaceService } from "~/lib/workspace-store";
+import { createStore } from "idb-keyval";
+import { WorkspaceService, makeWorkspaceService } from "~/lib/workspace-store";
 import type { SerializedDockview } from "dockview";
-import { WorkspaceError } from "~/lib/errors";
 
 let testCounter = 0;
 
@@ -12,36 +11,7 @@ function makeTestLayer() {
   const layoutStore = createStore(`layout-db-${suffix}`, "layout");
   const lastOpenedStore = createStore(`last-opened-db-${suffix}`, "last-opened");
 
-  const LAYOUT_KEY = "dockview-layout";
-
-  return Layer.succeed(WorkspaceService, {
-    saveLayout: (layout: SerializedDockview) =>
-      Effect.tryPromise({
-        try: () => set(LAYOUT_KEY, layout, layoutStore),
-        catch: (cause) => new WorkspaceError({ operation: "saveLayout", cause }),
-      }),
-    getLayout: () =>
-      Effect.tryPromise({
-        try: async () => {
-          const layout = await get<SerializedDockview>(LAYOUT_KEY, layoutStore);
-          return layout ?? null;
-        },
-        catch: (cause) => new WorkspaceError({ operation: "getLayout", cause }),
-      }),
-    saveLastOpened: (bookId: string, timestamp: number) =>
-      Effect.tryPromise({
-        try: () => set(bookId, timestamp, lastOpenedStore),
-        catch: (cause) => new WorkspaceError({ operation: "saveLastOpened", cause }),
-      }),
-    getLastOpenedMap: () =>
-      Effect.tryPromise({
-        try: async () => {
-          const all = await entries<string, number>(lastOpenedStore);
-          return new Map(all);
-        },
-        catch: (cause) => new WorkspaceError({ operation: "getLastOpenedMap", cause }),
-      }),
-  });
+  return Layer.succeed(WorkspaceService, makeWorkspaceService({ layoutStore, lastOpenedStore }));
 }
 
 function makeLayout(overrides: Partial<SerializedDockview> = {}): SerializedDockview {

@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { truncateTitle, sortBooks } from "~/lib/workspace-utils";
-import type { Book } from "~/lib/book-store";
+import type { BookMeta } from "~/lib/book-store";
 
-function makeBook(overrides: Partial<Book> & { id: string; title: string; author: string }): Book {
+function makeBook(
+  overrides: Partial<BookMeta> & { id: string; title: string; author: string },
+): BookMeta {
   return {
     coverImage: null,
-    data: new ArrayBuffer(0),
     ...overrides,
   };
 }

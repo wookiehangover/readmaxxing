@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { Link, Outlet, useLocation } from "react-router";
 import { Menu, PanelsTopLeft, Settings } from "lucide-react";
 import type { Route } from "./+types/library";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings } from "~/lib/settings";
 import { DropZone } from "~/components/drop-zone";
@@ -39,14 +39,14 @@ export function HydrateFallback() {
 }
 
 export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
-  const [books, setBooks] = useState<Book[]>(loaderData.books);
+  const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
   const isMobile = useIsMobile();
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
-  const handleBookAdded = useCallback((book: Book) => {
+  const handleBookAdded = useCallback((book: BookMeta) => {
     setBooks((prev) => [...prev, book]);
   }, []);
 

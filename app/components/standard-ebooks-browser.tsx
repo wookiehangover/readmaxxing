@@ -5,19 +5,16 @@ import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { parseEpubEffect } from "~/lib/epub-service";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useEffectQuery } from "~/lib/use-effect-query";
-import { cn } from "~/lib/utils";
 
 interface StandardEbooksBrowserProps {
-  onBookAdded: (book: Book) => void;
+  onBookAdded: (book: BookMeta) => void;
 }
 
-export function StandardEbooksBrowser({
-  onBookAdded,
-}: StandardEbooksBrowserProps) {
+export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProps) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchPage, setSearchPage] = useState(1);
@@ -50,9 +47,7 @@ export function StandardEbooksBrowser({
     isLoading,
   } = useEffectQuery(
     () =>
-      StandardEbooksService.pipe(
-        Effect.andThen((s) => s.searchBooks(debouncedQuery, searchPage)),
-      ),
+      StandardEbooksService.pipe(Effect.andThen((s) => s.searchBooks(debouncedQuery, searchPage))),
     [debouncedQuery, searchPage],
   );
 
@@ -70,14 +65,13 @@ export function StandardEbooksBrowser({
         const seSvc = yield* StandardEbooksService;
         const arrayBuffer = yield* seSvc.downloadEpub(seBook.urlPath);
         const metadata = yield* parseEpubEffect(arrayBuffer);
-        const book: Book = {
+        const book: BookMeta = {
           id: crypto.randomUUID(),
           title: metadata.title,
           author: metadata.author,
           coverImage: metadata.coverImage,
-          data: arrayBuffer,
         };
-        yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book)));
+        yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
         return book;
       });
 
@@ -119,9 +113,7 @@ export function StandardEbooksBrowser({
           />
         </div>
 
-        {error && (
-          <p className="text-sm text-destructive">{error}</p>
-        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
         {loadError && (
           <p className="text-sm text-destructive">
@@ -176,7 +168,8 @@ export function StandardEbooksBrowser({
             </a>
           </p>
           <p className="mt-1 text-xs text-muted-foreground/70">
-            Standard Ebooks is a volunteer-driven project dedicated to producing free, beautiful digital literature.
+            Standard Ebooks is a volunteer-driven project dedicated to producing free, beautiful
+            digital literature.
           </p>
           <a
             href="https://standardebooks.org/donate"
@@ -242,9 +235,7 @@ function SEBookCard({
         ) : (
           <div className="flex size-full flex-col items-center justify-center p-3 text-center">
             <Globe className="mb-2 size-8 text-muted-foreground/50" />
-            <p className="line-clamp-3 text-sm font-medium text-muted-foreground">
-              {book.title}
-            </p>
+            <p className="line-clamp-3 text-sm font-medium text-muted-foreground">{book.title}</p>
           </div>
         )}
       </div>

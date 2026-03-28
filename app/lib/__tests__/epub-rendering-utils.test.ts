@@ -39,7 +39,7 @@ describe("getTypographyCss", () => {
 
   it("includes @font-face declarations for Geist, Geist Mono, and Berkeley Mono", () => {
     const css = getTypographyCss("Literata", 100, 1.6);
-    expect(css).toContain('@font-face');
+    expect(css).toContain("@font-face");
     expect(css).toContain('"Geist"');
     expect(css).toContain('"Geist Mono"');
     expect(css).toContain('"Berkeley Mono"');

@@ -46,3 +46,8 @@ export class ChatError extends Data.TaggedError("ChatError")<{
   readonly operation: string;
   readonly cause?: unknown;
 }> {}
+
+export class DecodeError extends Data.TaggedError("DecodeError")<{
+  readonly operation: string;
+  readonly cause?: unknown;
+}> {}

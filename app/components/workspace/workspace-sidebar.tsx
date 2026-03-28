@@ -14,7 +14,7 @@ import { BookCover, TocList, filterBooks, FILTER_THRESHOLD } from "~/components/
 import { Input } from "~/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
-import type { Book } from "~/lib/book-store";
+import type { BookMeta } from "~/lib/book-store";
 import type { TocEntry } from "~/lib/reader-context";
 import type { WorkspaceSortBy } from "~/lib/settings";
 import { cn } from "~/lib/utils";
@@ -29,7 +29,7 @@ const SORT_OPTIONS: { value: WorkspaceSortBy; label: string }[] = [
   { value: "author", label: "Author (A\u2013Z)" },
 ];
 
-function WorkspaceSidebarBookContent({ book, collapsed }: { book: Book; collapsed: boolean }) {
+function WorkspaceSidebarBookContent({ book, collapsed }: { book: BookMeta; collapsed: boolean }) {
   return (
     <>
       {book.coverImage ? (
@@ -56,7 +56,7 @@ function WorkspaceTocPopoverItem({
   onOpenBook,
   isOpen,
 }: {
-  book: Book;
+  book: BookMeta;
   collapsed: boolean;
   toc: TocEntry[];
   onOpenBook: (e: React.MouseEvent) => void;
@@ -126,11 +126,14 @@ export interface WorkspaceSidebarProps {
   collapsed: boolean;
   sortBy: WorkspaceSortBy;
   tocVersion: number;
-  openBooks: Book[];
-  otherBooks: Book[];
-  onUpdateSettings: (patch: { sidebarCollapsed?: boolean; workspaceSortBy?: WorkspaceSortBy }) => void;
-  onOpenBook: (book: Book, forceNew?: boolean) => void;
-  onOpenNotebook: (book: Book) => void;
+  openBooks: BookMeta[];
+  otherBooks: BookMeta[];
+  onUpdateSettings: (patch: {
+    sidebarCollapsed?: boolean;
+    workspaceSortBy?: WorkspaceSortBy;
+  }) => void;
+  onOpenBook: (book: BookMeta, forceNew?: boolean) => void;
+  onOpenNotebook: (book: BookMeta) => void;
   onOpenNewTab: () => void;
   onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }

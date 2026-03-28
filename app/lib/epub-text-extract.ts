@@ -13,9 +13,7 @@ export interface BookChapter {
  * @param data - The epub file as an ArrayBuffer
  * @returns Array of chapters with index, title, and text
  */
-export async function extractBookChapters(
-  data: ArrayBuffer,
-): Promise<BookChapter[]> {
+export async function extractBookChapters(data: ArrayBuffer): Promise<BookChapter[]> {
   const book = ePub(data);
 
   try {
@@ -66,19 +64,17 @@ export async function extractBookChapters(
 
         // Resolve title from TOC navigation, href filename, or fallback
         const href: string = item.href ?? "";
-        const filename = href.split("/").pop()?.replace(/\.\w+$/, "") ?? "";
+        const filename =
+          href
+            .split("/")
+            .pop()
+            ?.replace(/\.\w+$/, "") ?? "";
         const title =
-          tocMap.get(item.href) ||
-          tocMap.get(filename) ||
-          filename ||
-          `Chapter ${i + 1}`;
+          tocMap.get(item.href) || tocMap.get(filename) || filename || `Chapter ${i + 1}`;
 
         chapters.push({ index: i, title, text });
       } catch (err) {
-        console.warn(
-          `Failed to load spine item "${item.href ?? "unknown"}":`,
-          err,
-        );
+        console.warn(`Failed to load spine item "${item.href ?? "unknown"}":`, err);
         continue;
       }
     }

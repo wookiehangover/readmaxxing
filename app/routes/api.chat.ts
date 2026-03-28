@@ -22,19 +22,16 @@ interface ChatRequestBody {
 }
 
 function buildSystemPrompt(bookContext: ChatRequestBody["bookContext"]): string {
-  const toc = bookContext.chapters
-    .map((c) => `  ${c.index}. ${c.title}`)
-    .join("\n");
+  const toc = bookContext.chapters.map((c) => `  ${c.index}. ${c.title}`).join("\n");
 
   let currentChapterSection = "";
 
   // Prefer the actual visible text from the reader iframe
   const pageText = bookContext.visibleText?.trim();
-  const chapter = bookContext.currentChapterIndex != null
-    ? bookContext.chapters.find(
-        (c) => c.index === bookContext.currentChapterIndex,
-      )
-    : undefined;
+  const chapter =
+    bookContext.currentChapterIndex != null
+      ? bookContext.chapters.find((c) => c.index === bookContext.currentChapterIndex)
+      : undefined;
 
   if (pageText || chapter) {
     const chapterLabel = chapter
@@ -105,11 +102,9 @@ function searchChapters(
       if (matchIndex === -1) break;
 
       const start = Math.max(0, matchIndex - CONTEXT_CHARS);
-      const end = Math.min(
-        chapter.text.length,
-        matchIndex + query.length + CONTEXT_CHARS,
-      );
-      const excerpt = (start > 0 ? "…" : "") +
+      const end = Math.min(chapter.text.length, matchIndex + query.length + CONTEXT_CHARS);
+      const excerpt =
+        (start > 0 ? "…" : "") +
         chapter.text.slice(start, end) +
         (end < chapter.text.length ? "…" : "");
 
@@ -134,11 +129,7 @@ export async function action({ request }: Route.ActionArgs) {
     return new Response("Missing or invalid messages", { status: 400 });
   }
 
-  if (
-    !bookContext?.title ||
-    !bookContext?.author ||
-    !Array.isArray(bookContext?.chapters)
-  ) {
+  if (!bookContext?.title || !bookContext?.author || !Array.isArray(bookContext?.chapters)) {
     return new Response("Missing required bookContext fields", { status: 400 });
   }
 
@@ -151,9 +142,7 @@ export async function action({ request }: Route.ActionArgs) {
         description:
           "Search the book for passages matching a query. Returns matching excerpts with surrounding context. Use this to find specific quotes, topics, characters, or themes.",
         inputSchema: z.object({
-          query: z
-            .string()
-            .describe("Text, keywords, or phrase to search for in the book"),
+          query: z.string().describe("Text, keywords, or phrase to search for in the book"),
         }),
         execute: async ({ query }) => {
           return searchChapters(bookContext.chapters, query);
@@ -171,9 +160,7 @@ export async function action({ request }: Route.ActionArgs) {
         description:
           "Add a note to the reader's notebook for this book. Use when they ask to save something, bookmark a passage, or jot down a thought. The text is appended to their existing notes.",
         inputSchema: z.object({
-          text: z
-            .string()
-            .describe("The text to add (markdown format)"),
+          text: z.string().describe("The text to add (markdown format)"),
         }),
         execute: async ({ text }) => {
           return { appended: true, text };
@@ -199,10 +186,7 @@ export async function action({ request }: Route.ActionArgs) {
         description:
           "Read the full text of a specific chapter. Use this to understand a chapter's full argument before answering detailed questions about it.",
         inputSchema: z.object({
-          chapterIndex: z
-            .number()
-            .optional()
-            .describe("The 0-based chapter index"),
+          chapterIndex: z.number().optional().describe("The 0-based chapter index"),
           chapterTitle: z
             .string()
             .optional()
@@ -211,14 +195,10 @@ export async function action({ request }: Route.ActionArgs) {
         execute: async ({ chapterIndex, chapterTitle }) => {
           let chapter: BookChapter | undefined;
           if (chapterIndex != null) {
-            chapter = bookContext.chapters.find(
-              (c) => c.index === chapterIndex,
-            );
+            chapter = bookContext.chapters.find((c) => c.index === chapterIndex);
           } else if (chapterTitle) {
             const lower = chapterTitle.toLowerCase();
-            chapter = bookContext.chapters.find((c) =>
-              c.title.toLowerCase().includes(lower),
-            );
+            chapter = bookContext.chapters.find((c) => c.title.toLowerCase().includes(lower));
           }
           if (!chapter) return { error: "Chapter not found" };
           const text =

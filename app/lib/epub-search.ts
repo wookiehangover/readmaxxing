@@ -18,12 +18,12 @@ export interface SearchOptions {
  */
 export function normalizeSearchText(text: string): string {
   return text
-    .replace(/[\u2018\u2019\u201A]/g, "'")  // smart single quotes → straight
-    .replace(/[\u201C\u201D\u201E]/g, '"')   // smart double quotes → straight
-    .replace(/\u2014/g, "--")                 // em dash → double hyphen
-    .replace(/\u2013/g, "-")                  // en dash → hyphen
-    .replace(/\u2026/g, "...")               // ellipsis char → three dots
-    .replace(/\s+/g, " ")                    // collapse whitespace
+    .replace(/[\u2018\u2019\u201A]/g, "'") // smart single quotes → straight
+    .replace(/[\u201C\u201D\u201E]/g, '"') // smart double quotes → straight
+    .replace(/\u2014/g, "--") // em dash → double hyphen
+    .replace(/\u2013/g, "-") // en dash → hyphen
+    .replace(/\u2026/g, "...") // ellipsis char → three dots
+    .replace(/\s+/g, " ") // collapse whitespace
     .trim();
 }
 
@@ -58,8 +58,7 @@ export async function searchBookForCfi(
 
     try {
       await item.load(book.load.bind(book));
-      const sectionResults: { cfi: string; excerpt: string }[] =
-        await item.find(query);
+      const sectionResults: { cfi: string; excerpt: string }[] = await item.find(query);
 
       for (const result of sectionResults) {
         allResults.push({
@@ -77,7 +76,6 @@ export async function searchBookForCfi(
 
   return allResults;
 }
-
 
 /**
  * Search with progressive fallback: tries the full query first, then

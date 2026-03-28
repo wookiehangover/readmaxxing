@@ -1,13 +1,13 @@
 import { useCallback } from "react";
 import type React from "react";
 import { Effect } from "effect";
-import { BookService, type Book } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/book-store";
 import { parseEpubEffect } from "~/lib/epub-service";
 import { AppRuntime } from "~/lib/effect-runtime";
 
 interface UseBookUploadOptions {
   /** Called after each book is saved to IndexedDB. */
-  onBookAdded: (book: Book) => void;
+  onBookAdded: (book: BookMeta) => void;
 }
 
 /**
@@ -23,21 +23,20 @@ export function useBookUpload({ onBookAdded }: UseBookUploadOptions) {
       if (!files) return;
       const epubFiles = Array.from(files).filter((f) => f.name.endsWith(".epub"));
 
-      const program = Effect.gen(function* () {
-        for (const file of epubFiles) {
+      const program = Effect.forEach(epubFiles, (file) =>
+        Effect.gen(function* () {
           const arrayBuffer = yield* Effect.promise(() => file.arrayBuffer());
           const metadata = yield* parseEpubEffect(arrayBuffer);
-          const book: Book = {
+          const book: BookMeta = {
             id: crypto.randomUUID(),
             title: metadata.title,
             author: metadata.author,
             coverImage: metadata.coverImage,
-            data: arrayBuffer,
           };
-          yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book)));
+          yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
           onBookAdded(book);
-        }
-      }).pipe(
+        }),
+      ).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {
             console.error("Failed to add book:", error);

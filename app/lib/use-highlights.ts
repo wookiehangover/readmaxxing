@@ -160,7 +160,7 @@ export function useHighlights({ bookId, renditionRef, containerRef }: UseHighlig
       const svc = yield* AnnotationService;
       yield* svc.saveHighlight(highlight);
     });
-    await AppRuntime.runPromise(saveProgram);
+    await AppRuntime.runPromise(saveProgram).catch(console.error);
     highlightsRef.current.set(cfiRange, highlight);
     applyHighlightToRendition(rendition, highlight);
 
@@ -186,7 +186,7 @@ export function useHighlights({ bookId, renditionRef, containerRef }: UseHighlig
       const svc = yield* AnnotationService;
       yield* svc.deleteHighlight(highlight.id);
     });
-    await AppRuntime.runPromise(deleteProgram);
+    await AppRuntime.runPromise(deleteProgram).catch(console.error);
     rendition.annotations.remove(highlight.cfiRange, "highlight");
     highlightsRef.current.delete(highlight.cfiRange);
     setEditPopover(null);

@@ -7,14 +7,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import type { Book } from "~/lib/book-store";
+import type { BookMeta } from "~/lib/book-store";
 import { useBookUpload } from "~/lib/use-book-upload";
 import { useBookDeletion } from "~/lib/use-book-deletion";
 import { useWorkspace } from "~/lib/workspace-context";
 
 export function LibraryBrowseContent() {
   const ws = useWorkspace();
-  const [books, setBooks] = useState<Book[]>(ws.booksRef.current);
+  const [books, setBooks] = useState<BookMeta[]>(ws.booksRef.current);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -26,21 +26,21 @@ export function LibraryBrowseContent() {
   }, [ws]);
 
   const handleOpenBook = useCallback(
-    (book: Book) => {
+    (book: BookMeta) => {
       ws.openBookRef.current?.(book);
     },
     [ws],
   );
 
   const handleOpenNotebook = useCallback(
-    (book: Book) => {
+    (book: BookMeta) => {
       ws.openNotebookRef.current?.(book);
     },
     [ws],
   );
 
   const handleBookAdded = useCallback(
-    (book: Book) => {
+    (book: BookMeta) => {
       ws.onBookAddedRef.current?.(book);
     },
     [ws],

@@ -92,13 +92,13 @@ export class MyError extends Data.TaggedError("MyError")<{
 **Executing effects** -- at call sites (route loaders, event handlers, React hooks), run effects through `AppRuntime.runPromise(...)`. Two common access patterns:
 
 1. Pipe from the service tag (shorter, good for one-shot calls):
+
    ```ts
-   await AppRuntime.runPromise(
-     BookService.pipe(Effect.andThen((s) => s.getBooks()))
-   );
+   await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())));
    ```
 
 2. Generator style (better when chaining multiple service calls):
+
    ```ts
    const program = Effect.gen(function* () {
      const svc = yield* AnnotationService;
@@ -111,18 +111,18 @@ export class MyError extends Data.TaggedError("MyError")<{
    ```ts
    const { data, error, isLoading } = useEffectQuery(
      () => BookService.pipe(Effect.andThen((s) => s.getBooks())),
-     [deps]
+     [deps],
    );
    ```
    Reserve `AppRuntime.runPromise` for route loaders, event handlers, and fire-and-forget operations. Use `useEffectQuery` for component-level data loading.
 
 **Error handling** -- handle errors in the Effect pipeline, not after `runPromise`:
 
-- Use `Effect.catchAll` or `Effect.catchTag` *before* `runPromise` to handle errors within the Effect pipeline, not `try/catch` after:
+- Use `Effect.catchAll` or `Effect.catchTag` _before_ `runPromise` to handle errors within the Effect pipeline, not `try/catch` after:
   ```ts
   Effect.catchTag("BookNotFoundError", () =>
-    Effect.die(new Response("Book not found", { status: 404 }))
-  )
+    Effect.die(new Response("Book not found", { status: 404 })),
+  );
   ```
 - Fire-and-forget `runPromise` calls (e.g. debounced saves) must always have `.catch()`:
   ```ts
@@ -140,3 +140,5 @@ export class MyError extends Data.TaggedError("MyError")<{
 - shadcn components use Base UI (not Radix) — check component APIs accordingly (e.g., `DropdownMenuLabel` must be inside `DropdownMenuGroup`)
 - When adding shadcn components: `pnpx shadcn@latest add <component>`
 - Prefer self-hosted fonts over CDN when font files are available locally
+- Always run `pnpm oxfmt .` before committing to ensure consistent formatting
+- Always run `pnpm oxlint` before committing and fix any warnings

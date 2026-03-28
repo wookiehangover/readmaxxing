@@ -1,4 +1,4 @@
-import type { Book } from "~/lib/book-store";
+import type { BookMeta } from "~/lib/book-store";
 import type { WorkspaceSortBy } from "~/lib/settings";
 
 export function truncateTitle(title: string, maxLength = 30): string {
@@ -6,10 +6,10 @@ export function truncateTitle(title: string, maxLength = 30): string {
 }
 
 export function sortBooks(
-  books: Book[],
+  books: BookMeta[],
   sortBy: WorkspaceSortBy,
   lastOpenedMap: Map<string, number> | undefined,
-): Book[] {
+): BookMeta[] {
   const sorted = [...books];
   switch (sortBy) {
     case "title":

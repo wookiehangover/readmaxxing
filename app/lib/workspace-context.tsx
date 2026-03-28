@@ -1,7 +1,7 @@
-import { createContext, useContext, useRef, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from "react";
 import type { DockviewApi } from "dockview";
 import type { TocEntry } from "~/lib/reader-context";
-import type { Book } from "~/lib/book-store";
+import type { BookMeta } from "~/lib/book-store";
 
 interface WorkspaceContextValue {
   /** panelId -> navigateToCfi callback */
@@ -21,19 +21,21 @@ interface WorkspaceContextValue {
   /** File input element for triggering uploads */
   fileInputRef: React.MutableRefObject<HTMLInputElement | null>;
   /** Current books list */
-  booksRef: React.MutableRefObject<Book[]>;
+  booksRef: React.MutableRefObject<BookMeta[]>;
   /** Callback to open a book panel */
-  openBookRef: React.MutableRefObject<((book: Book) => void) | null>;
+  openBookRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback to open a notebook panel */
-  openNotebookRef: React.MutableRefObject<((book: Book) => void) | null>;
+  openNotebookRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback to open a chat panel */
-  openChatRef: React.MutableRefObject<((book: Book) => void) | null>;
+  openChatRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback to open the Standard Ebooks browser panel */
   openStandardEbooksRef: React.MutableRefObject<(() => void) | null>;
   /** Find the navigation callback for a book by scanning dockview panels */
   findNavForBook: (bookId: string) => ((cfi: string) => void) | undefined;
+  /** Like findNavForBook but retries with short delays if the callback isn't registered yet */
+  waitForNavForBook: (bookId: string) => Promise<((cfi: string) => void) | undefined>;
   /** Callback ref for when a book is added (calls setBooks in workspace.tsx) */
-  onBookAddedRef: React.MutableRefObject<((book: Book) => void) | null>;
+  onBookAddedRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback ref for when a book is deleted (calls setBooks in workspace.tsx) */
   onBookDeletedRef: React.MutableRefObject<((bookId: string) => void) | null>;
   /** bookId -> current chapter context for chat */
@@ -68,95 +70,116 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const booksChangeListener = useRef<(() => void) | null>(null);
   const dockviewApi = useRef<DockviewApi | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const booksRef = useRef<Book[]>([]);
-  const openBookRef = useRef<((book: Book) => void) | null>(null);
-  const openNotebookRef = useRef<((book: Book) => void) | null>(null);
-  const openChatRef = useRef<((book: Book) => void) | null>(null);
+  const booksRef = useRef<BookMeta[]>([]);
+  const openBookRef = useRef<((book: BookMeta) => void) | null>(null);
+  const openNotebookRef = useRef<((book: BookMeta) => void) | null>(null);
+  const openChatRef = useRef<((book: BookMeta) => void) | null>(null);
   const openStandardEbooksRef = useRef<(() => void) | null>(null);
-  const onBookAddedRef = useRef<((book: Book) => void) | null>(null);
+  const onBookAddedRef = useRef<((book: BookMeta) => void) | null>(null);
   const onBookDeletedRef = useRef<((bookId: string) => void) | null>(null);
   const chatContextMap = useRef(
-    new Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>(),
+    new Map<
+      string,
+      { currentChapterIndex: number; currentSpineHref: string; visibleText: string }
+    >(),
   );
   const tempHighlightMap = useRef(new Map<string, (cfi: string) => void>());
 
-  const findNavForBook = useCallback(
-    (bookId: string): ((cfi: string) => void) | undefined => {
-      const api = dockviewApi.current;
-      if (!api) return undefined;
-      for (const panel of api.panels) {
-        if (
-          panel.id.startsWith("book-") &&
-          (panel.params as Record<string, unknown>)?.bookId === bookId
-        ) {
-          const nav = navigationMap.current.get(panel.id);
-          if (nav) return nav;
+  const findNavForBook = useCallback((bookId: string): ((cfi: string) => void) | undefined => {
+    const api = dockviewApi.current;
+    console.debug("[findNavForBook]", {
+      bookId,
+      hasApi: !!api,
+      panelCount: api?.panels.length,
+      panels: api?.panels.map((p) => ({ id: p.id, params: p.params })),
+      navMapKeys: Array.from(navigationMap.current.keys()),
+    });
+    if (!api) return undefined;
+    for (const panel of api.panels) {
+      if (
+        panel.id.startsWith("book-") &&
+        (panel.params as Record<string, unknown>)?.bookId === bookId
+      ) {
+        const nav = navigationMap.current.get(panel.id);
+        if (nav) return nav;
+      }
+    }
+    return undefined;
+  }, []);
+
+  const applyTempHighlightForBook = useCallback((bookId: string, cfi: string): void => {
+    const api = dockviewApi.current;
+    if (!api) return;
+    for (const panel of api.panels) {
+      if (
+        panel.id.startsWith("book-") &&
+        (panel.params as Record<string, unknown>)?.bookId === bookId
+      ) {
+        const fn = tempHighlightMap.current.get(panel.id);
+        if (fn) {
+          fn(cfi);
+          return;
+        }
+      }
+    }
+  }, []);
+
+  const waitForNavForBook = useCallback(
+    async (bookId: string): Promise<((cfi: string) => void) | undefined> => {
+      const maxAttempts = 5;
+      const delayMs = 500;
+      for (let i = 0; i < maxAttempts; i++) {
+        const nav = findNavForBook(bookId);
+        if (nav) return nav;
+        if (i < maxAttempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
         }
       }
       return undefined;
     },
-    [],
+    [findNavForBook],
   );
 
-  const applyTempHighlightForBook = useCallback(
-    (bookId: string, cfi: string): void => {
-      const api = dockviewApi.current;
-      if (!api) return;
-      for (const panel of api.panels) {
-        if (
-          panel.id.startsWith("book-") &&
-          (panel.params as Record<string, unknown>)?.bookId === bookId
-        ) {
-          const fn = tempHighlightMap.current.get(panel.id);
-          if (fn) {
-            fn(cfi);
-            return;
-          }
-        }
+  const findTocForBook = useCallback((bookId: string): TocEntry[] | undefined => {
+    const api = dockviewApi.current;
+    if (!api) return undefined;
+    for (const panel of api.panels) {
+      if (
+        panel.id.startsWith("book-") &&
+        (panel.params as Record<string, unknown>)?.bookId === bookId
+      ) {
+        const toc = tocMap.current.get(panel.id);
+        if (toc && toc.length > 0) return toc;
       }
-    },
-    [],
-  );
+    }
+    return undefined;
+  }, []);
 
-  const findTocForBook = useCallback(
-    (bookId: string): TocEntry[] | undefined => {
-      const api = dockviewApi.current;
-      if (!api) return undefined;
-      for (const panel of api.panels) {
-        if (
-          panel.id.startsWith("book-") &&
-          (panel.params as Record<string, unknown>)?.bookId === bookId
-        ) {
-          const toc = tocMap.current.get(panel.id);
-          if (toc && toc.length > 0) return toc;
-        }
-      }
-      return undefined;
-    },
-    [],
+  const value: WorkspaceContextValue = useMemo(
+    () => ({
+      navigationMap,
+      tocMap,
+      notebookCallbackMap,
+      tocChangeListener,
+      booksChangeListener,
+      dockviewApi,
+      fileInputRef,
+      booksRef,
+      openBookRef,
+      openNotebookRef,
+      openChatRef,
+      openStandardEbooksRef,
+      onBookAddedRef,
+      onBookDeletedRef,
+      chatContextMap,
+      findNavForBook,
+      waitForNavForBook,
+      findTocForBook,
+      tempHighlightMap,
+      applyTempHighlightForBook,
+    }),
+    [findNavForBook, waitForNavForBook, findTocForBook, applyTempHighlightForBook],
   );
-
-  const value: WorkspaceContextValue = {
-    navigationMap,
-    tocMap,
-    notebookCallbackMap,
-    tocChangeListener,
-    booksChangeListener,
-    dockviewApi,
-    fileInputRef,
-    booksRef,
-    openBookRef,
-    openNotebookRef,
-    openChatRef,
-    openStandardEbooksRef,
-    onBookAddedRef,
-    onBookDeletedRef,
-    chatContextMap,
-    findNavForBook,
-    findTocForBook,
-    tempHighlightMap,
-    applyTempHighlightForBook,
-  };
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

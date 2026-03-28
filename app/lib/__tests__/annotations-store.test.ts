@@ -1,9 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
-import { createStore, set, get, del, entries } from "idb-keyval";
-import { AnnotationService } from "~/lib/annotations-store";
+import { createStore } from "idb-keyval";
+import { AnnotationService, makeAnnotationService } from "~/lib/annotations-store";
 import type { Highlight, Notebook } from "~/lib/annotations-store";
-import { HighlightError, NotebookError } from "~/lib/errors";
 
 function makeHighlight(overrides: Partial<Highlight> = {}): Highlight {
   return {
@@ -31,60 +30,10 @@ function makeTestLayer() {
   const hlStore = createStore(`hl-db-${suffix}`, "highlights");
   const nbStore = createStore(`nb-db-${suffix}`, "notebooks");
 
-  return Layer.succeed(AnnotationService, {
-    saveHighlight: (highlight) =>
-      Effect.tryPromise({
-        try: () => set(highlight.id, highlight, hlStore),
-        catch: (cause) =>
-          new HighlightError({ operation: "saveHighlight", highlightId: highlight.id, cause }),
-      }),
-    getHighlightsByBook: (bookId) =>
-      Effect.tryPromise({
-        try: async () => {
-          const allEntries = await entries<string, Highlight>(hlStore);
-          return allEntries.map(([, hl]) => hl).filter((hl) => hl && hl.bookId === bookId);
-        },
-        catch: (cause) => new HighlightError({ operation: "getHighlightsByBook", cause }),
-      }),
-    updateHighlight: (id, updates) =>
-      Effect.gen(function* () {
-        const existing = yield* Effect.tryPromise({
-          try: () => get<Highlight>(id, hlStore),
-          catch: (cause) =>
-            new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
-        });
-        if (!existing) {
-          return yield* Effect.fail(
-            new HighlightError({ operation: "updateHighlight", highlightId: id }),
-          );
-        }
-        yield* Effect.tryPromise({
-          try: () => set(id, { ...existing, ...updates }, hlStore),
-          catch: (cause) =>
-            new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
-        });
-      }),
-    deleteHighlight: (id) =>
-      Effect.tryPromise({
-        try: () => del(id, hlStore),
-        catch: (cause) =>
-          new HighlightError({ operation: "deleteHighlight", highlightId: id, cause }),
-      }),
-    saveNotebook: (notebook) =>
-      Effect.tryPromise({
-        try: () => set(notebook.bookId, notebook, nbStore),
-        catch: (cause) =>
-          new NotebookError({ operation: "saveNotebook", bookId: notebook.bookId, cause }),
-      }),
-    getNotebook: (bookId) =>
-      Effect.tryPromise({
-        try: async () => {
-          const notebook = await get<Notebook>(bookId, nbStore);
-          return notebook ?? null;
-        },
-        catch: (cause) => new NotebookError({ operation: "getNotebook", bookId, cause }),
-      }),
-  });
+  return Layer.succeed(
+    AnnotationService,
+    makeAnnotationService({ highlightStore: hlStore, notebookStore: nbStore }),
+  );
 }
 
 describe("AnnotationService", () => {

@@ -65,9 +65,10 @@ function toUIMessages(messages: ChatMessage[]): UIMessage[] {
   return messages.map((m) => ({
     id: m.id,
     role: m.role,
-    parts: m.parts && m.parts.length > 0
-      ? (m.parts as UIMessage["parts"])
-      : [{ type: "text" as const, text: m.content }],
+    parts:
+      m.parts && m.parts.length > 0
+        ? (m.parts as UIMessage["parts"])
+        : [{ type: "text" as const, text: m.content }],
   }));
 }
 
@@ -76,10 +77,11 @@ function toChatMessages(messages: UIMessage[]): ChatMessage[] {
   return messages.map((m) => ({
     id: m.id,
     role: m.role as "user" | "assistant",
-    content: m.parts
-      ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-      .map((p) => p.text)
-      .join("") ?? "",
+    content:
+      m.parts
+        ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
+        .map((p) => p.text)
+        .join("") ?? "",
     createdAt: Date.now(),
     parts: m.parts?.map(serializePart),
   }));
@@ -104,21 +106,18 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
     const load = async () => {
       try {
-        const [savedMessages, book] = await Promise.all([
-          AppRuntime.runPromise(
-            ChatService.pipe(Effect.andThen((s) => s.getMessages(bookId))),
-          ),
-          AppRuntime.runPromise(
-            BookService.pipe(Effect.andThen((s) => s.getBook(bookId))),
-          ),
+        const [savedMessages, book, bookData] = await Promise.all([
+          AppRuntime.runPromise(ChatService.pipe(Effect.andThen((s) => s.getMessages(bookId)))),
+          AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBook(bookId)))),
+          AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBookData(bookId)))),
         ]);
 
         if (cancelled) return;
 
-        const chapters = await extractBookChapters(book.data);
+        const chapters = await extractBookChapters(bookData);
         if (cancelled) return;
 
-        bookDataRef.current = book.data;
+        bookDataRef.current = bookData;
         setBookContext({ title: book.title, author: book.author, chapters });
         setInitialMessages(toUIMessages(savedMessages));
       } catch (err) {
@@ -130,7 +129,9 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     };
 
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [bookId]);
 
   if (loadError) {
@@ -217,7 +218,8 @@ function ChatPanelInner({
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
 }) {
-  const { chatContextMap, notebookCallbackMap, findNavForBook, findTocForBook, applyTempHighlightForBook } = useWorkspace();
+  const { chatContextMap, notebookCallbackMap, waitForNavForBook, applyTempHighlightForBook } =
+    useWorkspace();
 
   // Load notebook markdown for the AI's read_notes tool
   const [notebookMarkdown, setNotebookMarkdown] = useState<string>("");
@@ -226,15 +228,13 @@ function ChatPanelInner({
 
   useEffect(() => {
     if (!bookId) return;
-    AppRuntime.runPromise(
-      AnnotationService.pipe(
-        Effect.andThen((svc) => svc.getNotebook(bookId)),
-      ),
-    ).then((notebook) => {
-      if (notebook?.content) {
-        setNotebookMarkdown(tiptapJsonToMarkdown(notebook.content));
-      }
-    }).catch(console.error);
+    AppRuntime.runPromise(AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))))
+      .then((notebook) => {
+        if (notebook?.content) {
+          setNotebookMarkdown(tiptapJsonToMarkdown(notebook.content));
+        }
+      })
+      .catch(console.error);
   }, [bookId]);
 
   // Refs that stay up-to-date with the reader's current chapter index and visible text
@@ -260,7 +260,8 @@ function ChatPanelInner({
   }, [bookId, chatContextMap]);
 
   const transport = useMemo(
-    () => createDynamicTransport(bookContext, currentChapterRef, notebookMarkdownRef, visibleTextRef),
+    () =>
+      createDynamicTransport(bookContext, currentChapterRef, notebookMarkdownRef, visibleTextRef),
     [bookContext],
   );
 
@@ -284,10 +285,13 @@ function ChatPanelInner({
         const text = typeof info?.input?.text === "string" ? info.input.text : undefined;
         if (!text || !bookId) continue;
 
-        const newNodes = text.split("\n").filter(Boolean).map((line: string) => ({
-          type: "paragraph" as const,
-          content: [{ type: "text" as const, text: line }],
-        }));
+        const newNodes = text
+          .split("\n")
+          .filter(Boolean)
+          .map((line: string) => ({
+            type: "paragraph" as const,
+            content: [{ type: "text" as const, text: line }],
+          }));
 
         AppRuntime.runPromise(
           Effect.gen(function* () {
@@ -304,9 +308,11 @@ function ChatPanelInner({
               updatedAt: Date.now(),
             });
           }),
-        ).then(() => {
-          setNotebookMarkdown((prev) => prev + "\n" + text);
-        }).catch(console.error);
+        )
+          .then(() => {
+            setNotebookMarkdown((prev) => prev + "\n" + text);
+          })
+          .catch(console.error);
       }
 
       // Handle create_highlight tool calls
@@ -332,7 +338,10 @@ function ChatPanelInner({
             try {
               const results = await fuzzySearchBookForCfi(tempBook, highlightText);
               if (results.length === 0) {
-                console.warn("create_highlight: no search results for:", highlightText.slice(0, 60));
+                console.warn(
+                  "create_highlight: no search results for:",
+                  highlightText.slice(0, 60),
+                );
                 return;
               }
 
@@ -355,7 +364,7 @@ function ChatPanelInner({
               );
 
               // Navigate to the highlight and show temp highlight in the reader
-              const navigate = findNavForBook(bookId);
+              const navigate = await waitForNavForBook(bookId);
               if (navigate) {
                 navigate(cfiRange);
               }
@@ -415,9 +424,7 @@ function ChatPanelInner({
   const persistMessages = useCallback(() => {
     const current = messages;
     AppRuntime.runPromise(
-      ChatService.pipe(
-        Effect.andThen((s) => s.saveMessages(bookId, toChatMessages(current))),
-      ),
+      ChatService.pipe(Effect.andThen((s) => s.saveMessages(bookId, toChatMessages(current)))),
     ).catch(console.error);
   }, [bookId, messages]);
 
@@ -440,22 +447,19 @@ function ChatPanelInner({
     [sendMessage, isLoading, inputRef, textareaRef],
   );
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-        e.preventDefault();
-        const form = e.currentTarget.form;
-        form?.requestSubmit();
-      }
-    },
-    [],
-  );
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      const form = e.currentTarget.form;
+      form?.requestSubmit();
+    }
+  }, []);
 
   const handleClear = useCallback(() => {
     setMessages([]);
-    AppRuntime.runPromise(
-      ChatService.pipe(Effect.andThen((s) => s.clearMessages(bookId))),
-    ).catch(console.error);
+    AppRuntime.runPromise(ChatService.pipe(Effect.andThen((s) => s.clearMessages(bookId)))).catch(
+      console.error,
+    );
   }, [setMessages, bookId]);
 
   return (
@@ -505,7 +509,9 @@ function ChatPanelInner({
               "field-sizing-content max-h-[6lh] min-h-[2.5rem]",
             )}
             placeholder="Ask about this book…"
-            onChange={(e) => { inputRef.current = e.target.value; }}
+            onChange={(e) => {
+              inputRef.current = e.target.value;
+            }}
             onKeyDown={handleKeyDown}
             disabled={isLoading}
             rows={1}
@@ -545,9 +551,7 @@ const SUGGESTION_CATEGORIES = [
   },
   {
     label: "Pull the Thread",
-    suggestions: [
-      "What ideas connect across multiple chapters?",
-    ],
+    suggestions: ["What ideas connect across multiple chapters?"],
   },
 ];
 
@@ -604,93 +608,95 @@ function ChatMessage({
   isStreaming?: boolean;
 }) {
   const isUser = message.role === "user";
-  const { findNavForBook, findTocForBook, applyTempHighlightForBook } = useWorkspace();
+  const { waitForNavForBook, findTocForBook, applyTempHighlightForBook } = useWorkspace();
 
   const textParts =
-    message.parts?.filter(
-      (p): p is { type: "text"; text: string } => p.type === "text",
-    ) ?? [];
-  const toolParts =
-    message.parts?.filter((p: any) => getToolInfo(p) !== null) ?? [];
-  const reasoningParts =
-    message.parts?.filter((p) => p.type === "reasoning") ?? [];
+    message.parts?.filter((p): p is { type: "text"; text: string } => p.type === "text") ?? [];
+  const toolParts = message.parts?.filter((p: any) => getToolInfo(p) !== null) ?? [];
+  const reasoningParts = message.parts?.filter((p) => p.type === "reasoning") ?? [];
 
   const text = textParts.map((p) => p.text).join("");
   const hasProcessSteps = toolParts.length > 0 || reasoningParts.length > 0;
 
-  const streamdownComponents = useMemo<Components>(() => ({
-    ref: ({ children, chapter, query }: Record<string, unknown>) => {
-      const queryStr = typeof query === "string" ? query : "";
-      if (!queryStr) {
-        // No query — render as plain text
-        return <span>{children as React.ReactNode}</span>;
-      }
-
-      const chapterStr = typeof chapter === "string" ? chapter : "";
-
-      const handleClick = async () => {
-        const data = bookDataRef.current;
-        if (!data) {
-          console.warn("Ref navigation: no book data available");
-          return;
+  const streamdownComponents = useMemo<Components>(
+    () => ({
+      ref: ({ children, chapter, query }: Record<string, unknown>) => {
+        const queryStr = typeof query === "string" ? query : "";
+        if (!queryStr) {
+          // No query — render as plain text
+          return <span>{children as React.ReactNode}</span>;
         }
 
-        const navigate = findNavForBook(bookId);
-        if (!navigate) {
-          console.warn("Ref navigation: no navigate callback for book", bookId);
-          return;
-        }
+        const chapterStr = typeof chapter === "string" ? chapter : "";
 
-        try {
-          const ePub = (await import("epubjs")).default;
-          const { fuzzySearchBookForCfi } = await import("~/lib/epub-search");
-          const book = ePub(data.slice(0));
-          try {
-            const results = await fuzzySearchBookForCfi(book, queryStr);
-
-            if (results.length > 0) {
-              const cfi = results[0].cfi;
-              navigate(cfi);
-              applyTempHighlightForBook(bookId, cfi);
-              return;
-            }
-          } finally {
-            book.destroy();
+        const handleClick = async () => {
+          console.debug("[ChatPanel] handleClick", { bookId });
+          const data = bookDataRef.current;
+          if (!data) {
+            console.warn("Ref navigation: no book data available");
+            return;
           }
 
-          // Fallback: navigate to chapter start via TOC
-          if (chapterStr) {
-            const chapterIndex = parseInt(chapterStr, 10);
-            if (!isNaN(chapterIndex)) {
-              const toc = findTocForBook(bookId);
-              if (toc && toc[chapterIndex]) {
-                console.debug("Ref navigation: falling back to chapter", chapterIndex);
-                navigate(toc[chapterIndex].href);
+          const navigate = await waitForNavForBook(bookId);
+          if (!navigate) {
+            console.warn("Ref navigation: no navigate callback for book", bookId);
+            return;
+          }
+
+          try {
+            const ePub = (await import("epubjs")).default;
+            const { fuzzySearchBookForCfi } = await import("~/lib/epub-search");
+            const book = ePub(data.slice(0));
+            try {
+              const results = await fuzzySearchBookForCfi(book, queryStr);
+
+              if (results.length > 0) {
+                const cfi = results[0].cfi;
+                navigate(cfi);
+                applyTempHighlightForBook(bookId, cfi);
                 return;
               }
+            } finally {
+              book.destroy();
             }
+
+            // Fallback: navigate to chapter start via TOC
+            if (chapterStr) {
+              const chapterIndex = parseInt(chapterStr, 10);
+              if (!isNaN(chapterIndex)) {
+                const toc = findTocForBook(bookId);
+                if (toc && toc[chapterIndex]) {
+                  console.debug("Ref navigation: falling back to chapter", chapterIndex);
+                  navigate(toc[chapterIndex].href);
+                  return;
+                }
+              }
+            }
+
+            console.debug("Ref navigation: no results for query:", queryStr);
+          } catch (err) {
+            console.warn("Ref navigation failed:", err);
           }
+        };
 
-          console.debug("Ref navigation: no results for query:", queryStr);
-        } catch (err) {
-          console.warn("Ref navigation failed:", err);
-        }
-      };
-
-      return (
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={handleClick}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") handleClick(); }}
-          className="underline decoration-dotted underline-offset-2 cursor-pointer hover:decoration-solid transition-all inline"
-          title={`Go to: "${queryStr}"`}
-        >
-          {children as React.ReactNode}
-        </span>
-      );
-    },
-  }), [bookId, bookDataRef, findNavForBook, findTocForBook, applyTempHighlightForBook]);
+        return (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={handleClick}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") handleClick();
+            }}
+            className="underline decoration-dotted underline-offset-2 cursor-pointer hover:decoration-solid transition-all inline"
+            title={`Go to: "${queryStr}"`}
+          >
+            {children as React.ReactNode}
+          </span>
+        );
+      },
+    }),
+    [bookId, bookDataRef, waitForNavForBook, findTocForBook, applyTempHighlightForBook],
+  );
 
   return (
     <div
@@ -709,23 +715,28 @@ function ChatMessage({
           <details className="group mb-2" open={isStreaming || undefined}>
             <summary className="cursor-pointer text-[11px] text-muted-foreground font-mono flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden">
               <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
-              {toolParts.map((part) => {
-                const info = getToolInfo(part);
-                if (!info) return null;
-                if (info.toolName === "search_book") return "Searched book";
-                if (info.toolName === "read_chapter") return "Read chapter";
-                if (info.toolName === "read_notes") return "Read notebook";
-                if (info.toolName === "append_to_notes") return "Added to notebook";
-                if (info.toolName === "create_highlight") return "Highlighted";
-                return info.toolName;
-              }).filter(Boolean).join(", ")}
-              {toolParts.length > 0 && ` → ${toolParts.length} step${toolParts.length > 1 ? "s" : ""}`}
+              {toolParts
+                .map((part) => {
+                  const info = getToolInfo(part);
+                  if (!info) return null;
+                  if (info.toolName === "search_book") return "Searched book";
+                  if (info.toolName === "read_chapter") return "Read chapter";
+                  if (info.toolName === "read_notes") return "Read notebook";
+                  if (info.toolName === "append_to_notes") return "Added to notebook";
+                  if (info.toolName === "create_highlight") return "Highlighted";
+                  return info.toolName;
+                })
+                .filter(Boolean)
+                .join(", ")}
+              {toolParts.length > 0 &&
+                ` → ${toolParts.length} step${toolParts.length > 1 ? "s" : ""}`}
               {reasoningParts.length > 0 && toolParts.length === 0 && "Reasoning"}
             </summary>
-            <div className={cn(
-              "mt-1 space-y-0.5 pl-4 text-[11px] font-mono text-muted-foreground",
-              { "max-h-[4.5rem] overflow-y-auto": isStreaming },
-            )}>
+            <div
+              className={cn("mt-1 space-y-0.5 pl-4 text-[11px] font-mono text-muted-foreground", {
+                "max-h-[4.5rem] overflow-y-auto": isStreaming,
+              })}
+            >
               {toolParts.map((part, i) => {
                 const info = getToolInfo(part);
                 if (!info) return null;
@@ -752,9 +763,11 @@ function ChatMessage({
                 } else if (info.toolName === "append_to_notes") {
                   label = isComplete ? "Added to notebook" : "Adding to notebook...";
                 } else if (info.toolName === "create_highlight") {
-                  const snippet = typeof info.input?.text === "string"
-                    ? (info.input.text as string).slice(0, 30) + ((info.input.text as string).length > 30 ? "…" : "")
-                    : "";
+                  const snippet =
+                    typeof info.input?.text === "string"
+                      ? (info.input.text as string).slice(0, 30) +
+                        ((info.input.text as string).length > 30 ? "…" : "")
+                      : "";
                   label = isComplete
                     ? `Highlighted: "${snippet}"`
                     : `Highlighting: "${snippet}"...`;
@@ -787,7 +800,6 @@ function ChatMessage({
                 animation: "fadeIn",
                 duration: 150,
                 easing: "ease-out",
-
               }}
               isAnimating={isStreaming}
               className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
