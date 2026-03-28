@@ -601,19 +601,19 @@ function SuggestedPrompts({
 }) {
   if (prompts.length === 0) return null;
   return (
-    <div className="mt-4 flex flex-wrap gap-1.5 px-5 pb-2">
+    <div className="mt-4 flex flex-wrap gap-2 px-5 pb-2">
       {prompts.map((prompt) => (
         <button
           key={prompt}
           type="button"
           className={cn(
-            "rounded-full border px-3 py-1 text-sm text-foreground",
-            "transition-colors hover:bg-accent hover:text-accent-foreground",
+            "text-xs text-muted-foreground text-left",
+            "hover:text-foreground transition-colors",
             "cursor-pointer",
           )}
           onClick={() => sendMessage({ text: prompt })}
         >
-          {prompt}
+          → {prompt}
         </button>
       ))}
     </div>
@@ -862,16 +862,6 @@ function ChatMessage({
             <p className="whitespace-pre-wrap">{text}</p>
           ) : (
             <Streamdown
-              animated={
-                isStreaming
-                  ? {
-                      animation: "fadeIn",
-                      duration: 30,
-                      easing: "linear",
-                    }
-                  : false
-              }
-              isAnimating={isStreaming}
               className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ul,ol]:pl-0"
               allowedTags={{ ref: ["chapter", "query"] }}
               components={streamdownComponents}
