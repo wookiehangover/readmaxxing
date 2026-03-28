@@ -7,7 +7,7 @@ import { SendHorizonal, Loader2, Trash2 } from "lucide-react";
 import { ChatService, type ChatMessage } from "~/lib/chat-store";
 import { BookService } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { extractBookText } from "~/lib/epub-text-extract";
+import { extractBookChapters, type BookChapter } from "~/lib/epub-text-extract";
 import { cn } from "~/lib/utils";
 
 interface ChatPanelProps {
@@ -42,7 +42,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const [bookContext, setBookContext] = useState<{
     title: string;
     author: string;
-    textExcerpt: string;
+    chapters: BookChapter[];
   } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -66,10 +66,10 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
         if (cancelled) return;
 
-        const textExcerpt = await extractBookText(book.data);
+        const chapters = await extractBookChapters(book.data);
         if (cancelled) return;
 
-        setBookContext({ title: book.title, author: book.author, textExcerpt });
+        setBookContext({ title: book.title, author: book.author, chapters });
         setInitialMessages(toUIMessages(savedMessages));
       } catch (err) {
         if (!cancelled) {
@@ -124,7 +124,7 @@ function ChatPanelInner({
   bookId: string;
   bookTitle: string;
   initialMessages: UIMessage[];
-  bookContext: { title: string; author: string; textExcerpt: string };
+  bookContext: { title: string; author: string; chapters: BookChapter[] };
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;

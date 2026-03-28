@@ -1,20 +1,21 @@
 import ePub from "epubjs";
 
-const DEFAULT_MAX_CHARS = 100_000;
-const CHAPTER_SEPARATOR = "\n\n--- Chapter ---\n\n";
+export interface BookChapter {
+  index: number;
+  title: string;
+  text: string;
+}
 
 /**
- * Extract plain text from an epub ArrayBuffer by iterating through spine items.
+ * Extract structured chapter data from an epub ArrayBuffer.
  * Client-side only — epubjs requires DOM.
  *
  * @param data - The epub file as an ArrayBuffer
- * @param maxChars - Maximum characters to return (default 100,000)
- * @returns Concatenated plain text from all chapters, truncated to maxChars
+ * @returns Array of chapters with index, title, and text
  */
-export async function extractBookText(
+export async function extractBookChapters(
   data: ArrayBuffer,
-  maxChars: number = DEFAULT_MAX_CHARS,
-): Promise<string> {
+): Promise<BookChapter[]> {
   const book = ePub(data);
 
   try {
@@ -22,7 +23,7 @@ export async function extractBookText(
 
     const spine = book.spine as any;
     if (typeof spine.each !== "function") {
-      return "";
+      return [];
     }
 
     // Collect spine items
@@ -31,11 +32,10 @@ export async function extractBookText(
       spineItems.push(item);
     });
 
-    const chunks: string[] = [];
-    let totalLength = 0;
+    const chapters: BookChapter[] = [];
 
-    for (const item of spineItems) {
-      if (totalLength >= maxChars) break;
+    for (let i = 0; i < spineItems.length; i++) {
+      const item = spineItems[i];
 
       try {
         await item.load(book.load.bind(book));
@@ -44,8 +44,12 @@ export async function extractBookText(
 
         if (!text) continue;
 
-        chunks.push(text);
-        totalLength += text.length + CHAPTER_SEPARATOR.length;
+        // Derive title from href filename or fallback to "Chapter N"
+        const href: string = item.href ?? "";
+        const filename = href.split("/").pop()?.replace(/\.\w+$/, "") ?? "";
+        const title = filename || `Chapter ${chapters.length + 1}`;
+
+        chapters.push({ index: chapters.length, title, text });
       } catch (err) {
         console.warn(
           `Failed to load spine item "${item.href ?? "unknown"}":`,
@@ -55,13 +59,7 @@ export async function extractBookText(
       }
     }
 
-    let result = chunks.join(CHAPTER_SEPARATOR);
-
-    if (result.length > maxChars) {
-      result = result.slice(0, maxChars);
-    }
-
-    return result;
+    return chapters;
   } finally {
     book.destroy();
   }
