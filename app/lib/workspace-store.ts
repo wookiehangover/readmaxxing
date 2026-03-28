@@ -41,7 +41,10 @@ export class WorkspaceService extends Context.Tag("WorkspaceService")<
   WorkspaceService,
   {
     readonly saveLayout: (layout: SerializedDockview) => Effect.Effect<void, WorkspaceError>;
-    readonly getLayout: () => Effect.Effect<SerializedDockview | null, WorkspaceError | DecodeError>;
+    readonly getLayout: () => Effect.Effect<
+      SerializedDockview | null,
+      WorkspaceError | DecodeError
+    >;
     readonly saveLastOpened: (
       bookId: string,
       timestamp: number,

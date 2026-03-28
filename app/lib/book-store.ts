@@ -48,8 +48,12 @@ export class BookService extends Context.Tag("BookService")<
     readonly saveBook: (meta: BookMeta, data: ArrayBuffer) => Effect.Effect<void, StorageError>;
     readonly updateBookMeta: (meta: BookMeta) => Effect.Effect<void, StorageError>;
     readonly getBooks: () => Effect.Effect<BookMeta[], StorageError | DecodeError>;
-    readonly getBook: (id: string) => Effect.Effect<BookMeta, BookNotFoundError | StorageError | DecodeError>;
-    readonly getBookData: (id: string) => Effect.Effect<ArrayBuffer, BookNotFoundError | StorageError | DecodeError>;
+    readonly getBook: (
+      id: string,
+    ) => Effect.Effect<BookMeta, BookNotFoundError | StorageError | DecodeError>;
+    readonly getBookData: (
+      id: string,
+    ) => Effect.Effect<ArrayBuffer, BookNotFoundError | StorageError | DecodeError>;
     readonly deleteBook: (id: string) => Effect.Effect<void, StorageError>;
   }
 >() {}

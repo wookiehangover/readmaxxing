@@ -60,10 +60,9 @@ export function SearchBar({
       />
       {hasQuery && (
         <span
-          className={cn(
-            "shrink-0 text-xs tabular-nums text-muted-foreground",
-            { "text-destructive": !hasResults },
-          )}
+          className={cn("shrink-0 text-xs tabular-nums text-muted-foreground", {
+            "text-destructive": !hasResults,
+          })}
         >
           {hasResults ? `${currentIndex + 1} of ${resultCount}` : "No results"}
         </span>
@@ -88,12 +87,7 @@ export function SearchBar({
         <ChevronDown data-icon="inline-start" />
         <span className="sr-only">Next result</span>
       </Button>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        onClick={onClose}
-        title="Close search (Escape)"
-      >
+      <Button variant="ghost" size="icon-xs" onClick={onClose} title="Close search (Escape)">
         <X data-icon="inline-start" />
         <span className="sr-only">Close search</span>
       </Button>

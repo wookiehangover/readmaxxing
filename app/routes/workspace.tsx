@@ -49,7 +49,6 @@ export function HydrateFallback() {
   );
 }
 
-
 const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any>>> = {
   "book-reader": BookReaderPanel,
   notebook: NotebookPanel,
@@ -115,9 +114,9 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     const api = apiRef.current;
     if (!api) return;
     const layout = api.toJSON();
-    AppRuntime.runPromise(
-      WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(layout))),
-    ).catch(console.error);
+    AppRuntime.runPromise(WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(layout)))).catch(
+      console.error,
+    );
   }, []);
 
   // Debounced layout save

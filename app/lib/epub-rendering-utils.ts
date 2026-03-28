@@ -47,4 +47,3 @@ export function getRenditionOptions(layout: ReaderLayout) {
       return { spread: "none" as const, flow: "paginated" as const };
   }
 }
-

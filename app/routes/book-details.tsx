@@ -119,7 +119,9 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     setSaved(false);
     try {
       const updatedBook: BookMeta = { ...book, title, author };
-      await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))));
+      await AppRuntime.runPromise(
+        BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))),
+      );
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {

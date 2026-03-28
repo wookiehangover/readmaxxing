@@ -156,7 +156,8 @@ export function filterBooks(books: BookMeta[], query: string): BookMeta[] {
   const q = query.toLowerCase();
   return books.filter(
     (book) =>
-      book.title.toLowerCase().includes(q) || (book.author && book.author.toLowerCase().includes(q)),
+      book.title.toLowerCase().includes(q) ||
+      (book.author && book.author.toLowerCase().includes(q)),
   );
 }
 
@@ -203,34 +204,34 @@ export function BookList({ books, collapsed = false }: BookListProps) {
       <ScrollArea className="min-h-0 flex-1">
         <div className={cn("flex flex-col gap-1", collapsed ? "items-center p-1" : "p-2")}>
           {filteredBooks.map((book) => {
-          const isActive = book.id === activeBookId;
-          const showTocPopover = isActive && toc.length > 0;
+            const isActive = book.id === activeBookId;
+            const showTocPopover = isActive && toc.length > 0;
 
-          const linkClassName = cn(
-            "flex items-center rounded-lg transition-colors",
-            "hover:bg-accent",
-            isActive && "bg-accent",
-            collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2 text-left",
-          );
-
-          if (showTocPopover) {
-            return (
-              <TocPopoverItem
-                key={book.id}
-                book={book}
-                collapsed={collapsed}
-                linkClassName={linkClassName}
-                toc={toc}
-                navigateToHref={navigateToHref}
-              />
+            const linkClassName = cn(
+              "flex items-center rounded-lg transition-colors",
+              "hover:bg-accent",
+              isActive && "bg-accent",
+              collapsed ? "justify-center p-1.5" : "gap-3 px-3 py-2 text-left",
             );
-          }
-          return (
-            <NavLink key={book.id} to={`/books/${book.id}/details`} className={linkClassName}>
-              <BookItemContent book={book} collapsed={collapsed} />
-            </NavLink>
-          );
-        })}
+
+            if (showTocPopover) {
+              return (
+                <TocPopoverItem
+                  key={book.id}
+                  book={book}
+                  collapsed={collapsed}
+                  linkClassName={linkClassName}
+                  toc={toc}
+                  navigateToHref={navigateToHref}
+                />
+              );
+            }
+            return (
+              <NavLink key={book.id} to={`/books/${book.id}/details`} className={linkClassName}>
+                <BookItemContent book={book} collapsed={collapsed} />
+              </NavLink>
+            );
+          })}
         </div>
       </ScrollArea>
     </div>

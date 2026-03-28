@@ -33,14 +33,14 @@ Open [http://localhost:5173](http://localhost:5173) and drop an `.epub` file to 
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `pnpm run dev` | Start development server |
-| `pnpm run build` | Production build |
-| `pnpm run start` | Serve production build |
+| Command              | Description                  |
+| -------------------- | ---------------------------- |
+| `pnpm run dev`       | Start development server     |
+| `pnpm run build`     | Production build             |
+| `pnpm run start`     | Serve production build       |
 | `pnpm run typecheck` | Run TypeScript type checking |
-| `pnpm run lint` | Lint with oxlint |
-| `pnpm run format` | Format with oxfmt |
+| `pnpm run lint`      | Lint with oxlint             |
+| `pnpm run format`    | Format with oxfmt            |
 
 ## License
 

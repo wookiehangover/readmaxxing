@@ -4,7 +4,14 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, MessageSquare, Notebook, Search, TableOfContents } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  MessageSquare,
+  Notebook,
+  Search,
+  TableOfContents,
+} from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { SearchBar } from "~/components/search-bar";
 import { useBookSearch } from "~/lib/use-book-search";
@@ -57,8 +64,6 @@ interface WorkspaceBookReaderProps {
   onRegisterTempHighlight?: (panelId: string, fn: (cfi: string) => void) => void;
   onUnregisterTempHighlight?: (panelId: string) => void;
 }
-
-
 
 export function WorkspaceBookReader({
   bookId,
@@ -273,13 +278,11 @@ function WorkspaceBookReaderInner({
       const isCurrent = i === searchIndex;
       const className = isCurrent ? "search-hl-current" : "search-hl";
       try {
-        rendition.annotations.highlight(
-          cfi,
-          {},
-          undefined,
-          className,
-          { fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)", "fill-opacity": "1", "mix-blend-mode": "multiply" },
-        );
+        rendition.annotations.highlight(cfi, {}, undefined, className, {
+          fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)",
+          "fill-opacity": "1",
+          "mix-blend-mode": "multiply",
+        });
       } catch {
         // annotation may fail for invalid CFIs
       }
@@ -350,7 +353,9 @@ function WorkspaceBookReaderInner({
         bookId: book.id,
         cfi,
         savePosition: (key, val) =>
-          AppRuntime.runPromise(ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val)))),
+          AppRuntime.runPromise(
+            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+          ),
       }).catch((err) => console.error("Failed to flush reading position:", err));
     }
   }, [book.id, panelApi?.id]);
@@ -379,7 +384,10 @@ function WorkspaceBookReaderInner({
     if (!rendition) return;
     try {
       rendition.annotations.highlight(
-        cfi, {}, undefined as any, undefined as any,
+        cfi,
+        {},
+        undefined as any,
+        undefined as any,
         { fill: "rgba(255, 213, 79, 0.4)", "fill-opacity": "0.4" } as any,
       );
       setTimeout(() => {
@@ -433,15 +441,15 @@ function WorkspaceBookReaderInner({
       );
       if (cancelled) return;
 
-    const opts = getRenditionOptions(localReaderLayout);
-    epubBook = ePub(bookData);
-    bookRef.current = epubBook;
+      const opts = getRenditionOptions(localReaderLayout);
+      epubBook = ePub(bookData);
+      bookRef.current = epubBook;
 
-    // Inject layout fix CSS via spine hooks — must run before iframe load
-    // so epubjs textWidth() calculation sees corrected layout
-    epubBook.spine.hooks.content.register((doc: Document, _section: any) => {
-      const style = doc.createElement("style");
-      style.textContent = `
+      // Inject layout fix CSS via spine hooks — must run before iframe load
+      // so epubjs textWidth() calculation sees corrected layout
+      epubBook.spine.hooks.content.register((doc: Document, _section: any) => {
+        const style = doc.createElement("style");
+        style.textContent = `
         /* Prevent off-screen positioned elements from inflating pagination width */
         section[class*="titlepage"] h1,
         section[class*="titlepage"] p,
@@ -456,40 +464,40 @@ function WorkspaceBookReaderInner({
           object-fit: contain !important;
         }
       `;
-      doc.head.appendChild(style);
-    });
+        doc.head.appendChild(style);
+      });
 
-    rendition = epubBook.renderTo(el, {
-      width: "100%",
-      height: "100%",
-      spread: opts.spread,
-      flow: opts.flow,
-      allowScriptedContent: true,
-      ...("gap" in opts && { gap: opts.gap }),
-    });
-    renditionRef.current = rendition;
+      rendition = epubBook.renderTo(el, {
+        width: "100%",
+        height: "100%",
+        spread: opts.spread,
+        flow: opts.flow,
+        allowScriptedContent: true,
+        ...("gap" in opts && { gap: opts.gap }),
+      });
+      renditionRef.current = rendition;
 
-    // Inject Google Fonts and typography CSS into the epub iframe
-    rendition.hooks.content.register((contents: any) => {
-      const doc = contents.document;
-      const link = doc.createElement("link");
-      link.rel = "stylesheet";
-      link.href =
-        "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Source+Serif+4:wght@400;500;600;700&display=swap";
-      doc.head.appendChild(link);
+      // Inject Google Fonts and typography CSS into the epub iframe
+      rendition.hooks.content.register((contents: any) => {
+        const doc = contents.document;
+        const link = doc.createElement("link");
+        link.rel = "stylesheet";
+        link.href =
+          "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Source+Serif+4:wght@400;500;600;700&display=swap";
+        doc.head.appendChild(link);
 
-      const style = doc.createElement("style");
-      style.id = "reader-typography";
-      style.textContent = getTypographyCss(
-        typographyRef.current.fontFamily,
-        typographyRef.current.fontSize,
-        typographyRef.current.lineHeight,
-      );
-      doc.head.appendChild(style);
+        const style = doc.createElement("style");
+        style.id = "reader-typography";
+        style.textContent = getTypographyCss(
+          typographyRef.current.fontFamily,
+          typographyRef.current.fontSize,
+          typographyRef.current.lineHeight,
+        );
+        doc.head.appendChild(style);
 
-      const highlightStyle = doc.createElement("style");
-      highlightStyle.id = "reader-highlights";
-      highlightStyle.textContent = `
+        const highlightStyle = doc.createElement("style");
+        highlightStyle.id = "reader-highlights";
+        highlightStyle.textContent = `
         .epubjs-hl {
           background-color: rgba(255, 213, 79, 0.4) !important;
           cursor: pointer;
@@ -501,172 +509,171 @@ function WorkspaceBookReaderInner({
           background-color: rgba(59, 130, 246, 0.6) !important;
         }
       `;
-      doc.head.appendChild(highlightStyle);
+        doc.head.appendChild(highlightStyle);
 
-      // Forward arrow-key navigation and intercept Cmd/Ctrl+F from the epub iframe
-      doc.addEventListener("keydown", (e: KeyboardEvent) => {
-        // Intercept Cmd/Ctrl+F to open in-book search
-        if ((e.metaKey || e.ctrlKey) && e.key === "f") {
-          e.preventDefault();
-          e.stopPropagation();
-          setSearchOpen(true);
-          return;
-        }
-        if (layoutRef.current === "scroll") return;
-        if (e.key === "ArrowLeft") rendition!.prev();
-        else if (e.key === "ArrowRight") rendition!.next();
+        // Forward arrow-key navigation and intercept Cmd/Ctrl+F from the epub iframe
+        doc.addEventListener("keydown", (e: KeyboardEvent) => {
+          // Intercept Cmd/Ctrl+F to open in-book search
+          if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+            e.preventDefault();
+            e.stopPropagation();
+            setSearchOpen(true);
+            return;
+          }
+          if (layoutRef.current === "scroll") return;
+          if (e.key === "ArrowLeft") rendition!.prev();
+          else if (e.key === "ArrowRight") rendition!.next();
+        });
       });
 
-    });
+      registerThemeColors(rendition);
 
-    registerThemeColors(rendition);
+      (async () => {
+        await epubBook.ready;
 
-    (async () => {
-      await epubBook.ready;
-
-      // Extract TOC from epub navigation
-      const nav = epubBook.navigation;
-      if (nav && nav.toc) {
-        const mapToc = (items: any[]): TocEntry[] =>
-          items.map((item) => ({
-            label: item.label?.trim() ?? "",
-            href: item.href ?? "",
-            ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
-          }));
-        const tocData = mapToc(nav.toc);
-        setLocalToc(tocData);
-        onRegisterToc?.(panelApi?.id ?? book.id, tocData);
-      }
-
-      // Restore reading position: prefer in-memory CFI, then panel-specific
-      // position (for refresh with restored layout), then book-level fallback.
-      const startCfi = await resolveStartCfi({
-        latestCfi: latestCfiRef.current,
-        panelId: panelApi?.id,
-        bookId: book.id,
-        getPosition: (key) =>
-          AppRuntime.runPromise(ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(key)))),
-      });
-      await rendition.display(startCfi || undefined);
-
-      // Eagerly populate chatContextMap so the chat panel has context
-      // even before the first 'relocated' event fires.
-      if (chatContextMap) {
-        let visibleText = "";
-        try {
-          const contents = (rendition as any).getContents?.() as any[];
-          if (contents?.length > 0) {
-            visibleText = contents
-              .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
-              .filter(Boolean)
-              .join("\n\n");
-          }
-        } catch {
-          // fallback: no visible text
+        // Extract TOC from epub navigation
+        const nav = epubBook.navigation;
+        if (nav && nav.toc) {
+          const mapToc = (items: any[]): TocEntry[] =>
+            items.map((item) => ({
+              label: item.label?.trim() ?? "",
+              href: item.href ?? "",
+              ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
+            }));
+          const tocData = mapToc(nav.toc);
+          setLocalToc(tocData);
+          onRegisterToc?.(panelApi?.id ?? book.id, tocData);
         }
-        const loc = rendition.currentLocation() as any;
-        if (loc?.start) {
-          chatContextMap.current.set(book.id, {
-            currentChapterIndex: loc.start.index ?? 0,
-            currentSpineHref: loc.start.href ?? "",
-            visibleText,
-          });
-        }
-      }
 
-      const effectiveTheme = resolveTheme(settings.theme);
-      rendition.themes.select(effectiveTheme);
+        // Restore reading position: prefer in-memory CFI, then panel-specific
+        // position (for refresh with restored layout), then book-level fallback.
+        const startCfi = await resolveStartCfi({
+          latestCfi: latestCfiRef.current,
+          panelId: panelApi?.id,
+          bookId: book.id,
+          getPosition: (key) =>
+            AppRuntime.runPromise(
+              ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(key))),
+            ),
+        });
+        await rendition.display(startCfi || undefined);
 
-      // Load and apply existing highlights
-      await loadAndApplyHighlights(rendition);
-
-      // Register selection handler
-      registerSelectionHandler(rendition);
-
-      try {
-        const cachedLocations = await AppRuntime.runPromise(
-          LocationCacheService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
-            Effect.catchAll(() => Effect.succeed(null)),
-          ),
-        );
-        if (cachedLocations) {
-          epubBook.locations.load(cachedLocations);
-        } else {
-          await epubBook.locations.generate(1500);
-          const json = (epubBook.locations as any).save() as string;
-          AppRuntime.runPromise(
-            LocationCacheService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
-          ).catch(console.error);
-        }
-        setTotalPages((epubBook.locations as any).total as number);
-      } catch {
-        // locations generation can fail silently
-      }
-
-      rendition.on(
-        "relocated",
-        (location: {
-          start: {
-            cfi: string;
-            percentage: number;
-            displayed: { page: number; total: number };
-            index?: number;
-            href?: string;
-          };
-        }) => {
-          if (!renditionRef.current) return;
-          setBookProgress(location.start.percentage * 100);
-          const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
-          if (epubLocTotal && epubLocTotal > 0) {
-            const locIndex = bookRef.current!.locations.locationFromCfi(location.start.cfi);
-            if (typeof locIndex === "number" && locIndex >= 0) {
-              setCurrentPage(locIndex + 1);
-            } else {
-              setCurrentPage(Math.max(1, Math.round(location.start.percentage * epubLocTotal)));
+        // Eagerly populate chatContextMap so the chat panel has context
+        // even before the first 'relocated' event fires.
+        if (chatContextMap) {
+          let visibleText = "";
+          try {
+            const contents = (rendition as any).getContents?.() as any[];
+            if (contents?.length > 0) {
+              visibleText = contents
+                .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
+                .filter(Boolean)
+                .join("\n\n");
             }
-            setTotalPages(epubLocTotal);
+          } catch {
+            // fallback: no visible text
           }
-          latestCfiRef.current = location.start.cfi;
-
-          // Update chat context with current chapter position and visible text
-          if (chatContextMap && location.start.index != null) {
-            let visibleText = "";
-            try {
-              const contents = (renditionRef.current as any)?.getContents?.() as any[];
-              if (contents?.length > 0) {
-                visibleText = contents
-                  .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
-                  .filter(Boolean)
-                  .join("\n\n");
-              }
-            } catch {
-              // fallback: no visible text
-            }
-
+          const loc = rendition.currentLocation() as any;
+          if (loc?.start) {
             chatContextMap.current.set(book.id, {
-              currentChapterIndex: location.start.index,
-              currentSpineHref: location.start.href ?? "",
+              currentChapterIndex: loc.start.index ?? 0,
+              currentSpineHref: loc.start.href ?? "",
               visibleText,
             });
           }
+        }
 
-          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = setTimeout(() => {
-            savePositionDualKey({
-              panelId: panelApi?.id,
-              bookId: book.id,
-              cfi: location.start.cfi,
-              savePosition: (key, val) =>
-                AppRuntime.runPromise(
-                  ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
-                ),
-            }).catch((err) => console.error("Failed to save reading position:", err));
-          }, POSITION_SAVE_DEBOUNCE_MS);
+        const effectiveTheme = resolveTheme(settings.theme);
+        rendition.themes.select(effectiveTheme);
 
-        },
-      );
-    })();
+        // Load and apply existing highlights
+        await loadAndApplyHighlights(rendition);
 
+        // Register selection handler
+        registerSelectionHandler(rendition);
+
+        try {
+          const cachedLocations = await AppRuntime.runPromise(
+            LocationCacheService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
+              Effect.catchAll(() => Effect.succeed(null)),
+            ),
+          );
+          if (cachedLocations) {
+            epubBook.locations.load(cachedLocations);
+          } else {
+            await epubBook.locations.generate(1500);
+            const json = (epubBook.locations as any).save() as string;
+            AppRuntime.runPromise(
+              LocationCacheService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
+            ).catch(console.error);
+          }
+          setTotalPages((epubBook.locations as any).total as number);
+        } catch {
+          // locations generation can fail silently
+        }
+
+        rendition.on(
+          "relocated",
+          (location: {
+            start: {
+              cfi: string;
+              percentage: number;
+              displayed: { page: number; total: number };
+              index?: number;
+              href?: string;
+            };
+          }) => {
+            if (!renditionRef.current) return;
+            setBookProgress(location.start.percentage * 100);
+            const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
+            if (epubLocTotal && epubLocTotal > 0) {
+              const locIndex = bookRef.current!.locations.locationFromCfi(location.start.cfi);
+              if (typeof locIndex === "number" && locIndex >= 0) {
+                setCurrentPage(locIndex + 1);
+              } else {
+                setCurrentPage(Math.max(1, Math.round(location.start.percentage * epubLocTotal)));
+              }
+              setTotalPages(epubLocTotal);
+            }
+            latestCfiRef.current = location.start.cfi;
+
+            // Update chat context with current chapter position and visible text
+            if (chatContextMap && location.start.index != null) {
+              let visibleText = "";
+              try {
+                const contents = (renditionRef.current as any)?.getContents?.() as any[];
+                if (contents?.length > 0) {
+                  visibleText = contents
+                    .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
+                    .filter(Boolean)
+                    .join("\n\n");
+                }
+              } catch {
+                // fallback: no visible text
+              }
+
+              chatContextMap.current.set(book.id, {
+                currentChapterIndex: location.start.index,
+                currentSpineHref: location.start.href ?? "",
+                visibleText,
+              });
+            }
+
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = setTimeout(() => {
+              savePositionDualKey({
+                panelId: panelApi?.id,
+                bookId: book.id,
+                cfi: location.start.cfi,
+                savePosition: (key, val) =>
+                  AppRuntime.runPromise(
+                    ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+                  ),
+              }).catch((err) => console.error("Failed to save reading position:", err));
+            }, POSITION_SAVE_DEBOUNCE_MS);
+          },
+        );
+      })();
     }; // end init()
 
     // Keyboard navigation scoped to this panel only
@@ -888,7 +895,12 @@ function WorkspaceBookReaderInner({
             </div>
           )}
           <div className="absolute right-2 flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={handleSearchOpen} title="Search in book (Cmd+F)">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleSearchOpen}
+              title="Search in book (Cmd+F)"
+            >
               <Search className="size-4" />
               <span className="sr-only">Search in book</span>
             </Button>

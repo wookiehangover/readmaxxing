@@ -30,8 +30,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return new Response(body, {
     headers: {
       "Content-Type": "application/epub+zip",
-      "Cache-Control":
-        "public, max-age=86400, stale-while-revalidate=604800",
+      "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
     },
   });
 }

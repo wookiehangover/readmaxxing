@@ -26,7 +26,9 @@ export interface LocationCacheServiceStores {
   readonly locationsStore: UseStore;
 }
 
-export function makeLocationCacheService(stores: LocationCacheServiceStores): LocationCacheService["Type"] {
+export function makeLocationCacheService(
+  stores: LocationCacheServiceStores,
+): LocationCacheService["Type"] {
   const { locationsStore } = stores;
   return {
     saveLocations: (bookId: string, json: string) =>

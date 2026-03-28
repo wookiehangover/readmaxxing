@@ -23,10 +23,7 @@ function makeTestLayer() {
   const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
   const posStore = createStore(`pos-db-${suffix}`, "positions");
 
-  const bookLayer = Layer.succeed(
-    BookService,
-    makeBookService({ bookStore, bookDataStore }),
-  );
+  const bookLayer = Layer.succeed(BookService, makeBookService({ bookStore, bookDataStore }));
 
   const positionLayer = Layer.succeed(
     ReadingPositionService,
@@ -74,7 +71,10 @@ describe("BookService", () => {
     it("fails with BookNotFoundError for missing book", async () => {
       const { bookLayer } = makeTestLayer();
       const exit = await Effect.runPromiseExit(
-        Effect.provide(BookService.pipe(Effect.andThen((s) => s.getBook("nonexistent"))), bookLayer),
+        Effect.provide(
+          BookService.pipe(Effect.andThen((s) => s.getBook("nonexistent"))),
+          bookLayer,
+        ),
       );
       expect(exit._tag).toBe("Failure");
       if (exit._tag === "Failure") {
@@ -103,8 +103,14 @@ describe("ReadingPositionService", () => {
       const { positionLayer } = makeTestLayer();
       const run = <A, E>(e: Effect.Effect<A, E, ReadingPositionService>) =>
         Effect.runPromise(Effect.provide(e, positionLayer));
-      await run(ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/4)"))));
-      const pos = await run(ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition("book-1"))));
+      await run(
+        ReadingPositionService.pipe(
+          Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/4)")),
+        ),
+      );
+      const pos = await run(
+        ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition("book-1"))),
+      );
       expect(pos).toBe("epubcfi(/6/4)");
     });
 
@@ -112,7 +118,9 @@ describe("ReadingPositionService", () => {
       const { positionLayer } = makeTestLayer();
       const run = <A, E>(e: Effect.Effect<A, E, ReadingPositionService>) =>
         Effect.runPromise(Effect.provide(e, positionLayer));
-      const pos = await run(ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition("no-book"))));
+      const pos = await run(
+        ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition("no-book"))),
+      );
       expect(pos).toBeNull();
     });
 
@@ -120,9 +128,19 @@ describe("ReadingPositionService", () => {
       const { positionLayer } = makeTestLayer();
       const run = <A, E>(e: Effect.Effect<A, E, ReadingPositionService>) =>
         Effect.runPromise(Effect.provide(e, positionLayer));
-      await run(ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/4)"))));
-      await run(ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/8)"))));
-      const pos = await run(ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition("book-1"))));
+      await run(
+        ReadingPositionService.pipe(
+          Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/4)")),
+        ),
+      );
+      await run(
+        ReadingPositionService.pipe(
+          Effect.andThen((s) => s.savePosition("book-1", "epubcfi(/6/8)")),
+        ),
+      );
+      const pos = await run(
+        ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition("book-1"))),
+      );
       expect(pos).toBe("epubcfi(/6/8)");
     });
   });

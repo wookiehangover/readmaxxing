@@ -44,8 +44,6 @@ export function HydrateFallback() {
   );
 }
 
-
-
 export default function LibraryIndex({ loaderData }: Route.ComponentProps) {
   const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const navigate = useNavigate();

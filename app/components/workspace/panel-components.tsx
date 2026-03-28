@@ -14,8 +14,15 @@ export function BookReaderPanel({
   params,
   api,
 }: IDockviewPanelProps<{ bookId: string; bookTitle?: string } & PanelTypographyParams>) {
-  const { navigationMap, tocMap, tocChangeListener, dockviewApi, notebookCallbackMap, chatContextMap, tempHighlightMap } =
-    useWorkspace();
+  const {
+    navigationMap,
+    tocMap,
+    tocChangeListener,
+    dockviewApi,
+    notebookCallbackMap,
+    chatContextMap,
+    tempHighlightMap,
+  } = useWorkspace();
 
   const handleRegister = useCallback(
     (panelId: string, nav: (cfi: string) => void) => {
@@ -162,7 +169,9 @@ export function BookReaderPanel({
   );
 }
 
-export function NotebookPanel({ params }: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
+export function NotebookPanel({
+  params,
+}: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
   const { findNavForBook, notebookCallbackMap } = useWorkspace();
 
   const handleNavigateToCfi = useCallback(
@@ -200,14 +209,6 @@ export function NotebookPanel({ params }: IDockviewPanelProps<{ bookId: string; 
   );
 }
 
-
-export function ChatPanel({
-  params,
-}: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
-  return (
-    <ChatPanelComponent
-      bookId={params.bookId}
-      bookTitle={params.bookTitle}
-    />
-  );
+export function ChatPanel({ params }: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
+  return <ChatPanelComponent bookId={params.bookId} bookTitle={params.bookTitle} />;
 }

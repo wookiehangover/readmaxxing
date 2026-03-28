@@ -11,9 +11,7 @@ function parseSearchHtml(html: string, page: number): SESearchResult {
 
   items.forEach((li) => {
     const titleEl = li.querySelector('[property="schema:name"]');
-    const authorEl = li.querySelector(
-      '[typeof="schema:Person"] [property="schema:name"]',
-    );
+    const authorEl = li.querySelector('[typeof="schema:Person"] [property="schema:name"]');
     const imgEl = li.querySelector("img");
     const aboutAttr = li.getAttribute("about");
 

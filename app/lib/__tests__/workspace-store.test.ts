@@ -11,10 +11,7 @@ function makeTestLayer() {
   const layoutStore = createStore(`layout-db-${suffix}`, "layout");
   const lastOpenedStore = createStore(`last-opened-db-${suffix}`, "last-opened");
 
-  return Layer.succeed(
-    WorkspaceService,
-    makeWorkspaceService({ layoutStore, lastOpenedStore }),
-  );
+  return Layer.succeed(WorkspaceService, makeWorkspaceService({ layoutStore, lastOpenedStore }));
 }
 
 function makeLayout(overrides: Partial<SerializedDockview> = {}): SerializedDockview {

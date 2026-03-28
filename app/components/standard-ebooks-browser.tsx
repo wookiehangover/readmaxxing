@@ -15,9 +15,7 @@ interface StandardEbooksBrowserProps {
   onBookAdded: (book: BookMeta) => void;
 }
 
-export function StandardEbooksBrowser({
-  onBookAdded,
-}: StandardEbooksBrowserProps) {
+export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProps) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchPage, setSearchPage] = useState(1);
@@ -50,9 +48,7 @@ export function StandardEbooksBrowser({
     isLoading,
   } = useEffectQuery(
     () =>
-      StandardEbooksService.pipe(
-        Effect.andThen((s) => s.searchBooks(debouncedQuery, searchPage)),
-      ),
+      StandardEbooksService.pipe(Effect.andThen((s) => s.searchBooks(debouncedQuery, searchPage))),
     [debouncedQuery, searchPage],
   );
 
@@ -118,9 +114,7 @@ export function StandardEbooksBrowser({
           />
         </div>
 
-        {error && (
-          <p className="text-sm text-destructive">{error}</p>
-        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
         {loadError && (
           <p className="text-sm text-destructive">
@@ -175,7 +169,8 @@ export function StandardEbooksBrowser({
             </a>
           </p>
           <p className="mt-1 text-xs text-muted-foreground/70">
-            Standard Ebooks is a volunteer-driven project dedicated to producing free, beautiful digital literature.
+            Standard Ebooks is a volunteer-driven project dedicated to producing free, beautiful
+            digital literature.
           </p>
           <a
             href="https://standardebooks.org/donate"
@@ -241,9 +236,7 @@ function SEBookCard({
         ) : (
           <div className="flex size-full flex-col items-center justify-center p-3 text-center">
             <Globe className="mb-2 size-8 text-muted-foreground/50" />
-            <p className="line-clamp-3 text-sm font-medium text-muted-foreground">
-              {book.title}
-            </p>
+            <p className="line-clamp-3 text-sm font-medium text-muted-foreground">{book.title}</p>
           </div>
         )}
       </div>

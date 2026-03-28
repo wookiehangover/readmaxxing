@@ -25,7 +25,6 @@ import { registerThemeColors } from "~/lib/epub-theme-utils";
 import { useBookSearch } from "~/lib/use-book-search";
 import { SearchBar } from "~/components/search-bar";
 
-
 /** Debounce delay for persisting reading position changes (ms) */
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
@@ -109,7 +108,14 @@ export function BookReader({ book }: BookReaderProps) {
   const [tocOpen, setTocOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const { search, results, currentIndex, next: searchNext, prev: searchPrev, clear: searchClear } = useBookSearch(bookRef);
+  const {
+    search,
+    results,
+    currentIndex,
+    next: searchNext,
+    prev: searchPrev,
+    clear: searchClear,
+  } = useBookSearch(bookRef);
 
   const navigateToCfi = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi).catch((err: unknown) => {
@@ -145,15 +151,15 @@ export function BookReader({ book }: BookReaderProps) {
       );
       if (cancelled) return;
 
-    const opts = getRenditionOptions(settings.readerLayout);
-    epubBook = ePub(bookData);
-    bookRef.current = epubBook;
+      const opts = getRenditionOptions(settings.readerLayout);
+      epubBook = ePub(bookData);
+      bookRef.current = epubBook;
 
-    // Inject layout fix CSS via spine hooks — must run before iframe load
-    // so epubjs textWidth() calculation sees corrected layout
-    epubBook.spine.hooks.content.register((doc: Document, _section: any) => {
-      const style = doc.createElement("style");
-      style.textContent = `
+      // Inject layout fix CSS via spine hooks — must run before iframe load
+      // so epubjs textWidth() calculation sees corrected layout
+      epubBook.spine.hooks.content.register((doc: Document, _section: any) => {
+        const style = doc.createElement("style");
+        style.textContent = `
         /* Prevent off-screen positioned elements from inflating pagination width */
         section[class*="titlepage"] h1,
         section[class*="titlepage"] p,
@@ -168,40 +174,40 @@ export function BookReader({ book }: BookReaderProps) {
           object-fit: contain !important;
         }
       `;
-      doc.head.appendChild(style);
-    });
+        doc.head.appendChild(style);
+      });
 
-    rendition = epubBook.renderTo(el, {
-      width: "100%",
-      height: "100%",
-      spread: opts.spread,
-      flow: opts.flow,
-      allowScriptedContent: true,
-      ...("gap" in opts && { gap: opts.gap }),
-    });
-    renditionRef.current = rendition;
+      rendition = epubBook.renderTo(el, {
+        width: "100%",
+        height: "100%",
+        spread: opts.spread,
+        flow: opts.flow,
+        allowScriptedContent: true,
+        ...("gap" in opts && { gap: opts.gap }),
+      });
+      renditionRef.current = rendition;
 
-    // Inject Google Fonts and typography CSS into the epub iframe
-    rendition.hooks.content.register((contents: any) => {
-      const doc = contents.document;
-      const link = doc.createElement("link");
-      link.rel = "stylesheet";
-      link.href =
-        "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Source+Serif+4:wght@400;500;600;700&display=swap";
-      doc.head.appendChild(link);
+      // Inject Google Fonts and typography CSS into the epub iframe
+      rendition.hooks.content.register((contents: any) => {
+        const doc = contents.document;
+        const link = doc.createElement("link");
+        link.rel = "stylesheet";
+        link.href =
+          "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Source+Serif+4:wght@400;500;600;700&display=swap";
+        doc.head.appendChild(link);
 
-      const style = doc.createElement("style");
-      style.id = "reader-typography";
-      style.textContent = getTypographyCss(
-        typographyRef.current.fontFamily,
-        typographyRef.current.fontSize,
-        typographyRef.current.lineHeight,
-      );
-      doc.head.appendChild(style);
+        const style = doc.createElement("style");
+        style.id = "reader-typography";
+        style.textContent = getTypographyCss(
+          typographyRef.current.fontFamily,
+          typographyRef.current.fontSize,
+          typographyRef.current.lineHeight,
+        );
+        doc.head.appendChild(style);
 
-      const highlightStyle = doc.createElement("style");
-      highlightStyle.id = "reader-highlights";
-      highlightStyle.textContent = `
+        const highlightStyle = doc.createElement("style");
+        highlightStyle.id = "reader-highlights";
+        highlightStyle.textContent = `
         .epubjs-hl {
           background-color: rgba(255, 213, 79, 0.4) !important;
           cursor: pointer;
@@ -213,109 +219,108 @@ export function BookReader({ book }: BookReaderProps) {
           background-color: rgba(59, 130, 246, 0.6) !important;
         }
       `;
-      doc.head.appendChild(highlightStyle);
+        doc.head.appendChild(highlightStyle);
 
-      // Forward arrow-key navigation from the epub iframe
-      doc.addEventListener("keydown", (e: KeyboardEvent) => {
-        if (layoutRef.current === "scroll") return;
-        if (e.key === "ArrowLeft") rendition!.prev();
-        else if (e.key === "ArrowRight") rendition!.next();
-      });
-
-    });
-
-    registerThemeColors(rendition);
-
-    (async () => {
-      await epubBook.ready;
-
-      // Extract TOC from epub navigation
-      const nav = epubBook.navigation;
-      if (nav && nav.toc) {
-        const mapToc = (items: any[]): TocEntry[] =>
-          items.map((item) => ({
-            label: item.label?.trim() ?? "",
-            href: item.href ?? "",
-            ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
-          }));
-        setToc(mapToc(nav.toc));
-      }
-
-      // Provide chapter navigation via rendition.display
-      setNavigateToHref((href: string) => {
-        rendition!.display(href).catch((err: unknown) => {
-          console.warn("TOC navigation failed:", err);
+        // Forward arrow-key navigation from the epub iframe
+        doc.addEventListener("keydown", (e: KeyboardEvent) => {
+          if (layoutRef.current === "scroll") return;
+          if (e.key === "ArrowLeft") rendition!.prev();
+          else if (e.key === "ArrowRight") rendition!.next();
         });
       });
 
-      const savedCfi = await AppRuntime.runPromise(
-        ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
-      );
-      await rendition.display(savedCfi || undefined);
+      registerThemeColors(rendition);
 
-      const effectiveTheme = resolveTheme(settings.theme);
-      rendition.themes.select(effectiveTheme);
+      (async () => {
+        await epubBook.ready;
 
-      // Load and apply existing highlights via the hook
-      await loadAndApplyHighlights(rendition);
-
-      // Register selection handler via the hook
-      registerSelectionHandler(rendition);
-
-      try {
-        const cachedLocations = await AppRuntime.runPromise(
-          LocationCacheService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
-            Effect.catchAll(() => Effect.succeed(null)),
-          ),
-        );
-        if (cachedLocations) {
-          epubBook.locations.load(cachedLocations);
-        } else {
-          await epubBook.locations.generate(1500);
-          const json = (epubBook.locations as any).save() as string;
-          AppRuntime.runPromise(
-            LocationCacheService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
-          ).catch(console.error);
+        // Extract TOC from epub navigation
+        const nav = epubBook.navigation;
+        if (nav && nav.toc) {
+          const mapToc = (items: any[]): TocEntry[] =>
+            items.map((item) => ({
+              label: item.label?.trim() ?? "",
+              href: item.href ?? "",
+              ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
+            }));
+          setToc(mapToc(nav.toc));
         }
-        setTotalPages((epubBook.locations as any).total as number);
-      } catch {
-        // locations generation can fail silently
-      }
 
-      rendition.on(
-        "relocated",
-        (location: {
-          start: {
-            cfi: string;
-            percentage: number;
-            displayed: { page: number; total: number };
-          };
-        }) => {
-          if (!renditionRef.current) return;
-          setBookProgress(location.start.percentage * 100);
-          // Compute current page from locations if available
-          const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
-          if (epubLocTotal && epubLocTotal > 0) {
-            const locIndex = bookRef.current!.locations.locationFromCfi(location.start.cfi);
-            if (typeof locIndex === "number" && locIndex >= 0) {
-              setCurrentPage(locIndex + 1);
-            } else {
-              // Fallback: derive from percentage
-              setCurrentPage(Math.max(1, Math.round(location.start.percentage * epubLocTotal)));
-            }
-            setTotalPages(epubLocTotal);
-          }
-          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = setTimeout(() => {
+        // Provide chapter navigation via rendition.display
+        setNavigateToHref((href: string) => {
+          rendition!.display(href).catch((err: unknown) => {
+            console.warn("TOC navigation failed:", err);
+          });
+        });
+
+        const savedCfi = await AppRuntime.runPromise(
+          ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(book.id))),
+        );
+        await rendition.display(savedCfi || undefined);
+
+        const effectiveTheme = resolveTheme(settings.theme);
+        rendition.themes.select(effectiveTheme);
+
+        // Load and apply existing highlights via the hook
+        await loadAndApplyHighlights(rendition);
+
+        // Register selection handler via the hook
+        registerSelectionHandler(rendition);
+
+        try {
+          const cachedLocations = await AppRuntime.runPromise(
+            LocationCacheService.pipe(Effect.andThen((s) => s.getLocations(book.id))).pipe(
+              Effect.catchAll(() => Effect.succeed(null)),
+            ),
+          );
+          if (cachedLocations) {
+            epubBook.locations.load(cachedLocations);
+          } else {
+            await epubBook.locations.generate(1500);
+            const json = (epubBook.locations as any).save() as string;
             AppRuntime.runPromise(
-              ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(book.id, location.start.cfi))),
-            ).catch((err) => console.error("Failed to save reading position:", err));
-          }, POSITION_SAVE_DEBOUNCE_MS);
+              LocationCacheService.pipe(Effect.andThen((s) => s.saveLocations(book.id, json))),
+            ).catch(console.error);
+          }
+          setTotalPages((epubBook.locations as any).total as number);
+        } catch {
+          // locations generation can fail silently
+        }
 
-        },
-      );
-    })();
-
+        rendition.on(
+          "relocated",
+          (location: {
+            start: {
+              cfi: string;
+              percentage: number;
+              displayed: { page: number; total: number };
+            };
+          }) => {
+            if (!renditionRef.current) return;
+            setBookProgress(location.start.percentage * 100);
+            // Compute current page from locations if available
+            const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
+            if (epubLocTotal && epubLocTotal > 0) {
+              const locIndex = bookRef.current!.locations.locationFromCfi(location.start.cfi);
+              if (typeof locIndex === "number" && locIndex >= 0) {
+                setCurrentPage(locIndex + 1);
+              } else {
+                // Fallback: derive from percentage
+                setCurrentPage(Math.max(1, Math.round(location.start.percentage * epubLocTotal)));
+              }
+              setTotalPages(epubLocTotal);
+            }
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = setTimeout(() => {
+              AppRuntime.runPromise(
+                ReadingPositionService.pipe(
+                  Effect.andThen((s) => s.savePosition(book.id, location.start.cfi)),
+                ),
+              ).catch((err) => console.error("Failed to save reading position:", err));
+            }, POSITION_SAVE_DEBOUNCE_MS);
+          },
+        );
+      })();
     }; // end init()
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -424,13 +429,11 @@ export function BookReader({ book }: BookReaderProps) {
       const isCurrent = i === currentIndex;
       const className = isCurrent ? "search-hl-current" : "search-hl";
       try {
-        rendition.annotations.highlight(
-          cfi,
-          {},
-          undefined,
-          className,
-          { fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)", "fill-opacity": "1", "mix-blend-mode": "multiply" },
-        );
+        rendition.annotations.highlight(cfi, {}, undefined, className, {
+          fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)",
+          "fill-opacity": "1",
+          "mix-blend-mode": "multiply",
+        });
       } catch {
         // annotation may fail for invalid CFIs
       }

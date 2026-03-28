@@ -18,9 +18,7 @@ function parseAtomFeed(xml: string): SEBook[] {
     const coverUrl = thumbnail?.getAttribute("url") ?? null;
 
     const idText = entry.querySelector("id")?.textContent?.trim() ?? "";
-    const urlPath = idText.startsWith(SE_BASE)
-      ? idText.replace(SE_BASE, "")
-      : idText;
+    const urlPath = idText.startsWith(SE_BASE) ? idText.replace(SE_BASE, "") : idText;
 
     const categories = entry.querySelectorAll("category");
     const subjects: string[] = [];

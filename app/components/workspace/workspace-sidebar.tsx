@@ -128,7 +128,10 @@ export interface WorkspaceSidebarProps {
   tocVersion: number;
   openBooks: BookMeta[];
   otherBooks: BookMeta[];
-  onUpdateSettings: (patch: { sidebarCollapsed?: boolean; workspaceSortBy?: WorkspaceSortBy }) => void;
+  onUpdateSettings: (patch: {
+    sidebarCollapsed?: boolean;
+    workspaceSortBy?: WorkspaceSortBy;
+  }) => void;
   onOpenBook: (book: BookMeta, forceNew?: boolean) => void;
   onOpenNotebook: (book: BookMeta) => void;
   onOpenNewTab: () => void;

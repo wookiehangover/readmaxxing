@@ -8,7 +8,14 @@ import { ChatError } from "~/lib/errors";
 export type SerializedPart =
   | { type: "text"; text: string }
   | { type: "step-start" }
-  | { type: string; toolCallId?: string; state?: string; toolName?: string; input?: Record<string, unknown>; output?: unknown };
+  | {
+      type: string;
+      toolCallId?: string;
+      state?: string;
+      toolName?: string;
+      input?: Record<string, unknown>;
+      output?: unknown;
+    };
 
 export interface ChatMessage {
   id: string;

@@ -22,13 +22,19 @@ const LegacyFontSize = Schema.transform(Schema.Unknown, Schema.Number, {
 });
 
 export const SettingsSchema = Schema.Struct({
-  theme: Schema.optionalWith(Schema.Literal("light", "dark", "system"), { default: () => "system" as const }),
-  readerLayout: Schema.optionalWith(Schema.Literal("single", "spread", "scroll"), { default: () => "single" as const }),
+  theme: Schema.optionalWith(Schema.Literal("light", "dark", "system"), {
+    default: () => "system" as const,
+  }),
+  readerLayout: Schema.optionalWith(Schema.Literal("single", "spread", "scroll"), {
+    default: () => "single" as const,
+  }),
   fontFamily: Schema.optionalWith(Schema.String, { default: () => "Literata" }),
   fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
   lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
   sidebarCollapsed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
-  workspaceSortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), { default: () => "recent" as const }),
+  workspaceSortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), {
+    default: () => "recent" as const,
+  }),
 });
 
 export type Settings = typeof SettingsSchema.Type;

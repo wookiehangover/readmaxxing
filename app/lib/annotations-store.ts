@@ -47,14 +47,18 @@ export class AnnotationService extends Context.Tag("AnnotationService")<
   AnnotationService,
   {
     readonly saveHighlight: (highlight: Highlight) => Effect.Effect<void, HighlightError>;
-    readonly getHighlightsByBook: (bookId: string) => Effect.Effect<Highlight[], HighlightError | DecodeError>;
+    readonly getHighlightsByBook: (
+      bookId: string,
+    ) => Effect.Effect<Highlight[], HighlightError | DecodeError>;
     readonly updateHighlight: (
       id: string,
       updates: Partial<Omit<Highlight, "id" | "bookId" | "createdAt">>,
     ) => Effect.Effect<void, HighlightError | DecodeError>;
     readonly deleteHighlight: (id: string) => Effect.Effect<void, HighlightError>;
     readonly saveNotebook: (notebook: Notebook) => Effect.Effect<void, NotebookError>;
-    readonly getNotebook: (bookId: string) => Effect.Effect<Notebook | null, NotebookError | DecodeError>;
+    readonly getNotebook: (
+      bookId: string,
+    ) => Effect.Effect<Notebook | null, NotebookError | DecodeError>;
   }
 >() {}
 

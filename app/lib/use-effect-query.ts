@@ -44,10 +44,7 @@ export function useEffectQuery<A, E>(
       })
       .catch((err: unknown) => {
         // Ignore interruption errors — they mean cleanup cancelled this fiber
-        if (
-          err instanceof Error &&
-          Cause.InterruptedExceptionTypeId in err
-        ) {
+        if (err instanceof Error && Cause.InterruptedExceptionTypeId in err) {
           return;
         }
         setError(err as E);

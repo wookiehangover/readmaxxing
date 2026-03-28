@@ -76,65 +76,59 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const onBookAddedRef = useRef<((book: BookMeta) => void) | null>(null);
   const onBookDeletedRef = useRef<((bookId: string) => void) | null>(null);
   const chatContextMap = useRef(
-    new Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>(),
+    new Map<
+      string,
+      { currentChapterIndex: number; currentSpineHref: string; visibleText: string }
+    >(),
   );
   const tempHighlightMap = useRef(new Map<string, (cfi: string) => void>());
 
-  const findNavForBook = useCallback(
-    (bookId: string): ((cfi: string) => void) | undefined => {
-      const api = dockviewApi.current;
-      if (!api) return undefined;
-      for (const panel of api.panels) {
-        if (
-          panel.id.startsWith("book-") &&
-          (panel.params as Record<string, unknown>)?.bookId === bookId
-        ) {
-          const nav = navigationMap.current.get(panel.id);
-          if (nav) return nav;
-        }
+  const findNavForBook = useCallback((bookId: string): ((cfi: string) => void) | undefined => {
+    const api = dockviewApi.current;
+    if (!api) return undefined;
+    for (const panel of api.panels) {
+      if (
+        panel.id.startsWith("book-") &&
+        (panel.params as Record<string, unknown>)?.bookId === bookId
+      ) {
+        const nav = navigationMap.current.get(panel.id);
+        if (nav) return nav;
       }
-      return undefined;
-    },
-    [],
-  );
+    }
+    return undefined;
+  }, []);
 
-  const applyTempHighlightForBook = useCallback(
-    (bookId: string, cfi: string): void => {
-      const api = dockviewApi.current;
-      if (!api) return;
-      for (const panel of api.panels) {
-        if (
-          panel.id.startsWith("book-") &&
-          (panel.params as Record<string, unknown>)?.bookId === bookId
-        ) {
-          const fn = tempHighlightMap.current.get(panel.id);
-          if (fn) {
-            fn(cfi);
-            return;
-          }
+  const applyTempHighlightForBook = useCallback((bookId: string, cfi: string): void => {
+    const api = dockviewApi.current;
+    if (!api) return;
+    for (const panel of api.panels) {
+      if (
+        panel.id.startsWith("book-") &&
+        (panel.params as Record<string, unknown>)?.bookId === bookId
+      ) {
+        const fn = tempHighlightMap.current.get(panel.id);
+        if (fn) {
+          fn(cfi);
+          return;
         }
       }
-    },
-    [],
-  );
+    }
+  }, []);
 
-  const findTocForBook = useCallback(
-    (bookId: string): TocEntry[] | undefined => {
-      const api = dockviewApi.current;
-      if (!api) return undefined;
-      for (const panel of api.panels) {
-        if (
-          panel.id.startsWith("book-") &&
-          (panel.params as Record<string, unknown>)?.bookId === bookId
-        ) {
-          const toc = tocMap.current.get(panel.id);
-          if (toc && toc.length > 0) return toc;
-        }
+  const findTocForBook = useCallback((bookId: string): TocEntry[] | undefined => {
+    const api = dockviewApi.current;
+    if (!api) return undefined;
+    for (const panel of api.panels) {
+      if (
+        panel.id.startsWith("book-") &&
+        (panel.params as Record<string, unknown>)?.bookId === bookId
+      ) {
+        const toc = tocMap.current.get(panel.id);
+        if (toc && toc.length > 0) return toc;
       }
-      return undefined;
-    },
-    [],
-  );
+    }
+    return undefined;
+  }, []);
 
   const value: WorkspaceContextValue = {
     navigationMap,
