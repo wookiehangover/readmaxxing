@@ -14,6 +14,7 @@ import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
 import { extractBookChapters, type BookChapter } from "~/lib/epub-text-extract";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/workspace-context";
+import { ScrollArea } from "~/components/ui/scroll-area";
 
 /** Extract a normalized tool info object from an AI SDK tool part (static or dynamic). */
 function getToolInfo(part: any): {
@@ -480,7 +481,7 @@ function ChatPanelInner({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <ScrollArea className="flex-1 px-4 py-3 h-full scroll-fog-container overflow-hidden">
         {messages.length === 0 && (
           <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
         )}
@@ -496,17 +497,17 @@ function ChatPanelInner({
           ))}
           <div ref={messagesEndRef} />
         </div>
-      </div>
+      </ScrollArea>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="border-t px-4 py-3">
+      <form onSubmit={handleSubmit} className="px-4 py-3">
         <div className="flex items-end gap-2">
           <textarea
             ref={textareaRef}
             className={cn(
               "flex-1 resize-none rounded-md border bg-transparent px-3 py-2 text-sm",
               "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-              "field-sizing-content max-h-[6lh] min-h-[2.5rem]",
+              "field-sizing-content max-h-[6lh] min-h-10",
             )}
             placeholder="Ask about this book…"
             onChange={(e) => {
@@ -547,11 +548,12 @@ const SUGGESTION_CATEGORIES = [
     suggestions: [
       "What's the strongest argument in this chapter?",
       "What would a critic say about this book's thesis?",
+      "Give me a Straussian reading of this chapter",
     ],
   },
   {
     label: "Pull the Thread",
-    suggestions: ["What ideas connect across multiple chapters?"],
+    suggestions: ["What ideas connect across multiple chapters?", "What would Tyler Cowen think about this?"],
   },
 ];
 
@@ -700,19 +702,19 @@ function ChatMessage({
 
   return (
     <div
-      className={cn("flex", {
+      className={cn("flex px-5", {
         "justify-end": isUser,
         "justify-start": !isUser,
       })}
     >
       <div
-        className={cn("max-w-[85%] rounded-lg px-3 py-2 text-sm", {
-          "bg-secondary text-secondary-foreground": isUser,
-          "bg-muted text-foreground": !isUser,
+        className={cn("max-w-prose text-sm", {
+          "rounded-lg px-3 py-2 bg-secondary text-secondary-foreground my-5": isUser,
+          "text-foreground": !isUser,
         })}
       >
         {hasProcessSteps && (
-          <details className="group mb-2" open={isStreaming || undefined}>
+          <details className="group mb-5 -ml-4" open={isStreaming || undefined}>
             <summary className="cursor-pointer text-[11px] text-muted-foreground font-mono flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden">
               <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
               {toolParts
@@ -802,7 +804,7 @@ function ChatMessage({
                 easing: "ease-out",
               }}
               isAnimating={isStreaming}
-              className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+              className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_ul,ol]:pl-0"
               allowedTags={{ ref: ["chapter", "query"] }}
               components={streamdownComponents}
             >

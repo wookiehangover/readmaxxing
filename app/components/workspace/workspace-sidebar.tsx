@@ -257,9 +257,14 @@ export function WorkspaceSidebar({
       <ScrollArea className="min-h-0 flex-1" hideScrollbar>
         {openBooks.length === 0 && otherBooks.length === 0 ? (
           !collapsed && (
-            <p className="p-4 text-sm text-muted-foreground">
-              No books yet. Drop an epub or click + to add.
-            </p>
+            <div className="p-4 text-xs text-muted-foreground space-y-4">
+              <p>
+                No books yet.
+              </p>
+              <p>
+                Drop an epub or click + to add.
+              </p>
+            </div>
           )
         ) : (
           <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
