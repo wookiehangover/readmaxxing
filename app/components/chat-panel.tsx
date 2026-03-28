@@ -866,8 +866,8 @@ function ChatMessage({
                 isStreaming
                   ? {
                       animation: "fadeIn",
-                      duration: 150,
-                      easing: "ease-out",
+                      duration: 30,
+                      easing: "linear",
                     }
                   : false
               }
