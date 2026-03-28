@@ -1,4 +1,5 @@
 import { createStore, get, set } from "idb-keyval";
+import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer } from "effect";
 import { PositionError } from "~/lib/errors";
 
@@ -21,19 +22,30 @@ export class ReadingPositionService extends Context.Tag("ReadingPositionService"
   }
 >() {}
 
-export const ReadingPositionServiceLive = Layer.succeed(ReadingPositionService, {
-  savePosition: (bookId: string, cfi: string) =>
-    Effect.tryPromise({
-      try: () => set(bookId, cfi, getPositionStore()),
-      catch: (cause) => new PositionError({ operation: "savePosition", bookId, cause }),
-    }),
+export interface PositionServiceStores {
+  readonly positionStore: UseStore;
+}
 
-  getPosition: (bookId: string) =>
-    Effect.tryPromise({
-      try: async () => {
-        const cfi = await get<string>(bookId, getPositionStore());
-        return cfi ?? null;
-      },
-      catch: (cause) => new PositionError({ operation: "getPosition", bookId, cause }),
-    }),
-});
+export function makePositionService(stores: PositionServiceStores): ReadingPositionService["Type"] {
+  const { positionStore } = stores;
+  return {
+    savePosition: (bookId: string, cfi: string) =>
+      Effect.tryPromise({
+        try: () => set(bookId, cfi, positionStore),
+        catch: (cause) => new PositionError({ operation: "savePosition", bookId, cause }),
+      }),
+
+    getPosition: (bookId: string) =>
+      Effect.tryPromise({
+        try: async () => {
+          const cfi = await get<string>(bookId, positionStore);
+          return cfi ?? null;
+        },
+        catch: (cause) => new PositionError({ operation: "getPosition", bookId, cause }),
+      }),
+  };
+}
+
+export const ReadingPositionServiceLive = Layer.sync(ReadingPositionService, () =>
+  makePositionService({ positionStore: getPositionStore() }),
+);

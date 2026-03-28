@@ -1,4 +1,5 @@
 import { createStore, get, set, del, entries } from "idb-keyval";
+import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer, Schema } from "effect";
 import { StorageError, BookNotFoundError, DecodeError } from "~/lib/errors";
 
@@ -53,77 +54,88 @@ export class BookService extends Context.Tag("BookService")<
   }
 >() {}
 
-export const BookServiceLive = Layer.succeed(BookService, {
-  saveBook: (meta: BookMeta, data: ArrayBuffer) =>
-    Effect.tryPromise({
-      try: async () => {
-        // Store metadata (without binary data) and binary data separately
-        await set(meta.id, meta, getBookStore());
-        await set(meta.id, data, getBookDataStore());
-      },
-      catch: (cause) => new StorageError({ operation: "saveBook", cause }),
-    }),
+export interface BookServiceStores {
+  readonly bookStore: UseStore;
+  readonly bookDataStore: UseStore;
+}
 
-  updateBookMeta: (meta: BookMeta) =>
-    Effect.tryPromise({
-      try: () => set(meta.id, meta, getBookStore()),
-      catch: (cause) => new StorageError({ operation: "updateBookMeta", cause }),
-    }),
+export function makeBookService(stores: BookServiceStores): BookService["Type"] {
+  const { bookStore, bookDataStore } = stores;
+  return {
+    saveBook: (meta: BookMeta, data: ArrayBuffer) =>
+      Effect.tryPromise({
+        try: async () => {
+          await set(meta.id, meta, bookStore);
+          await set(meta.id, data, bookDataStore);
+        },
+        catch: (cause) => new StorageError({ operation: "saveBook", cause }),
+      }),
 
-  getBooks: () =>
-    Effect.gen(function* () {
-      const allEntries = yield* Effect.tryPromise({
-        try: () => entries<string, unknown>(getBookStore()),
-        catch: (cause) => new StorageError({ operation: "getBooks", cause }),
-      });
-      return yield* Effect.try({
-        try: () =>
-          allEntries
-            .map(([, raw]) => raw)
-            .filter(Boolean)
-            .map((raw) => decodeBookMeta(raw)),
-        catch: (cause) => new DecodeError({ operation: "getBooks", cause }),
-      });
-    }),
+    updateBookMeta: (meta: BookMeta) =>
+      Effect.tryPromise({
+        try: () => set(meta.id, meta, bookStore),
+        catch: (cause) => new StorageError({ operation: "updateBookMeta", cause }),
+      }),
 
-  getBook: (id: string) =>
-    Effect.gen(function* () {
-      const raw = yield* Effect.tryPromise({
-        try: () => get<unknown>(id, getBookStore()),
-        catch: (cause) => new StorageError({ operation: "getBook", cause }),
-      });
-      if (!raw) {
-        return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
-      }
-      return yield* Effect.try({
-        try: () => decodeBookMeta(raw),
-        catch: (cause) => new DecodeError({ operation: "getBook", cause }),
-      });
-    }),
+    getBooks: () =>
+      Effect.gen(function* () {
+        const allEntries = yield* Effect.tryPromise({
+          try: () => entries<string, unknown>(bookStore),
+          catch: (cause) => new StorageError({ operation: "getBooks", cause }),
+        });
+        return yield* Effect.try({
+          try: () =>
+            allEntries
+              .map(([, raw]) => raw)
+              .filter(Boolean)
+              .map((raw) => decodeBookMeta(raw)),
+          catch: (cause) => new DecodeError({ operation: "getBooks", cause }),
+        });
+      }),
 
-  getBookData: (id: string) =>
-    Effect.gen(function* () {
-      const data = yield* Effect.tryPromise({
-        try: () => get<ArrayBuffer>(id, getBookDataStore()),
-        catch: (cause) => new StorageError({ operation: "getBookData", cause }),
-      });
-      if (!data) {
-        return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
-      }
-      return data;
-    }),
-
-  deleteBook: (id: string) =>
-    Effect.tryPromise({
-      try: async () => {
-        await del(id, getBookStore());
-        // Best-effort cleanup of binary data
-        try {
-          await del(id, getBookDataStore());
-        } catch {
-          /* ignore */
+    getBook: (id: string) =>
+      Effect.gen(function* () {
+        const raw = yield* Effect.tryPromise({
+          try: () => get<unknown>(id, bookStore),
+          catch: (cause) => new StorageError({ operation: "getBook", cause }),
+        });
+        if (!raw) {
+          return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
         }
-      },
-      catch: (cause) => new StorageError({ operation: "deleteBook", cause }),
-    }),
-});
+        return yield* Effect.try({
+          try: () => decodeBookMeta(raw),
+          catch: (cause) => new DecodeError({ operation: "getBook", cause }),
+        });
+      }),
+
+    getBookData: (id: string) =>
+      Effect.gen(function* () {
+        const data = yield* Effect.tryPromise({
+          try: () => get<ArrayBuffer>(id, bookDataStore),
+          catch: (cause) => new StorageError({ operation: "getBookData", cause }),
+        });
+        if (!data) {
+          return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
+        }
+        return data;
+      }),
+
+    deleteBook: (id: string) =>
+      Effect.tryPromise({
+        try: async () => {
+          await del(id, bookStore);
+          // Best-effort cleanup of binary data
+          try {
+            await del(id, bookDataStore);
+          } catch {
+            /* ignore */
+          }
+        },
+        catch: (cause) => new StorageError({ operation: "deleteBook", cause }),
+      }),
+  };
+}
+
+export const BookServiceLive = Layer.sync(BookService, () =>
+  makeBookService({ bookStore: getBookStore(), bookDataStore: getBookDataStore() }),
+);

@@ -1,10 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
-import { createStore, set, get, del, entries } from "idb-keyval";
-import { BookService } from "~/lib/book-store";
+import { createStore } from "idb-keyval";
+import { BookService, makeBookService } from "~/lib/book-store";
 import type { Book, BookMeta } from "~/lib/book-store";
-import { ReadingPositionService } from "~/lib/position-store";
-import { StorageError, BookNotFoundError, PositionError } from "~/lib/errors";
+import { ReadingPositionService, makePositionService } from "~/lib/position-store";
 
 function makeBook(overrides: Partial<Book> = {}): Book {
   return {
@@ -21,73 +20,18 @@ let testCounter = 0;
 function makeTestLayer() {
   const suffix = `test-${++testCounter}-${Date.now()}`;
   const bookStore = createStore(`book-db-${suffix}`, "books");
-  const posStore = createStore(`pos-db-${suffix}`, "positions");
-  const locStore = createStore(`loc-db-${suffix}`, "locations");
-
   const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
+  const posStore = createStore(`pos-db-${suffix}`, "positions");
 
-  const bookLayer = Layer.succeed(BookService, {
-    saveBook: (meta: BookMeta, data: ArrayBuffer) =>
-      Effect.tryPromise({
-        try: async () => {
-          await set(meta.id, meta, bookStore);
-          await set(meta.id, data, bookDataStore);
-        },
-        catch: (cause) => new StorageError({ operation: "saveBook", cause }),
-      }),
-    getBooks: () =>
-      Effect.tryPromise({
-        try: async () => {
-          const allEntries = await entries<string, BookMeta>(bookStore);
-          return allEntries.map(([, meta]) => meta).filter(Boolean);
-        },
-        catch: (cause) => new StorageError({ operation: "getBooks", cause }),
-      }),
-    getBook: (id: string) =>
-      Effect.gen(function* () {
-        const meta = yield* Effect.tryPromise({
-          try: () => get<BookMeta>(id, bookStore),
-          catch: (cause) => new StorageError({ operation: "getBook", cause }),
-        });
-        if (!meta) return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
-        return meta;
-      }),
-    getBookData: (id: string) =>
-      Effect.gen(function* () {
-        const data = yield* Effect.tryPromise({
-          try: () => get<ArrayBuffer>(id, bookDataStore),
-          catch: (cause) => new StorageError({ operation: "getBookData", cause }),
-        });
-        if (!data) return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
-        return data;
-      }),
-    updateBookMeta: (meta: BookMeta) =>
-      Effect.tryPromise({
-        try: () => set(meta.id, meta, bookStore),
-        catch: (cause) => new StorageError({ operation: "updateBookMeta", cause }),
-      }),
-    deleteBook: (id: string) =>
-      Effect.tryPromise({
-        try: () => del(id, bookStore),
-        catch: (cause) => new StorageError({ operation: "deleteBook", cause }),
-      }),
-  });
+  const bookLayer = Layer.succeed(
+    BookService,
+    makeBookService({ bookStore, bookDataStore }),
+  );
 
-  const positionLayer = Layer.succeed(ReadingPositionService, {
-    savePosition: (bookId: string, cfi: string) =>
-      Effect.tryPromise({
-        try: () => set(bookId, cfi, posStore),
-        catch: (cause) => new PositionError({ operation: "savePosition", bookId, cause }),
-      }),
-    getPosition: (bookId: string) =>
-      Effect.tryPromise({
-        try: async () => {
-          const cfi = await get<string>(bookId, posStore);
-          return cfi ?? null;
-        },
-        catch: (cause) => new PositionError({ operation: "getPosition", bookId, cause }),
-      }),
-  });
+  const positionLayer = Layer.succeed(
+    ReadingPositionService,
+    makePositionService({ positionStore: posStore }),
+  );
 
   return { bookLayer, positionLayer };
 }

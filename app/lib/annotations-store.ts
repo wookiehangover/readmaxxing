@@ -1,4 +1,5 @@
 import { createStore, get, set, del, entries } from "idb-keyval";
+import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer, Schema } from "effect";
 import type { JSONContent } from "@tiptap/react";
 import { HighlightError, NotebookError, DecodeError } from "~/lib/errors";
@@ -72,80 +73,92 @@ function getNotebookStore() {
   return _notebookStore;
 }
 
-// --- Live implementation ---
+// --- Factory + Live implementation ---
 
-export const AnnotationServiceLive = Layer.succeed(AnnotationService, {
-  saveHighlight: (highlight) =>
-    Effect.tryPromise({
-      try: () => set(highlight.id, highlight, getHighlightStore()),
-      catch: (cause) =>
-        new HighlightError({ operation: "saveHighlight", highlightId: highlight.id, cause }),
-    }),
+export interface AnnotationServiceStores {
+  readonly highlightStore: UseStore;
+  readonly notebookStore: UseStore;
+}
 
-  getHighlightsByBook: (bookId) =>
-    Effect.gen(function* () {
-      const allEntries = yield* Effect.tryPromise({
-        try: () => entries<string, unknown>(getHighlightStore()),
-        catch: (cause) => new HighlightError({ operation: "getHighlightsByBook", cause }),
-      });
-      return yield* Effect.try({
-        try: () =>
-          allEntries
-            .map(([, raw]) => raw)
-            .filter(Boolean)
-            .map((raw) => decodeHighlight(raw))
-            .filter((hl) => hl.bookId === bookId),
-        catch: (cause) => new DecodeError({ operation: "getHighlightsByBook", cause }),
-      });
-    }),
-
-  updateHighlight: (id, updates) =>
-    Effect.gen(function* () {
-      const raw = yield* Effect.tryPromise({
-        try: () => get<unknown>(id, getHighlightStore()),
+export function makeAnnotationService(stores: AnnotationServiceStores): AnnotationService["Type"] {
+  const { highlightStore, notebookStore } = stores;
+  return {
+    saveHighlight: (highlight) =>
+      Effect.tryPromise({
+        try: () => set(highlight.id, highlight, highlightStore),
         catch: (cause) =>
-          new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
-      });
-      if (!raw) {
-        return yield* Effect.fail(
-          new HighlightError({ operation: "updateHighlight", highlightId: id }),
-        );
-      }
-      const existing = yield* Effect.try({
-        try: () => decodeHighlight(raw),
-        catch: (cause) => new DecodeError({ operation: "updateHighlight", cause }),
-      });
-      yield* Effect.tryPromise({
-        try: () => set(id, { ...existing, ...updates }, getHighlightStore()),
+          new HighlightError({ operation: "saveHighlight", highlightId: highlight.id, cause }),
+      }),
+
+    getHighlightsByBook: (bookId) =>
+      Effect.gen(function* () {
+        const allEntries = yield* Effect.tryPromise({
+          try: () => entries<string, unknown>(highlightStore),
+          catch: (cause) => new HighlightError({ operation: "getHighlightsByBook", cause }),
+        });
+        return yield* Effect.try({
+          try: () =>
+            allEntries
+              .map(([, raw]) => raw)
+              .filter(Boolean)
+              .map((raw) => decodeHighlight(raw))
+              .filter((hl) => hl.bookId === bookId),
+          catch: (cause) => new DecodeError({ operation: "getHighlightsByBook", cause }),
+        });
+      }),
+
+    updateHighlight: (id, updates) =>
+      Effect.gen(function* () {
+        const raw = yield* Effect.tryPromise({
+          try: () => get<unknown>(id, highlightStore),
+          catch: (cause) =>
+            new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
+        });
+        if (!raw) {
+          return yield* Effect.fail(
+            new HighlightError({ operation: "updateHighlight", highlightId: id }),
+          );
+        }
+        const existing = yield* Effect.try({
+          try: () => decodeHighlight(raw),
+          catch: (cause) => new DecodeError({ operation: "updateHighlight", cause }),
+        });
+        yield* Effect.tryPromise({
+          try: () => set(id, { ...existing, ...updates }, highlightStore),
+          catch: (cause) =>
+            new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
+        });
+      }),
+
+    deleteHighlight: (id) =>
+      Effect.tryPromise({
+        try: () => del(id, highlightStore),
         catch: (cause) =>
-          new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
-      });
-    }),
+          new HighlightError({ operation: "deleteHighlight", highlightId: id, cause }),
+      }),
 
-  deleteHighlight: (id) =>
-    Effect.tryPromise({
-      try: () => del(id, getHighlightStore()),
-      catch: (cause) =>
-        new HighlightError({ operation: "deleteHighlight", highlightId: id, cause }),
-    }),
+    saveNotebook: (notebook) =>
+      Effect.tryPromise({
+        try: () => set(notebook.bookId, notebook, notebookStore),
+        catch: (cause) =>
+          new NotebookError({ operation: "saveNotebook", bookId: notebook.bookId, cause }),
+      }),
 
-  saveNotebook: (notebook) =>
-    Effect.tryPromise({
-      try: () => set(notebook.bookId, notebook, getNotebookStore()),
-      catch: (cause) =>
-        new NotebookError({ operation: "saveNotebook", bookId: notebook.bookId, cause }),
-    }),
+    getNotebook: (bookId) =>
+      Effect.gen(function* () {
+        const raw = yield* Effect.tryPromise({
+          try: () => get<unknown>(bookId, notebookStore),
+          catch: (cause) => new NotebookError({ operation: "getNotebook", bookId, cause }),
+        });
+        if (!raw) return null;
+        return yield* Effect.try({
+          try: () => decodeNotebook(raw),
+          catch: (cause) => new DecodeError({ operation: "getNotebook", cause }),
+        });
+      }),
+  };
+}
 
-  getNotebook: (bookId) =>
-    Effect.gen(function* () {
-      const raw = yield* Effect.tryPromise({
-        try: () => get<unknown>(bookId, getNotebookStore()),
-        catch: (cause) => new NotebookError({ operation: "getNotebook", bookId, cause }),
-      });
-      if (!raw) return null;
-      return yield* Effect.try({
-        try: () => decodeNotebook(raw),
-        catch: (cause) => new DecodeError({ operation: "getNotebook", cause }),
-      });
-    }),
-});
+export const AnnotationServiceLive = Layer.sync(AnnotationService, () =>
+  makeAnnotationService({ highlightStore: getHighlightStore(), notebookStore: getNotebookStore() }),
+);

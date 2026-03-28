@@ -1,4 +1,5 @@
 import { createStore, get, set } from "idb-keyval";
+import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer } from "effect";
 import { StorageError } from "~/lib/errors";
 
@@ -21,19 +22,30 @@ export class LocationCacheService extends Context.Tag("LocationCacheService")<
   }
 >() {}
 
-export const LocationCacheServiceLive = Layer.succeed(LocationCacheService, {
-  saveLocations: (bookId: string, json: string) =>
-    Effect.tryPromise({
-      try: () => set(bookId, json, getLocationsStore()),
-      catch: (cause) => new StorageError({ operation: "saveLocations", cause }),
-    }),
+export interface LocationCacheServiceStores {
+  readonly locationsStore: UseStore;
+}
 
-  getLocations: (bookId: string) =>
-    Effect.tryPromise({
-      try: async () => {
-        const json = await get<string>(bookId, getLocationsStore());
-        return json ?? null;
-      },
-      catch: (cause) => new StorageError({ operation: "getLocations", cause }),
-    }),
-});
+export function makeLocationCacheService(stores: LocationCacheServiceStores): LocationCacheService["Type"] {
+  const { locationsStore } = stores;
+  return {
+    saveLocations: (bookId: string, json: string) =>
+      Effect.tryPromise({
+        try: () => set(bookId, json, locationsStore),
+        catch: (cause) => new StorageError({ operation: "saveLocations", cause }),
+      }),
+
+    getLocations: (bookId: string) =>
+      Effect.tryPromise({
+        try: async () => {
+          const json = await get<string>(bookId, locationsStore);
+          return json ?? null;
+        },
+        catch: (cause) => new StorageError({ operation: "getLocations", cause }),
+      }),
+  };
+}
+
+export const LocationCacheServiceLive = Layer.sync(LocationCacheService, () =>
+  makeLocationCacheService({ locationsStore: getLocationsStore() }),
+);
