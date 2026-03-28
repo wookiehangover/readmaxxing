@@ -487,7 +487,9 @@ function ChatPanelInner({
       {/* Messages */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 py-3 scroll-fog-container relative"
+        className={cn("flex-1 overflow-y-auto px-4 py-3 relative", {
+          "scroll-fog-container": messages.length > 0,
+        })}
       >
         <div ref={contentRef}>
           {messages.length === 0 && (
