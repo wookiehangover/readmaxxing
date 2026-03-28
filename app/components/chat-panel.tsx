@@ -583,14 +583,16 @@ function ChatMessage({
       };
 
       return (
-        <button
-          type="button"
+        <span
+          role="button"
+          tabIndex={0}
           onClick={handleClick}
-          className="underline decoration-dotted underline-offset-2 cursor-pointer hover:decoration-solid transition-all"
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") handleClick(); }}
+          className="underline decoration-dotted underline-offset-2 cursor-pointer hover:decoration-solid transition-all inline"
           title={`Go to: "${queryStr}"`}
         >
           {children as React.ReactNode}
-        </button>
+        </span>
       );
     },
   }), [bookId, bookDataRef, findNavForBook]);
@@ -664,7 +666,7 @@ function ChatMessage({
                 animation: "fadeIn",
                 duration: 150,
                 easing: "ease-out",
-                stagger: 20,
+
               }}
               isAnimating={isStreaming}
               className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
