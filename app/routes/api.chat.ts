@@ -137,7 +137,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const result = streamText({
-    model: gateway("anthropic/claude-sonnet-4-20250514"),
+    model: gateway("anthropic/claude-sonnet-4.6"),
     system: buildSystemPrompt(bookContext),
     messages: await convertToModelMessages(messages),
     tools: {
