@@ -8,6 +8,7 @@ import {
   type DockviewTheme,
   type AddPanelPositionOptions,
 } from "dockview";
+import { PanelLeft } from "lucide-react";
 import type { Route } from "./+types/workspace";
 import { BookService, type BookMeta } from "~/lib/book-store";
 import { useBookUpload } from "~/lib/use-book-upload";
@@ -24,6 +25,14 @@ import { StandardEbooksPanel } from "~/components/workspace/standard-ebooks-pane
 import { WatermarkPanel } from "~/components/workspace/watermark-panel";
 import { LeftHeaderActions } from "~/components/workspace/left-header-actions";
 import { WorkspaceSidebar } from "~/components/workspace/workspace-sidebar";
+import { useIsMobile } from "~/hooks/use-mobile";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "~/components/ui/sheet";
 
 /** Delay after sidebar CSS transition before dispatching resize (ms) */
 const SIDEBAR_TRANSITION_MS = 270;
@@ -74,6 +83,8 @@ export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
 
 function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps["loaderData"] }) {
   const ws = useWorkspace();
+  const isMobile = useIsMobile();
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
@@ -458,23 +469,59 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   ws.onBookAddedRef.current = handleBookAdded;
   ws.onBookDeletedRef.current = handleBookDeleted;
 
+  const sidebarProps = {
+    collapsed,
+    sortBy,
+    tocVersion,
+    openBooks,
+    otherBooks,
+    onUpdateSettings: updateSettings,
+    onOpenBook: (book: BookMeta, forceNew?: boolean) => {
+      openBook(book, forceNew);
+      setMobileOpen(false);
+    },
+    onOpenNotebook: (book: BookMeta) => {
+      openNotebook(book);
+      setMobileOpen(false);
+    },
+    onOpenNewTab: () => {
+      openNewTab();
+      setMobileOpen(false);
+    },
+    onFileInput: handleFileInput,
+  };
+
   return (
     <DropZone onBookAdded={handleBookAdded}>
       <div className="flex h-dvh">
-        <WorkspaceSidebar
-          collapsed={collapsed}
-          sortBy={sortBy}
-          tocVersion={tocVersion}
-          openBooks={openBooks}
-          otherBooks={otherBooks}
-          onUpdateSettings={updateSettings}
-          onOpenBook={openBook}
-          onOpenNotebook={openNotebook}
-          onOpenNewTab={openNewTab}
-          onFileInput={handleFileInput}
-        />
+        {/* Desktop sidebar — hidden on mobile */}
+        {isMobile !== true && <WorkspaceSidebar {...sidebarProps} />}
 
-        {/* Dockview container — full width when sidebar is collapsed */}
+        {/* Mobile floating pill + sheet sidebar */}
+        {isMobile === true && (
+          <>
+            <button
+              type="button"
+              onClick={() => setMobileOpen(true)}
+              className="fixed top-2 left-2 z-40 flex items-center gap-1.5 rounded-full border border-border/50 bg-card/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-card hover:text-foreground active:bg-accent"
+              aria-label="Open sidebar"
+            >
+              <PanelLeft className="size-3.5" />
+              <span>Library</span>
+            </button>
+            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+              <SheetContent side="left" className="w-75 p-0">
+                <SheetHeader className="sr-only">
+                  <SheetTitle>Library</SheetTitle>
+                  <SheetDescription>Book library navigation</SheetDescription>
+                </SheetHeader>
+                <WorkspaceSidebar {...sidebarProps} collapsed={false} />
+              </SheetContent>
+            </Sheet>
+          </>
+        )}
+
+        {/* Dockview container — full width when sidebar is collapsed or on mobile */}
         <div className="flex-1">
           <DockviewReact
             theme={dockviewTheme}
