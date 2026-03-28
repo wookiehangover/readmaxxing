@@ -118,10 +118,30 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
           try: () => get<ArrayBuffer>(id, bookDataStore),
           catch: (cause) => new StorageError({ operation: "getBookData", cause }),
         });
-        if (!data) {
+        if (data) return data;
+
+        // Lazy migration: check old-format record in bookStore for inline `data` field
+        const raw = yield* Effect.tryPromise({
+          try: () => get<Record<string, unknown>>(id, bookStore),
+          catch: (cause) => new StorageError({ operation: "getBookData.migrate.read", cause }),
+        });
+        if (!raw || !raw.data || !(raw.data instanceof ArrayBuffer)) {
           return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
         }
-        return data;
+
+        const migratedData = raw.data as ArrayBuffer;
+
+        // Move binary data to the dedicated store and strip it from the metadata record
+        yield* Effect.tryPromise({
+          try: async () => {
+            await set(id, migratedData, bookDataStore);
+            const { data: _, ...metaOnly } = raw;
+            await set(id, metaOnly, bookStore);
+          },
+          catch: (cause) => new StorageError({ operation: "getBookData.migrate.write", cause }),
+        });
+
+        return migratedData;
       }),
 
     deleteBook: (id: string) =>
