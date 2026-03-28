@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
@@ -33,6 +33,10 @@ import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { DockviewPanelApi } from "dockview";
 import type { TocEntry } from "~/lib/reader-context";
 import { getTypographyCss, getRenditionOptions } from "~/lib/epub-rendering-utils";
+import { useIsMobile } from "~/hooks/use-mobile";
+
+/** Auto-hide delay for mobile toolbar (ms) */
+const TOOLBAR_AUTO_HIDE_MS = 3000;
 
 /** Debounce delay for persisting reading position changes (ms) */
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
@@ -276,6 +280,50 @@ function WorkspaceBookReaderInner({
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestCfiRef = useRef<string | null>(null);
+
+  // Mobile toolbar auto-hide
+  const isMobile = useIsMobile();
+  const [toolbarVisible, setToolbarVisible] = useState(true);
+  const toolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetToolbarTimer = useCallback(() => {
+    if (toolbarTimerRef.current) clearTimeout(toolbarTimerRef.current);
+    toolbarTimerRef.current = setTimeout(() => {
+      setToolbarVisible(false);
+    }, TOOLBAR_AUTO_HIDE_MS);
+  }, []);
+
+  /** Show toolbar and start auto-hide countdown (mobile only) */
+  const showToolbar = useCallback(() => {
+    setToolbarVisible(true);
+    if (isMobile) resetToolbarTimer();
+  }, [isMobile, resetToolbarTimer]);
+
+  /** Toggle toolbar visibility (for center-tap on mobile) */
+  const toggleToolbar = useCallback(() => {
+    setToolbarVisible((prev) => {
+      const next = !prev;
+      if (next && isMobile) resetToolbarTimer();
+      return next;
+    });
+  }, [isMobile, resetToolbarTimer]);
+
+  // Start auto-hide timer on mount for mobile
+  useEffect(() => {
+    if (isMobile) {
+      resetToolbarTimer();
+    } else {
+      // On desktop, ensure toolbar is always visible
+      setToolbarVisible(true);
+      if (toolbarTimerRef.current) {
+        clearTimeout(toolbarTimerRef.current);
+        toolbarTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (toolbarTimerRef.current) clearTimeout(toolbarTimerRef.current);
+    };
+  }, [isMobile, resetToolbarTimer]);
 
   // Search state
   const [searchOpen, setSearchOpen] = useState(false);
@@ -675,6 +723,8 @@ function WorkspaceBookReaderInner({
             };
           }) => {
             if (!renditionRef.current) return;
+            // Flash toolbar on page navigation so user sees page number update
+            showToolbar();
             setBookProgress(location.start.percentage * 100);
             const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
             if (epubLocTotal && epubLocTotal > 0) {
@@ -951,8 +1001,38 @@ function WorkspaceBookReaderInner({
             ref={containerRef}
             className={cn("h-full overflow-hidden", { "px-8 pt-10 pb-4": localReaderLayout })}
           />
+          {isMobile && !isScrollMode && (
+            <div className="pointer-events-none absolute inset-0 z-[5]">
+              <button
+                type="button"
+                aria-label="Previous page"
+                className="pointer-events-auto absolute top-0 left-0 h-full w-1/4 appearance-none border-none bg-transparent p-0 active:bg-black/5 dark:active:bg-white/5"
+                onPointerUp={handlePrev}
+              />
+              <button
+                type="button"
+                aria-label="Toggle toolbar"
+                className="pointer-events-auto absolute top-0 left-1/4 h-full w-1/2 appearance-none border-none bg-transparent p-0"
+                onPointerUp={toggleToolbar}
+              />
+              <button
+                type="button"
+                aria-label="Next page"
+                className="pointer-events-auto absolute top-0 right-0 h-full w-1/4 appearance-none border-none bg-transparent p-0 active:bg-black/5 dark:active:bg-white/5"
+                onPointerUp={handleNext}
+              />
+            </div>
+          )}
         </div>
-        <div className="relative flex items-center justify-center border-t px-2 h-10">
+        <div
+          className={cn(
+            "relative flex items-center justify-center border-t px-2 h-10 transition-all duration-300 ease-in-out",
+            {
+              "max-h-0 overflow-hidden border-t-0 opacity-0": isMobile && !toolbarVisible,
+              "max-h-10 opacity-100": !isMobile || toolbarVisible,
+            },
+          )}
+        >
           <div className="absolute left-2 flex items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (
               <span className="text-muted-foreground text-xs tabular-nums">
