@@ -506,13 +506,13 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
             <button
               type="button"
               onClick={() => setMobileOpen((prev) => !prev)}
-              className="fixed top-2 right-2 z-50 flex items-center justify-center rounded-full border border-border/50 bg-card/80 p-2 text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-card hover:text-foreground active:bg-accent"
+              className="fixed top-2 right-2 z-[60] flex items-center justify-center rounded-full border border-border/50 bg-card/80 p-2 text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-card hover:text-foreground active:bg-accent"
               aria-label={mobileOpen ? "Close sidebar" : "Open sidebar"}
             >
               {mobileOpen ? <X className="size-4" /> : <PanelLeft className="size-4" />}
             </button>
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-              <SheetContent side="left" className="w-75 p-0">
+              <SheetContent side="left" className="w-75 p-0" showCloseButton={false}>
                 <SheetHeader className="sr-only">
                   <SheetTitle>Library</SheetTitle>
                   <SheetDescription>Book library navigation</SheetDescription>
