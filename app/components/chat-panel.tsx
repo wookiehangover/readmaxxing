@@ -104,21 +104,24 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
     const load = async () => {
       try {
-        const [savedMessages, book] = await Promise.all([
+        const [savedMessages, book, bookData] = await Promise.all([
           AppRuntime.runPromise(
             ChatService.pipe(Effect.andThen((s) => s.getMessages(bookId))),
           ),
           AppRuntime.runPromise(
             BookService.pipe(Effect.andThen((s) => s.getBook(bookId))),
           ),
+          AppRuntime.runPromise(
+            BookService.pipe(Effect.andThen((s) => s.getBookData(bookId))),
+          ),
         ]);
 
         if (cancelled) return;
 
-        const chapters = await extractBookChapters(book.data);
+        const chapters = await extractBookChapters(bookData);
         if (cancelled) return;
 
-        bookDataRef.current = book.data;
+        bookDataRef.current = bookData;
         setBookContext({ title: book.title, author: book.author, chapters });
         setInitialMessages(toUIMessages(savedMessages));
       } catch (err) {

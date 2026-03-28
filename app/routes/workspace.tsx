@@ -361,7 +361,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     });
   }, []);
 
-  const openChat = useCallback((book: Book) => {
+  const openChat = useCallback((book: BookMeta) => {
     const api = apiRef.current;
     if (!api) return;
 
