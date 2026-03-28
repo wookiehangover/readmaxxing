@@ -1,7 +1,9 @@
 import { streamText, convertToModelMessages, type UIMessage, tool, stepCountIs } from "ai";
 import { gateway } from "@ai-sdk/gateway";
+import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import type { Route } from "./+types/api.chat";
+import { SE_BASE, parseSearchHtml } from "./api.standard-ebooks.search";
 
 interface BookChapter {
   index: number;
@@ -76,6 +78,9 @@ When the reader asks "What would [thinker] think about this?" or similar questio
 - When they ask about their notes or want you to reference what they've written, use read_notes first.
 - When you find a passage that is particularly important, beautiful, or relevant to the reader's question, proactively highlight it using create_highlight. Include a brief note explaining why it's significant.
 
+## Going deeper — web search for recommendations
+When the reader asks you to recommend related reading, essays, podcasts, articles, or asks to "go deeper" on a topic, use your web search tool to find real, current resources. Always include clickable links in your recommendations. Prefer high-quality sources (e.g. literary reviews, academic essays, author interviews, well-known podcasts). Search for specific and relevant queries rather than generic ones.
+
 ## Suggested follow-ups
 At the very end of every response, include an HTML comment with 2-3 suggested follow-up prompts the reader might want to ask next. These should be contextual and specific to what was just discussed. Format:
 <!-- suggested-prompts
@@ -149,6 +154,7 @@ export async function action({ request }: Route.ActionArgs) {
     system: buildSystemPrompt(bookContext),
     messages: await convertToModelMessages(messages),
     tools: {
+      web_search: anthropic.tools.webSearch_20250305(),
       search_book: tool({
         description:
           "Search the book for passages matching a query. Returns matching excerpts with surrounding context. Use this to find specific quotes, topics, characters, or themes.",
