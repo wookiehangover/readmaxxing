@@ -590,11 +590,13 @@ export function BookReader({ book }: BookReaderProps) {
           )}
           <div
             ref={containerRef}
-            className={cn("h-full overflow-hidden", { "px-8 pt-10 pb-4": settings.readerLayout })}
+            className={cn("h-full overflow-hidden", {
+              "px-3 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": settings.readerLayout,
+            })}
           />
         </div>
-        <div className="relative flex items-center justify-center border-t px-2 h-12 md:h-10 pb-[env(safe-area-inset-bottom)]">
-          <div className="absolute left-2 flex items-center gap-1.5">
+        <div className="flex items-center justify-between border-t px-2 h-14 md:h-10 pb-[env(safe-area-inset-bottom)]">
+          <div className="flex items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (
               <span className="text-muted-foreground text-[10px] tabular-nums md:text-xs">
                 Page {currentPage} of {totalPages}
@@ -605,29 +607,29 @@ export function BookReader({ book }: BookReaderProps) {
               </span>
             )}
           </div>
-          {!isScrollMode && (
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-10 md:size-8"
-                onClick={handlePrev}
-              >
-                <ChevronLeft className="size-5 md:size-4" />
-                <span className="sr-only">Previous page</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-10 md:size-8"
-                onClick={handleNext}
-              >
-                <ChevronRight className="size-5 md:size-4" />
-                <span className="sr-only">Next page</span>
-              </Button>
-            </div>
-          )}
-          <div className="absolute right-2 flex items-center gap-1">
+          <div className="flex items-center gap-1">
+            {!isScrollMode && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-10 md:size-8"
+                  onClick={handlePrev}
+                >
+                  <ChevronLeft className="size-5 md:size-4" />
+                  <span className="sr-only">Previous page</span>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-10 md:size-8"
+                  onClick={handleNext}
+                >
+                  <ChevronRight className="size-5 md:size-4" />
+                  <span className="sr-only">Next page</span>
+                </Button>
+              </>
+            )}
             <Button
               variant="ghost"
               size="icon"
