@@ -607,13 +607,13 @@ export function BookReader({ book }: BookReaderProps) {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0 md:gap-1">
             {!isScrollMode && (
               <>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-10 md:size-8"
+                  className="hidden size-10 md:flex md:size-8"
                   onClick={handlePrev}
                 >
                   <ChevronLeft className="size-5 md:size-4" />
@@ -622,7 +622,7 @@ export function BookReader({ book }: BookReaderProps) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-10 md:size-8"
+                  className="hidden size-10 md:flex md:size-8"
                   onClick={handleNext}
                 >
                   <ChevronRight className="size-5 md:size-4" />
