@@ -124,7 +124,7 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
                     <SheetDescription className="sr-only">Book library navigation</SheetDescription>
                   </SheetHeader>
                   <BookList books={books} collapsed={false} />
-                  <div className="flex items-center gap-1 border-t px-2 py-2">
+                  <div className="flex items-center gap-1 border-t px-2 py-2 pb-[env(safe-area-inset-bottom)]">
                     <ThemeToggle />
                     <Link
                       to="/settings"

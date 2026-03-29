@@ -999,7 +999,9 @@ function WorkspaceBookReaderInner({
           )}
           <div
             ref={containerRef}
-            className={cn("h-full overflow-hidden", { "px-8 pt-10 pb-4": localReaderLayout })}
+            className={cn("h-full overflow-hidden", {
+              "px-4 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": localReaderLayout,
+            })}
           />
           {isMobile && !isScrollMode && (
             <div className="pointer-events-none absolute inset-0 z-[5]">
@@ -1026,10 +1028,10 @@ function WorkspaceBookReaderInner({
         </div>
         <div
           className={cn(
-            "relative flex items-center justify-center border-t px-2 h-10 transition-all duration-300 ease-in-out",
+            "relative flex items-center justify-center border-t px-2 h-10 mb-[env(safe-area-inset-bottom)] transition-all duration-300 ease-in-out",
             {
               "max-h-0 overflow-hidden border-t-0 opacity-0": isMobile && !toolbarVisible,
-              "max-h-10 opacity-100": !isMobile || toolbarVisible,
+              "max-h-20 opacity-100": !isMobile || toolbarVisible,
             },
           )}
         >
@@ -1045,7 +1047,7 @@ function WorkspaceBookReaderInner({
             )}
           </div>
           {!isScrollMode && (
-            <div className="flex items-center gap-4">
+            <div className="hidden items-center gap-4 md:flex">
               <Button variant="ghost" size="icon" onClick={handlePrev}>
                 <ChevronLeft className="size-4" />
                 <span className="sr-only">Previous page</span>

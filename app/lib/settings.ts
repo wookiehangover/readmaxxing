@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Schema } from "effect";
 
 export type Theme = "light" | "dark" | "system";
@@ -65,9 +65,12 @@ export function getSettings(): Settings {
   }
 }
 
+const SETTINGS_CHANGED_EVENT = "settings-changed";
+
 export function saveSettings(settings: Settings): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT));
 }
 
 export function useSettings(): [Settings, (update: Partial<Settings>) => void] {
@@ -75,6 +78,19 @@ export function useSettings(): [Settings, (update: Partial<Settings>) => void] {
     if (typeof window === "undefined") return defaultSettings;
     return getSettings();
   });
+
+  useEffect(() => {
+    const handler = () => setSettings(getSettings());
+    window.addEventListener(SETTINGS_CHANGED_EVENT, handler);
+    const storageHandler = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) setSettings(getSettings());
+    };
+    window.addEventListener("storage", storageHandler);
+    return () => {
+      window.removeEventListener(SETTINGS_CHANGED_EVENT, handler);
+      window.removeEventListener("storage", storageHandler);
+    };
+  }, []);
 
   const updateSettings = useCallback((update: Partial<Settings>) => {
     setSettings((prev) => {
