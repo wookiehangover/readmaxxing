@@ -3,6 +3,7 @@ import { type RouteConfig, index, layout, route } from "@react-router/dev/routes
 export default [
   index("routes/workspace.tsx"),
   layout("routes/library.tsx", [
+    index("routes/library-index.tsx"),
     route("books/:id", "routes/book.tsx"),
     route("books/:id/details", "routes/book-details.tsx"),
   ]),
