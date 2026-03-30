@@ -5,7 +5,7 @@ import {
   type PanelTypographyParams,
 } from "~/components/workspace-book-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
-import { ChatPanel as ChatPanelComponent } from "~/components/chat-panel";
+import { ChatPanel as ChatPanelComponent } from "~/components/chat/chat-panel";
 import { useWorkspace } from "~/lib/workspace-context";
 
 export function BookReaderPanel({

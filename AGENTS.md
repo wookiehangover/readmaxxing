@@ -142,3 +142,39 @@ export class MyError extends Data.TaggedError("MyError")<{
 - Prefer self-hosted fonts over CDN when font files are available locally
 - Always run `pnpm oxfmt .` before committing to ensure consistent formatting
 - Always run `pnpm oxlint` before committing and fix any warnings
+
+## Component Architecture Rules
+
+### File size limits
+
+- No single component file should exceed ~500 lines. If it does, extract hooks or decompose into sub-components.
+- Prefer extracting reusable hooks into `app/hooks/` when the same logic appears in multiple components.
+
+### No barrel modules
+
+- Do NOT create `index.ts` or re-export files. Import directly from the source module.
+- Bad: `import { Foo } from "~/components/foo"` (resolves to foo/index.ts)
+- Good: `import { Foo } from "~/components/foo/foo-component"`
+
+### No prop drilling
+
+- When a component needs data from a React context, consume the context directly via its hook (e.g., `useWorkspace()`). Do NOT create adapter/wrapper components that destructure context and pass values as props.
+- Exception: components that need to work in multiple contexts (e.g., `BookReader` works both standalone and in workspace) should accept props for the context-dependent parts.
+
+### Shared hooks
+
+- `app/hooks/use-epub-lifecycle.ts` — shared epub initialization and lifecycle (used by both reader components)
+- `app/hooks/use-reader-search.ts` — shared search state, annotations, keyboard shortcuts
+- `app/hooks/use-toolbar-auto-hide.ts` — mobile toolbar auto-hide timer
+- When adding epub reader functionality, add it to the shared hook rather than duplicating in individual readers.
+
+### Component decomposition
+
+- `app/components/chat/` — chat panel split into focused modules (chat-panel, chat-message, chat-empty-state, se-book-cards, chat-utils, use-chat-tool-handlers)
+- Follow this pattern for other large components: create a subdirectory with focused modules, no barrel index file.
+
+### E2E tests
+
+- Playwright E2E tests live in `e2e/` and run via `pnpm e2e`
+- Always run `pnpm e2e` after structural refactors to verify nothing broke
+- Test fixture epub is in `e2e/fixtures/test-book.epub`
