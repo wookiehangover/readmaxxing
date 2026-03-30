@@ -82,10 +82,6 @@ export function WorkspaceBookReader({
   // When the rendition isn't ready yet, queue the CFI and force the epub
   // to start initializing by setting hasBeenVisible = true.
   const placeholderNav = useCallback((cfi: string) => {
-    console.debug("[WorkspaceBookReader] placeholderNav called", {
-      cfi,
-      hasRealNav: !!realNavRef.current,
-    });
     if (realNavRef.current) {
       realNavRef.current(cfi);
     } else {
@@ -98,11 +94,6 @@ export function WorkspaceBookReader({
   // Register the placeholder immediately — no waiting for book data.
   useEffect(() => {
     const id = panelApi?.id ?? bookId;
-    console.debug("[WorkspaceBookReader] registering placeholder nav", {
-      id,
-      bookId,
-      panelApiId: panelApi?.id,
-    });
     navigationMap.current.set(id, placeholderNav);
     return () => {
       navigationMap.current.delete(id);
@@ -111,7 +102,6 @@ export function WorkspaceBookReader({
 
   // Called by WorkspaceBookReaderInner once its rendition is ready
   const onRenditionReady = useCallback((nav: (cfi: string) => void) => {
-    console.debug("[WorkspaceBookReader] onRenditionReady called, pending:", pendingCfiRef.current);
     realNavRef.current = nav;
     // Drain any CFI that arrived while loading
     const pending = pendingCfiRef.current;
@@ -305,8 +295,8 @@ function WorkspaceBookReaderInner({
           // annotation may already be gone
         }
       }, 3000);
-    } catch (err) {
-      console.debug("Temp highlight failed:", err);
+    } catch {
+      // annotation may already be gone
     }
   }, []);
 

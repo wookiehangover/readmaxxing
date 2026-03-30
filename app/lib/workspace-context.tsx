@@ -92,13 +92,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const findNavForBook = useCallback((bookId: string): ((cfi: string) => void) | undefined => {
     const api = dockviewApi.current;
-    console.debug("[findNavForBook]", {
-      bookId,
-      hasApi: !!api,
-      panelCount: api?.panels.length,
-      panels: api?.panels.map((p) => ({ id: p.id, params: p.params })),
-      navMapKeys: Array.from(navigationMap.current.keys()),
-    });
     if (!api) return undefined;
     for (const panel of api.panels) {
       if (
