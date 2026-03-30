@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { NotebookPen, Ellipsis, Globe, Trash2 } from "lucide-react";
-import { CoverImage, CoverPlaceholder, AddBookCard } from "~/components/book-grid";
+import { CoverImage } from "~/components/book-grid/cover-image";
+import { CoverPlaceholder } from "~/components/book-grid/cover-placeholder";
+import { AddBookCard } from "~/components/book-grid/add-book-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
