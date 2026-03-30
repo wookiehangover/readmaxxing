@@ -21,6 +21,9 @@ export function useHighlights({ bookId, renditionRef, onHighlightClick }: UseHig
   const highlightsRef = useRef<Map<string, Highlight>>(new Map());
   const [selectionPopover, setSelectionPopover] = useState<SelectionPopover | null>(null);
 
+  const onHighlightClickRef = useRef(onHighlightClick);
+  onHighlightClickRef.current = onHighlightClick;
+
   const makeClickCallback = useCallback(
     (cfiRange: string) => (e: MouseEvent) => {
       e.preventDefault();
@@ -28,9 +31,9 @@ export function useHighlights({ bookId, renditionRef, onHighlightClick }: UseHig
       const stored = highlightsRef.current.get(cfiRange);
       if (!stored) return;
       setSelectionPopover(null);
-      onHighlightClick?.(stored);
+      onHighlightClickRef.current?.(stored);
     },
-    [onHighlightClick],
+    [],
   );
 
   /** Apply a single highlight to the rendition with a click callback. */
