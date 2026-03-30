@@ -1,29 +1,19 @@
 import { useRef, useEffect } from "react";
 import { Button } from "~/components/ui/button";
 
-interface HighlightPopoverBaseProps {
+interface HighlightPopoverProps {
   position: { x: number; y: number };
   selectedText: string;
+  onSave: () => void;
   onDismiss: () => void;
 }
 
-interface HighlightPopoverCreateProps extends HighlightPopoverBaseProps {
-  mode?: "create";
-  onSave: () => void;
-  onDelete?: never;
-}
-
-interface HighlightPopoverEditProps extends HighlightPopoverBaseProps {
-  mode: "edit";
-  onDelete: () => void;
-  onSave?: never;
-}
-
-type HighlightPopoverProps = HighlightPopoverCreateProps | HighlightPopoverEditProps;
-
-export function HighlightPopover(props: HighlightPopoverProps) {
-  const { position, selectedText, onDismiss } = props;
-  const isEdit = props.mode === "edit";
+export function HighlightPopover({
+  position,
+  selectedText,
+  onSave,
+  onDismiss,
+}: HighlightPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
 
   // Position the popover so it doesn't overflow the viewport
@@ -88,19 +78,12 @@ export function HighlightPopover(props: HighlightPopoverProps) {
     >
       <p className="mb-2 text-xs text-muted-foreground line-clamp-3">"{truncatedText}"</p>
       <div className="flex justify-end gap-2">
-        {isEdit && (
-          <Button variant="destructive" size="sm" onClick={props.onDelete}>
-            Delete
-          </Button>
-        )}
         <Button variant="ghost" size="sm" onClick={onDismiss}>
           Cancel
         </Button>
-        {!isEdit && (
-          <Button size="sm" onClick={props.onSave}>
-            Highlight
-          </Button>
-        )}
+        <Button size="sm" onClick={onSave}>
+          Highlight
+        </Button>
       </div>
     </div>
   );

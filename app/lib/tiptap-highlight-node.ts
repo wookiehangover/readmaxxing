@@ -18,6 +18,7 @@ declare module "@tiptap/react" {
 
 export interface HighlightReferenceStorage {
   onNavigateToHighlight: ((cfi: string) => void) | null;
+  onDeleteHighlight: ((highlightId: string, cfiRange: string) => void) | null;
 }
 
 export const HighlightReference = Node.create<
@@ -31,6 +32,7 @@ export const HighlightReference = Node.create<
   addStorage() {
     return {
       onNavigateToHighlight: null,
+      onDeleteHighlight: null,
     };
   },
 

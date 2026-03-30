@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import { Effect } from "effect";
 import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
@@ -17,6 +18,8 @@ import { cn } from "~/lib/utils";
 import { SearchBar } from "~/components/search-bar";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useReaderSearch } from "~/hooks/use-reader-search";
+import { AnnotationService } from "~/lib/annotations-store";
+import { AppRuntime } from "~/lib/effect-runtime";
 
 interface BookReaderProps {
   book: BookMeta;
@@ -52,13 +55,29 @@ export function BookReader({ book }: BookReaderProps) {
 
   const {
     selectionPopover,
-    editPopover,
     saveHighlight: saveHighlightFromPopover,
-    deleteHighlightFromPopover,
     dismissPopovers,
     loadAndApplyHighlights,
     registerSelectionHandler,
-  } = useHighlights({ bookId: book.id, renditionRef, containerRef });
+    highlightsRef,
+  } = useHighlights({
+    bookId: book.id,
+    renditionRef,
+    onHighlightClick: () => setAnnotationsPanelOpen(true),
+  });
+
+  const handleDeleteHighlight = useCallback(
+    (highlightId: string, cfiRange: string) => {
+      const deleteProgram = Effect.gen(function* () {
+        const svc = yield* AnnotationService;
+        yield* svc.deleteHighlight(highlightId);
+      });
+      AppRuntime.runPromise(deleteProgram).catch(console.error);
+      renditionRef.current?.annotations.remove(cfiRange, "highlight");
+      highlightsRef.current.delete(cfiRange);
+    },
+    [highlightsRef],
+  );
 
   const { toc, bookProgress, currentPage, totalPages, navigateToCfi } = useEpubLifecycle({
     bookId: book.id,
@@ -290,15 +309,6 @@ export function BookReader({ book }: BookReaderProps) {
             onDismiss={dismissPopovers}
           />
         )}
-        {editPopover && (
-          <HighlightPopover
-            mode="edit"
-            position={editPopover.position}
-            selectedText={editPopover.highlight.text}
-            onDelete={deleteHighlightFromPopover}
-            onDismiss={dismissPopovers}
-          />
-        )}
       </div>
       <AnnotationsPanel
         bookId={book.id}
@@ -306,6 +316,7 @@ export function BookReader({ book }: BookReaderProps) {
         isOpen={annotationsPanelOpen}
         onClose={() => setAnnotationsPanelOpen(false)}
         onNavigateToCfi={navigateToCfi}
+        onDeleteHighlight={handleDeleteHighlight}
         editorRef={editorRef}
       />
     </div>

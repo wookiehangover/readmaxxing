@@ -3,6 +3,7 @@ import type { ReactNodeViewProps, JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
+import { Navigation, Trash2 } from "lucide-react";
 import {
   HighlightReference,
   type HighlightReferenceAttrs,
@@ -17,31 +18,57 @@ interface TiptapEditorProps {
   content?: JSONContent;
   onUpdate?: (content: JSONContent) => void;
   onNavigateToHighlight?: (cfi: string) => void;
+  onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
 }
 
-function HighlightReferenceView({ node, extension }: ReactNodeViewProps) {
-  const { text, cfiRange } = node.attrs as HighlightReferenceAttrs;
+function HighlightReferenceView({ node, extension, deleteNode }: ReactNodeViewProps) {
+  const { text, cfiRange, highlightId } = node.attrs as HighlightReferenceAttrs;
   const storage = extension.storage as HighlightReferenceStorage;
 
-  const handleClick = () => {
+  const handleNavigate = (e: React.MouseEvent) => {
+    e.stopPropagation();
     storage.onNavigateToHighlight?.(cfiRange);
+  };
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    storage.onDeleteHighlight?.(highlightId, cfiRange);
+    deleteNode();
   };
 
   return (
     <NodeViewWrapper>
       <blockquote
-        onClick={handleClick}
-        className="my-2 cursor-pointer rounded border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-sm italic text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/50 dark:text-amber-200 dark:hover:bg-amber-950/80"
+        onClick={handleNavigate}
+        className="group/hl relative my-2 cursor-pointer rounded border-l-4 border-amber-400 bg-amber-50 px-3 py-2 pr-16 text-sm italic text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/50 dark:text-amber-200 dark:hover:bg-amber-950/80"
         title="Click to navigate to this highlight"
       >
         "{text}"
+        <span className="absolute top-1/2 right-2 flex -translate-y-1/2 gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100">
+          <button
+            type="button"
+            onClick={handleNavigate}
+            className="rounded p-1 text-amber-700 hover:bg-amber-200 dark:text-amber-300 dark:hover:bg-amber-800"
+            title="Navigate to highlight"
+          >
+            <Navigation className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="rounded p-1 text-amber-700 hover:bg-red-100 hover:text-red-600 dark:text-amber-300 dark:hover:bg-red-900 dark:hover:text-red-400"
+            title="Delete highlight"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        </span>
       </blockquote>
     </NodeViewWrapper>
   );
 }
 
 export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(function TiptapEditor(
-  { content, onUpdate, onNavigateToHighlight },
+  { content, onUpdate, onNavigateToHighlight, onDeleteHighlight },
   ref,
 ) {
   const onUpdateRef = useRef(onUpdate);
@@ -68,7 +95,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     immediatelyRender: true,
   });
 
-  // Keep the navigate callback in extension storage so HighlightReferenceView can access it
+  // Keep callbacks in extension storage so HighlightReferenceView can access them
   useEffect(() => {
     if (!editor) return;
     const storage = editor.extensionManager.extensions.find(
@@ -76,8 +103,9 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     )?.storage as HighlightReferenceStorage | undefined;
     if (storage) {
       storage.onNavigateToHighlight = onNavigateToHighlight ?? null;
+      storage.onDeleteHighlight = onDeleteHighlight ?? null;
     }
-  }, [editor, onNavigateToHighlight]);
+  }, [editor, onNavigateToHighlight, onDeleteHighlight]);
 
   // Expose imperative handle for appending highlight references
   useImperativeHandle(

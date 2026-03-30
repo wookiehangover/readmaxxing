@@ -23,6 +23,7 @@ interface WorkspaceNotebookProps {
   bookId: string;
   bookTitle?: string;
   onNavigateToCfi?: (cfi: string) => void;
+  onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
   onRegisterAppendHighlight?: (
     bookId: string,
     fn: (attrs: HighlightReferenceAttrs) => void,
@@ -34,6 +35,7 @@ export function WorkspaceNotebook({
   bookId,
   bookTitle,
   onNavigateToCfi,
+  onDeleteHighlight,
   onRegisterAppendHighlight,
   onUnregisterAppendHighlight,
 }: WorkspaceNotebookProps) {
@@ -151,6 +153,7 @@ export function WorkspaceNotebook({
             content={content}
             onUpdate={handleUpdate}
             onNavigateToHighlight={handleNavigateToCfi}
+            onDeleteHighlight={onDeleteHighlight}
           />
         )}
       </ScrollArea>

@@ -16,6 +16,7 @@ interface AnnotationsPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigateToCfi: (cfi: string) => void;
+  onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
   editorRef: React.RefObject<TiptapEditorHandle | null>;
 }
 
@@ -25,6 +26,7 @@ export function AnnotationsPanel({
   isOpen,
   onClose,
   onNavigateToCfi,
+  onDeleteHighlight,
   editorRef,
 }: AnnotationsPanelProps) {
   const { data: notebook, isLoading } = useEffectQuery(
@@ -111,6 +113,7 @@ export function AnnotationsPanel({
                 content={content}
                 onUpdate={handleUpdate}
                 onNavigateToHighlight={onNavigateToCfi}
+                onDeleteHighlight={onDeleteHighlight}
               />
             )}
           </ScrollArea>

@@ -188,6 +188,7 @@ function WorkspaceBookReaderInner({
     notebookCallbackMap,
     chatContextMap,
     tempHighlightMap,
+    highlightDeleteMap,
   } = useWorkspace();
   const isMobile = useIsMobile();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -236,15 +237,21 @@ function WorkspaceBookReaderInner({
     panelRef,
   });
 
+  // Ref-based callback so useHighlights always calls the latest handleOpenNotebook
+  const handleOpenNotebookRef = useRef<() => void>(() => {});
+
   const {
     selectionPopover,
-    editPopover,
     saveHighlight: saveHighlightFromPopover,
-    deleteHighlightFromPopover,
     dismissPopovers,
     loadAndApplyHighlights,
     registerSelectionHandler,
-  } = useHighlights({ bookId: book.id, renditionRef, containerRef });
+    highlightsRef,
+  } = useHighlights({
+    bookId: book.id,
+    renditionRef,
+    onHighlightClick: () => handleOpenNotebookRef.current(),
+  });
 
   const { toc, bookProgress, currentPage, totalPages, flushPositionSave, latestCfiRef } =
     useEpubLifecycle({
@@ -310,6 +317,25 @@ function WorkspaceBookReaderInner({
       tempHighlightMap.current.delete(id);
     };
   }, [book.id, panelApi, applyTempHighlight, tempHighlightMap]);
+
+  // Register highlight delete callback so notebooks can remove annotations from rendition
+  const removeHighlightAnnotation = useCallback(
+    (cfiRange: string) => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+      rendition.annotations.remove(cfiRange, "highlight");
+      highlightsRef.current.delete(cfiRange);
+    },
+    [highlightsRef],
+  );
+
+  useEffect(() => {
+    const id = panelApi?.id ?? book.id;
+    highlightDeleteMap.current.set(id, removeHighlightAnnotation);
+    return () => {
+      highlightDeleteMap.current.delete(id);
+    };
+  }, [book.id, panelApi, removeHighlightAnnotation, highlightDeleteMap]);
 
   // With renderer: "always", dockview keeps the DOM alive when the tab is hidden
   // (instead of removing it). The epub iframe stays intact, so we only need to
@@ -472,6 +498,9 @@ function WorkspaceBookReaderInner({
         : { referencePanel: panelApi.id, direction: "right" as const },
     });
   }, [dockviewApi, book.id, book.title, panelApi, isMobile]);
+
+  // Keep ref in sync so useHighlights click handler always calls latest version
+  handleOpenNotebookRef.current = handleOpenNotebook;
 
   const handleOpenChat = useCallback(() => {
     const dockApi = dockviewApi.current;
@@ -669,17 +698,6 @@ function WorkspaceBookReaderInner({
               position={selectionPopover.position}
               selectedText={selectionPopover.text}
               onSave={handleSaveHighlight}
-              onDismiss={dismissPopovers}
-            />,
-            document.body,
-          )}
-        {editPopover &&
-          createPortal(
-            <HighlightPopover
-              mode="edit"
-              position={editPopover.position}
-              selectedText={editPopover.highlight.text}
-              onDelete={deleteHighlightFromPopover}
               onDismiss={dismissPopovers}
             />,
             document.body,

@@ -48,6 +48,10 @@ interface WorkspaceContextValue {
   tempHighlightMap: React.MutableRefObject<Map<string, (cfi: string) => void>>;
   /** Apply a temporary highlight in the reader for a book */
   applyTempHighlightForBook: (bookId: string, cfi: string) => void;
+  /** panelId -> remove highlight annotation from rendition */
+  highlightDeleteMap: React.MutableRefObject<Map<string, (cfiRange: string) => void>>;
+  /** Remove a highlight annotation from the reader rendition for a book */
+  removeHighlightAnnotationForBook: (bookId: string, cfiRange: string) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -84,6 +88,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     >(),
   );
   const tempHighlightMap = useRef(new Map<string, (cfi: string) => void>());
+  const highlightDeleteMap = useRef(new Map<string, (cfiRange: string) => void>());
 
   const findNavForBook = useCallback((bookId: string): ((cfi: string) => void) | undefined => {
     const api = dockviewApi.current;
@@ -118,6 +123,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const fn = tempHighlightMap.current.get(panel.id);
         if (fn) {
           fn(cfi);
+          return;
+        }
+      }
+    }
+  }, []);
+
+  const removeHighlightAnnotationForBook = useCallback((bookId: string, cfiRange: string): void => {
+    const api = dockviewApi.current;
+    if (!api) return;
+    for (const panel of api.panels) {
+      if (
+        panel.id.startsWith("book-") &&
+        (panel.params as Record<string, unknown>)?.bookId === bookId
+      ) {
+        const fn = highlightDeleteMap.current.get(panel.id);
+        if (fn) {
+          fn(cfiRange);
           return;
         }
       }
@@ -177,8 +199,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       findTocForBook,
       tempHighlightMap,
       applyTempHighlightForBook,
+      highlightDeleteMap,
+      removeHighlightAnnotationForBook,
     }),
-    [findNavForBook, waitForNavForBook, findTocForBook, applyTempHighlightForBook],
+    [
+      findNavForBook,
+      waitForNavForBook,
+      findTocForBook,
+      applyTempHighlightForBook,
+      removeHighlightAnnotationForBook,
+    ],
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
