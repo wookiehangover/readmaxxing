@@ -18,6 +18,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings } from "~/lib/settings";
 import { useEffectQuery } from "~/lib/use-effect-query";
 import { truncateTitle, sortBooks } from "~/lib/workspace-utils";
+import { cn } from "~/lib/utils";
 import { WorkspaceProvider, useWorkspace } from "~/lib/workspace-context";
 import { BookReaderPanel, NotebookPanel, ChatPanel } from "~/components/workspace/panel-components";
 import { NewTabPanel } from "~/components/workspace/new-tab-panel";
@@ -102,6 +103,8 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(new Set());
   // Track total panel count for dynamic document title
   const [panelCount, setPanelCount] = useState(0);
+  // Track whether dockview layout has been restored (controls fade-in)
+  const [layoutReady, setLayoutReady] = useState(false);
 
   // Load last-opened timestamps for sorting
   const { data: lastOpenedMap } = useEffectQuery(
@@ -165,8 +168,12 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
               console.error("Failed to restore dockview layout:", err);
             }
           }
+          setLayoutReady(true);
         })
-        .catch(console.error);
+        .catch((err) => {
+          console.error(err);
+          setLayoutReady(true);
+        });
 
       // Track total panel count for dynamic title
       const updatePanelCount = () => setPanelCount(event.api.panels.length);
@@ -495,7 +502,12 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
   return (
     <DropZone onBookAdded={handleBookAdded}>
-      <div className="flex h-dvh animate-in fade-in-0 duration-300">
+      <div
+        className={cn(
+          "flex h-dvh",
+          layoutReady ? "animate-in fade-in-0 duration-300" : "opacity-0",
+        )}
+      >
         {/* Desktop sidebar — hidden on mobile */}
         {isMobile !== true && <WorkspaceSidebar {...sidebarProps} />}
 
