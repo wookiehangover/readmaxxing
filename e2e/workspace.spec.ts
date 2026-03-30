@@ -132,6 +132,89 @@ test.describe("Workspace route", () => {
     await expect(page.getByRole("button", { name: "Chapter 2: The End" }).first()).toBeVisible();
   });
 
+  test("highlight reference navigate and delete in notebook", async ({ page }) => {
+    await uploadAndOpenBook(page);
+
+    // Wait for epub iframe to be ready with content
+    const iframe = page.frameLocator("iframe").first();
+    const chapterText = iframe.locator("p").first();
+    await expect(chapterText).toBeVisible({ timeout: 20_000 });
+
+    // Open the notebook panel FIRST so the callback map is registered
+    const notebookBtn = page.getByRole("button", { name: "Open Notebook" });
+    await expect(notebookBtn.first()).toBeVisible({ timeout: 10_000 });
+    await notebookBtn.first().click();
+
+    // Wait for notebook panel to render
+    await page.waitForTimeout(1_000);
+
+    // Click the book reader tab to go back to the reader
+    const bookTab = page.locator(".dv-default-tab", { hasText: "Test Book" });
+    await bookTab.first().click();
+
+    // Wait for epub iframe content to be ready again
+    await expect(chapterText).toBeVisible({ timeout: 15_000 });
+
+    // Programmatically select text inside the epub iframe to trigger epubjs "selected" event
+    const iframeHandle = await page.locator("iframe").first().elementHandle();
+    if (!iframeHandle) throw new Error("Could not get iframe element handle");
+    const iframeFrame = await iframeHandle.contentFrame();
+    if (!iframeFrame) throw new Error("Could not get iframe content frame");
+
+    await iframeFrame.evaluate(() => {
+      const p = document.querySelector("p");
+      if (!p || !p.firstChild) throw new Error("No paragraph found in epub");
+      const range = document.createRange();
+      range.selectNodeContents(p);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    });
+
+    // Wait for the highlight popover to appear (portaled to document.body)
+    const highlightBtn = page.getByRole("button", { name: "Highlight" });
+    await expect(highlightBtn).toBeVisible({ timeout: 10_000 });
+
+    // Click "Highlight" to save the highlight
+    await highlightBtn.click();
+
+    // Switch to the notebook tab to see the highlight reference
+    const notebookTab = page.locator(".dv-default-tab", { hasText: "Notes:" });
+    await expect(notebookTab.first()).toBeVisible({ timeout: 10_000 });
+    await notebookTab.first().click();
+
+    // Wait for the highlight reference blockquote to appear in the notebook
+    const highlightRef = page.locator("blockquote").first();
+    await expect(highlightRef).toBeVisible({ timeout: 15_000 });
+
+    // Verify the blockquote contains some highlighted text
+    const blockquoteText = await highlightRef.textContent();
+    expect(blockquoteText?.length).toBeGreaterThan(0);
+
+    // Test navigate: click the blockquote to navigate to the highlight
+    await highlightRef.click();
+    // Navigation should focus the reader panel — verify the reader is still showing
+    await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
+      timeout: 10_000,
+    });
+
+    // Test delete: hover the blockquote and click the delete button
+    // Re-focus the notebook panel
+    await notebookTab.first().click();
+
+    // Wait for blockquote to be visible again
+    const highlightRefAgain = page.locator("blockquote").first();
+    await expect(highlightRefAgain).toBeVisible({ timeout: 10_000 });
+
+    // Click the delete button (force: true since it's opacity-hidden until hover)
+    const deleteBtn = page.locator('[title="Delete highlight"]').first();
+    await deleteBtn.click({ force: true, timeout: 5_000 });
+
+    // Verify the highlight reference blockquote is removed from the notebook
+    await expect(page.locator("blockquote")).toHaveCount(0, { timeout: 10_000 });
+  });
+
   test("reader settings menu opens", async ({ page }) => {
     await uploadAndOpenBook(page);
 
