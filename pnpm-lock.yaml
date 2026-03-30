@@ -23,6 +23,9 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.8
         version: 5.2.8
+      '@orama/orama':
+        specifier: ^3.1.18
+        version: 3.1.18
       '@react-router/node':
         specifier: 7.12.0
         version: 7.12.0(react-router@7.12.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(typescript@5.9.3)
@@ -660,6 +663,10 @@ packages:
   '@opentelemetry/api@1.9.0':
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
     engines: {node: '>=8.0.0'}
+
+  '@orama/orama@3.1.18':
+    resolution: {integrity: sha512-a61ljmRVVyG5MC/698C8/FfFDw5a8LOIvyOLW5fztgUXqUpc1jOfQzOitSCbge657OgXXThmY3Tk8fpiDb4UcA==}
+    engines: {node: '>= 20.0.0'}
 
   '@oxfmt/binding-android-arm-eabi@0.36.0':
     resolution: {integrity: sha512-Z4yVHJWx/swHHjtr0dXrBZb6LxS+qNz1qdza222mWwPTUK4L790+5i3LTgjx3KYGBzcYpjaiZBw4vOx94dH7MQ==}
@@ -4719,6 +4726,8 @@ snapshots:
   '@open-draft/until@2.1.0': {}
 
   '@opentelemetry/api@1.9.0': {}
+
+  '@orama/orama@3.1.18': {}
 
   '@oxfmt/binding-android-arm-eabi@0.36.0':
     optional: true

@@ -18,6 +18,7 @@
     "@ai-sdk/react": "^3.0.143",
     "@base-ui/react": "^1.2.0",
     "@fontsource-variable/geist": "^5.2.8",
+    "@orama/orama": "^3.1.18",
     "@react-router/node": "7.12.0",
     "@react-router/serve": "7.12.0",
     "@tailwindcss/typography": "^0.5.19",

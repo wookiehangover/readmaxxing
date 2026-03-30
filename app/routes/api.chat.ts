@@ -4,12 +4,8 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import type { Route } from "./+types/api.chat";
 import { SE_BASE, parseSearchHtml } from "./api.standard-ebooks.search";
-
-interface BookChapter {
-  index: number;
-  title: string;
-  text: string;
-}
+import type { BookChapter } from "~/lib/epub-text-extract";
+import { getOrBuildBookIndex, searchBook } from "~/lib/orama-book-search";
 
 interface ChatRequestBody {
   messages: UIMessage[];
@@ -102,49 +98,6 @@ ${toc}
 ${currentChapterSection}`;
 }
 
-function searchChapters(
-  chapters: BookChapter[],
-  query: string,
-): Array<{ chapterIndex: number; chapterTitle: string; excerpt: string }> {
-  const results: Array<{
-    chapterIndex: number;
-    chapterTitle: string;
-    excerpt: string;
-  }> = [];
-  const lowerQuery = query.toLowerCase();
-  const MAX_RESULTS = 10;
-  const CONTEXT_CHARS = 250;
-
-  for (const chapter of chapters) {
-    if (results.length >= MAX_RESULTS) break;
-
-    const lowerText = chapter.text.toLowerCase();
-    let searchFrom = 0;
-
-    while (results.length < MAX_RESULTS) {
-      const matchIndex = lowerText.indexOf(lowerQuery, searchFrom);
-      if (matchIndex === -1) break;
-
-      const start = Math.max(0, matchIndex - CONTEXT_CHARS);
-      const end = Math.min(chapter.text.length, matchIndex + query.length + CONTEXT_CHARS);
-      const excerpt =
-        (start > 0 ? "…" : "") +
-        chapter.text.slice(start, end) +
-        (end < chapter.text.length ? "…" : "");
-
-      results.push({
-        chapterIndex: chapter.index,
-        chapterTitle: chapter.title,
-        excerpt,
-      });
-
-      searchFrom = matchIndex + query.length;
-    }
-  }
-
-  return results;
-}
-
 export async function action({ request }: Route.ActionArgs) {
   const body = (await request.json()) as ChatRequestBody;
   const { messages, bookContext } = body;
@@ -157,6 +110,8 @@ export async function action({ request }: Route.ActionArgs) {
     return new Response("Missing required bookContext fields", { status: 400 });
   }
 
+  const bookIndex = getOrBuildBookIndex(bookContext.chapters);
+
   const result = streamText({
     model: gateway("anthropic/claude-sonnet-4.6"),
     system: buildSystemPrompt(bookContext),
@@ -165,12 +120,12 @@ export async function action({ request }: Route.ActionArgs) {
       web_search: anthropic.tools.webSearch_20250305(),
       search_book: tool({
         description:
-          "Search the book for passages matching a query. Returns matching excerpts with surrounding context. Use this to find specific quotes, topics, characters, or themes.",
+          "Search the book for passages matching a query. Uses fuzzy, typo-tolerant full-text search to find relevant excerpts across all chapters. Use this to find specific quotes, topics, characters, or themes — even with approximate or misspelled terms.",
         inputSchema: z.object({
           query: z.string().describe("Text, keywords, or phrase to search for in the book"),
         }),
         execute: async ({ query }) => {
-          return searchChapters(bookContext.chapters, query);
+          return searchBook(bookIndex, query);
         },
       }),
       read_notes: tool({
