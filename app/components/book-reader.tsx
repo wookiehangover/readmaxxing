@@ -14,9 +14,9 @@ import { useReaderNavigation } from "~/lib/reader-context";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
 import { cn } from "~/lib/utils";
-import { useBookSearch } from "~/lib/use-book-search";
 import { SearchBar } from "~/components/search-bar";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
+import { useReaderSearch } from "~/hooks/use-reader-search";
 
 interface BookReaderProps {
   book: BookMeta;
@@ -24,6 +24,7 @@ interface BookReaderProps {
 
 export function BookReader({ book }: BookReaderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const bookRef = useRef<import("epubjs/types/book").default | null>(null);
   const renditionRef = useRef<Rendition | null>(null);
 
   const [settings, updateSettings] = useSettings();
@@ -32,8 +33,22 @@ export function BookReader({ book }: BookReaderProps) {
   const [pendingHighlight, setPendingHighlight] = useState<HighlightReferenceAttrs | null>(null);
   const { toc: contextToc, navigateToHref, setToc, setNavigateToHref } = useReaderNavigation();
   const [tocOpen, setTocOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+
+  const {
+    searchOpen,
+    searchQuery,
+    searchResults,
+    searchIndex,
+    searchNext,
+    searchPrev,
+    handleSearchClose,
+    handleSearchQueryChange,
+    handleSearchOpenFromIframe,
+  } = useReaderSearch({
+    bookRef,
+    renditionRef,
+    bookId: book.id,
+  });
 
   const {
     selectionPopover,
@@ -45,7 +60,7 @@ export function BookReader({ book }: BookReaderProps) {
     registerSelectionHandler,
   } = useHighlights({ bookId: book.id, renditionRef, containerRef });
 
-  const { bookRef, toc, bookProgress, currentPage, totalPages, navigateToCfi } = useEpubLifecycle({
+  const { toc, bookProgress, currentPage, totalPages, navigateToCfi } = useEpubLifecycle({
     bookId: book.id,
     containerRef,
     readerLayout: settings.readerLayout,
@@ -67,18 +82,10 @@ export function BookReader({ book }: BookReaderProps) {
       setToc([]);
       setNavigateToHref(() => {});
     },
-    onSearchOpen: () => setSearchOpen(true),
+    onSearchOpen: handleSearchOpenFromIframe,
+    bookRef,
     renditionRef,
   });
-
-  const {
-    search,
-    results,
-    currentIndex,
-    next: searchNext,
-    prev: searchPrev,
-    clear: searchClear,
-  } = useBookSearch(bookRef);
 
   // Use contextToc from the navigation context (synced via onTocExtracted)
   const activeToc = contextToc.length > 0 ? contextToc : toc;
@@ -89,105 +96,6 @@ export function BookReader({ book }: BookReaderProps) {
     }, 350);
     return () => clearTimeout(timer);
   }, [annotationsPanelOpen]);
-
-  // Track previous search annotations so we can remove them
-  const prevSearchCfisRef = useRef<string[]>([]);
-
-  // Navigate to the current search result when it changes
-  useEffect(() => {
-    if (results.length > 0 && results[currentIndex]) {
-      renditionRef.current?.display(results[currentIndex].cfi).catch((err: unknown) => {
-        console.warn("Search navigation failed:", err);
-      });
-    }
-  }, [results, currentIndex]);
-
-  // Apply/remove search highlight annotations in the epub
-  useEffect(() => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-
-    // Remove previous annotations
-    for (const cfi of prevSearchCfisRef.current) {
-      try {
-        rendition.annotations.remove(cfi, "highlight");
-      } catch {
-        // annotation may not exist
-      }
-    }
-
-    if (results.length === 0) {
-      prevSearchCfisRef.current = [];
-      return;
-    }
-
-    // Add highlight annotations for all results
-    const cfis: string[] = [];
-    for (let i = 0; i < results.length; i++) {
-      const cfi = results[i].cfi;
-      cfis.push(cfi);
-      const isCurrent = i === currentIndex;
-      const className = isCurrent ? "search-hl-current" : "search-hl";
-      try {
-        rendition.annotations.highlight(cfi, {}, undefined, className, {
-          fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)",
-          "fill-opacity": "1",
-          "mix-blend-mode": "multiply",
-        });
-      } catch {
-        // annotation may fail for invalid CFIs
-      }
-    }
-    prevSearchCfisRef.current = cfis;
-  }, [results, currentIndex]);
-
-  // Clear search state when book changes
-  useEffect(() => {
-    setSearchOpen(false);
-    setSearchQuery("");
-    searchClear();
-  }, [book.id, searchClear]);
-
-  // Intercept Cmd/Ctrl+F in parent page and epub iframe
-  useEffect(() => {
-    const handleFindShortcut = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
-        e.preventDefault();
-        e.stopPropagation();
-        setSearchOpen(true);
-      }
-    };
-
-    document.addEventListener("keydown", handleFindShortcut);
-
-    // Also intercept in the epub iframe
-    const rendition = renditionRef.current;
-    const contents = (rendition as any)?.getContents?.() as any[] | undefined;
-    contents?.forEach((content: any) => {
-      content.document?.addEventListener("keydown", handleFindShortcut);
-    });
-
-    return () => {
-      document.removeEventListener("keydown", handleFindShortcut);
-      contents?.forEach((content: any) => {
-        content.document?.removeEventListener("keydown", handleFindShortcut);
-      });
-    };
-  }, []);
-
-  const handleSearchQueryChange = useCallback(
-    (query: string) => {
-      setSearchQuery(query);
-      search(query);
-    },
-    [search],
-  );
-
-  const handleSearchClose = useCallback(() => {
-    setSearchOpen(false);
-    setSearchQuery("");
-    searchClear();
-  }, [searchClear]);
 
   const handlePrev = useCallback(() => renditionRef.current?.prev(), []);
   const handleNext = useCallback(() => renditionRef.current?.next(), []);
@@ -247,8 +155,8 @@ export function BookReader({ book }: BookReaderProps) {
               <SearchBar
                 query={searchQuery}
                 onQueryChange={handleSearchQueryChange}
-                resultCount={results.length}
-                currentIndex={currentIndex}
+                resultCount={searchResults.length}
+                currentIndex={searchIndex}
                 onNext={searchNext}
                 onPrev={searchPrev}
                 onClose={handleSearchClose}
@@ -301,7 +209,7 @@ export function BookReader({ book }: BookReaderProps) {
               variant="ghost"
               size="icon"
               className="size-10 md:size-8"
-              onClick={() => setSearchOpen((prev) => !prev)}
+              onClick={() => (searchOpen ? handleSearchClose() : handleSearchOpenFromIframe())}
               title="Search in book (Cmd+F)"
             >
               <Search className="size-5 md:size-4" />
