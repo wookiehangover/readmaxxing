@@ -8,7 +8,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { LocationCacheService } from "~/lib/location-cache-store";
 import { ReadingPositionService } from "~/lib/position-store";
 import { resolveTheme } from "~/lib/settings";
-import type { ReaderLayout } from "~/lib/settings";
+import type { ReaderLayout, Theme } from "~/lib/settings";
 import { registerThemeColors, getThemeColorCss, injectThemeColors } from "~/lib/epub-theme-utils";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import { getTypographyCss, getRenditionOptions } from "~/lib/epub-rendering-utils";
@@ -29,7 +29,7 @@ export interface UseEpubLifecycleConfig {
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
-  theme: string;
+  theme: Theme;
   loadAndApplyHighlights: (rendition: Rendition) => Promise<void>;
   registerSelectionHandler: (rendition: Rendition) => void;
   /** Whether the epub should initialize. Default true. */

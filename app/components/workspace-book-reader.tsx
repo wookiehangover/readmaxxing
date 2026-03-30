@@ -215,7 +215,7 @@ function WorkspaceBookReaderInner({
   const [tocOpen, setTocOpen] = useState(false);
 
   // Mobile toolbar auto-hide
-  const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile);
+  const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
 
   // Search state (shared hook)
   const {
