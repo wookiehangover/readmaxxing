@@ -6,3 +6,5 @@
 /.react-router/
 /build/
 .intent/
+playwright-report/
+.last-run.json
