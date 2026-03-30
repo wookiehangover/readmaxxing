@@ -495,7 +495,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
   return (
     <DropZone onBookAdded={handleBookAdded}>
-      <div className="flex h-dvh">
+      <div className="flex h-dvh animate-in fade-in-0 duration-300">
         {/* Desktop sidebar — hidden on mobile */}
         {isMobile !== true && <WorkspaceSidebar {...sidebarProps} />}
 

@@ -75,7 +75,7 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
   return (
     <ReaderNavigationProvider>
       <DropZone onBookAdded={handleBookAdded}>
-        <div className="flex h-dvh">
+        <div className="flex h-dvh animate-in fade-in-0 duration-300">
           {/* Desktop sidebar — shown when isMobile is undefined (SSR/initial) or false */}
           {isMobile !== true && (
             <aside
