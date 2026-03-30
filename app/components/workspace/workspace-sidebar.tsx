@@ -209,7 +209,7 @@ export function WorkspaceSidebar({
                     >
                       <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
                     </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={8}>
+                    <TooltipContent side="right" sideOffset={8} hidden={!collapsed}>
                       <div>
                         <p>{book.title}</p>
                         {book.author && <p className="text-background/70">{book.author}</p>}
@@ -259,7 +259,7 @@ export function WorkspaceSidebar({
                       >
                         <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
                       </TooltipTrigger>
-                      <TooltipContent side="right" sideOffset={8}>
+                      <TooltipContent side="right" sideOffset={8} hidden={!collapsed}>
                         <div>
                           <p>{book.title}</p>
                           {book.author && <p className="text-background/70">{book.author}</p>}
