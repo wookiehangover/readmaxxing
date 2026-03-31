@@ -289,7 +289,6 @@ body {
   }
 }
 
-
 /* PDF text layer — selectable invisible text over canvas */
 .pdf-text-layer {
   cursor: text;
