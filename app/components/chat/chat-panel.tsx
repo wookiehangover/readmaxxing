@@ -3,7 +3,7 @@ import { useChat, type UIMessage } from "@ai-sdk/react";
 import { Effect } from "effect";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "~/components/ui/button";
-import { Trash2, ArrowDown } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { ChatService } from "~/lib/chat-store";
 import { BookService } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
@@ -208,7 +208,7 @@ function ChatPanelInner({
 
   const isLoading = status === "streaming" || status === "submitted";
 
-  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom();
+  const { scrollRef, contentRef } = useStickToBottom();
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -289,17 +289,6 @@ function ChatPanelInner({
             })}
           </div>
         </div>
-        {!isAtBottom && (
-          <Button
-            variant="outline"
-            size="icon"
-            className="absolute bottom-2 left-1/2 z-10 size-8 -translate-x-1/2 rounded-full shadow-md"
-            onClick={() => scrollToBottom()}
-          >
-            <ArrowDown className="size-4" />
-            <span className="sr-only">Scroll to bottom</span>
-          </Button>
-        )}
       </div>
 
       {/* Input */}
