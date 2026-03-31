@@ -63,7 +63,7 @@ export function LibraryBrowseContent() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".epub"
+        accept=".epub,.pdf"
         multiple
         className="hidden"
         onChange={handleFileInput}

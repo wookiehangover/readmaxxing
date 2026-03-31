@@ -5,11 +5,15 @@ import { StorageError, BookNotFoundError, DecodeError } from "~/lib/errors";
 
 // --- Schema ---
 
+export const BookFormatSchema = Schema.Literal("epub", "pdf");
+export type BookFormat = typeof BookFormatSchema.Type;
+
 export const BookMetaSchema = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
   author: Schema.String,
   coverImage: Schema.NullOr(Schema.instanceOf(Blob)),
+  format: Schema.optionalWith(BookFormatSchema, { default: () => "epub" as const }),
 });
 
 /** Metadata-only book record (no binary epub data). */

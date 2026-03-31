@@ -7,6 +7,7 @@ import { ReadingPositionServiceLive } from "~/lib/position-store";
 import { StandardEbooksServiceLive } from "~/lib/standard-ebooks";
 import { WorkspaceServiceLive } from "~/lib/workspace-store";
 import { ChatServiceLive } from "~/lib/chat-store";
+import { PdfServiceLive } from "~/lib/pdf-service";
 
 /**
  * Application-wide layer that composes all service layers.
@@ -15,6 +16,7 @@ import { ChatServiceLive } from "~/lib/chat-store";
 export const AppLayer = Layer.mergeAll(
   BookServiceLive,
   EpubServiceLive,
+  PdfServiceLive,
   AnnotationServiceLive,
   LocationCacheServiceLive,
   ReadingPositionServiceLive,
