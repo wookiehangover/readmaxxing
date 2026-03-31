@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect, type DragEvent } from "react";
 import { Effect } from "effect";
 import { parseEpubEffect } from "~/lib/epub-service";
+import { parsePdfEffect } from "~/lib/pdf-service";
 import { BookService, type BookMeta } from "~/lib/book-store";
+import type { BookFormat } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { cn } from "~/lib/utils";
 
@@ -53,7 +55,9 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
       setDragCounter(0);
       setIsDragging(false);
 
-      const files = Array.from(e.dataTransfer.files).filter((f) => f.name.endsWith(".epub"));
+      const files = Array.from(e.dataTransfer.files).filter(
+        (f) => f.name.endsWith(".epub") || f.name.endsWith(".pdf"),
+      );
 
       if (files.length === 0) return;
 
@@ -62,13 +66,19 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
       const processFiles = Effect.gen(function* () {
         for (const file of files) {
           const arrayBuffer = yield* Effect.promise(() => file.arrayBuffer());
-          const metadata = yield* parseEpubEffect(arrayBuffer);
+          const isPdf = file.name.toLowerCase().endsWith(".pdf");
+          const format: BookFormat = isPdf ? "pdf" : "epub";
+
+          const metadata = isPdf
+            ? yield* parsePdfEffect(arrayBuffer, file.name)
+            : yield* parseEpubEffect(arrayBuffer);
 
           const book: BookMeta = {
             id: crypto.randomUUID(),
             title: metadata.title,
             author: metadata.author,
             coverImage: metadata.coverImage,
+            format,
           };
 
           yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
@@ -77,7 +87,7 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
       }).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {
-            console.error("Failed to process epub:", error);
+            console.error("Failed to process file:", error);
           }),
         ),
         Effect.ensuring(
@@ -111,7 +121,9 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
           )}
         >
           <div className="rounded-lg bg-card p-8 text-center shadow-lg">
-            <p className="text-lg font-medium text-card-foreground">Drop .epub files here</p>
+            <p className="text-lg font-medium text-card-foreground">
+              Drop .epub or .pdf files here
+            </p>
             <p className="mt-1 text-sm text-muted-foreground">Release to add to your library</p>
           </div>
         </div>
@@ -121,7 +133,7 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="rounded-lg bg-card p-8 text-center shadow-lg">
             <p className="text-lg font-medium text-card-foreground">Processing…</p>
-            <p className="mt-1 text-sm text-muted-foreground">Parsing epub metadata</p>
+            <p className="mt-1 text-sm text-muted-foreground">Parsing book metadata</p>
           </div>
         </div>
       )}

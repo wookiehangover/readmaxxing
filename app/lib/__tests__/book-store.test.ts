@@ -11,6 +11,7 @@ function makeBook(overrides: Partial<Book> = {}): Book {
     title: overrides.title ?? "Test Book",
     author: overrides.author ?? "Test Author",
     coverImage: overrides.coverImage ?? null,
+    format: overrides.format ?? ("epub" as const),
     data: overrides.data ?? new ArrayBuffer(8),
   };
 }

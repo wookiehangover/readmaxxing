@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import type { Route } from "./+types/book";
 import { BookService } from "~/lib/book-store";
 import { BookReader } from "~/components/book-reader";
+import { PdfReader } from "~/components/pdf-reader";
 import { AppRuntime } from "~/lib/effect-runtime";
 
 export function meta({ data }: Route.MetaArgs) {
@@ -32,5 +33,9 @@ export function HydrateFallback() {
 }
 
 export default function BookRoute({ loaderData }: Route.ComponentProps) {
-  return <BookReader book={loaderData.book} />;
+  const { book } = loaderData;
+  if (book.format === "pdf") {
+    return <PdfReader book={book} />;
+  }
+  return <BookReader book={book} />;
 }

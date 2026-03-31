@@ -13,7 +13,7 @@ const TEST_EPUB = resolve(__dirname, "fixtures/test-book.epub");
 async function uploadTestBook(page: Page) {
   // The sidebar has a hidden file input for epub uploads — use .first() since
   // the watermark panel also has one
-  const fileInput = page.locator('input[type="file"][accept=".epub"]').first();
+  const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_EPUB);
 
   // Wait for the book to appear in the sidebar — target the sidebar button specifically

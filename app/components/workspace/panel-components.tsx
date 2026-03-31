@@ -5,6 +5,7 @@ import {
   WorkspaceBookReader,
   type PanelTypographyParams,
 } from "~/components/workspace-book-reader";
+import { WorkspacePdfReader } from "~/components/workspace-pdf-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
 import { ChatPanel as ChatPanelComponent } from "~/components/chat/chat-panel";
 import { useWorkspace } from "~/lib/workspace-context";
@@ -14,7 +15,9 @@ import { AppRuntime } from "~/lib/effect-runtime";
 export function BookReaderPanel({
   params,
   api,
-}: IDockviewPanelProps<{ bookId: string; bookTitle?: string } & PanelTypographyParams>) {
+}: IDockviewPanelProps<
+  { bookId: string; bookTitle?: string; bookFormat?: string } & PanelTypographyParams
+>) {
   // Extract per-panel typography overrides from dockview params (restored layout)
   const panelTypography: PanelTypographyParams = {
     fontFamily: typeof params.fontFamily === "string" ? params.fontFamily : undefined,
@@ -25,6 +28,13 @@ export function BookReaderPanel({
         ? (params.readerLayout as PanelTypographyParams["readerLayout"])
         : undefined,
   };
+
+  // PDF books use the dedicated PDF reader component
+  if (params.bookFormat === "pdf") {
+    return (
+      <WorkspacePdfReader bookId={params.bookId} panelApi={api} panelTypography={panelTypography} />
+    );
+  }
 
   return (
     <WorkspaceBookReader bookId={params.bookId} panelApi={api} panelTypography={panelTypography} />

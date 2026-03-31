@@ -8,6 +8,7 @@ import { getToolInfo } from "./chat-utils";
 
 interface UseChatToolHandlersOptions {
   bookId: string;
+  bookFormat?: string;
   bookDataRef: React.RefObject<ArrayBuffer | null>;
   persistMessages: () => void;
   setNotebookMarkdown: React.Dispatch<React.SetStateAction<string>>;
@@ -15,6 +16,7 @@ interface UseChatToolHandlersOptions {
 
 export function useChatToolHandlers({
   bookId,
+  bookFormat,
   bookDataRef,
   persistMessages,
   setNotebookMarkdown,
@@ -83,84 +85,153 @@ export function useChatToolHandlers({
         const data = bookDataRef.current;
         if (!data) continue;
 
-        // Search for the text in the book to get a CFI, then persist the highlight
+        // Search for the text in the book to get a location, then persist the highlight
         (async () => {
           try {
-            const ePub = (await import("epubjs")).default;
-            const { fuzzySearchBookForCfi } = await import("~/lib/epub-search");
-            const tempBook = ePub(data.slice(0));
-            try {
-              const results = await fuzzySearchBookForCfi(tempBook, highlightText);
-              if (results.length === 0) {
-                console.warn(
-                  "create_highlight: no search results for:",
-                  highlightText.slice(0, 60),
-                );
-                return;
+            if (bookFormat === "pdf") {
+              // PDF path: search for text and navigate to page
+              const pdfjs = await import("pdfjs-dist");
+              const { searchPdf } = await import("~/lib/pdf-search");
+              const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
+              pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href;
+              const dataCopy = new Uint8Array(data).slice();
+              const doc = await pdfjs.getDocument({ data: dataCopy }).promise;
+              try {
+                const results = await searchPdf(doc, highlightText);
+                if (results.length > 0) {
+                  const cfiRange = `page:${results[0].page}`;
+                  const highlight = {
+                    id: crypto.randomUUID(),
+                    bookId,
+                    cfiRange,
+                    text: highlightText,
+                    color: "rgba(255, 213, 79, 0.4)",
+                    createdAt: Date.now(),
+                  };
+                  await AppRuntime.runPromise(
+                    Effect.gen(function* () {
+                      const svc = yield* AnnotationService;
+                      yield* svc.saveHighlight(highlight);
+                    }),
+                  );
+                  const navigate = await waitForNavForBook(bookId);
+                  if (navigate) navigate(cfiRange);
+
+                  // Append highlight to notebook (same as epub path)
+                  const appendFn = notebookCallbackMap.current.get(bookId);
+                  if (appendFn) {
+                    appendFn({
+                      highlightId: highlight.id,
+                      cfiRange: highlight.cfiRange,
+                      text: highlight.text,
+                    });
+                  } else {
+                    AppRuntime.runPromise(
+                      Effect.gen(function* () {
+                        const svc = yield* AnnotationService;
+                        const notebook = yield* svc.getNotebook(bookId);
+                        const existingContent = notebook?.content?.content ?? [];
+                        const highlightNode = {
+                          type: "highlightReference" as const,
+                          attrs: {
+                            highlightId: highlight.id,
+                            cfiRange: highlight.cfiRange,
+                            text: highlight.text,
+                          },
+                        };
+                        const updatedContent = {
+                          type: "doc" as const,
+                          content: [...existingContent, highlightNode],
+                        };
+                        yield* svc.saveNotebook({
+                          bookId,
+                          content: updatedContent,
+                          updatedAt: Date.now(),
+                        });
+                      }),
+                    ).catch(console.error);
+                  }
+                } else {
+                  console.warn(
+                    "create_highlight (PDF): no search results for:",
+                    highlightText.slice(0, 60),
+                  );
+                }
+              } finally {
+                await doc.destroy();
               }
+            } else {
+              // Epub path
+              const ePub = (await import("epubjs")).default;
+              const { fuzzySearchBookForCfi } = await import("~/lib/epub-search");
+              const tempBook = ePub(data.slice(0));
+              try {
+                const results = await fuzzySearchBookForCfi(tempBook, highlightText);
+                if (results.length === 0) {
+                  console.warn(
+                    "create_highlight: no search results for:",
+                    highlightText.slice(0, 60),
+                  );
+                  return;
+                }
 
-              const cfiRange = results[0].cfi;
-              const highlight = {
-                id: crypto.randomUUID(),
-                bookId,
-                cfiRange,
-                text: highlightText,
-                color: "rgba(255, 213, 79, 0.4)",
-                createdAt: Date.now(),
-              };
+                const cfiRange = results[0].cfi;
+                const highlight = {
+                  id: crypto.randomUUID(),
+                  bookId,
+                  cfiRange,
+                  text: highlightText,
+                  color: "rgba(255, 213, 79, 0.4)",
+                  createdAt: Date.now(),
+                };
 
-              // Persist highlight to IndexedDB
-              await AppRuntime.runPromise(
-                Effect.gen(function* () {
-                  const svc = yield* AnnotationService;
-                  yield* svc.saveHighlight(highlight);
-                }),
-              );
-
-              // Navigate to the highlight and show temp highlight in the reader
-              const navigate = await waitForNavForBook(bookId);
-              if (navigate) {
-                navigate(cfiRange);
-              }
-              applyTempHighlightForBook(bookId, cfiRange);
-
-              // Add HighlightReference to the notebook
-              const appendFn = notebookCallbackMap.current.get(bookId);
-              if (appendFn) {
-                appendFn({
-                  highlightId: highlight.id,
-                  cfiRange: highlight.cfiRange,
-                  text: highlight.text,
-                });
-              } else {
-                // Notebook panel not open — append directly via AnnotationService
-                AppRuntime.runPromise(
+                await AppRuntime.runPromise(
                   Effect.gen(function* () {
                     const svc = yield* AnnotationService;
-                    const notebook = yield* svc.getNotebook(bookId);
-                    const existingContent = notebook?.content?.content ?? [];
-                    const highlightNode = {
-                      type: "highlightReference" as const,
-                      attrs: {
-                        highlightId: highlight.id,
-                        cfiRange: highlight.cfiRange,
-                        text: highlight.text,
-                      },
-                    };
-                    const updatedContent = {
-                      type: "doc" as const,
-                      content: [...existingContent, highlightNode],
-                    };
-                    yield* svc.saveNotebook({
-                      bookId,
-                      content: updatedContent,
-                      updatedAt: Date.now(),
-                    });
+                    yield* svc.saveHighlight(highlight);
                   }),
-                ).catch(console.error);
+                );
+
+                const navigate = await waitForNavForBook(bookId);
+                if (navigate) navigate(cfiRange);
+                applyTempHighlightForBook(bookId, cfiRange);
+
+                const appendFn = notebookCallbackMap.current.get(bookId);
+                if (appendFn) {
+                  appendFn({
+                    highlightId: highlight.id,
+                    cfiRange: highlight.cfiRange,
+                    text: highlight.text,
+                  });
+                } else {
+                  AppRuntime.runPromise(
+                    Effect.gen(function* () {
+                      const svc = yield* AnnotationService;
+                      const notebook = yield* svc.getNotebook(bookId);
+                      const existingContent = notebook?.content?.content ?? [];
+                      const highlightNode = {
+                        type: "highlightReference" as const,
+                        attrs: {
+                          highlightId: highlight.id,
+                          cfiRange: highlight.cfiRange,
+                          text: highlight.text,
+                        },
+                      };
+                      const updatedContent = {
+                        type: "doc" as const,
+                        content: [...existingContent, highlightNode],
+                      };
+                      yield* svc.saveNotebook({
+                        bookId,
+                        content: updatedContent,
+                        updatedAt: Date.now(),
+                      });
+                    }),
+                  ).catch(console.error);
+                }
+              } finally {
+                tempBook.destroy();
               }
-            } finally {
-              tempBook.destroy();
             }
           } catch (err) {
             console.warn("Failed to create highlight from AI tool:", err);
@@ -170,6 +241,7 @@ export function useChatToolHandlers({
     },
     [
       bookId,
+      bookFormat,
       bookDataRef,
       persistMessages,
       setNotebookMarkdown,

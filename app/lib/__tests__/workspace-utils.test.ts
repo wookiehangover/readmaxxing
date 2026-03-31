@@ -7,6 +7,7 @@ function makeBook(
 ): BookMeta {
   return {
     coverImage: null,
+    format: "epub" as const,
     ...overrides,
   };
 }

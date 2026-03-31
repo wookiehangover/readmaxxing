@@ -70,6 +70,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
           title: metadata.title,
           author: metadata.author,
           coverImage: metadata.coverImage,
+          format: "epub" as const,
         };
         yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
         return book;

@@ -13,6 +13,12 @@ export const HighlightSchema = Schema.Struct({
   text: Schema.String,
   color: Schema.String,
   createdAt: Schema.Number,
+  /** PDF-only: page number where the highlight lives */
+  pageNumber: Schema.optional(Schema.Number),
+  /** PDF-only: character offset within the page text content */
+  textOffset: Schema.optional(Schema.Number),
+  /** PDF-only: length of highlighted text in characters */
+  textLength: Schema.optional(Schema.Number),
 });
 
 export type Highlight = typeof HighlightSchema.Type;

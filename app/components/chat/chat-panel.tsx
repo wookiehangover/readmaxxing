@@ -3,13 +3,14 @@ import { useChat, type UIMessage } from "@ai-sdk/react";
 import { Effect } from "effect";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "~/components/ui/button";
-import { Trash2, ArrowDown } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { ChatService } from "~/lib/chat-store";
 import { BookService } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
 import { extractBookChapters, type BookChapter } from "~/lib/epub-text-extract";
+import { extractPdfChapters } from "~/lib/pdf-text-extract";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/workspace-context";
 import {
@@ -35,6 +36,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     author: string;
     chapters: BookChapter[];
   } | null>(null);
+  const [bookFormat, setBookFormat] = useState<string | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   const bookDataRef = useRef<ArrayBuffer | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -54,10 +56,14 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
         if (cancelled) return;
 
-        const chapters = await extractBookChapters(bookData);
+        const chapters =
+          book.format === "pdf"
+            ? await extractPdfChapters(bookData)
+            : await extractBookChapters(bookData);
         if (cancelled) return;
 
         bookDataRef.current = bookData;
+        setBookFormat(book.format);
         setBookContext({ title: book.title, author: book.author, chapters });
         setInitialMessages(toUIMessages(savedMessages));
       } catch (err) {
@@ -94,6 +100,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     <ChatPanelInner
       bookId={bookId}
       bookTitle={bookTitle}
+      bookFormat={bookFormat}
       initialMessages={initialMessages}
       bookContext={bookContext}
       bookDataRef={bookDataRef}
@@ -106,6 +113,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 function ChatPanelInner({
   bookId,
   bookTitle,
+  bookFormat,
   initialMessages,
   bookContext,
   bookDataRef,
@@ -114,6 +122,7 @@ function ChatPanelInner({
 }: {
   bookId: string;
   bookTitle: string;
+  bookFormat?: string;
   initialMessages: UIMessage[];
   bookContext: { title: string; author: string; chapters: BookChapter[] };
   bookDataRef: React.RefObject<ArrayBuffer | null>;
@@ -178,6 +187,7 @@ function ChatPanelInner({
 
   const { onFinish } = useChatToolHandlers({
     bookId,
+    bookFormat,
     bookDataRef,
     persistMessages,
     setNotebookMarkdown,
@@ -198,7 +208,7 @@ function ChatPanelInner({
 
   const isLoading = status === "streaming" || status === "submitted";
 
-  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom();
+  const { scrollRef, contentRef } = useStickToBottom();
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -259,6 +269,7 @@ function ChatPanelInner({
                   <ChatMessage
                     message={message}
                     bookId={bookId}
+                    bookFormat={bookFormat}
                     bookDataRef={bookDataRef}
                     isStreaming={isCurrentlyStreaming}
                   />
@@ -278,17 +289,6 @@ function ChatPanelInner({
             })}
           </div>
         </div>
-        {!isAtBottom && (
-          <Button
-            variant="outline"
-            size="icon"
-            className="absolute bottom-2 left-1/2 z-10 size-8 -translate-x-1/2 rounded-full shadow-md"
-            onClick={() => scrollToBottom()}
-          >
-            <ArrowDown className="size-4" />
-            <span className="sr-only">Scroll to bottom</span>
-          </Button>
-        )}
       </div>
 
       {/* Input */}

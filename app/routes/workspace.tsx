@@ -321,7 +321,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       id: panelId,
       component: "book-reader",
       title: truncateTitle(book.title),
-      params: { bookId: book.id, bookTitle: book.title },
+      params: { bookId: book.id, bookTitle: book.title, bookFormat: book.format },
       renderer: "always",
     });
 

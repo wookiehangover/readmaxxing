@@ -288,3 +288,34 @@ body {
     }
   }
 }
+
+/* PDF text layer — selectable invisible text over canvas */
+.pdf-text-layer {
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.pdf-text-layer span {
+  position: absolute;
+  white-space: pre;
+  color: transparent;
+}
+
+.pdf-text-layer span::selection {
+  background: rgba(59, 130, 246, 0.35);
+  color: transparent;
+}
+
+/* PDF search highlights */
+.pdf-search-highlight {
+  background: rgba(250, 204, 21, 0.45);
+  color: transparent;
+  border-radius: 1px;
+}
+
+.pdf-search-highlight-current {
+  background: rgba(59, 130, 246, 0.6);
+  color: transparent;
+  border-radius: 1px;
+}

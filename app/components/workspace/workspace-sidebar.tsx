@@ -159,7 +159,7 @@ export function WorkspaceSidebar({
         <input
           ref={ws.fileInputRef}
           type="file"
-          accept=".epub"
+          accept=".epub,.pdf"
           multiple
           className="hidden"
           onChange={onFileInput}
