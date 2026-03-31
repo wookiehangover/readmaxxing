@@ -173,4 +173,57 @@ test.describe("PDF support", () => {
     // Verify we're on page 1
     await expect(page.getByText("Page 1 of 2")).toBeVisible({ timeout: 5_000 });
   });
+
+  test("selecting text in PDF shows highlight popover", async ({ page }) => {
+    await uploadTestPdf(page);
+
+    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
+    await sidebarBook.click();
+
+    const pdfContainer = page.locator("[data-testid='pdf-container']");
+    await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
+    await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    // Wait for text layer to render
+    const textLayer = pdfContainer.locator(".pdf-text-layer").first();
+    await expect(textLayer).toBeAttached({ timeout: 10_000 });
+
+    // Select text by triple-clicking a span in the text layer (force because text layer is transparent)
+    const textSpan = textLayer.locator("span").first();
+    await expect(textSpan).toBeAttached({ timeout: 5_000 });
+    await textSpan.click({ clickCount: 3, force: true });
+
+    // The highlight popover should appear with the "Highlight" button
+    const highlightBtn = page.getByRole("button", { name: "Highlight" });
+    await expect(highlightBtn).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("saving a highlight persists it as a visible overlay", async ({ page }) => {
+    await uploadTestPdf(page);
+
+    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
+    await sidebarBook.click();
+
+    const pdfContainer = page.locator("[data-testid='pdf-container']");
+    await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
+    await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    // Wait for text layer to render
+    const textLayer = pdfContainer.locator(".pdf-text-layer").first();
+    await expect(textLayer).toBeAttached({ timeout: 10_000 });
+
+    // Select text by triple-clicking a span (force because text layer is transparent)
+    const textSpan = textLayer.locator("span").first();
+    await expect(textSpan).toBeAttached({ timeout: 5_000 });
+    await textSpan.click({ clickCount: 3, force: true });
+
+    // Click the Highlight button in the popover
+    const highlightBtn = page.getByRole("button", { name: "Highlight" });
+    await expect(highlightBtn).toBeVisible({ timeout: 5_000 });
+    await highlightBtn.click();
+
+    // A highlight overlay should now be visible
+    const overlay = pdfContainer.locator(".pdf-highlight-overlay").first();
+    await expect(overlay).toBeAttached({ timeout: 5_000 });
+  });
 });

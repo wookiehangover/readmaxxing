@@ -21,6 +21,8 @@ export interface UsePdfLifecycleConfig {
   onCleanupToc?: () => void;
   onRelocated?: () => void;
   panelRef?: React.RefObject<HTMLDivElement | null>;
+  /** Called after pages have been rendered (e.g. to re-apply highlight overlays). */
+  onAfterRender?: () => void;
 }
 
 export interface UsePdfLifecycleReturn {
@@ -165,6 +167,8 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
         }
       } finally {
         renderingRef.current = false;
+        // Notify after render so highlight overlays can be re-applied
+        configRef.current.onAfterRender?.();
       }
     },
     [containerRef, fontSize, renderPage],

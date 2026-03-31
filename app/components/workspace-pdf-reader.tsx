@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "~/components/ui/button";
-import { ChevronLeft, ChevronRight, Search, TableOfContents } from "lucide-react";
+import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
@@ -8,6 +9,7 @@ import { BookService, type BookMeta } from "~/lib/book-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { ReaderLayout, Settings } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { HighlightPopover } from "~/components/highlight-popover";
 import { SearchBar } from "~/components/search-bar";
 import { useEffectQuery } from "~/lib/use-effect-query";
 import { cn } from "~/lib/utils";
@@ -15,6 +17,7 @@ import type { DockviewPanelApi } from "dockview";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { usePdfSearch } from "~/hooks/use-pdf-search";
+import { usePdfHighlights } from "~/lib/use-pdf-highlights";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/workspace-context";
 import type { PanelTypographyParams } from "~/components/workspace-book-reader";
@@ -95,7 +98,14 @@ function WorkspacePdfReaderInner({
   panelTypography?: PanelTypographyParams;
   hasBeenVisible: boolean;
 }) {
-  const { tocMap, tocChangeListener } = useWorkspace();
+  const {
+    tocMap,
+    tocChangeListener,
+    dockviewApi,
+    notebookCallbackMap,
+    tempHighlightMap,
+    highlightDeleteMap,
+  } = useWorkspace();
   const isMobile = useIsMobile();
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -111,6 +121,24 @@ function WorkspacePdfReaderInner({
 
   const [tocOpen, setTocOpen] = useState(false);
   const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
+
+  // Ref-based callback so usePdfHighlights always calls the latest handleOpenNotebook
+  const handleOpenNotebookRef = useRef<() => void>(() => {});
+
+  const {
+    selectionPopover,
+    saveHighlight: saveHighlightFromPopover,
+    dismissPopovers,
+    loadAndApplyHighlights,
+    reapplyAllHighlights,
+    removeHighlight,
+    applyTempHighlight,
+  } = usePdfHighlights({
+    bookId: book.id,
+    containerRef,
+    theme: settings.theme,
+    onHighlightClick: () => handleOpenNotebookRef.current(),
+  });
 
   const {
     toc,
@@ -142,7 +170,17 @@ function WorkspacePdfReaderInner({
     },
     onRelocated: showToolbar,
     panelRef,
+    onAfterRender: reapplyAllHighlights,
   });
+
+  // Load highlights once after initial render
+  const highlightsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (totalPages > 0 && !highlightsLoadedRef.current) {
+      highlightsLoadedRef.current = true;
+      loadAndApplyHighlights();
+    }
+  }, [totalPages, loadAndApplyHighlights]);
 
   const {
     searchOpen,
@@ -190,6 +228,83 @@ function WorkspacePdfReaderInner({
     },
     [panelApi],
   );
+
+  // Register temp highlight callback
+  useEffect(() => {
+    const id = panelApi?.id ?? book.id;
+    tempHighlightMap.current.set(id, applyTempHighlight);
+    return () => {
+      tempHighlightMap.current.delete(id);
+    };
+  }, [book.id, panelApi, applyTempHighlight, tempHighlightMap]);
+
+  // Register highlight delete callback
+  useEffect(() => {
+    const id = panelApi?.id ?? book.id;
+    highlightDeleteMap.current.set(id, removeHighlight);
+    return () => {
+      highlightDeleteMap.current.delete(id);
+    };
+  }, [book.id, panelApi, removeHighlight, highlightDeleteMap]);
+
+  const handleSaveHighlight = useCallback(async () => {
+    const highlight = await saveHighlightFromPopover();
+    if (highlight) {
+      const appendFn = notebookCallbackMap.current.get(book.id);
+      if (appendFn) {
+        appendFn({
+          highlightId: highlight.id,
+          cfiRange: highlight.cfiRange,
+          text: highlight.text,
+        });
+      }
+    }
+  }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
+
+  const handleOpenNotebook = useCallback(() => {
+    const dockApi = dockviewApi.current;
+    if (!dockApi || !panelApi) return;
+
+    const panelId = `notebook-${book.id}`;
+    const existing = dockApi.panels.find((p) => p.id === panelId);
+    if (existing) {
+      existing.focus();
+      return;
+    }
+
+    const title = book.title ?? "Untitled";
+
+    if (isMobile) {
+      dockApi.addPanel({
+        id: panelId,
+        component: "notebook",
+        title: `Notes: ${title}`.slice(0, 30),
+        params: { bookId: book.id, bookTitle: title },
+        renderer: "always",
+      });
+      return;
+    }
+
+    const bookGroup = panelApi.group;
+    const bookRect = bookGroup.element.getBoundingClientRect();
+    const rightGroup = dockApi.groups.find(
+      (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
+    );
+
+    dockApi.addPanel({
+      id: panelId,
+      component: "notebook",
+      title: `Notes: ${title}`.slice(0, 30),
+      params: { bookId: book.id, bookTitle: title },
+      renderer: "always",
+      position: rightGroup
+        ? { referenceGroup: rightGroup }
+        : { referencePanel: panelApi.id, direction: "right" as const },
+    });
+  }, [dockviewApi, book.id, book.title, panelApi, isMobile]);
+
+  // Keep ref in sync so usePdfHighlights click handler always calls latest version
+  handleOpenNotebookRef.current = handleOpenNotebook;
 
   const isScrollMode = localReaderLayout === "scroll";
   const isDark = resolveTheme(settings.theme) === "dark";
@@ -291,6 +406,10 @@ function WorkspacePdfReaderInner({
             <Search className="size-4" />
             <span className="sr-only">Search in book</span>
           </Button>
+          <Button variant="ghost" size="icon" onClick={handleOpenNotebook} title="Open Notebook">
+            <Notebook className="size-4" />
+            <span className="sr-only">Open Notebook</span>
+          </Button>
           {toc.length > 0 && (
             <Popover open={tocOpen} onOpenChange={setTocOpen}>
               <PopoverTrigger
@@ -330,6 +449,17 @@ function WorkspacePdfReaderInner({
           <ReaderSettingsMenu settings={localSettings} onUpdateSettings={handleUpdateSettings} />
         </div>
       </div>
+      {/* Portal popovers to document.body to escape dockview's CSS transforms */}
+      {selectionPopover &&
+        createPortal(
+          <HighlightPopover
+            position={selectionPopover.position}
+            selectedText={selectionPopover.text}
+            onSave={handleSaveHighlight}
+            onDismiss={dismissPopovers}
+          />,
+          document.body,
+        )}
     </div>
   );
 }
