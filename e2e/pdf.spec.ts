@@ -104,8 +104,8 @@ test.describe("PDF support", () => {
     await expect(settingsBtn).toBeVisible({ timeout: 5_000 });
     await settingsBtn.click();
 
-    // Settings menu should show layout options
-    await expect(page.getByText("Single Page")).toBeVisible({ timeout: 5_000 });
+    // Settings menu should show PDF layout options
+    await expect(page.getByText("Fit to Height")).toBeVisible({ timeout: 5_000 });
   });
 
   test("search bar opens when search button is clicked", async ({ page }) => {
