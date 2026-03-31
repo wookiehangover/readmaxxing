@@ -47,7 +47,7 @@ export function PdfReader({ book }: PdfReaderProps) {
     usePdfLifecycle({
       bookId: book.id,
       containerRef,
-      readerLayout: settings.readerLayout,
+      pdfLayout: settings.pdfLayout,
       theme: settings.theme,
       fontSize: settings.fontSize,
       onAfterRender: reapplyAllHighlights,
@@ -129,7 +129,7 @@ export function PdfReader({ book }: PdfReaderProps) {
     [goToPage],
   );
 
-  const isScrollMode = settings.readerLayout === "scroll";
+  const isScrollMode = settings.pdfLayout === "continuous";
   const isDark = resolveTheme(settings.theme) === "dark";
 
   return (
@@ -275,7 +275,7 @@ export function PdfReader({ book }: PdfReaderProps) {
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
+            <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} isPdf />
           </div>
         </div>
         {selectionPopover && (

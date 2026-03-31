@@ -16,7 +16,7 @@ import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/book-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
-import type { ReaderLayout, Settings } from "~/lib/settings";
+import type { PdfLayout, ReaderLayout, Settings } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/lib/use-highlights";
@@ -36,6 +36,7 @@ export interface PanelTypographyParams {
   fontSize?: number;
   lineHeight?: number;
   readerLayout?: ReaderLayout;
+  pdfLayout?: PdfLayout;
 }
 
 interface WorkspaceBookReaderProps {

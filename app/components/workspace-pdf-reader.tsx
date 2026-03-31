@@ -14,7 +14,7 @@ import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/book-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
-import type { ReaderLayout, Settings } from "~/lib/settings";
+import type { PdfLayout, Settings } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { SearchBar } from "~/components/search-bar";
@@ -116,8 +116,8 @@ function WorkspacePdfReaderInner({
   const [localFontSize, setLocalFontSize] = useState<number>(
     () => panelTypography?.fontSize ?? settings.fontSize,
   );
-  const [localReaderLayout, setLocalReaderLayout] = useState<ReaderLayout>(
-    () => panelTypography?.readerLayout ?? settings.readerLayout,
+  const [localPdfLayout, setLocalPdfLayout] = useState<PdfLayout>(
+    () => (panelTypography?.pdfLayout as PdfLayout) ?? settings.pdfLayout,
   );
 
   const [tocOpen, setTocOpen] = useState(false);
@@ -154,7 +154,7 @@ function WorkspacePdfReaderInner({
   } = usePdfLifecycle({
     bookId: book.id,
     containerRef,
-    readerLayout: localReaderLayout,
+    pdfLayout: localPdfLayout,
     theme: settings.theme,
     fontSize: localFontSize,
     enabled: hasBeenVisible,
@@ -216,12 +216,12 @@ function WorkspacePdfReaderInner({
   const handleUpdateSettings = useCallback(
     (update: Partial<Settings>) => {
       if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
-      if (update.readerLayout !== undefined) setLocalReaderLayout(update.readerLayout);
+      if (update.pdfLayout !== undefined) setLocalPdfLayout(update.pdfLayout);
 
       if (panelApi) {
         const paramUpdates: Record<string, unknown> = {};
         if (update.fontSize !== undefined) paramUpdates.fontSize = update.fontSize;
-        if (update.readerLayout !== undefined) paramUpdates.readerLayout = update.readerLayout;
+        if (update.pdfLayout !== undefined) paramUpdates.pdfLayout = update.pdfLayout;
         if (Object.keys(paramUpdates).length > 0) {
           panelApi.updateParameters(paramUpdates);
         }
@@ -247,13 +247,13 @@ function WorkspacePdfReaderInner({
     setGoToPage(goToPage);
   }, [goToPage, setGoToPage]);
 
-  const isScrollMode = localReaderLayout === "scroll";
+  const isScrollMode = localPdfLayout === "continuous";
   const isDark = resolveTheme(settings.theme) === "dark";
 
   const localSettings: Settings = {
     ...settings,
     fontSize: localFontSize,
-    readerLayout: localReaderLayout,
+    pdfLayout: localPdfLayout,
   };
 
   return (
@@ -391,7 +391,11 @@ function WorkspacePdfReaderInner({
               </PopoverContent>
             </Popover>
           )}
-          <ReaderSettingsMenu settings={localSettings} onUpdateSettings={handleUpdateSettings} />
+          <ReaderSettingsMenu
+            settings={localSettings}
+            onUpdateSettings={handleUpdateSettings}
+            isPdf
+          />
         </div>
       </div>
       {/* Portal popovers to document.body to escape dockview's CSS transforms */}

@@ -3,6 +3,7 @@ import { Schema } from "effect";
 
 export type Theme = "light" | "dark" | "system";
 export type ReaderLayout = "single" | "spread" | "scroll";
+export type PdfLayout = "original" | "fit-height" | "fit-width" | "two-page" | "continuous";
 export type WorkspaceSortBy = "title" | "author" | "recent";
 
 // --- Schema ---
@@ -32,6 +33,10 @@ export const SettingsSchema = Schema.Struct({
   fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
   lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
   sidebarCollapsed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  pdfLayout: Schema.optionalWith(
+    Schema.Literal("original", "fit-height", "fit-width", "two-page", "continuous"),
+    { default: () => "fit-height" as const },
+  ),
   workspaceSortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), {
     default: () => "recent" as const,
   }),
@@ -46,6 +51,7 @@ const STORAGE_KEY = "app-settings";
 const defaultSettings: Settings = {
   theme: "system",
   readerLayout: "single",
+  pdfLayout: "fit-height",
   fontFamily: "Literata",
   fontSize: 100,
   lineHeight: 1.6,
@@ -59,6 +65,10 @@ export function getSettings(): Settings {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultSettings;
     const parsed = JSON.parse(raw);
+    // Migrate legacy "fit" value to "fit-height"
+    if (parsed.pdfLayout === "fit") {
+      parsed.pdfLayout = "fit-height";
+    }
     return decodeSettings(parsed);
   } catch {
     return defaultSettings;

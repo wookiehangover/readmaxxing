@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { ArrowLeft, Minus, Plus } from "lucide-react";
-import { useSettings, type Theme, type ReaderLayout } from "~/lib/settings";
+import { useSettings, type Theme, type ReaderLayout, type PdfLayout } from "~/lib/settings";
 import { Button } from "~/components/ui/button";
 
 export async function clientLoader() {
@@ -27,6 +27,14 @@ const layoutOptions: { value: ReaderLayout; label: string }[] = [
   { value: "single", label: "Single Page" },
   { value: "spread", label: "Two Page Spread" },
   { value: "scroll", label: "Continuous Scroll" },
+];
+
+const pdfLayoutOptions: { value: PdfLayout; label: string }[] = [
+  { value: "original", label: "Original Size" },
+  { value: "fit-height", label: "Fit to Height" },
+  { value: "fit-width", label: "Fit to Width" },
+  { value: "two-page", label: "Two Page" },
+  { value: "continuous", label: "Continuous" },
 ];
 
 const fontSections = [
@@ -236,6 +244,28 @@ export default function SettingsPage() {
                 })
               }
             />
+          </div>
+        </section>
+        {/* PDF Defaults */}
+        <section>
+          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            PDF Defaults
+          </h2>
+          <div className="rounded-lg border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Layout</span>
+              <div className="flex gap-1.5">
+                {pdfLayoutOptions.map((opt) => (
+                  <OptionButton
+                    key={opt.value}
+                    selected={settings.pdfLayout === opt.value}
+                    onClick={() => updateSettings({ pdfLayout: opt.value })}
+                  >
+                    {opt.label}
+                  </OptionButton>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
       </main>

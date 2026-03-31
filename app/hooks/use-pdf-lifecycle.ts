@@ -4,7 +4,7 @@ import { BookService } from "~/lib/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { ReadingPositionService } from "~/lib/position-store";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
-import type { ReaderLayout, Theme } from "~/lib/settings";
+import type { PdfLayout, Theme } from "~/lib/settings";
 import type { TocEntry } from "~/lib/reader-context";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
@@ -12,7 +12,7 @@ const POSITION_SAVE_DEBOUNCE_MS = 1000;
 export interface UsePdfLifecycleConfig {
   bookId: string;
   containerRef: React.RefObject<HTMLDivElement | null>;
-  readerLayout: ReaderLayout;
+  pdfLayout: PdfLayout;
   theme: Theme;
   fontSize: number;
   enabled?: boolean;
@@ -38,7 +38,7 @@ export interface UsePdfLifecycleReturn {
 }
 
 export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleReturn {
-  const { bookId, containerRef, readerLayout, fontSize, enabled = true, panelId } = config;
+  const { bookId, containerRef, pdfLayout, fontSize, enabled = true, panelId } = config;
 
   const configRef = useRef(config);
   configRef.current = config;
@@ -51,9 +51,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestPageRef = useRef<number>(1);
   const renderingRef = useRef(false);
-  const layoutRef = useRef(readerLayout);
-  layoutRef.current = readerLayout;
-  const renderViewRef = useRef<(doc: any, page: number, layout: ReaderLayout) => Promise<void>>(
+  const layoutRef = useRef(pdfLayout);
+  layoutRef.current = pdfLayout;
+  const renderViewRef = useRef<(doc: any, page: number, layout: PdfLayout) => Promise<void>>(
     async () => {},
   );
 
@@ -96,7 +96,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   );
 
   const renderPage = useCallback(
-    async (doc: any, pageNum: number, wrapper: HTMLDivElement, scale: number) => {
+    async (doc: any, pageNum: number, wrapper: HTMLDivElement, scale: number, fitWidth = true) => {
       const pdfjs = await import("pdfjs-dist");
       const page = await doc.getPage(pageNum);
       const viewport = page.getViewport({ scale });
@@ -105,8 +105,10 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       canvas.style.display = "block";
-      canvas.style.width = "100%";
-      canvas.style.height = "auto";
+      if (fitWidth) {
+        canvas.style.width = "100%";
+        canvas.style.height = "auto";
+      }
       wrapper.appendChild(canvas);
 
       const ctx = canvas.getContext("2d")!;
@@ -120,7 +122,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       textDiv.style.width = `${viewport.width}px`;
       textDiv.style.height = `${viewport.height}px`;
       textDiv.style.transformOrigin = "0 0";
-      const containerWidth = wrapper.clientWidth || viewport.width;
+      const containerWidth = fitWidth ? wrapper.clientWidth || viewport.width : viewport.width;
       const scaleFactor = containerWidth / viewport.width;
       textDiv.style.transform = `scale(${scaleFactor})`;
       wrapper.appendChild(textDiv);
@@ -140,33 +142,100 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   );
 
   const renderView = useCallback(
-    async (doc: any, page: number, layout: ReaderLayout) => {
+    async (doc: any, page: number, layout: PdfLayout) => {
       const el = containerRef.current;
       if (!el || renderingRef.current) return;
       renderingRef.current = true;
 
       try {
         el.innerHTML = "";
-        const zoomScale = (fontSize / 100) * 1.5;
+        const zoomMultiplier = fontSize / 100;
 
-        if (layout === "scroll") {
+        if (layout === "continuous") {
+          // Render all pages vertically, each fit to container width
           for (let i = 1; i <= doc.numPages; i++) {
+            const pdfPage = await doc.getPage(i);
+            const nativeVp = pdfPage.getViewport({ scale: 1 });
+            const fitScale = (el.clientWidth / nativeVp.width) * zoomMultiplier;
+            pdfPage.cleanup();
+
             const pageWrapper = document.createElement("div");
             pageWrapper.className = "pdf-page-wrapper";
             pageWrapper.style.position = "relative";
             pageWrapper.style.marginBottom = "16px";
             pageWrapper.dataset.pageNumber = String(i);
             el.appendChild(pageWrapper);
-            await renderPage(doc, i, pageWrapper, zoomScale);
+            await renderPage(doc, i, pageWrapper, fitScale);
           }
-        } else {
+        } else if (layout === "two-page") {
+          // Render current page and next page side-by-side
+          const row = document.createElement("div");
+          row.style.display = "flex";
+          row.style.gap = "8px";
+          row.style.justifyContent = "center";
+          row.style.alignItems = "flex-start";
+          el.appendChild(row);
+
+          const pagesToRender = [page];
+          if (page + 1 <= doc.numPages) pagesToRender.push(page + 1);
+          const halfWidth = (el.clientWidth - 8) / 2;
+
+          for (const p of pagesToRender) {
+            const pdfPage = await doc.getPage(p);
+            const nativeVp = pdfPage.getViewport({ scale: 1 });
+            const fitScale = (halfWidth / nativeVp.width) * zoomMultiplier;
+            pdfPage.cleanup();
+
+            const pageWrapper = document.createElement("div");
+            pageWrapper.className = "pdf-page-wrapper";
+            pageWrapper.style.position = "relative";
+            pageWrapper.style.flex = "0 1 auto";
+            pageWrapper.style.maxWidth = `${halfWidth}px`;
+            pageWrapper.dataset.pageNumber = String(p);
+            row.appendChild(pageWrapper);
+            await renderPage(doc, p, pageWrapper, fitScale);
+          }
+        } else if (layout === "original") {
+          // Native resolution (scale=1), allow horizontal scroll
+          const pageWrapper = document.createElement("div");
+          pageWrapper.className = "pdf-page-wrapper";
+          pageWrapper.style.position = "relative";
+          pageWrapper.style.margin = "0 auto";
+          pageWrapper.dataset.pageNumber = String(page);
+          el.appendChild(pageWrapper);
+          await renderPage(doc, page, pageWrapper, 1 * zoomMultiplier, false);
+        } else if (layout === "fit-width") {
+          // "fit-width" — scale page to container width
+          const pdfPage = await doc.getPage(page);
+          const nativeVp = pdfPage.getViewport({ scale: 1 });
+          const fitScale = (el.clientWidth / nativeVp.width) * zoomMultiplier;
+          pdfPage.cleanup();
+
           const pageWrapper = document.createElement("div");
           pageWrapper.className = "pdf-page-wrapper";
           pageWrapper.style.position = "relative";
           pageWrapper.style.maxWidth = "100%";
           pageWrapper.style.margin = "0 auto";
+          pageWrapper.dataset.pageNumber = String(page);
           el.appendChild(pageWrapper);
-          await renderPage(doc, page, pageWrapper, zoomScale);
+          await renderPage(doc, page, pageWrapper, fitScale);
+        } else {
+          // "fit-height" — scale page to container height (default), centered horizontally
+          const pdfPage = await doc.getPage(page);
+          const nativeVp = pdfPage.getViewport({ scale: 1 });
+          const fitScale = (el.clientHeight / nativeVp.height) * zoomMultiplier;
+          pdfPage.cleanup();
+
+          const pageWrapper = document.createElement("div");
+          pageWrapper.className = "pdf-page-wrapper";
+          pageWrapper.style.position = "relative";
+          pageWrapper.style.maxWidth = "100%";
+          pageWrapper.style.margin = "0 auto";
+          pageWrapper.style.display = "flex";
+          pageWrapper.style.justifyContent = "center";
+          pageWrapper.dataset.pageNumber = String(page);
+          el.appendChild(pageWrapper);
+          await renderPage(doc, page, pageWrapper, fitScale, false);
         }
       } finally {
         renderingRef.current = false;
@@ -189,7 +258,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       configRef.current.onRelocated?.();
       savePositionDebounced(page);
 
-      if (layoutRef.current === "scroll") {
+      if (layoutRef.current === "continuous") {
         const el = containerRef.current;
         if (!el) return;
         const pageEl = el.querySelector(`[data-page-number="${page}"]`);
@@ -202,11 +271,13 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   );
 
   const goNext = useCallback(() => {
-    goToPage(latestPageRef.current + 1);
+    const step = layoutRef.current === "two-page" ? 2 : 1;
+    goToPage(latestPageRef.current + step);
   }, [goToPage]);
 
   const goPrev = useCallback(() => {
-    goToPage(latestPageRef.current - 1);
+    const step = layoutRef.current === "two-page" ? 2 : 1;
+    goToPage(Math.max(1, latestPageRef.current - step));
   }, [goToPage]);
 
   // Main lifecycle effect
@@ -278,7 +349,17 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
 
       setCurrentPage(startPage);
       latestPageRef.current = startPage;
-      await renderViewRef.current(doc, startPage, readerLayout);
+      const currentLayout = layoutRef.current;
+      await renderViewRef.current(doc, startPage, currentLayout);
+
+      // In continuous mode, all pages are rendered — scroll to the restored page
+      if (currentLayout === "continuous" && startPage > 1) {
+        const container = containerRef.current;
+        if (container) {
+          const pageEl = container.querySelector(`[data-page-number="${startPage}"]`);
+          if (pageEl) pageEl.scrollIntoView({ behavior: "instant" });
+        }
+      }
     };
 
     init().catch((err) => {
@@ -286,17 +367,18 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     });
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (layoutRef.current === "scroll") return;
+      if (layoutRef.current === "continuous") return;
       if (configRef.current.panelRef) {
         const panel = configRef.current.panelRef.current;
         if (!panel?.contains(document.activeElement) && document.activeElement !== panel) return;
       }
+      const step = layoutRef.current === "two-page" ? 2 : 1;
       if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
         e.preventDefault();
-        goToPage(latestPageRef.current - 1);
+        goToPage(Math.max(1, latestPageRef.current - step));
       } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
         e.preventDefault();
-        goToPage(latestPageRef.current + 1);
+        goToPage(latestPageRef.current + step);
       }
     };
     document.addEventListener("keydown", handleKeyDown);
@@ -312,18 +394,32 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
         pdfDocRef.current = null;
       }
     };
-  }, [enabled, bookId, readerLayout, flushPositionSave, goToPage, panelId]);
+    // Note: pdfLayout is intentionally excluded — layout changes are handled by
+    // the separate re-render effect below. Including it here would cause a full
+    // teardown/re-init (reloading the PDF from IndexedDB) on every layout change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, bookId, flushPositionSave, goToPage, panelId]);
 
-  // Re-render on fontSize change
+  // Re-render on fontSize or layout change
   useEffect(() => {
     const doc = pdfDocRef.current;
     if (!doc) return;
-    renderView(doc, latestPageRef.current, readerLayout);
-  }, [fontSize, renderView, readerLayout]);
+    const page = latestPageRef.current;
+    renderView(doc, page, pdfLayout).then(() => {
+      // After switching to continuous mode, scroll to the current page
+      if (pdfLayout === "continuous" && page > 1) {
+        const container = containerRef.current;
+        if (container) {
+          const pageEl = container.querySelector(`[data-page-number="${page}"]`);
+          if (pageEl) pageEl.scrollIntoView({ behavior: "instant" });
+        }
+      }
+    });
+  }, [fontSize, renderView, pdfLayout, containerRef]);
 
-  // Scroll mode: track current page from scroll position
+  // Continuous mode: track current page from scroll position
   useEffect(() => {
-    if (readerLayout !== "scroll") return;
+    if (pdfLayout !== "continuous") return;
     const el = containerRef.current;
     if (!el) return;
 
@@ -349,7 +445,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
 
     el.addEventListener("scroll", handleScroll, { passive: true });
     return () => el.removeEventListener("scroll", handleScroll);
-  }, [readerLayout, containerRef, savePositionDebounced]);
+  }, [pdfLayout, containerRef, savePositionDebounced]);
 
   const bookProgress = totalPages > 0 ? (currentPage / totalPages) * 100 : 0;
 
