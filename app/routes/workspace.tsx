@@ -296,6 +296,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
       // Cmd+[ / Cmd+] — cycle tabs in active group
       if (e.metaKey && (e.key === "[" || e.key === "]")) {
+        if (isEditableElement()) return;
         const group = api.activeGroup;
         if (!group || group.panels.length < 2) return;
         e.preventDefault();
