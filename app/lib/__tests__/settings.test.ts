@@ -13,6 +13,7 @@ const defaultSettings: Settings = {
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
   pdfLayout: "fit-height",
+  colorTheme: "default",
 };
 
 beforeEach(() => {
@@ -34,6 +35,7 @@ describe("getSettings", () => {
       sidebarCollapsed: true,
       workspaceSortBy: "title",
       pdfLayout: "fit-height",
+      colorTheme: "default",
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     expect(getSettings()).toEqual(stored);
@@ -117,6 +119,7 @@ describe("saveSettings", () => {
       sidebarCollapsed: true,
       workspaceSortBy: "author",
       pdfLayout: "fit-height",
+      colorTheme: "default",
     };
     saveSettings(settings);
     expect(getSettings()).toEqual(settings);
