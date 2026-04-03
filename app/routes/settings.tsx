@@ -169,7 +169,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="border-t" />
+            <div className="border-t my-4" />
 
             {/* Color Theme */}
             <div>
