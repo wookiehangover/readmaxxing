@@ -187,11 +187,11 @@ export default function SettingsPage() {
                         "flex flex-col items-center gap-1.5 rounded-lg p-2 transition-colors",
                         {
                           "ring-2 ring-primary ring-offset-2 ring-offset-background": isSelected,
-                          "hover:bg-accent": !isSelected,
+                          "hover:bg-accent/50": !isSelected,
                         },
                       )}
                     >
-                      <div className="flex overflow-hidden rounded-md border">
+                      <div className="flex overflow-hidden border">
                         {theme.swatchColors.map((color, i) => (
                           <div key={i} className="size-4" style={{ backgroundColor: color }} />
                         ))}
