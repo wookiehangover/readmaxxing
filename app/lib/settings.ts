@@ -40,6 +40,10 @@ export const SettingsSchema = Schema.Struct({
   workspaceSortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), {
     default: () => "recent" as const,
   }),
+  colorTheme: Schema.optionalWith(
+    Schema.Literal("default", "dracula", "nord", "rose-pine", "tokyo-night", "solarized"),
+    { default: () => "default" as const },
+  ),
 });
 
 export type Settings = typeof SettingsSchema.Type;
@@ -57,6 +61,7 @@ const defaultSettings: Settings = {
   lineHeight: 1.6,
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
+  colorTheme: "default",
 };
 
 export function getSettings(): Settings {

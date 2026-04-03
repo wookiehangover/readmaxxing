@@ -1,7 +1,9 @@
 import { Link } from "react-router";
 import { ArrowLeft, Minus, Plus } from "lucide-react";
 import { useSettings, type Theme, type ReaderLayout, type PdfLayout } from "~/lib/settings";
+import { COLOR_THEMES, COLOR_THEME_IDS } from "~/lib/color-themes";
 import { Button } from "~/components/ui/button";
+import { cn } from "~/lib/utils";
 
 export async function clientLoader() {
   return {};
@@ -164,6 +166,40 @@ export default function SettingsPage() {
                     {opt.label}
                   </OptionButton>
                 ))}
+              </div>
+            </div>
+
+            <div className="border-t my-4" />
+
+            {/* Color Theme */}
+            <div>
+              <span className="mb-3 block text-sm font-medium">Color Theme</span>
+              <div className="flex flex-wrap gap-3">
+                {COLOR_THEME_IDS.map((id) => {
+                  const theme = COLOR_THEMES[id];
+                  const isSelected = settings.colorTheme === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => updateSettings({ colorTheme: id })}
+                      className={cn(
+                        "flex flex-col items-center gap-1.5 rounded-lg p-2 transition-colors",
+                        {
+                          "ring-2 ring-primary ring-offset-2 ring-offset-background": isSelected,
+                          "hover:bg-accent/50": !isSelected,
+                        },
+                      )}
+                    >
+                      <div className="flex overflow-hidden border">
+                        {theme.swatchColors.map((color, i) => (
+                          <div key={i} className="size-4" style={{ backgroundColor: color }} />
+                        ))}
+                      </div>
+                      <span className="text-xs text-muted-foreground">{theme.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>

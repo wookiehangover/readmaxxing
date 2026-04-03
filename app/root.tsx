@@ -10,8 +10,20 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import { ThemeEffect } from "~/components/theme-effect";
+import { COLOR_THEMES } from "~/lib/color-themes";
 
-// Inline script to set the theme class before React hydrates, preventing FOUC.
+// Build a minimal JSON blob of non-default theme CSS variables for the FOUC script.
+// This is serialized at build/SSR time and embedded in the inline script.
+const colorThemeVarsJson = JSON.stringify(
+  Object.fromEntries(
+    Object.entries(COLOR_THEMES)
+      .filter(([id]) => id !== "default")
+      .map(([id, def]) => [id, { light: def.light, dark: def.dark }]),
+  ),
+);
+
+// Inline script to set the theme class and color theme variables before React hydrates,
+// preventing FOUC. This must be self-contained (no imports).
 const themeScript = `
 (function() {
   try {
@@ -19,6 +31,18 @@ const themeScript = `
     var t = s.theme || 'system';
     var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
     if (dark) document.documentElement.classList.add('dark');
+    var ct = s.colorTheme || 'default';
+    if (ct !== 'default') {
+      var m = dark ? 'dark' : 'light';
+      var themes = ${colorThemeVarsJson};
+      var vars = themes[ct] && themes[ct][m];
+      if (vars) {
+        var root = document.documentElement;
+        for (var k in vars) {
+          if (vars.hasOwnProperty(k)) root.style.setProperty(k, vars[k]);
+        }
+      }
+    }
   } catch(e) {}
 })();
 `;
