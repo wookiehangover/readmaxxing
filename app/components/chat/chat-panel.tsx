@@ -245,11 +245,18 @@ function ChatPanelInner({
   const messagesRef = useRef<UIMessage[]>(initialMessages);
 
   const persistMessages = useCallback(() => {
+    if (!activeSessionId) return;
     const current = messagesRef.current;
+    const sid = activeSessionId;
     AppRuntime.runPromise(
-      ChatService.pipe(Effect.andThen((s) => s.saveMessages(bookId, toChatMessages(current)))),
+      Effect.gen(function* () {
+        const svc = yield* ChatService;
+        const session = yield* svc.getSession(sid, bookId);
+        if (!session) return;
+        yield* svc.saveSession({ ...session, messages: toChatMessages(current) });
+      }),
     ).catch(console.error);
-  }, [bookId]);
+  }, [bookId, activeSessionId]);
 
   const { onFinish: onToolFinish } = useChatToolHandlers({
     bookId,
