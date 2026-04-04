@@ -112,11 +112,9 @@ export function ChatSessionList({
                     <span className="size-1.5 shrink-0 rounded-full bg-foreground/60" />
                   )}
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-sm">{session.title || "Untitled"}</span>
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="truncate text-xs">{session.title || "Untitled"}</span>
+                    <span className="text-[10px] text-muted-foreground">
                       {formatRelativeTime(session.updatedAt)}
-                      {session.messages.length > 0 &&
-                        ` · ${session.messages.length} msg${session.messages.length !== 1 ? "s" : ""}`}
                     </span>
                   </div>
                   <button
