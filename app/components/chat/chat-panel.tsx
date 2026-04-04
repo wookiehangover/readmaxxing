@@ -3,7 +3,7 @@ import { useChat, type UIMessage } from "@ai-sdk/react";
 import { Effect } from "effect";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "~/components/ui/button";
-import { Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { ChatService, type ChatSession } from "~/lib/chat-store";
 import { BookService } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
@@ -23,6 +23,7 @@ import { ChatMessage } from "./chat-message";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
 import { useChatToolHandlers } from "./use-chat-tool-handlers";
 import { ChatInput } from "./chat-input";
+import { ChatSessionMenu } from "./chat-session-menu";
 
 interface ChatPanelProps {
   bookId: string;
@@ -38,6 +39,10 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   } | null>(null);
   const [bookFormat, setBookFormat] = useState<string | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessionTitle, setSessionTitle] = useState<string>("Chat");
+  // Increment to force ChatPanelInner remount on session switch
+  const [sessionKey, setSessionKey] = useState(0);
   const bookDataRef = useRef<ArrayBuffer | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef("");
@@ -55,6 +60,23 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         ]);
 
         if (cancelled) return;
+
+        // Get active session info
+        const activeId = await AppRuntime.runPromise(
+          ChatService.pipe(Effect.andThen((s) => s.getActiveSessionId(bookId))),
+        );
+        if (cancelled) return;
+
+        if (activeId) {
+          setActiveSessionId(activeId);
+          const session = await AppRuntime.runPromise(
+            ChatService.pipe(Effect.andThen((s) => s.getSession(activeId, bookId))),
+          );
+          if (cancelled) return;
+          if (session) {
+            setSessionTitle(session.title);
+          }
+        }
 
         const chapters =
           book.format === "pdf"
@@ -80,6 +102,34 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     };
   }, [bookId]);
 
+  const handleSwitchSession = useCallback(
+    async (sessionId: string) => {
+      await AppRuntime.runPromise(
+        ChatService.pipe(Effect.andThen((s) => s.setActiveSessionId(bookId, sessionId))),
+      );
+      const session = await AppRuntime.runPromise(
+        ChatService.pipe(Effect.andThen((s) => s.getSession(sessionId, bookId))),
+      );
+      if (session) {
+        setActiveSessionId(sessionId);
+        setSessionTitle(session.title);
+        setInitialMessages(toUIMessages(session.messages));
+        setSessionKey((k) => k + 1);
+      }
+    },
+    [bookId],
+  );
+
+  const handleNewSession = useCallback(async () => {
+    const session = await AppRuntime.runPromise(
+      ChatService.pipe(Effect.andThen((s) => s.createSession(bookId))),
+    );
+    setActiveSessionId(session.id);
+    setSessionTitle(session.title);
+    setInitialMessages([]);
+    setSessionKey((k) => k + 1);
+  }, [bookId]);
+
   if (loadError) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -98,6 +148,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
   return (
     <ChatPanelInner
+      key={sessionKey}
       bookId={bookId}
       bookTitle={bookTitle}
       bookFormat={bookFormat}
@@ -106,6 +157,11 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       bookDataRef={bookDataRef}
       textareaRef={textareaRef}
       inputRef={inputRef}
+      activeSessionId={activeSessionId}
+      sessionTitle={sessionTitle}
+      onSwitchSession={handleSwitchSession}
+      onNewSession={handleNewSession}
+      onSessionTitleChange={setSessionTitle}
     />
   );
 }
@@ -119,6 +175,11 @@ function ChatPanelInner({
   bookDataRef,
   textareaRef,
   inputRef,
+  activeSessionId,
+  sessionTitle,
+  onSwitchSession,
+  onNewSession,
+  onSessionTitleChange,
 }: {
   bookId: string;
   bookTitle: string;
@@ -128,6 +189,11 @@ function ChatPanelInner({
   bookDataRef: React.RefObject<ArrayBuffer | null>;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
+  activeSessionId: string | null;
+  sessionTitle: string;
+  onSwitchSession: (sessionId: string) => void;
+  onNewSession: () => void;
+  onSessionTitleChange: (title: string) => void;
 }) {
   const { chatContextMap } = useWorkspace();
 
@@ -242,15 +308,16 @@ function ChatPanelInner({
               Effect.andThen((svc) => svc.saveSession({ ...session, title } as ChatSession)),
             ),
           );
+          onSessionTitleChange(title);
         };
 
         generateTitle().catch(console.error);
       }
     },
-    [onToolFinish, bookId],
+    [onToolFinish, bookId, onSessionTitleChange],
   );
 
-  const { messages, sendMessage, setMessages, status, stop } = useChat({
+  const { messages, sendMessage, status, stop } = useChat({
     id: `chat-${bookId}`,
     transport,
     messages: initialMessages,
@@ -281,27 +348,26 @@ function ChatPanelInner({
     [sendMessage, isLoading, inputRef, textareaRef],
   );
 
-  const handleClear = useCallback(() => {
-    setMessages([]);
-    AppRuntime.runPromise(ChatService.pipe(Effect.andThen((s) => s.clearMessages(bookId)))).catch(
-      console.error,
-    );
-  }, [setMessages, bookId]);
-
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-2">
-        <h3 className="truncate text-sm font-medium">{bookTitle}</h3>
+      <div className="flex items-center gap-1 border-b px-2 py-1.5">
+        <ChatSessionMenu
+          bookId={bookId}
+          activeSessionId={activeSessionId}
+          onSwitchSession={onSwitchSession}
+          onNewSession={onNewSession}
+        />
+        <h3 className="min-w-0 flex-1 truncate text-sm font-medium">{sessionTitle}</h3>
         <Button
           variant="ghost"
           size="icon"
-          onClick={handleClear}
-          title="Clear chat"
+          onClick={onNewSession}
+          title="New chat"
           className="size-7"
         >
-          <Trash2 className="size-3.5" />
-          <span className="sr-only">Clear chat</span>
+          <Plus className="size-3.5" />
+          <span className="sr-only">New chat</span>
         </Button>
       </div>
 
