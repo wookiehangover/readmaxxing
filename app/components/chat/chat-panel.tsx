@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "~/components/ui/button";
 import { Trash2 } from "lucide-react";
-import { ChatService } from "~/lib/chat-store";
+import { ChatService, type ChatSession } from "~/lib/chat-store";
 import { BookService } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -185,13 +185,70 @@ function ChatPanelInner({
     ).catch(console.error);
   }, [bookId]);
 
-  const { onFinish } = useChatToolHandlers({
+  const { onFinish: onToolFinish } = useChatToolHandlers({
     bookId,
     bookFormat,
     bookDataRef,
     persistMessages,
     setNotebookMarkdown,
   });
+
+  // Track whether title generation has already been triggered for this session
+  const titleGeneratedRef = useRef(false);
+
+  const onFinish = useCallback(
+    (event: { message: UIMessage }) => {
+      onToolFinish(event);
+
+      // Fire-and-forget title generation after the first assistant response
+      const currentMessages = messagesRef.current;
+      if (
+        !titleGeneratedRef.current &&
+        event.message.role === "assistant" &&
+        currentMessages.length <= 5
+      ) {
+        titleGeneratedRef.current = true;
+
+        // Check if the active session needs a title, then generate one
+        const generateTitle = async () => {
+          const session = await AppRuntime.runPromise(
+            Effect.gen(function* () {
+              const svc = yield* ChatService;
+              const activeId = yield* svc.getActiveSessionId(bookId);
+              if (!activeId) return null;
+              return yield* svc.getSession(activeId, bookId);
+            }),
+          );
+
+          if (!session) return;
+
+          // Only generate if session has a default/generic title
+          const genericTitles = ["Chat", "New Chat"];
+          if (!genericTitles.includes(session.title)) return;
+
+          const res = await fetch("/api/chat-title", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messages: currentMessages }),
+          });
+
+          if (!res.ok) return;
+
+          const { title } = (await res.json()) as { title: string };
+          if (!title) return;
+
+          await AppRuntime.runPromise(
+            ChatService.pipe(
+              Effect.andThen((svc) => svc.saveSession({ ...session, title } as ChatSession)),
+            ),
+          );
+        };
+
+        generateTitle().catch(console.error);
+      }
+    },
+    [onToolFinish, bookId],
+  );
 
   const { messages, sendMessage, setMessages, status, stop } = useChat({
     id: `chat-${bookId}`,
