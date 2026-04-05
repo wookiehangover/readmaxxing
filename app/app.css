@@ -252,8 +252,8 @@ body {
 }
 
 .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {
-    background-color: var(--dv-activegroup-visiblepanel-tab-background-color) !important;
-    color: var(--dv-activegroup-visiblepanel-tab-color) !important;
+  background-color: var(--dv-activegroup-visiblepanel-tab-background-color) !important;
+  color: var(--dv-activegroup-visiblepanel-tab-color) !important;
 }
 
 @supports (animation-timeline: scroll()) {
