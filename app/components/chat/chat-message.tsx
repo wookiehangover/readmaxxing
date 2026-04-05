@@ -196,7 +196,8 @@ export function ChatMessage({
             <p className="whitespace-pre-wrap">{text}</p>
           ) : (
             <Streamdown
-              caret="circle"
+              caret="block"
+              isAnimating={isStreaming}
               allowedTags={{ ref: ["chapter", "query"] }}
               components={streamdownComponents}
             >

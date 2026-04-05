@@ -158,7 +158,7 @@ export function usePdfWorkspacePanels({
       dockApi.addPanel({
         id: chatPanelId,
         component: "chat",
-        title: `Chat: ${title}`.slice(0, 30),
+        title: `Discuss: ${title}`.slice(0, 30),
         params: { bookId: book.id, bookTitle: title },
         renderer: "always",
       });
@@ -174,7 +174,7 @@ export function usePdfWorkspacePanels({
     dockApi.addPanel({
       id: chatPanelId,
       component: "chat",
-      title: `Chat: ${title}`.slice(0, 30),
+      title: `Discuss: ${title}`.slice(0, 30),
       params: { bookId: book.id, bookTitle: title },
       renderer: "always",
       position: rightGroup

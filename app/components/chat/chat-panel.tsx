@@ -3,7 +3,7 @@ import { useChat, type UIMessage } from "@ai-sdk/react";
 import { Effect } from "effect";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "~/components/ui/button";
-import { Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { ChatService } from "~/lib/chat-store";
 import { BookService } from "~/lib/book-store";
 import { AnnotationService } from "~/lib/annotations-store";
@@ -23,6 +23,7 @@ import { ChatMessage } from "./chat-message";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
 import { useChatToolHandlers } from "./use-chat-tool-handlers";
 import { ChatInput } from "./chat-input";
+import { SessionMenuButton, ChatSessionList } from "./chat-session-menu";
 
 interface ChatPanelProps {
   bookId: string;
@@ -38,6 +39,10 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   } | null>(null);
   const [bookFormat, setBookFormat] = useState<string | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessionTitle, setSessionTitle] = useState<string>("");
+  // Increment to force ChatPanelInner remount on session switch
+  const [sessionKey, setSessionKey] = useState(0);
   const bookDataRef = useRef<ArrayBuffer | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef("");
@@ -55,6 +60,31 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         ]);
 
         if (cancelled) return;
+
+        // Get active session info
+        const activeId = await AppRuntime.runPromise(
+          ChatService.pipe(Effect.andThen((s) => s.getActiveSessionId(bookId))),
+        );
+        if (cancelled) return;
+
+        if (activeId) {
+          setActiveSessionId(activeId);
+          const session = await AppRuntime.runPromise(
+            ChatService.pipe(Effect.andThen((s) => s.getSession(activeId, bookId))),
+          );
+          if (cancelled) return;
+          if (session) {
+            setSessionTitle(session.title);
+          }
+        } else {
+          // No session exists — create one so messages persist from the start
+          const newSession = await AppRuntime.runPromise(
+            ChatService.pipe(Effect.andThen((s) => s.createSession(bookId))),
+          );
+          if (cancelled) return;
+          setActiveSessionId(newSession.id);
+          setSessionTitle(newSession.title);
+        }
 
         const chapters =
           book.format === "pdf"
@@ -80,6 +110,34 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     };
   }, [bookId]);
 
+  const handleSwitchSession = useCallback(
+    async (sessionId: string) => {
+      await AppRuntime.runPromise(
+        ChatService.pipe(Effect.andThen((s) => s.setActiveSessionId(bookId, sessionId))),
+      );
+      const session = await AppRuntime.runPromise(
+        ChatService.pipe(Effect.andThen((s) => s.getSession(sessionId, bookId))),
+      );
+      if (session) {
+        setActiveSessionId(sessionId);
+        setSessionTitle(session.title);
+        setInitialMessages(toUIMessages(session.messages));
+        setSessionKey((k) => k + 1);
+      }
+    },
+    [bookId],
+  );
+
+  const handleNewSession = useCallback(async () => {
+    const session = await AppRuntime.runPromise(
+      ChatService.pipe(Effect.andThen((s) => s.createSession(bookId))),
+    );
+    setActiveSessionId(session.id);
+    setSessionTitle(session.title);
+    setInitialMessages([]);
+    setSessionKey((k) => k + 1);
+  }, [bookId]);
+
   if (loadError) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -98,6 +156,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
   return (
     <ChatPanelInner
+      key={sessionKey}
       bookId={bookId}
       bookTitle={bookTitle}
       bookFormat={bookFormat}
@@ -106,6 +165,11 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       bookDataRef={bookDataRef}
       textareaRef={textareaRef}
       inputRef={inputRef}
+      activeSessionId={activeSessionId}
+      sessionTitle={sessionTitle}
+      onSwitchSession={handleSwitchSession}
+      onNewSession={handleNewSession}
+      onSessionTitleChange={setSessionTitle}
     />
   );
 }
@@ -119,6 +183,11 @@ function ChatPanelInner({
   bookDataRef,
   textareaRef,
   inputRef,
+  activeSessionId,
+  sessionTitle,
+  onSwitchSession,
+  onNewSession,
+  onSessionTitleChange,
 }: {
   bookId: string;
   bookTitle: string;
@@ -128,8 +197,14 @@ function ChatPanelInner({
   bookDataRef: React.RefObject<ArrayBuffer | null>;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
+  activeSessionId: string | null;
+  sessionTitle: string;
+  onSwitchSession: (sessionId: string) => void;
+  onNewSession: () => void;
+  onSessionTitleChange: (title: string) => void;
 }) {
   const { chatContextMap } = useWorkspace();
+  const [showSessionList, setShowSessionList] = useState(false);
 
   // Load notebook markdown for the AI's read_notes tool
   const [notebookMarkdown, setNotebookMarkdown] = useState<string>("");
@@ -179,13 +254,20 @@ function ChatPanelInner({
   const messagesRef = useRef<UIMessage[]>(initialMessages);
 
   const persistMessages = useCallback(() => {
+    if (!activeSessionId) return;
     const current = messagesRef.current;
+    const sid = activeSessionId;
     AppRuntime.runPromise(
-      ChatService.pipe(Effect.andThen((s) => s.saveMessages(bookId, toChatMessages(current)))),
+      Effect.gen(function* () {
+        const svc = yield* ChatService;
+        const session = yield* svc.getSession(sid, bookId);
+        if (!session) return;
+        yield* svc.saveSession({ ...session, messages: toChatMessages(current) });
+      }),
     ).catch(console.error);
-  }, [bookId]);
+  }, [bookId, activeSessionId]);
 
-  const { onFinish } = useChatToolHandlers({
+  const { onFinish: onToolFinish } = useChatToolHandlers({
     bookId,
     bookFormat,
     bookDataRef,
@@ -193,7 +275,64 @@ function ChatPanelInner({
     setNotebookMarkdown,
   });
 
-  const { messages, sendMessage, setMessages, status, stop } = useChat({
+  // Track whether title generation has already been triggered for this session
+  const titleGeneratedRef = useRef(false);
+
+  const onFinish = useCallback(
+    (event: { message: UIMessage }) => {
+      onToolFinish(event);
+
+      // Fire-and-forget title generation after the first assistant response
+      const currentMessages = messagesRef.current;
+      if (
+        !titleGeneratedRef.current &&
+        event.message.role === "assistant" &&
+        currentMessages.length <= 5
+      ) {
+        titleGeneratedRef.current = true;
+
+        // Check if the active session needs a title, then generate one
+        const generateTitle = async () => {
+          const session = await AppRuntime.runPromise(
+            Effect.gen(function* () {
+              const svc = yield* ChatService;
+              const activeId = yield* svc.getActiveSessionId(bookId);
+              if (!activeId) return null;
+              return yield* svc.getSession(activeId, bookId);
+            }),
+          );
+
+          if (!session) return;
+
+          // Only generate if session has a default/generic title
+          if (session.title) return;
+
+          const res = await fetch("/api/chat-title", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messages: currentMessages }),
+          });
+
+          if (!res.ok) return;
+
+          const { title } = (await res.json()) as { title: string };
+          if (!title) return;
+
+          await AppRuntime.runPromise(
+            ChatService.pipe(
+              Effect.andThen((svc) => svc.updateSessionTitle(session.id, session.bookId, title)),
+            ),
+          );
+          onSessionTitleChange(title);
+        };
+
+        generateTitle().catch(console.error);
+      }
+    },
+    [onToolFinish, bookId, onSessionTitleChange],
+  );
+
+  const { messages, sendMessage, status, stop } = useChat({
     id: `chat-${bookId}`,
     transport,
     messages: initialMessages,
@@ -224,81 +363,112 @@ function ChatPanelInner({
     [sendMessage, isLoading, inputRef, textareaRef],
   );
 
-  const handleClear = useCallback(() => {
-    setMessages([]);
-    AppRuntime.runPromise(ChatService.pipe(Effect.andThen((s) => s.clearMessages(bookId)))).catch(
-      console.error,
-    );
-  }, [setMessages, bookId]);
+  const handleSwitchSessionFromList = useCallback(
+    (sessionId: string) => {
+      setShowSessionList(false);
+      if (sessionId !== activeSessionId) {
+        onSwitchSession(sessionId);
+      }
+    },
+    [activeSessionId, onSwitchSession],
+  );
+
+  const handleNewSessionFromList = useCallback(() => {
+    setShowSessionList(false);
+    onNewSession();
+  }, [onNewSession]);
 
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-2">
-        <h3 className="truncate text-sm font-medium">{bookTitle}</h3>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleClear}
-          title="Clear chat"
-          className="size-7"
-        >
-          <Trash2 className="size-3.5" />
-          <span className="sr-only">Clear chat</span>
-        </Button>
+      <div className="flex items-center gap-1 border-b px-2 py-1.5">
+        <SessionMenuButton
+          showSessionList={showSessionList}
+          onToggle={() => setShowSessionList((v) => !v)}
+        />
+        {sessionTitle && (
+          <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
+            {showSessionList ? "Sessions" : sessionTitle}
+          </h3>
+        )}
+        {!showSessionList && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onNewSession}
+            title="New chat"
+            className="size-7 ml-auto"
+          >
+            <Plus className="size-3.5" />
+            <span className="sr-only">New chat</span>
+          </Button>
+        )}
       </div>
 
-      {/* Messages */}
-      <div
-        ref={scrollRef}
-        className={cn("flex-1 overflow-y-auto px-4 py-3 relative flex flex-col", {
-          "scroll-fog": messages.length > 0,
-        })}
-      >
-        <div ref={contentRef} className="flex flex-col flex-1">
-          {messages.length === 0 && (
-            <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
-          )}
-          <div className="space-y-3">
-            {messages.map((message, i) => {
-              const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
-              const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
-
-              return (
-                <div key={message.id}>
-                  <ChatMessage
-                    message={message}
-                    bookId={bookId}
-                    bookFormat={bookFormat}
-                    bookDataRef={bookDataRef}
-                    isStreaming={isCurrentlyStreaming}
-                  />
-                  {isLastAssistant && !isLoading && (
-                    <SuggestedPrompts
-                      prompts={parseSuggestedPrompts(
-                        message.parts
-                          ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-                          .map((p) => p.text)
-                          .join("") ?? "",
-                      )}
-                      sendMessage={sendMessage}
-                    />
-                  )}
-                </div>
-              );
+      {showSessionList ? (
+        <ChatSessionList
+          bookId={bookId}
+          activeSessionId={activeSessionId}
+          onSwitchSession={handleSwitchSessionFromList}
+          onNewSession={handleNewSessionFromList}
+        />
+      ) : (
+        <>
+          {/* Messages */}
+          <div
+            ref={scrollRef}
+            className={cn("flex-1 overflow-y-auto px-4 py-3 relative flex flex-col", {
+              "scroll-fog": messages.length > 0,
             })}
-          </div>
-        </div>
-      </div>
+          >
+            <div ref={contentRef} className="flex flex-col flex-1">
+              {messages.length === 0 && (
+                <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
+              )}
+              <div className="space-y-3">
+                {messages.map((message, i) => {
+                  const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
+                  const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
 
-      {/* Input */}
-      <ChatInput
-        textareaRef={textareaRef}
-        inputRef={inputRef}
-        isLoading={isLoading}
-        onSubmit={handleSubmit}
-        onStop={stop}
-      />
+                  return (
+                    <div key={message.id}>
+                      <ChatMessage
+                        message={message}
+                        bookId={bookId}
+                        bookFormat={bookFormat}
+                        bookDataRef={bookDataRef}
+                        isStreaming={isCurrentlyStreaming}
+                      />
+                      {isLastAssistant && !isLoading && (
+                        <SuggestedPrompts
+                          prompts={parseSuggestedPrompts(
+                            message.parts
+                              ?.filter(
+                                (p): p is { type: "text"; text: string } => p.type === "text",
+                              )
+                              .map((p) => p.text)
+                              .join("") ?? "",
+                          )}
+                          sendMessage={sendMessage}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Input */}
+          <ChatInput
+            textareaRef={textareaRef}
+            inputRef={inputRef}
+            isLoading={isLoading}
+            onSubmit={handleSubmit}
+            onStop={stop}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -428,7 +428,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       api.addPanel({
         id: chatId,
         component: "chat",
-        title: truncateTitle(`Chat: ${book.title}`),
+        title: truncateTitle(`Discuss: ${book.title}`),
         params: { bookId: book.id, bookTitle: book.title },
         renderer: "always",
         position: { referencePanel: panelId, direction: "right" },
@@ -531,7 +531,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     api.addPanel({
       id: panelId,
       component: "chat",
-      title: truncateTitle(`Chat: ${book.title}`),
+      title: truncateTitle(`Discuss: ${book.title}`),
       params: { bookId: book.id, bookTitle: book.title },
       renderer: "always",
       ...(position ? { position } : {}),

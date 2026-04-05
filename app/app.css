@@ -176,7 +176,7 @@ body {
 /* Custom dockview theme mapped to shadcn CSS variables */
 .dockview-theme-app {
   --dv-paneview-active-outline-color: var(--ring);
-  --dv-tabs-and-actions-container-font-size: 13px;
+  --dv-tabs-and-actions-container-font-size: 12px;
   --dv-tabs-and-actions-container-height: 36px;
   --dv-drag-over-background-color: color-mix(in oklch, var(--accent) 50%, transparent);
   --dv-drag-over-border-color: var(--border);
@@ -184,7 +184,7 @@ body {
   --dv-icon-hover-background-color: var(--accent);
   --dv-floating-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   --dv-overlay-z-index: 999;
-  --dv-tab-font-size: inherit;
+  --dv-tab-font-size: 12px;
   --dv-border-radius: 0px;
   --dv-tab-margin: 0;
   --dv-sash-color: transparent;
@@ -249,6 +249,11 @@ body {
   .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {
   opacity: 0;
   transition: none;
+}
+
+.dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {
+  background-color: var(--dv-activegroup-visiblepanel-tab-background-color) !important;
+  color: var(--dv-activegroup-visiblepanel-tab-color) !important;
 }
 
 @supports (animation-timeline: scroll()) {

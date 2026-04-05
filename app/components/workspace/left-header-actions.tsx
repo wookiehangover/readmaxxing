@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import type { IDockviewHeaderActionsProps } from "dockview";
 import { Plus } from "lucide-react";
 
-export function LeftHeaderActions({ containerApi }: IDockviewHeaderActionsProps) {
+export function LeftHeaderActions({ containerApi, group }: IDockviewHeaderActionsProps) {
   const handleClick = useCallback(() => {
     const panelId = `new-tab-${crypto.randomUUID().slice(0, 8)}`;
     containerApi.addPanel({
@@ -10,8 +10,9 @@ export function LeftHeaderActions({ containerApi }: IDockviewHeaderActionsProps)
       component: "new-tab",
       title: "Library",
       params: {},
+      position: { referenceGroup: group },
     });
-  }, [containerApi]);
+  }, [containerApi, group]);
 
   return (
     <div className="flex h-full items-stretch">

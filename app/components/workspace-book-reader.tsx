@@ -521,7 +521,7 @@ function WorkspaceBookReaderInner({
       dockApi.addPanel({
         id: panelId,
         component: "chat",
-        title: truncateTitle(`Chat: ${title}`),
+        title: truncateTitle(`Discuss: ${title}`),
         params: { bookId: book.id, bookTitle: title },
         renderer: "always",
       });
@@ -537,7 +537,7 @@ function WorkspaceBookReaderInner({
     dockApi.addPanel({
       id: panelId,
       component: "chat",
-      title: truncateTitle(`Chat: ${title}`),
+      title: truncateTitle(`Discuss: ${title}`),
       params: { bookId: book.id, bookTitle: title },
       renderer: "always",
       position: rightGroup
