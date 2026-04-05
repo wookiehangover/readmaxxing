@@ -23,7 +23,7 @@ import { ChatMessage } from "./chat-message";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
 import { useChatToolHandlers } from "./use-chat-tool-handlers";
 import { ChatInput } from "./chat-input";
-import { SessionMenuButton, ChatSessionList } from "./chat-session-menu";
+import { SessionMenuButton, ChatSessionList, EditableTitle } from "./chat-session-menu";
 
 interface ChatPanelProps {
   bookId: string;
@@ -386,11 +386,24 @@ function ChatPanelInner({
           showSessionList={showSessionList}
           onToggle={() => setShowSessionList((v) => !v)}
         />
-        {sessionTitle && (
-          <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
-            {showSessionList ? "Sessions" : sessionTitle}
-          </h3>
-        )}
+        {showSessionList ? (
+          <h3 className="min-w-0 flex-1 truncate text-sm font-medium">Sessions</h3>
+        ) : sessionTitle ? (
+          <EditableTitle
+            value={sessionTitle}
+            className="min-w-0 flex-1 text-sm font-medium"
+            onSave={(newTitle) => {
+              if (!activeSessionId) return;
+              AppRuntime.runPromise(
+                ChatService.pipe(
+                  Effect.andThen((s) => s.updateSessionTitle(activeSessionId, bookId, newTitle)),
+                ),
+              )
+                .then(() => onSessionTitleChange(newTitle))
+                .catch(console.error);
+            }}
+          />
+        ) : null}
         {!showSessionList && (
           <Button
             variant="ghost"
