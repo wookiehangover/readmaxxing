@@ -1,10 +1,84 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Effect } from "effect";
 import { ArrowLeft, Menu, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { ChatService, type ChatSession } from "~/lib/chat-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { cn } from "~/lib/utils";
+
+interface EditableTitleProps {
+  value: string;
+  onSave: (newTitle: string) => void;
+  className?: string;
+}
+
+export function EditableTitle({ value, onSave, className }: EditableTitleProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  const save = () => {
+    const trimmed = draft.trim();
+    setEditing(false);
+    if (trimmed && trimmed !== value) {
+      onSave(trimmed);
+    } else {
+      setDraft(value);
+    }
+  };
+
+  const cancel = () => {
+    setEditing(false);
+    setDraft(value);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            save();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            cancel();
+          }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          "bg-transparent outline-none border-b border-muted-foreground/40 focus:border-foreground",
+          className,
+        )}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={cn("cursor-pointer truncate", className)}
+      onClick={(e) => {
+        e.stopPropagation();
+        setDraft(value);
+        setEditing(true);
+      }}
+      title="Click to rename"
+    >
+      {value || "Untitled"}
+    </span>
+  );
+}
 
 function formatRelativeTime(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -109,7 +183,21 @@ export function ChatSessionList({
                   }}
                 >
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="truncate text-xs">{session.title || "Untitled"}</span>
+                    <EditableTitle
+                      value={session.title || "Untitled"}
+                      className="text-xs"
+                      onSave={(newTitle) => {
+                        AppRuntime.runPromise(
+                          ChatService.pipe(
+                            Effect.andThen((s) =>
+                              s.updateSessionTitle(session.id, bookId, newTitle),
+                            ),
+                          ),
+                        )
+                          .then(() => loadSessions())
+                          .catch(console.error);
+                      }}
+                    />
                     <span className="text-[10px] text-muted-foreground">
                       {formatRelativeTime(session.updatedAt)}
                     </span>
