@@ -76,6 +76,14 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
           if (session) {
             setSessionTitle(session.title);
           }
+        } else {
+          // No session exists — create one so messages persist from the start
+          const newSession = await AppRuntime.runPromise(
+            ChatService.pipe(Effect.andThen((s) => s.createSession(bookId))),
+          );
+          if (cancelled) return;
+          setActiveSessionId(newSession.id);
+          setSessionTitle(newSession.title);
         }
 
         const chapters =
