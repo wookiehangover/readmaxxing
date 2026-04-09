@@ -9,7 +9,7 @@ let _client: import("@simplepasskey/browser").SimplePasskey | null = null;
 async function getClient() {
   if (!_client) {
     const { SimplePasskey } = await import("@simplepasskey/browser");
-    _client = new SimplePasskey({ clientId: "01KNSW2SAJ9X563ASQB3R6FGRQ" });
+    _client = new SimplePasskey({ clientId: "01KNSW2SAJ9X563ASQB3R6FGRQ", autoRefresh: false });
   }
   return _client;
 }
