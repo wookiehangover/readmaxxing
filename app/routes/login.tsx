@@ -1,10 +1,48 @@
 import { useState } from "react";
 import { redirect, useNavigate } from "react-router";
-import { Effect } from "effect";
+import { Cause, Effect, Runtime } from "effect";
 import { Loader2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { AuthService } from "~/lib/auth-service";
 import { AppRuntime } from "~/lib/effect-runtime";
+
+/**
+ * Extract the real error message from Effect's FiberFailure wrapper.
+ *
+ * When `AppRuntime.runPromise` rejects, the thrown value is a FiberFailure
+ * whose `.message` is the generic "An error has occurred". The actual error
+ * is buried inside the Cause chain. This walks that chain to surface the
+ * original message (e.g. from a DOMException thrown by the WebAuthn API).
+ */
+function extractErrorMessage(err: unknown, fallback: string): string {
+  // Effect FiberFailure — dig into the Cause to find our AuthError
+  if (err instanceof Error && Runtime.FiberFailureCauseId in err) {
+    const cause = (err as any)[Runtime.FiberFailureCauseId];
+    if (cause) {
+      const failures = Array.from(Cause.failures(cause));
+      if (failures.length > 0) {
+        const authErr = failures[0];
+        // AuthError has a 'cause' field holding the original error
+        if (authErr && typeof authErr === "object" && "cause" in authErr) {
+          const original = (authErr as any).cause;
+          if (original instanceof Error) return original.message;
+          if (typeof original === "string") return original;
+        }
+        // Fallback to the AuthError's own message
+        if (authErr instanceof Error) return authErr.message;
+      }
+    }
+  }
+  // Simple nested cause (non-Effect errors)
+  if (err instanceof Error && err.cause instanceof Error) {
+    return err.cause.message;
+  }
+  if (err instanceof Error && err.message && err.message !== "An error has occurred") {
+    return err.message;
+  }
+  if (typeof err === "string") return err;
+  return fallback;
+}
 
 export async function clientLoader() {
   const isAuthed = await AppRuntime.runPromise(
@@ -40,15 +78,7 @@ export default function LoginRoute() {
     } catch (err: unknown) {
       if (err instanceof Response) return;
       console.error("Register failed:", err);
-      const message =
-        err instanceof Error
-          ? err.message
-          : typeof err === "object" && err !== null && "message" in err
-            ? String((err as any).message)
-            : typeof err === "string"
-              ? err
-              : "Registration failed. Please try again.";
-      setError(message);
+      setError(extractErrorMessage(err, "Registration failed. Please try again."));
     } finally {
       setLoadingAction(null);
     }
@@ -63,15 +93,7 @@ export default function LoginRoute() {
     } catch (err: unknown) {
       if (err instanceof Response) return;
       console.error("Sign-in failed:", err);
-      const message =
-        err instanceof Error
-          ? err.message
-          : typeof err === "object" && err !== null && "message" in err
-            ? String((err as any).message)
-            : typeof err === "string"
-              ? err
-              : "Sign-in failed. Please try again.";
-      setError(message);
+      setError(extractErrorMessage(err, "Sign-in failed. Please try again."));
     } finally {
       setLoadingAction(null);
     }
