@@ -49,14 +49,13 @@ function computeTextOffset(textLayerDiv: HTMLElement, range: Range): number {
   if (!containingSpan) return 0;
 
   let offset = 0;
-  const children = textLayerDiv.children;
-  for (let i = 0; i < children.length; i++) {
-    const child = children[i];
-    if (child === containingSpan) {
+  const spans = textLayerDiv.querySelectorAll("span");
+  for (const span of spans) {
+    if (span === containingSpan) {
       offset += range.startOffset;
       break;
     }
-    offset += child.textContent?.length ?? 0;
+    offset += span.textContent?.length ?? 0;
   }
   return offset;
 }
