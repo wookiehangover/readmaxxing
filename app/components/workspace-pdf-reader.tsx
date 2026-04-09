@@ -271,7 +271,11 @@ function WorkspacePdfReaderInner({
             />
           </div>
         )}
-        <div ref={containerRef} className="h-full overflow-auto" data-testid="pdf-container" />
+        <div
+          ref={containerRef}
+          className="absolute inset-0 overflow-auto"
+          data-testid="pdf-container"
+        />
         {!isScrollMode && (
           <div className="pointer-events-none absolute inset-0 z-[5]">
             <button
