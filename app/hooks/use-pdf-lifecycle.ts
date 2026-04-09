@@ -46,7 +46,34 @@ export interface UsePdfLifecycleReturn {
 function layoutToScrollMode(layout: PdfLayout): number {
   // ScrollMode values: VERTICAL=0, PAGE=3
   if (layout === "continuous") return 0; // ScrollMode.VERTICAL
+  if (layout === "two-page") return 3; // ScrollMode.PAGE — paired with SpreadMode.EVEN
   return 3; // ScrollMode.PAGE — single-page for all other modes
+}
+
+/** Map our PdfLayout setting to a pdf.js named scale value */
+function layoutToScaleValue(layout: PdfLayout): string {
+  switch (layout) {
+    case "original":
+      return "page-actual";
+    case "fit-width":
+      return "page-width";
+    case "fit-height":
+      return "page-fit";
+    case "two-page":
+      return "page-width";
+    case "continuous":
+      return "page-width";
+    default:
+      return "page-width";
+  }
+}
+
+/** Apply layout-based scale and spread mode to a PDFViewer */
+function applyLayoutToViewer(viewer: any, layout: PdfLayout): void {
+  // SpreadMode: NONE=0, ODD=1, EVEN=2
+  viewer.spreadMode = layout === "two-page" ? 2 : 0;
+  viewer.scrollMode = layoutToScrollMode(layout);
+  viewer.currentScaleValue = layoutToScaleValue(layout);
 }
 
 export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleReturn {
@@ -177,8 +204,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       viewerRef.current = viewer;
       linkService.setViewer(viewer);
 
-      // Set scroll mode based on layout
+      // Set initial scroll/spread mode based on layout
       viewer.scrollMode = layoutToScrollMode(configRef.current.pdfLayout);
+      viewer.spreadMode = configRef.current.pdfLayout === "two-page" ? 2 : 0;
 
       // Listen for page changes
       eventBus.on("pagechanging", (evt: any) => {
@@ -210,11 +238,10 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       linkService.setDocument(doc, null);
       findController.setDocument(doc);
 
-      // Apply initial scale
-      const zoomScale = fontSize / 100;
+      // Apply initial layout-based scale
       // Wait for first page to render before setting scale
       eventBus.on("pagesinit", () => {
-        viewer.currentScale = zoomScale;
+        applyLayoutToViewer(viewer, configRef.current.pdfLayout);
 
         // Restore reading position
         resolveStartCfi({
@@ -297,11 +324,11 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     viewer.currentScale = zoomScale;
   }, [fontSize]);
 
-  // Update scroll mode when pdfLayout changes
+  // Update scroll mode, spread mode, and scale when pdfLayout changes
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || !pdfDocRef.current) return;
-    viewer.scrollMode = layoutToScrollMode(pdfLayout);
+    applyLayoutToViewer(viewer, pdfLayout);
   }, [pdfLayout]);
 
   // Update page colors when theme changes
