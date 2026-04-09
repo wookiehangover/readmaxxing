@@ -57,10 +57,7 @@ export function EditableTitle({ value, onSave, className }: EditableTitleProps) 
           }
         }}
         onClick={(e) => e.stopPropagation()}
-        className={cn(
-          "bg-transparent outline-none border-none",
-          className,
-        )}
+        className={cn("bg-transparent outline-none border-none", className)}
       />
     );
   }
