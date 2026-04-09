@@ -37,9 +37,18 @@ export default function LoginRoute() {
     try {
       await AppRuntime.runPromise(AuthService.pipe(Effect.andThen((s) => s.register("Reader"))));
       navigate("/", { replace: true });
-    } catch (err) {
+    } catch (err: unknown) {
       if (err instanceof Response) return;
-      setError(err instanceof Error ? err.message : "Registration failed. Please try again.");
+      console.error("Register failed:", err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "object" && err !== null && "message" in err
+            ? String((err as any).message)
+            : typeof err === "string"
+              ? err
+              : "Registration failed. Please try again.";
+      setError(message);
     } finally {
       setLoadingAction(null);
     }
@@ -51,9 +60,18 @@ export default function LoginRoute() {
     try {
       await AppRuntime.runPromise(AuthService.pipe(Effect.andThen((s) => s.signIn())));
       navigate("/", { replace: true });
-    } catch (err) {
+    } catch (err: unknown) {
       if (err instanceof Response) return;
-      setError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
+      console.error("Sign-in failed:", err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "object" && err !== null && "message" in err
+            ? String((err as any).message)
+            : typeof err === "string"
+              ? err
+              : "Sign-in failed. Please try again.";
+      setError(message);
     } finally {
       setLoadingAction(null);
     }
