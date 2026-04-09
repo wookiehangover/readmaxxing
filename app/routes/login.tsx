@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { redirect, useNavigate } from "react-router";
 import { Effect } from "effect";
 import { Loader2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -11,7 +11,7 @@ export async function clientLoader() {
     AuthService.pipe(Effect.andThen((s) => s.isAuthenticated())),
   );
   if (isAuthed) {
-    throw new Response(null, { status: 302, headers: { Location: "/" } });
+    throw redirect("/");
   }
   return {};
 }
@@ -36,8 +36,9 @@ export default function LoginRoute() {
     setLoadingAction("register");
     try {
       await AppRuntime.runPromise(AuthService.pipe(Effect.andThen((s) => s.register("Reader"))));
-      navigate("/");
+      navigate("/", { replace: true });
     } catch (err) {
+      if (err instanceof Response) return;
       setError(err instanceof Error ? err.message : "Registration failed. Please try again.");
     } finally {
       setLoadingAction(null);
@@ -49,8 +50,9 @@ export default function LoginRoute() {
     setLoadingAction("signin");
     try {
       await AppRuntime.runPromise(AuthService.pipe(Effect.andThen((s) => s.signIn())));
-      navigate("/");
+      navigate("/", { replace: true });
     } catch (err) {
+      if (err instanceof Response) return;
       setError(err instanceof Error ? err.message : "Sign-in failed. Please try again.");
     } finally {
       setLoadingAction(null);

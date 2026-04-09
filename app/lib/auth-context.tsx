@@ -28,15 +28,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
 
-    // Check initial auth state
+    // Check initial auth state — use getSession() first (sync, no network)
+    // to avoid triggering a refresh 401 for unauthenticated users.
     const init = Effect.gen(function* () {
       const auth = yield* AuthService;
-      const authenticated = yield* auth.isAuthenticated();
-      let session: Session | null = null;
-      if (authenticated) {
-        session = yield* auth.getSession();
+      const session = yield* auth.getSession();
+      // If no JWT stored, skip isAuthenticated() which triggers a refresh attempt
+      if (!session.jwt) {
+        return { authenticated: false, session: null };
       }
-      return { authenticated, session };
+      const authenticated = yield* auth.isAuthenticated();
+      return { authenticated, session: authenticated ? session : null };
     });
 
     AppRuntime.runPromise(init)
