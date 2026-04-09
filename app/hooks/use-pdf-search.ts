@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from "react";
+import { useEffect, useCallback, useState, useSyncExternalStore } from "react";
 
 interface UsePdfSearchOptions {
   /** Reference to the EventBus from PDFViewer */
@@ -6,6 +6,26 @@ interface UsePdfSearchOptions {
   bookId: string;
   /** When provided, Cmd/Ctrl+F is only intercepted if this element (or a descendant) has focus. */
   panelRef?: React.RefObject<HTMLElement | null>;
+}
+
+/**
+ * Polls a ref until its `.current` is non-null and returns a stable snapshot.
+ * This lets us use eventBusRef.current as a useEffect dependency — the effect
+ * re-runs when the ref value changes from null to the actual EventBus instance.
+ */
+function useRefValue<T>(ref: React.RefObject<T>): T | null {
+  const subscribe = useCallback(
+    (cb: () => void) => {
+      // Poll every 100ms until the ref is assigned
+      const id = setInterval(() => {
+        cb();
+      }, 100);
+      return () => clearInterval(id);
+    },
+    [], // stable — no deps needed
+  );
+  const getSnapshot = useCallback(() => ref.current, [ref]);
+  return useSyncExternalStore(subscribe, getSnapshot, () => null);
 }
 
 interface UsePdfSearchReturn {
@@ -34,9 +54,11 @@ export function usePdfSearch({
   const [searchResultCount, setSearchResultCount] = useState(0);
   const [searchIndex, setSearchIndex] = useState(0);
 
+  // Track when eventBusRef.current becomes available (it's assigned async in use-pdf-lifecycle)
+  const eventBus = useRefValue(eventBusRef);
+
   // Listen for find result updates from PDFFindController
   useEffect(() => {
-    const eventBus = eventBusRef.current;
     if (!eventBus) return;
 
     const onMatchesCount = (evt: any) => {
@@ -54,7 +76,7 @@ export function usePdfSearch({
       eventBus.off("updatefindmatchescount", onMatchesCount);
       eventBus.off("updatefindcontrolstate", onMatchesCount);
     };
-  }, [eventBusRef]);
+  }, [eventBus]);
 
   const dispatchFind = useCallback(
     (query: string, type: string = "") => {
@@ -136,15 +158,10 @@ export function usePdfSearch({
     setSearchQuery("");
     setSearchResultCount(0);
     setSearchIndex(0);
-    // Clear find highlights
-    const eventBus = eventBusRef.current;
-    if (eventBus) {
-      eventBus.dispatch("find", {
-        type: "",
-        query: "",
-        caseSensitive: false,
-        highlightAll: false,
-      });
+    // Clear find highlights and notify PDFFindController the find bar is closed
+    const eb = eventBusRef.current;
+    if (eb) {
+      eb.dispatch("findbarclose", {});
     }
   }, [eventBusRef]);
 
