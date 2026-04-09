@@ -185,7 +185,7 @@ test.describe("PDF support", () => {
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 
     // Wait for text layer to render
-    const textLayer = pdfContainer.locator(".pdf-text-layer").first();
+    const textLayer = pdfContainer.locator(".textLayer").first();
     await expect(textLayer).toBeAttached({ timeout: 10_000 });
 
     // Select text by triple-clicking a span in the text layer (force because text layer is transparent)
@@ -209,7 +209,7 @@ test.describe("PDF support", () => {
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 
     // Wait for text layer to render
-    const textLayer = pdfContainer.locator(".pdf-text-layer").first();
+    const textLayer = pdfContainer.locator(".textLayer").first();
     await expect(textLayer).toBeAttached({ timeout: 10_000 });
 
     // Select text by triple-clicking a span (force because text layer is transparent)
