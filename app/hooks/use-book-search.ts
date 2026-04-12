@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type EpubBook from "epubjs/types/book";
-import { searchBookForCfi, type SearchResult } from "~/lib/epub-search";
+import { searchBookForCfi, type SearchResult } from "~/lib/epub/epub-search";
 
-export type { SearchResult } from "~/lib/epub-search";
+export type { SearchResult } from "~/lib/epub/epub-search";
 
 interface UseBookSearchReturn {
   search: (query: string) => void;

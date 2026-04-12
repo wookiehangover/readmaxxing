@@ -1,8 +1,8 @@
 import type React from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import type { ChatMessage, SerializedPart } from "~/lib/chat-store";
-import type { BookChapter } from "~/lib/epub-text-extract";
+import type { ChatMessage, SerializedPart } from "~/lib/stores/chat-store";
+import type { BookChapter } from "~/lib/epub/epub-text-extract";
 
 /** Extract a normalized tool info object from an AI SDK tool part (static or dynamic). */
 export function getToolInfo(part: any): {

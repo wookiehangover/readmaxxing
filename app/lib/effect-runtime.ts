@@ -1,7 +1,7 @@
 import { Layer, ManagedRuntime } from "effect";
 import { AnnotationServiceLive } from "~/lib/stores/annotations-store";
 import { BookServiceLive } from "~/lib/stores/book-store";
-import { EpubServiceLive } from "~/lib/epub-service";
+import { EpubServiceLive } from "~/lib/epub/epub-service";
 import { LocationCacheServiceLive } from "~/lib/stores/location-cache-store";
 import { ReadingPositionServiceLive } from "~/lib/stores/position-store";
 import { StandardEbooksServiceLive } from "~/lib/standard-ebooks";

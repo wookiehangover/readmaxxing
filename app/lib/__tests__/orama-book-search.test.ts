@@ -5,7 +5,7 @@ import {
   getOrBuildBookIndex,
   clearBookIndexCache,
 } from "~/lib/orama-book-search";
-import type { BookChapter } from "~/lib/epub-text-extract";
+import type { BookChapter } from "~/lib/epub/epub-text-extract";
 
 function makeChapter(overrides: Partial<BookChapter> & { index: number }): BookChapter {
   return {

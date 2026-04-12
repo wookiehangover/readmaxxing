@@ -22,7 +22,7 @@ import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { cn } from "~/lib/utils";
-import { registerThemeColors, injectThemeColors } from "~/lib/epub-theme-utils";
+import { registerThemeColors, injectThemeColors } from "~/lib/epub/epub-theme-utils";
 import type { DockviewPanelApi } from "dockview";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";

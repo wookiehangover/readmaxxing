@@ -4,7 +4,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { z } from "zod";
 import type { Route } from "./+types/api.chat";
 import { SE_BASE, parseSearchHtml } from "./api.standard-ebooks.search";
-import type { BookChapter } from "~/lib/epub-text-extract";
+import type { BookChapter } from "~/lib/epub/epub-text-extract";
 import { getOrBuildBookIndex, searchBook } from "~/lib/orama-book-search";
 
 interface ChatRequestBody {
