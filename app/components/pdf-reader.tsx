@@ -3,7 +3,7 @@ import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
-import type { BookMeta } from "~/lib/book-store";
+import type { BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { AnnotationsPanel } from "~/components/annotations-panel";
@@ -13,7 +13,7 @@ import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { usePdfSearch } from "~/hooks/use-pdf-search";
 import { usePdfHighlights } from "~/hooks/use-pdf-highlights";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
-import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
+import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
 
 interface PdfReaderProps {
   book: BookMeta;

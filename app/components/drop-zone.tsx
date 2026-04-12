@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, type DragEvent } from "react";
 import { Effect } from "effect";
-import { parseEpubEffect } from "~/lib/epub-service";
+import { parseEpubEffect } from "~/lib/epub/epub-service";
 import { parsePdfEffect } from "~/lib/pdf/pdf-service";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import type { BookFormat } from "~/lib/stores/book-store";

@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { Route } from "./+types/book";
-import { BookService } from "~/lib/book-store";
+import { BookService } from "~/lib/stores/book-store";
 import { BookReader } from "~/components/book-reader";
 import { PdfReader } from "~/components/pdf-reader";
 import { AppRuntime } from "~/lib/effect-runtime";

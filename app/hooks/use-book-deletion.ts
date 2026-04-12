@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { Effect } from "effect";
-import { BookService } from "~/lib/book-store";
-import { AnnotationService } from "~/lib/annotations-store";
+import { BookService } from "~/lib/stores/book-store";
+import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 
 interface UseBookDeletionOptions {

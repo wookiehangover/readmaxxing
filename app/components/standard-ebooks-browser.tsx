@@ -6,7 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import { parseEpubEffect } from "~/lib/epub-service";
+import { parseEpubEffect } from "~/lib/epub/epub-service";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 

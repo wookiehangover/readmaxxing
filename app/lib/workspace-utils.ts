@@ -1,4 +1,4 @@
-import type { BookMeta } from "~/lib/book-store";
+import type { BookMeta } from "~/lib/stores/book-store";
 import type { WorkspaceSortBy } from "~/lib/settings";
 
 export function truncateTitle(title: string, maxLength = 30): string {

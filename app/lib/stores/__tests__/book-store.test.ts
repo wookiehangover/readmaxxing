@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { createStore, set, get } from "idb-keyval";
-import { BookService, makeBookService } from "~/lib/book-store";
-import type { Book } from "~/lib/book-store";
-import { ReadingPositionService, makePositionService } from "~/lib/position-store";
+import { BookService, makeBookService } from "~/lib/stores/book-store";
+import type { Book } from "~/lib/stores/book-store";
+import { ReadingPositionService, makePositionService } from "~/lib/stores/position-store";
 
 function makeBook(overrides: Partial<Book> = {}): Book {
   return {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { createStore } from "idb-keyval";
-import { WorkspaceService, makeWorkspaceService } from "~/lib/workspace-store";
+import { WorkspaceService, makeWorkspaceService } from "~/lib/stores/workspace-store";
 import type { SerializedDockview } from "dockview";
 
 let testCounter = 0;
