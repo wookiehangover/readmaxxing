@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { getFontFallback, getTypographyCss, getRenditionOptions } from "~/lib/epub/epub-rendering-utils";
+import {
+  getFontFallback,
+  getTypographyCss,
+  getRenditionOptions,
+} from "~/lib/epub/epub-rendering-utils";
 
 describe("getFontFallback", () => {
   it("returns sans-serif for Geist", () => {

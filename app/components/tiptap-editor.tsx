@@ -4,7 +4,10 @@ import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import { useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { Navigation, Trash2 } from "lucide-react";
-import { HighlightReference, type HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
+import {
+  HighlightReference,
+  type HighlightReferenceAttrs,
+} from "~/lib/editor/tiptap-highlight-node";
 
 export interface TiptapEditorHandle {
   appendHighlightReference: (attrs: HighlightReferenceAttrs) => void;
