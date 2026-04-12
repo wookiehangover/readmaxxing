@@ -5,20 +5,20 @@ import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
-import type { BookMeta } from "~/lib/book-store";
+import type { BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
-import { useHighlights } from "~/lib/use-highlights";
-import { useReaderNavigation } from "~/lib/reader-context";
+import { useHighlights } from "~/hooks/use-highlights";
+import { useReaderNavigation } from "~/lib/context/reader-context";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
-import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
+import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
 import { cn } from "~/lib/utils";
 import { SearchBar } from "~/components/search-bar";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useReaderSearch } from "~/hooks/use-reader-search";
-import { AnnotationService } from "~/lib/annotations-store";
+import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 
 interface BookReaderProps {

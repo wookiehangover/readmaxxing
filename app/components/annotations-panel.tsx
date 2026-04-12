@@ -4,11 +4,11 @@ import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { X, Download } from "lucide-react";
 import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
-import { AnnotationService } from "~/lib/annotations-store";
+import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import type { JSONContent } from "@tiptap/react";
-import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
-import { useEffectQuery } from "~/lib/use-effect-query";
+import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
+import { useEffectQuery } from "~/hooks/use-effect-query";
 
 interface AnnotationsPanelProps {
   bookId: string;

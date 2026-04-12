@@ -11,13 +11,13 @@ import {
 import { Download, Ellipsis, FileText } from "lucide-react";
 import { Link } from "react-router";
 import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
-import { AnnotationService } from "~/lib/annotations-store";
-import { BookService } from "~/lib/book-store";
+import { AnnotationService } from "~/lib/stores/annotations-store";
+import { BookService } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import type { JSONContent } from "@tiptap/react";
-import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
-import { useEffectQuery } from "~/lib/use-effect-query";
-import type { HighlightReferenceAttrs } from "~/lib/tiptap-highlight-node";
+import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
+import { useEffectQuery } from "~/hooks/use-effect-query";
+import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
 
 interface WorkspaceNotebookProps {
   bookId: string;
