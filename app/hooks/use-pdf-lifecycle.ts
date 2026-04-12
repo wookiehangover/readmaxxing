@@ -6,7 +6,7 @@ import { ReadingPositionService } from "~/lib/stores/position-store";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { PdfLayout, Theme } from "~/lib/settings";
 import { resolveTheme } from "~/lib/settings";
-import type { TocEntry } from "~/lib/reader-context";
+import type { TocEntry } from "~/lib/context/reader-context";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 

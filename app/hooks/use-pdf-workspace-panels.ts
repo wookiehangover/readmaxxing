@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import { useWorkspace } from "~/lib/workspace-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
 import { useIsMobile } from "~/hooks/use-mobile";

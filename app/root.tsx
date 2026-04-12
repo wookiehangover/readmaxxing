@@ -10,7 +10,7 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import { ThemeEffect } from "~/components/theme-effect";
-import { AuthProvider } from "~/lib/auth-context";
+import { AuthProvider } from "~/lib/context/auth-context";
 import { COLOR_THEMES } from "~/lib/color-themes";
 
 // Build a minimal JSON blob of non-default theme CSS variables for the FOUC script.

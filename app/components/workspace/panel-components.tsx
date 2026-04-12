@@ -8,8 +8,8 @@ import {
 import { WorkspacePdfReader } from "~/components/workspace-pdf-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
 import { ChatPanel as ChatPanelComponent } from "~/components/chat/chat-panel";
-import { useWorkspace } from "~/lib/workspace-context";
-import { AnnotationService } from "~/lib/annotations-store";
+import { useWorkspace } from "~/lib/context/workspace-context";
+import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 
 export function BookReaderPanel({
