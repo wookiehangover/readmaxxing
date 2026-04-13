@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { createStore } from "idb-keyval";
-import { AnnotationService, makeAnnotationService } from "~/lib/annotations-store";
-import type { Highlight, Notebook } from "~/lib/annotations-store";
+import { AnnotationService, makeAnnotationService } from "~/lib/stores/annotations-store";
+import type { Highlight, Notebook } from "~/lib/stores/annotations-store";
 
 function makeHighlight(overrides: Partial<Highlight> = {}): Highlight {
   return {

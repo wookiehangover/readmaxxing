@@ -12,13 +12,13 @@ import {
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
-import { BookService, type BookMeta } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { SearchBar } from "~/components/search-bar";
-import { useEffectQuery } from "~/lib/use-effect-query";
+import { useEffectQuery } from "~/hooks/use-effect-query";
 import { cn } from "~/lib/utils";
 import type { DockviewPanelApi } from "dockview";
 import { useIsMobile } from "~/hooks/use-mobile";
@@ -26,7 +26,7 @@ import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { usePdfSearch } from "~/hooks/use-pdf-search";
 import { usePdfHighlights } from "~/hooks/use-pdf-highlights";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
-import { useWorkspace } from "~/lib/workspace-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
 import { usePdfWorkspacePanels } from "~/hooks/use-pdf-workspace-panels";
 import type { PanelTypographyParams } from "~/components/workspace-book-reader";
 

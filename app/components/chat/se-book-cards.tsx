@@ -2,11 +2,11 @@ import { useState, useCallback } from "react";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { Globe, Loader2, Plus, Check } from "lucide-react";
-import { BookService, type BookMeta } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
-import { parseEpubEffect } from "~/lib/epub-service";
+import { parseEpubEffect } from "~/lib/epub/epub-service";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { useWorkspace } from "~/lib/workspace-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
 
 /** Inline SE book card for chat results — compact horizontal layout. */
 export function ChatSEBookCard({

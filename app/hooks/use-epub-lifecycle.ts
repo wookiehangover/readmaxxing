@@ -3,16 +3,20 @@ import ePub from "epubjs";
 import type EpubBook from "epubjs/types/book";
 import type Rendition from "epubjs/types/rendition";
 import { Effect } from "effect";
-import { BookService } from "~/lib/book-store";
+import { BookService } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { LocationCacheService } from "~/lib/location-cache-store";
-import { ReadingPositionService } from "~/lib/position-store";
+import { LocationCacheService } from "~/lib/stores/location-cache-store";
+import { ReadingPositionService } from "~/lib/stores/position-store";
 import { resolveTheme } from "~/lib/settings";
 import type { ReaderLayout, Theme } from "~/lib/settings";
-import { registerThemeColors, getThemeColorCss, injectThemeColors } from "~/lib/epub-theme-utils";
+import {
+  registerThemeColors,
+  getThemeColorCss,
+  injectThemeColors,
+} from "~/lib/epub/epub-theme-utils";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
-import { getTypographyCss, getRenditionOptions } from "~/lib/epub-rendering-utils";
-import type { TocEntry } from "~/lib/reader-context";
+import { getTypographyCss, getRenditionOptions } from "~/lib/epub/epub-rendering-utils";
+import type { TocEntry } from "~/lib/context/reader-context";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 

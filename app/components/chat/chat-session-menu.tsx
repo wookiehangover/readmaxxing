@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Effect } from "effect";
 import { ArrowLeft, Menu, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { ChatService, type ChatSession } from "~/lib/chat-store";
+import { ChatService, type ChatSession } from "~/lib/stores/chat-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { cn } from "~/lib/utils";
 

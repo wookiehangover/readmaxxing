@@ -1,12 +1,12 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { Effect } from "effect";
-import { BookService } from "~/lib/book-store";
+import { BookService } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { ReadingPositionService } from "~/lib/position-store";
+import { ReadingPositionService } from "~/lib/stores/position-store";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { PdfLayout, Theme } from "~/lib/settings";
 import { resolveTheme } from "~/lib/settings";
-import type { TocEntry } from "~/lib/reader-context";
+import type { TocEntry } from "~/lib/context/reader-context";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 

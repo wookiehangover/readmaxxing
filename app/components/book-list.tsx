@@ -4,8 +4,8 @@ import { Search } from "lucide-react";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
-import type { BookMeta } from "~/lib/book-store";
-import { useReaderNavigation, type TocEntry } from "~/lib/reader-context";
+import type { BookMeta } from "~/lib/stores/book-store";
+import { useReaderNavigation, type TocEntry } from "~/lib/context/reader-context";
 import { cn } from "~/lib/utils";
 
 interface BookListProps {

@@ -3,13 +3,13 @@ import { Effect } from "effect";
 import { Link, Outlet, useLocation } from "react-router";
 import { Menu, PanelsTopLeft, Settings } from "lucide-react";
 import type { Route } from "./+types/library";
-import { BookService, type BookMeta } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useSettings } from "~/lib/settings";
 import { DropZone } from "~/components/drop-zone";
 import { BookList } from "~/components/book-list";
 import { ThemeToggle } from "~/components/theme-toggle";
-import { ReaderNavigationProvider } from "~/lib/reader-context";
+import { ReaderNavigationProvider } from "~/lib/context/reader-context";
 import { useIsMobile } from "~/hooks/use-mobile";
 import {
   Sheet,

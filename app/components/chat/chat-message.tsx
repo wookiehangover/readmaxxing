@@ -5,7 +5,7 @@ import { Streamdown } from "streamdown";
 import type { Components } from "streamdown";
 import type { SEBook } from "~/lib/standard-ebooks";
 import { cn } from "~/lib/utils";
-import { useWorkspace } from "~/lib/workspace-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
 import { getToolInfo, stripSuggestedPrompts } from "./chat-utils";
 import { SEBookCardsInChat } from "./se-book-cards";
 
@@ -89,7 +89,7 @@ export function ChatMessage({
             if (bookFormat === "pdf") {
               // PDF path: search for text and navigate to page
               const pdfjs = await import("pdfjs-dist");
-              const { searchPdf } = await import("~/lib/pdf-search");
+              const { searchPdf } = await import("~/lib/pdf/pdf-search");
               const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
               pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href;
               const dataCopy = new Uint8Array(data).slice();
@@ -116,7 +116,7 @@ export function ChatMessage({
               console.debug("Ref navigation (PDF): no results for query:", queryStr);
             } else {
               const ePub = (await import("epubjs")).default;
-              const { fuzzySearchBookForCfi } = await import("~/lib/epub-search");
+              const { fuzzySearchBookForCfi } = await import("~/lib/epub/epub-search");
               const book = ePub(data.slice(0));
               try {
                 const results = await fuzzySearchBookForCfi(book, queryStr);

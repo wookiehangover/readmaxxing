@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { Effect } from "effect";
 import type Rendition from "epubjs/types/rendition";
-import { AnnotationService, type Highlight } from "~/lib/annotations-store";
+import { AnnotationService, type Highlight } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { type Theme, resolveTheme } from "~/lib/settings";
 

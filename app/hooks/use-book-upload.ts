@@ -1,10 +1,10 @@
 import { useCallback } from "react";
 import type React from "react";
 import { Effect } from "effect";
-import { BookService, type BookMeta } from "~/lib/book-store";
-import type { BookFormat } from "~/lib/book-store";
-import { parseEpubEffect } from "~/lib/epub-service";
-import { parsePdfEffect } from "~/lib/pdf-service";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
+import type { BookFormat } from "~/lib/stores/book-store";
+import { parseEpubEffect } from "~/lib/epub/epub-service";
+import { parsePdfEffect } from "~/lib/pdf/pdf-service";
 import { AppRuntime } from "~/lib/effect-runtime";
 
 interface UseBookUploadOptions {

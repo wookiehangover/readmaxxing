@@ -14,20 +14,20 @@ import { SearchBar } from "~/components/search-bar";
 import { useReaderSearch } from "~/hooks/use-reader-search";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
-import { BookService, type BookMeta } from "~/lib/book-store";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { PdfLayout, ReaderLayout, Settings } from "~/lib/settings";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
-import { useHighlights } from "~/lib/use-highlights";
-import { useEffectQuery } from "~/lib/use-effect-query";
+import { useHighlights } from "~/hooks/use-highlights";
+import { useEffectQuery } from "~/hooks/use-effect-query";
 import { cn } from "~/lib/utils";
-import { registerThemeColors, injectThemeColors } from "~/lib/epub-theme-utils";
+import { registerThemeColors, injectThemeColors } from "~/lib/epub/epub-theme-utils";
 import type { DockviewPanelApi } from "dockview";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
-import { useWorkspace } from "~/lib/workspace-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
 import { truncateTitle } from "~/lib/workspace-utils";
 
 /** Typography overrides restored from dockview panel params */

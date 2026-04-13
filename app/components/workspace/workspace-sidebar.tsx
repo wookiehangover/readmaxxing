@@ -14,10 +14,10 @@ import { BookCover, filterBooks, FILTER_THRESHOLD } from "~/components/book-list
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
-import type { BookMeta } from "~/lib/book-store";
+import type { BookMeta } from "~/lib/stores/book-store";
 import type { WorkspaceSortBy } from "~/lib/settings";
 import { cn } from "~/lib/utils";
-import { useWorkspace } from "~/lib/workspace-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
 
 /** Delay after sidebar CSS transition before dispatching resize (ms) */
 const SIDEBAR_TRANSITION_MS = 270;

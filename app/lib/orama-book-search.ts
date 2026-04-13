@@ -1,6 +1,6 @@
 import { create, insertMultiple, search } from "@orama/orama";
 import type { AnyOrama } from "@orama/orama";
-import type { BookChapter } from "~/lib/epub-text-extract";
+import type { BookChapter } from "~/lib/epub/epub-text-extract";
 
 /**
  * Schema for paragraph-sized chunks of book content, indexed by Orama.

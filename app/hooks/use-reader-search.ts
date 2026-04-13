@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { useBookSearch } from "~/lib/use-book-search";
+import { useBookSearch } from "~/hooks/use-book-search";
 
 interface UseReaderSearchOptions {
   bookRef: React.RefObject<import("epubjs/types/book").default | null>;

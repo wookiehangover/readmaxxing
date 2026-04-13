@@ -1,5 +1,5 @@
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
-import type { BookChapter } from "~/lib/epub-text-extract";
+import type { BookChapter } from "~/lib/epub/epub-text-extract";
 
 /**
  * Configure the pdfjs worker. Reuses the same pattern as pdf-service.ts.

@@ -1,9 +1,9 @@
 import { useCallback } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import { Effect } from "effect";
-import { AnnotationService } from "~/lib/annotations-store";
+import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { useWorkspace } from "~/lib/workspace-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
 import { getToolInfo } from "./chat-utils";
 
 interface UseChatToolHandlersOptions {
@@ -91,7 +91,7 @@ export function useChatToolHandlers({
             if (bookFormat === "pdf") {
               // PDF path: search for text and navigate to page
               const pdfjs = await import("pdfjs-dist");
-              const { searchPdf } = await import("~/lib/pdf-search");
+              const { searchPdf } = await import("~/lib/pdf/pdf-search");
               const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
               pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href;
               const dataCopy = new Uint8Array(data).slice();
@@ -163,7 +163,7 @@ export function useChatToolHandlers({
             } else {
               // Epub path
               const ePub = (await import("epubjs")).default;
-              const { fuzzySearchBookForCfi } = await import("~/lib/epub-search");
+              const { fuzzySearchBookForCfi } = await import("~/lib/epub/epub-search");
               const tempBook = ePub(data.slice(0));
               try {
                 const results = await fuzzySearchBookForCfi(tempBook, highlightText);

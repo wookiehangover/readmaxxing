@@ -5,10 +5,10 @@ import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
-import { BookService, type BookMeta } from "~/lib/book-store";
-import { parseEpubEffect } from "~/lib/epub-service";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
+import { parseEpubEffect } from "~/lib/epub/epub-service";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { useEffectQuery } from "~/lib/use-effect-query";
+import { useEffectQuery } from "~/hooks/use-effect-query";
 
 interface StandardEbooksBrowserProps {
   onBookAdded: (book: BookMeta) => void;

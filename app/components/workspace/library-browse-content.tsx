@@ -9,10 +9,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import type { BookMeta } from "~/lib/book-store";
-import { useBookUpload } from "~/lib/use-book-upload";
-import { useBookDeletion } from "~/lib/use-book-deletion";
-import { useWorkspace } from "~/lib/workspace-context";
+import type { BookMeta } from "~/lib/stores/book-store";
+import { useBookUpload } from "~/hooks/use-book-upload";
+import { useBookDeletion } from "~/hooks/use-book-deletion";
+import { useWorkspace } from "~/lib/context/workspace-context";
 
 export function LibraryBrowseContent() {
   const ws = useWorkspace();

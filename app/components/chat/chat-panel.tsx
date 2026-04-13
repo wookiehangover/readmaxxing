@@ -4,15 +4,15 @@ import { Effect } from "effect";
 import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "~/components/ui/button";
 import { Plus } from "lucide-react";
-import { ChatService } from "~/lib/chat-store";
-import { BookService } from "~/lib/book-store";
-import { AnnotationService } from "~/lib/annotations-store";
+import { ChatService } from "~/lib/stores/chat-store";
+import { BookService } from "~/lib/stores/book-store";
+import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { tiptapJsonToMarkdown } from "~/lib/tiptap-to-markdown";
-import { extractBookChapters, type BookChapter } from "~/lib/epub-text-extract";
-import { extractPdfChapters } from "~/lib/pdf-text-extract";
+import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
+import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
+import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
 import { cn } from "~/lib/utils";
-import { useWorkspace } from "~/lib/workspace-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
 import {
   toUIMessages,
   toChatMessages,
