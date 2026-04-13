@@ -32,12 +32,12 @@ export async function loader() {
 
   // Persist challenge for verification step
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_SECONDS * 1000);
-  await saveChallenge({
+  const challengeRow = await saveChallenge({
     userId: user.id,
     challenge: options.challenge,
     type: "registration",
     expiresAt,
   });
 
-  return Response.json({ options, userId: user.id });
+  return Response.json({ options, userId: user.id, challengeId: challengeRow?.id ?? null });
 }

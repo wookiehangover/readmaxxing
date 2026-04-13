@@ -45,10 +45,10 @@ function extractErrorMessage(err: unknown, fallback: string): string {
 }
 
 export async function clientLoader() {
-  const isAuthed = await AppRuntime.runPromise(
-    AuthService.pipe(Effect.andThen((s) => s.isAuthenticated())),
+  const session = await AppRuntime.runPromise(
+    AuthService.pipe(Effect.andThen((s) => s.getSession())),
   );
-  if (isAuthed) {
+  if (session.user) {
     throw redirect("/");
   }
   return {};
