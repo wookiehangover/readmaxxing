@@ -45,32 +45,41 @@ export function useChatToolHandlers({
 
         const toolCallId = (toolCall as any).toolCallId as string | undefined;
 
-        // If streaming already inserted this content, just update markdown state
-        // (the streaming hook already did replaceContentFrom with the final text)
-        if (
-          streamedToolCallIdRef?.current &&
-          toolCallId &&
-          streamedToolCallIdRef.current === toolCallId
-        ) {
-          streamedToolCallIdRef.current = null;
-          setNotebookMarkdown((prev) => prev + "\n" + text);
-          return;
-        }
-
         const parsed = markdownToTiptapJson(text);
         const newNodes = parsed.content ?? [];
 
-        // Try live editor first — if notebook panel is open, push through it
-        // The editor's onUpdate will trigger the debounced save automatically
+        // If streaming already inserted this content via replaceContentFrom,
+        // skip the editor append but still persist to IndexedDB below.
+        const alreadyStreamed =
+          streamedToolCallIdRef?.current &&
+          toolCallId &&
+          streamedToolCallIdRef.current === toolCallId;
+
+        if (alreadyStreamed) {
+          streamedToolCallIdRef.current = null;
+        }
+
+        // Push through live editor if notebook panel is open and content wasn't already streamed
         const editorCallbacks = notebookEditorCallbackMap.current.get(bookId);
-        if (editorCallbacks) {
+        if (editorCallbacks && !alreadyStreamed) {
           editorCallbacks.appendContent(newNodes);
-          setNotebookMarkdown((prev) => prev + "\n" + text);
-        } else {
-          // Fallback: write directly to IndexedDB when notebook panel is not open
-          await AppRuntime.runPromise(
-            Effect.gen(function* () {
-              const svc = yield* AnnotationService;
+        }
+
+        // Always persist to IndexedDB immediately so content survives panel close/unmount
+        await AppRuntime.runPromise(
+          Effect.gen(function* () {
+            const svc = yield* AnnotationService;
+            // If the editor is open, read the authoritative content from it
+            const editorCbs = notebookEditorCallbackMap.current.get(bookId);
+            if (editorCbs) {
+              const currentContent = editorCbs.getContent();
+              yield* svc.saveNotebook({
+                bookId,
+                content: currentContent,
+                updatedAt: Date.now(),
+              });
+            } else {
+              // Editor not open — merge with existing IndexedDB content
               const notebook = yield* svc.getNotebook(bookId);
               const existingContent = notebook?.content?.content ?? [];
               const updatedContent = {
@@ -82,8 +91,16 @@ export function useChatToolHandlers({
                 content: updatedContent,
                 updatedAt: Date.now(),
               });
-            }),
-          ).catch(console.error);
+            }
+          }),
+        ).catch(console.error);
+
+        // Only update notebookMarkdown manually when the editor is NOT open.
+        // When the editor IS open, its onUpdate fires after appendContent /
+        // replaceContentFrom and syncs notebookMarkdown via
+        // notebookContentChangeMap — calling setNotebookMarkdown here too
+        // would duplicate the appended text.
+        if (!editorCallbacks) {
           setNotebookMarkdown((prev) => prev + "\n" + text);
         }
         return;
@@ -91,7 +108,9 @@ export function useChatToolHandlers({
 
       if (toolCall.toolName === "edit_notes") {
         const code = typeof args?.code === "string" ? args.code : undefined;
-        if (!code || !bookId) return;
+        if (!code || !bookId) {
+          return { executed: false, error: "Missing code or bookId" };
+        }
 
         try {
           // Prefer live editor content over IndexedDB to avoid stale reads
@@ -144,10 +163,12 @@ export function useChatToolHandlers({
           } finally {
             destroy();
           }
+          return { executed: true };
         } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
           console.error("edit_notes: failed to execute AI code:", err);
+          return { executed: false, error: message };
         }
-        return;
       }
     },
     [bookId, setNotebookMarkdown, notebookEditorCallbackMap],
