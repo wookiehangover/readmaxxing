@@ -22,7 +22,12 @@ export function useChatToolHandlers({
   persistMessages,
   setNotebookMarkdown,
 }: UseChatToolHandlersOptions) {
-  const { waitForNavForBook, applyTempHighlightForBook, notebookCallbackMap } = useWorkspace();
+  const {
+    waitForNavForBook,
+    applyTempHighlightForBook,
+    notebookCallbackMap,
+    notebookEditorCallbackMap,
+  } = useWorkspace();
 
   const onFinish = useCallback(
     (event: { message: UIMessage }) => {
@@ -45,26 +50,35 @@ export function useChatToolHandlers({
         const parsed = markdownToTiptapJson(text);
         const newNodes = parsed.content ?? [];
 
-        AppRuntime.runPromise(
-          Effect.gen(function* () {
-            const svc = yield* AnnotationService;
-            const notebook = yield* svc.getNotebook(bookId);
-            const existingContent = notebook?.content?.content ?? [];
-            const updatedContent = {
-              type: "doc" as const,
-              content: [...existingContent, ...newNodes],
-            };
-            yield* svc.saveNotebook({
-              bookId,
-              content: updatedContent,
-              updatedAt: Date.now(),
-            });
-          }),
-        )
-          .then(() => {
-            setNotebookMarkdown((prev) => prev + "\n" + text);
-          })
-          .catch(console.error);
+        // Try live editor first — if notebook panel is open, push through it
+        // The editor's onUpdate will trigger the debounced save automatically
+        const editorCallbacks = notebookEditorCallbackMap.current.get(bookId);
+        if (editorCallbacks) {
+          editorCallbacks.appendContent(newNodes);
+          setNotebookMarkdown((prev) => prev + "\n" + text);
+        } else {
+          // Fallback: write directly to IndexedDB when notebook panel is not open
+          AppRuntime.runPromise(
+            Effect.gen(function* () {
+              const svc = yield* AnnotationService;
+              const notebook = yield* svc.getNotebook(bookId);
+              const existingContent = notebook?.content?.content ?? [];
+              const updatedContent = {
+                type: "doc" as const,
+                content: [...existingContent, ...newNodes],
+              };
+              yield* svc.saveNotebook({
+                bookId,
+                content: updatedContent,
+                updatedAt: Date.now(),
+              });
+            }),
+          )
+            .then(() => {
+              setNotebookMarkdown((prev) => prev + "\n" + text);
+            })
+            .catch(console.error);
+        }
       }
 
       // Handle create_highlight tool calls
@@ -244,6 +258,7 @@ export function useChatToolHandlers({
       waitForNavForBook,
       applyTempHighlightForBook,
       notebookCallbackMap,
+      notebookEditorCallbackMap,
     ],
   );
 
