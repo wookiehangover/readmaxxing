@@ -22,6 +22,7 @@ import {
 import { ChatMessage } from "./chat-message";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
 import { useChatToolHandlers } from "./use-chat-tool-handlers";
+import { useStreamingAppend } from "./use-streaming-append";
 import { ChatInput } from "./chat-input";
 import { SessionMenuButton, ChatSessionList, EditableTitle } from "./chat-session-menu";
 
@@ -203,7 +204,7 @@ function ChatPanelInner({
   onNewSession: () => void;
   onSessionTitleChange: (title: string) => void;
 }) {
-  const { chatContextMap } = useWorkspace();
+  const { chatContextMap, notebookContentChangeMap, notebookEditorCallbackMap } = useWorkspace();
   const [showSessionList, setShowSessionList] = useState(false);
 
   // Load notebook markdown for the AI's read_notes tool
@@ -221,6 +222,17 @@ function ChatPanelInner({
       })
       .catch(console.error);
   }, [bookId]);
+
+  // Listen for notebook content changes from the editor (user edits, programmatic updates)
+  useEffect(() => {
+    if (!bookId) return;
+    notebookContentChangeMap.current.set(bookId, (markdown: string) => {
+      setNotebookMarkdown(markdown);
+    });
+    return () => {
+      notebookContentChangeMap.current.delete(bookId);
+    };
+  }, [bookId, notebookContentChangeMap]);
 
   // Refs that stay up-to-date with the reader's current chapter index and visible text
   const currentChapterRef = useRef<number | undefined>(undefined);
@@ -267,12 +279,16 @@ function ChatPanelInner({
     ).catch(console.error);
   }, [bookId, activeSessionId]);
 
-  const { onFinish: onToolFinish } = useChatToolHandlers({
+  // Shared ref so streaming hook can tell onToolCall that content was already inserted
+  const streamedToolCallIdRef = useRef<string | null>(null);
+
+  const { onToolCall, onFinish: onToolFinish } = useChatToolHandlers({
     bookId,
     bookFormat,
     bookDataRef,
     persistMessages,
     setNotebookMarkdown,
+    streamedToolCallIdRef,
   });
 
   // Track whether title generation has already been triggered for this session
@@ -336,6 +352,9 @@ function ChatPanelInner({
     id: `chat-${bookId}`,
     transport,
     messages: initialMessages,
+    // Cast needed: onToolCall returns result objects for edit_notes (success/failure),
+    // which AI SDK uses as tool output. The SDK type is overly strict (void).
+    onToolCall: onToolCall as any,
     onFinish,
     onError: (err) => {
       console.error("Chat error:", err);
@@ -344,6 +363,15 @@ function ChatPanelInner({
 
   // Keep messagesRef in sync
   messagesRef.current = messages;
+
+  // Stream append_to_notes content to the notebook in real-time as tokens arrive
+  useStreamingAppend({
+    messages,
+    bookId,
+    status,
+    notebookEditorCallbackMap,
+    streamedToolCallIdRef,
+  });
 
   const isLoading = status === "streaming" || status === "submitted";
 
