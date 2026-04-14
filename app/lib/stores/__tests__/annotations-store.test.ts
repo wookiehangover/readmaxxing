@@ -235,7 +235,11 @@ describe("AnnotationService", () => {
           const notebook = yield* svc.getNotebook("book-1");
           const existingContent = notebook?.content?.content ?? [];
           const newNodes = [
-            { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "New Section" }] },
+            {
+              type: "heading",
+              attrs: { level: 2 },
+              content: [{ type: "text", text: "New Section" }],
+            },
             { type: "paragraph", content: [{ type: "text", text: "Appended during load" }] },
           ];
           const updatedContent = {
@@ -273,7 +277,11 @@ describe("AnnotationService", () => {
         content: {
           type: "doc",
           content: [
-            { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "My Book Notes" }] },
+            {
+              type: "heading",
+              attrs: { level: 1 },
+              content: [{ type: "text", text: "My Book Notes" }],
+            },
             { type: "paragraph", content: [{ type: "text", text: "Important insight" }] },
           ],
         },
