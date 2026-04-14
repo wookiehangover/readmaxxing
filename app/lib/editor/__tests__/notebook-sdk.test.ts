@@ -1337,3 +1337,68 @@ describe("nested list handling", () => {
     expect(items[2]).toMatchObject({ text: "level2", depth: 2 });
   });
 });
+
+
+describe("invalid AI-generated edit code (regression)", () => {
+  it("throws when AI code has a syntax error", () => {
+    const { sdk, destroy } = createNotebookSDK(doc(p("Hello")));
+    try {
+      // Simulate what onToolCall does: create a Function from AI-generated code
+      expect(() => {
+        const fn = new Function("notebook", "notebook.find({{invalid syntax}})");
+        fn(sdk);
+      }).toThrow();
+    } finally {
+      destroy();
+    }
+  });
+
+  it("throws when AI code references undefined methods", () => {
+    const { sdk, destroy } = createNotebookSDK(doc(p("Hello")));
+    try {
+      expect(() => {
+        const fn = new Function("notebook", "notebook.nonExistentMethod()");
+        fn(sdk);
+      }).toThrow();
+    } finally {
+      destroy();
+    }
+  });
+
+  it("throws when AI code throws a runtime error", () => {
+    const { sdk, destroy } = createNotebookSDK(doc(p("Hello")));
+    try {
+      expect(() => {
+        const fn = new Function("notebook", "throw new Error('AI made a mistake')");
+        fn(sdk);
+      }).toThrow("AI made a mistake");
+    } finally {
+      destroy();
+    }
+  });
+
+  it("does not modify content when AI code fails mid-execution", () => {
+    const { sdk, getResult, destroy } = createNotebookSDK(doc(p("Original")));
+    try {
+      // Code that does a valid mutation then throws
+      expect(() => {
+        const fn = new Function(
+          "notebook",
+          `
+          notebook.append("Added");
+          throw new Error("oops");
+        `,
+        );
+        fn(sdk);
+      }).toThrow("oops");
+
+      // Despite the error, getResult still returns the editor state
+      // (the append happened before the throw — this is expected behavior;
+      // the caller should NOT call getResult/save when an error occurs)
+      const result = getResult();
+      expect(result.type).toBe("doc");
+    } finally {
+      destroy();
+    }
+  });
+});

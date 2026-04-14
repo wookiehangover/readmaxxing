@@ -230,7 +230,11 @@ function ToolStepsDetails({
             if (info.toolName === "read_chapter") return "Read chapter";
             if (info.toolName === "read_notes") return "Read notebook";
             if (info.toolName === "append_to_notes") return "Added to notebook";
-            if (info.toolName === "edit_notes") return "Edited notebook";
+            if (info.toolName === "edit_notes") {
+              return info.output?.executed === false
+                ? "Failed to edit notebook"
+                : "Edited notebook";
+            }
             if (info.toolName === "create_highlight") return "Highlighted";
             if (info.toolName === "search_standard_ebooks") return "Searched Standard Ebooks";
             return info.toolName;
@@ -271,7 +275,17 @@ function ToolStepsDetails({
           } else if (info.toolName === "append_to_notes") {
             label = isComplete ? "Added to notebook" : "Adding to notebook...";
           } else if (info.toolName === "edit_notes") {
-            label = isComplete ? "Edited notebook" : "Editing notebook...";
+            if (isComplete) {
+              if (info.output?.executed === false) {
+                const errMsg =
+                  typeof info.output?.error === "string" ? info.output.error : "unknown error";
+                label = `Failed to edit notebook: ${errMsg}`;
+              } else {
+                label = "Edited notebook";
+              }
+            } else {
+              label = "Editing notebook...";
+            }
           } else if (info.toolName === "create_highlight") {
             const snippet =
               typeof info.input?.text === "string"
@@ -287,10 +301,21 @@ function ToolStepsDetails({
               label = `Searching Standard Ebooks for "${q}"...`;
             }
           }
+          const isFailed = isComplete && info.output?.executed === false;
           return (
-            <div key={i} className="flex items-center gap-1.5 leading-tight">
+            <div
+              key={i}
+              className={cn("flex items-center gap-1.5 leading-tight", {
+                "text-destructive": isFailed,
+              })}
+            >
               {isComplete ? (
-                <span className="size-1 rounded-full bg-muted-foreground/50 shrink-0" />
+                <span
+                  className={cn("size-1 rounded-full shrink-0", {
+                    "bg-destructive": isFailed,
+                    "bg-muted-foreground/50": !isFailed,
+                  })}
+                />
               ) : (
                 <span className="size-1.5 rounded-full bg-muted-foreground/70 animate-pulse shrink-0" />
               )}

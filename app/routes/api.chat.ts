@@ -158,7 +158,9 @@ export async function action({ request }: Route.ActionArgs) {
             ),
         }),
         execute: async ({ code }) => {
-          return { code, executed: true };
+          // Actual execution happens client-side in onToolCall.
+          // The client returns { executed: true } or { executed: false, error } after running the code.
+          return { code };
         },
       }),
       create_highlight: tool({
