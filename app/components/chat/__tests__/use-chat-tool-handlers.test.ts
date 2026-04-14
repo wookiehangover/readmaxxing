@@ -48,7 +48,9 @@ describe("useChatToolHandlers – append_to_notes dedup", () => {
 
   beforeEach(() => {
     setNotebookMarkdownMock = vi.fn();
-    setNotebookMarkdown = setNotebookMarkdownMock as unknown as React.Dispatch<React.SetStateAction<string>>;
+    setNotebookMarkdown = setNotebookMarkdownMock as unknown as React.Dispatch<
+      React.SetStateAction<string>
+    >;
     streamedToolCallIdRef = { current: null };
     appendContentSpy = vi.fn();
     mockNotebookEditorCallbackMap.current.clear();

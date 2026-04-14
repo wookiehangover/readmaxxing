@@ -1338,7 +1338,6 @@ describe("nested list handling", () => {
   });
 });
 
-
 describe("invalid AI-generated edit code (regression)", () => {
   it("throws when AI code has a syntax error", () => {
     const { sdk, destroy } = createNotebookSDK(doc(p("Hello")));
