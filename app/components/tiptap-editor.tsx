@@ -11,6 +11,9 @@ import {
 
 export interface TiptapEditorHandle {
   appendHighlightReference: (attrs: HighlightReferenceAttrs) => void;
+  appendContent: (nodes: JSONContent[]) => void;
+  setContent: (content: JSONContent) => void;
+  getContent: () => JSONContent;
 }
 
 interface TiptapEditorProps {
@@ -139,6 +142,19 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
         const nodes: JSONContent[] = [{ type: "highlightReference", attrs }, { type: "paragraph" }];
         const endPos = editor.state.doc.content.size;
         editor.chain().focus().insertContentAt(endPos, nodes).run();
+      },
+      appendContent(nodes: JSONContent[]) {
+        if (!editor) return;
+        const endPos = editor.state.doc.content.size;
+        editor.chain().focus().insertContentAt(endPos, nodes).run();
+      },
+      setContent(content: JSONContent) {
+        if (!editor) return;
+        editor.commands.setContent(content);
+      },
+      getContent() {
+        if (!editor) return { type: "doc", content: [] };
+        return editor.getJSON();
       },
     }),
     [editor],

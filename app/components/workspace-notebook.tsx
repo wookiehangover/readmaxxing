@@ -18,6 +18,7 @@ import type { JSONContent } from "@tiptap/react";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
+import { useWorkspace } from "~/lib/context/workspace-context";
 
 interface WorkspaceNotebookProps {
   bookId: string;
@@ -41,6 +42,7 @@ export function WorkspaceNotebook({
 }: WorkspaceNotebookProps) {
   const editorRef = useRef<TiptapEditorHandle | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { notebookEditorCallbackMap, notebookContentChangeMap } = useWorkspace();
 
   const { data: book } = useEffectQuery(
     () =>
@@ -63,6 +65,13 @@ export function WorkspaceNotebook({
 
   const handleUpdate = useCallback(
     (newContent: JSONContent) => {
+      // Notify chat panel of content changes so read_notes sees current content
+      const changeCallback = notebookContentChangeMap.current.get(bookId);
+      if (changeCallback) {
+        const markdown = tiptapJsonToMarkdown(newContent);
+        changeCallback(markdown);
+      }
+
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         const program = Effect.gen(function* () {
@@ -78,7 +87,7 @@ export function WorkspaceNotebook({
         );
       }, 1000);
     },
-    [bookId],
+    [bookId, notebookContentChangeMap],
   );
 
   useEffect(() => {
@@ -97,6 +106,24 @@ export function WorkspaceNotebook({
       onUnregisterAppendHighlight?.(bookId);
     };
   }, [bookId, onRegisterAppendHighlight, onUnregisterAppendHighlight]);
+
+  // Register editor callbacks for live-sync from chat tool handlers
+  useEffect(() => {
+    notebookEditorCallbackMap.current.set(bookId, {
+      appendContent: (nodes) => {
+        editorRef.current?.appendContent(nodes);
+      },
+      setContent: (content) => {
+        editorRef.current?.setContent(content);
+      },
+      getContent: () => {
+        return editorRef.current?.getContent() ?? { type: "doc", content: [] };
+      },
+    });
+    return () => {
+      notebookEditorCallbackMap.current.delete(bookId);
+    };
+  }, [bookId, notebookEditorCallbackMap]);
 
   const handleExportMarkdown = useCallback(() => {
     if (!content) return;
