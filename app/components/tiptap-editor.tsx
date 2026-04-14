@@ -28,6 +28,8 @@ interface TiptapEditorProps {
   onUpdate?: (content: JSONContent) => void;
   onNavigateToHighlight?: (cfi: string) => void | Promise<void>;
   onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
+  /** Fires once the underlying Tiptap editor instance is created and ready. */
+  onReady?: () => void;
 }
 
 function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps) {
@@ -90,7 +92,7 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
 }
 
 export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(function TiptapEditor(
-  { content, onUpdate, onNavigateToHighlight, onDeleteHighlight },
+  { content, onUpdate, onNavigateToHighlight, onDeleteHighlight, onReady },
   ref,
 ) {
   const onUpdateRef = useRef(onUpdate);
@@ -116,6 +118,17 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     },
     immediatelyRender: true,
   });
+
+  // Notify parent when editor becomes available
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const firedReadyRef = useRef(false);
+  useEffect(() => {
+    if (editor && !firedReadyRef.current) {
+      firedReadyRef.current = true;
+      onReadyRef.current?.();
+    }
+  }, [editor]);
 
   // Listen for custom DOM events dispatched by HighlightReferenceView
   useEffect(() => {

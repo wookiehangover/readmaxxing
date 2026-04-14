@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -42,6 +42,7 @@ export function WorkspaceNotebook({
 }: WorkspaceNotebookProps) {
   const editorRef = useRef<TiptapEditorHandle | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [editorReady, setEditorReady] = useState(false);
   const { notebookEditorCallbackMap, notebookContentChangeMap } = useWorkspace();
 
   const { data: book } = useEffectQuery(
@@ -63,6 +64,33 @@ export function WorkspaceNotebook({
   const content = notebook?.content;
   const loaded = !isLoading;
 
+  // Track the latest unsaved content so we can flush on unmount
+  const pendingContentRef = useRef<JSONContent | null>(null);
+  const bookIdRef = useRef(bookId);
+  bookIdRef.current = bookId;
+
+  const flushSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const pendingContent = pendingContentRef.current;
+    if (!pendingContent) return;
+    pendingContentRef.current = null;
+    const currentBookId = bookIdRef.current;
+    const program = Effect.gen(function* () {
+      const svc = yield* AnnotationService;
+      yield* svc.saveNotebook({
+        bookId: currentBookId,
+        content: pendingContent,
+        updatedAt: Date.now(),
+      });
+    });
+    AppRuntime.runPromise(program).catch((err) =>
+      console.error("Failed to flush notebook save:", err),
+    );
+  }, []);
+
   const handleUpdate = useCallback(
     (newContent: JSONContent) => {
       // Notify chat panel of content changes so read_notes sees current content
@@ -72,8 +100,12 @@ export function WorkspaceNotebook({
         changeCallback(markdown);
       }
 
+      // Track pending content for flush-on-unmount
+      pendingContentRef.current = newContent;
+
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
+        pendingContentRef.current = null;
         const program = Effect.gen(function* () {
           const svc = yield* AnnotationService;
           yield* svc.saveNotebook({
@@ -90,11 +122,12 @@ export function WorkspaceNotebook({
     [bookId, notebookContentChangeMap],
   );
 
+  // Flush any pending debounced save on unmount
   useEffect(() => {
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      flushSave();
     };
-  }, []);
+  }, [flushSave]);
 
   // Register the appendHighlightReference callback so the workspace can push highlights here
   useEffect(() => {
@@ -107,8 +140,12 @@ export function WorkspaceNotebook({
     };
   }, [bookId, onRegisterAppendHighlight, onUnregisterAppendHighlight]);
 
-  // Register editor callbacks for live-sync from chat tool handlers
+  // Register editor callbacks for live-sync from chat tool handlers.
+  // Only register once the Tiptap editor is ready so that tool handlers
+  // fall back to IndexedDB during the loading window instead of silently
+  // dropping content via the not-yet-functional imperative ref.
   useEffect(() => {
+    if (!editorReady) return;
     notebookEditorCallbackMap.current.set(bookId, {
       appendContent: (nodes) => {
         editorRef.current?.appendContent(nodes);
@@ -129,7 +166,7 @@ export function WorkspaceNotebook({
     return () => {
       notebookEditorCallbackMap.current.delete(bookId);
     };
-  }, [bookId, notebookEditorCallbackMap]);
+  }, [bookId, editorReady, notebookEditorCallbackMap]);
 
   const handleExportMarkdown = useCallback(() => {
     if (!content) return;
@@ -187,6 +224,7 @@ export function WorkspaceNotebook({
             onUpdate={handleUpdate}
             onNavigateToHighlight={handleNavigateToCfi}
             onDeleteHighlight={onDeleteHighlight}
+            onReady={() => setEditorReady(true)}
           />
         )}
       </ScrollArea>
