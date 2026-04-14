@@ -5,6 +5,7 @@ import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { getToolInfo } from "./chat-utils";
+import { markdownToTiptapJson } from "~/lib/editor/markdown-to-tiptap";
 
 interface UseChatToolHandlersOptions {
   bookId: string;
@@ -41,13 +42,8 @@ export function useChatToolHandlers({
         const text = typeof info?.input?.text === "string" ? info.input.text : undefined;
         if (!text || !bookId) continue;
 
-        const newNodes = text
-          .split("\n")
-          .filter(Boolean)
-          .map((line: string) => ({
-            type: "paragraph" as const,
-            content: [{ type: "text" as const, text: line }],
-          }));
+        const parsed = markdownToTiptapJson(text);
+        const newNodes = parsed.content ?? [];
 
         AppRuntime.runPromise(
           Effect.gen(function* () {
