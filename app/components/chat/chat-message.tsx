@@ -230,6 +230,7 @@ function ToolStepsDetails({
             if (info.toolName === "read_chapter") return "Read chapter";
             if (info.toolName === "read_notes") return "Read notebook";
             if (info.toolName === "append_to_notes") return "Added to notebook";
+            if (info.toolName === "edit_notes") return "Edited notebook";
             if (info.toolName === "create_highlight") return "Highlighted";
             if (info.toolName === "search_standard_ebooks") return "Searched Standard Ebooks";
             return info.toolName;
@@ -269,6 +270,8 @@ function ToolStepsDetails({
             label = isComplete ? "Read notebook" : "Reading notebook...";
           } else if (info.toolName === "append_to_notes") {
             label = isComplete ? "Added to notebook" : "Adding to notebook...";
+          } else if (info.toolName === "edit_notes") {
+            label = isComplete ? "Edited notebook" : "Editing notebook...";
           } else if (info.toolName === "create_highlight") {
             const snippet =
               typeof info.input?.text === "string"

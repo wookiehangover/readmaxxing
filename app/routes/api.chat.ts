@@ -69,8 +69,9 @@ When the reader asks "What would [thinker] think about this?" or similar questio
 - When referencing a specific passage, wrap a SHORT phrase (not the full quote) in a <ref> tag so the reader can click to navigate there:
   <ref chapter="3" query="first few words of passage">the key phrase</ref>
   The "chapter" attribute is the chapter index number, and "query" is a short exact phrase from the passage (enough to locate it uniquely). The text between the tags is what the reader sees — keep it brief (a few words). Do NOT wrap entire quotes or long passages in ref tags; use them only for short inline references.
-- You can read and add to the reader's personal notebook using read_notes and append_to_notes.
-- When the reader asks you to "save this", "note that", or "add to my notes", use append_to_notes.
+- You can read and edit the reader's personal notebook using read_notes, append_to_notes, and edit_notes.
+- When the reader asks you to "save this", "note that", or "add to my notes", use append_to_notes for quick additions.
+- When the reader asks to reorganize, restructure, replace sections, delete content, or rewrite their notes, use edit_notes. This gives you a \`notebook\` object with methods like find(), replace(), remove(), insertAfter(), etc.
 - When they ask about their notes or want you to reference what they've written, use read_notes first.
 - When you find a passage that is particularly important, beautiful, or relevant to the reader's question, proactively highlight it using create_highlight. Include a brief note explaining why it's significant.
 - When the reader asks for recommendations, related reading, or "what else should I read", use BOTH search tools together as described in "Going deeper" below.
@@ -144,6 +145,20 @@ export async function action({ request }: Route.ActionArgs) {
         }),
         execute: async ({ text }) => {
           return { appended: true, text };
+        },
+      }),
+      edit_notes: tool({
+        description:
+          "Edit the reader's notebook using JavaScript code. Use this for complex edits: reorganizing sections, replacing content, deleting blocks, or restructuring notes. The code runs against a `notebook` object. Always call read_notes first to see the current content before editing.",
+        inputSchema: z.object({
+          code: z
+            .string()
+            .describe(
+              "JavaScript code that uses the `notebook` object to edit notes. Available methods: notebook.getMarkdown(), notebook.getBlocks(), notebook.find(query), notebook.append(markdown), notebook.prepend(markdown), notebook.replace(block, markdown), notebook.remove(block), notebook.insertAfter(block, markdown), notebook.insertBefore(block, markdown), notebook.setContent(markdown). The `find` method accepts a string (text search) or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock', text?: string }. It returns Block objects with { type, text, level?, index }. Pass these Block objects to replace(), remove(), insertAfter(), insertBefore().",
+            ),
+        }),
+        execute: async ({ code }) => {
+          return { code, executed: true };
         },
       }),
       create_highlight: tool({

@@ -6,6 +6,8 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { getToolInfo } from "./chat-utils";
 import { markdownToTiptapJson } from "~/lib/editor/markdown-to-tiptap";
+import { createNotebookSDK } from "~/lib/editor/notebook-sdk";
+import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 
 interface UseChatToolHandlersOptions {
   bookId: string;
@@ -79,6 +81,70 @@ export function useChatToolHandlers({
             })
             .catch(console.error);
         }
+      }
+
+      // Handle edit_notes tool calls
+      const editNotesParts = (msg.parts ?? []).filter((p: any) => {
+        const info = getToolInfo(p);
+        return info && info.toolName === "edit_notes" && info.state === "output-available";
+      });
+
+      for (const part of editNotesParts) {
+        const info = getToolInfo(part);
+        const code = typeof info?.input?.code === "string" ? info.input.code : undefined;
+        if (!code || !bookId) continue;
+
+        // Get current notebook content, run SDK, and push result
+        (async () => {
+          try {
+            // Load current notebook content from live editor or IndexedDB
+            const notebook = await AppRuntime.runPromise(
+              Effect.gen(function* () {
+                const svc = yield* AnnotationService;
+                return yield* svc.getNotebook(bookId);
+              }),
+            );
+            const currentContent = notebook?.content ?? {
+              type: "doc" as const,
+              content: [],
+            };
+
+            // Create SDK and execute AI code in sandbox
+            const { sdk, getResult, destroy } = createNotebookSDK(currentContent);
+            try {
+              const fn = new Function("notebook", code);
+              fn(sdk);
+
+              const resultJson = getResult();
+
+              // Push to live editor if open, otherwise save to IndexedDB
+              const editorCallbacks = notebookEditorCallbackMap.current.get(bookId);
+              if (editorCallbacks) {
+                editorCallbacks.setContent(resultJson);
+              }
+
+              // Always save to IndexedDB for persistence
+              await AppRuntime.runPromise(
+                Effect.gen(function* () {
+                  const svc = yield* AnnotationService;
+                  yield* svc.saveNotebook({
+                    bookId,
+                    content: resultJson,
+                    updatedAt: Date.now(),
+                  });
+                }),
+              );
+
+              // Update the markdown state for the chat context
+              const newMarkdown = tiptapJsonToMarkdown(resultJson);
+              setNotebookMarkdown(newMarkdown);
+            } finally {
+              destroy();
+            }
+          } catch (err) {
+            console.error("edit_notes: failed to execute AI code:", err);
+          }
+        })();
       }
 
       // Handle create_highlight tool calls
