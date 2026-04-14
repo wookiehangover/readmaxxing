@@ -62,7 +62,10 @@ function getTextFromNode(node: any): string {
   node.forEach((child: any) => {
     parts.push(getTextFromNode(child));
   });
-  return parts.join("\n");
+  // Only join block-level children with newlines; inline siblings (text, marks)
+  // should be concatenated without separators.
+  const hasBlockChildren = node.childCount > 0 && !node.firstChild?.isInline;
+  return parts.join(hasBlockChildren ? "\n" : "");
 }
 
 /** Get only the direct paragraph/text content of a listItem, excluding nested lists */
@@ -311,6 +314,8 @@ export function createNotebookSDK(content: JSONContent): {
             if (typeof query.text === "string") {
               return b.text.includes(query.text);
             }
+            // Reset lastIndex to avoid skipping matches when using g/y flags
+            query.text.lastIndex = 0;
             return query.text.test(b.text);
           }
           return true;

@@ -352,7 +352,9 @@ function ChatPanelInner({
     id: `chat-${bookId}`,
     transport,
     messages: initialMessages,
-    onToolCall,
+    // Cast needed: onToolCall returns result objects for edit_notes (success/failure),
+    // which AI SDK uses as tool output. The SDK type is overly strict (void).
+    onToolCall: onToolCall as any,
     onFinish,
     onError: (err) => {
       console.error("Chat error:", err);

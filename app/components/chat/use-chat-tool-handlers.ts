@@ -109,7 +109,7 @@ export function useChatToolHandlers({
       if (toolCall.toolName === "edit_notes") {
         const code = typeof args?.code === "string" ? args.code : undefined;
         if (!code || !bookId) {
-          return;
+          return { executed: false, error: "missing code or bookId" };
         }
 
         try {
@@ -163,10 +163,11 @@ export function useChatToolHandlers({
           } finally {
             destroy();
           }
-          return;
+          return { executed: true };
         } catch (err) {
           console.error("edit_notes: failed to execute AI code:", err);
-          return;
+          const errMsg = err instanceof Error ? err.message : String(err);
+          return { executed: false, error: errMsg };
         }
       }
     },

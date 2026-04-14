@@ -532,6 +532,22 @@ describe("complex document structures", () => {
     expect(blocks[0].text).toContain("italic");
   });
 
+  it("getTextFromNode joins inline nodes without newlines", () => {
+    const { sdk } = setup(
+      doc({
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Hello " },
+          { type: "text", marks: [{ type: "bold" }], text: "world" },
+          { type: "text", text: " today" },
+        ],
+      }),
+    );
+    const blocks = sdk.getBlocks();
+    // Inline text segments within the same paragraph must NOT be separated by newlines
+    expect(blocks[0].text).toBe("Hello world today");
+  });
+
   it("handles code blocks", () => {
     const { sdk } = setup(doc(p("Before"), codeBlock("const x = 1;"), p("After")));
     const blocks = sdk.getBlocks();
@@ -963,6 +979,14 @@ describe("find edge cases", () => {
     const results = sdk.find({ text: /^Hello$/ });
     expect(results).toHaveLength(1);
     expect(results[0].text).toBe("Hello");
+  });
+
+  it("find with global regex does not skip matches due to lastIndex", () => {
+    const { sdk } = setup(doc(p("abc 123"), p("def 456"), p("ghi 789")));
+    // Using the g flag: without resetting lastIndex, .test() would advance
+    // and skip every other match
+    const results = sdk.find({ text: /[0-9]+/g });
+    expect(results).toHaveLength(3);
   });
 
   it("find by type only returns all blocks of that type", () => {
