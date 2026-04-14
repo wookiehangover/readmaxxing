@@ -18,6 +18,16 @@ function heading(level: number, text: string): JSONContent {
   };
 }
 
+function bulletList(...items: string[]): JSONContent {
+  return {
+    type: "bulletList",
+    content: items.map((item) => ({
+      type: "listItem",
+      content: [p(item)],
+    })),
+  };
+}
+
 let destroyFn: (() => void) | null = null;
 
 afterEach(() => {
@@ -148,6 +158,63 @@ describe("createNotebookSDK", () => {
       const blocks = sdk.getBlocks();
       expect(blocks[0]).toMatchObject({ type: "heading", text: "Fresh Start" });
       expect(blocks.some((b) => b.text === "Old content")).toBe(false);
+    });
+
+    it("correctly parses markdown with lists", () => {
+      const { sdk } = setup(doc(p("Old")));
+      sdk.setContent("- alpha\n- beta\n- gamma");
+      const blocks = sdk.getBlocks();
+      expect(blocks.some((b) => b.type === "bulletList")).toBe(true);
+      const list = blocks.find((b) => b.type === "bulletList")!;
+      expect(list.text).toContain("alpha");
+      expect(list.text).toContain("beta");
+    });
+  });
+
+  describe("list editing", () => {
+    it("find matches a list item without false positives from concatenated text", () => {
+      const { sdk } = setup(doc(bulletList("one", "two", "three")));
+      const results = sdk.find("one");
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toBe("bulletList");
+      // Should NOT match on concatenated "onetwothree"
+      const noMatch = sdk.find("onetwothree");
+      expect(noMatch).toHaveLength(0);
+    });
+
+    it("getTextFromNode separates list items with newlines", () => {
+      const { sdk } = setup(doc(bulletList("alpha", "beta", "gamma")));
+      const blocks = sdk.getBlocks();
+      const list = blocks.find((b) => b.type === "bulletList")!;
+      expect(list.text).toBe("alpha\nbeta\ngamma");
+    });
+
+    it("replace on a list block works", () => {
+      const { sdk } = setup(doc(p("Before"), bulletList("old1", "old2"), p("After")));
+      const list = sdk.find({ type: "bulletList" })[0];
+      sdk.replace(list, "- new1\n- new2\n- new3");
+      const blocks = sdk.getBlocks();
+      const texts = blocks.map((b) => b.text);
+      expect(texts).toContain("Before");
+      expect(texts).toContain("After");
+      const newList = blocks.find((b) => b.type === "bulletList");
+      expect(newList).toBeDefined();
+      expect(newList!.text).toContain("new1");
+      expect(newList!.text).toContain("new2");
+      expect(newList!.text).toContain("new3");
+      expect(newList!.text).not.toContain("old1");
+    });
+
+    it("replace on a paragraph still works after list fix", () => {
+      const { sdk } = setup(doc(p("Keep"), p("Replace me"), p("Also keep")));
+      const target = sdk.find("Replace me")[0];
+      sdk.replace(target, "**Replaced**");
+      const blocks = sdk.getBlocks();
+      const texts = blocks.map((b) => b.text);
+      expect(texts).toContain("Replaced");
+      expect(texts).not.toContain("Replace me");
+      expect(texts).toContain("Keep");
+      expect(texts).toContain("Also keep");
     });
   });
 
