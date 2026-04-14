@@ -278,7 +278,7 @@ function ChatPanelInner({
     ).catch(console.error);
   }, [bookId, activeSessionId]);
 
-  const { onFinish: onToolFinish } = useChatToolHandlers({
+  const { onToolCall, onFinish: onToolFinish } = useChatToolHandlers({
     bookId,
     bookFormat,
     bookDataRef,
@@ -347,6 +347,7 @@ function ChatPanelInner({
     id: `chat-${bookId}`,
     transport,
     messages: initialMessages,
+    onToolCall,
     onFinish,
     onError: (err) => {
       console.error("Chat error:", err);
