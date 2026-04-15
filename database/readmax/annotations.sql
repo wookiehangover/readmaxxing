@@ -3,9 +3,9 @@ SET search_path TO readmax;
 -- Highlights
 
 CREATE TABLE readmax.highlight (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES readmax.user(id),
-    book_id UUID NOT NULL REFERENCES readmax.book(id),
+    book_id TEXT NOT NULL REFERENCES readmax.book(id),
     cfi_range TEXT,
     text TEXT,
     color TEXT,
@@ -23,7 +23,7 @@ CREATE INDEX highlight_book_id_idx ON readmax.highlight (book_id);
 
 CREATE TABLE readmax.notebook (
     user_id UUID NOT NULL REFERENCES readmax.user(id),
-    book_id UUID NOT NULL REFERENCES readmax.book(id),
+    book_id TEXT NOT NULL REFERENCES readmax.book(id),
     content JSONB,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, book_id)

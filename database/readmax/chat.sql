@@ -3,9 +3,9 @@ SET search_path TO readmax;
 -- Chat sessions
 
 CREATE TABLE readmax.chat_session (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES readmax.user(id),
-    book_id UUID REFERENCES readmax.book(id),
+    book_id TEXT REFERENCES readmax.book(id),
     title TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -19,7 +19,7 @@ CREATE INDEX chat_session_book_id_idx ON readmax.chat_session (book_id);
 
 CREATE TABLE readmax.chat_message (
     id TEXT PRIMARY KEY,
-    session_id UUID NOT NULL REFERENCES readmax.chat_session(id) ON DELETE CASCADE,
+    session_id TEXT NOT NULL REFERENCES readmax.chat_session(id) ON DELETE CASCADE,
     role TEXT NOT NULL,
     content TEXT,
     parts JSONB,
