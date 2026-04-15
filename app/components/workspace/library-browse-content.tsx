@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { CloudDownload, NotebookPen, Ellipsis, Globe, Trash2 } from "lucide-react";
+import { NotebookPen, Ellipsis, Globe, Trash2 } from "lucide-react";
 import { CoverImage } from "~/components/book-grid/cover-image";
 import { CoverPlaceholder } from "~/components/book-grid/cover-placeholder";
 import { AddBookCard } from "~/components/book-grid/add-book-card";
@@ -101,14 +101,10 @@ export function LibraryBrowseContent() {
                           alt={book.title}
                           remoteCoverUrl={book.remoteCoverUrl}
                           bookId={book.id}
+                          needsDownload={needsDownload}
                         />
                       ) : (
                         <CoverPlaceholder title={book.title} author={book.author} />
-                      )}
-                      {needsDownload && (
-                        <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30">
-                          <CloudDownload className="size-8 text-white" />
-                        </div>
                       )}
                     </div>
                     <p className="mt-2 truncate text-sm font-medium">{book.title}</p>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { Effect } from "effect";
-import { ArrowLeft, BookOpen, BookOpenText, CloudDownload } from "lucide-react";
+import { ArrowLeft, BookOpen, BookOpenText, Download } from "lucide-react";
 import type { Route } from "./+types/book-details";
 import type { JSONContent } from "@tiptap/react";
 import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
@@ -12,6 +12,7 @@ import { TiptapEditor } from "~/components/tiptap-editor";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { cn } from "~/lib/utils";
 
 export function meta({ data }: Route.MetaArgs) {
   const title = data?.book?.title ?? "Readmaxxing";
@@ -45,11 +46,13 @@ function CoverImage({
   alt,
   remoteCoverUrl,
   bookId,
+  needsDownload,
 }: {
   coverImage: Blob | null;
   alt: string;
   remoteCoverUrl?: string;
   bookId?: string;
+  needsDownload?: boolean;
 }) {
   const [url, setUrl] = useState<string | null>(null);
 
@@ -70,7 +73,9 @@ function CoverImage({
     <img
       src={url}
       alt={alt}
-      className="aspect-[2/3] w-full max-w-xs rounded-lg object-cover shadow-md"
+      className={cn("aspect-[2/3] w-full max-w-xs rounded-lg object-cover shadow-md", {
+        "grayscale opacity-50": needsDownload,
+      })}
     />
   );
 }
@@ -165,6 +170,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
               alt={title}
               remoteCoverUrl={book.remoteCoverUrl}
               bookId={book.id}
+              needsDownload={bookNeedsDownload(book)}
             />
           ) : (
             <CoverPlaceholder />
@@ -192,7 +198,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
             </Button>
             {bookNeedsDownload(book) ? (
               <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
-                <CloudDownload className="size-4" />
+                <Download className="size-4" />
                 Download &amp; Read
               </Button>
             ) : (

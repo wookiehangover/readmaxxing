@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Effect } from "effect";
-import { CloudDownload, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type { Route } from "./+types/book";
 import { BookService, bookNeedsDownload } from "~/lib/stores/book-store";
 import { BookReader } from "~/components/book-reader";
@@ -37,10 +37,7 @@ export function HydrateFallback() {
 function DownloadingFallback({ title }: { title: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3">
-      <div className="relative">
-        <CloudDownload className="size-10 text-muted-foreground" />
-        <Loader2 className="absolute -right-1 -bottom-1 size-4 animate-spin text-primary" />
-      </div>
+      <Loader2 className="size-8 animate-spin text-muted-foreground" />
       <div className="text-center">
         <p className="font-medium text-muted-foreground">Downloading book…</p>
         <p className="mt-1 text-sm text-muted-foreground/70">{title}</p>
@@ -71,10 +68,7 @@ export default function BookRoute({ loaderData }: Route.ComponentProps) {
     <div className="relative h-full">
       {downloading && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/80">
-          <div className="relative">
-            <CloudDownload className="size-10 text-muted-foreground" />
-            <Loader2 className="absolute -right-1 -bottom-1 size-4 animate-spin text-primary" />
-          </div>
+          <Loader2 className="size-8 animate-spin text-muted-foreground" />
           <div className="text-center">
             <p className="font-medium text-muted-foreground">Downloading book…</p>
             <p className="mt-1 text-sm text-muted-foreground/70">{book.title}</p>

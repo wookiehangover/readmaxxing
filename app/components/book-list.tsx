@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useParams } from "react-router";
-import { CloudDownload, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
@@ -79,7 +79,7 @@ function BookItemContent({ book, collapsed }: { book: BookMeta; collapsed: boole
   const needsDownload = bookNeedsDownload(book);
   return (
     <>
-      <div className="relative shrink-0">
+      <div className={cn("shrink-0", { "grayscale opacity-50": needsDownload })}>
         {book.coverImage || book.remoteCoverUrl ? (
           <BookCover
             coverImage={book.coverImage}
@@ -89,11 +89,6 @@ function BookItemContent({ book, collapsed }: { book: BookMeta; collapsed: boole
         ) : (
           <div className="flex h-12 w-8 items-center justify-center rounded bg-muted">
             <span className="text-xs text-muted-foreground">📖</span>
-          </div>
-        )}
-        {needsDownload && (
-          <div className="absolute inset-0 flex items-center justify-center rounded bg-black/30">
-            <CloudDownload className="size-4 text-white" />
           </div>
         )}
       </div>
