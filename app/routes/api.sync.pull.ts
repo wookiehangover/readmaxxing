@@ -1,9 +1,11 @@
 import { requireAuth } from "~/lib/database/auth-middleware";
+import { getHighlightsByUserSince } from "~/lib/database/annotation/highlight";
+import { getNotebooksByUserSince } from "~/lib/database/annotation/notebook";
 import { getBooksByUserSince } from "~/lib/database/book/book";
 import { getPositionsByUserSince } from "~/lib/database/book/reading-position";
 import type { EntityType, SyncPullResponse } from "~/lib/sync/types";
 
-const SUPPORTED_ENTITY_TYPES: EntityType[] = ["book", "position"];
+const SUPPORTED_ENTITY_TYPES: EntityType[] = ["book", "position", "highlight", "notebook"];
 
 export async function loader({ request }: { request: Request }) {
   const { userId } = await requireAuth(request);
@@ -48,6 +50,34 @@ export async function loader({ request }: { request: Request }) {
           changes.push({
             entity: "position",
             records: positions,
+            cursor: latestUpdatedAt.toISOString(),
+            hasMore: false,
+          });
+        }
+        break;
+      }
+
+      case "highlight": {
+        const highlights = await getHighlightsByUserSince(userId, since);
+        if (highlights.length > 0) {
+          const latestCreatedAt = highlights[highlights.length - 1].createdAt;
+          changes.push({
+            entity: "highlight",
+            records: highlights,
+            cursor: latestCreatedAt.toISOString(),
+            hasMore: false,
+          });
+        }
+        break;
+      }
+
+      case "notebook": {
+        const notebooks = await getNotebooksByUserSince(userId, since);
+        if (notebooks.length > 0) {
+          const latestUpdatedAt = notebooks[notebooks.length - 1].updatedAt;
+          changes.push({
+            entity: "notebook",
+            records: notebooks,
             cursor: latestUpdatedAt.toISOString(),
             hasMore: false,
           });

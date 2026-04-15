@@ -1,4 +1,6 @@
 import { requireAuth } from "~/lib/database/auth-middleware";
+import { upsertHighlight, softDeleteHighlight } from "~/lib/database/annotation/highlight";
+import { upsertNotebook } from "~/lib/database/annotation/notebook";
 import { upsertBook, softDeleteBook } from "~/lib/database/book/book";
 import { upsertPosition } from "~/lib/database/book/reading-position";
 import { upsertUser } from "~/lib/database/user/user";
@@ -45,6 +47,56 @@ async function processEntry(
       return { accepted: true };
     }
 
+    case "highlight": {
+      if (entry.operation === "put") {
+        const data = entry.data as {
+          id: string;
+          bookId: string;
+          cfiRange?: string | null;
+          text?: string | null;
+          color?: string | null;
+          pageNumber?: number | null;
+          textOffset?: number | null;
+          textLength?: number | null;
+          createdAt?: number | null;
+          deletedAt?: number | null;
+        };
+        await upsertHighlight(userId, {
+          id: entry.entityId,
+          bookId: data.bookId,
+          cfiRange: data.cfiRange,
+          text: data.text,
+          color: data.color,
+          pageNumber: data.pageNumber,
+          textOffset: data.textOffset,
+          textLength: data.textLength,
+          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
+          deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
+        });
+      } else {
+        await softDeleteHighlight(userId, entry.entityId);
+      }
+      return { accepted: true };
+    }
+
+    case "notebook": {
+      if (entry.operation === "put") {
+        const data = entry.data as {
+          bookId: string;
+          content: unknown;
+          updatedAt?: number | null;
+        };
+        await upsertNotebook(
+          userId,
+          data.bookId ?? entry.entityId,
+          data.content,
+          data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
+        );
+      }
+      // delete is a no-op for notebooks
+      return { accepted: true };
+    }
+
     default: {
       console.warn(`[sync/push] Skipping unsupported entity type: ${entry.entity}`);
       return { accepted: false, reason: `Unsupported entity type: ${entry.entity}` };
@@ -72,7 +124,7 @@ export async function action({ request }: { request: Request }) {
 
   // Sort changes so parent entities (book) are processed before dependents (position).
   // This prevents FK violations when a position references a book in the same push batch.
-  const entityOrder: Record<string, number> = { book: 0, position: 1 };
+  const entityOrder: Record<string, number> = { book: 0, position: 1, highlight: 2, notebook: 3 };
   const sortedChanges = [...body.changes].sort(
     (a, b) => (entityOrder[a.entity] ?? 99) - (entityOrder[b.entity] ?? 99),
   );

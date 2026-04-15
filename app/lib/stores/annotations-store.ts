@@ -3,6 +3,7 @@ import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer, Schema } from "effect";
 import type { JSONContent } from "@tiptap/react";
 import { HighlightError, NotebookError, DecodeError } from "~/lib/errors";
+import { recordChange } from "~/lib/sync/change-log";
 
 // --- Schemas ---
 
@@ -99,9 +100,16 @@ export function makeAnnotationService(stores: AnnotationServiceStores): Annotati
   return {
     saveHighlight: (highlight) =>
       Effect.tryPromise({
-        try: () => {
+        try: async () => {
           const stamped = { ...highlight, updatedAt: highlight.updatedAt ?? Date.now() };
-          return set(highlight.id, stamped, highlightStore);
+          await set(highlight.id, stamped, highlightStore);
+          recordChange({
+            entity: "highlight",
+            entityId: highlight.id,
+            operation: "put",
+            data: stamped,
+            timestamp: stamped.updatedAt!,
+          }).catch(console.error);
         },
         catch: (cause) =>
           new HighlightError({ operation: "saveHighlight", highlightId: highlight.id, cause }),
@@ -140,11 +148,20 @@ export function makeAnnotationService(stores: AnnotationServiceStores): Annotati
           try: () => decodeHighlight(raw),
           catch: (cause) => new DecodeError({ operation: "updateHighlight", cause }),
         });
+        const now = Date.now();
+        const updated = { ...existing, ...updates, updatedAt: now };
         yield* Effect.tryPromise({
-          try: () => set(id, { ...existing, ...updates, updatedAt: Date.now() }, highlightStore),
+          try: () => set(id, updated, highlightStore),
           catch: (cause) =>
             new HighlightError({ operation: "updateHighlight", highlightId: id, cause }),
         });
+        recordChange({
+          entity: "highlight",
+          entityId: id,
+          operation: "put",
+          data: updated,
+          timestamp: now,
+        }).catch(console.error);
       }),
 
     deleteHighlight: (id) =>
@@ -160,13 +177,10 @@ export function makeAnnotationService(stores: AnnotationServiceStores): Annotati
             try: () => decodeHighlight(raw),
             catch: (cause) => new DecodeError({ operation: "deleteHighlight.decode", cause }),
           });
+          const now = Date.now();
+          const tombstone = { ...existing, deletedAt: now, updatedAt: now };
           yield* Effect.tryPromise({
-            try: () =>
-              set(
-                id,
-                { ...existing, deletedAt: Date.now(), updatedAt: Date.now() },
-                highlightStore,
-              ),
+            try: () => set(id, tombstone, highlightStore),
             catch: (cause) =>
               new HighlightError({
                 operation: "deleteHighlight.write",
@@ -174,12 +188,28 @@ export function makeAnnotationService(stores: AnnotationServiceStores): Annotati
                 cause,
               }),
           });
+          recordChange({
+            entity: "highlight",
+            entityId: id,
+            operation: "delete",
+            data: tombstone,
+            timestamp: now,
+          }).catch(console.error);
         }
       }),
 
     saveNotebook: (notebook) =>
       Effect.tryPromise({
-        try: () => set(notebook.bookId, notebook, notebookStore),
+        try: async () => {
+          await set(notebook.bookId, notebook, notebookStore);
+          recordChange({
+            entity: "notebook",
+            entityId: notebook.bookId,
+            operation: "put",
+            data: notebook,
+            timestamp: notebook.updatedAt,
+          }).catch(console.error);
+        },
         catch: (cause) =>
           new NotebookError({ operation: "saveNotebook", bookId: notebook.bookId, cause }),
       }),
