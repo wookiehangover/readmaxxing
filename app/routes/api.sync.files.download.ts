@@ -1,3 +1,4 @@
+import { get } from "@vercel/blob";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 
@@ -10,10 +11,16 @@ import { getBookByIdForUser } from "~/lib/database/book/book";
  *   - bookId: string (required)
  *   - type: "file" (default) | "cover"
  *
- * Since we use public blob storage, this redirects to the blob URL.
+ * Private blobs require authenticated access via get(), which returns
+ * a stream that we proxy to the client.
  */
 export async function loader({ request }: { request: Request }) {
   const { userId } = await requireAuth(request);
+
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!token) {
+    return Response.json({ error: "Blob storage is not configured" }, { status: 500 });
+  }
 
   const url = new URL(request.url);
   const bookId = url.searchParams.get("bookId");
@@ -40,6 +47,17 @@ export async function loader({ request }: { request: Request }) {
     return Response.json({ error: `No ${type} uploaded for this book` }, { status: 404 });
   }
 
-  // Public blobs: redirect to the blob URL directly
-  return Response.redirect(blobUrl, 302);
+  // Private blobs: use get() to fetch via authenticated token and stream to client
+  const result = await get(blobUrl, { access: "private", token });
+
+  if (!result || result.statusCode !== 200 || !result.stream) {
+    return Response.json({ error: "Failed to retrieve file from blob storage" }, { status: 502 });
+  }
+
+  return new Response(result.stream, {
+    headers: {
+      "Content-Type": result.blob.contentType ?? "application/octet-stream",
+      "Content-Disposition": result.blob.contentDisposition,
+    },
+  });
 }

@@ -53,7 +53,7 @@ export async function action({ request }: { request: Request }) {
   const pathname = `${folder}/${userId}/${bookId}/${file.name}`;
 
   const blob = await put(pathname, file, {
-    access: "public",
+    access: "private",
     token,
     allowOverwrite: true,
   });
