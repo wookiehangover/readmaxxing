@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef, useState } from "react";
 import { Effect } from "effect";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import {
@@ -77,11 +78,13 @@ export function WorkspaceNotebook({
   }, [content]);
 
   // On sync pull, compare pulled content with current — only update editor if different
+  const notebookSyncVersion = useSyncListener(["notebook"]);
   useEffect(() => {
-    const handler = async () => {
-      // Skip if user has pending local edits
-      if (pendingContentRef.current) return;
+    if (notebookSyncVersion === 0) return;
+    // Skip if user has pending local edits
+    if (pendingContentRef.current) return;
 
+    (async () => {
       try {
         const nb = await AppRuntime.runPromise(
           AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))),
@@ -102,10 +105,8 @@ export function WorkspaceNotebook({
       } catch (err) {
         console.error("Failed to check notebook sync:", err);
       }
-    };
-    window.addEventListener("sync:pull-complete", handler);
-    return () => window.removeEventListener("sync:pull-complete", handler);
-  }, [bookId]);
+    })();
+  }, [bookId, notebookSyncVersion]);
 
   // Track the latest unsaved content so we can flush on unmount
   const pendingContentRef = useRef<JSONContent | null>(null);

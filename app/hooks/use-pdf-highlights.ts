@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { AnnotationService, type Highlight } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { type Theme, resolveTheme } from "~/lib/settings";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 const HIGHLIGHT_COLOR_LIGHT = "rgba(255, 213, 79, 0.6)";
 const HIGHLIGHT_COLOR_DARK = "rgba(255, 220, 100, 0.8)";
@@ -383,21 +384,24 @@ export function usePdfHighlights({
     [bookId, applyHighlightOverlay],
   );
 
-  // Incrementally sync highlights when sync pulls new data
+  // Incrementally sync highlights when sync pulls highlight data
+  const highlightSyncVersion = useSyncListener(["highlight"]);
   useEffect(() => {
-    const handler = async () => {
-      const program = Effect.gen(function* () {
-        const svc = yield* AnnotationService;
-        return yield* svc.getHighlightsByBook(bookId);
-      }).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to sync PDF highlights:", error);
-            return [] as Highlight[];
-          }),
-        ),
-      );
+    if (highlightSyncVersion === 0) return;
 
+    const program = Effect.gen(function* () {
+      const svc = yield* AnnotationService;
+      return yield* svc.getHighlightsByBook(bookId);
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error("Failed to sync PDF highlights:", error);
+          return [] as Highlight[];
+        }),
+      ),
+    );
+
+    (async () => {
       try {
         const freshHighlights = await AppRuntime.runPromise(program);
 
@@ -435,10 +439,8 @@ export function usePdfHighlights({
       } catch (err) {
         console.error("Failed to sync PDF highlights:", err);
       }
-    };
-    window.addEventListener("sync:pull-complete", handler);
-    return () => window.removeEventListener("sync:pull-complete", handler);
-  }, [bookId, applyHighlightOverlay]);
+    })();
+  }, [bookId, applyHighlightOverlay, highlightSyncVersion]);
 
   const dismissPopovers = useCallback(() => {
     setSelectionPopover(null);

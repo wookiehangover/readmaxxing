@@ -27,6 +27,7 @@ import { WatermarkPanel } from "~/components/workspace/watermark-panel";
 import { LeftHeaderActions } from "~/components/workspace/left-header-actions";
 import { WorkspaceSidebar } from "~/components/workspace/workspace-sidebar";
 import { useIsMobile } from "~/hooks/use-mobile";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 import {
   Sheet,
   SheetContent,
@@ -551,16 +552,14 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     [ws],
   );
 
-  // Reload books when a sync pull brings in new data
+  // Reload books when sync pulls book data
+  const syncVersion = useSyncListener(["book"]);
   useEffect(() => {
-    function handleSyncPull() {
-      AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())))
-        .then((freshBooks) => updateBooks(() => freshBooks))
-        .catch(console.error);
-    }
-    window.addEventListener("sync:pull-complete", handleSyncPull);
-    return () => window.removeEventListener("sync:pull-complete", handleSyncPull);
-  }, [updateBooks]);
+    if (syncVersion === 0) return;
+    AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())))
+      .then((freshBooks) => updateBooks(() => freshBooks))
+      .catch(console.error);
+  }, [syncVersion, updateBooks]);
 
   const handleBookAdded = useCallback(
     (book: BookMeta) => {

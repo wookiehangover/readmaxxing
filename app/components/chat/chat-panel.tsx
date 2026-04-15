@@ -12,6 +12,7 @@ import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
 import { cn } from "~/lib/utils";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import {
   toUIMessages,
@@ -118,37 +119,34 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const initialMessagesRef = useRef(initialMessages);
   initialMessagesRef.current = initialMessages;
 
-  // Reload chat messages when sync pulls new data from server
+  // Reload chat messages when sync pulls chat data from server
+  const chatSyncVersion = useSyncListener(["chat_session", "chat_message"]);
   useEffect(() => {
-    function handleSyncPull() {
-      if (!activeSessionId) return;
-      AppRuntime.runPromise(
-        ChatService.pipe(Effect.andThen((s) => s.getSession(activeSessionId, bookId))),
-      )
-        .then((session) => {
-          if (!session) return;
-          const newMessages = toUIMessages(session.messages);
-          const currentLast = initialMessagesRef.current?.[initialMessagesRef.current.length - 1];
-          const newLast = newMessages[newMessages.length - 1];
-          // Only update if the last message actually changed
-          if (currentLast?.id !== newLast?.id) {
-            setSessionTitle(session.title);
-            if (setChatMessagesRef.current) {
-              // Update messages in-place without remounting — preserves scroll
-              setChatMessagesRef.current(newMessages);
-              initialMessagesRef.current = newMessages;
-            } else {
-              // Fallback: remount if ref isn't registered yet
-              setInitialMessages(newMessages);
-              setSessionKey((k) => k + 1);
-            }
+    if (chatSyncVersion === 0 || !activeSessionId) return;
+    AppRuntime.runPromise(
+      ChatService.pipe(Effect.andThen((s) => s.getSession(activeSessionId, bookId))),
+    )
+      .then((session) => {
+        if (!session) return;
+        const newMessages = toUIMessages(session.messages);
+        const currentLast = initialMessagesRef.current?.[initialMessagesRef.current.length - 1];
+        const newLast = newMessages[newMessages.length - 1];
+        // Only update if the last message actually changed
+        if (currentLast?.id !== newLast?.id) {
+          setSessionTitle(session.title);
+          if (setChatMessagesRef.current) {
+            // Update messages in-place without remounting — preserves scroll
+            setChatMessagesRef.current(newMessages);
+            initialMessagesRef.current = newMessages;
+          } else {
+            // Fallback: remount if ref isn't registered yet
+            setInitialMessages(newMessages);
+            setSessionKey((k) => k + 1);
           }
-        })
-        .catch(console.error);
-    }
-    window.addEventListener("sync:pull-complete", handleSyncPull);
-    return () => window.removeEventListener("sync:pull-complete", handleSyncPull);
-  }, [bookId, activeSessionId]);
+        }
+      })
+      .catch(console.error);
+  }, [bookId, activeSessionId, chatSyncVersion]);
 
   const handleSwitchSession = useCallback(
     async (sessionId: string) => {

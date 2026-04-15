@@ -4,6 +4,7 @@ import type Rendition from "epubjs/types/rendition";
 import { AnnotationService, type Highlight } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { type Theme, resolveTheme } from "~/lib/settings";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 const HIGHLIGHT_COLOR_LIGHT = "rgba(255, 213, 79, 0.6)";
 const HIGHLIGHT_COLOR_DARK = "rgba(255, 220, 100, 0.8)";
@@ -147,24 +148,26 @@ export function useHighlights({
     return highlight;
   }, [selectionPopover, bookId, renditionRef, applyHighlightToRendition]);
 
-  // Incrementally sync highlights when sync pulls new data
+  // Incrementally sync highlights when sync pulls highlight data
+  const highlightSyncVersion = useSyncListener(["highlight"]);
   useEffect(() => {
-    const handler = async () => {
-      const rendition = renditionRef.current;
-      if (!rendition) return;
+    if (highlightSyncVersion === 0) return;
+    const rendition = renditionRef.current;
+    if (!rendition) return;
 
-      const program = Effect.gen(function* () {
-        const svc = yield* AnnotationService;
-        return yield* svc.getHighlightsByBook(bookId);
-      }).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to sync highlights:", error);
-            return [] as Highlight[];
-          }),
-        ),
-      );
+    const program = Effect.gen(function* () {
+      const svc = yield* AnnotationService;
+      return yield* svc.getHighlightsByBook(bookId);
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          console.error("Failed to sync highlights:", error);
+          return [] as Highlight[];
+        }),
+      ),
+    );
 
+    (async () => {
       try {
         const freshHighlights = await AppRuntime.runPromise(program);
 
@@ -202,10 +205,8 @@ export function useHighlights({
       } catch (err) {
         console.error("Failed to sync highlights:", err);
       }
-    };
-    window.addEventListener("sync:pull-complete", handler);
-    return () => window.removeEventListener("sync:pull-complete", handler);
-  }, [bookId, renditionRef, applyHighlightToRendition]);
+    })();
+  }, [bookId, renditionRef, applyHighlightToRendition, highlightSyncVersion]);
 
   const dismissPopovers = useCallback(() => {
     setSelectionPopover(null);

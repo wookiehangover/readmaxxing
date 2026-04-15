@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef, useState } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -9,6 +9,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import type { JSONContent } from "@tiptap/react";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 import { useEffectQuery } from "~/hooks/use-effect-query";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 interface AnnotationsPanelProps {
   bookId: string;
@@ -29,13 +30,8 @@ export function AnnotationsPanel({
   onDeleteHighlight,
   editorRef,
 }: AnnotationsPanelProps) {
-  // Bump syncVersion on pull-complete to re-read notebook from IDB
-  const [syncVersion, setSyncVersion] = useState(0);
-  useEffect(() => {
-    const handler = () => setSyncVersion((v) => v + 1);
-    window.addEventListener("sync:pull-complete", handler);
-    return () => window.removeEventListener("sync:pull-complete", handler);
-  }, []);
+  // Bump syncVersion when highlight or notebook data is synced
+  const syncVersion = useSyncListener(["highlight", "notebook"]);
 
   const { data: notebook, isLoading } = useEffectQuery(
     () => AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))),

@@ -503,7 +503,7 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
 
     // Notify UI so book list re-renders without stale cloud icons
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("sync:pull-complete"));
+      window.dispatchEvent(new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }));
     }
   }
 
@@ -569,24 +569,22 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
 
     const result: SyncPullResponse = await res.json();
 
-    let hadRecords = false;
     for (const group of result.changes) {
       const merger = ENTITY_MERGERS[group.entity];
       if (!merger) continue;
-
-      if (group.records.length > 0) {
-        hadRecords = true;
-      }
 
       for (const record of group.records) {
         await merger(record as Record<string, unknown>);
       }
 
       await setCursor(group.entity, group.cursor);
-    }
 
-    if (hadRecords) {
-      window.dispatchEvent(new CustomEvent("sync:pull-complete"));
+      // Dispatch granular per-entity event so only relevant components re-render
+      if (group.records.length > 0) {
+        window.dispatchEvent(
+          new CustomEvent("sync:entity-updated", { detail: { entity: group.entity } }),
+        );
+      }
     }
   }
 
