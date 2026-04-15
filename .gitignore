@@ -9,3 +9,5 @@
 .intent/
 playwright-report/
 .last-run.json
+.vercel
+.env*.local

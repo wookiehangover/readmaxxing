@@ -84,10 +84,7 @@ export async function getBooksByUserSince(userId: string, cursor: Date): Promise
 /**
  * Get a single book by ID, scoped to a specific user for authorization.
  */
-export async function getBookByIdForUser(
-  bookId: string,
-  userId: string,
-): Promise<BookRow | null> {
+export async function getBookByIdForUser(bookId: string, userId: string): Promise<BookRow | null> {
   const pool = getPool();
   const result = await pool.query<BookRow>(sql`
     SELECT ${BOOK_COLUMNS}
