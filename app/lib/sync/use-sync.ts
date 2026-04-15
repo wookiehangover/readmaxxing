@@ -1,0 +1,96 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "~/lib/context/auth-context";
+import { makeSyncEngine, type SyncEngine } from "./sync-engine";
+
+interface SyncState {
+  /** Whether a sync cycle is currently running. */
+  isSyncing: boolean;
+  /** ISO timestamp of the last successful sync completion. */
+  lastSyncedAt: string | null;
+  /** Most recent sync error, or null if last sync succeeded. */
+  syncError: Error | null;
+  /** Manually trigger a push+pull cycle. */
+  triggerSync: () => void;
+}
+
+/**
+ * React hook that manages the SyncEngine lifecycle.
+ *
+ * - Creates and starts the engine when the user is authenticated
+ * - Stops the engine on logout or unmount
+ * - Triggers a push on window focus
+ * - Pauses/resumes based on navigator.onLine
+ */
+export function useSync(): SyncState {
+  const { isAuthenticated } = useAuth();
+  const engineRef = useRef<SyncEngine | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<Error | null>(null);
+
+  // Stable trigger function
+  const triggerSync = useCallback(() => {
+    if (engineRef.current) {
+      engineRef.current.triggerPush();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      // Not authenticated — tear down any existing engine
+      if (engineRef.current) {
+        engineRef.current.stopSync();
+        engineRef.current = null;
+      }
+      return;
+    }
+
+    // Create and start the sync engine
+    const engine = makeSyncEngine({
+      onSyncStart: () => setIsSyncing(true),
+      onSyncEnd: () => {
+        setIsSyncing(false);
+        setLastSyncedAt(new Date().toISOString());
+      },
+      onSyncError: (err) => {
+        setSyncError(err);
+      },
+      onAuthExpired: () => {
+        // Session expired — stop syncing; auth context will update separately
+        engine.stopSync();
+        engineRef.current = null;
+      },
+    });
+
+    engineRef.current = engine;
+    engine.startSync();
+
+    // Window focus → immediate push
+    function handleFocus() {
+      engineRef.current?.triggerPush();
+    }
+
+    // Online/offline handling
+    function handleOnline() {
+      engineRef.current?.startSync();
+    }
+
+    function handleOffline() {
+      engineRef.current?.stopSync();
+    }
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      engine.stopSync();
+      engineRef.current = null;
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [isAuthenticated]);
+
+  return { isSyncing, lastSyncedAt, syncError, triggerSync };
+}
