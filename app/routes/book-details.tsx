@@ -40,14 +40,27 @@ export function HydrateFallback() {
   );
 }
 
-function CoverImage({ coverImage, alt }: { coverImage: Blob; alt: string }) {
+function CoverImage({
+  coverImage,
+  alt,
+  remoteCoverUrl,
+}: {
+  coverImage: Blob | null;
+  alt: string;
+  remoteCoverUrl?: string;
+}) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const objectUrl = URL.createObjectURL(coverImage);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [coverImage]);
+    if (coverImage) {
+      const objectUrl = URL.createObjectURL(coverImage);
+      setUrl(objectUrl);
+      return () => URL.revokeObjectURL(objectUrl);
+    }
+    if (remoteCoverUrl) {
+      setUrl(remoteCoverUrl);
+    }
+  }, [coverImage, remoteCoverUrl]);
 
   if (!url) return null;
 
@@ -144,8 +157,12 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
         className={`mx-auto flex flex-col gap-8 sm:flex-row ${hasNotebook ? "max-w-5xl" : "max-w-2xl"}`}
       >
         <div className="shrink-0">
-          {book.coverImage ? (
-            <CoverImage coverImage={book.coverImage} alt={title} />
+          {book.coverImage || book.remoteCoverUrl ? (
+            <CoverImage
+              coverImage={book.coverImage}
+              alt={title}
+              remoteCoverUrl={book.remoteCoverUrl}
+            />
           ) : (
             <CoverPlaceholder />
           )}

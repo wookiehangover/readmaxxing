@@ -93,8 +93,12 @@ export function LibraryBrowseContent() {
                   className="block w-full text-left"
                 >
                   <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
-                    {book.coverImage ? (
-                      <CoverImage coverImage={book.coverImage} alt={book.title} />
+                    {book.coverImage || book.remoteCoverUrl ? (
+                      <CoverImage
+                        coverImage={book.coverImage}
+                        alt={book.title}
+                        remoteCoverUrl={book.remoteCoverUrl}
+                      />
                     ) : (
                       <CoverPlaceholder title={book.title} author={book.author} />
                     )}

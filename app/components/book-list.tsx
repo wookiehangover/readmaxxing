@@ -13,14 +13,25 @@ interface BookListProps {
   collapsed?: boolean;
 }
 
-export function BookCover({ coverImage }: { coverImage: Blob }) {
+export function BookCover({
+  coverImage,
+  remoteCoverUrl,
+}: {
+  coverImage: Blob | null;
+  remoteCoverUrl?: string;
+}) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const objectUrl = URL.createObjectURL(coverImage);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [coverImage]);
+    if (coverImage) {
+      const objectUrl = URL.createObjectURL(coverImage);
+      setUrl(objectUrl);
+      return () => URL.revokeObjectURL(objectUrl);
+    }
+    if (remoteCoverUrl) {
+      setUrl(remoteCoverUrl);
+    }
+  }, [coverImage, remoteCoverUrl]);
 
   if (!url) return null;
 
@@ -65,8 +76,8 @@ export function TocList({
 function BookItemContent({ book, collapsed }: { book: BookMeta; collapsed: boolean }) {
   return (
     <>
-      {book.coverImage ? (
-        <BookCover coverImage={book.coverImage} />
+      {book.coverImage || book.remoteCoverUrl ? (
+        <BookCover coverImage={book.coverImage} remoteCoverUrl={book.remoteCoverUrl} />
       ) : (
         <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted">
           <span className="text-xs text-muted-foreground">📖</span>

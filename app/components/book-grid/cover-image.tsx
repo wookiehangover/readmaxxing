@@ -1,13 +1,26 @@
 import { useEffect, useState } from "react";
 
-export function CoverImage({ coverImage, alt }: { coverImage: Blob; alt: string }) {
+export function CoverImage({
+  coverImage,
+  alt,
+  remoteCoverUrl,
+}: {
+  coverImage: Blob | null;
+  alt: string;
+  remoteCoverUrl?: string;
+}) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const objectUrl = URL.createObjectURL(coverImage);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [coverImage]);
+    if (coverImage) {
+      const objectUrl = URL.createObjectURL(coverImage);
+      setUrl(objectUrl);
+      return () => URL.revokeObjectURL(objectUrl);
+    }
+    if (remoteCoverUrl) {
+      setUrl(remoteCoverUrl);
+    }
+  }, [coverImage, remoteCoverUrl]);
 
   if (!url) return null;
 

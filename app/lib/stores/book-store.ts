@@ -159,23 +159,75 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
           try: () => get<Record<string, unknown>>(id, bookStore),
           catch: (cause) => new StorageError({ operation: "getBookData.migrate.read", cause }),
         });
-        if (!raw || !raw.data || !(raw.data instanceof ArrayBuffer)) {
-          return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
+        if (raw?.data && raw.data instanceof ArrayBuffer) {
+          const migratedData = raw.data as ArrayBuffer;
+
+          // Move binary data to the dedicated store and strip it from the metadata record
+          yield* Effect.tryPromise({
+            try: async () => {
+              await set(id, migratedData, bookDataStore);
+              const { data: _, ...metaOnly } = raw;
+              await set(id, metaOnly, bookStore);
+            },
+            catch: (cause) => new StorageError({ operation: "getBookData.migrate.write", cause }),
+          });
+
+          return migratedData;
         }
 
-        const migratedData = raw.data as ArrayBuffer;
+        // On-demand download: if the book has a remote file URL, fetch and cache it
+        const meta = raw
+          ? yield* Effect.try({
+              try: () => decodeBookMeta(raw),
+              catch: (cause) => new DecodeError({ operation: "getBookData.decodeMeta", cause }),
+            })
+          : null;
 
-        // Move binary data to the dedicated store and strip it from the metadata record
-        yield* Effect.tryPromise({
-          try: async () => {
-            await set(id, migratedData, bookDataStore);
-            const { data: _, ...metaOnly } = raw;
-            await set(id, metaOnly, bookStore);
-          },
-          catch: (cause) => new StorageError({ operation: "getBookData.migrate.write", cause }),
-        });
+        if (meta?.remoteFileUrl) {
+          const downloaded = yield* Effect.tryPromise({
+            try: async () => {
+              const res = await fetch(
+                `/api/sync/files/download?bookId=${encodeURIComponent(id)}&type=file`,
+                { credentials: "include" },
+              );
+              if (!res.ok) {
+                throw new Error(`Download failed: ${res.status} ${res.statusText}`);
+              }
+              return res.arrayBuffer();
+            },
+            catch: (cause) => new StorageError({ operation: "getBookData.download", cause }),
+          });
 
-        return migratedData;
+          // Cache the downloaded file locally
+          yield* Effect.tryPromise({
+            try: () => set(id, downloaded, bookDataStore),
+            catch: (cause) => new StorageError({ operation: "getBookData.cacheFile", cause }),
+          });
+
+          // Also download and cache the cover image if available
+          if (meta.remoteCoverUrl && !meta.coverImage) {
+            yield* Effect.tryPromise({
+              try: async () => {
+                const coverRes = await fetch(
+                  `/api/sync/files/download?bookId=${encodeURIComponent(id)}&type=cover`,
+                  { credentials: "include" },
+                );
+                if (coverRes.ok) {
+                  const coverBlob = await coverRes.blob();
+                  const updated = { ...meta, coverImage: coverBlob };
+                  await set(id, updated, bookStore);
+                }
+              },
+              catch: () => {
+                /* cover caching is best-effort, ignore errors */
+              },
+            }).pipe(Effect.catchAll(() => Effect.void));
+          }
+
+          return downloaded;
+        }
+
+        return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
       }),
 
     deleteBook: (id: string) =>
