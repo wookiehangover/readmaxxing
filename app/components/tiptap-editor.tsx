@@ -11,6 +11,16 @@ import {
 
 export interface TiptapEditorHandle {
   appendHighlightReference: (attrs: HighlightReferenceAttrs) => void;
+  appendContent: (nodes: JSONContent[]) => void;
+  setContent: (content: JSONContent) => void;
+  getContent: () => JSONContent;
+  /** Returns the current number of top-level nodes in the document. */
+  getTopLevelNodeCount: () => number;
+  /**
+   * Replace content from a given top-level node index to end of document.
+   * Used for streaming preview: truncate to `fromIndex` then append `nodes`.
+   */
+  replaceContentFrom: (fromIndex: number, nodes: JSONContent[]) => void;
 }
 
 interface TiptapEditorProps {
@@ -18,6 +28,8 @@ interface TiptapEditorProps {
   onUpdate?: (content: JSONContent) => void;
   onNavigateToHighlight?: (cfi: string) => void | Promise<void>;
   onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
+  /** Fires once the underlying Tiptap editor instance is created and ready. */
+  onReady?: () => void;
 }
 
 function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps) {
@@ -80,7 +92,7 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
 }
 
 export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(function TiptapEditor(
-  { content, onUpdate, onNavigateToHighlight, onDeleteHighlight },
+  { content, onUpdate, onNavigateToHighlight, onDeleteHighlight, onReady },
   ref,
 ) {
   const onUpdateRef = useRef(onUpdate);
@@ -106,6 +118,17 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     },
     immediatelyRender: true,
   });
+
+  // Notify parent when editor becomes available
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const firedReadyRef = useRef(false);
+  useEffect(() => {
+    if (editor && !firedReadyRef.current) {
+      firedReadyRef.current = true;
+      onReadyRef.current?.();
+    }
+  }, [editor]);
 
   // Listen for custom DOM events dispatched by HighlightReferenceView
   useEffect(() => {
@@ -140,6 +163,35 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
         const endPos = editor.state.doc.content.size;
         editor.chain().focus().insertContentAt(endPos, nodes).run();
       },
+      appendContent(nodes: JSONContent[]) {
+        if (!editor) return;
+        const endPos = editor.state.doc.content.size;
+        editor.chain().focus().insertContentAt(endPos, nodes).run();
+      },
+      setContent(content: JSONContent) {
+        if (!editor) return;
+        editor.commands.setContent(content);
+      },
+      getContent() {
+        if (!editor) return { type: "doc", content: [] };
+        return editor.getJSON();
+      },
+      getTopLevelNodeCount() {
+        if (!editor) return 0;
+        return editor.state.doc.childCount;
+      },
+      replaceContentFrom(fromIndex: number, nodes: JSONContent[]) {
+        if (!editor) return;
+        const doc = editor.state.doc;
+        // Find the position at the start of the node at fromIndex
+        let pos = 0;
+        for (let i = 0; i < Math.min(fromIndex, doc.childCount); i++) {
+          pos += doc.child(i).nodeSize;
+        }
+        // Delete from pos to end, then insert new nodes
+        const endPos = doc.content.size;
+        editor.chain().deleteRange({ from: pos, to: endPos }).insertContentAt(pos, nodes).run();
+      },
     }),
     [editor],
   );
@@ -148,7 +200,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     <div className="tiptap-editor">
       <EditorContent
         editor={editor}
-        className="prose prose-sm dark:prose-invert max-w-none px-4 py-3 focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none"
+        className="prose prose-sm dark:prose-invert max-w-none px-4 py-3 focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none [&_.tiptap_li]:my-0.5 [&_.tiptap_li_p]:my-0"
       />
     </div>
   );

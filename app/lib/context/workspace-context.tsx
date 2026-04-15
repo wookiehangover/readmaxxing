@@ -2,6 +2,15 @@ import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode
 import type { DockviewApi } from "dockview";
 import type { TocEntry } from "~/lib/context/reader-context";
 import type { BookMeta } from "~/lib/stores/book-store";
+import type { JSONContent } from "@tiptap/react";
+
+export interface NotebookEditorCallbacks {
+  appendContent: (nodes: JSONContent[]) => void;
+  setContent: (content: JSONContent) => void;
+  getContent: () => JSONContent;
+  getTopLevelNodeCount: () => number;
+  replaceContentFrom: (fromIndex: number, nodes: JSONContent[]) => void;
+}
 
 interface WorkspaceContextValue {
   /** panelId -> navigateToCfi callback */
@@ -52,6 +61,10 @@ interface WorkspaceContextValue {
   highlightDeleteMap: React.MutableRefObject<Map<string, (cfiRange: string) => void>>;
   /** Remove a highlight annotation from the reader rendition for a book */
   removeHighlightAnnotationForBook: (bookId: string, cfiRange: string) => void;
+  /** bookId -> notebook editor callbacks (appendContent, setContent, getContent) for live-sync */
+  notebookEditorCallbackMap: React.MutableRefObject<Map<string, NotebookEditorCallbacks>>;
+  /** bookId -> callback notified when notebook content changes (user edits or programmatic) */
+  notebookContentChangeMap: React.MutableRefObject<Map<string, (markdown: string) => void>>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -89,6 +102,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
   const tempHighlightMap = useRef(new Map<string, (cfi: string) => void>());
   const highlightDeleteMap = useRef(new Map<string, (cfiRange: string) => void>());
+  const notebookEditorCallbackMap = useRef(new Map<string, NotebookEditorCallbacks>());
+  const notebookContentChangeMap = useRef(new Map<string, (markdown: string) => void>());
 
   const findNavForBook = useCallback((bookId: string): ((cfi: string) => void) | undefined => {
     const api = dockviewApi.current;
@@ -194,6 +209,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       applyTempHighlightForBook,
       highlightDeleteMap,
       removeHighlightAnnotationForBook,
+      notebookEditorCallbackMap,
+      notebookContentChangeMap,
     }),
     [
       findNavForBook,
