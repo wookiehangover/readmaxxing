@@ -11,6 +11,7 @@ import {
   Search,
 } from "lucide-react";
 import { BookCover, filterBooks, FILTER_THRESHOLD } from "~/components/book-list";
+import { SyncStatus } from "~/components/sync-status";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
@@ -291,33 +292,43 @@ export function WorkspaceSidebar({
         )}
       </ScrollArea>
       <div
-        className={cn("border-t h-10 flex items-center @container", {
-          "justify-between px-1": !collapsed,
-          "justify-center": collapsed,
+        className={cn("border-t flex flex-col @container", {
+          "px-1": !collapsed,
+          "items-center": collapsed,
         })}
       >
-        <Link
-          to="/settings"
-          className={cn(
-            "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground",
-            { "mx-auto": collapsed },
-          )}
-          title="Settings"
+        <div
+          className={cn("flex h-10 items-center", {
+            "justify-between": !collapsed,
+            "justify-center": collapsed,
+          })}
         >
-          <Settings className="size-4" />
-          {!collapsed && <span>Settings</span>}
-        </Link>
-        {!collapsed && (
-          <button
-            type="button"
-            onClick={onOpenNewTab}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-            title="Open library panel"
+          <Link
+            to="/settings"
+            className={cn(
+              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground",
+              { "mx-auto": collapsed },
+            )}
+            title="Settings"
           >
-            <Plus className="size-4" />
-            <span>New tab</span>
-          </button>
-        )}
+            <Settings className="size-4" />
+            {!collapsed && <span>Settings</span>}
+          </Link>
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={onOpenNewTab}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Open library panel"
+            >
+              <Plus className="size-4" />
+              <span>New tab</span>
+            </button>
+          )}
+        </div>
+        <TooltipProvider delay={300}>
+          <SyncStatus collapsed={collapsed} />
+        </TooltipProvider>
       </div>
     </aside>
   );
