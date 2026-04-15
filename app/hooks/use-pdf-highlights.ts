@@ -383,6 +383,20 @@ export function usePdfHighlights({
     [bookId, applyHighlightOverlay],
   );
 
+  // Re-apply highlights when sync pulls new data
+  useEffect(() => {
+    const handler = () => {
+      // Clear existing overlays and reload from IDB
+      for (const overlay of overlaysRef.current.values()) {
+        overlay.remove();
+      }
+      overlaysRef.current.clear();
+      loadAndApplyHighlights().catch(console.error);
+    };
+    window.addEventListener("sync:pull-complete", handler);
+    return () => window.removeEventListener("sync:pull-complete", handler);
+  }, [loadAndApplyHighlights]);
+
   const dismissPopovers = useCallback(() => {
     setSelectionPopover(null);
   }, []);

@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -29,9 +29,17 @@ export function AnnotationsPanel({
   onDeleteHighlight,
   editorRef,
 }: AnnotationsPanelProps) {
+  // Bump syncVersion on pull-complete to re-read notebook from IDB
+  const [syncVersion, setSyncVersion] = useState(0);
+  useEffect(() => {
+    const handler = () => setSyncVersion((v) => v + 1);
+    window.addEventListener("sync:pull-complete", handler);
+    return () => window.removeEventListener("sync:pull-complete", handler);
+  }, []);
+
   const { data: notebook, isLoading } = useEffectQuery(
     () => AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))),
-    [bookId],
+    [bookId, syncVersion],
   );
   const content = notebook?.content;
   const loaded = !isLoading;

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Effect } from "effect";
 import type Rendition from "epubjs/types/rendition";
 import { AnnotationService, type Highlight } from "~/lib/stores/annotations-store";
@@ -146,6 +146,33 @@ export function useHighlights({
 
     return highlight;
   }, [selectionPopover, bookId, renditionRef, applyHighlightToRendition]);
+
+  /** Clear existing highlights from rendition and reload from IDB. */
+  const reloadHighlights = useCallback(async () => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+
+    // Clear existing highlights from rendition
+    for (const cfiRange of highlightsRef.current.keys()) {
+      try {
+        rendition.annotations.remove(cfiRange, "highlight");
+      } catch {
+        // ignore removal errors for missing annotations
+      }
+    }
+
+    // Reload from IDB and re-apply
+    await loadAndApplyHighlights(rendition);
+  }, [renditionRef, loadAndApplyHighlights]);
+
+  // Re-apply highlights when sync pulls new data
+  useEffect(() => {
+    const handler = () => {
+      reloadHighlights().catch(console.error);
+    };
+    window.addEventListener("sync:pull-complete", handler);
+    return () => window.removeEventListener("sync:pull-complete", handler);
+  }, [reloadHighlights]);
 
   const dismissPopovers = useCallback(() => {
     setSelectionPopover(null);
