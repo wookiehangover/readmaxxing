@@ -218,18 +218,29 @@ function serverChatMessageToLocal(record: Record<string, unknown>): LocalChatMes
 
 async function mergeBookRecord(record: Record<string, unknown>): Promise<void> {
   const store = getBookStore();
-  const localRecord = serverBookToLocal(record);
-  const id = localRecord.id as string;
+  const remoteRecord = serverBookToLocal(record);
+  const id = remoteRecord.id as string;
   const local = await get<Record<string, unknown>>(id, store);
 
   if (!local) {
-    await set(id, localRecord, store);
+    await set(id, remoteRecord, store);
     return;
   }
 
-  const merged = lwwMerge(local as { updatedAt: number }, localRecord as { updatedAt: number });
-  if (merged === localRecord) {
-    await set(id, localRecord, store);
+  const merged = lwwMerge(local as { updatedAt: number }, remoteRecord as { updatedAt: number });
+  if (merged === remoteRecord) {
+    // Server wins — preserve client-only fields from local record.
+    // hasLocalFile and coverImage are never sent to the server, so
+    // serverBookToLocal always returns them as undefined/null.
+    await set(
+      id,
+      {
+        ...remoteRecord,
+        hasLocalFile: local.hasLocalFile,
+        coverImage: local.coverImage ?? remoteRecord.coverImage,
+      },
+      store,
+    );
   }
 }
 
