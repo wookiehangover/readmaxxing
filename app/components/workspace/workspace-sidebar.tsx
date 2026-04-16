@@ -305,43 +305,28 @@ export function WorkspaceSidebar({
         )}
       </ScrollArea>
       <div
-        className={cn("border-t flex flex-col @container", {
-          "px-1": !collapsed,
-          "items-center": collapsed,
+        className={cn("border-t flex  @container items-center ", {
+          "px-1 justify-between h-10": !collapsed,
+          "flex-col py-1.5 gap-1": collapsed,
         })}
       >
-        <div
-          className={cn("flex h-10 items-center", {
-            "justify-between": !collapsed,
-            "justify-center": collapsed,
-          })}
-        >
-          <Link
-            to="/settings"
-            className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground",
-              { "mx-auto": collapsed },
-            )}
-            title="Settings"
-          >
-            <Settings className="size-4" />
-            {!collapsed && <span>Settings</span>}
-          </Link>
-          {!collapsed && (
-            <button
-              type="button"
-              onClick={onOpenNewTab}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-              title="Open library panel"
-            >
-              <Plus className="size-4" />
-              <span>New tab</span>
-            </button>
+        <Link
+          to="/settings"
+          className={cn(
+            "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground",
+            { "mx-auto": collapsed },
           )}
+          title="Settings"
+        >
+          <Settings className="size-4" />
+          {!collapsed && <span>Settings</span>}
+        </Link>
+
+        <div className={cn({ "order-first": collapsed })}>
+          <TooltipProvider delay={300}>
+            <SyncStatus collapsed={collapsed} />
+          </TooltipProvider>
         </div>
-        <TooltipProvider delay={300}>
-          <SyncStatus collapsed={collapsed} />
-        </TooltipProvider>
       </div>
     </aside>
   );
