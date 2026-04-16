@@ -1,0 +1,644 @@
+import { createStore, get, set, entries } from "idb-keyval";
+import type { UseStore } from "idb-keyval";
+import { getUnsyncedChanges, markSynced, clearSyncedChanges } from "./change-log";
+import { lwwMerge, setUnionMerge } from "./merge";
+import { getCursor, setCursor } from "./sync-cursors";
+import type { EntityType, SyncPushRequest, SyncPushResponse, SyncPullResponse } from "./types";
+
+// ---------------------------------------------------------------------------
+// IDB store accessors (same db/store names as book-store & position-store,
+// accessed directly to avoid circular Effect service dependencies)
+// ---------------------------------------------------------------------------
+
+let _bookStore: ReturnType<typeof createStore> | null = null;
+let _bookDataStore: ReturnType<typeof createStore> | null = null;
+let _positionStore: ReturnType<typeof createStore> | null = null;
+let _highlightStore: ReturnType<typeof createStore> | null = null;
+let _notebookStore: ReturnType<typeof createStore> | null = null;
+let _chatSessionStore: ReturnType<typeof createStore> | null = null;
+
+function getBookStore(): UseStore {
+  if (!_bookStore) _bookStore = createStore("ebook-reader-db", "books");
+  return _bookStore;
+}
+
+function getBookDataStore(): UseStore {
+  if (!_bookDataStore) _bookDataStore = createStore("ebook-reader-book-data", "book-data");
+  return _bookDataStore;
+}
+
+function getPositionStore(): UseStore {
+  if (!_positionStore) _positionStore = createStore("ebook-reader-positions", "positions");
+  return _positionStore;
+}
+
+function getHighlightStore(): UseStore {
+  if (!_highlightStore) _highlightStore = createStore("ebook-reader-highlights", "highlights");
+  return _highlightStore;
+}
+
+function getNotebookStore(): UseStore {
+  if (!_notebookStore) _notebookStore = createStore("ebook-reader-notebooks", "notebooks");
+  return _notebookStore;
+}
+
+function getChatSessionStore(): UseStore {
+  if (!_chatSessionStore) _chatSessionStore = createStore("ebook-reader-chat-sessions", "sessions");
+  return _chatSessionStore;
+}
+
+// ---------------------------------------------------------------------------
+// SyncEngine interface
+// ---------------------------------------------------------------------------
+
+export interface SyncEngine {
+  /** Push all unsynced local changes to the server. */
+  pushChanges(): Promise<void>;
+  /** Pull remote changes for all entity types and merge into local IDB. */
+  pullChanges(): Promise<void>;
+  /** Start periodic push/pull intervals and do an immediate pull. */
+  startSync(): void;
+  /** Stop all periodic sync intervals. */
+  stopSync(): void;
+  /** Trigger an immediate push (e.g. after a local write). */
+  triggerPush(): void;
+  /** Trigger an immediate pull (e.g. on window focus). */
+  triggerPull(): void;
+}
+
+// ---------------------------------------------------------------------------
+// Entity types we actively sync (subset of all EntityType values)
+// ---------------------------------------------------------------------------
+
+const SYNCABLE_ENTITIES: EntityType[] = [
+  "book",
+  "position",
+  "highlight",
+  "notebook",
+  "chat_session",
+  "chat_message",
+  "settings",
+];
+
+// ---------------------------------------------------------------------------
+// Server → local record transforms
+// ---------------------------------------------------------------------------
+
+function toTimestamp(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" || value instanceof Date) {
+    const ms = new Date(value as string).getTime();
+    if (!isNaN(ms)) return ms;
+  }
+  return Date.now();
+}
+
+function toOptionalTimestamp(value: unknown): number | undefined {
+  if (value == null) return undefined;
+  return toTimestamp(value);
+}
+
+/**
+ * Transform a server BookRow into the local BookMeta shape expected by
+ * BookMetaSchema (see book-store.ts).
+ */
+function serverBookToLocal(record: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: record.id,
+    title: (record.title as string) ?? "",
+    author: (record.author as string) ?? "",
+    coverImage: null, // can't reconstruct Blob from server; null until re-downloaded
+    format: (record.format as string) ?? "epub",
+    remoteCoverUrl: (record.coverBlobUrl as string) ?? undefined,
+    remoteFileUrl: (record.fileBlobUrl as string) ?? undefined,
+    fileHash: (record.fileHash as string) ?? undefined,
+    updatedAt: toTimestamp(record.updatedAt),
+    deletedAt: toOptionalTimestamp(record.deletedAt),
+  };
+}
+
+/**
+ * Transform a server ReadingPositionRow into the local PositionRecord shape
+ * expected by position-store.ts ({ cfi, updatedAt: number }).
+ */
+function serverPositionToLocal(record: Record<string, unknown>): {
+  id: string;
+  cfi: string;
+  updatedAt: number;
+} {
+  const bookId = (record.bookId as string) ?? (record.id as string);
+  return {
+    id: bookId,
+    cfi: (record.cfi as string) ?? "",
+    updatedAt: toTimestamp(record.updatedAt),
+  };
+}
+
+/**
+ * Transform a server HighlightRow into the local Highlight shape
+ * expected by annotations-store.ts.
+ */
+function serverHighlightToLocal(record: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: record.id,
+    bookId: record.bookId,
+    cfiRange: (record.cfiRange as string) ?? "",
+    text: (record.text as string) ?? "",
+    color: (record.color as string) ?? "yellow",
+    createdAt: toTimestamp(record.createdAt),
+    updatedAt: toTimestamp(record.createdAt), // highlights use createdAt as the main timestamp
+    pageNumber: (record.pageNumber as number) ?? undefined,
+    textOffset: (record.textOffset as number) ?? undefined,
+    textLength: (record.textLength as number) ?? undefined,
+    deletedAt: toOptionalTimestamp(record.deletedAt),
+  };
+}
+
+/**
+ * Transform a server NotebookRow into the local Notebook shape
+ * expected by annotations-store.ts.
+ */
+function serverNotebookToLocal(record: Record<string, unknown>): Record<string, unknown> {
+  return {
+    bookId: (record.bookId as string) ?? "",
+    content: record.content ?? {},
+    updatedAt: toTimestamp(record.updatedAt),
+  };
+}
+
+/** ChatSession shape matching chat-store.ts */
+interface LocalChatSession {
+  id: string;
+  bookId: string;
+  title: string;
+  messages: LocalChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface LocalChatMessage {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: number;
+  parts?: unknown[];
+}
+
+/**
+ * Transform a server ChatSessionRow into a minimal local ChatSession shape.
+ * Messages are merged separately — the session transform only handles metadata.
+ */
+function serverChatSessionToLocal(record: Record<string, unknown>): LocalChatSession {
+  return {
+    id: (record.id as string) ?? "",
+    bookId: (record.bookId as string) ?? "",
+    title: (record.title as string) ?? "",
+    messages: [], // messages merged separately
+    createdAt: toTimestamp(record.createdAt),
+    updatedAt: toTimestamp(record.updatedAt),
+  };
+}
+
+/**
+ * Transform a server ChatMessageRow into a local ChatMessage shape.
+ */
+function serverChatMessageToLocal(record: Record<string, unknown>): LocalChatMessage {
+  return {
+    id: (record.id as string) ?? "",
+    role: (record.role as string) ?? "user",
+    content: (record.content as string) ?? "",
+    createdAt: toTimestamp(record.createdAt),
+    parts: record.parts != null ? (record.parts as unknown[]) : undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Merge helpers
+// ---------------------------------------------------------------------------
+
+async function mergeBookRecord(record: Record<string, unknown>): Promise<void> {
+  const store = getBookStore();
+  const remoteRecord = serverBookToLocal(record);
+  const id = remoteRecord.id as string;
+  const local = await get<Record<string, unknown>>(id, store);
+
+  if (!local) {
+    await set(id, remoteRecord, store);
+    return;
+  }
+
+  const merged = lwwMerge(local as { updatedAt: number }, remoteRecord as { updatedAt: number });
+  if (merged === remoteRecord) {
+    // Server wins — preserve client-only fields from local record.
+    // hasLocalFile and coverImage are never sent to the server, so
+    // serverBookToLocal always returns them as undefined/null.
+    await set(
+      id,
+      {
+        ...remoteRecord,
+        hasLocalFile: local.hasLocalFile,
+        coverImage: local.coverImage ?? remoteRecord.coverImage,
+      },
+      store,
+    );
+  }
+}
+
+async function mergePositionRecord(record: Record<string, unknown>): Promise<void> {
+  const store = getPositionStore();
+  const localRecord = serverPositionToLocal(record);
+  const id = localRecord.id;
+  const local = await get<Record<string, unknown>>(id, store);
+
+  if (!local) {
+    await set(id, localRecord, store);
+    return;
+  }
+
+  const merged = lwwMerge(local as { updatedAt: number }, localRecord as { updatedAt: number });
+  if (merged === localRecord) {
+    await set(id, localRecord, store);
+  }
+}
+
+/**
+ * Merge a single highlight record using set-union semantics.
+ * If either side has deletedAt, tombstone propagates. Otherwise LWW by updatedAt.
+ */
+async function mergeHighlightRecord(record: Record<string, unknown>): Promise<void> {
+  const store = getHighlightStore();
+  const remoteRecord = serverHighlightToLocal(record);
+  const id = remoteRecord.id as string;
+  const local = await get<Record<string, unknown>>(id, store);
+
+  if (!local) {
+    await set(id, remoteRecord, store);
+    return;
+  }
+
+  // Use setUnionMerge for a single-item merge (handles tombstones correctly)
+  const [merged] = setUnionMerge(
+    [local as { deletedAt?: number | null }],
+    [remoteRecord as { deletedAt?: number | null }],
+    (item) => (item as Record<string, unknown>).id as string,
+  );
+  // Write if the merge result differs from local
+  if (merged !== local) {
+    await set(id, merged, store);
+  }
+}
+
+/**
+ * Merge a notebook record using LWW by updatedAt.
+ */
+async function mergeNotebookRecord(record: Record<string, unknown>): Promise<void> {
+  const store = getNotebookStore();
+  const remoteRecord = serverNotebookToLocal(record);
+  const id = remoteRecord.bookId as string;
+  const local = await get<Record<string, unknown>>(id, store);
+
+  if (!local) {
+    await set(id, remoteRecord, store);
+    return;
+  }
+
+  const merged = lwwMerge(local as { updatedAt: number }, remoteRecord as { updatedAt: number });
+  if (merged === remoteRecord) {
+    await set(id, remoteRecord, store);
+  }
+}
+
+/**
+ * Merge a chat session record (LWW for session metadata).
+ * Chat sessions are stored per-bookId as ChatSession[] in IDB.
+ */
+async function mergeChatSessionRecord(record: Record<string, unknown>): Promise<void> {
+  const store = getChatSessionStore();
+  const remote = serverChatSessionToLocal(record);
+  const bookId = remote.bookId;
+  if (!bookId) return;
+
+  const sessions = (await get<LocalChatSession[]>(bookId, store)) ?? [];
+  const idx = sessions.findIndex((s) => s.id === remote.id);
+
+  if (idx < 0) {
+    // New session from server — add it (preserve empty messages array)
+    sessions.push(remote);
+  } else {
+    // LWW merge on metadata only, preserving local messages
+    const local = sessions[idx];
+    if (remote.updatedAt > local.updatedAt) {
+      sessions[idx] = {
+        ...remote,
+        messages: local.messages, // keep local messages intact
+      };
+    }
+  }
+
+  await set(bookId, sessions, store);
+}
+
+/**
+ * Merge a chat message record (append-only by message ID).
+ * Finds the parent session in IDB and adds the message if not already present.
+ */
+async function mergeChatMessageRecord(record: Record<string, unknown>): Promise<void> {
+  const store = getChatSessionStore();
+  const remoteMsg = serverChatMessageToLocal(record);
+  const sessionId = (record.sessionId as string) ?? "";
+  if (!sessionId) return;
+
+  // We need to find which bookId this session belongs to.
+  // Scan all entries to find the session. This is suboptimal but the chat
+  // store is keyed by bookId (not sessionId).
+  const allEntries = await entries<string, LocalChatSession[]>(store);
+  for (const [bookId, sessions] of allEntries) {
+    if (!sessions) continue;
+    const sIdx = sessions.findIndex((s) => s.id === sessionId);
+    if (sIdx < 0) continue;
+
+    const session = sessions[sIdx];
+    // Append-only: add if not already present by ID.
+    // Messages arrive from the server in created_at ASC order, so simply
+    // appending preserves the correct sequence without needing a sort
+    // (sorting was unreliable because some messages had createdAt of 0).
+    const exists = session.messages.some((m) => m.id === remoteMsg.id);
+    if (!exists) {
+      session.messages.push(remoteMsg);
+      sessions[sIdx] = { ...session, updatedAt: Math.max(session.updatedAt, remoteMsg.createdAt) };
+      await set(bookId, sessions, store);
+    }
+    return;
+  }
+
+  // If the session doesn't exist locally yet, the session record may arrive
+  // in the same pull batch. The pull loop processes entities in order
+  // (chat_session before chat_message), so this is unlikely but harmless.
+}
+
+/**
+ * Merge a settings record (LWW).
+ * Settings live in localStorage, not IDB. After merging, dispatch a custom
+ * event so useSettings re-reads.
+ */
+async function mergeSettingsRecord(record: Record<string, unknown>): Promise<void> {
+  const remoteSettings = record.settings as Record<string, unknown> | undefined;
+  const remoteUpdatedAt = toTimestamp(record.updatedAt);
+  if (!remoteSettings) return;
+
+  const STORAGE_KEY = "app-settings";
+  let local: Record<string, unknown> = {};
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) local = JSON.parse(raw);
+  } catch {
+    // corrupt localStorage, overwrite
+  }
+
+  const localUpdatedAt = typeof local.updatedAt === "number" ? local.updatedAt : 0;
+
+  if (remoteUpdatedAt > localUpdatedAt) {
+    const merged = { ...remoteSettings, updatedAt: remoteUpdatedAt };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    queueMicrotask(() => {
+      window.dispatchEvent(new CustomEvent("settings-changed"));
+    });
+  }
+}
+
+const ENTITY_MERGERS: Partial<
+  Record<EntityType, (record: Record<string, unknown>) => Promise<void>>
+> = {
+  book: mergeBookRecord,
+  position: mergePositionRecord,
+  highlight: mergeHighlightRecord,
+  notebook: mergeNotebookRecord,
+  chat_session: mergeChatSessionRecord,
+  chat_message: mergeChatMessageRecord,
+  settings: mergeSettingsRecord,
+};
+
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+
+export interface SyncEngineCallbacks {
+  onSyncStart?: () => void;
+  onSyncEnd?: (result: { success: boolean }) => void;
+  onSyncError?: (error: Error) => void;
+  onAuthExpired?: () => void;
+}
+
+const PUSH_INTERVAL_MS = 30_000;
+const PULL_INTERVAL_MS = 60_000;
+
+export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine {
+  let pushTimer: ReturnType<typeof setInterval> | null = null;
+  let pullTimer: ReturnType<typeof setInterval> | null = null;
+  let stopped = false;
+
+  async function uploadFile(
+    bookId: string,
+    data: ArrayBuffer | Blob,
+    type: "file" | "cover",
+  ): Promise<string | null> {
+    const fileName = type === "cover" ? "cover.jpg" : "book.epub";
+    const blob = data instanceof Blob ? data : new Blob([data], { type: "application/epub+zip" });
+    const formData = new FormData();
+    formData.set("bookId", bookId);
+    formData.set("file", new File([blob], fileName));
+
+    const res = await fetch(`/api/sync/files/upload?type=${type}`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (res.status === 401) {
+      callbacks.onAuthExpired?.();
+      return null;
+    }
+    if (!res.ok) {
+      console.error(`[sync] File upload failed for ${bookId} (${type}): ${res.status}`);
+      return null;
+    }
+
+    const result: { url: string } = await res.json();
+    return result.url;
+  }
+
+  /**
+   * Scan all books in IDB and upload any that have local file data or cover
+   * images but are missing their remote URLs. Runs asynchronously after
+   * metadata push — failures are logged but don't block the sync cycle.
+   */
+  async function uploadPendingFiles(): Promise<void> {
+    if (stopped) return;
+
+    const bookStore = getBookStore();
+    const dataStore = getBookDataStore();
+    const allBooks = await entries<string, Record<string, unknown>>(bookStore);
+
+    for (const [bookId, meta] of allBooks) {
+      if (!meta || meta.deletedAt) continue;
+
+      // Upload epub file if missing remoteFileUrl
+      if (!meta.remoteFileUrl) {
+        const fileData = await get<ArrayBuffer>(bookId, dataStore);
+        if (fileData) {
+          const url = await uploadFile(bookId, fileData, "file");
+          if (url) {
+            await set(bookId, { ...meta, remoteFileUrl: url, hasLocalFile: true }, bookStore);
+          }
+        }
+      }
+
+      // Upload cover image if missing remoteCoverUrl
+      if (!meta.remoteCoverUrl && meta.coverImage instanceof Blob) {
+        const url = await uploadFile(bookId, meta.coverImage, "cover");
+        if (url) {
+          // Re-read in case the file upload above already updated meta
+          const current = (await get<Record<string, unknown>>(bookId, bookStore)) ?? meta;
+          await set(bookId, { ...current, remoteCoverUrl: url, hasLocalFile: true }, bookStore);
+        }
+      }
+    }
+
+    // Notify UI so book list re-renders without stale cloud icons
+    if (typeof window !== "undefined") {
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }),
+        );
+      });
+    }
+  }
+
+  async function pushChanges(): Promise<void> {
+    if (stopped) return;
+    const changes = await getUnsyncedChanges();
+    if (changes.length === 0) return;
+
+    const body: SyncPushRequest = { changes };
+    const res = await fetch("/api/sync/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (res.status === 401) {
+      callbacks.onAuthExpired?.();
+      return;
+    }
+    if (!res.ok) {
+      throw new Error(`Push failed: ${res.status} ${res.statusText}`);
+    }
+
+    const result: SyncPushResponse = await res.json();
+    if (result.accepted.length > 0) {
+      await markSynced(result.accepted);
+      await clearSyncedChanges();
+    }
+
+    // Fire-and-forget file uploads after metadata push succeeds
+    uploadPendingFiles().catch((err) => console.error("[sync] File upload pass failed:", err));
+  }
+
+  async function pullChanges(): Promise<void> {
+    if (stopped) return;
+
+    // The pull route expects `since` (ISO date) and `entityType` (comma-separated).
+    // Use the minimum per-entity cursor so we don't miss any changes.
+    // Merge is idempotent so re-fetching already-seen records is safe.
+    let minCursor: string | null = null;
+    for (const entity of SYNCABLE_ENTITIES) {
+      const cursor = await getCursor(entity);
+      if (cursor && (!minCursor || cursor < minCursor)) {
+        minCursor = cursor;
+      }
+    }
+
+    const params = new URLSearchParams();
+    if (minCursor) {
+      params.set("since", minCursor);
+    }
+    params.set("entityType", SYNCABLE_ENTITIES.join(","));
+
+    const res = await fetch(`/api/sync/pull?${params.toString()}`);
+
+    if (res.status === 401) {
+      callbacks.onAuthExpired?.();
+      return;
+    }
+    if (!res.ok) {
+      throw new Error(`Pull failed: ${res.status} ${res.statusText}`);
+    }
+
+    const result: SyncPullResponse = await res.json();
+
+    for (const group of result.changes) {
+      const merger = ENTITY_MERGERS[group.entity];
+      if (!merger) continue;
+
+      for (const record of group.records) {
+        await merger(record as Record<string, unknown>);
+      }
+
+      await setCursor(group.entity, group.cursor);
+
+      // Dispatch granular per-entity event so only relevant components re-render
+      if (group.records.length > 0) {
+        queueMicrotask(() => {
+          window.dispatchEvent(
+            new CustomEvent("sync:entity-updated", { detail: { entity: group.entity } }),
+          );
+        });
+      }
+    }
+  }
+
+  async function runCycle(fn: () => Promise<void>): Promise<void> {
+    let success = false;
+    try {
+      callbacks.onSyncStart?.();
+      await fn();
+      success = true;
+    } catch (err) {
+      callbacks.onSyncError?.(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      callbacks.onSyncEnd?.({ success });
+    }
+  }
+
+  return {
+    pushChanges: () => runCycle(pushChanges),
+    pullChanges: () => runCycle(pullChanges),
+
+    startSync() {
+      stopped = false;
+      // Immediate pull on start
+      runCycle(pullChanges);
+      pushTimer = setInterval(() => runCycle(pushChanges), PUSH_INTERVAL_MS);
+      pullTimer = setInterval(() => runCycle(pullChanges), PULL_INTERVAL_MS);
+    },
+
+    stopSync() {
+      stopped = true;
+      if (pushTimer) {
+        clearInterval(pushTimer);
+        pushTimer = null;
+      }
+      if (pullTimer) {
+        clearInterval(pullTimer);
+        pullTimer = null;
+      }
+    },
+
+    triggerPush() {
+      runCycle(pushChanges);
+    },
+
+    triggerPull() {
+      runCycle(pullChanges);
+    },
+  };
+}

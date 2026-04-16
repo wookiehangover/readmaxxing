@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef, useState } from "react";
 import { Effect } from "effect";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import {
@@ -57,12 +58,55 @@ export function WorkspaceNotebook({
   const displayTitle = book?.title ?? bookTitle;
   const displayAuthor = book?.author;
 
+  // Track the last known serialized content to detect actual changes from sync
+  const lastContentRef = useRef<string | null>(null);
+  // Flag to suppress handleUpdate saves when content is set from a sync pull
+  const fromSyncRef = useRef(false);
+
   const { data: notebook, isLoading } = useEffectQuery(
     () => AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))),
     [bookId],
   );
   const content = notebook?.content;
   const loaded = !isLoading;
+
+  // Seed lastContentRef when notebook first loads
+  useEffect(() => {
+    if (content) {
+      lastContentRef.current = JSON.stringify(content);
+    }
+  }, [content]);
+
+  // On sync pull, compare pulled content with current — only update editor if different
+  const notebookSyncVersion = useSyncListener(["notebook"]);
+  useEffect(() => {
+    if (notebookSyncVersion === 0) return;
+    // Skip if user has pending local edits
+    if (pendingContentRef.current) return;
+
+    (async () => {
+      try {
+        const nb = await AppRuntime.runPromise(
+          AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))),
+        );
+        if (!nb?.content) return;
+
+        const newContentStr = JSON.stringify(nb.content);
+        if (newContentStr === lastContentRef.current) return; // No change, skip
+
+        lastContentRef.current = newContentStr;
+
+        // Update editor in-place if available, avoiding a full remount
+        if (editorRef.current) {
+          fromSyncRef.current = true;
+          editorRef.current.setContent(nb.content);
+          fromSyncRef.current = false;
+        }
+      } catch (err) {
+        console.error("Failed to check notebook sync:", err);
+      }
+    })();
+  }, [bookId, notebookSyncVersion]);
 
   // Track the latest unsaved content so we can flush on unmount
   const pendingContentRef = useRef<JSONContent | null>(null);
@@ -93,6 +137,9 @@ export function WorkspaceNotebook({
 
   const handleUpdate = useCallback(
     (newContent: JSONContent) => {
+      // Skip saving when content was set from a sync pull (not a user edit)
+      if (fromSyncRef.current) return;
+
       // Notify chat panel of content changes so read_notes sees current content
       const changeCallback = notebookContentChangeMap.current.get(bookId);
       if (changeCallback) {
@@ -106,6 +153,8 @@ export function WorkspaceNotebook({
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         pendingContentRef.current = null;
+        // Update lastContentRef so future sync pulls can compare accurately
+        lastContentRef.current = JSON.stringify(newContent);
         const program = Effect.gen(function* () {
           const svc = yield* AnnotationService;
           yield* svc.saveNotebook({

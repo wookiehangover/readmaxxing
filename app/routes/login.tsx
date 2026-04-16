@@ -4,6 +4,7 @@ import { Cause, Effect, Runtime } from "effect";
 import { Loader2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { AuthService } from "~/lib/auth-service";
+import { useAuth } from "~/lib/context/auth-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 
 /**
@@ -45,10 +46,10 @@ function extractErrorMessage(err: unknown, fallback: string): string {
 }
 
 export async function clientLoader() {
-  const isAuthed = await AppRuntime.runPromise(
-    AuthService.pipe(Effect.andThen((s) => s.isAuthenticated())),
+  const session = await AppRuntime.runPromise(
+    AuthService.pipe(Effect.andThen((s) => s.getSession())),
   );
-  if (isAuthed) {
+  if (session.user) {
     throw redirect("/");
   }
   return {};
@@ -66,6 +67,7 @@ export function HydrateFallback() {
 
 export default function LoginRoute() {
   const navigate = useNavigate();
+  const { refreshAuth } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState<"register" | "signin" | null>(null);
 
@@ -74,6 +76,7 @@ export default function LoginRoute() {
     setLoadingAction("register");
     try {
       await AppRuntime.runPromise(AuthService.pipe(Effect.andThen((s) => s.register("Reader"))));
+      refreshAuth();
       navigate("/", { replace: true });
     } catch (err: unknown) {
       if (err instanceof Response) return;
@@ -89,6 +92,7 @@ export default function LoginRoute() {
     setLoadingAction("signin");
     try {
       await AppRuntime.runPromise(AuthService.pipe(Effect.andThen((s) => s.signIn())));
+      refreshAuth();
       navigate("/", { replace: true });
     } catch (err: unknown) {
       if (err instanceof Response) return;

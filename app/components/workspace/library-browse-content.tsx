@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import type { BookMeta } from "~/lib/stores/book-store";
+import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { useBookUpload } from "~/hooks/use-book-upload";
 import { useBookDeletion } from "~/hooks/use-book-deletion";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -85,47 +85,56 @@ export function LibraryBrowseContent() {
       ) : (
         <div className="h-full overflow-y-auto p-4 md:p-6">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-            {books.map((book) => (
-              <div key={book.id} className="group relative">
-                <button
-                  type="button"
-                  onClick={() => handleOpenBook(book)}
-                  className="block w-full text-left"
-                >
-                  <div className="overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
-                    {book.coverImage ? (
-                      <CoverImage coverImage={book.coverImage} alt={book.title} />
-                    ) : (
-                      <CoverPlaceholder title={book.title} author={book.author} />
-                    )}
-                  </div>
-                  <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
-                  <p className="truncate text-xs text-muted-foreground">{book.author}</p>
-                </button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/70 focus-visible:opacity-100 group-hover:opacity-100"
-                    render={<button type="button" />}
-                    onClick={(e) => e.preventDefault()}
+            {books.map((book) => {
+              const needsDownload = bookNeedsDownload(book);
+              return (
+                <div key={book.id} className="group relative">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenBook(book)}
+                    className="block w-full text-left"
                   >
-                    <Ellipsis className="size-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleOpenNotebook(book)}>
-                      <NotebookPen className="size-4" />
-                      Open notebook
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onClick={() => handleDeleteBook(book.id)}
+                    <div className="relative overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
+                      {book.coverImage || book.remoteCoverUrl ? (
+                        <CoverImage
+                          coverImage={book.coverImage}
+                          alt={book.title}
+                          remoteCoverUrl={book.remoteCoverUrl}
+                          bookId={book.id}
+                          needsDownload={needsDownload}
+                        />
+                      ) : (
+                        <CoverPlaceholder title={book.title} author={book.author} />
+                      )}
+                    </div>
+                    <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
+                    <p className="truncate text-xs text-muted-foreground">{book.author}</p>
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/70 focus-visible:opacity-100 group-hover:opacity-100"
+                      render={<button type="button" />}
+                      onClick={(e) => e.preventDefault()}
                     >
-                      <Trash2 className="size-4" />
-                      Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            ))}
+                      <Ellipsis className="size-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleOpenNotebook(book)}>
+                        <NotebookPen className="size-4" />
+                        Open notebook
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => handleDeleteBook(book.id)}
+                      >
+                        <Trash2 className="size-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              );
+            })}
             <div>
               <AddBookCard onClick={() => fileInputRef.current?.click()} />
             </div>

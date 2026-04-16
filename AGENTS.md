@@ -21,6 +21,10 @@ Ebook reader web app. Users drag-and-drop `.epub` files, which are persisted in 
 - **Linting**: oxlint (no eslint)
 - **Formatting**: oxfmt
 - **Effect System**: Effect.ts (`effect` package)
+- **Database**: Postgres via `pg` + `pg-sql` (PlanetScale Postgres on Vercel with Fluid Compute)
+- **Auth**: Self-hosted WebAuthn passkeys via `@simplewebauthn/server` + `@simplewebauthn/browser`
+- **File Storage**: Vercel Blob (private access, server-proxied)
+- **Sync**: Local-first sync engine with per-entity-type merge strategies (LWW, set-union, append-only)
 - **Package Manager**: pnpm
 
 ## Key Architecture Decisions
@@ -50,6 +54,24 @@ Reading positions (CFI strings) are stored per-book in IndexedDB using a separat
 ### Client-side only
 
 All epub parsing, IndexedDB access, and rendering must happen client-side. Use `clientLoader` (not `loader`) in React Router routes. epubjs and IndexedDB APIs are not available during SSR.
+
+### Sync architecture
+
+The app is local-first: IndexedDB is the source of truth. Sync is optional and requires authentication.
+
+**Change tracking**: All service mutations (BookService, AnnotationService, ChatService, Settings) call `recordChange()` which writes to a changelog IDB store. Changes are queued and pushed to the server on an interval or immediately on `sync:push-needed` events.
+
+**Merge strategies**:
+
+- Books, reading positions, notebooks, settings: Last-Write-Wins (LWW) by `updatedAt`
+- Highlights: Set-union with tombstone propagation (soft delete)
+- Chat messages: Append-only (ON CONFLICT DO NOTHING)
+
+**Sync events**: The sync engine dispatches granular `sync:entity-updated` events (not a blanket event). Components use the `useSyncListener(["entity"])` hook to only re-render when their specific data changes.
+
+**File sync**: Epub files and covers are uploaded to Vercel Blob (private). On pull, metadata syncs immediately; files are downloaded on-demand when the user opens the book.
+
+**Initial sync**: On first login, `runInitialSyncIfNeeded()` scans all IDB stores and backfills the change log so existing data gets pushed.
 
 ### Effect.ts conventions
 
@@ -142,6 +164,8 @@ export class MyError extends Data.TaggedError("MyError")<{
 - Prefer self-hosted fonts over CDN when font files are available locally
 - Always run `pnpm oxfmt .` before committing to ensure consistent formatting
 - Always run `pnpm oxlint` before committing and fix any warnings
+- Wrap custom event dispatches in `queueMicrotask()` to avoid React flushSync errors
+- Use `useSyncListener(["entity"])` hook for sync reactivity, not raw event listeners
 
 ## Component Architecture Rules
 

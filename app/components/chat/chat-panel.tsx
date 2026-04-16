@@ -12,6 +12,7 @@ import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
 import { cn } from "~/lib/utils";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import {
   toUIMessages,
@@ -47,6 +48,9 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const bookDataRef = useRef<ArrayBuffer | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef("");
+  // Ref to setMessages from ChatPanelInner's useChat hook — lets us update
+  // messages in-place on sync without remounting (which loses scroll position).
+  const setChatMessagesRef = useRef<((msgs: UIMessage[]) => void) | null>(null);
 
   // Load chat history and book context on mount
   useEffect(() => {
@@ -111,6 +115,39 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     };
   }, [bookId]);
 
+  // Track current messages for sync comparison without re-registering the listener
+  const initialMessagesRef = useRef(initialMessages);
+  initialMessagesRef.current = initialMessages;
+
+  // Reload chat messages when sync pulls chat data from server
+  const chatSyncVersion = useSyncListener(["chat_session", "chat_message"]);
+  useEffect(() => {
+    if (chatSyncVersion === 0 || !activeSessionId) return;
+    AppRuntime.runPromise(
+      ChatService.pipe(Effect.andThen((s) => s.getSession(activeSessionId, bookId))),
+    )
+      .then((session) => {
+        if (!session) return;
+        const newMessages = toUIMessages(session.messages);
+        const currentLast = initialMessagesRef.current?.[initialMessagesRef.current.length - 1];
+        const newLast = newMessages[newMessages.length - 1];
+        // Only update if the last message actually changed
+        if (currentLast?.id !== newLast?.id) {
+          setSessionTitle(session.title);
+          if (setChatMessagesRef.current) {
+            // Update messages in-place without remounting — preserves scroll
+            setChatMessagesRef.current(newMessages);
+            initialMessagesRef.current = newMessages;
+          } else {
+            // Fallback: remount if ref isn't registered yet
+            setInitialMessages(newMessages);
+            setSessionKey((k) => k + 1);
+          }
+        }
+      })
+      .catch(console.error);
+  }, [bookId, activeSessionId, chatSyncVersion]);
+
   const handleSwitchSession = useCallback(
     async (sessionId: string) => {
       await AppRuntime.runPromise(
@@ -171,6 +208,9 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       onSwitchSession={handleSwitchSession}
       onNewSession={handleNewSession}
       onSessionTitleChange={setSessionTitle}
+      onRegisterSetMessages={(fn) => {
+        setChatMessagesRef.current = fn;
+      }}
     />
   );
 }
@@ -189,6 +229,7 @@ function ChatPanelInner({
   onSwitchSession,
   onNewSession,
   onSessionTitleChange,
+  onRegisterSetMessages,
 }: {
   bookId: string;
   bookTitle: string;
@@ -203,6 +244,7 @@ function ChatPanelInner({
   onSwitchSession: (sessionId: string) => void;
   onNewSession: () => void;
   onSessionTitleChange: (title: string) => void;
+  onRegisterSetMessages?: (fn: (msgs: UIMessage[]) => void) => void;
 }) {
   const { chatContextMap, notebookContentChangeMap, notebookEditorCallbackMap } = useWorkspace();
   const [showSessionList, setShowSessionList] = useState(false);
@@ -348,7 +390,7 @@ function ChatPanelInner({
     [onToolFinish, bookId, onSessionTitleChange],
   );
 
-  const { messages, sendMessage, status, stop } = useChat({
+  const { messages, sendMessage, setMessages, status, stop } = useChat({
     id: `chat-${bookId}`,
     transport,
     messages: initialMessages,
@@ -363,6 +405,11 @@ function ChatPanelInner({
 
   // Keep messagesRef in sync
   messagesRef.current = messages;
+
+  // Expose setMessages to the parent so sync can update messages in-place
+  useEffect(() => {
+    onRegisterSetMessages?.(setMessages);
+  }, [setMessages, onRegisterSetMessages]);
 
   // Stream append_to_notes content to the notebook in real-time as tokens arrive
   useStreamingAppend({

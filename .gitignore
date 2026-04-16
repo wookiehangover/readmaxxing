@@ -1,5 +1,6 @@
 .DS_Store
 .env
+.env.local
 /node_modules/
 
 # React Router
@@ -8,3 +9,5 @@
 .intent/
 playwright-report/
 .last-run.json
+.vercel
+.env*.local

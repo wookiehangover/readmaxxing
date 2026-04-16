@@ -11,6 +11,7 @@ import type { Route } from "./+types/root";
 import "./app.css";
 import { ThemeEffect } from "~/components/theme-effect";
 import { AuthProvider } from "~/lib/context/auth-context";
+import { useSync, SyncContext } from "~/lib/sync/use-sync";
 import { COLOR_THEMES } from "~/lib/color-themes";
 
 // Build a minimal JSON blob of non-default theme CSS variables for the FOUC script.
@@ -100,10 +101,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
+function SyncProvider({ children }: { children: React.ReactNode }) {
+  const syncState = useSync();
+  return <SyncContext.Provider value={syncState}>{children}</SyncContext.Provider>;
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <Outlet />
+      <SyncProvider>
+        <Outlet />
+      </SyncProvider>
     </AuthProvider>
   );
 }

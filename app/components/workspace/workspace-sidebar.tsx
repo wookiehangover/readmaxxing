@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { Link } from "react-router";
 import {
   BookOpen,
+  CloudDownload,
   NotebookPen,
   Plus,
   ArrowUpDown,
@@ -11,10 +12,11 @@ import {
   Search,
 } from "lucide-react";
 import { BookCover, filterBooks, FILTER_THRESHOLD } from "~/components/book-list";
+import { SyncStatus } from "~/components/sync-status";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
-import type { BookMeta } from "~/lib/stores/book-store";
+import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import type { WorkspaceSortBy } from "~/lib/settings";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -29,17 +31,29 @@ const SORT_OPTIONS: { value: WorkspaceSortBy; label: string }[] = [
 ];
 
 function WorkspaceSidebarBookContent({ book, collapsed }: { book: BookMeta; collapsed: boolean }) {
+  const needsDownload = bookNeedsDownload(book);
   return (
     <>
-      {book.coverImage ? (
-        <BookCover coverImage={book.coverImage} />
-      ) : (
-        <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted">
-          <span className="text-xs text-muted-foreground">📖</span>
-        </div>
-      )}
+      <div className="relative shrink-0">
+        {book.coverImage || book.remoteCoverUrl ? (
+          <BookCover
+            coverImage={book.coverImage}
+            remoteCoverUrl={book.remoteCoverUrl}
+            bookId={book.id}
+          />
+        ) : (
+          <div className="flex h-12 w-8 items-center justify-center rounded bg-muted">
+            <span className="text-xs text-muted-foreground">📖</span>
+          </div>
+        )}
+        {needsDownload && (
+          <div className="absolute inset-0 flex items-center justify-center rounded bg-black/30">
+            <CloudDownload className="size-4 text-white" />
+          </div>
+        )}
+      </div>
       {!collapsed && (
-        <div className="min-w-0 flex-1">
+        <div className={cn("min-w-0 flex-1", { "opacity-60": needsDownload })}>
           <p className="truncate text-sm font-medium">{book.title}</p>
           <p className="truncate text-xs text-muted-foreground">{book.author}</p>
         </div>
@@ -291,33 +305,43 @@ export function WorkspaceSidebar({
         )}
       </ScrollArea>
       <div
-        className={cn("border-t h-10 flex items-center @container", {
-          "justify-between px-1": !collapsed,
-          "justify-center": collapsed,
+        className={cn("border-t flex flex-col @container", {
+          "px-1": !collapsed,
+          "items-center": collapsed,
         })}
       >
-        <Link
-          to="/settings"
-          className={cn(
-            "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground",
-            { "mx-auto": collapsed },
-          )}
-          title="Settings"
+        <div
+          className={cn("flex h-10 items-center", {
+            "justify-between": !collapsed,
+            "justify-center": collapsed,
+          })}
         >
-          <Settings className="size-4" />
-          {!collapsed && <span>Settings</span>}
-        </Link>
-        {!collapsed && (
-          <button
-            type="button"
-            onClick={onOpenNewTab}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-            title="Open library panel"
+          <Link
+            to="/settings"
+            className={cn(
+              "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground",
+              { "mx-auto": collapsed },
+            )}
+            title="Settings"
           >
-            <Plus className="size-4" />
-            <span>New tab</span>
-          </button>
-        )}
+            <Settings className="size-4" />
+            {!collapsed && <span>Settings</span>}
+          </Link>
+          {!collapsed && (
+            <button
+              type="button"
+              onClick={onOpenNewTab}
+              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Open library panel"
+            >
+              <Plus className="size-4" />
+              <span>New tab</span>
+            </button>
+          )}
+        </div>
+        <TooltipProvider delay={300}>
+          <SyncStatus collapsed={collapsed} />
+        </TooltipProvider>
       </div>
     </aside>
   );

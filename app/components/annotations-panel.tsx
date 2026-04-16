@@ -9,6 +9,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import type { JSONContent } from "@tiptap/react";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 import { useEffectQuery } from "~/hooks/use-effect-query";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 interface AnnotationsPanelProps {
   bookId: string;
@@ -29,9 +30,12 @@ export function AnnotationsPanel({
   onDeleteHighlight,
   editorRef,
 }: AnnotationsPanelProps) {
+  // Bump syncVersion when highlight or notebook data is synced
+  const syncVersion = useSyncListener(["highlight", "notebook"]);
+
   const { data: notebook, isLoading } = useEffectQuery(
     () => AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(bookId))),
-    [bookId],
+    [bookId, syncVersion],
   );
   const content = notebook?.content;
   const loaded = !isLoading;

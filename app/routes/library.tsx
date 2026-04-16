@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { Effect } from "effect";
 import { Link, Outlet, useLocation } from "react-router";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 import { Menu, PanelsTopLeft, Settings } from "lucide-react";
 import type { Route } from "./+types/library";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
@@ -60,6 +61,15 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
+
+  // Reload books when sync pulls book data
+  const syncVersion = useSyncListener(["book"]);
+  useEffect(() => {
+    if (syncVersion === 0) return;
+    AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())))
+      .then(setBooks)
+      .catch(console.error);
+  }, [syncVersion]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {

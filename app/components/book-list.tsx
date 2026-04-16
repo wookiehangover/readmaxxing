@@ -4,7 +4,7 @@ import { Search } from "lucide-react";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
-import type { BookMeta } from "~/lib/stores/book-store";
+import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { useReaderNavigation, type TocEntry } from "~/lib/context/reader-context";
 import { cn } from "~/lib/utils";
 
@@ -13,14 +13,27 @@ interface BookListProps {
   collapsed?: boolean;
 }
 
-export function BookCover({ coverImage }: { coverImage: Blob }) {
+export function BookCover({
+  coverImage,
+  remoteCoverUrl,
+  bookId,
+}: {
+  coverImage: Blob | null;
+  remoteCoverUrl?: string;
+  bookId?: string;
+}) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const objectUrl = URL.createObjectURL(coverImage);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [coverImage]);
+    if (coverImage) {
+      const objectUrl = URL.createObjectURL(coverImage);
+      setUrl(objectUrl);
+      return () => URL.revokeObjectURL(objectUrl);
+    }
+    if (remoteCoverUrl && bookId) {
+      setUrl(`/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`);
+    }
+  }, [coverImage, remoteCoverUrl, bookId]);
 
   if (!url) return null;
 
@@ -63,17 +76,24 @@ export function TocList({
 }
 
 function BookItemContent({ book, collapsed }: { book: BookMeta; collapsed: boolean }) {
+  const needsDownload = bookNeedsDownload(book);
   return (
     <>
-      {book.coverImage ? (
-        <BookCover coverImage={book.coverImage} />
-      ) : (
-        <div className="flex h-12 w-8 shrink-0 items-center justify-center rounded bg-muted">
-          <span className="text-xs text-muted-foreground">📖</span>
-        </div>
-      )}
+      <div className={cn("shrink-0", { "grayscale opacity-50": needsDownload })}>
+        {book.coverImage || book.remoteCoverUrl ? (
+          <BookCover
+            coverImage={book.coverImage}
+            remoteCoverUrl={book.remoteCoverUrl}
+            bookId={book.id}
+          />
+        ) : (
+          <div className="flex h-12 w-8 items-center justify-center rounded bg-muted">
+            <span className="text-xs text-muted-foreground">📖</span>
+          </div>
+        )}
+      </div>
       {!collapsed && (
-        <div className="min-w-0 flex-1">
+        <div className={cn("min-w-0 flex-1", { "opacity-60": needsDownload })}>
           <p className="truncate text-sm font-medium">{book.title}</p>
           <p className="truncate text-xs text-muted-foreground">{book.author}</p>
         </div>

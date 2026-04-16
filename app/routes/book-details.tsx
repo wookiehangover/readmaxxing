@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { Effect } from "effect";
-import { ArrowLeft, BookOpen, BookOpenText } from "lucide-react";
+import { ArrowLeft, BookOpen, BookOpenText, Download } from "lucide-react";
 import type { Route } from "./+types/book-details";
 import type { JSONContent } from "@tiptap/react";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
+import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useEffectQuery } from "~/hooks/use-effect-query";
@@ -12,6 +12,7 @@ import { TiptapEditor } from "~/components/tiptap-editor";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { cn } from "~/lib/utils";
 
 export function meta({ data }: Route.MetaArgs) {
   const title = data?.book?.title ?? "Readmaxxing";
@@ -40,14 +41,31 @@ export function HydrateFallback() {
   );
 }
 
-function CoverImage({ coverImage, alt }: { coverImage: Blob; alt: string }) {
+function CoverImage({
+  coverImage,
+  alt,
+  remoteCoverUrl,
+  bookId,
+  needsDownload,
+}: {
+  coverImage: Blob | null;
+  alt: string;
+  remoteCoverUrl?: string;
+  bookId?: string;
+  needsDownload?: boolean;
+}) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const objectUrl = URL.createObjectURL(coverImage);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [coverImage]);
+    if (coverImage) {
+      const objectUrl = URL.createObjectURL(coverImage);
+      setUrl(objectUrl);
+      return () => URL.revokeObjectURL(objectUrl);
+    }
+    if (remoteCoverUrl && bookId) {
+      setUrl(`/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`);
+    }
+  }, [coverImage, remoteCoverUrl, bookId]);
 
   if (!url) return null;
 
@@ -55,7 +73,9 @@ function CoverImage({ coverImage, alt }: { coverImage: Blob; alt: string }) {
     <img
       src={url}
       alt={alt}
-      className="aspect-[2/3] w-full max-w-xs rounded-lg object-cover shadow-md"
+      className={cn("aspect-[2/3] w-full max-w-xs rounded-lg object-cover shadow-md", {
+        "grayscale opacity-50": needsDownload,
+      })}
     />
   );
 }
@@ -144,8 +164,14 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
         className={`mx-auto flex flex-col gap-8 sm:flex-row ${hasNotebook ? "max-w-5xl" : "max-w-2xl"}`}
       >
         <div className="shrink-0">
-          {book.coverImage ? (
-            <CoverImage coverImage={book.coverImage} alt={title} />
+          {book.coverImage || book.remoteCoverUrl ? (
+            <CoverImage
+              coverImage={book.coverImage}
+              alt={title}
+              remoteCoverUrl={book.remoteCoverUrl}
+              bookId={book.id}
+              needsDownload={bookNeedsDownload(book)}
+            />
           ) : (
             <CoverPlaceholder />
           )}
@@ -170,10 +196,17 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : saved ? "Saved" : "Save"}
             </Button>
-            <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
-              <BookOpenText className="size-4" />
-              Read
-            </Button>
+            {bookNeedsDownload(book) ? (
+              <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
+                <Download className="size-4" />
+                Download &amp; Read
+              </Button>
+            ) : (
+              <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
+                <BookOpenText className="size-4" />
+                Read
+              </Button>
+            )}
           </div>
         </div>
 

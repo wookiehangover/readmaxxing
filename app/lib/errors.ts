@@ -61,3 +61,8 @@ export class AuthError extends Data.TaggedError("AuthError")<{
   readonly operation: string;
   readonly cause?: unknown;
 }> {}
+
+export class SyncError extends Data.TaggedError("SyncError")<{
+  readonly operation: string;
+  readonly cause?: unknown;
+}> {}

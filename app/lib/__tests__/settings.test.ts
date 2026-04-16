@@ -106,7 +106,12 @@ describe("saveSettings", () => {
     saveSettings(settings);
     const raw = localStorage.getItem(STORAGE_KEY);
     expect(raw).not.toBeNull();
-    expect(JSON.parse(raw!)).toEqual(settings);
+    const parsed = JSON.parse(raw!);
+    // saveSettings stamps updatedAt automatically
+    expect(parsed.updatedAt).toEqual(expect.any(Number));
+    const { updatedAt: _, ...rest } = parsed;
+    const { updatedAt: _2, ...expected } = settings;
+    expect(rest).toEqual(expected);
   });
 
   it("round-trips with getSettings", () => {
@@ -122,7 +127,12 @@ describe("saveSettings", () => {
       colorTheme: "default",
     };
     saveSettings(settings);
-    expect(getSettings()).toEqual(settings);
+    const result = getSettings();
+    // updatedAt is stamped by saveSettings, so just check it's present
+    expect(result.updatedAt).toEqual(expect.any(Number));
+    const { updatedAt: _, ...rest } = result;
+    const { updatedAt: _2, ...expected } = settings;
+    expect(rest).toEqual(expected);
   });
 });
 

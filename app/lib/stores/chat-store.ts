@@ -1,6 +1,7 @@
 import { createStore, get, set, del } from "idb-keyval";
 import { Context, Effect, Layer } from "effect";
 import { ChatError } from "~/lib/errors";
+import { recordChange } from "~/lib/sync/change-log";
 
 // --- Types ---
 
@@ -63,6 +64,36 @@ function getActiveSessionStore() {
 
 function generateSessionId(): string {
   return crypto.randomUUID();
+}
+
+/** Fire-and-forget: record a session change in the sync change log. */
+function trackSessionChange(session: ChatSession, operation: "put" | "delete" = "put"): void {
+  const { messages: _msgs, ...metadata } = session;
+  recordChange({
+    entity: "chat_session",
+    entityId: session.id,
+    operation,
+    data: metadata,
+    timestamp: session.updatedAt,
+  });
+}
+
+/** Fire-and-forget: record new messages in the sync change log.
+ *  `previousMessageCount` is the number of messages before the update —
+ *  only messages after that index are recorded. When omitted (e.g. during
+ *  migration or first save) all messages are tracked. */
+function trackMessages(session: ChatSession, previousMessageCount?: number): void {
+  const start = previousMessageCount ?? 0;
+  const newMessages = session.messages.slice(start);
+  for (const msg of newMessages) {
+    recordChange({
+      entity: "chat_message",
+      entityId: msg.id,
+      operation: "put",
+      data: { ...msg, sessionId: session.id },
+      timestamp: msg.createdAt,
+    });
+  }
 }
 
 // --- Service interface ---
@@ -186,13 +217,18 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
           };
           await set(bookId, [session], getSessionStore());
           await set(bookId, session.id, getActiveSessionStore());
+          trackSessionChange(session);
+          trackMessages(session);
           return;
         }
 
         const idx = activeId ? sessions.findIndex((s) => s.id === activeId) : sessions.length - 1;
         if (idx >= 0) {
+          const previousCount = sessions[idx].messages.length;
           sessions[idx] = { ...sessions[idx], messages, updatedAt: now };
           await set(bookId, sessions, getSessionStore());
+          trackSessionChange(sessions[idx]);
+          trackMessages(sessions[idx], previousCount);
         }
       },
       catch: (cause) => new ChatError({ operation: "saveMessages", cause }),
@@ -209,6 +245,7 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
           if (idx >= 0) {
             sessions[idx] = { ...sessions[idx], messages: [], updatedAt: Date.now() };
             await set(bookId, sessions, getSessionStore());
+            trackSessionChange(sessions[idx]);
           }
         }
       },
@@ -233,6 +270,7 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
         sessions.push(session);
         await set(bookId, sessions, getSessionStore());
         await set(bookId, session.id, getActiveSessionStore());
+        trackSessionChange(session);
         return session;
       },
       catch: (cause) => new ChatError({ operation: "createSession", cause }),
@@ -264,12 +302,16 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
       try: async () => {
         const sessions = (await get<ChatSession[]>(session.bookId, getSessionStore())) ?? [];
         const idx = sessions.findIndex((s) => s.id === session.id);
+        const previousCount = idx >= 0 ? sessions[idx].messages.length : 0;
         if (idx >= 0) {
           sessions[idx] = { ...session, updatedAt: Date.now() };
         } else {
           sessions.push({ ...session, updatedAt: Date.now() });
         }
         await set(session.bookId, sessions, getSessionStore());
+        const saved = sessions.find((s) => s.id === session.id)!;
+        trackSessionChange(saved);
+        trackMessages(saved, previousCount);
       },
       catch: (cause) => new ChatError({ operation: "saveSession", cause }),
     }),
@@ -278,8 +320,13 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
     Effect.tryPromise({
       try: async () => {
         const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
+        const deleted = sessions.find((s) => s.id === sessionId);
         const filtered = sessions.filter((s) => s.id !== sessionId);
         await set(bookId, filtered, getSessionStore());
+
+        if (deleted) {
+          trackSessionChange({ ...deleted, updatedAt: Date.now() }, "delete");
+        }
 
         // If the deleted session was active, clear or reset active
         const activeId = await get<string>(bookId, getActiveSessionStore());
@@ -318,6 +365,7 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
         if (idx >= 0) {
           sessions[idx] = { ...sessions[idx], title, updatedAt: Date.now() };
           await set(bookId, sessions, getSessionStore());
+          trackSessionChange(sessions[idx]);
         }
       },
       catch: (cause) => new ChatError({ operation: "updateSessionTitle", cause }),
