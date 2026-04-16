@@ -6,6 +6,7 @@ import { BookService, bookNeedsDownload } from "~/lib/stores/book-store";
 import { BookReader } from "~/components/book-reader";
 import { PdfReader } from "~/components/pdf-reader";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 export function meta({ data }: Route.MetaArgs) {
   const title = data?.book?.title ?? "Readmaxxing";
@@ -49,14 +50,23 @@ function DownloadingFallback({ title }: { title: string }) {
 export default function BookRoute({ loaderData }: Route.ComponentProps) {
   const { book, needsDownload } = loaderData;
   const [downloading, setDownloading] = useState(needsDownload);
+  const bookSyncVersion = useSyncListener(["book"]);
 
-  // Listen for sync:pull-complete which fires after getBookData finishes downloading
+  // Re-check download state when book data changes via sync
   useEffect(() => {
     if (!downloading) return;
-    const handler = () => setDownloading(false);
-    window.addEventListener("sync:pull-complete", handler);
-    return () => window.removeEventListener("sync:pull-complete", handler);
-  }, [downloading]);
+    // Re-fetch the book to check if hasLocalFile is now true
+    AppRuntime.runPromise(
+      BookService.pipe(
+        Effect.andThen((s) => s.getBook(book.id)),
+        Effect.catchAll(() => Effect.succeed(null)),
+      ),
+    ).then((updated) => {
+      if (updated && !bookNeedsDownload(updated)) {
+        setDownloading(false);
+      }
+    });
+  }, [downloading, bookSyncVersion, book.id]);
 
   if (book.format === "pdf") {
     if (downloading) {

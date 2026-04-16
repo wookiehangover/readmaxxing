@@ -75,7 +75,7 @@ function trackSessionChange(session: ChatSession, operation: "put" | "delete" = 
     operation,
     data: metadata,
     timestamp: session.updatedAt,
-  });
+  }).catch(console.error);
 }
 
 /** Fire-and-forget: record new messages in the sync change log.
@@ -92,7 +92,7 @@ function trackMessages(session: ChatSession, previousMessageCount?: number): voi
       operation: "put",
       data: { ...msg, sessionId: session.id },
       timestamp: msg.createdAt,
-    });
+    }).catch(console.error);
   }
 }
 

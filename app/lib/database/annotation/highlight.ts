@@ -12,6 +12,7 @@ export interface HighlightRow {
   textOffset: number | null;
   textLength: number | null;
   createdAt: Date;
+  updatedAt: Date;
   deletedAt: Date | null;
 }
 
@@ -39,6 +40,7 @@ const HIGHLIGHT_COLUMNS = sql`
   text_offset AS "textOffset",
   text_length AS "textLength",
   created_at AS "createdAt",
+  updated_at AS "updatedAt",
   deleted_at AS "deletedAt"
 `;
 
@@ -48,7 +50,7 @@ export async function upsertHighlight(
 ): Promise<HighlightRow | null> {
   const pool = getPool();
   const result = await pool.query<HighlightRow>(sql`
-    INSERT INTO readmax.highlight (id, user_id, book_id, cfi_range, text, color, page_number, text_offset, text_length, created_at, deleted_at)
+    INSERT INTO readmax.highlight (id, user_id, book_id, cfi_range, text, color, page_number, text_offset, text_length, created_at, updated_at, deleted_at)
     VALUES (
       ${highlight.id},
       ${userId},
@@ -60,6 +62,7 @@ export async function upsertHighlight(
       ${highlight.textOffset ?? null},
       ${highlight.textLength ?? null},
       ${highlight.createdAt.toISOString()},
+      NOW(),
       ${highlight.deletedAt?.toISOString() ?? null}
     )
     ON CONFLICT (id) DO UPDATE
@@ -72,6 +75,7 @@ export async function upsertHighlight(
           text_offset = EXCLUDED.text_offset,
           text_length = EXCLUDED.text_length,
           created_at = EXCLUDED.created_at,
+          updated_at = NOW(),
           deleted_at = EXCLUDED.deleted_at
     RETURNING ${HIGHLIGHT_COLUMNS}
   `);
@@ -102,8 +106,8 @@ export async function getHighlightsByUserSince(
     SELECT ${HIGHLIGHT_COLUMNS}
     FROM readmax.highlight
     WHERE user_id = ${userId}
-      AND (created_at > ${cursor.toISOString()} OR deleted_at > ${cursor.toISOString()})
-    ORDER BY created_at ASC
+      AND (updated_at > ${cursor.toISOString()} OR deleted_at > ${cursor.toISOString()})
+    ORDER BY updated_at ASC
   `);
   return result.rows;
 }

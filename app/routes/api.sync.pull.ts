@@ -74,11 +74,11 @@ export async function loader({ request }: { request: Request }) {
       case "highlight": {
         const highlights = await getHighlightsByUserSince(userId, since);
         if (highlights.length > 0) {
-          const latestCreatedAt = highlights[highlights.length - 1].createdAt;
+          const latestUpdatedAt = highlights[highlights.length - 1].updatedAt;
           changes.push({
             entity: "highlight",
             records: highlights,
-            cursor: latestCreatedAt.toISOString(),
+            cursor: latestUpdatedAt.toISOString(),
             hasMore: false,
           });
         }

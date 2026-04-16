@@ -21,6 +21,7 @@ export interface UpsertBookData {
   author?: string | null;
   format?: string | null;
   fileHash?: string | null;
+  updatedAt?: Date;
 }
 
 const BOOK_COLUMNS = sql`
@@ -39,15 +40,17 @@ const BOOK_COLUMNS = sql`
 
 export async function upsertBook(userId: string, book: UpsertBookData): Promise<BookRow | null> {
   const pool = getPool();
+  const ts = book.updatedAt ? book.updatedAt.toISOString() : new Date().toISOString();
   const result = await pool.query<BookRow>(sql`
-    INSERT INTO readmax.book (id, user_id, title, author, format, file_hash)
-    VALUES (${book.id}, ${userId}, ${book.title ?? null}, ${book.author ?? null}, ${book.format ?? null}, ${book.fileHash ?? null})
+    INSERT INTO readmax.book (id, user_id, title, author, format, file_hash, updated_at)
+    VALUES (${book.id}, ${userId}, ${book.title ?? null}, ${book.author ?? null}, ${book.format ?? null}, ${book.fileHash ?? null}, ${ts})
     ON CONFLICT (id) DO UPDATE
       SET title = COALESCE(EXCLUDED.title, readmax.book.title),
           author = COALESCE(EXCLUDED.author, readmax.book.author),
           format = COALESCE(EXCLUDED.format, readmax.book.format),
           file_hash = COALESCE(EXCLUDED.file_hash, readmax.book.file_hash),
-          updated_at = NOW()
+          updated_at = EXCLUDED.updated_at
+      WHERE EXCLUDED.updated_at > readmax.book.updated_at
     RETURNING ${BOOK_COLUMNS}
   `);
 

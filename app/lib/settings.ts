@@ -98,7 +98,7 @@ export function saveSettings(settings: Settings): void {
     operation: "put",
     data: stamped,
     timestamp: stamped.updatedAt!,
-  });
+  }).catch(console.error);
 }
 
 export function useSettings(): [Settings, (update: Partial<Settings>) => void] {

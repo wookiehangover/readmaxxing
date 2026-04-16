@@ -146,7 +146,7 @@ function serverHighlightToLocal(record: Record<string, unknown>): Record<string,
     text: (record.text as string) ?? "",
     color: (record.color as string) ?? "yellow",
     createdAt: toTimestamp(record.createdAt),
-    updatedAt: toTimestamp(record.createdAt), // highlights use createdAt as the main timestamp
+    updatedAt: toTimestamp(record.updatedAt ?? record.createdAt),
     pageNumber: (record.pageNumber as number) ?? undefined,
     textOffset: (record.textOffset as number) ?? undefined,
     textLength: (record.textLength as number) ?? undefined,

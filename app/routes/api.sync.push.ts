@@ -21,6 +21,7 @@ async function processEntry(
           author?: string | null;
           format?: string | null;
           fileHash?: string | null;
+          updatedAt?: number | null;
         };
         await upsertBook(userId, {
           id: entry.entityId,
@@ -28,6 +29,7 @@ async function processEntry(
           author: data.author,
           format: data.format,
           fileHash: data.fileHash,
+          updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
         });
       } else {
         await softDeleteBook(userId, entry.entityId);

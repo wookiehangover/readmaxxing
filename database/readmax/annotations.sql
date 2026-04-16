@@ -13,6 +13,7 @@ CREATE TABLE readmax.highlight (
     text_offset INT,
     text_length INT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ
 );
 
