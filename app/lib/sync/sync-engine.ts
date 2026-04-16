@@ -424,7 +424,7 @@ const ENTITY_MERGERS: Partial<
 
 export interface SyncEngineCallbacks {
   onSyncStart?: () => void;
-  onSyncEnd?: () => void;
+  onSyncEnd?: (result: { success: boolean }) => void;
   onSyncError?: (error: Error) => void;
   onAuthExpired?: () => void;
 }
@@ -597,13 +597,15 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
   }
 
   async function runCycle(fn: () => Promise<void>): Promise<void> {
+    let success = false;
     try {
       callbacks.onSyncStart?.();
       await fn();
+      success = true;
     } catch (err) {
       callbacks.onSyncError?.(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      callbacks.onSyncEnd?.();
+      callbacks.onSyncEnd?.({ success });
     }
   }
 

@@ -84,11 +84,14 @@ export function useSync(): SyncState {
     // Create and start the sync engine
     const engine = makeSyncEngine({
       onSyncStart: () => setIsSyncing(true),
-      onSyncEnd: () => {
+      onSyncEnd: ({ success }) => {
         setIsSyncing(false);
-        setHasPendingChanges(false);
-        setSyncError(null);
-        setLastSyncedAt(new Date().toISOString());
+        if (success) {
+          setHasPendingChanges(false);
+          setSyncError(null);
+          setLastSyncedAt(new Date().toISOString());
+        }
+        // On failure: keep hasPendingChanges, syncError, and lastSyncedAt unchanged
       },
       onSyncError: (err) => {
         setSyncError(err);

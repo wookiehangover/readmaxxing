@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, CloudOff, CloudUpload, Loader2, AlertTriangle } from "lucide-react";
 import { useSyncState } from "~/lib/sync/use-sync";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
@@ -29,12 +29,40 @@ function useTimeTick(intervalMs = 30_000): number {
 }
 
 /**
+ * Keep error visible for at least `minMs` so it doesn't flicker
+ * between error → syncing → error on consecutive failed cycles.
+ */
+function useStickyError(syncError: Error | null, minMs = 3000): Error | null {
+  const [displayError, setDisplayError] = useState<Error | null>(syncError);
+  const errorTimestampRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (syncError) {
+      // New error — show immediately and record the timestamp
+      setDisplayError(syncError);
+      errorTimestampRef.current = Date.now();
+    } else if (displayError) {
+      // Error cleared — keep it visible for at least `minMs`
+      const elapsed = Date.now() - errorTimestampRef.current;
+      const remaining = Math.max(0, minMs - elapsed);
+      const timer = setTimeout(() => {
+        setDisplayError(null);
+      }, remaining);
+      return () => clearTimeout(timer);
+    }
+  }, [syncError, minMs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return displayError;
+}
+
+/**
  * Minimal sync status indicator for the sidebar footer.
  * Hidden when not authenticated (isActive=false).
  */
 export function SyncStatus({ collapsed }: { collapsed: boolean }) {
   const { isSyncing, hasPendingChanges, lastSyncedAt, syncError, isOnline, isActive } =
     useSyncState();
+  const stickyError = useStickyError(syncError);
 
   // Keep relative timestamp ("2m ago") updating live
   useTimeTick();
@@ -46,13 +74,14 @@ export function SyncStatus({ collapsed }: { collapsed: boolean }) {
   let shortLabel: string;
 
   // Priority: offline > error > syncing > pending > synced
+  // Use stickyError so the error stays visible long enough to be noticed
   if (!isOnline) {
     icon = <CloudOff className="size-3.5" />;
     label = "Offline";
     shortLabel = "Offline";
-  } else if (syncError) {
+  } else if (stickyError) {
     icon = <AlertTriangle className="size-3.5" />;
-    label = `Sync error: ${syncError.message}`;
+    label = `Sync error: ${stickyError.message}`;
     shortLabel = "Sync error";
   } else if (isSyncing) {
     icon = <Loader2 className="size-3.5 animate-spin" />;
@@ -77,9 +106,9 @@ export function SyncStatus({ collapsed }: { collapsed: boolean }) {
             className={cn(
               "flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors",
               {
-                "text-muted-foreground": !syncError && isOnline && !hasPendingChanges,
-                "text-blue-600 dark:text-blue-400": hasPendingChanges && !syncError && isOnline,
-                "text-destructive": !!syncError,
+                "text-muted-foreground": !stickyError && isOnline && !hasPendingChanges,
+                "text-blue-600 dark:text-blue-400": hasPendingChanges && !stickyError && isOnline,
+                "text-destructive": !!stickyError,
                 "text-yellow-600 dark:text-yellow-500": !isOnline,
               },
             )}
