@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { NotebookPen, Ellipsis, Globe, Trash2 } from "lucide-react";
+import { Button } from "~/components/ui/button";
+import { MessageSquare, NotebookPen, Ellipsis, Globe, Trash2, Upload } from "lucide-react";
 import { CoverImage } from "~/components/book-grid/cover-image";
 import { CoverPlaceholder } from "~/components/book-grid/cover-placeholder";
 import { AddBookCard } from "~/components/book-grid/add-book-card";
@@ -41,6 +42,13 @@ export function LibraryBrowseContent() {
     [ws],
   );
 
+  const handleOpenChat = useCallback(
+    (book: BookMeta) => {
+      ws.openChatRef.current?.(book);
+    },
+    [ws],
+  );
+
   const handleBookAdded = useCallback(
     (book: BookMeta) => {
       ws.onBookAddedRef.current?.(book);
@@ -70,17 +78,15 @@ export function LibraryBrowseContent() {
       />
       {books.length === 0 ? (
         <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
-          <div className="w-40">
-            <AddBookCard onClick={() => fileInputRef.current?.click()} />
-          </div>
-          <button
-            type="button"
-            onClick={() => ws.openStandardEbooksRef.current?.()}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
+          <Button onClick={() => fileInputRef.current?.click()}>
+            <Upload className="size-4" />
+            Upload an epub or PDF
+          </Button>
+          <span className="text-sm text-muted-foreground">or</span>
+          <Button variant="outline" onClick={() => ws.openStandardEbooksRef.current?.()}>
             <Globe className="size-4" />
             Browse Standard Ebooks
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="h-full overflow-y-auto p-4 md:p-6">
@@ -118,10 +124,14 @@ export function LibraryBrowseContent() {
                     >
                       <Ellipsis className="size-4" />
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    <DropdownMenuContent align="end" className="w-auto">
                       <DropdownMenuItem onClick={() => handleOpenNotebook(book)}>
                         <NotebookPen className="size-4" />
                         Open notebook
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleOpenChat(book)}>
+                        <MessageSquare className="size-4" />
+                        Open chat
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         variant="destructive"

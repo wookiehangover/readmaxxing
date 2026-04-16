@@ -197,7 +197,7 @@ export function WorkspaceSidebar({
           !collapsed && (
             <div className="p-4 text-xs text-muted-foreground space-y-4">
               <p>No books yet.</p>
-              <p>Drop an epub or click + to add.</p>
+              <p>Drop epub or click + to add.</p>
             </div>
           )
         ) : (
