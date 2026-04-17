@@ -80,7 +80,7 @@ export function BookReader({ book }: BookReaderProps) {
     [highlightsRef],
   );
 
-  const { toc, bookProgress, currentPage, totalPages, navigateToCfi } = useEpubLifecycle({
+  const { toc, currentPage, totalPages, navigateToCfi } = useEpubLifecycle({
     bookId: book.id,
     containerRef,
     readerLayout: settings.readerLayout,
@@ -214,11 +214,7 @@ export function BookReader({ book }: BookReaderProps) {
               <span className="text-muted-foreground text-[10px] tabular-nums md:text-xs">
                 Page {currentPage} of {totalPages}
               </span>
-            ) : (
-              <span className="text-muted-foreground text-[10px] tabular-nums md:text-xs">
-                {Math.round(bookProgress)}%
-              </span>
-            )}
+            ) : null}
           </div>
           <div className="flex items-center gap-0 md:gap-1">
             {!isScrollMode && (

@@ -245,37 +245,36 @@ function WorkspaceBookReaderInner({
     theme: settings.theme,
   });
 
-  const { toc, bookProgress, currentPage, totalPages, flushPositionSave, latestCfiRef } =
-    useEpubLifecycle({
-      bookId: book.id,
-      containerRef,
-      readerLayout: localReaderLayout,
-      fontFamily: localFontFamily,
-      fontSize: localFontSize,
-      lineHeight: localLineHeight,
-      theme: settings.theme,
-      loadAndApplyHighlights,
-      registerSelectionHandler,
-      enabled: hasBeenVisible,
-      panelId: panelApi?.id,
-      chatContextMap,
-      onRenditionReady,
-      onTocExtracted: (tocData) => {
-        const id = panelApi?.id ?? book.id;
-        tocMap.current.set(id, tocData);
-        tocChangeListener.current?.();
-      },
-      onCleanupToc: () => {
-        const id = panelApi?.id ?? book.id;
-        tocMap.current.delete(id);
-        tocChangeListener.current?.();
-      },
-      onSearchOpen: handleSearchOpenFromIframe,
-      onRelocated: showToolbar,
-      panelRef,
-      bookRef,
-      renditionRef,
-    });
+  const { toc, currentPage, totalPages, flushPositionSave, latestCfiRef } = useEpubLifecycle({
+    bookId: book.id,
+    containerRef,
+    readerLayout: localReaderLayout,
+    fontFamily: localFontFamily,
+    fontSize: localFontSize,
+    lineHeight: localLineHeight,
+    theme: settings.theme,
+    loadAndApplyHighlights,
+    registerSelectionHandler,
+    enabled: hasBeenVisible,
+    panelId: panelApi?.id,
+    chatContextMap,
+    onRenditionReady,
+    onTocExtracted: (tocData) => {
+      const id = panelApi?.id ?? book.id;
+      tocMap.current.set(id, tocData);
+      tocChangeListener.current?.();
+    },
+    onCleanupToc: () => {
+      const id = panelApi?.id ?? book.id;
+      tocMap.current.delete(id);
+      tocChangeListener.current?.();
+    },
+    onSearchOpen: handleSearchOpenFromIframe,
+    onRelocated: showToolbar,
+    panelRef,
+    bookRef,
+    renditionRef,
+  });
 
   // Temporary highlight: briefly flash a CFI range in the reader
   const applyTempHighlight = useCallback((cfi: string) => {
@@ -610,7 +609,7 @@ function WorkspaceBookReaderInner({
         </div>
         <div
           className={cn(
-            "relative flex items-center justify-center border-t px-2 h-10 mb-[env(safe-area-inset-bottom)] transition-all duration-300 ease-in-out",
+            "relative flex items-center justify-center px-2 h-10 mb-[env(safe-area-inset-bottom)] transition-all duration-300 ease-in-out",
             {
               "max-h-0 overflow-hidden border-t-0 opacity-0": isMobile && !toolbarVisible,
               "max-h-20 opacity-100": !isMobile || toolbarVisible,
@@ -622,11 +621,7 @@ function WorkspaceBookReaderInner({
               <span className="text-muted-foreground text-xs tabular-nums">
                 Page {currentPage} of {totalPages}
               </span>
-            ) : (
-              <span className="text-muted-foreground text-xs tabular-nums">
-                {Math.round(bookProgress)}%
-              </span>
-            )}
+            ) : null}
           </div>
           {!isScrollMode && (
             <div className="hidden items-center gap-4 md:flex">
