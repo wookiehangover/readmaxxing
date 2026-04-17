@@ -13,7 +13,6 @@ interface UseChatToolHandlersOptions {
   bookId: string;
   bookFormat?: string;
   bookDataRef: React.RefObject<ArrayBuffer | null>;
-  persistMessages: () => void;
   setNotebookMarkdown: React.Dispatch<React.SetStateAction<string>>;
   /** Set by useStreamingAppend when streaming already inserted append_to_notes content */
   streamedToolCallIdRef?: React.MutableRefObject<string | null>;
@@ -23,7 +22,6 @@ export function useChatToolHandlers({
   bookId,
   bookFormat,
   bookDataRef,
-  persistMessages,
   setNotebookMarkdown,
   streamedToolCallIdRef,
 }: UseChatToolHandlersOptions) {
@@ -176,9 +174,6 @@ export function useChatToolHandlers({
 
   const onFinish = useCallback(
     (event: { message: UIMessage }) => {
-      // Persist after assistant finishes
-      persistMessages();
-
       const msg = event.message;
 
       // Handle create_highlight tool calls
@@ -353,7 +348,6 @@ export function useChatToolHandlers({
       bookId,
       bookFormat,
       bookDataRef,
-      persistMessages,
       waitForNavForBook,
       applyTempHighlightForBook,
       notebookCallbackMap,

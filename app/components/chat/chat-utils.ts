@@ -2,7 +2,6 @@ import type React from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import type { ChatMessage, SerializedPart } from "~/lib/stores/chat-store";
-import type { BookChapter } from "~/lib/epub/epub-text-extract";
 
 /** Extract a normalized tool info object from an AI SDK tool part (static or dynamic). */
 export function getToolInfo(part: any): {
@@ -87,36 +86,33 @@ export function stripSuggestedPrompts(text: string): string {
 }
 
 /**
- * Creates a DefaultChatTransport that dynamically injects the current chapter
- * index from a ref into every request body, rather than capturing a static value.
+ * Creates a DefaultChatTransport wired to the server-authoritative chat API.
+ *
+ * - `sendMessages` POSTs only the latest user message plus routing context
+ *   (`sessionId`, `bookId`, `visibleText`, `currentChapterIndex`). The server
+ *   loads prior history from Postgres, so we don't ship the full message list.
+ * - `reconnectToStream` is redirected to the custom resume endpoint
+ *   `/api/chat/resume/:sessionId`, which replays an in-flight Redis stream.
  */
-export function createDynamicTransport(
-  bookContext: { title: string; author: string; chapters: BookChapter[] },
-  currentChapterRef: React.MutableRefObject<number | undefined>,
-  notebookMarkdownRef: React.MutableRefObject<string>,
-  visibleTextRef: React.MutableRefObject<string>,
-) {
-  const originalFetch = globalThis.fetch;
-  const dynamicFetch: typeof globalThis.fetch = async (input, init) => {
-    if (init?.body && typeof init.body === "string") {
-      try {
-        const parsed = JSON.parse(init.body);
-        if (parsed.bookContext) {
-          parsed.bookContext.currentChapterIndex = currentChapterRef.current;
-          parsed.bookContext.notebookMarkdown = notebookMarkdownRef.current;
-          parsed.bookContext.visibleText = visibleTextRef.current;
-          init = { ...init, body: JSON.stringify(parsed) };
-        }
-      } catch {
-        // not JSON, pass through
-      }
-    }
-    return originalFetch(input, init);
-  };
-
-  return new DefaultChatTransport({
+export function createChatTransport(opts: {
+  sessionId: string;
+  bookId: string;
+  visibleTextRef: React.MutableRefObject<string>;
+  currentChapterRef: React.MutableRefObject<number | undefined>;
+}) {
+  return new DefaultChatTransport<UIMessage>({
     api: "/api/chat",
-    body: { bookContext },
-    fetch: dynamicFetch,
+    prepareSendMessagesRequest: ({ messages }) => ({
+      body: {
+        sessionId: opts.sessionId,
+        bookId: opts.bookId,
+        visibleText: opts.visibleTextRef.current,
+        currentChapterIndex: opts.currentChapterRef.current,
+        message: messages[messages.length - 1],
+      },
+    }),
+    prepareReconnectToStreamRequest: () => ({
+      api: `/api/chat/resume/${encodeURIComponent(opts.sessionId)}`,
+    }),
   });
 }

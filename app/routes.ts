@@ -13,6 +13,7 @@ export default [
   route("api/standard-ebooks/download", "routes/api.standard-ebooks.download.ts"),
   route("api/chat", "routes/api.chat.ts"),
   route("api/chat/resume/:sessionId", "routes/api.chat.resume.$sessionId.ts"),
+  route("api/chat/messages/:sessionId", "routes/api.chat.messages.$sessionId.ts"),
   route("api/chat-title", "routes/api.chat-title.ts"),
   route("api/books/:bookId/chapters", "routes/api.books.$bookId.chapters.ts"),
   route("api/auth/register-options", "routes/api.auth.register-options.ts"),

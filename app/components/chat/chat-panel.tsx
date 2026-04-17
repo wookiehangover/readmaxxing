@@ -15,12 +15,7 @@ import { isChaptersUploaded, markChaptersUploaded } from "~/lib/stores/chapter-u
 import { cn } from "~/lib/utils";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import {
-  toUIMessages,
-  toChatMessages,
-  parseSuggestedPrompts,
-  createDynamicTransport,
-} from "./chat-utils";
+import { toUIMessages, parseSuggestedPrompts, createChatTransport } from "./chat-utils";
 import { ChatMessage } from "./chat-message";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
 import { useChatToolHandlers } from "./use-chat-tool-handlers";
@@ -145,6 +140,35 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const initialMessagesRef = useRef(initialMessages);
   initialMessagesRef.current = initialMessages;
 
+  // Reconcile with the server-authoritative message history whenever the
+  // active session changes. IDB is rendered first as a warm-start cache; the
+  // fetched messages then replace it via the registered setMessages callback.
+  // If the server is unavailable (401/503), we silently keep the IDB copy.
+  useEffect(() => {
+    if (!activeSessionId) return;
+    let cancelled = false;
+    fetch(`/api/chat/messages/${encodeURIComponent(activeSessionId)}`)
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json()) as { messages: UIMessage[]; activeStreamId: string | null };
+      })
+      .then((data) => {
+        if (cancelled || !data) return;
+        const serverMessages = data.messages;
+        if (setChatMessagesRef.current) {
+          setChatMessagesRef.current(serverMessages);
+          initialMessagesRef.current = serverMessages;
+        } else {
+          setInitialMessages(serverMessages);
+          initialMessagesRef.current = serverMessages;
+        }
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId]);
+
   // Reload chat messages when sync pulls chat data from server
   const chatSyncVersion = useSyncListener(["chat_session", "chat_message"]);
   useEffect(() => {
@@ -210,7 +234,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     );
   }
 
-  if (!initialMessages || !bookContext) {
+  if (!initialMessages || !bookContext || !activeSessionId) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Loading chat…</p>
@@ -225,7 +249,6 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       bookTitle={bookTitle}
       bookFormat={bookFormat}
       initialMessages={initialMessages}
-      bookContext={bookContext}
       bookDataRef={bookDataRef}
       textareaRef={textareaRef}
       inputRef={inputRef}
@@ -246,7 +269,6 @@ function ChatPanelInner({
   bookTitle,
   bookFormat,
   initialMessages,
-  bookContext,
   bookDataRef,
   textareaRef,
   inputRef,
@@ -261,11 +283,10 @@ function ChatPanelInner({
   bookTitle: string;
   bookFormat?: string;
   initialMessages: UIMessage[];
-  bookContext: { title: string; author: string; chapters: BookChapter[] };
   bookDataRef: React.RefObject<ArrayBuffer | null>;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
-  activeSessionId: string | null;
+  activeSessionId: string;
   sessionTitle: string;
   onSwitchSession: (sessionId: string) => void;
   onNewSession: () => void;
@@ -275,10 +296,10 @@ function ChatPanelInner({
   const { chatContextMap, notebookContentChangeMap, notebookEditorCallbackMap } = useWorkspace();
   const [showSessionList, setShowSessionList] = useState(false);
 
-  // Load notebook markdown for the AI's read_notes tool
-  const [notebookMarkdown, setNotebookMarkdown] = useState<string>("");
-  const notebookMarkdownRef = useRef(notebookMarkdown);
-  notebookMarkdownRef.current = notebookMarkdown;
+  // Tool handlers keep a local copy of the notebook markdown in sync so the
+  // append_to_notes fallback path (editor closed) can work. The value itself
+  // is no longer shipped to the server — `read_notes` runs server-side.
+  const [, setNotebookMarkdown] = useState<string>("");
 
   useEffect(() => {
     if (!bookId) return;
@@ -326,26 +347,17 @@ function ChatPanelInner({
 
   const transport = useMemo(
     () =>
-      createDynamicTransport(bookContext, currentChapterRef, notebookMarkdownRef, visibleTextRef),
-    [bookContext],
+      createChatTransport({
+        sessionId: activeSessionId,
+        bookId,
+        visibleTextRef,
+        currentChapterRef,
+      }),
+    [activeSessionId, bookId],
   );
 
-  // Use a ref-based persistMessages so onFinish always sees latest messages
+  // Track latest messages for onFinish callbacks (e.g. title generation)
   const messagesRef = useRef<UIMessage[]>(initialMessages);
-
-  const persistMessages = useCallback(() => {
-    if (!activeSessionId) return;
-    const current = messagesRef.current;
-    const sid = activeSessionId;
-    AppRuntime.runPromise(
-      Effect.gen(function* () {
-        const svc = yield* ChatService;
-        const session = yield* svc.getSession(sid, bookId);
-        if (!session) return;
-        yield* svc.saveSession({ ...session, messages: toChatMessages(current) });
-      }),
-    ).catch(console.error);
-  }, [bookId, activeSessionId]);
 
   // Shared ref so streaming hook can tell onToolCall that content was already inserted
   const streamedToolCallIdRef = useRef<string | null>(null);
@@ -354,7 +366,6 @@ function ChatPanelInner({
     bookId,
     bookFormat,
     bookDataRef,
-    persistMessages,
     setNotebookMarkdown,
     streamedToolCallIdRef,
   });
@@ -417,9 +428,13 @@ function ChatPanelInner({
   );
 
   const { messages, sendMessage, setMessages, status, stop } = useChat({
-    id: `chat-${bookId}`,
+    id: activeSessionId,
     transport,
     messages: initialMessages,
+    // Reconnect to any in-flight stream for this session on mount. The resume
+    // endpoint (`/api/chat/resume/:sessionId`) returns a no-op stream when
+    // nothing is active, so this is safe to always enable.
+    resume: true,
     // Cast needed: onToolCall returns result objects for edit_notes (success/failure),
     // which AI SDK uses as tool output. The SDK type is overly strict (void).
     onToolCall: onToolCall as any,

@@ -62,7 +62,6 @@ describe("useChatToolHandlers – append_to_notes dedup", () => {
       useChatToolHandlers({
         bookId: "book-1",
         bookDataRef: { current: null },
-        persistMessages: vi.fn(),
         setNotebookMarkdown,
         streamedToolCallIdRef,
       }),
