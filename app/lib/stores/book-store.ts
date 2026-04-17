@@ -67,9 +67,13 @@ let _migrated = false;
 async function migrateHasLocalFile(): Promise<void> {
   const bookStore = getBookStore();
   const bookDataStore = getBookDataStore();
-  const allEntries = await entries<string, BookMeta>(bookStore);
+  const allEntries = await entries<string, unknown>(bookStore);
 
-  for (const [id, meta] of allEntries) {
+  for (const entry of allEntries) {
+    if (!Array.isArray(entry) || entry.length < 2) continue;
+    const id = entry[0];
+    const meta = entry[1] as BookMeta | null | undefined;
+    if (!meta || typeof meta !== "object") continue;
     if (meta.hasLocalFile) continue;
 
     const data = await get(id, bookDataStore);
@@ -158,12 +162,24 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
           catch: (cause) => new StorageError({ operation: "getBooks", cause }),
         });
         return yield* Effect.try({
-          try: () =>
-            allEntries
-              .map(([, raw]) => raw)
-              .filter(Boolean)
-              .map((raw) => decodeBookMeta(raw))
-              .filter((book) => book.deletedAt === undefined),
+          try: () => {
+            const books: BookMeta[] = [];
+            for (const entry of allEntries) {
+              if (!Array.isArray(entry) || entry.length < 2) continue;
+              const raw = entry[1];
+              if (raw == null || typeof raw !== "object") continue;
+              try {
+                const meta = decodeBookMeta(raw);
+                if (meta.deletedAt === undefined) books.push(meta);
+              } catch (err) {
+                console.warn(
+                  `[book-store] Skipping malformed book record (key=${String(entry[0])})`,
+                  err,
+                );
+              }
+            }
+            return books;
+          },
           catch: (cause) => new DecodeError({ operation: "getBooks", cause }),
         });
       }),
@@ -290,11 +306,20 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
         });
         return yield* Effect.try({
           try: () => {
-            for (const [, raw] of allEntries) {
-              if (!raw) continue;
-              const meta = decodeBookMeta(raw);
-              if (meta.deletedAt !== undefined) continue;
-              if (meta.fileHash === hash) return meta;
+            for (const entry of allEntries) {
+              if (!Array.isArray(entry) || entry.length < 2) continue;
+              const raw = entry[1];
+              if (raw == null || typeof raw !== "object") continue;
+              try {
+                const meta = decodeBookMeta(raw);
+                if (meta.deletedAt !== undefined) continue;
+                if (meta.fileHash === hash) return meta;
+              } catch (err) {
+                console.warn(
+                  `[book-store] Skipping malformed book record (key=${String(entry[0])})`,
+                  err,
+                );
+              }
             }
             return null;
           },

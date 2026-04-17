@@ -402,9 +402,12 @@ async function mergeChatMessageRecord(record: Record<string, unknown>): Promise<
   // Scan all entries to find the session. This is suboptimal but the chat
   // store is keyed by bookId (not sessionId).
   const allEntries = await entries<string, LocalChatSession[]>(store);
-  for (const [bookId, sessions] of allEntries) {
-    if (!sessions) continue;
-    const sIdx = sessions.findIndex((s) => s.id === sessionId);
+  for (const entry of allEntries) {
+    if (!Array.isArray(entry) || entry.length < 2) continue;
+    const bookId = entry[0];
+    const sessions = entry[1];
+    if (!Array.isArray(sessions)) continue;
+    const sIdx = sessions.findIndex((s) => s && s.id === sessionId);
     if (sIdx < 0) continue;
 
     const session = sessions[sIdx];
@@ -576,8 +579,11 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     const dataStore = getBookDataStore();
     const allBooks = await entries<string, Record<string, unknown>>(bookStore);
 
-    for (const [bookId, meta] of allBooks) {
-      if (!meta || meta.deletedAt) continue;
+    for (const entry of allBooks) {
+      if (!Array.isArray(entry) || entry.length < 2) continue;
+      const bookId = entry[0];
+      const meta = entry[1];
+      if (!meta || typeof meta !== "object" || meta.deletedAt) continue;
 
       // Upload epub file if missing remoteFileUrl
       if (!meta.remoteFileUrl) {
