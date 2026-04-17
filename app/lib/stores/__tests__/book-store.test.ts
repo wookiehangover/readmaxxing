@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { Effect, Layer } from "effect";
 import { createStore, set, get } from "idb-keyval";
 import { BookService, makeBookService } from "~/lib/stores/book-store";
@@ -233,6 +233,75 @@ describe("BookService", () => {
       expect(books).toHaveLength(1);
       expect(books[0].id).toBe("old-book-3");
       expect(books[0].title).toBe("Old Book 3");
+    });
+  });
+
+  describe("defensive iteration over malformed IDB records", () => {
+    it("getBooks skips undefined / non-object values and still returns valid books", async () => {
+      const suffix = `test-${++testCounter}-${Date.now()}`;
+      const bookStore = createStore(`book-db-${suffix}`, "books");
+      const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
+
+      // Seed a valid record alongside several malformed shapes that have
+      // caused `Cannot read properties of undefined (reading '0')` in prod.
+      const valid = makeBook({ id: "valid-book", title: "Valid" });
+      await set("valid-book", { ...valid }, bookStore);
+      await set("undef-book", undefined as unknown as object, bookStore);
+      await set("null-book", null as unknown as object, bookStore);
+      await set("string-book", "not-a-book" as unknown as object, bookStore);
+      await set("number-book", 42 as unknown as object, bookStore);
+
+      const bookLayer = Layer.succeed(BookService, makeBookService({ bookStore, bookDataStore }));
+      const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
+        Effect.runPromise(Effect.provide(e, bookLayer));
+
+      const books = await run(BookService.pipe(Effect.andThen((s) => s.getBooks())));
+      expect(books.map((b) => b.id)).toEqual(["valid-book"]);
+    });
+
+    it("getBooks skips records that fail schema decode and logs a warning", async () => {
+      const suffix = `test-${++testCounter}-${Date.now()}`;
+      const bookStore = createStore(`book-db-${suffix}`, "books");
+      const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
+
+      const valid = makeBook({ id: "good-book", title: "Good" });
+      await set("good-book", { ...valid }, bookStore);
+      // Missing required fields — decodeBookMeta will throw for this record.
+      await set("broken-book", { id: "broken-book" }, bookStore);
+
+      const bookLayer = Layer.succeed(BookService, makeBookService({ bookStore, bookDataStore }));
+      const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
+        Effect.runPromise(Effect.provide(e, bookLayer));
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const books = await run(BookService.pipe(Effect.andThen((s) => s.getBooks())));
+        expect(books.map((b) => b.id)).toEqual(["good-book"]);
+        expect(warnSpy).toHaveBeenCalled();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("findByFileHash skips malformed records and finds the matching valid one", async () => {
+      const suffix = `test-${++testCounter}-${Date.now()}`;
+      const bookStore = createStore(`book-db-${suffix}`, "books");
+      const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
+
+      await set("undef-book", undefined as unknown as object, bookStore);
+      await set("null-book", null as unknown as object, bookStore);
+      await set("string-book", "nope" as unknown as object, bookStore);
+      const valid = { ...makeBook({ id: "hash-book" }), fileHash: "target-hash" };
+      await set("hash-book", valid, bookStore);
+
+      const bookLayer = Layer.succeed(BookService, makeBookService({ bookStore, bookDataStore }));
+      const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
+        Effect.runPromise(Effect.provide(e, bookLayer));
+
+      const found = await run(
+        BookService.pipe(Effect.andThen((s) => s.findByFileHash("target-hash"))),
+      );
+      expect(found?.id).toBe("hash-book");
     });
   });
 });

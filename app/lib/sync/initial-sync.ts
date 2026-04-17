@@ -5,6 +5,17 @@ import type { ChatSession } from "~/lib/stores/chat-store";
 
 const INITIAL_SYNC_KEY = "initial-sync-complete";
 
+/**
+ * Returns `[key, value]` for a well-formed IDB entry, or `null` for anything
+ * malformed (non-tuple, missing slots, null/undefined value). Skipping rather
+ * than throwing lets a single corrupt record not kill the whole sync scan.
+ */
+function safeEntry(entry: unknown): [IDBValidKey, unknown] | null {
+  if (!Array.isArray(entry) || entry.length < 2) return null;
+  if (entry[1] == null) return null;
+  return [entry[0] as IDBValidKey, entry[1]];
+}
+
 // Lazy store for the flag (separate DB to avoid conflicts)
 let _flagStore: ReturnType<typeof createStore> | null = null;
 function getFlagStore(): UseStore {
@@ -26,7 +37,10 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   // 1. Books (key = bookId, value = BookMeta)
   const bookStore = createStore("ebook-reader-db", "books");
   const books = await entries(bookStore);
-  for (const [id, data] of books) {
+  for (const entry of books) {
+    const tuple = safeEntry(entry);
+    if (!tuple) continue;
+    const [id, data] = tuple;
     await recordChange({
       entity: "book",
       entityId: id as string,
@@ -39,7 +53,10 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   // 2. Reading positions (key = bookId, value = PositionRecord)
   const posStore = createStore("ebook-reader-positions", "positions");
   const positions = await entries(posStore);
-  for (const [bookId, data] of positions) {
+  for (const entry of positions) {
+    const tuple = safeEntry(entry);
+    if (!tuple) continue;
+    const [bookId, data] = tuple;
     await recordChange({
       entity: "position",
       entityId: bookId as string,
@@ -52,7 +69,10 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   // 3. Highlights (key = highlightId, value = Highlight)
   const hlStore = createStore("ebook-reader-highlights", "highlights");
   const highlights = await entries(hlStore);
-  for (const [id, data] of highlights) {
+  for (const entry of highlights) {
+    const tuple = safeEntry(entry);
+    if (!tuple) continue;
+    const [id, data] = tuple;
     const rec = data as Record<string, unknown>;
     // Skip soft-deleted highlights
     if (rec?.deletedAt) continue;
@@ -68,7 +88,10 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   // 4. Notebooks (key = bookId, value = Notebook)
   const nbStore = createStore("ebook-reader-notebooks", "notebooks");
   const notebooks = await entries(nbStore);
-  for (const [bookId, data] of notebooks) {
+  for (const entry of notebooks) {
+    const tuple = safeEntry(entry);
+    if (!tuple) continue;
+    const [bookId, data] = tuple;
     await recordChange({
       entity: "notebook",
       entityId: bookId as string,
@@ -81,10 +104,13 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   // 5. Chat sessions (key = bookId, value = ChatSession[])
   const chatStore = createStore("ebook-reader-chat-sessions", "sessions");
   const sessions = await entries(chatStore);
-  for (const [, sessionsForBook] of sessions) {
-    const sessionList = sessionsForBook as ChatSession[];
+  for (const entry of sessions) {
+    const tuple = safeEntry(entry);
+    if (!tuple) continue;
+    const sessionList = tuple[1] as ChatSession[];
     if (!Array.isArray(sessionList)) continue;
     for (const session of sessionList) {
+      if (!session || typeof session !== "object") continue;
       // Record session metadata (without messages)
       const { messages, ...metadata } = session;
       await recordChange({
