@@ -273,12 +273,21 @@ export async function mergeBookRecord(record: Record<string, unknown>): Promise<
     // Server wins — preserve client-only fields from local record.
     // hasLocalFile and coverImage are never sent to the server, so
     // serverBookToLocal always returns them as undefined/null.
+    //
+    // remoteCoverUrl / remoteFileUrl: treat nullish server values as
+    // "no opinion" and keep the locally-known URL. The server row may
+    // have been stamped before this device's upload push landed, or a
+    // different device created the book row without uploading blobs
+    // yet. Overwriting with undefined would clear URLs we already have
+    // and force a redundant re-upload on the next push.
     await set(
       id,
       {
         ...remoteRecord,
         hasLocalFile: local.hasLocalFile,
         coverImage: local.coverImage ?? remoteRecord.coverImage,
+        remoteCoverUrl: remoteRecord.remoteCoverUrl ?? local.remoteCoverUrl,
+        remoteFileUrl: remoteRecord.remoteFileUrl ?? local.remoteFileUrl,
       },
       store,
     );

@@ -140,3 +140,114 @@ describe("mergeBookRecord pull-path dedup", () => {
     expect(remapSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("mergeBookRecord preserves local blob URLs on server-wins merge", () => {
+  it("keeps local remoteCoverUrl and remoteFileUrl when the server record has nullish blob URLs", async () => {
+    await set(
+      "book-1",
+      {
+        id: "book-1",
+        title: "Local",
+        author: "A",
+        coverImage: null,
+        format: "epub",
+        fileHash: "abc",
+        remoteCoverUrl: "https://blob.vercel/cover-1",
+        remoteFileUrl: "https://blob.vercel/file-1",
+        hasLocalFile: true,
+        updatedAt: 100,
+      },
+      bookStore,
+    );
+
+    // Server record wins LWW (newer updatedAt) but has no blob URLs.
+    // Simulates another device that created the row but hasn't uploaded
+    // yet, or this device's upload push not yet landing on the server.
+    await mergeBookRecord({
+      id: "book-1",
+      title: "Remote",
+      author: "A",
+      format: "epub",
+      fileHash: "abc",
+      coverBlobUrl: null,
+      fileBlobUrl: null,
+      updatedAt: 200,
+    });
+
+    const after = await get<Record<string, unknown>>("book-1", bookStore);
+    expect(after).toBeDefined();
+    expect(after?.title).toBe("Remote");
+    expect(after?.remoteCoverUrl).toBe("https://blob.vercel/cover-1");
+    expect(after?.remoteFileUrl).toBe("https://blob.vercel/file-1");
+    expect(after?.hasLocalFile).toBe(true);
+  });
+
+  it("uses server remoteCoverUrl and remoteFileUrl when the server record provides them", async () => {
+    await set(
+      "book-2",
+      {
+        id: "book-2",
+        title: "Local",
+        author: "A",
+        coverImage: null,
+        format: "epub",
+        fileHash: "abc",
+        remoteCoverUrl: "https://blob.vercel/cover-old",
+        remoteFileUrl: "https://blob.vercel/file-old",
+        hasLocalFile: true,
+        updatedAt: 100,
+      },
+      bookStore,
+    );
+
+    await mergeBookRecord({
+      id: "book-2",
+      title: "Remote",
+      author: "A",
+      format: "epub",
+      fileHash: "abc",
+      coverBlobUrl: "https://blob.vercel/cover-new",
+      fileBlobUrl: "https://blob.vercel/file-new",
+      updatedAt: 200,
+    });
+
+    const after = await get<Record<string, unknown>>("book-2", bookStore);
+    expect(after?.remoteCoverUrl).toBe("https://blob.vercel/cover-new");
+    expect(after?.remoteFileUrl).toBe("https://blob.vercel/file-new");
+  });
+
+  it("leaves local URLs untouched when the local record wins LWW", async () => {
+    await set(
+      "book-3",
+      {
+        id: "book-3",
+        title: "Local newer",
+        author: "A",
+        coverImage: null,
+        format: "epub",
+        fileHash: "abc",
+        remoteCoverUrl: "https://blob.vercel/cover-local",
+        remoteFileUrl: "https://blob.vercel/file-local",
+        hasLocalFile: true,
+        updatedAt: 300,
+      },
+      bookStore,
+    );
+
+    await mergeBookRecord({
+      id: "book-3",
+      title: "Remote older",
+      author: "A",
+      format: "epub",
+      fileHash: "abc",
+      coverBlobUrl: null,
+      fileBlobUrl: null,
+      updatedAt: 200,
+    });
+
+    const after = await get<Record<string, unknown>>("book-3", bookStore);
+    expect(after?.title).toBe("Local newer");
+    expect(after?.remoteCoverUrl).toBe("https://blob.vercel/cover-local");
+    expect(after?.remoteFileUrl).toBe("https://blob.vercel/file-local");
+  });
+});
