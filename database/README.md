@@ -34,6 +34,7 @@ done
 | 001 | `001-book-id-to-text.sql`                      | Switch `readmax.book.id` from UUID to TEXT so client-generated book ids can be used directly.                                         | Required before 002.                |
 | 002 | `002-drop-book-fk-constraints.sql`             | Drop foreign-key constraints from entities that reference `readmax.book(id)` so books can be deleted locally without cascade errors.  | Safe to re-run.                     |
 | 003 | `003-highlight-updated-at.sql`                 | Add `updated_at` to `readmax.highlight` for LWW conflict resolution and set-union merge bookkeeping.                                  | Safe to re-run.                     |
+| 004 | `004-book-file-hash-unique.sql`                | Add a partial unique index on `readmax.book (user_id, file_hash)` for live rows to dedupe cross-device uploads at the DB level.       | Merged from main.                   |
 | 005 | `005-chat-active-stream-and-book-chapters.sql` | Add `chat_session.active_stream_id` for resumable SSE streams. Create `readmax.book_chapters` to cache parsed epub TOC per user/book. | Introduced on the chat-sync branch. |
 | 006 | `006-highlight-text-anchor-and-note.sql`       | Add `text_anchor` (JSONB) and `note` (TEXT) columns to `readmax.highlight`. Required by the server-side `create_highlight` AI tool.   | Introduced on the chat-sync branch. |
 
