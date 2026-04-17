@@ -218,7 +218,7 @@ function serverChatMessageToLocal(record: Record<string, unknown>): LocalChatMes
 // Merge helpers
 // ---------------------------------------------------------------------------
 
-async function mergeBookRecord(record: Record<string, unknown>): Promise<void> {
+export async function mergeBookRecord(record: Record<string, unknown>): Promise<void> {
   const store = getBookStore();
   const remoteRecord = serverBookToLocal(record);
   const id = remoteRecord.id as string;

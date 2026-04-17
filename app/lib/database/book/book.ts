@@ -118,7 +118,9 @@ export async function softDeleteBook(userId: string, bookId: string): Promise<bo
 /**
  * Find the canonical (earliest-created, non-deleted) book for a given
  * user + file_hash. Used by the push handler to dedup cross-device uploads
- * of the same content.
+ * of the same content. Ties on `created_at` (e.g. bulk backfill writes
+ * with identical timestamps) are broken by `id ASC` for deterministic
+ * canonical selection across replicas.
  */
 export async function findBookByUserAndHash(
   userId: string,
@@ -131,7 +133,7 @@ export async function findBookByUserAndHash(
     WHERE user_id = ${userId}
       AND file_hash = ${fileHash}
       AND deleted_at IS NULL
-    ORDER BY created_at ASC
+    ORDER BY created_at ASC, id ASC
     LIMIT 1
   `);
   return result.rows[0] ?? null;
