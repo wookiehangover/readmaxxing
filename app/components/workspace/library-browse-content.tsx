@@ -1,6 +1,14 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "~/components/ui/button";
-import { MessageSquare, NotebookPen, Ellipsis, Globe, Trash2, Upload } from "lucide-react";
+import {
+  MessageSquare,
+  NotebookPen,
+  Ellipsis,
+  Globe,
+  RefreshCw,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { CoverImage } from "~/components/book-grid/cover-image";
 import { CoverPlaceholder } from "~/components/book-grid/cover-placeholder";
 import { AddBookCard } from "~/components/book-grid/add-book-card";
@@ -14,6 +22,7 @@ import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { useBookUpload } from "~/hooks/use-book-upload";
 import { useBookDeletion } from "~/hooks/use-book-deletion";
 import { useWorkspace } from "~/lib/context/workspace-context";
+import { useSyncState } from "~/lib/sync/use-sync";
 
 export function LibraryBrowseContent() {
   const ws = useWorkspace();
@@ -65,6 +74,18 @@ export function LibraryBrowseContent() {
 
   const { handleDeleteBook } = useBookDeletion({ onBookDeleted: handleBookDeleted });
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
+  const { reloadBookFiles, isActive: syncActive } = useSyncState();
+
+  const handleReloadBook = useCallback(
+    async (bookId: string) => {
+      try {
+        await reloadBookFiles(bookId);
+      } catch (err) {
+        console.error("Failed to reload book:", err);
+      }
+    },
+    [reloadBookFiles],
+  );
 
   return (
     <>
@@ -133,6 +154,12 @@ export function LibraryBrowseContent() {
                         <MessageSquare className="size-4" />
                         Open chat
                       </DropdownMenuItem>
+                      {syncActive && (
+                        <DropdownMenuItem onClick={() => handleReloadBook(book.id)}>
+                          <RefreshCw className="size-4" />
+                          Sync
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         variant="destructive"
                         onClick={() => handleDeleteBook(book.id)}

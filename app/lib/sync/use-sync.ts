@@ -20,6 +20,11 @@ export interface SyncState {
   isActive: boolean;
   /** Manually trigger a push+pull cycle. */
   triggerSync: () => void;
+  /**
+   * Re-download a single book's file and cover, or upload them if the DB
+   * row is missing the blob URLs. No-op when the engine is not running.
+   */
+  reloadBookFiles: (bookId: string) => Promise<void>;
 }
 
 const defaultSyncState: SyncState = {
@@ -30,6 +35,7 @@ const defaultSyncState: SyncState = {
   isOnline: true,
   isActive: false,
   triggerSync: () => {},
+  reloadBookFiles: async () => {},
 };
 
 const SyncContext = createContext<SyncState>(defaultSyncState);
@@ -64,6 +70,12 @@ export function useSync(): SyncState {
     if (engineRef.current) {
       engineRef.current.triggerPush();
     }
+  }, []);
+
+  const reloadBookFiles = useCallback(async (bookId: string) => {
+    if (!engineRef.current) return;
+    await engineRef.current.reloadBookFiles(bookId);
+    engineRef.current.triggerPush();
   }, []);
 
   // Log sync errors to console
@@ -175,5 +187,6 @@ export function useSync(): SyncState {
     isOnline,
     isActive: isAuthenticated,
     triggerSync,
+    reloadBookFiles,
   };
 }

@@ -75,6 +75,12 @@ export interface SyncEngine {
   triggerPush(): void;
   /** Trigger an immediate pull (e.g. on window focus). */
   triggerPull(): void;
+  /**
+   * Re-download the book file and cover from the server, overwriting local
+   * copies. If the book is missing a remote URL, upload the local file /
+   * cover to blob storage instead so the DB row gets populated.
+   */
+  reloadBookFiles(bookId: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -657,6 +663,121 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     }
   }
 
+  /**
+   * Re-download file + cover for a single book from the server, overwriting
+   * the locally cached copies. If the book is missing `remoteFileUrl` or
+   * `remoteCoverUrl`, upload the local file / cover to blob storage so the
+   * DB row gets populated (same logic as {@link uploadPendingFiles}, but
+   * scoped to one book).
+   */
+  async function reloadBookFiles(bookId: string): Promise<void> {
+    if (!config.userId) return;
+
+    const bookStore = getBookStore();
+    const dataStore = getBookDataStore();
+
+    const rawMeta = await get<Record<string, unknown>>(bookId, bookStore);
+    if (!rawMeta || typeof rawMeta !== "object" || rawMeta.deletedAt) return;
+
+    syncDebugLog("reload-start", { bookId });
+
+    let meta: Record<string, unknown> = { ...rawMeta };
+    let metaChanged = false;
+
+    // --- File ---
+    if (meta.remoteFileUrl) {
+      try {
+        const res = await fetch(
+          `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=file`,
+          { credentials: "include" },
+        );
+        if (res.ok) {
+          const buf = await res.arrayBuffer();
+          await set(bookId, buf, dataStore);
+          if (!meta.hasLocalFile) {
+            meta = { ...meta, hasLocalFile: true };
+            metaChanged = true;
+          }
+        } else {
+          console.error(`[sync] reload file download failed: ${res.status} ${res.statusText}`);
+        }
+      } catch (err) {
+        console.error("[sync] reload file download failed:", err);
+      }
+    } else {
+      const fileData = await get<ArrayBuffer>(bookId, dataStore);
+      if (fileData) {
+        const url = await uploadFileWithBackoff(bookId, fileData, "file");
+        if (url) {
+          meta = {
+            ...meta,
+            remoteFileUrl: url,
+            hasLocalFile: true,
+            updatedAt: Date.now(),
+          };
+          metaChanged = true;
+          recordChange({
+            entity: "book",
+            entityId: bookId,
+            operation: "put",
+            data: meta,
+            timestamp: meta.updatedAt as number,
+          }).catch(console.error);
+        }
+      }
+    }
+
+    // --- Cover ---
+    if (meta.remoteCoverUrl) {
+      try {
+        const res = await fetch(
+          `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`,
+          { credentials: "include" },
+        );
+        if (res.ok) {
+          const blob = await res.blob();
+          meta = { ...meta, coverImage: blob };
+          metaChanged = true;
+        } else {
+          console.error(`[sync] reload cover download failed: ${res.status} ${res.statusText}`);
+        }
+      } catch (err) {
+        console.error("[sync] reload cover download failed:", err);
+      }
+    } else if (meta.coverImage instanceof Blob) {
+      const url = await uploadFileWithBackoff(bookId, meta.coverImage, "cover");
+      if (url) {
+        meta = {
+          ...meta,
+          remoteCoverUrl: url,
+          updatedAt: Date.now(),
+        };
+        metaChanged = true;
+        recordChange({
+          entity: "book",
+          entityId: bookId,
+          operation: "put",
+          data: meta,
+          timestamp: meta.updatedAt as number,
+        }).catch(console.error);
+      }
+    }
+
+    if (metaChanged) {
+      await set(bookId, meta, bookStore);
+    }
+
+    syncDebugLog("reload-end", { bookId, metaChanged });
+
+    if (typeof window !== "undefined") {
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }),
+        );
+      });
+    }
+  }
+
   async function pushChanges(): Promise<void> {
     if (stopped) return;
     const changes = await getUnsyncedChanges();
@@ -820,6 +941,10 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
     triggerPull() {
       runCycle(pullChanges);
+    },
+
+    async reloadBookFiles(bookId: string) {
+      await reloadBookFiles(bookId);
     },
   };
 }
