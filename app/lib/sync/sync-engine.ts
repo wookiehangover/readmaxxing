@@ -4,6 +4,7 @@ import type { UseStore } from "idb-keyval";
 import { getUnsyncedChanges, markSynced, clearSyncedChanges } from "./change-log";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
+import { syncDebugLog } from "./sync-debug";
 import { getCursor, setCursor } from "./sync-cursors";
 import type { EntityType, SyncPushRequest, SyncPushResponse, SyncPullResponse } from "./types";
 import {
@@ -511,14 +512,22 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     const key = uploadRetryKey(bookId, type);
     const decision = shouldAttemptUpload(uploadRetryState, key, Date.now());
     if (!decision.attempt) {
-      console.log(`[sync] Skipping ${type} upload for ${bookId}, retry in ${decision.retryInMs}ms`);
+      syncDebugLog("upload-skipped", {
+        bookId,
+        type,
+        retryInMs: decision.retryInMs,
+      });
       return null;
     }
+    const size = data instanceof Blob ? data.size : data.byteLength;
+    syncDebugLog("upload-attempt", { bookId, type, size });
     const url = await uploadFile(bookId, data, type);
     if (url) {
       clearUploadRetry(uploadRetryState, key);
+      syncDebugLog("upload-success", { bookId, type, size });
     } else {
       recordUploadFailure(uploadRetryState, key, Date.now());
+      syncDebugLog("upload-failed", { bookId, type, size });
     }
     return url;
   }
@@ -579,6 +588,8 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     const dataStore = getBookDataStore();
     const allBooks = await entries<string, Record<string, unknown>>(bookStore);
 
+    syncDebugLog("upload-pending-start", { bookCount: allBooks.length });
+
     for (const entry of allBooks) {
       if (!Array.isArray(entry) || entry.length < 2) continue;
       const bookId = entry[0];
@@ -622,6 +633,8 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     const changes = await getUnsyncedChanges();
     if (changes.length === 0) return;
 
+    syncDebugLog("push-start", { changeCount: changes.length });
+
     const body: SyncPushRequest = { changes };
     const res = await fetch("/api/sync/push", {
       method: "POST",
@@ -638,6 +651,10 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     }
 
     const result: SyncPushResponse = await res.json();
+    syncDebugLog("push-response", {
+      accepted: result.accepted.length,
+      rejected: result.rejected?.length ?? 0,
+    });
     if (result.accepted.length > 0) {
       await markSynced(result.accepted.map((a) => a.id));
       await clearSyncedChanges();
@@ -691,6 +708,8 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     }
     params.set("entityType", SYNCABLE_ENTITIES.join(","));
 
+    syncDebugLog("pull-start", { since: minCursor });
+
     const res = await fetch(`/api/sync/pull?${params.toString()}`);
 
     if (res.status === 401) {
@@ -702,6 +721,11 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     }
 
     const result: SyncPullResponse = await res.json();
+
+    syncDebugLog("pull-response", {
+      groupCount: result.changes.length,
+      recordCounts: result.changes.map((g) => ({ entity: g.entity, count: g.records.length })),
+    });
 
     for (const group of result.changes) {
       const merger = ENTITY_MERGERS[group.entity];

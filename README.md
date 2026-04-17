@@ -77,6 +77,10 @@ Migrations are in `database/migrations/` — apply them sequentially.
 | `pnpm run lint`      | Lint with oxlint             |
 | `pnpm run format`    | Format with oxfmt            |
 
+## Troubleshooting sync
+
+Verbose sync diagnostics are opt-in. In DevTools, run `localStorage.setItem("sync_debug", "1")` and reload to see structured `[sync-debug]` logs for upload attempts, push/pull cycles, and retry backoffs. Clear the flag with `localStorage.removeItem("sync_debug")`.
+
 ## License
 
 MIT
