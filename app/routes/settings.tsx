@@ -145,7 +145,7 @@ export default function SettingsPage() {
           >
             <ArrowLeft className="size-4" />
           </Link>
-          <h1 className="text-lg font-semibold">Settings</h1>
+          <h1 className="font-semibold">Settings</h1>
         </div>
       </header>
 

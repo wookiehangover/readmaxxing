@@ -13,7 +13,7 @@ export default function AboutPage() {
           >
             <ArrowLeft className="size-4" />
           </Link>
-          <span className="text-lg font-semibold">About</span>
+          <span className="font-semibold">About</span>
         </div>
       </header>
 
