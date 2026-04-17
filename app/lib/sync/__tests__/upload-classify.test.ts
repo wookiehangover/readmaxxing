@@ -3,7 +3,7 @@ import {
   classifyBlobError,
   runUploadWithRetry,
   UPLOAD_INCALL_RETRY_DELAYS_MS,
-} from "../sync-engine";
+} from "../upload-retry";
 
 // Construct an Error that mimics the name surface exposed by @vercel/blob error
 // classes. The SDK defines them as `var X = class extends BlobError {}` so

@@ -7,7 +7,7 @@ import {
   shouldAttemptUpload,
   uploadRetryKey,
   type UploadRetryEntry,
-} from "../sync-engine";
+} from "../upload-retry";
 
 describe("uploadRetryKey", () => {
   it("composes bookId and type", () => {
