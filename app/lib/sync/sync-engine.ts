@@ -509,6 +509,129 @@ export function clearUploadRetry(state: Map<string, UploadRetryEntry>, key: stri
 }
 
 // ---------------------------------------------------------------------------
+// In-call retry: classify blob SDK errors and retry transient ones
+// ---------------------------------------------------------------------------
+
+/**
+ * Classification of errors thrown by `@vercel/blob/client#upload`. The SDK
+ * exposes typed error classes (`BlobAccessError`, `BlobServiceNotAvailable`,
+ * `BlobServiceRateLimited`, etc.) but the `/client` subpath does not re-export
+ * them, so we match on `constructor.name` / `name` / message fragments.
+ */
+export type BlobErrorClass = "auth" | "transient" | "permanent";
+
+export function classifyBlobError(err: unknown): BlobErrorClass {
+  if (!(err instanceof Error)) return "permanent";
+  const ctor = err.constructor?.name ?? "";
+  const name = err.name;
+  const msg = err.message;
+
+  // Auth: access denied (403) or failed client-token exchange (401/403).
+  if (
+    ctor === "BlobAccessError" ||
+    name === "BlobAccessError" ||
+    ctor === "BlobClientTokenExpiredError" ||
+    name === "BlobClientTokenExpiredError" ||
+    /client token/i.test(msg)
+  ) {
+    return "auth";
+  }
+
+  // Permanent: validation / not-found / aborted — retrying won't help.
+  if (
+    ctor === "BlobFileTooLargeError" ||
+    name === "BlobFileTooLargeError" ||
+    ctor === "BlobContentTypeNotAllowedError" ||
+    name === "BlobContentTypeNotAllowedError" ||
+    ctor === "BlobPathnameMismatchError" ||
+    name === "BlobPathnameMismatchError" ||
+    ctor === "BlobPreconditionFailedError" ||
+    name === "BlobPreconditionFailedError" ||
+    ctor === "BlobNotFoundError" ||
+    name === "BlobNotFoundError" ||
+    ctor === "BlobStoreNotFoundError" ||
+    name === "BlobStoreNotFoundError" ||
+    ctor === "BlobStoreSuspendedError" ||
+    name === "BlobStoreSuspendedError" ||
+    ctor === "BlobRequestAbortedError" ||
+    name === "BlobRequestAbortedError"
+  ) {
+    return "permanent";
+  }
+
+  // Transient: service outage, rate limiting, unknown server error.
+  if (
+    ctor === "BlobServiceNotAvailable" ||
+    name === "BlobServiceNotAvailable" ||
+    ctor === "BlobServiceRateLimited" ||
+    name === "BlobServiceRateLimited" ||
+    ctor === "BlobUnknownError" ||
+    name === "BlobUnknownError"
+  ) {
+    return "transient";
+  }
+
+  // Network / fetch-level failures (`TypeError: Failed to fetch` and the like).
+  if (err instanceof TypeError) return "transient";
+  if (/network|failed to fetch|fetch failed/i.test(msg)) return "transient";
+
+  return "permanent";
+}
+
+/**
+ * Delays applied between in-call retry attempts for transient upload errors.
+ * Total attempts = `length + 1` (initial attempt plus one retry per slot).
+ */
+export const UPLOAD_INCALL_RETRY_DELAYS_MS: readonly number[] = [500, 2_000, 5_000];
+
+export interface UploadRetryHooks {
+  readonly onAuthExpired?: () => void;
+  readonly onTransientRetry?: (attempt: number, delayMs: number, err: unknown) => void;
+  readonly onGiveUp?: (err: unknown, totalAttempts: number) => void;
+  readonly onPermanentFailure?: (err: unknown) => void;
+}
+
+/**
+ * Execute `performUpload` with bounded in-call retries on transient errors.
+ * Auth and permanent errors short-circuit. Returns the upload result on
+ * success, or `null` if all attempts were exhausted or a non-retryable error
+ * was hit.
+ */
+export async function runUploadWithRetry<T>(
+  performUpload: () => Promise<T>,
+  hooks: UploadRetryHooks = {},
+  delaysMs: readonly number[] = UPLOAD_INCALL_RETRY_DELAYS_MS,
+  sleepMs: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<T | null> {
+  const maxAttempts = delaysMs.length + 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await performUpload();
+    } catch (err) {
+      const kind = classifyBlobError(err);
+      if (kind === "auth") {
+        hooks.onAuthExpired?.();
+        return null;
+      }
+      if (kind === "permanent") {
+        hooks.onPermanentFailure?.(err);
+        return null;
+      }
+      if (attempt < maxAttempts) {
+        const delay = delaysMs[attempt - 1];
+        hooks.onTransientRetry?.(attempt, delay, err);
+        await sleepMs(delay);
+        continue;
+      }
+      hooks.onGiveUp?.(err, attempt);
+      return null;
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -571,27 +694,35 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     const blob = data instanceof Blob ? data : new Blob([data], { type: contentType });
     const pathname = `${folder}/${config.userId}/${bookId}/${fileName}`;
 
-    try {
-      const result = await upload(pathname, blob, {
-        access: "private",
-        handleUploadUrl: "/api/sync/files/upload",
-        clientPayload: JSON.stringify({ bookId, type }),
-        contentType,
-      });
-      return result.url;
-    } catch (err) {
-      // The client SDK throws BlobAccessError when the handleUpload route
-      // returns a 403. A 401 from our route surfaces as a generic BlobError
-      // ("Failed to retrieve the client token") — treat either as auth loss.
-      const name = err instanceof Error ? err.name : "";
-      const message = err instanceof Error ? err.message : String(err);
-      if (name === "BlobAccessError" || (name === "BlobError" && /client token/i.test(message))) {
-        config.onAuthExpired?.();
-        return null;
-      }
-      console.error(`[sync] File upload failed for ${bookId} (${type}):`, err);
-      return null;
-    }
+    const result = await runUploadWithRetry(
+      () =>
+        upload(pathname, blob, {
+          access: "private",
+          handleUploadUrl: "/api/sync/files/upload",
+          clientPayload: JSON.stringify({ bookId, type }),
+          contentType,
+        }),
+      {
+        onAuthExpired: () => config.onAuthExpired?.(),
+        onTransientRetry: (attempt, delayMs, err) => {
+          console.warn(
+            `[sync] File upload transient error for ${bookId} (${type}), attempt ${attempt}, retrying in ${delayMs}ms:`,
+            err,
+          );
+        },
+        onGiveUp: (err, totalAttempts) => {
+          console.error(
+            `[sync] File upload giving up for ${bookId} (${type}) after ${totalAttempts} transient failures:`,
+            err,
+          );
+        },
+        onPermanentFailure: (err) => {
+          console.error(`[sync] File upload failed for ${bookId} (${type}):`, err);
+        },
+      },
+    );
+
+    return result?.url ?? null;
   }
 
   /**
