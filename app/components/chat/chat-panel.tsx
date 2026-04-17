@@ -11,6 +11,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
+import { isChaptersUploaded, markChaptersUploaded } from "~/lib/stores/chapter-upload-cache-store";
 import { cn } from "~/lib/utils";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -30,6 +31,27 @@ import { SessionMenuButton, ChatSessionList, EditableTitle } from "./chat-sessio
 interface ChatPanelProps {
   bookId: string;
   bookTitle: string;
+}
+
+async function uploadChaptersOnce(
+  bookId: string,
+  chapters: BookChapter[],
+  format: string | undefined,
+): Promise<void> {
+  if (await isChaptersUploaded(bookId)) return;
+  const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/chapters`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chapters, format }),
+  });
+  if (res.ok) {
+    await markChaptersUploaded(bookId);
+    return;
+  }
+  // 401 (signed out) / 503 (sync off) are expected — don't mark, try again next open
+  if (res.status !== 401 && res.status !== 503) {
+    console.error("Failed to upload chapters:", res.status, await res.text().catch(() => ""));
+  }
 }
 
 export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
@@ -101,6 +123,10 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         setBookFormat(book.format);
         setBookContext({ title: book.title, author: book.author, chapters });
         setInitialMessages(toUIMessages(savedMessages));
+
+        // Fire-and-forget: upload chapters to the server once per book so
+        // subsequent chat requests can reuse the cached text.
+        uploadChaptersOnce(bookId, chapters, book.format).catch(console.error);
       } catch (err) {
         if (!cancelled) {
           console.error("Failed to load chat data:", err);

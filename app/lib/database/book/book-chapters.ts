@@ -42,7 +42,7 @@ export async function upsertBookChapters(
   return result.rows[0];
 }
 
-export async function getBookChapters(
+export async function getBookChaptersForUser(
   userId: string,
   bookId: string,
 ): Promise<BookChaptersRow | null> {
