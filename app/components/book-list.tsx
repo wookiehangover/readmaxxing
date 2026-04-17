@@ -23,12 +23,12 @@ export function BookCover({
   remoteCoverUrl?: string;
   bookId?: string;
 }) {
-  const objectUrl = useBlobObjectUrl(coverImage, bookId ?? null);
-  const url =
-    objectUrl ??
-    (remoteCoverUrl && bookId
+  const remoteUrl =
+    remoteCoverUrl && bookId
       ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`
-      : null);
+      : null;
+  const fallbackBlobUrl = useBlobObjectUrl(remoteUrl ? null : coverImage, bookId ?? null);
+  const url = remoteUrl ?? fallbackBlobUrl;
 
   if (!url) return null;
 
