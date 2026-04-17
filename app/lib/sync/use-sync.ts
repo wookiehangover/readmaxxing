@@ -47,7 +47,7 @@ export { SyncContext };
  * - Pauses/resumes based on navigator.onLine
  */
 export function useSync(): SyncState {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const engineRef = useRef<SyncEngine | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
@@ -71,9 +71,11 @@ export function useSync(): SyncState {
     }
   }, [syncError]);
 
+  const userId = user?.id ?? null;
+
   useEffect(() => {
-    if (!isAuthenticated) {
-      // Not authenticated — tear down any existing engine
+    if (!isAuthenticated || !userId) {
+      // Not authenticated (or user not yet loaded) — tear down any existing engine
       if (engineRef.current) {
         engineRef.current.stopSync();
         engineRef.current = null;
@@ -83,6 +85,7 @@ export function useSync(): SyncState {
 
     // Create and start the sync engine
     const engine = makeSyncEngine({
+      userId,
       onSyncStart: () => setIsSyncing(true),
       onSyncEnd: ({ success }) => {
         setIsSyncing(false);
@@ -152,7 +155,7 @@ export function useSync(): SyncState {
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("sync:push-needed", handlePushNeeded);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, userId]);
 
   return {
     isSyncing,

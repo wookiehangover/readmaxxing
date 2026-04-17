@@ -58,10 +58,14 @@ export async function loader({ request }: { request: Request }) {
     return Response.json({ error: "Failed to retrieve file from blob storage" }, { status: 502 });
   }
 
-  return new Response(result.stream, {
-    headers: {
-      "Content-Type": result.blob.contentType ?? "application/octet-stream",
-      "Content-Disposition": result.blob.contentDisposition,
-    },
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": result.blob.contentType ?? "application/octet-stream",
+    "Content-Disposition": result.blob.contentDisposition,
+  };
+
+  if (type === "cover") {
+    headers["Cache-Control"] = "private, max-age=604800, stale-while-revalidate=86400";
+  }
+
+  return new Response(result.stream, { headers });
 }

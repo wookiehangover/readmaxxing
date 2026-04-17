@@ -377,19 +377,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const openNewTab = useCallback(() => {
-    const api = apiRef.current;
-    if (!api) return;
-
-    const panelId = `new-tab-${crypto.randomUUID().slice(0, 8)}`;
-    api.addPanel({
-      id: panelId,
-      component: "new-tab",
-      title: "Library",
-      params: {},
-    });
-  }, []);
-
   const openBook = useCallback((book: BookMeta, forceNew = false) => {
     const api = apiRef.current;
     if (!api) return;
@@ -598,10 +585,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     },
     onOpenNotebook: (book: BookMeta) => {
       openNotebook(book);
-      setMobileOpen(false);
-    },
-    onOpenNewTab: () => {
-      openNewTab();
       setMobileOpen(false);
     },
     onFileInput: handleFileInput,

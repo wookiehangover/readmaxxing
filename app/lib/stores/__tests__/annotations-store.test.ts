@@ -178,7 +178,7 @@ describe("AnnotationService", () => {
       await run(AnnotationService.pipe(Effect.andThen((s) => s.saveNotebook(initial))));
 
       // Simulate what append_to_notes does: read, merge, save immediately
-      const appended = await run(
+      await run(
         Effect.gen(function* () {
           const svc = yield* AnnotationService;
           const notebook = yield* svc.getNotebook("book-1");

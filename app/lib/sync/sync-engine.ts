@@ -1,3 +1,4 @@
+import { upload } from "@vercel/blob/client";
 import { createStore, get, set, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { getUnsyncedChanges, markSynced, clearSyncedChanges } from "./change-log";
@@ -422,7 +423,9 @@ const ENTITY_MERGERS: Partial<
 // Factory
 // ---------------------------------------------------------------------------
 
-export interface SyncEngineCallbacks {
+export interface SyncEngineConfig {
+  /** Authenticated user ID. Required for file uploads (used in the blob pathname). */
+  userId: string;
   onSyncStart?: () => void;
   onSyncEnd?: (result: { success: boolean }) => void;
   onSyncError?: (error: Error) => void;
@@ -432,7 +435,7 @@ export interface SyncEngineCallbacks {
 const PUSH_INTERVAL_MS = 30_000;
 const PULL_INTERVAL_MS = 60_000;
 
-export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine {
+export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
   let pushTimer: ReturnType<typeof setInterval> | null = null;
   let pullTimer: ReturnType<typeof setInterval> | null = null;
   let stopped = false;
@@ -442,28 +445,33 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
     data: ArrayBuffer | Blob,
     type: "file" | "cover",
   ): Promise<string | null> {
+    const folder = type === "cover" ? "covers" : "books";
     const fileName = type === "cover" ? "cover.jpg" : "book.epub";
-    const blob = data instanceof Blob ? data : new Blob([data], { type: "application/epub+zip" });
-    const formData = new FormData();
-    formData.set("bookId", bookId);
-    formData.set("file", new File([blob], fileName));
+    const contentType = type === "cover" ? "image/jpeg" : "application/epub+zip";
+    const blob = data instanceof Blob ? data : new Blob([data], { type: contentType });
+    const pathname = `${folder}/${config.userId}/${bookId}/${fileName}`;
 
-    const res = await fetch(`/api/sync/files/upload?type=${type}`, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (res.status === 401) {
-      callbacks.onAuthExpired?.();
+    try {
+      const result = await upload(pathname, blob, {
+        access: "private",
+        handleUploadUrl: "/api/sync/files/upload",
+        clientPayload: JSON.stringify({ bookId, type }),
+        contentType,
+      });
+      return result.url;
+    } catch (err) {
+      // The client SDK throws BlobAccessError when the handleUpload route
+      // returns a 403. A 401 from our route surfaces as a generic BlobError
+      // ("Failed to retrieve the client token") — treat either as auth loss.
+      const name = err instanceof Error ? err.name : "";
+      const message = err instanceof Error ? err.message : String(err);
+      if (name === "BlobAccessError" || (name === "BlobError" && /client token/i.test(message))) {
+        config.onAuthExpired?.();
+        return null;
+      }
+      console.error(`[sync] File upload failed for ${bookId} (${type}):`, err);
       return null;
     }
-    if (!res.ok) {
-      console.error(`[sync] File upload failed for ${bookId} (${type}): ${res.status}`);
-      return null;
-    }
-
-    const result: { url: string } = await res.json();
-    return result.url;
   }
 
   /**
@@ -473,6 +481,8 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
    */
   async function uploadPendingFiles(): Promise<void> {
     if (stopped) return;
+    // Safety: never attempt uploads before userId is known.
+    if (!config.userId) return;
 
     const bookStore = getBookStore();
     const dataStore = getBookDataStore();
@@ -526,7 +536,7 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
     });
 
     if (res.status === 401) {
-      callbacks.onAuthExpired?.();
+      config.onAuthExpired?.();
       return;
     }
     if (!res.ok) {
@@ -566,7 +576,7 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
     const res = await fetch(`/api/sync/pull?${params.toString()}`);
 
     if (res.status === 401) {
-      callbacks.onAuthExpired?.();
+      config.onAuthExpired?.();
       return;
     }
     if (!res.ok) {
@@ -599,13 +609,13 @@ export function makeSyncEngine(callbacks: SyncEngineCallbacks = {}): SyncEngine 
   async function runCycle(fn: () => Promise<void>): Promise<void> {
     let success = false;
     try {
-      callbacks.onSyncStart?.();
+      config.onSyncStart?.();
       await fn();
       success = true;
     } catch (err) {
-      callbacks.onSyncError?.(err instanceof Error ? err : new Error(String(err)));
+      config.onSyncError?.(err instanceof Error ? err : new Error(String(err)));
     } finally {
-      callbacks.onSyncEnd?.({ success });
+      config.onSyncEnd?.({ success });
     }
   }
 

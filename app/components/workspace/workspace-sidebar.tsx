@@ -73,7 +73,6 @@ export interface WorkspaceSidebarProps {
   }) => void;
   onOpenBook: (book: BookMeta, forceNew?: boolean) => void;
   onOpenNotebook: (book: BookMeta) => void;
-  onOpenNewTab: () => void;
   onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
@@ -85,7 +84,6 @@ export function WorkspaceSidebar({
   onUpdateSettings,
   onOpenBook,
   onOpenNotebook,
-  onOpenNewTab,
   onFileInput,
 }: WorkspaceSidebarProps) {
   const ws = useWorkspace();
