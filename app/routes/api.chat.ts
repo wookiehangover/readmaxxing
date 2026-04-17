@@ -23,6 +23,7 @@ import { getBookChaptersForUser } from "~/lib/database/book/book-chapters";
 import { getNotebookMarkdownForUser } from "~/lib/database/annotation/notebook";
 import {
   getMessagesBySession,
+  getSessionByIdForUser,
   upsertMessage,
   updateActiveStreamId,
   type ChatMessageRow,
@@ -178,6 +179,14 @@ export async function action({ request }: Route.ActionArgs) {
   const book = await getBookByIdForUser(bookId, userId);
   if (!book) {
     return Response.json({ error: "Book not found" }, { status: 404 });
+  }
+
+  // Verify the session belongs to this user before loading its history or
+  // persisting new messages to it — otherwise an authed user could leak/inject
+  // into another user's session by passing its id.
+  const session = await getSessionByIdForUser(sessionId, userId);
+  if (!session) {
+    return Response.json({ error: "Session not found" }, { status: 404 });
   }
 
   const chaptersRow = await getBookChaptersForUser(userId, bookId);
