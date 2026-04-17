@@ -67,11 +67,14 @@ export async function getSessionFromRequest(request: Request): Promise<{ userId:
 /**
  * Like `getSessionFromRequest`, but throws a 401 Response when the
  * request is not authenticated. Use in loaders/actions that require auth.
+ *
+ * The thrown body is always `{ error: "auth_required" }` so API clients can
+ * pattern-match a single shape across routes.
  */
 export async function requireAuth(request: Request): Promise<{ userId: string }> {
   const session = await getSessionFromRequest(request);
   if (!session) {
-    throw new Response("Unauthorized", { status: 401 });
+    throw Response.json({ error: "auth_required" }, { status: 401 });
   }
   return session;
 }

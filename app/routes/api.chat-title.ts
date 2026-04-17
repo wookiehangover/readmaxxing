@@ -1,6 +1,6 @@
 import { generateText, type UIMessage } from "ai";
 import { gateway } from "@ai-sdk/gateway";
-import { requireAuth } from "~/lib/database/auth-middleware";
+import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 
 interface ChatTitleRequestBody {
   messages: UIMessage[];
@@ -8,7 +8,7 @@ interface ChatTitleRequestBody {
 
 export async function action({ request }: { request: Request }) {
   // Require authentication before generating titles
-  const session = await requireAuth(request).catch(() => null);
+  const session = await getSessionFromRequest(request);
   if (!session) {
     return Response.json({ error: "auth_required" }, { status: 401 });
   }

@@ -17,7 +17,7 @@ import type { Route } from "./+types/api.chat";
 import { SE_BASE, parseSearchHtml } from "./api.standard-ebooks.search";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
 import { getOrBuildBookIndex, locateTextAnchor, searchBook } from "~/lib/orama-book-search";
-import { requireAuth } from "~/lib/database/auth-middleware";
+import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { getBookChaptersForUser } from "~/lib/database/book/book-chapters";
 import { upsertHighlight } from "~/lib/database/annotation/highlight";
@@ -164,7 +164,7 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   // Require authentication before processing chat requests
-  const authSession = await requireAuth(request).catch(() => null);
+  const authSession = await getSessionFromRequest(request);
   if (!authSession) {
     return Response.json({ error: "auth_required" }, { status: 401 });
   }
