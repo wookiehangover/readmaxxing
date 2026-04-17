@@ -1,10 +1,10 @@
 # Ebook Reader
 
-A browser-based ebook reader. Drag and drop `.epub` files to load them, and read with customizable typography and layout settings. Books are stored locally in IndexedDB — no server or account required. Optionally sign in with a passkey to sync across devices.
+A browser-based ebook reader. Drag and drop `.epub` or `.pdf` files to load them, and read with customizable typography and layout settings. Books are stored locally in IndexedDB — no server or account required. Optionally sign in with a passkey to sync across devices.
 
 ## Features
 
-- **Drag-and-drop loading** — drop `.epub` files anywhere on the page
+- **Drag-and-drop loading** — drop `.epub` or `.pdf` files anywhere on the page
 - **Local persistence** — books and reading positions stored in IndexedDB
 - **Inbox-style layout** — book list sidebar with reader pane
 - **Dark mode** — system-aware with manual toggle

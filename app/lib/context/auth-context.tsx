@@ -64,9 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [checkSession]);
 
   const logout = useCallback(async () => {
-    await AppRuntime.runPromise(
-      AuthService.pipe(Effect.andThen((s) => s.logout())),
-    );
+    await AppRuntime.runPromise(AuthService.pipe(Effect.andThen((s) => s.logout())));
     setState({ isAuthenticated: false, user: null, isLoading: false });
   }, []);
 
