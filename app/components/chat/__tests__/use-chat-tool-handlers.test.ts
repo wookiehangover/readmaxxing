@@ -1,4 +1,3 @@
-import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { NotebookEditorCallbacks } from "~/lib/context/workspace-context";
 import type { JSONContent } from "@tiptap/react";

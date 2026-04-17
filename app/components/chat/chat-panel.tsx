@@ -158,6 +158,11 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   //
   // If the server is unavailable (401/503), we silently keep the IDB copy.
   // Gated on `isAuthenticated` — signed-out users never hit the endpoint.
+  //
+  // Session-switch safety: `handleSwitchSession` bumps `sessionKey` which
+  // remounts ChatPanelInner. The `cancelled` flag below is flipped during
+  // cleanup before the next effect runs, so any in-flight fetch for the old
+  // session bails out before touching the new inner's `setChatMessagesRef`.
   useEffect(() => {
     if (!isAuthenticated || !activeSessionId) return;
     let cancelled = false;
