@@ -57,21 +57,47 @@ All epub parsing, IndexedDB access, and rendering must happen client-side. Use `
 
 ### Sync architecture
 
-The app is local-first: IndexedDB is the source of truth. Sync is optional and requires authentication.
+The app is local-first for most entities: IndexedDB is the source of truth and sync is optional. **Chat is the exception** — Postgres is authoritative for chat sessions and messages (see "Chat architecture" below). Sync requires authentication.
 
-**Change tracking**: All service mutations (BookService, AnnotationService, ChatService, Settings) call `recordChange()` which writes to a changelog IDB store. Changes are queued and pushed to the server on an interval or immediately on `sync:push-needed` events.
+**Change tracking**: Service mutations (BookService, AnnotationService, Settings, chat session metadata) call `recordChange()` which writes to a changelog IDB store. Changes are queued and pushed to the server on an interval or immediately on `sync:push-needed` events. Chat message bodies are **not** recorded to the change log — the server persists them directly when streaming `/api/chat`.
 
 **Merge strategies**:
 
-- Books, reading positions, notebooks, settings: Last-Write-Wins (LWW) by `updatedAt`
+- Books, reading positions, notebooks, settings, chat session metadata: Last-Write-Wins (LWW) by `updatedAt`
 - Highlights: Set-union with tombstone propagation (soft delete)
-- Chat messages: Append-only (ON CONFLICT DO NOTHING)
+- Chat messages: Append-only (ON CONFLICT DO NOTHING) — written server-side during streaming; sync pull hydrates the IDB warm-start cache only
 
 **Sync events**: The sync engine dispatches granular `sync:entity-updated` events (not a blanket event). Components use the `useSyncListener(["entity"])` hook to only re-render when their specific data changes.
 
 **File sync**: Epub files and covers are uploaded to Vercel Blob (private). On pull, metadata syncs immediately; files are downloaded on-demand when the user opens the book.
 
 **Initial sync**: On first login, `runInitialSyncIfNeeded()` scans all IDB stores and backfills the change log so existing data gets pushed.
+
+### Chat architecture
+
+Chat is **server-authoritative**: Postgres (`readmax.chat_session`, `readmax.chat_message`) is the source of truth for sessions and messages, not IndexedDB. This is a deliberate deviation from the local-first model used for books and annotations, because chat involves streaming LLM output and server-executed tools.
+
+**Transport**: The client uses the AI SDK's `DefaultChatTransport` with `resume: true`. On mount, `useChat` hydrates message history from `/api/chat/messages/:sessionId` and, if an `activeStreamId` is present, reconnects to the in-flight SSE stream via `/api/chat/resume/:sessionId` (backed by `resumable-stream` + Redis). This survives page reloads and tab switches mid-generation.
+
+**IDB as warm-start cache**: `app/lib/stores/chat-store.ts` keeps a per-session IDB copy of messages purely so the chat panel can paint something before the server hydration request returns. It is written from the server-authoritative list via `cacheServerMessages()` and is **never** pushed to the server for messages. Session metadata (title, `bookId`, timestamps) is still synced LWW via the sync engine as `chat_session`.
+
+**Server-executed tools**: The following tools run entirely inside the `/api/chat` route handler on the server, not in the browser:
+
+- `read_notes` — reads the user's notebook from Postgres and returns its markdown
+- `append_to_notes` — appends markdown to the notebook and persists it server-side
+- `edit_notes` — runs a sandboxed JS edit script against the notebook SDK and persists the result
+- `create_highlight` — upserts a highlight row keyed by a text anchor (chapter index + snippet); CFI is resolved later by the client
+
+Tool output is streamed back to the client as SSE UI message parts. `app/components/chat/use-chat-tool-handlers.ts` watches for `output-available` parts and applies the resulting state change locally (update the notebook editor, add the highlight to the annotations store, resolve the CFI). The client does **not** re-run these tools.
+
+**Auth-gated endpoints**: All chat endpoints require a valid passkey session. Signed-out users see a sign-in CTA in the chat panel instead of an input:
+
+- `POST /api/chat` — start or continue a chat turn
+- `POST /api/chat-title` — generate a session title
+- `GET /api/chat/resume/:sessionId` — resume an in-flight stream
+- `GET /api/chat/messages/:sessionId` — hydrate message history
+
+Unauthenticated requests return 401; the panel does not attempt to stream locally.
 
 ### Effect.ts conventions
 
