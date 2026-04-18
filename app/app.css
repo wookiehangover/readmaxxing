@@ -216,24 +216,25 @@ body {
   --dv-paneview-header-border-color: var(--border);
 }
 
-.dockview-theme-app .dv-tabs-and-actions-container {
+
+
+.dockview-theme-app .dv-tab {
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
 
-.dockview-theme-app .dv-tab {
-  border-top: none !important;
-  border-bottom: none !important;
+.dv-tab:focus-within::after, .dv-tab:focus::after {
+    display: none !important;
 }
 
-.dockview-theme-app .dv-tab.dv-inactive-tab {
-  border-right: 1px solid var(--border);
+.dv-left-actions-container,
+.dv-void-container {
+    border-bottom: 1px solid var(--border);
 }
 
 .dockview-theme-app .dv-tab.dv-active-tab {
-  outline: none !important;
-  border-bottom: none !important;
-  border-top: none !important;
-  border-right: 1px solid var(--border);
+    border-bottom-color: transparent;
 }
 
 .dockview-theme-app .dv-tab .dv-default-tab .dv-default-tab-action {
