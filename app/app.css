@@ -44,7 +44,7 @@
 
 html,
 body {
-  @apply bg-white dark:bg-gray-950 overscroll-none;
+  @apply bg-background overscroll-none;
 }
 
 .dark {
