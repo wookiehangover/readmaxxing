@@ -11,7 +11,8 @@ import {
   PanelLeftClose,
   Search,
 } from "lucide-react";
-import { BookCover, filterBooks, FILTER_THRESHOLD } from "~/components/book-list";
+import { BookCover, FILTER_THRESHOLD } from "~/components/book-list";
+import { filterBooks } from "~/lib/workspace-utils";
 import { SyncStatus } from "~/components/sync-status";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";

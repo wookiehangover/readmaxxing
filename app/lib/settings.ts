@@ -6,6 +6,7 @@ export type Theme = "light" | "dark" | "system";
 export type ReaderLayout = "single" | "spread" | "scroll";
 export type PdfLayout = "original" | "fit-height" | "fit-width" | "two-page" | "continuous";
 export type WorkspaceSortBy = "title" | "author" | "recent";
+export type LibraryView = "grid" | "table";
 
 // --- Schema ---
 
@@ -41,6 +42,9 @@ export const SettingsSchema = Schema.Struct({
   workspaceSortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), {
     default: () => "recent" as const,
   }),
+  libraryView: Schema.optionalWith(Schema.Literal("grid", "table"), {
+    default: () => "grid" as const,
+  }),
   colorTheme: Schema.optionalWith(
     Schema.Literal("default", "dracula", "nord", "rose-pine", "tokyo-night", "solarized"),
     { default: () => "default" as const },
@@ -64,6 +68,7 @@ const defaultSettings: Settings = {
   lineHeight: 1.6,
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
+  libraryView: "grid",
   colorTheme: "default",
 };
 

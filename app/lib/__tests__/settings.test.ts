@@ -12,6 +12,7 @@ const defaultSettings: Settings = {
   lineHeight: 1.6,
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
+  libraryView: "grid",
   pdfLayout: "fit-height",
   colorTheme: "default",
 };
@@ -34,6 +35,7 @@ describe("getSettings", () => {
       lineHeight: 1.8,
       sidebarCollapsed: true,
       workspaceSortBy: "title",
+      libraryView: "table",
       pdfLayout: "fit-height",
       colorTheme: "default",
     };
@@ -123,6 +125,7 @@ describe("saveSettings", () => {
       lineHeight: 1.4,
       sidebarCollapsed: true,
       workspaceSortBy: "author",
+      libraryView: "grid",
       pdfLayout: "fit-height",
       colorTheme: "default",
     };

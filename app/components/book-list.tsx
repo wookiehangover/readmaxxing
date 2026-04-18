@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { useReaderNavigation, type TocEntry } from "~/lib/context/reader-context";
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
+import { filterBooks } from "~/lib/workspace-utils";
 import { cn } from "~/lib/utils";
 
 interface BookListProps {
@@ -166,15 +167,6 @@ function TocPopoverItem({
 }
 
 export const FILTER_THRESHOLD = 9;
-
-export function filterBooks(books: BookMeta[], query: string): BookMeta[] {
-  const q = query.toLowerCase();
-  return books.filter(
-    (book) =>
-      book.title.toLowerCase().includes(q) ||
-      (book.author && book.author.toLowerCase().includes(q)),
-  );
-}
 
 export function BookList({ books, collapsed = false }: BookListProps) {
   const params = useParams();
