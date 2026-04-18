@@ -40,10 +40,27 @@ function migratePosition(raw: unknown): PositionRecord | null {
 
 // --- Effect Service ---
 
+/**
+ * Options for {@link ReadingPositionService.savePosition}.
+ *
+ * `recordChange` controls whether the write is appended to the sync changelog.
+ * Defaults to `true`. Set to `false` for local-only writes such as the
+ * panel-specific mirror saved by `savePositionDualKey` — panel ids are
+ * device-local UUIDs that no other device can ever consume, so syncing them
+ * just doubles every page-turn push for zero benefit.
+ */
+export interface SavePositionOptions {
+  readonly recordChange?: boolean;
+}
+
 export class ReadingPositionService extends Context.Tag("ReadingPositionService")<
   ReadingPositionService,
   {
-    readonly savePosition: (bookId: string, cfi: string) => Effect.Effect<void, PositionError>;
+    readonly savePosition: (
+      bookId: string,
+      cfi: string,
+      options?: SavePositionOptions,
+    ) => Effect.Effect<void, PositionError>;
     readonly getPosition: (bookId: string) => Effect.Effect<string | null, PositionError>;
     readonly getPositionRecord: (
       bookId: string,
@@ -58,18 +75,28 @@ export interface PositionServiceStores {
 export function makePositionService(stores: PositionServiceStores): ReadingPositionService["Type"] {
   const { positionStore } = stores;
   return {
-    savePosition: (bookId: string, cfi: string) =>
+    savePosition: (bookId: string, cfi: string, options?: SavePositionOptions) =>
       Effect.tryPromise({
         try: async () => {
+          // Short-circuit no-op writes: if the stored CFI matches exactly,
+          // skip both the IDB write and the sync changelog entry. Without
+          // this, a stuck `relocated` event source (e.g. a visibility /
+          // dimensions cycle) can enqueue one identical position change per
+          // debounce interval and drive /api/sync/push in a loop.
+          const existing = migratePosition(await get<unknown>(bookId, positionStore));
+          if (existing && existing.cfi === cfi) return;
+
           const record: PositionRecord = { cfi, updatedAt: Date.now() };
           await set(bookId, record, positionStore);
-          recordChange({
-            entity: "position",
-            entityId: bookId,
-            operation: "put",
-            data: record,
-            timestamp: record.updatedAt,
-          }).catch(console.error);
+          if (options?.recordChange !== false) {
+            recordChange({
+              entity: "position",
+              entityId: bookId,
+              operation: "put",
+              data: record,
+              timestamp: record.updatedAt,
+            }).catch(console.error);
+          }
         },
         catch: (cause) => new PositionError({ operation: "savePosition", bookId, cause }),
       }),

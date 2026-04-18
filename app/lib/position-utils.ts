@@ -49,21 +49,30 @@ export interface SavePositionDualKeyOpts {
   bookId: string;
   /** The CFI string to persist. */
   cfi: string;
-  /** Callback to persist a position by key. */
-  savePosition: (key: string, cfi: string) => Promise<void>;
+  /**
+   * Callback to persist a position by key. The optional `options` bag is
+   * forwarded to the underlying service — when `recordChange: false` the
+   * write is local-only (no sync changelog entry).
+   */
+  savePosition: (key: string, cfi: string, options?: { recordChange?: boolean }) => Promise<void>;
 }
 
 /**
  * Save a reading position under both the panel key and the book key.
  *
  * When `panelId` is undefined only the book-level key is written.
+ *
+ * Only the book-level save emits a sync changelog entry. The panel-key save
+ * is a device-local mirror (panel ids are random per-session UUIDs that no
+ * other device queries) so recording a second change for it just doubles
+ * every page-turn push without adding useful state for other devices.
  */
 export async function savePositionDualKey(opts: SavePositionDualKeyOpts): Promise<void> {
   const { panelId, bookId, cfi, savePosition } = opts;
 
   const saves: Promise<void>[] = [savePosition(bookId, cfi)];
   if (panelId !== undefined) {
-    saves.push(savePosition(panelId, cfi));
+    saves.push(savePosition(panelId, cfi, { recordChange: false }));
   }
   await Promise.all(saves);
 }

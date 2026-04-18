@@ -1,6 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createStore, set as idbSet } from "idb-keyval";
 import { Effect } from "effect";
+
+// Mock the sync changelog so we can assert on recordChange invocations
+// without touching the real changelog IDB store.
+vi.mock("~/lib/sync/change-log", () => ({
+  recordChange: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { recordChange } from "~/lib/sync/change-log";
 import { makePositionService } from "../position-store";
 import type { PositionRecord } from "../position-store";
 
@@ -73,6 +81,10 @@ describe("position migration (via service)", () => {
 // ---------------------------------------------------------------------------
 
 describe("savePosition", () => {
+  beforeEach(() => {
+    vi.mocked(recordChange).mockClear();
+  });
+
   it("saves and retrieves a position with updatedAt timestamp", async () => {
     const { service } = createTestStore();
 
@@ -92,5 +104,63 @@ describe("savePosition", () => {
 
     const cfi = await Effect.runPromise(service.getPosition("book-6"));
     expect(cfi).toBe("epubcfi(/6/2)");
+  });
+
+  it("records a sync change by default", async () => {
+    const { service } = createTestStore();
+
+    await Effect.runPromise(service.savePosition("book-7", "epubcfi(/6/7)"));
+
+    expect(recordChange).toHaveBeenCalledTimes(1);
+    expect(recordChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity: "position",
+        entityId: "book-7",
+        operation: "put",
+      }),
+    );
+  });
+
+  it("skips recordChange when options.recordChange is false (local-only write)", async () => {
+    const { service } = createTestStore();
+
+    await Effect.runPromise(
+      service.savePosition("panel-xyz", "epubcfi(/6/8)", { recordChange: false }),
+    );
+
+    // IDB still gets the write — local restore on refresh needs it.
+    const record = await Effect.runPromise(service.getPositionRecord("panel-xyz"));
+    expect(record?.cfi).toBe("epubcfi(/6/8)");
+
+    // But no sync changelog entry, so no doubled push per page turn.
+    expect(recordChange).not.toHaveBeenCalled();
+  });
+
+  it("skips IDB write and recordChange when saving the same CFI twice", async () => {
+    const { service } = createTestStore();
+
+    await Effect.runPromise(service.savePosition("book-9", "epubcfi(/6/90)"));
+    const first = await Effect.runPromise(service.getPositionRecord("book-9"));
+    expect(recordChange).toHaveBeenCalledTimes(1);
+
+    // Second save with identical CFI should be a no-op: no new changelog
+    // entry, and the stored updatedAt must not change (otherwise a stuck
+    // relocated-event source can drive a 1Hz sync-push loop).
+    await Effect.runPromise(service.savePosition("book-9", "epubcfi(/6/90)"));
+    const second = await Effect.runPromise(service.getPositionRecord("book-9"));
+
+    expect(recordChange).toHaveBeenCalledTimes(1);
+    expect(second?.updatedAt).toBe(first?.updatedAt);
+  });
+
+  it("still records a change when CFI changes to a new value", async () => {
+    const { service } = createTestStore();
+
+    await Effect.runPromise(service.savePosition("book-10", "epubcfi(/6/10)"));
+    await Effect.runPromise(service.savePosition("book-10", "epubcfi(/6/11)"));
+
+    expect(recordChange).toHaveBeenCalledTimes(2);
+    const cfi = await Effect.runPromise(service.getPosition("book-10"));
+    expect(cfi).toBe("epubcfi(/6/11)");
   });
 });

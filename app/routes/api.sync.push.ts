@@ -7,6 +7,7 @@ import {
   findBookByUserAndHash,
   insertTombstonedBook,
   getBookByIdForUser,
+  updateBookBlobUrls,
 } from "~/lib/database/book/book";
 import { upsertPosition } from "~/lib/database/book/reading-position";
 import { upsertSession, softDeleteSession, upsertMessage } from "~/lib/database/chat/chat-session";
@@ -27,6 +28,8 @@ export async function processEntry(
           author?: string | null;
           format?: string | null;
           fileHash?: string | null;
+          remoteCoverUrl?: string | null;
+          remoteFileUrl?: string | null;
           updatedAt?: number | null;
         };
 
@@ -58,6 +61,18 @@ export async function processEntry(
           fileHash: data.fileHash,
           updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
         });
+
+        // Persist blob URLs if the client carried them. Additive to the
+        // onUploadCompleted webhook in api.sync.files.upload.ts (the webhook
+        // is still a fast path but no longer the only way a URL reaches the
+        // DB). COALESCE inside updateBookBlobUrls prevents a nullish value
+        // on one side from clobbering an existing non-null column.
+        if (data.remoteCoverUrl || data.remoteFileUrl) {
+          await updateBookBlobUrls(entry.entityId, {
+            coverBlobUrl: data.remoteCoverUrl ?? undefined,
+            fileBlobUrl: data.remoteFileUrl ?? undefined,
+          });
+        }
       } else {
         await softDeleteBook(userId, entry.entityId);
       }

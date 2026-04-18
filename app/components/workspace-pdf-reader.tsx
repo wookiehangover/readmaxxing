@@ -303,7 +303,7 @@ function WorkspacePdfReaderInner({
       </div>
       <div
         className={cn(
-          "relative flex items-center justify-center border-t px-2 h-10 mb-[env(safe-area-inset-bottom)] transition-all duration-300 ease-in-out",
+          "relative flex items-center justify-center px-2 h-10 mb-[env(safe-area-inset-bottom)] transition-all duration-300 ease-in-out",
           {
             "max-h-0 overflow-hidden border-t-0 opacity-0": isMobile && !toolbarVisible,
             "max-h-20 opacity-100": !isMobile || toolbarVisible,

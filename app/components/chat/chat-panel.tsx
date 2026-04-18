@@ -577,7 +577,7 @@ function ChatPanelInner({
           <div
             ref={scrollRef}
             className={cn("flex-1 overflow-y-auto px-4 py-3 relative flex flex-col", {
-              "scroll-fog": messages.length > 0,
+              "scroll-fog-bottom": messages.length > 0,
             })}
           >
             <div ref={contentRef} className="flex flex-col flex-1">

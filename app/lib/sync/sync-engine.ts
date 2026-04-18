@@ -1,11 +1,20 @@
 import { upload } from "@vercel/blob/client";
 import { createStore, get, set, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
-import { getUnsyncedChanges, markSynced, clearSyncedChanges } from "./change-log";
+import { getUnsyncedChanges, markSynced, clearSyncedChanges, recordChange } from "./change-log";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
+import { syncDebugLog } from "./sync-debug";
 import { getCursor, setCursor } from "./sync-cursors";
 import type { EntityType, SyncPushRequest, SyncPushResponse, SyncPullResponse } from "./types";
+import {
+  clearUploadRetry,
+  recordUploadFailure,
+  runUploadWithRetry,
+  shouldAttemptUpload,
+  uploadRetryKey,
+  type UploadRetryEntry,
+} from "./upload-retry";
 
 // ---------------------------------------------------------------------------
 // IDB store accessors (same db/store names as book-store & position-store,
@@ -66,6 +75,12 @@ export interface SyncEngine {
   triggerPush(): void;
   /** Trigger an immediate pull (e.g. on window focus). */
   triggerPull(): void;
+  /**
+   * Re-download the book file and cover from the server, overwriting local
+   * copies. If the book is missing a remote URL, upload the local file /
+   * cover to blob storage instead so the DB row gets populated.
+   */
+  reloadBookFiles(bookId: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,12 +282,21 @@ export async function mergeBookRecord(record: Record<string, unknown>): Promise<
     // Server wins — preserve client-only fields from local record.
     // hasLocalFile and coverImage are never sent to the server, so
     // serverBookToLocal always returns them as undefined/null.
+    //
+    // remoteCoverUrl / remoteFileUrl: treat nullish server values as
+    // "no opinion" and keep the locally-known URL. The server row may
+    // have been stamped before this device's upload push landed, or a
+    // different device created the book row without uploading blobs
+    // yet. Overwriting with undefined would clear URLs we already have
+    // and force a redundant re-upload on the next push.
     await set(
       id,
       {
         ...remoteRecord,
         hasLocalFile: local.hasLocalFile,
         coverImage: local.coverImage ?? remoteRecord.coverImage,
+        remoteCoverUrl: remoteRecord.remoteCoverUrl ?? local.remoteCoverUrl,
+        remoteFileUrl: remoteRecord.remoteFileUrl ?? local.remoteFileUrl,
       },
       store,
     );
@@ -387,9 +411,12 @@ async function mergeChatMessageRecord(record: Record<string, unknown>): Promise<
   // Scan all entries to find the session. This is suboptimal but the chat
   // store is keyed by bookId (not sessionId).
   const allEntries = await entries<string, LocalChatSession[]>(store);
-  for (const [bookId, sessions] of allEntries) {
-    if (!sessions) continue;
-    const sIdx = sessions.findIndex((s) => s.id === sessionId);
+  for (const entry of allEntries) {
+    if (!Array.isArray(entry) || entry.length < 2) continue;
+    const bookId = entry[0];
+    const sessions = entry[1];
+    if (!Array.isArray(sessions)) continue;
+    const sIdx = sessions.findIndex((s) => s && s.id === sessionId);
     if (sIdx < 0) continue;
 
     const session = sessions[sIdx];
@@ -474,6 +501,45 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
   let pullTimer: ReturnType<typeof setInterval> | null = null;
   let stopped = false;
 
+  // Per-book upload retry state. In-memory only: resets on reload / new engine
+  // instance. Prevents the sync loop from hammering the blob endpoint when a
+  // particular book's upload keeps failing (e.g. Vercel Blob returning 503).
+  const uploadRetryState = new Map<string, UploadRetryEntry>();
+
+  /**
+   * Wrapper around {@link uploadFile} that enforces the per-book exponential
+   * backoff. On success the retry state for this book+type is cleared; on
+   * failure (null return) the next-attempt timestamp is pushed forward along
+   * the {@link UPLOAD_BACKOFF_SCHEDULE_MS} schedule.
+   */
+  async function uploadFileWithBackoff(
+    bookId: string,
+    data: ArrayBuffer | Blob,
+    type: "file" | "cover",
+  ): Promise<string | null> {
+    const key = uploadRetryKey(bookId, type);
+    const decision = shouldAttemptUpload(uploadRetryState, key, Date.now());
+    if (!decision.attempt) {
+      syncDebugLog("upload-skipped", {
+        bookId,
+        type,
+        retryInMs: decision.retryInMs,
+      });
+      return null;
+    }
+    const size = data instanceof Blob ? data.size : data.byteLength;
+    syncDebugLog("upload-attempt", { bookId, type, size });
+    const url = await uploadFile(bookId, data, type);
+    if (url) {
+      clearUploadRetry(uploadRetryState, key);
+      syncDebugLog("upload-success", { bookId, type, size });
+    } else {
+      recordUploadFailure(uploadRetryState, key, Date.now());
+      syncDebugLog("upload-failed", { bookId, type, size });
+    }
+    return url;
+  }
+
   async function uploadFile(
     bookId: string,
     data: ArrayBuffer | Blob,
@@ -485,27 +551,35 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     const blob = data instanceof Blob ? data : new Blob([data], { type: contentType });
     const pathname = `${folder}/${config.userId}/${bookId}/${fileName}`;
 
-    try {
-      const result = await upload(pathname, blob, {
-        access: "private",
-        handleUploadUrl: "/api/sync/files/upload",
-        clientPayload: JSON.stringify({ bookId, type }),
-        contentType,
-      });
-      return result.url;
-    } catch (err) {
-      // The client SDK throws BlobAccessError when the handleUpload route
-      // returns a 403. A 401 from our route surfaces as a generic BlobError
-      // ("Failed to retrieve the client token") — treat either as auth loss.
-      const name = err instanceof Error ? err.name : "";
-      const message = err instanceof Error ? err.message : String(err);
-      if (name === "BlobAccessError" || (name === "BlobError" && /client token/i.test(message))) {
-        config.onAuthExpired?.();
-        return null;
-      }
-      console.error(`[sync] File upload failed for ${bookId} (${type}):`, err);
-      return null;
-    }
+    const result = await runUploadWithRetry(
+      () =>
+        upload(pathname, blob, {
+          access: "private",
+          handleUploadUrl: "/api/sync/files/upload",
+          clientPayload: JSON.stringify({ bookId, type }),
+          contentType,
+        }),
+      {
+        onAuthExpired: () => config.onAuthExpired?.(),
+        onTransientRetry: (attempt, delayMs, err) => {
+          console.warn(
+            `[sync] File upload transient error for ${bookId} (${type}), attempt ${attempt}, retrying in ${delayMs}ms:`,
+            err,
+          );
+        },
+        onGiveUp: (err, totalAttempts) => {
+          console.error(
+            `[sync] File upload giving up for ${bookId} (${type}) after ${totalAttempts} transient failures:`,
+            err,
+          );
+        },
+        onPermanentFailure: (err) => {
+          console.error(`[sync] File upload failed for ${bookId} (${type}):`, err);
+        },
+      },
+    );
+
+    return result?.url ?? null;
   }
 
   /**
@@ -522,27 +596,61 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     const dataStore = getBookDataStore();
     const allBooks = await entries<string, Record<string, unknown>>(bookStore);
 
-    for (const [bookId, meta] of allBooks) {
-      if (!meta || meta.deletedAt) continue;
+    syncDebugLog("upload-pending-start", { bookCount: allBooks.length });
+
+    for (const entry of allBooks) {
+      if (!Array.isArray(entry) || entry.length < 2) continue;
+      const bookId = entry[0];
+      const meta = entry[1];
+      if (!meta || typeof meta !== "object" || meta.deletedAt) continue;
 
       // Upload epub file if missing remoteFileUrl
       if (!meta.remoteFileUrl) {
         const fileData = await get<ArrayBuffer>(bookId, dataStore);
         if (fileData) {
-          const url = await uploadFile(bookId, fileData, "file");
+          const url = await uploadFileWithBackoff(bookId, fileData, "file");
           if (url) {
-            await set(bookId, { ...meta, remoteFileUrl: url, hasLocalFile: true }, bookStore);
+            const stamped = {
+              ...meta,
+              remoteFileUrl: url,
+              hasLocalFile: true,
+              updatedAt: Date.now(),
+            };
+            await set(bookId, stamped, bookStore);
+            // Enqueue a book change so the URL is carried to the server on
+            // the next push. The onUploadCompleted webhook also writes it,
+            // but is unreliable; this is the authoritative persistence path.
+            recordChange({
+              entity: "book",
+              entityId: bookId,
+              operation: "put",
+              data: stamped,
+              timestamp: stamped.updatedAt,
+            }).catch(console.error);
           }
         }
       }
 
       // Upload cover image if missing remoteCoverUrl
       if (!meta.remoteCoverUrl && meta.coverImage instanceof Blob) {
-        const url = await uploadFile(bookId, meta.coverImage, "cover");
+        const url = await uploadFileWithBackoff(bookId, meta.coverImage, "cover");
         if (url) {
           // Re-read in case the file upload above already updated meta
           const current = (await get<Record<string, unknown>>(bookId, bookStore)) ?? meta;
-          await set(bookId, { ...current, remoteCoverUrl: url, hasLocalFile: true }, bookStore);
+          const stamped = {
+            ...current,
+            remoteCoverUrl: url,
+            hasLocalFile: true,
+            updatedAt: Date.now(),
+          };
+          await set(bookId, stamped, bookStore);
+          recordChange({
+            entity: "book",
+            entityId: bookId,
+            operation: "put",
+            data: stamped,
+            timestamp: stamped.updatedAt,
+          }).catch(console.error);
         }
       }
     }
@@ -557,10 +665,127 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     }
   }
 
+  /**
+   * Re-download file + cover for a single book from the server, overwriting
+   * the locally cached copies. If the book is missing `remoteFileUrl` or
+   * `remoteCoverUrl`, upload the local file / cover to blob storage so the
+   * DB row gets populated (same logic as {@link uploadPendingFiles}, but
+   * scoped to one book).
+   */
+  async function reloadBookFiles(bookId: string): Promise<void> {
+    if (!config.userId) return;
+
+    const bookStore = getBookStore();
+    const dataStore = getBookDataStore();
+
+    const rawMeta = await get<Record<string, unknown>>(bookId, bookStore);
+    if (!rawMeta || typeof rawMeta !== "object" || rawMeta.deletedAt) return;
+
+    syncDebugLog("reload-start", { bookId });
+
+    let meta: Record<string, unknown> = { ...rawMeta };
+    let metaChanged = false;
+
+    // --- File ---
+    if (meta.remoteFileUrl) {
+      try {
+        const res = await fetch(
+          `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=file`,
+          { credentials: "include" },
+        );
+        if (res.ok) {
+          const buf = await res.arrayBuffer();
+          await set(bookId, buf, dataStore);
+          if (!meta.hasLocalFile) {
+            meta = { ...meta, hasLocalFile: true };
+            metaChanged = true;
+          }
+        } else {
+          console.error(`[sync] reload file download failed: ${res.status} ${res.statusText}`);
+        }
+      } catch (err) {
+        console.error("[sync] reload file download failed:", err);
+      }
+    } else {
+      const fileData = await get<ArrayBuffer>(bookId, dataStore);
+      if (fileData) {
+        const url = await uploadFileWithBackoff(bookId, fileData, "file");
+        if (url) {
+          meta = {
+            ...meta,
+            remoteFileUrl: url,
+            hasLocalFile: true,
+            updatedAt: Date.now(),
+          };
+          metaChanged = true;
+          recordChange({
+            entity: "book",
+            entityId: bookId,
+            operation: "put",
+            data: meta,
+            timestamp: meta.updatedAt as number,
+          }).catch(console.error);
+        }
+      }
+    }
+
+    // --- Cover ---
+    if (meta.remoteCoverUrl) {
+      try {
+        const res = await fetch(
+          `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`,
+          { credentials: "include" },
+        );
+        if (res.ok) {
+          const blob = await res.blob();
+          meta = { ...meta, coverImage: blob };
+          metaChanged = true;
+        } else {
+          console.error(`[sync] reload cover download failed: ${res.status} ${res.statusText}`);
+        }
+      } catch (err) {
+        console.error("[sync] reload cover download failed:", err);
+      }
+    } else if (meta.coverImage instanceof Blob) {
+      const url = await uploadFileWithBackoff(bookId, meta.coverImage, "cover");
+      if (url) {
+        meta = {
+          ...meta,
+          remoteCoverUrl: url,
+          updatedAt: Date.now(),
+        };
+        metaChanged = true;
+        recordChange({
+          entity: "book",
+          entityId: bookId,
+          operation: "put",
+          data: meta,
+          timestamp: meta.updatedAt as number,
+        }).catch(console.error);
+      }
+    }
+
+    if (metaChanged) {
+      await set(bookId, meta, bookStore);
+    }
+
+    syncDebugLog("reload-end", { bookId, metaChanged });
+
+    if (typeof window !== "undefined") {
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }),
+        );
+      });
+    }
+  }
+
   async function pushChanges(): Promise<void> {
     if (stopped) return;
     const changes = await getUnsyncedChanges();
     if (changes.length === 0) return;
+
+    syncDebugLog("push-start", { changeCount: changes.length });
 
     const body: SyncPushRequest = { changes };
     const res = await fetch("/api/sync/push", {
@@ -578,6 +803,10 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     }
 
     const result: SyncPushResponse = await res.json();
+    syncDebugLog("push-response", {
+      accepted: result.accepted.length,
+      rejected: result.rejected?.length ?? 0,
+    });
     if (result.accepted.length > 0) {
       await markSynced(result.accepted.map((a) => a.id));
       await clearSyncedChanges();
@@ -631,6 +860,8 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     }
     params.set("entityType", SYNCABLE_ENTITIES.join(","));
 
+    syncDebugLog("pull-start", { since: minCursor });
+
     const res = await fetch(`/api/sync/pull?${params.toString()}`);
 
     if (res.status === 401) {
@@ -642,6 +873,11 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     }
 
     const result: SyncPullResponse = await res.json();
+
+    syncDebugLog("pull-response", {
+      groupCount: result.changes.length,
+      recordCounts: result.changes.map((g) => ({ entity: g.entity, count: g.records.length })),
+    });
 
     for (const group of result.changes) {
       const merger = ENTITY_MERGERS[group.entity];
@@ -707,6 +943,10 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
     triggerPull() {
       runCycle(pullChanges);
+    },
+
+    async reloadBookFiles(bookId: string) {
+      await reloadBookFiles(bookId);
     },
   };
 }

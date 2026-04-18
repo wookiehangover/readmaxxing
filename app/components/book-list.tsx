@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { NavLink, useParams } from "react-router";
 import { Search } from "lucide-react";
 import { Input } from "~/components/ui/input";
@@ -6,6 +6,7 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { useReaderNavigation, type TocEntry } from "~/lib/context/reader-context";
+import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { cn } from "~/lib/utils";
 
 interface BookListProps {
@@ -22,18 +23,12 @@ export function BookCover({
   remoteCoverUrl?: string;
   bookId?: string;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (coverImage) {
-      const objectUrl = URL.createObjectURL(coverImage);
-      setUrl(objectUrl);
-      return () => URL.revokeObjectURL(objectUrl);
-    }
-    if (remoteCoverUrl && bookId) {
-      setUrl(`/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`);
-    }
-  }, [coverImage, remoteCoverUrl, bookId]);
+  const remoteUrl =
+    remoteCoverUrl && bookId
+      ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`
+      : null;
+  const fallbackBlobUrl = useBlobObjectUrl(remoteUrl ? null : coverImage, bookId ?? null);
+  const url = remoteUrl ?? fallbackBlobUrl;
 
   if (!url) return null;
 

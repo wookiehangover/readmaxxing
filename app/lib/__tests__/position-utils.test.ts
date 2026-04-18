@@ -102,7 +102,7 @@ describe("resolveStartCfi", () => {
 describe("savePositionDualKey", () => {
   it("saves to both panelId and bookId keys", async () => {
     const savePosition = vi
-      .fn<(key: string, cfi: string) => Promise<void>>()
+      .fn<(key: string, cfi: string, options?: { recordChange?: boolean }) => Promise<void>>()
       .mockResolvedValue(undefined);
 
     await savePositionDualKey({
@@ -113,13 +113,35 @@ describe("savePositionDualKey", () => {
     });
 
     expect(savePosition).toHaveBeenCalledTimes(2);
-    expect(savePosition).toHaveBeenCalledWith("book-1", "epubcfi(/6/50)");
-    expect(savePosition).toHaveBeenCalledWith("panel-1", "epubcfi(/6/50)");
+    expect(savePosition).toHaveBeenNthCalledWith(1, "book-1", "epubcfi(/6/50)");
+    expect(savePosition).toHaveBeenNthCalledWith(2, "panel-1", "epubcfi(/6/50)", {
+      recordChange: false,
+    });
+  });
+
+  it("emits exactly one sync-recording save per page turn (bookId only, panel-key is local-only)", async () => {
+    const recording: string[] = [];
+    const savePosition = vi
+      .fn<(key: string, cfi: string, options?: { recordChange?: boolean }) => Promise<void>>()
+      .mockImplementation(async (key, _cfi, options) => {
+        if (options?.recordChange !== false) recording.push(key);
+      });
+
+    await savePositionDualKey({
+      panelId: "panel-42",
+      bookId: "book-42",
+      cfi: "epubcfi(/6/80)",
+      savePosition,
+    });
+
+    // Regression guard: without the recordChange:false flag on the panel save,
+    // a single page turn in workspace mode produced two sync changelog entries.
+    expect(recording).toEqual(["book-42"]);
   });
 
   it("saves only to bookId when panelId is undefined", async () => {
     const savePosition = vi
-      .fn<(key: string, cfi: string) => Promise<void>>()
+      .fn<(key: string, cfi: string, options?: { recordChange?: boolean }) => Promise<void>>()
       .mockResolvedValue(undefined);
 
     await savePositionDualKey({
@@ -136,7 +158,7 @@ describe("savePositionDualKey", () => {
   it("both saves receive the same CFI value", async () => {
     const saved: Array<{ key: string; cfi: string }> = [];
     const savePosition = vi
-      .fn<(key: string, cfi: string) => Promise<void>>()
+      .fn<(key: string, cfi: string, options?: { recordChange?: boolean }) => Promise<void>>()
       .mockImplementation(async (key, cfi) => {
         saved.push({ key, cfi });
       });

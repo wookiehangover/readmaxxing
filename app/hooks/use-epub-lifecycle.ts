@@ -119,9 +119,9 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         panelId,
         bookId,
         cfi,
-        savePosition: (key, val) =>
+        savePosition: (key, val, options) =>
           AppRuntime.runPromise(
-            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val, options))),
           ),
       }).catch((err) => console.error("Failed to flush reading position:", err));
     }
@@ -313,7 +313,20 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
             LocationCacheService.pipe(Effect.andThen((s) => s.saveLocations(bookId, json))),
           ).catch(console.error);
         }
-        setTotalPages((epubBook.locations as any).total as number);
+        const locTotal = (epubBook.locations as any).total as number;
+        setTotalPages(locTotal);
+        // Seed currentPage from the current location so the UI shows
+        // "Page X of Y" immediately instead of "0%" until first navigation.
+        const loc = rendition.currentLocation() as any;
+        const startCfiForPage = loc?.start?.cfi ?? latestCfiRef.current;
+        if (locTotal > 0 && startCfiForPage) {
+          const locIndex = epubBook.locations.locationFromCfi(startCfiForPage);
+          if (typeof locIndex === "number" && locIndex >= 0) {
+            setCurrentPage(locIndex + 1);
+          } else if (typeof loc?.start?.percentage === "number") {
+            setCurrentPage(Math.max(1, Math.round(loc.start.percentage * locTotal)));
+          }
+        }
       } catch {
         // locations generation can fail silently
       }
@@ -372,9 +385,11 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
               panelId: configRef.current.panelId,
               bookId,
               cfi: location.start.cfi,
-              savePosition: (key, val) =>
+              savePosition: (key, val, options) =>
                 AppRuntime.runPromise(
-                  ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+                  ReadingPositionService.pipe(
+                    Effect.andThen((s) => s.savePosition(key, val, options)),
+                  ),
                 ),
             }).catch((err) => console.error("Failed to save reading position:", err));
           }, POSITION_SAVE_DEBOUNCE_MS);

@@ -7,6 +7,7 @@ vi.mock("~/lib/database/book/book", () => ({
   findBookByUserAndHash: vi.fn(async () => null),
   insertTombstonedBook: vi.fn(async () => null),
   getBookByIdForUser: vi.fn(async () => null),
+  updateBookBlobUrls: vi.fn(async () => null),
 }));
 
 vi.mock("~/lib/database/auth-middleware", () => ({
@@ -33,12 +34,14 @@ import {
   findBookByUserAndHash,
   insertTombstonedBook,
   getBookByIdForUser,
+  updateBookBlobUrls,
 } from "~/lib/database/book/book";
 
 const upsertBookMock = upsertBook as ReturnType<typeof vi.fn>;
 const findMock = findBookByUserAndHash as ReturnType<typeof vi.fn>;
 const insertTombstoneMock = insertTombstonedBook as ReturnType<typeof vi.fn>;
 const getByIdMock = getBookByIdForUser as ReturnType<typeof vi.fn>;
+const updateUrlsMock = updateBookBlobUrls as ReturnType<typeof vi.fn>;
 
 function makeBookEntry(overrides: Partial<ChangeEntry> = {}): ChangeEntry {
   return {
@@ -65,6 +68,7 @@ beforeEach(() => {
   findMock.mockReset();
   insertTombstoneMock.mockReset();
   getByIdMock.mockReset();
+  updateUrlsMock.mockClear();
 });
 
 describe("processEntry book dedup branch", () => {
@@ -142,5 +146,85 @@ describe("processEntry book dedup branch", () => {
     expect(result).toEqual({ accepted: true });
     expect(upsertBookMock).toHaveBeenCalled();
     expect(insertTombstoneMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("processEntry book blob URLs", () => {
+  it("calls updateBookBlobUrls with both URLs when the client sends them", async () => {
+    findMock.mockResolvedValue(null);
+    const entry = makeBookEntry({
+      data: {
+        id: "book-new",
+        title: "Test",
+        fileHash: "hash-abc",
+        remoteFileUrl: "https://blob.vercel-storage.com/file.epub",
+        remoteCoverUrl: "https://blob.vercel-storage.com/cover.jpg",
+        updatedAt: 2000,
+      },
+    });
+
+    const result = await processEntry("u1", entry);
+
+    expect(result).toEqual({ accepted: true });
+    expect(upsertBookMock).toHaveBeenCalled();
+    expect(updateUrlsMock).toHaveBeenCalledWith("book-new", {
+      fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
+      coverBlobUrl: "https://blob.vercel-storage.com/cover.jpg",
+    });
+  });
+
+  it("does not call updateBookBlobUrls when neither URL is provided", async () => {
+    findMock.mockResolvedValue(null);
+    const entry = makeBookEntry({
+      data: { id: "book-new", title: "Test", updatedAt: 2000 },
+    });
+
+    await processEntry("u1", entry);
+
+    expect(upsertBookMock).toHaveBeenCalled();
+    expect(updateUrlsMock).not.toHaveBeenCalled();
+  });
+
+  it("passes undefined for the missing URL so COALESCE preserves existing DB values", async () => {
+    findMock.mockResolvedValue(null);
+    const entry = makeBookEntry({
+      data: {
+        id: "book-new",
+        remoteFileUrl: "https://blob.vercel-storage.com/file.epub",
+        updatedAt: 2000,
+      },
+    });
+
+    await processEntry("u1", entry);
+
+    expect(updateUrlsMock).toHaveBeenCalledWith("book-new", {
+      fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
+      coverBlobUrl: undefined,
+    });
+  });
+
+  it("does not persist URLs on the dedup tombstone branch", async () => {
+    findMock.mockResolvedValue({
+      id: "book-canonical",
+      userId: "u1",
+      fileHash: "hash-abc",
+      deletedAt: null,
+    });
+    getByIdMock.mockResolvedValue(null);
+
+    const result = await processEntry(
+      "u1",
+      makeBookEntry({
+        data: {
+          id: "book-new",
+          fileHash: "hash-abc",
+          remoteFileUrl: "https://blob.vercel-storage.com/file.epub",
+          updatedAt: 2000,
+        },
+      }),
+    );
+
+    expect(result.canonicalId).toBe("book-canonical");
+    expect(updateUrlsMock).not.toHaveBeenCalled();
   });
 });

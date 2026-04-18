@@ -103,9 +103,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
         panelId,
         bookId,
         cfi: `page:${page}`,
-        savePosition: (key, val) =>
+        savePosition: (key, val, options) =>
           AppRuntime.runPromise(
-            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val, options))),
           ),
       }).catch((err) => console.error("Failed to flush PDF position:", err));
     }
@@ -120,9 +120,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
           panelId: configRef.current.panelId,
           bookId,
           cfi: `page:${page}`,
-          savePosition: (key, val) =>
+          savePosition: (key, val, options) =>
             AppRuntime.runPromise(
-              ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val))),
+              ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val, options))),
             ),
         }).catch((err) => console.error("Failed to save PDF position:", err));
       }, POSITION_SAVE_DEBOUNCE_MS);

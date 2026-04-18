@@ -8,6 +8,7 @@
 /build/
 .intent/
 playwright-report/
+test-results/
 .last-run.json
 .vercel
 .env*.local
