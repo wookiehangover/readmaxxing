@@ -8,7 +8,7 @@ export function LibraryViewToggle() {
   const current: LibraryView = settings.libraryView;
 
   return (
-    <div className="flex items-center rounded-md border bg-background p-0.5">
+    <div className="flex items-center">
       <Button
         type="button"
         size="icon"

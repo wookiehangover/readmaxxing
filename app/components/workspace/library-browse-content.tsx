@@ -132,7 +132,7 @@ export function LibraryBrowseContent() {
               <p className="text-sm text-muted-foreground">No matching books</p>
             </div>
           ) : libraryView === "table" ? (
-            <div className="flex-1 overflow-hidden p-4 md:p-6">
+            <div className="flex-1 overflow-hidden p-4 pt-2 md:p-6 md:pt-3">
               <LibraryTable
                 books={filteredBooks}
                 onOpenBook={handleOpenBook}
@@ -144,7 +144,7 @@ export function LibraryBrowseContent() {
               />
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto p-4 md:p-6">
+            <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                 {filteredBooks.map((book) => {
                   const needsDownload = bookNeedsDownload(book);
