@@ -92,6 +92,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32" />
         <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link
+          rel="apple-touch-icon"
+          href="/apple-touch-icon-dark.png"
+          sizes="180x180"
+          media="(prefers-color-scheme: dark)"
+        />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="Readmaxxing" />
