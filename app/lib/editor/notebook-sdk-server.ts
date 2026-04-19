@@ -88,6 +88,13 @@ export async function runEditNotesInSandbox(
 ): Promise<RunEditNotesResult> {
   const timeoutMs = opts.timeoutMs ?? 1500;
 
+  // Log the incoming script so production failures are diagnosable from logs.
+  // Gate behind DEBUG_EDIT_NOTES if an operator wants to keep scripts out of logs.
+  if (process.env.DEBUG_EDIT_NOTES !== "0") {
+    console.log("[edit_notes] code:", code.length, "chars");
+    console.log(code.slice(0, 400));
+  }
+
   ensureServerDom();
 
   // Dynamic import so the TipTap / DOM work only runs when a tool call hits us.

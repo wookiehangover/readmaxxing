@@ -316,7 +316,7 @@ export async function action({ request }: Route.ActionArgs) {
           }),
           edit_notes: tool({
             description:
-              "Edit the reader's notebook using JavaScript code. Use this for block-targeted edits: changing a specific paragraph or list item, removing a block, inserting around a block, or restructuring a section. The code runs against a `notebook` object. ALWAYS call read_notes first to see the current content. PREFER block-targeted operations (find → replace/remove/insertAfter/insertBefore). DO NOT reassemble the whole notebook from scratch — there is no whole-document replace method, and the server rejects scripts that reduce the notebook to near-empty. If the user explicitly asks to reset their notebook, call remove() on each block in a loop.",
+              "Edit the reader's notebook using JavaScript code. Use this for block-targeted edits: changing a specific paragraph or list item, removing a block, inserting around a block, or restructuring a section. The code runs against a `notebook` object. ALWAYS call read_notes first to see the current content. PREFER block-targeted operations (find → setText/replace/remove/insertAfter/insertBefore). DO NOT reassemble the whole notebook from scratch — there is no whole-document replace method, and the server rejects scripts that reduce the notebook to near-empty. If the user explicitly asks to reset their notebook, call remove() on each block in a loop.",
             inputSchema: z.object({
               code: z
                 .string()
@@ -325,15 +325,18 @@ export async function action({ request }: Route.ActionArgs) {
                     "notebook.getMarkdown() — current notes as markdown; " +
                     "notebook.getBlocks() — all blocks as structured objects; " +
                     "notebook.find(query) — locate blocks to edit (accepts a string for plain-text search — links show as their display text, not markdown syntax — or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock'|'listItem', text?: string }); " +
-                    "notebook.replace(block, markdown) → boolean — replace a single block in place; USE THIS for most edits; " +
+                    "notebook.setText(block, text) → boolean — PREFERRED for 'change the text of this block'. Preserves heading level, list-item structure, code-block language, etc. Use this to rename headings, fix typos, or reword existing blocks. `text` is inserted verbatim as plain text — do NOT include markdown markers like '#' or '*'; " +
+                    "notebook.replace(block, markdown) → boolean — replaces the entire block with newly-parsed markdown. Use when you want to change the block's TYPE (e.g. a paragraph becomes a bulleted list) or insert multiple blocks in place of one; " +
                     "notebook.remove(block) → boolean — delete a single block; " +
                     "notebook.insertAfter(block, markdown) — insert new content after a block; " +
                     "notebook.insertBefore(block, markdown) — insert new content before a block; " +
                     "notebook.append(markdown) — add new content at the END of the notebook; does NOT touch existing content; " +
                     "notebook.prepend(markdown) — add new content at the START of the notebook; does NOT touch existing content. " +
-                    "`find` returns Block objects with { type, text, level?, index, parentIndex?, depth? }. Use type 'listItem' to target individual list items at ANY nesting level. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). replace() and remove() return true if the block was found and modified, false otherwise. " +
-                    "Example — rewrite a word in one paragraph: const b = notebook.find('old word')[0]; if (b) notebook.replace(b, b.text.replace('old word', 'new word')); " +
-                    "Example — edit a nested list item: const item = notebook.find({ type: 'listItem', text: 'old text' })[0]; if (item) notebook.replace(item, 'new text'); " +
+                    "`find` returns Block objects with { type, text, level?, index, parentIndex?, depth? }. Use type 'listItem' to target individual list items at ANY nesting level. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). setText(), replace() and remove() return true if the block was found and modified, false otherwise. " +
+                    "Example — rename a heading (keeps it a heading): const h = notebook.find({ type: 'heading', text: 'Intro' })[0]; if (h) notebook.setText(h, 'Introduction'); " +
+                    "Example — fix a typo in a paragraph: const p = notebook.find('teh quick')[0]; if (p) notebook.setText(p, p.text.replace('teh', 'the')); " +
+                    "Example — change a paragraph into a bullet list (structural change): const p = notebook.find('items:')[0]; if (p) notebook.replace(p, '- a\\n- b\\n- c'); " +
+                    "Example — remove a block: const b = notebook.find({ text: 'obsolete' })[0]; if (b) notebook.remove(b); " +
                     "There is NO whole-document replace method. Do NOT rebuild the entire notebook in a single call — the server will reject scripts that reduce the notebook to near-empty.",
                 ),
             }),
