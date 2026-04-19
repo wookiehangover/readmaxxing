@@ -48,10 +48,18 @@ export function useChatToolHandlers({
       const msg = event.message;
 
       // Handle append_to_notes: the server parsed the markdown, persisted the
-      // updated notebook to Postgres, and returned the appended Tiptap nodes.
-      // We apply those authoritative nodes to the live editor (if open); the
-      // notebook row itself arrives in IndexedDB via the next sync pull, so
-      // we intentionally do NOT write to IDB here.
+      // updated notebook to Postgres, and returned the appended Tiptap nodes
+      // along with the full `updatedContent` and server `updatedAt`. We:
+      //   1. Apply the authoritative nodes to the live editor (if open and not
+      //      already previewed via input-streaming).
+      //   2. Mirror the full `updatedContent` to IndexedDB via `cacheNotebook`
+      //      so other UI (book-details, notebook preview) sees the new notes
+      //      immediately, without waiting for the next sync pull.
+      //   3. Dispatch `sync:entity-updated` {notebook} so `useSyncListener`
+      //      consumers re-fetch from IDB.
+      // We seed the open editor's lastContentRef before dispatching so the
+      // workspace-notebook listener treats the event as a no-op — preventing
+      // an unnecessary `setContent` that would reset cursor position.
       const appendNotesParts = (msg.parts ?? []).filter((p: any) => {
         const info = getToolInfo(p);
         return info && info.toolName === "append_to_notes" && info.state === "output-available";
@@ -59,7 +67,13 @@ export function useChatToolHandlers({
       for (const part of appendNotesParts) {
         const info = getToolInfo(part);
         const output = info?.output as
-          | { appended?: boolean; text?: string; appendedNodes?: JSONContent[] }
+          | {
+              appended?: boolean;
+              text?: string;
+              appendedNodes?: JSONContent[];
+              updatedContent?: JSONContent;
+              updatedAt?: number;
+            }
           | undefined;
         const toolCallId = (part as any).toolCallId as string | undefined;
 
@@ -73,22 +87,46 @@ export function useChatToolHandlers({
         const appendedNodes = Array.isArray(output.appendedNodes) ? output.appendedNodes : [];
         if (appendedNodes.length === 0) continue;
 
-        // If the streaming preview already inserted these nodes during
-        // input-streaming, skip the append — the editor already has them and
-        // re-applying would duplicate.
-        if (streamingPreviewed) continue;
-
         const editorCbs = notebookEditorCallbackMap.current.get(bookId);
-        if (editorCbs) {
+
+        // Editor update: if the streaming preview already inserted these nodes
+        // during input-streaming, skip — re-applying would duplicate.
+        if (!streamingPreviewed && editorCbs) {
           editorCbs.appendContent(appendedNodes);
         }
-        // Editor not open → no-op. The server already persisted the notebook
-        // update and the row will arrive locally via the next sync pull.
+
+        // Write-through to IndexedDB is independent of editor state — even if
+        // the editor isn't open we still want IDB to reflect the new notes.
+        if (output.updatedContent && typeof output.updatedAt === "number") {
+          const nextContent = output.updatedContent;
+          const nextUpdatedAt = output.updatedAt;
+          editorCbs?.seedLastContent(nextContent);
+          AppRuntime.runPromise(
+            AnnotationService.pipe(
+              Effect.andThen((svc) =>
+                svc.cacheNotebook({
+                  bookId,
+                  content: nextContent,
+                  updatedAt: nextUpdatedAt,
+                }),
+              ),
+            ),
+          )
+            .then(() => {
+              queueMicrotask(() => {
+                window.dispatchEvent(
+                  new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
+                );
+              });
+            })
+            .catch(console.error);
+        }
       }
 
       // Handle edit_notes: server ran the SDK code and returned updatedContent.
       // Apply to the live editor if open; mirror to IndexedDB so the local
-      // cache matches server truth without waiting for sync pull.
+      // cache matches server truth without waiting for sync pull; dispatch
+      // `sync:entity-updated` {notebook} for other UI listeners.
       const editNotesParts = (msg.parts ?? []).filter((p: any) => {
         const info = getToolInfo(p);
         return info && info.toolName === "edit_notes" && info.state === "output-available";
@@ -96,7 +134,12 @@ export function useChatToolHandlers({
       for (const part of editNotesParts) {
         const info = getToolInfo(part);
         const output = info?.output as
-          | { executed?: boolean; updatedContent?: JSONContent; error?: string }
+          | {
+              executed?: boolean;
+              updatedContent?: JSONContent;
+              updatedAt?: number;
+              error?: string;
+            }
           | undefined;
         if (!output?.executed || !output.updatedContent || !bookId) continue;
 
@@ -104,21 +147,44 @@ export function useChatToolHandlers({
         const editorCbs = notebookEditorCallbackMap.current.get(bookId);
         if (editorCbs) {
           editorCbs.setContent(updatedContent);
+          editorCbs.seedLastContent(updatedContent);
         }
+
+        // The server is authoritative for the LWW timestamp. If it omitted
+        // updatedAt on an executed:true response, treat that as an invalid
+        // server response and SKIP the cache write + sync event — falling
+        // back to Date.now() would fabricate a freshness the server row
+        // doesn't actually have, defeating LWW on future pulls.
+        if (typeof output.updatedAt !== "number") {
+          console.warn(
+            "edit_notes: server returned executed:true without updatedAt; skipping cache write",
+          );
+          continue;
+        }
+        const nextUpdatedAt = output.updatedAt;
 
         // Use cacheNotebook (not saveNotebook) because the server has already
         // persisted this notebook state. saveNotebook would recordChange and
         // echo the same value back to the server on the next sync push.
         AppRuntime.runPromise(
-          Effect.gen(function* () {
-            const svc = yield* AnnotationService;
-            yield* svc.cacheNotebook({
-              bookId,
-              content: updatedContent,
-              updatedAt: Date.now(),
+          AnnotationService.pipe(
+            Effect.andThen((svc) =>
+              svc.cacheNotebook({
+                bookId,
+                content: updatedContent,
+                updatedAt: nextUpdatedAt,
+              }),
+            ),
+          ),
+        )
+          .then(() => {
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
+              );
             });
-          }),
-        ).catch(console.error);
+          })
+          .catch(console.error);
       }
 
       // Handle create_highlight tool calls

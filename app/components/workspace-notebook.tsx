@@ -211,6 +211,9 @@ export function WorkspaceNotebook({
       replaceContentFrom: (fromIndex, nodes) => {
         editorRef.current?.replaceContentFrom(fromIndex, nodes);
       },
+      seedLastContent: (newContent) => {
+        lastContentRef.current = JSON.stringify(newContent);
+      },
     });
     return () => {
       notebookEditorCallbackMap.current.delete(bookId);

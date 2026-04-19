@@ -10,6 +10,14 @@ export interface NotebookEditorCallbacks {
   getContent: () => JSONContent;
   getTopLevelNodeCount: () => number;
   replaceContentFrom: (fromIndex: number, nodes: JSONContent[]) => void;
+  /**
+   * Seed the editor's last-known-content ref to the given content so a
+   * subsequent `sync:entity-updated` {notebook} event that reads the same
+   * content from IndexedDB is treated as a no-op. Used by chat tool handlers
+   * that write-through to IDB and dispatch a sync event while the editor is
+   * open, to avoid a redundant `setContent` that would reset cursor position.
+   */
+  seedLastContent: (content: JSONContent) => void;
 }
 
 interface WorkspaceContextValue {
