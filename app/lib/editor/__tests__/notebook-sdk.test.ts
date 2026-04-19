@@ -787,16 +787,6 @@ describe("replace edge cases", () => {
     expect(texts).toEqual(["X", "B", "Y", "D", "Z"]);
   });
 
-  it("replace with empty string is rejected (guard against silent content loss)", () => {
-    const { sdk } = setup(doc(p("Before"), p("Target"), p("After")));
-    const target = sdk.find("Target")[0];
-    // The guard throws so the AI's script fails loudly rather than silently
-    // leaving a block with no text. The notebook is untouched.
-    expect(() => sdk.replace(target, "")).toThrow(/empty or whitespace-only/);
-    const texts = sdk.getBlocks().map((b) => b.text);
-    expect(texts).toEqual(["Before", "Target", "After"]);
-  });
-
   it("replace a block when same text appears in multiple blocks", () => {
     const { sdk } = setup(doc(p("Duplicate"), p("Middle"), p("Duplicate")));
     // find returns both, replace the first one

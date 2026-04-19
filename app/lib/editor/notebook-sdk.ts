@@ -248,22 +248,6 @@ function parseMarkdownNodes(_editor: Editor, markdown: string): JSONContent[] {
   return nodes;
 }
 
-/**
- * Reject calls that pass an empty or whitespace-only markdown string. This
- * catches the obvious error case (`replace(block, "")`) without inspecting
- * parsed AST shape — traversal-based checks have proven flaky across tiptap
- * extension combinations, so we only guard against the one case we know is
- * always wrong.
- */
-function assertNonEmptyMarkdown(method: string, markdown: string): void {
-  if (markdown.trim().length > 0) return;
-  throw new Error(
-    `notebook.${method}(): markdown is empty or whitespace-only. ` +
-      `Provide valid markdown with actual text (e.g. "## New Heading"). ` +
-      `To delete a block, use notebook.remove(block) instead.`,
-  );
-}
-
 export function createNotebookSDK(content: JSONContent): {
   sdk: NotebookSDK;
   getResult: () => JSONContent;
@@ -342,7 +326,6 @@ export function createNotebookSDK(content: JSONContent): {
     },
 
     append(markdown: string): void {
-      assertNonEmptyMarkdown("append", markdown);
       const nodes = parseMarkdownNodes(editor, markdown);
       const endPos = editor.state.doc.content.size;
       editor.commands.insertContentAt(endPos, nodes);
@@ -350,14 +333,12 @@ export function createNotebookSDK(content: JSONContent): {
     },
 
     prepend(markdown: string): void {
-      assertNonEmptyMarkdown("prepend", markdown);
       const nodes = parseMarkdownNodes(editor, markdown);
       editor.commands.insertContentAt(1, nodes);
       mutationGeneration++;
     },
 
     replace(block: Block, markdown: string): boolean {
-      assertNonEmptyMarkdown("replace", markdown);
       const resolved = resolveBlock(block);
       if (!resolved) return false;
 
@@ -515,7 +496,6 @@ export function createNotebookSDK(content: JSONContent): {
     },
 
     insertAfter(block: Block, markdown: string): void {
-      assertNonEmptyMarkdown("insertAfter", markdown);
       const resolved = resolveBlock(block);
       if (!resolved) return;
 
@@ -554,7 +534,6 @@ export function createNotebookSDK(content: JSONContent): {
     },
 
     insertBefore(block: Block, markdown: string): void {
-      assertNonEmptyMarkdown("insertBefore", markdown);
       const resolved = resolveBlock(block);
       if (!resolved) return;
 
