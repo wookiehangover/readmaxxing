@@ -290,8 +290,11 @@ export async function action({ request }: Route.ActionArgs) {
                 content: [...existingNodes, ...appendedNodes],
               };
 
+              const now = new Date();
+              let updatedAtMs = now.getTime();
               try {
-                await upsertNotebook(userId, bookId, updatedContent, new Date());
+                const row = await upsertNotebook(userId, bookId, updatedContent, now);
+                if (row) updatedAtMs = row.updatedAt.getTime();
               } catch (err) {
                 console.error("append_to_notes: failed to persist notebook:", err);
                 return {
@@ -302,17 +305,39 @@ export async function action({ request }: Route.ActionArgs) {
                 };
               }
 
-              return { appended: true, text, appendedNodes };
+              return {
+                appended: true,
+                text,
+                appendedNodes,
+                updatedContent,
+                updatedAt: updatedAtMs,
+              };
             },
           }),
           edit_notes: tool({
             description:
-              "Edit the reader's notebook using JavaScript code. Use this for complex edits: reorganizing sections, replacing content, deleting blocks, or restructuring notes. The code runs against a `notebook` object. Always call read_notes first to see the current content before editing.",
+              "Edit the reader's notebook using JavaScript code. Use this for block-targeted edits: changing a specific paragraph or list item, removing a block, inserting around a block, or restructuring a section. The code runs against a `notebook` object. ALWAYS call read_notes first to see the current content. PREFER block-targeted operations (find → setText/replace/remove/insertAfter/insertBefore). DO NOT reassemble the whole notebook from scratch — there is no whole-document replace method, and the server rejects scripts that reduce the notebook to near-empty. If the user explicitly asks to reset their notebook, call remove() on each block in a loop.",
             inputSchema: z.object({
               code: z
                 .string()
                 .describe(
-                  "JavaScript code that uses the `notebook` object to edit notes. Available methods: notebook.getMarkdown(), notebook.getBlocks(), notebook.find(query), notebook.append(markdown), notebook.prepend(markdown), notebook.replace(block, markdown) → boolean, notebook.remove(block) → boolean, notebook.insertAfter(block, markdown), notebook.insertBefore(block, markdown), notebook.setContent(markdown). The `find` method accepts a string (plain text search — links show as their display text, not markdown syntax) or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock'|'listItem', text?: string }. It returns Block objects with { type, text, level?, index, parentIndex?, depth? }. Use type 'listItem' to target individual list items — this works at ALL nesting levels. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). You can target nested items directly: notebook.find({ type: 'listItem', text: 'sub-item' }). replace() and remove() return true if the block was found and modified, false otherwise. Example — edit a nested list item: const item = notebook.find({ type: 'listItem', text: 'old text' })[0]; if (item) notebook.replace(item, 'new text');",
+                  "JavaScript code that uses the `notebook` object to edit notes. Available methods: " +
+                    "notebook.getMarkdown() — current notes as markdown; " +
+                    "notebook.getBlocks() — all blocks as structured objects; " +
+                    "notebook.find(query) — locate blocks to edit (accepts a string for plain-text search — links show as their display text, not markdown syntax — or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock'|'listItem', text?: string }); " +
+                    "notebook.setText(block, text) → boolean — PREFERRED for 'change the text of this block'. Preserves heading level, list-item structure, code-block language, etc. Use this to rename headings, fix typos, or reword existing blocks. `text` is inserted verbatim as plain text — do NOT include markdown markers like '#' or '*'; " +
+                    "notebook.replace(block, markdown) → boolean — replaces the entire block with newly-parsed markdown. Use when you want to change the block's TYPE (e.g. a paragraph becomes a bulleted list) or insert multiple blocks in place of one; " +
+                    "notebook.remove(block) → boolean — delete a single block; " +
+                    "notebook.insertAfter(block, markdown) — insert new content after a block; " +
+                    "notebook.insertBefore(block, markdown) — insert new content before a block; " +
+                    "notebook.append(markdown) — add new content at the END of the notebook; does NOT touch existing content; " +
+                    "notebook.prepend(markdown) — add new content at the START of the notebook; does NOT touch existing content. " +
+                    "`find` returns Block objects with { type, text, level?, index, parentIndex?, depth? }. Use type 'listItem' to target individual list items at ANY nesting level. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). setText(), replace() and remove() return true if the block was found and modified, false otherwise. " +
+                    "Example — rename a heading (keeps it a heading): const h = notebook.find({ type: 'heading', text: 'Intro' })[0]; if (h) notebook.setText(h, 'Introduction'); " +
+                    "Example — fix a typo in a paragraph: const p = notebook.find('teh quick')[0]; if (p) notebook.setText(p, p.text.replace('teh', 'the')); " +
+                    "Example — change a paragraph into a bullet list (structural change): const p = notebook.find('items:')[0]; if (p) notebook.replace(p, '- a\\n- b\\n- c'); " +
+                    "Example — remove a block: const b = notebook.find({ text: 'obsolete' })[0]; if (b) notebook.remove(b); " +
+                    "There is NO whole-document replace method. Do NOT rebuild the entire notebook in a single call — the server will reject scripts that reduce the notebook to near-empty.",
                 ),
             }),
             execute: async ({ code }) => {
@@ -332,8 +357,9 @@ export async function action({ request }: Route.ActionArgs) {
                 return { executed: false, error: result.error };
               }
 
+              let row: Awaited<ReturnType<typeof upsertNotebook>>;
               try {
-                await upsertNotebook(userId, bookId, result.updatedContent, new Date());
+                row = await upsertNotebook(userId, bookId, result.updatedContent, new Date());
               } catch (err) {
                 console.error("edit_notes: failed to persist updated notebook:", err);
                 return {
@@ -342,7 +368,24 @@ export async function action({ request }: Route.ActionArgs) {
                 };
               }
 
-              return { executed: true, updatedContent: result.updatedContent };
+              // LWW-filtered: server already has a newer notebook row. Do NOT
+              // fabricate a timestamp — mirror the server-authoritative model
+              // and surface the conflict so the client skips its cache write.
+              if (!row) {
+                console.warn(
+                  "edit_notes: upsertNotebook returned null (LWW filtered); skipping client cache update",
+                );
+                return {
+                  executed: false,
+                  error: "edit_notes: server already has a newer notebook; ignoring this edit",
+                };
+              }
+
+              return {
+                executed: true,
+                updatedContent: result.updatedContent,
+                updatedAt: row.updatedAt.getTime(),
+              };
             },
           }),
           create_highlight: tool({

@@ -3,7 +3,6 @@ import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import { HighlightReference } from "./tiptap-highlight-node";
 import { tiptapJsonToMarkdown } from "./tiptap-to-markdown";
-import { markdownToTiptapJson } from "./markdown-to-tiptap";
 
 export type BlockType =
   | "heading"
@@ -49,11 +48,10 @@ export interface NotebookSDK {
   append(markdown: string): void;
   prepend(markdown: string): void;
   replace(block: Block, markdown: string): boolean;
+  setText(block: Block, text: string): boolean;
   remove(block: Block): boolean;
   insertAfter(block: Block, markdown: string): void;
   insertBefore(block: Block, markdown: string): void;
-
-  setContent(markdown: string): void;
 }
 
 function getTextFromNode(node: any): string {
@@ -359,7 +357,8 @@ export function createNotebookSDK(content: JSONContent): {
         if (!parentList.content || childIdx < 0 || childIdx >= parentList.content.length)
           return false;
 
-        // Parse replacement and wrap in listItem
+        // Parse replacement and wrap in listItem. If the input has no markdown
+        // structure, treat it as plain inline text for the list item.
         const parsed = parseMarkdownNodes(editor, markdown);
         const listItemContent =
           parsed.length > 0
@@ -379,6 +378,78 @@ export function createNotebookSDK(content: JSONContent): {
       const parsed = parseMarkdownNodes(editor, markdown);
       const newContent: JSONContent[] = [...docJson.content];
       newContent.splice(idx, 1, ...parsed);
+      editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
+      mutationGeneration++;
+      return true;
+    },
+
+    setText(block: Block, text: string): boolean {
+      const resolved = resolveBlock(block);
+      if (!resolved) return false;
+
+      // bulletList / orderedList have no inline text of their own.
+      if (resolved.type === "bulletList" || resolved.type === "orderedList") {
+        console.warn(
+          `notebook.setText(): cannot set text on a ${resolved.type}. ` +
+            `Target an individual listItem instead.`,
+        );
+        return false;
+      }
+
+      const docJson = editor.getJSON();
+      if (!docJson.content) return false;
+
+      const textChild: JSONContent = { type: "text", text };
+
+      if (resolved.type === "listItem") {
+        // JSON-splice: replace just the inline text of this listItem, preserving
+        // any nested lists and other structure the item may contain.
+        const childIdx = resolved._listItemChildIndex;
+        if (childIdx === undefined) return false;
+
+        const nav = navigateToListItem(docJson, resolved);
+        if (!nav) return false;
+        const { newContent, parentList } = nav;
+
+        if (!parentList.content || childIdx < 0 || childIdx >= parentList.content.length)
+          return false;
+
+        const existingItem = parentList.content[childIdx];
+        const existingChildren = existingItem.content ?? [];
+        // Keep any nested lists; replace the first paragraph's text, or prepend
+        // a fresh paragraph if the item had no inline content.
+        const newChildren: JSONContent[] = [];
+        let replacedParagraph = false;
+        for (const child of existingChildren) {
+          if (!replacedParagraph && child.type === "paragraph") {
+            newChildren.push({ type: "paragraph", content: [textChild] });
+            replacedParagraph = true;
+          } else {
+            newChildren.push(child);
+          }
+        }
+        if (!replacedParagraph) {
+          newChildren.unshift({ type: "paragraph", content: [textChild] });
+        }
+        parentList.content[childIdx] = { ...existingItem, content: newChildren };
+        editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
+        mutationGeneration++;
+        return true;
+      }
+
+      // Top-level block: build a fresh node of the same type preserving attrs.
+      const idx = resolved._topLevelIndex;
+      if (idx === undefined || idx < 0 || idx >= docJson.content.length) return false;
+
+      const existing = docJson.content[idx];
+      const newNode: JSONContent = {
+        type: existing.type,
+        ...(existing.attrs ? { attrs: { ...existing.attrs } } : {}),
+        content: [textChild],
+      };
+
+      const newContent: JSONContent[] = [...docJson.content];
+      newContent.splice(idx, 1, newNode);
       editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
       mutationGeneration++;
       return true;
@@ -496,12 +567,6 @@ export function createNotebookSDK(content: JSONContent): {
       const newContent: JSONContent[] = [...docJson.content];
       newContent.splice(idx, 0, ...parsed);
       editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
-      mutationGeneration++;
-    },
-
-    setContent(markdown: string): void {
-      const parsed = markdownToTiptapJson(markdown);
-      editor.commands.setContent(parsed);
       mutationGeneration++;
     },
   };
