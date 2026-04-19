@@ -9,7 +9,7 @@ interface LibraryToolbarProps {
 
 export function LibraryToolbar({ query, onQueryChange }: LibraryToolbarProps) {
   return (
-    <div className="flex items-center justify-between gap-3 px-4 pt-4 md:px-6">
+    <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2 md:px-6">
       <div className="relative flex-1 max-w-sm">
         <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
