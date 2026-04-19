@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import type { JSONContent } from "@tiptap/react";
 import { runEditNotesInSandbox } from "../notebook-sdk-server";
 
@@ -96,5 +96,57 @@ describe("runEditNotesInSandbox", () => {
     if (!result.ok) {
       expect(result.error).toContain("boom");
     }
+  });
+
+  describe("script logging is opt-in via DEBUG_EDIT_NOTES", () => {
+    const originalFlag = process.env.DEBUG_EDIT_NOTES;
+
+    afterEach(() => {
+      if (originalFlag === undefined) {
+        delete process.env.DEBUG_EDIT_NOTES;
+      } else {
+        process.env.DEBUG_EDIT_NOTES = originalFlag;
+      }
+    });
+
+    it("does not log script content when DEBUG_EDIT_NOTES is unset", async () => {
+      delete process.env.DEBUG_EDIT_NOTES;
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        const input = doc(p("one"), p("two"));
+        const result = await runEditNotesInSandbox(input, "notebook.append('x')");
+        expect(result.ok).toBe(true);
+        expect(logSpy).not.toHaveBeenCalled();
+      } finally {
+        logSpy.mockRestore();
+      }
+    });
+
+    it('logs script content when DEBUG_EDIT_NOTES="1"', async () => {
+      process.env.DEBUG_EDIT_NOTES = "1";
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        const input = doc(p("one"), p("two"));
+        const code = "notebook.append('x')";
+        const result = await runEditNotesInSandbox(input, code);
+        expect(result.ok).toBe(true);
+        expect(logSpy).toHaveBeenCalled();
+      } finally {
+        logSpy.mockRestore();
+      }
+    });
+
+    it('does not log script content when DEBUG_EDIT_NOTES="0"', async () => {
+      process.env.DEBUG_EDIT_NOTES = "0";
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      try {
+        const input = doc(p("one"), p("two"));
+        const result = await runEditNotesInSandbox(input, "notebook.append('x')");
+        expect(result.ok).toBe(true);
+        expect(logSpy).not.toHaveBeenCalled();
+      } finally {
+        logSpy.mockRestore();
+      }
+    });
   });
 });

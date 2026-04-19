@@ -293,7 +293,7 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
     return onFinish;
   }
 
-  it("caches updatedContent and dispatches sync:entity-updated for notebook", async () => {
+  it("caches updatedContent with the server-provided updatedAt and dispatches sync:entity-updated", async () => {
     const setContentSpy = vi.fn();
     const seedSpy = vi.fn();
     mockNotebookEditorCallbackMap.current.set(
@@ -305,6 +305,7 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
       type: "doc",
       content: [{ type: "paragraph", content: [{ type: "text", text: "rewritten" }] }],
     };
+    const serverUpdatedAt = 1_700_000_123_456;
 
     const msg: UIMessage = {
       id: "msg-1",
@@ -315,7 +316,7 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
           toolCallId: "tc-edit-1",
           state: "output-available",
           input: { code: "notebook.setContent('rewritten')" },
-          output: { executed: true, updatedContent },
+          output: { executed: true, updatedContent, updatedAt: serverUpdatedAt },
         } as unknown as UIMessage["parts"][number],
       ],
     };
@@ -324,6 +325,11 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
     const listener = (e: Event) => events.push(e as CustomEvent);
     window.addEventListener("sync:entity-updated", listener);
 
+    // Spy on Date.now to guard against the pre-fix behavior of caching with
+    // a fabricated client timestamp. The edit_notes path must not touch
+    // Date.now — updatedAt is sourced exclusively from the server output.
+    const dateNowSpy = vi.spyOn(Date, "now");
+
     try {
       const onFinish = getOnFinish();
       onFinish({ message: msg });
@@ -331,12 +337,70 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
       expect(setContentSpy).toHaveBeenCalledWith(updatedContent);
       expect(seedSpy).toHaveBeenCalledWith(updatedContent);
       expect(AppRuntime.runPromise).toHaveBeenCalledTimes(1);
+      // No client-side timestamp fabrication on the success path.
+      expect(dateNowSpy).not.toHaveBeenCalled();
 
       await waitForMicrotasks();
       expect(events).toHaveLength(1);
       expect(events[0].detail).toEqual({ entity: "notebook" });
     } finally {
       window.removeEventListener("sync:entity-updated", listener);
+      dateNowSpy.mockRestore();
+    }
+  });
+
+  it("skips cacheNotebook + sync event and warns when server omits updatedAt on executed:true", async () => {
+    const setContentSpy = vi.fn();
+    const seedSpy = vi.fn();
+    mockNotebookEditorCallbackMap.current.set(
+      "book-1",
+      makeEditorCallbacks({ setContent: setContentSpy, seedLastContent: seedSpy }),
+    );
+
+    const updatedContent: JSONContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "no-ts" }] }],
+    };
+
+    const msg: UIMessage = {
+      id: "msg-1",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-edit_notes",
+          toolCallId: "tc-edit-2",
+          state: "output-available",
+          input: { code: "notebook.append('no-ts')" },
+          // Intentionally missing updatedAt — regression guard against
+          // fabricating freshness with Date.now() on the client.
+          output: { executed: true, updatedContent },
+        } as unknown as UIMessage["parts"][number],
+      ],
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const events: CustomEvent[] = [];
+    const listener = (e: Event) => events.push(e as CustomEvent);
+    window.addEventListener("sync:entity-updated", listener);
+
+    try {
+      const onFinish = getOnFinish();
+      onFinish({ message: msg });
+
+      // Editor still gets the authoritative content (it's in-memory only).
+      expect(setContentSpy).toHaveBeenCalledWith(updatedContent);
+      expect(seedSpy).toHaveBeenCalledWith(updatedContent);
+      // But NO IDB cache write and NO sync event — we don't fabricate freshness.
+      expect(AppRuntime.runPromise).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("edit_notes: server returned executed:true without updatedAt"),
+      );
+
+      await waitForMicrotasks();
+      expect(events).toHaveLength(0);
+    } finally {
+      window.removeEventListener("sync:entity-updated", listener);
+      warnSpy.mockRestore();
     }
   });
 });

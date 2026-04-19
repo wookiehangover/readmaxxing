@@ -134,7 +134,12 @@ export function useChatToolHandlers({
       for (const part of editNotesParts) {
         const info = getToolInfo(part);
         const output = info?.output as
-          | { executed?: boolean; updatedContent?: JSONContent; error?: string }
+          | {
+              executed?: boolean;
+              updatedContent?: JSONContent;
+              updatedAt?: number;
+              error?: string;
+            }
           | undefined;
         if (!output?.executed || !output.updatedContent || !bookId) continue;
 
@@ -145,6 +150,19 @@ export function useChatToolHandlers({
           editorCbs.seedLastContent(updatedContent);
         }
 
+        // The server is authoritative for the LWW timestamp. If it omitted
+        // updatedAt on an executed:true response, treat that as an invalid
+        // server response and SKIP the cache write + sync event — falling
+        // back to Date.now() would fabricate a freshness the server row
+        // doesn't actually have, defeating LWW on future pulls.
+        if (typeof output.updatedAt !== "number") {
+          console.warn(
+            "edit_notes: server returned executed:true without updatedAt; skipping cache write",
+          );
+          continue;
+        }
+        const nextUpdatedAt = output.updatedAt;
+
         // Use cacheNotebook (not saveNotebook) because the server has already
         // persisted this notebook state. saveNotebook would recordChange and
         // echo the same value back to the server on the next sync push.
@@ -154,7 +172,7 @@ export function useChatToolHandlers({
               svc.cacheNotebook({
                 bookId,
                 content: updatedContent,
-                updatedAt: Date.now(),
+                updatedAt: nextUpdatedAt,
               }),
             ),
           ),

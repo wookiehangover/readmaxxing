@@ -357,8 +357,9 @@ export async function action({ request }: Route.ActionArgs) {
                 return { executed: false, error: result.error };
               }
 
+              let row: Awaited<ReturnType<typeof upsertNotebook>>;
               try {
-                await upsertNotebook(userId, bookId, result.updatedContent, new Date());
+                row = await upsertNotebook(userId, bookId, result.updatedContent, new Date());
               } catch (err) {
                 console.error("edit_notes: failed to persist updated notebook:", err);
                 return {
@@ -367,7 +368,24 @@ export async function action({ request }: Route.ActionArgs) {
                 };
               }
 
-              return { executed: true, updatedContent: result.updatedContent };
+              // LWW-filtered: server already has a newer notebook row. Do NOT
+              // fabricate a timestamp — mirror the server-authoritative model
+              // and surface the conflict so the client skips its cache write.
+              if (!row) {
+                console.warn(
+                  "edit_notes: upsertNotebook returned null (LWW filtered); skipping client cache update",
+                );
+                return {
+                  executed: false,
+                  error: "edit_notes: server already has a newer notebook; ignoring this edit",
+                };
+              }
+
+              return {
+                executed: true,
+                updatedContent: result.updatedContent,
+                updatedAt: row.updatedAt.getTime(),
+              };
             },
           }),
           create_highlight: tool({

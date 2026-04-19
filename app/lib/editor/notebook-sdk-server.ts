@@ -88,9 +88,10 @@ export async function runEditNotesInSandbox(
 ): Promise<RunEditNotesResult> {
   const timeoutMs = opts.timeoutMs ?? 1500;
 
-  // Log the incoming script so production failures are diagnosable from logs.
-  // Gate behind DEBUG_EDIT_NOTES if an operator wants to keep scripts out of logs.
-  if (process.env.DEBUG_EDIT_NOTES !== "0") {
+  // Opt-in script logging for debugging. Scripts frequently contain literal
+  // note text (find({ text: '...' }), setText(block, '...'), etc.); do not
+  // log by default. Set DEBUG_EDIT_NOTES=1 to enable.
+  if (process.env.DEBUG_EDIT_NOTES === "1") {
     console.log("[edit_notes] code:", code.length, "chars");
     console.log(code.slice(0, 400));
   }
