@@ -151,10 +151,20 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
           setSessionTitle(newSession.title);
         }
 
-        const chapters =
-          book.format === "pdf"
-            ? await extractPdfChapters(bookData)
-            : await extractBookChapters(bookData);
+        // Chapter extraction is best-effort and MUST NOT block chat from
+        // rendering. On Safari with large PDFs, pdfjs has been observed to
+        // throw from inside `getTextContent`; if that escapes, we still want
+        // the chat panel to load with an empty chapter list. Chapter-dependent
+        // features degrade gracefully server-side when chapters are missing.
+        let chapters: BookChapter[] = [];
+        try {
+          chapters =
+            book.format === "pdf"
+              ? await extractPdfChapters(bookData)
+              : await extractBookChapters(bookData);
+        } catch (err) {
+          console.warn("Failed to extract book chapters for chat context:", err);
+        }
         if (cancelled) return;
 
         bookDataRef.current = bookData;
@@ -163,8 +173,11 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         setInitialMessages(toUIMessages(savedMessages));
 
         // Fire-and-forget: upload chapters to the server once per book so
-        // subsequent chat requests can reuse the cached text.
-        uploadChaptersOnce(bookId, chapters, book.format).catch(console.error);
+        // subsequent chat requests can reuse the cached text. Skip when empty
+        // — no point POSTing an empty payload.
+        if (chapters.length > 0) {
+          uploadChaptersOnce(bookId, chapters, book.format).catch(console.error);
+        }
       } catch (err) {
         if (!cancelled) {
           console.error("Failed to load chat data:", err);
