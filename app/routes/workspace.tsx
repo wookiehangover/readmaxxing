@@ -98,8 +98,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
-  // Sync books to context ref so NewTabPanel can read them
-  ws.booksRef.current = books;
   // Track which books have TOC data via a version counter (triggers re-render)
   const [_tocVersion, setTocVersion] = useState(0);
   // Track which books currently have open panels in dockview
@@ -235,6 +233,12 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [flushLayout]);
+
+  // Sync books to context ref so NewTabPanel (and other consumers) can read them.
+  // Done in an effect so it happens after commit, not during render.
+  useEffect(() => {
+    ws.booksRef.current = books;
+  }, [books, ws]);
 
   // Register TOC change listener (safe to re-run when ws changes)
   useEffect(() => {
@@ -540,14 +544,23 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     });
   }, []);
 
-  // Wrap setBooks to also update booksRef and notify booksChangeListener
+  // Wrap setBooks to also update booksRef and notify booksChangeListener.
+  // Both the ref mutation and listener notification happen in a queueMicrotask
+  // AFTER the setBooks call, so they don't run during another component's
+  // render/commit (which would trigger a "setState during render" warning
+  // when the listener calls setBooks on LibraryBrowseContent).
   const updateBooks = useCallback(
     (updater: (prev: BookMeta[]) => BookMeta[]) => {
+      let next: BookMeta[] | undefined;
       setBooks((prev) => {
-        const next = updater(prev);
-        ws.booksRef.current = next;
-        ws.booksChangeListener.current?.();
+        next = updater(prev);
         return next;
+      });
+      queueMicrotask(() => {
+        if (next !== undefined) {
+          ws.booksRef.current = next;
+        }
+        ws.booksChangeListener.current?.();
       });
     },
     [ws],
