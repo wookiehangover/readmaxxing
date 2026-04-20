@@ -32,6 +32,39 @@ interface ChatPanelProps {
   bookTitle: string;
 }
 
+// Signature for the last message's parts — enough to detect in-flight streaming
+// growth (new text tokens, new tool invocations) without relying on deep equality.
+function lastMessageSignature(msg: UIMessage | undefined): string {
+  if (!msg) return "";
+  const parts = msg.parts ?? [];
+  let sig = `${msg.id}|${parts.length}`;
+  for (const part of parts) {
+    if (part.type === "text") {
+      sig += `|t:${part.text.length}`;
+    } else if (part.type.startsWith("tool-")) {
+      // tool parts carry `state` + `output`; state transitions and output
+      // presence are the visible changes we care about
+      const p = part as { state?: string; output?: unknown };
+      sig += `|${part.type}:${p.state ?? ""}:${p.output === undefined ? 0 : 1}`;
+    } else {
+      sig += `|${part.type}`;
+    }
+  }
+  return sig;
+}
+
+// Returns true when the two message lists would render differently.
+// Compares length, last id, and last-part signature. This is sufficient for
+// sync-pull updates (append-only messages) without iterating the whole list.
+function messagesDiffer(a: UIMessage[], b: UIMessage[]): boolean {
+  if (a.length !== b.length) return true;
+  if (a.length === 0) return false;
+  const la = a[a.length - 1];
+  const lb = b[b.length - 1];
+  if (la.id !== lb.id) return true;
+  return lastMessageSignature(la) !== lastMessageSignature(lb);
+}
+
 async function uploadChaptersOnce(
   bookId: string,
   chapters: BookChapter[],
@@ -201,34 +234,54 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     };
   }, [bookId, activeSessionId, isAuthenticated]);
 
-  // Reload chat messages when sync pulls chat data from server
-  const chatSyncVersion = useSyncListener(["chat_session", "chat_message"]);
+  // Split the chat sync listener by entity type so background session-metadata
+  // updates (title, updatedAt, activeStreamId from LWW) do NOT touch the
+  // message list. Calling `setMessages` on an unchanged list still resets
+  // scroll position inside `useStickToBottom`, which feels like a reload.
+  //
+  // - `chat_session` events → update only `sessionTitle` (and any other
+  //   session metadata). Do NOT call setChatMessagesRef.
+  // - `chat_message` events → diff messages against what's currently rendered
+  //   (length + last id + last-part signature) and only call setMessages when
+  //   the list has actually changed. Streaming deltas still flow through
+  //   because the last-part signature picks up on text growth.
+  const sessionSyncVersion = useSyncListener(["chat_session"]);
+  const messageSyncVersion = useSyncListener(["chat_message"]);
+
   useEffect(() => {
-    if (chatSyncVersion === 0 || !activeSessionId) return;
+    if (sessionSyncVersion === 0 || !activeSessionId) return;
+    AppRuntime.runPromise(
+      ChatService.pipe(Effect.andThen((s) => s.getSession(activeSessionId, bookId))),
+    )
+      .then((session) => {
+        if (!session) return;
+        setSessionTitle(session.title);
+      })
+      .catch(console.error);
+  }, [bookId, activeSessionId, sessionSyncVersion]);
+
+  useEffect(() => {
+    if (messageSyncVersion === 0 || !activeSessionId) return;
     AppRuntime.runPromise(
       ChatService.pipe(Effect.andThen((s) => s.getSession(activeSessionId, bookId))),
     )
       .then((session) => {
         if (!session) return;
         const newMessages = toUIMessages(session.messages);
-        const currentLast = initialMessagesRef.current?.[initialMessagesRef.current.length - 1];
-        const newLast = newMessages[newMessages.length - 1];
-        // Only update if the last message actually changed
-        if (currentLast?.id !== newLast?.id) {
-          setSessionTitle(session.title);
-          if (setChatMessagesRef.current) {
-            // Update messages in-place without remounting — preserves scroll
-            setChatMessagesRef.current(newMessages);
-            initialMessagesRef.current = newMessages;
-          } else {
-            // Fallback: remount if ref isn't registered yet
-            setInitialMessages(newMessages);
-            setSessionKey((k) => k + 1);
-          }
+        const current = initialMessagesRef.current ?? [];
+        if (!messagesDiffer(current, newMessages)) return;
+        if (setChatMessagesRef.current) {
+          // Update messages in-place without remounting — preserves scroll
+          setChatMessagesRef.current(newMessages);
+          initialMessagesRef.current = newMessages;
+        } else {
+          // Fallback: remount if ref isn't registered yet
+          setInitialMessages(newMessages);
+          setSessionKey((k) => k + 1);
         }
       })
       .catch(console.error);
-  }, [bookId, activeSessionId, chatSyncVersion]);
+  }, [bookId, activeSessionId, messageSyncVersion]);
 
   const handleSwitchSession = useCallback(
     async (sessionId: string) => {
