@@ -8,7 +8,11 @@ const TEST_EPUB = resolve(__dirname, "fixtures/test-book.epub");
 
 /**
  * Upload a test epub via the hidden file input in the sidebar.
- * Returns once the book title appears in the sidebar.
+ * Returns once the book's reader panel tab appears in dockview.
+ *
+ * Note: the upload flow auto-opens the first book and auto-collapses the
+ * sidebar, so asserting on the sidebar entry is unreliable. The dockview
+ * tab is a cleaner signal that the upload completed and the reader mounted.
  */
 async function uploadTestBook(page: Page) {
   // The sidebar has a hidden file input for epub uploads — use .first() since
@@ -16,23 +20,23 @@ async function uploadTestBook(page: Page) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_EPUB);
 
-  // Wait for the book to appear in the sidebar — target the sidebar button specifically
-  const sidebarBook = page.locator("aside").getByText("Test Book for E2E", { exact: true });
-  await expect(sidebarBook).toBeVisible({ timeout: 15_000 });
+  // Wait for the dockview tab — the upload triggers handleBookAdded which
+  // calls openBook and adds a book-reader panel whose tab title is the book
+  // title (truncated to 30 chars).
+  await expect(
+    page.locator(".dv-default-tab", { hasText: "Test Book for E2E" }).first(),
+  ).toBeVisible({ timeout: 15_000 });
 }
 
 /**
- * Upload a book and open it in a reader panel, waiting for the reader toolbar.
+ * Upload a book. The first upload auto-opens the reader panel, so we just
+ * wait for the reader toolbar to initialize.
  */
 async function uploadAndOpenBook(page: Page) {
   await uploadTestBook(page);
 
-  // Click the book entry in the sidebar to open it
-  const sidebarBook = page.locator("aside").getByText("Test Book for E2E", { exact: true });
-  await sidebarBook.click();
-
-  // Wait for a dockview panel tab with the book to appear and reader to initialize
-  // Use the prev/next buttons as a signal that the reader is ready
+  // The book auto-opens on upload (handleBookAdded -> openBook). Wait for the
+  // reader toolbar (prev/next buttons) as a signal that the reader is ready.
   await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
     timeout: 20_000,
   });
@@ -45,13 +49,22 @@ test.describe("Workspace route", () => {
     // The dockview container should be present once hydrated
     await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
 
-    // Clear IndexedDB to start with a clean state
+    // Clear IndexedDB + storage, then pre-collapse the sidebar. The app
+    // auto-collapses the sidebar on first-book open and dispatches a resize
+    // event during the transition, which races epubjs initialization and
+    // leaves the iframe empty. Pre-collapsing short-circuits the auto-collapse
+    // branch in openBook so the transition never fires during tests. Tests
+    // that inspect sidebar contents expand it explicitly.
     await page.evaluate(async () => {
       const dbs = await indexedDB.databases();
       for (const db of dbs) {
         if (db.name) indexedDB.deleteDatabase(db.name);
       }
       localStorage.clear();
+      localStorage.setItem(
+        "app-settings",
+        JSON.stringify({ sidebarCollapsed: true, updatedAt: Date.now() }),
+      );
     });
 
     // Reload after clearing storage to get a fresh state
@@ -71,6 +84,10 @@ test.describe("Workspace route", () => {
 
   test("upload book via file input and verify it appears in sidebar", async ({ page }) => {
     await uploadTestBook(page);
+
+    // The sidebar auto-collapses when the first book opens — expand it so the
+    // book title text is rendered.
+    await page.getByTitle("Expand sidebar").click();
 
     // Verify the book title is now in the sidebar
     const bookEntry = page.locator("aside").getByText("Test Book for E2E", { exact: true });

@@ -17,7 +17,9 @@ const ASSISTANT_BUBBLE = ".max-w-prose.text-foreground";
 async function uploadTestBook(page: Page) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_EPUB);
-  await expect(page.locator("aside").getByText(BOOK_TITLE, { exact: true })).toBeVisible({
+  // The first book upload auto-opens a reader panel and auto-collapses the
+  // sidebar, so we wait on the dockview tab rather than the sidebar entry.
+  await expect(page.locator(".dv-default-tab", { hasText: BOOK_TITLE }).first()).toBeVisible({
     timeout: 15_000,
   });
 }
@@ -46,7 +48,8 @@ const FIXTURE_CHAPTERS = [
 ];
 
 async function openBookAndChat(page: Page) {
-  await page.locator("aside").getByText(BOOK_TITLE, { exact: true }).click();
+  // The book auto-opens on upload (handleBookAdded -> openBook), so we skip
+  // the sidebar click and wait for the reader toolbar to initialize.
   await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
     timeout: 20_000,
   });
@@ -132,12 +135,18 @@ test.describe("Chat (server-authoritative)", () => {
 
     await page.goto("/");
     await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    // Clear storage + pre-collapse the sidebar. See e2e/workspace.spec.ts
+    // beforeEach for why — auto-collapse races epubjs initialization.
     await page.evaluate(async () => {
       const dbs = await indexedDB.databases();
       for (const db of dbs) {
         if (db.name) indexedDB.deleteDatabase(db.name);
       }
       localStorage.clear();
+      localStorage.setItem(
+        "app-settings",
+        JSON.stringify({ sidebarCollapsed: true, updatedAt: Date.now() }),
+      );
     });
 
     await registerAndSignIn(page);

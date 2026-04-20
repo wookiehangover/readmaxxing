@@ -13,15 +13,19 @@ const TEST_PDF = resolve(__dirname, "fixtures/test-document.pdf");
 
 /**
  * Upload a test PDF via the hidden file input in the sidebar.
- * Returns once the book title appears in the sidebar.
+ * Returns once the PDF's reader panel tab appears in dockview.
+ *
+ * Note: the first book upload auto-opens a reader panel and auto-collapses
+ * the sidebar, so we wait on the dockview tab rather than the sidebar entry.
  */
 async function uploadTestPdf(page: Page) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_PDF);
 
-  // Wait for the PDF to appear in the sidebar
-  const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-  await expect(sidebarBook).toBeVisible({ timeout: 15_000 });
+  // Wait for the dockview tab — upload triggers handleBookAdded -> openBook.
+  await expect(
+    page.locator(".dv-default-tab", { hasText: "Test PDF for E2E" }).first(),
+  ).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe("PDF support", () => {
@@ -30,13 +34,19 @@ test.describe("PDF support", () => {
     // Wait for client-side hydration — the workspace route is the index
     await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
 
-    // Clear IndexedDB to start with a clean state
+    // Clear IndexedDB + storage, then pre-collapse the sidebar. See
+    // e2e/workspace.spec.ts beforeEach for why — the auto-collapse resize
+    // event races epubjs/pdf.js initialization on first-book open.
     await page.evaluate(async () => {
       const dbs = await indexedDB.databases();
       for (const db of dbs) {
         if (db.name) indexedDB.deleteDatabase(db.name);
       }
       localStorage.clear();
+      localStorage.setItem(
+        "app-settings",
+        JSON.stringify({ sidebarCollapsed: true, updatedAt: Date.now() }),
+      );
     });
 
     // Reload after clearing storage to get a fresh state
@@ -47,6 +57,10 @@ test.describe("PDF support", () => {
   test("upload a PDF and verify it appears in sidebar", async ({ page }) => {
     await uploadTestPdf(page);
 
+    // The sidebar auto-collapses when the first book opens — expand it so the
+    // book title text is rendered.
+    await page.getByTitle("Expand sidebar").click();
+
     // Verify the PDF title appears in the sidebar
     const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
     await expect(sidebarBook).toBeVisible();
@@ -54,6 +68,10 @@ test.describe("PDF support", () => {
 
   test("PDF shows correct author in sidebar", async ({ page }) => {
     await uploadTestPdf(page);
+
+    // The sidebar auto-collapses when the first book opens — expand it so the
+    // author text is rendered.
+    await page.getByTitle("Expand sidebar").click();
 
     // The author should appear somewhere in the sidebar near the book
     const author = page.locator("aside").getByText("Test PDF Author");
@@ -63,10 +81,7 @@ test.describe("PDF support", () => {
   test("uploaded PDF opens in reader with canvas visible", async ({ page }) => {
     await uploadTestPdf(page);
 
-    // Click the PDF in the sidebar to open it
-    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-    await sidebarBook.click();
-
+    // The PDF auto-opens on upload (handleBookAdded -> openBook).
     // Wait for the PDF container to appear with a rendered canvas
     const pdfContainer = page.locator("[data-testid='pdf-container']");
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
@@ -78,10 +93,7 @@ test.describe("PDF support", () => {
   test("PDF reader has prev/next navigation buttons", async ({ page }) => {
     await uploadTestPdf(page);
 
-    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-    await sidebarBook.click();
-
-    // Wait for PDF to load
+    // Wait for PDF to load (auto-opened on upload)
     const pdfContainer = page.locator("[data-testid='pdf-container']");
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
@@ -96,10 +108,7 @@ test.describe("PDF support", () => {
   test("PDF reader settings menu opens", async ({ page }) => {
     await uploadTestPdf(page);
 
-    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-    await sidebarBook.click();
-
-    // Wait for PDF to render
+    // Wait for PDF to render (auto-opened on upload)
     const pdfContainer = page.locator("[data-testid='pdf-container']");
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
@@ -115,9 +124,6 @@ test.describe("PDF support", () => {
 
   test("search bar opens when search button is clicked", async ({ page }) => {
     await uploadTestPdf(page);
-
-    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-    await sidebarBook.click();
 
     const pdfContainer = page.locator("[data-testid='pdf-container']");
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
@@ -135,9 +141,6 @@ test.describe("PDF support", () => {
 
   test("searching for text returns results", async ({ page }) => {
     await uploadTestPdf(page);
-
-    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-    await sidebarBook.click();
 
     const pdfContainer = page.locator("[data-testid='pdf-container']");
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
@@ -157,9 +160,6 @@ test.describe("PDF support", () => {
 
   test("navigating search results changes page", async ({ page }) => {
     await uploadTestPdf(page);
-
-    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-    await sidebarBook.click();
 
     const pdfContainer = page.locator("[data-testid='pdf-container']");
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
@@ -182,9 +182,6 @@ test.describe("PDF support", () => {
   test("selecting text in PDF shows highlight popover", async ({ page }) => {
     await uploadTestPdf(page);
 
-    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-    await sidebarBook.click();
-
     const pdfContainer = page.locator("[data-testid='pdf-container']");
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
@@ -205,9 +202,6 @@ test.describe("PDF support", () => {
 
   test("saving a highlight persists it as a visible overlay", async ({ page }) => {
     await uploadTestPdf(page);
-
-    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-    await sidebarBook.click();
 
     const pdfContainer = page.locator("[data-testid='pdf-container']");
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
@@ -238,11 +232,7 @@ test.describe("PDF support", () => {
     await registerAndSignIn(page);
     await uploadTestPdf(page);
 
-    // Open the PDF by clicking its title in the sidebar
-    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-    await sidebarBook.click();
-
-    // Wait for the PDF to render
+    // Wait for the PDF to render (auto-opened on upload)
     const pdfContainer = page.locator('[data-testid="pdf-container"]');
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
@@ -266,10 +256,6 @@ test.describe("PDF support", () => {
     await installVirtualAuthenticator(context, page);
     await registerAndSignIn(page);
     await uploadTestPdf(page);
-
-    // Open the PDF
-    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-    await sidebarBook.click();
 
     const pdfContainer = page.locator('[data-testid="pdf-container"]');
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
