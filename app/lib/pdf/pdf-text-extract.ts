@@ -1,4 +1,4 @@
-import type { TextItem } from "pdfjs-dist/types/src/display/api";
+import type { PDFDocumentProxy, TextItem } from "pdfjs-dist/types/src/display/api";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
 
 /**
@@ -23,18 +23,23 @@ async function ensurePdfWorker() {
  * @returns Array of chapters (one per page) with index, title, and text
  */
 export async function extractPdfChapters(data: ArrayBuffer): Promise<BookChapter[]> {
-  await ensurePdfWorker();
-  const pdfjs = await import("pdfjs-dist");
-
-  // Clone data so pdfjs doesn't detach the caller's ArrayBuffer
-  const dataCopy = new Uint8Array(data).slice();
-  const loadingTask = pdfjs.getDocument({ data: dataCopy });
-  const doc = await loadingTask.promise;
+  const chapters: BookChapter[] = [];
+  let doc: PDFDocumentProxy | null = null;
+  let failedPages = 0;
+  let firstFailure: unknown = null;
+  let totalPages = 0;
 
   try {
-    const chapters: BookChapter[] = [];
+    await ensurePdfWorker();
+    const pdfjs = await import("pdfjs-dist");
 
-    for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+    // Clone data so pdfjs doesn't detach the caller's ArrayBuffer
+    const dataCopy = new Uint8Array(data).slice();
+    const loadingTask = pdfjs.getDocument({ data: dataCopy });
+    doc = await loadingTask.promise;
+    totalPages = doc.numPages;
+
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
       try {
         const page = await doc.getPage(pageNum);
         const textContent = await page.getTextContent();
@@ -55,15 +60,32 @@ export async function extractPdfChapters(data: ArrayBuffer): Promise<BookChapter
           text,
         });
       } catch (err) {
-        console.warn(`Failed to extract text from PDF page ${pageNum}:`, err);
+        failedPages++;
+        if (firstFailure === null) firstFailure = err;
         continue;
       }
     }
-
-    return chapters;
+  } catch (err) {
+    // Worker init / getDocument / unexpected crash — return whatever we have
+    console.warn("PDF chapter extraction aborted early:", err);
   } finally {
-    await doc.destroy();
+    if (doc) {
+      try {
+        await doc.destroy();
+      } catch (err) {
+        console.warn("Failed to destroy pdfjs document:", err);
+      }
+    }
   }
+
+  if (failedPages > 0) {
+    console.warn(
+      `Failed to extract text from ${failedPages} of ${totalPages} PDF pages:`,
+      firstFailure,
+    );
+  }
+
+  return chapters;
 }
 
 /**

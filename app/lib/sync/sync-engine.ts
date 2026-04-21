@@ -496,6 +496,48 @@ export interface SyncEngineConfig {
 const PUSH_INTERVAL_MS = 30_000;
 const PULL_INTERVAL_MS = 60_000;
 
+/**
+ * Normalize any caught value from a sync cycle into a real {@link Error}
+ * with a non-empty message. Prevents the UI from rendering literals like
+ * `"null"` or `"undefined"` when something somewhere rejects with a nullish
+ * value. The raw cause is logged to the console for diagnostics whenever
+ * the thrown value isn't already an Error.
+ */
+export function normalizeSyncError(err: unknown): Error {
+  if (err instanceof Error) {
+    if (!err.message || err.message.trim() === "") {
+      const wrapped = new Error("Unknown sync error");
+      (wrapped as Error & { cause?: unknown }).cause = err;
+      return wrapped;
+    }
+    return err;
+  }
+
+  // Not an Error — log the raw cause so the next occurrence is diagnosable,
+  // then coerce to a sensible Error.
+  console.error("[sync] non-Error thrown during sync cycle:", err);
+
+  if (err == null) {
+    return new Error("Unknown sync error");
+  }
+
+  if (typeof err === "string") {
+    const trimmed = err.trim();
+    return new Error(trimmed === "" ? "Unknown sync error" : trimmed);
+  }
+
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(err);
+  } catch {
+    serialized = String(err);
+  }
+  if (!serialized || serialized === "{}" || serialized === "null" || serialized === "undefined") {
+    return new Error("Unknown sync error");
+  }
+  return new Error(serialized);
+}
+
 export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
   let pushTimer: ReturnType<typeof setInterval> | null = null;
   let pullTimer: ReturnType<typeof setInterval> | null = null;
@@ -907,7 +949,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
       await fn();
       success = true;
     } catch (err) {
-      config.onSyncError?.(err instanceof Error ? err : new Error(String(err)));
+      config.onSyncError?.(normalizeSyncError(err));
     } finally {
       config.onSyncEnd?.({ success });
     }

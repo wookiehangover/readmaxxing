@@ -92,12 +92,12 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
+  const collapsedRef = useRef(collapsed);
+  collapsedRef.current = collapsed;
   const sortBy = settings.workspaceSortBy;
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
-  // Sync books to context ref so NewTabPanel can read them
-  ws.booksRef.current = books;
   // Track which books have TOC data via a version counter (triggers re-render)
   const [_tocVersion, setTocVersion] = useState(0);
   // Track which books currently have open panels in dockview
@@ -233,6 +233,12 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [flushLayout]);
+
+  // Sync books to context ref so NewTabPanel (and other consumers) can read them.
+  // Done in an effect so it happens after commit, not during render.
+  useEffect(() => {
+    ws.booksRef.current = books;
+  }, [books, ws]);
 
   // Register TOC change listener (safe to re-run when ws changes)
   useEffect(() => {
@@ -372,52 +378,64 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const openBook = useCallback((book: BookMeta, forceNew = false) => {
-    const api = apiRef.current;
-    if (!api) return;
+  const openBook = useCallback(
+    (book: BookMeta, forceNew = false) => {
+      const api = apiRef.current;
+      if (!api) return;
 
-    // Record last-opened timestamp
-    AppRuntime.runPromise(
-      WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
-    ).catch(console.error);
+      // Record last-opened timestamp
+      AppRuntime.runPromise(
+        WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
+      ).catch(console.error);
 
-    if (!forceNew) {
-      // Focus first existing panel for this book
-      const existing = api.panels.find(
-        (p) =>
-          p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
-      );
-      if (existing) {
-        existing.focus();
-        return;
+      if (!forceNew) {
+        // Focus first existing panel for this book
+        const existing = api.panels.find(
+          (p) =>
+            p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
+        );
+        if (existing) {
+          existing.focus();
+          return;
+        }
       }
-    }
 
-    // Check if this will be the first panel (companion new-tab logic)
-    const isFirstPanel = !api.panels.some((p) => p.id.startsWith("book-"));
+      // Check if this will be the first panel (companion new-tab logic)
+      const isFirstPanel = !api.panels.some((p) => p.id.startsWith("book-"));
 
-    const panelId = `book-${book.id}-${crypto.randomUUID().slice(0, 8)}`;
-    api.addPanel({
-      id: panelId,
-      component: "book-reader",
-      title: truncateTitle(book.title),
-      params: { bookId: book.id, bookTitle: book.title, bookFormat: book.format },
-      renderer: "always",
-    });
-
-    // When opening the first panel on a wide screen (and not mobile), add a companion chat panel
-    if (isFirstPanel && !isMobileRef.current && window.innerWidth > 1000) {
-      const chatId = `chat-${book.id}`;
+      const panelId = `book-${book.id}-${crypto.randomUUID().slice(0, 8)}`;
       api.addPanel({
-        id: chatId,
-        component: "chat",
-        title: truncateTitle(`Discuss: ${book.title}`),
-        params: { bookId: book.id, bookTitle: book.title },
+        id: panelId,
+        component: "book-reader",
+        title: truncateTitle(book.title),
+        params: { bookId: book.id, bookTitle: book.title, bookFormat: book.format },
         renderer: "always",
-        position: { referencePanel: panelId, direction: "right" },
       });
-    }
-  }, []);
+
+      // When opening the first panel on a wide screen (and not mobile), add a companion chat panel
+      if (isFirstPanel && !isMobileRef.current && window.innerWidth > 1000) {
+        const chatId = `chat-${book.id}`;
+        api.addPanel({
+          id: chatId,
+          component: "chat",
+          title: truncateTitle(`Discuss: ${book.title}`),
+          params: { bookId: book.id, bookTitle: book.title },
+          renderer: "always",
+          position: { referencePanel: panelId, direction: "right" },
+        });
+      }
+
+      // When opening the first book from an empty workspace on desktop,
+      // auto-collapse the sidebar so the reader gets full width.
+      if (isFirstPanel && !isMobileRef.current && !collapsedRef.current) {
+        updateSettings({ sidebarCollapsed: true });
+        setTimeout(() => {
+          window.dispatchEvent(new Event("resize"));
+        }, SIDEBAR_TRANSITION_MS);
+      }
+    },
+    [updateSettings],
+  );
 
   const openNotebook = useCallback((book: BookMeta) => {
     const api = apiRef.current;
@@ -521,14 +539,23 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     });
   }, []);
 
-  // Wrap setBooks to also update booksRef and notify booksChangeListener
+  // Wrap setBooks to also update booksRef and notify booksChangeListener.
+  // Both the ref mutation and listener notification happen in a queueMicrotask
+  // AFTER the setBooks call, so they don't run during another component's
+  // render/commit (which would trigger a "setState during render" warning
+  // when the listener calls setBooks on LibraryBrowseContent).
   const updateBooks = useCallback(
     (updater: (prev: BookMeta[]) => BookMeta[]) => {
+      let next: BookMeta[] | undefined;
       setBooks((prev) => {
-        const next = updater(prev);
-        ws.booksRef.current = next;
-        ws.booksChangeListener.current?.();
+        next = updater(prev);
         return next;
+      });
+      queueMicrotask(() => {
+        if (next !== undefined) {
+          ws.booksRef.current = next;
+        }
+        ws.booksChangeListener.current?.();
       });
     },
     [ws],

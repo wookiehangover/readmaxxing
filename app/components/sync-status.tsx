@@ -81,7 +81,8 @@ export function SyncStatus({ collapsed }: { collapsed: boolean }) {
     shortLabel = "Offline";
   } else if (stickyError) {
     icon = <AlertTriangle className="size-3.5" />;
-    label = `Sync error: ${stickyError.message}`;
+    const message = stickyError.message?.trim();
+    label = message ? `Sync error: ${message}` : "Sync error";
     shortLabel = "Sync error";
   } else if (isSyncing) {
     icon = <Loader2 className="size-3.5 animate-spin" />;

@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import type { DockviewPanelApi } from "dockview";
 import { Button } from "~/components/ui/button";
 import {
   MessageSquare,
@@ -28,12 +29,21 @@ import { useSyncState } from "~/lib/sync/use-sync";
 import { useSettings } from "~/lib/settings";
 import { filterBooks } from "~/lib/workspace-utils";
 
-export function LibraryBrowseContent() {
+interface LibraryBrowseContentProps {
+  /** Dockview panel API — when provided, enables visibility-based refresh. */
+  panelApi?: DockviewPanelApi;
+}
+
+/** Minimum interval between panel-activation-triggered refreshes (ms). */
+const PANEL_REFRESH_THROTTLE_MS = 5000;
+
+export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {}) {
   const ws = useWorkspace();
   const [books, setBooks] = useState<BookMeta[]>(ws.booksRef.current);
   const [searchQuery, setSearchQuery] = useState("");
   const [settings] = useSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastRefreshedAtRef = useRef(0);
 
   useEffect(() => {
     const prev = ws.booksChangeListener.current;
@@ -80,7 +90,7 @@ export function LibraryBrowseContent() {
 
   const { handleDeleteBook } = useBookDeletion({ onBookDeleted: handleBookDeleted });
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
-  const { reloadBookFiles, isActive: syncActive } = useSyncState();
+  const { reloadBookFiles, isActive: syncActive, triggerSync } = useSyncState();
 
   const handleReloadBook = useCallback(
     async (bookId: string) => {
@@ -92,6 +102,41 @@ export function LibraryBrowseContent() {
     },
     [reloadBookFiles],
   );
+
+  // When the library panel becomes visible/active in dockview, trigger a
+  // sync and refresh the book list (throttled to avoid thrashing on rapid
+  // panel switching). Dispatching `sync:entity-updated` {book} piggybacks
+  // on the workspace's existing listener which calls BookService.getBooks
+  // and propagates the result through booksRef + booksChangeListener.
+  useEffect(() => {
+    if (!panelApi) return;
+
+    const refreshLibrary = () => {
+      const now = Date.now();
+      if (now - lastRefreshedAtRef.current < PANEL_REFRESH_THROTTLE_MS) return;
+      lastRefreshedAtRef.current = now;
+
+      if (syncActive) triggerSync();
+
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }),
+        );
+      });
+    };
+
+    const visDisposable = panelApi.onDidVisibilityChange((e) => {
+      if (e.isVisible) refreshLibrary();
+    });
+    const activeDisposable = panelApi.onDidActiveChange((e) => {
+      if (e.isActive) refreshLibrary();
+    });
+
+    return () => {
+      visDisposable.dispose();
+      activeDisposable.dispose();
+    };
+  }, [panelApi, syncActive, triggerSync]);
 
   const filteredBooks = useMemo(
     () => (searchQuery ? filterBooks(books, searchQuery) : books),
