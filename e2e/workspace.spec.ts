@@ -232,6 +232,54 @@ test.describe("Workspace route", () => {
     await expect(page.locator("blockquote")).toHaveCount(0, { timeout: 10_000 });
   });
 
+  test("highlight created with notebook closed appears when notebook opens", async ({ page }) => {
+    await uploadAndOpenBook(page);
+
+    // Wait for epub iframe to be ready with content
+    const iframe = page.frameLocator("iframe").first();
+    const chapterText = iframe.locator("p").first();
+    await expect(chapterText).toBeVisible({ timeout: 20_000 });
+
+    // Do NOT open the notebook first — this is the regression scenario.
+    // Select text inside the epub iframe and save a highlight.
+    const iframeHandle = await page.locator("iframe").first().elementHandle();
+    if (!iframeHandle) throw new Error("Could not get iframe element handle");
+    const iframeFrame = await iframeHandle.contentFrame();
+    if (!iframeFrame) throw new Error("Could not get iframe content frame");
+
+    await iframeFrame.evaluate(() => {
+      const p = document.querySelector("p");
+      if (!p || !p.firstChild) throw new Error("No paragraph found in epub");
+      const range = document.createRange();
+      range.selectNodeContents(p);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    });
+
+    const highlightBtn = page.getByRole("button", { name: "Highlight" });
+    await expect(highlightBtn).toBeVisible({ timeout: 10_000 });
+    await highlightBtn.click();
+
+    // Now open the notebook — the highlight reference should already be
+    // persisted in IDB via the fallback path, so the blockquote must appear.
+    const notebookBtn = page.getByRole("button", { name: "Open Notebook" });
+    await expect(notebookBtn.first()).toBeVisible({ timeout: 10_000 });
+    await notebookBtn.first().click();
+
+    const highlightRef = page.locator("blockquote").first();
+    await expect(highlightRef).toBeVisible({ timeout: 15_000 });
+
+    // Exactly one blockquote — no duplicates from a double-write.
+    await expect(page.locator("blockquote")).toHaveCount(1);
+
+    // Delete must still work from the fallback-created node.
+    const deleteBtn = page.locator('[title="Delete highlight"]').first();
+    await deleteBtn.click({ force: true, timeout: 5_000 });
+    await expect(page.locator("blockquote")).toHaveCount(0, { timeout: 10_000 });
+  });
+
   test("reader settings menu opens", async ({ page }) => {
     await uploadAndOpenBook(page);
 

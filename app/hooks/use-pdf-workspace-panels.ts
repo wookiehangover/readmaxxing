@@ -5,6 +5,7 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
 import { useIsMobile } from "~/hooks/use-mobile";
+import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import type { DockviewPanelApi } from "dockview";
 
 interface UsePdfWorkspacePanelsOptions {
@@ -84,16 +85,29 @@ export function usePdfWorkspacePanels({
 
   const handleSaveHighlight = useCallback(async () => {
     const highlight = await saveHighlightFromPopover();
-    if (highlight) {
-      const appendFn = notebookCallbackMap.current.get(book.id);
-      if (appendFn) {
-        appendFn({
-          highlightId: highlight.id,
-          cfiRange: highlight.cfiRange,
-          text: highlight.text,
-        });
-      }
+    if (!highlight) return;
+    const attrs = {
+      highlightId: highlight.id,
+      cfiRange: highlight.cfiRange,
+      text: highlight.text,
+    };
+    const appendFn = notebookCallbackMap.current.get(book.id);
+    if (appendFn) {
+      appendFn(attrs);
+      return;
     }
+    // Notebook panel isn't mounted — write the reference directly to IDB so
+    // the highlight is visible (and deletable) the next time the notebook
+    // opens, instead of silently orphaning it.
+    AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
+      .then(() => {
+        queueMicrotask(() => {
+          window.dispatchEvent(
+            new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
+          );
+        });
+      })
+      .catch((err) => console.error("Failed to append highlight to notebook:", err));
   }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
 
   const handleOpenNotebook = useCallback(() => {

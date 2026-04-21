@@ -5,6 +5,7 @@ import { Effect } from "effect";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useWorkspace } from "~/lib/context/workspace-context";
+import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import { getToolInfo } from "./chat-utils";
 
 interface UseChatToolHandlersOptions {
@@ -254,38 +255,18 @@ export function useChatToolHandlers({
                   if (navigate) navigate(cfiRange);
 
                   // Append highlight to notebook (same as epub path)
+                  const attrs = {
+                    highlightId: highlight.id,
+                    cfiRange: highlight.cfiRange,
+                    text: highlight.text,
+                  };
                   const appendFn = notebookCallbackMap.current.get(bookId);
                   if (appendFn) {
-                    appendFn({
-                      highlightId: highlight.id,
-                      cfiRange: highlight.cfiRange,
-                      text: highlight.text,
-                    });
+                    appendFn(attrs);
                   } else {
-                    AppRuntime.runPromise(
-                      Effect.gen(function* () {
-                        const svc = yield* AnnotationService;
-                        const notebook = yield* svc.getNotebook(bookId);
-                        const existingContent = notebook?.content?.content ?? [];
-                        const highlightNode = {
-                          type: "highlightReference" as const,
-                          attrs: {
-                            highlightId: highlight.id,
-                            cfiRange: highlight.cfiRange,
-                            text: highlight.text,
-                          },
-                        };
-                        const updatedContent = {
-                          type: "doc" as const,
-                          content: [...existingContent, highlightNode],
-                        };
-                        yield* svc.saveNotebook({
-                          bookId,
-                          content: updatedContent,
-                          updatedAt: Date.now(),
-                        });
-                      }),
-                    ).catch(console.error);
+                    AppRuntime.runPromise(appendHighlightReferenceToNotebook(bookId, attrs)).catch(
+                      console.error,
+                    );
                   }
                 } else {
                   console.warn(
@@ -345,38 +326,18 @@ export function useChatToolHandlers({
                   applyTempHighlightForBook(bookId, cfiRange);
                 }
 
+                const attrs = {
+                  highlightId: highlight.id,
+                  cfiRange: highlight.cfiRange,
+                  text: highlight.text,
+                };
                 const appendFn = notebookCallbackMap.current.get(bookId);
                 if (appendFn) {
-                  appendFn({
-                    highlightId: highlight.id,
-                    cfiRange: highlight.cfiRange,
-                    text: highlight.text,
-                  });
+                  appendFn(attrs);
                 } else {
-                  AppRuntime.runPromise(
-                    Effect.gen(function* () {
-                      const svc = yield* AnnotationService;
-                      const notebook = yield* svc.getNotebook(bookId);
-                      const existingContent = notebook?.content?.content ?? [];
-                      const highlightNode = {
-                        type: "highlightReference" as const,
-                        attrs: {
-                          highlightId: highlight.id,
-                          cfiRange: highlight.cfiRange,
-                          text: highlight.text,
-                        },
-                      };
-                      const updatedContent = {
-                        type: "doc" as const,
-                        content: [...existingContent, highlightNode],
-                      };
-                      yield* svc.saveNotebook({
-                        bookId,
-                        content: updatedContent,
-                        updatedAt: Date.now(),
-                      });
-                    }),
-                  ).catch(console.error);
+                  AppRuntime.runPromise(appendHighlightReferenceToNotebook(bookId, attrs)).catch(
+                    console.error,
+                  );
                 }
               } finally {
                 tempBook.destroy();

@@ -20,6 +20,7 @@ import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useReaderSearch } from "~/hooks/use-reader-search";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 
 interface BookReaderProps {
   book: BookMeta;
@@ -33,7 +34,6 @@ export function BookReader({ book }: BookReaderProps) {
   const [settings, updateSettings] = useSettings();
   const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
   const editorRef = useRef<TiptapEditorHandle>(null);
-  const [pendingHighlight, setPendingHighlight] = useState<HighlightReferenceAttrs | null>(null);
   const { toc: contextToc, navigateToHref, setToc, setNavigateToHref } = useReaderNavigation();
   const [tocOpen, setTocOpen] = useState(false);
 
@@ -135,34 +135,38 @@ export function BookReader({ book }: BookReaderProps) {
 
   const handleSaveHighlight = useCallback(async () => {
     const highlight = await saveHighlightFromPopover();
-    if (highlight) {
-      const attrs: HighlightReferenceAttrs = {
-        highlightId: highlight.id,
-        cfiRange: highlight.cfiRange,
-        text: highlight.text,
-      };
+    if (!highlight) return;
+    const attrs: HighlightReferenceAttrs = {
+      highlightId: highlight.id,
+      cfiRange: highlight.cfiRange,
+      text: highlight.text,
+    };
 
-      // If the editor is already mounted, append directly
-      if (editorRef.current) {
-        editorRef.current.appendHighlightReference(attrs);
-      } else {
-        // Queue the highlight and open the panel — the useEffect below
-        // will flush it once the editor mounts
-        setPendingHighlight(attrs);
-      }
-
-      // Always ensure the panel is open
+    // Panel open with editor mounted: append imperatively so the user sees
+    // the highlight appear instantly; the editor's debounced save persists
+    // the update to IndexedDB.
+    if (editorRef.current) {
+      editorRef.current.appendHighlightReference(attrs);
       setAnnotationsPanelOpen(true);
+      return;
     }
-  }, [saveHighlightFromPopover]);
 
-  // Flush pending highlight once the editor is mounted
-  useEffect(() => {
-    if (pendingHighlight && editorRef.current) {
-      editorRef.current.appendHighlightReference(pendingHighlight);
-      setPendingHighlight(null);
-    }
-  });
+    // Panel closed (editor not mounted): write the reference to the
+    // notebook doc in IDB directly, then open the panel. The AnnotationsPanel
+    // reloads via `useEffectQuery` when the notebook sync event fires, so it
+    // will mount with the new highlight node already present — no pending
+    // state needed and no risk of double-appending.
+    AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
+      .then(() => {
+        queueMicrotask(() => {
+          window.dispatchEvent(
+            new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
+          );
+        });
+      })
+      .catch((err) => console.error("Failed to append highlight to notebook:", err));
+    setAnnotationsPanelOpen(true);
+  }, [saveHighlightFromPopover, book.id]);
 
   const isScrollMode = settings.readerLayout === "scroll";
 
