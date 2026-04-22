@@ -7,6 +7,7 @@ const MAX_COVER_BYTES = 5 * 1024 * 1024; // 5 MiB
 
 const FILE_CONTENT_TYPES = ["application/epub+zip", "application/pdf"];
 const COVER_CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const COVER_CACHE_CONTROL_MAX_AGE = 31_536_000; // 1 year
 
 interface ClientPayload {
   bookId: string;
@@ -107,6 +108,7 @@ export async function action({ request }: { request: Request }) {
           maximumSizeInBytes: type === "cover" ? MAX_COVER_BYTES : MAX_FILE_BYTES,
           addRandomSuffix: false,
           allowOverwrite: true,
+          ...(type === "cover" ? { cacheControlMaxAge: COVER_CACHE_CONTROL_MAX_AGE } : {}),
           tokenPayload: JSON.stringify({ bookId, type } satisfies TokenPayload),
         };
       },

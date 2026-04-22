@@ -8,6 +8,7 @@ import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
+import { isPublicBlobUrl } from "~/lib/blob-url";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { TiptapEditor } from "~/components/tiptap-editor";
 import { Input } from "~/components/ui/input";
@@ -55,10 +56,12 @@ function CoverImage({
   bookId?: string;
   needsDownload?: boolean;
 }) {
-  const remoteUrl =
-    remoteCoverUrl && bookId
+  const directUrl = remoteCoverUrl && isPublicBlobUrl(remoteCoverUrl) ? remoteCoverUrl : null;
+  const proxyUrl =
+    !directUrl && remoteCoverUrl && bookId
       ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`
       : null;
+  const remoteUrl = directUrl ?? proxyUrl;
   const fallbackBlobUrl = useBlobObjectUrl(remoteUrl ? null : coverImage, bookId ?? null);
   const url = remoteUrl ?? fallbackBlobUrl;
 
