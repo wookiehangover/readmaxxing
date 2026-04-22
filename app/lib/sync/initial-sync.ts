@@ -111,8 +111,9 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     if (!Array.isArray(sessionList)) continue;
     for (const session of sessionList) {
       if (!session || typeof session !== "object") continue;
-      // Record session metadata (without messages)
-      const { messages, ...metadata } = session;
+      // Record session metadata only. Chat messages are server-authoritative
+      // and persisted by /api/chat — they must not be pushed from clients.
+      const { messages: _messages, ...metadata } = session;
       await recordChange({
         entity: "chat_session",
         entityId: session.id,
@@ -120,20 +121,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
         data: metadata,
         timestamp: session.updatedAt ?? Date.now(),
       });
-      // Record each message individually
-      if (Array.isArray(messages)) {
-        for (const msg of messages) {
-          if (msg?.id) {
-            await recordChange({
-              entity: "chat_message",
-              entityId: msg.id,
-              operation: "put",
-              data: { ...msg, sessionId: session.id },
-              timestamp: msg.createdAt ?? Date.now(),
-            });
-          }
-        }
-      }
     }
   }
 
