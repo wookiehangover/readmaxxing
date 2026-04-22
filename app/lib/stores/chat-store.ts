@@ -230,10 +230,12 @@ export const ChatServiceLive = Layer.succeed(ChatService, {
         const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
         const idx = sessions.findIndex((s) => s.id === sessionId);
         if (idx < 0) return;
-        // Do NOT call recordChange here — the server is authoritative for
-        // chat messages, so writing back to IDB is a warm-start cache update
-        // only. Bumping updatedAt stays local; no sync enqueue.
-        sessions[idx] = { ...sessions[idx], messages, updatedAt: Date.now() };
+        // Server is authoritative for chat messages, so this is a warm-start
+        // cache update only. Do NOT bump updatedAt — it is the LWW clock for
+        // session metadata (title, bookId), and bumping it on every message
+        // hydration would silently overwrite legitimate metadata edits from
+        // other devices on the next sync pull.
+        sessions[idx] = { ...sessions[idx], messages };
         await set(bookId, sessions, getSessionStore());
       },
       catch: (cause) => new ChatError({ operation: "cacheServerMessages", cause }),
