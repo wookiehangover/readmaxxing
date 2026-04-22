@@ -596,7 +596,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     const result = await runUploadWithRetry(
       () =>
         upload(pathname, blob, {
-          access: "private",
+          access: type === "cover" ? "public" : "private",
           handleUploadUrl: "/api/sync/files/upload",
           clientPayload: JSON.stringify({ bookId, type }),
           contentType,
