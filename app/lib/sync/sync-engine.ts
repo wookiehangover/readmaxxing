@@ -1,6 +1,7 @@
 import { upload } from "@vercel/blob/client";
 import { createStore, get, set, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
+import { removeSessionLocally } from "~/lib/stores/chat-store";
 import { getUnsyncedChanges, markSynced, clearSyncedChanges, recordChange } from "./change-log";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
@@ -193,6 +194,7 @@ interface LocalChatSession {
   messages: LocalChatMessage[];
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number;
 }
 
 interface LocalChatMessage {
@@ -215,6 +217,7 @@ function serverChatSessionToLocal(record: Record<string, unknown>): LocalChatSes
     messages: [], // messages merged separately
     createdAt: toTimestamp(record.createdAt),
     updatedAt: toTimestamp(record.updatedAt),
+    deletedAt: toOptionalTimestamp(record.deletedAt),
   };
 }
 
@@ -368,10 +371,17 @@ async function mergeNotebookRecord(record: Record<string, unknown>): Promise<voi
 }
 
 /**
- * Merge a chat session record (LWW for session metadata).
+ * Merge a chat session record (LWW for session metadata, tombstone-aware).
  * Chat sessions are stored per-bookId as ChatSession[] in IDB.
+ *
+ * When the remote row carries `deletedAt`, the session (and its cached
+ * messages, which live inside the same IDB array value) is removed from
+ * local storage unless the local copy's `updatedAt` is strictly newer —
+ * same LWW tie-break as `mergeBookRecord`. The server is the source of
+ * truth if the session is ever un-deleted, so losing the local cache is
+ * safe.
  */
-async function mergeChatSessionRecord(record: Record<string, unknown>): Promise<void> {
+export async function mergeChatSessionRecord(record: Record<string, unknown>): Promise<void> {
   const store = getChatSessionStore();
   const remote = serverChatSessionToLocal(record);
   const bookId = remote.bookId;
@@ -379,6 +389,18 @@ async function mergeChatSessionRecord(record: Record<string, unknown>): Promise<
 
   const sessions = (await get<LocalChatSession[]>(bookId, store)) ?? [];
   const idx = sessions.findIndex((s) => s.id === remote.id);
+
+  // Remote tombstone path: propagate the delete to this device.
+  if (remote.deletedAt != null) {
+    if (idx < 0) return; // nothing to remove locally
+    const local = sessions[idx];
+    // LWW: a local edit strictly newer than the tombstone wins. Callers that
+    // just locally re-created the session at the same millisecond would also
+    // lose, but that matches the other LWW mergers in this file.
+    if (local.updatedAt > remote.updatedAt) return;
+    await removeSessionLocally(bookId, remote.id);
+    return;
+  }
 
   if (idx < 0) {
     // New session from server — add it (preserve empty messages array)

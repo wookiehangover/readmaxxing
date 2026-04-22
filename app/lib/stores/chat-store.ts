@@ -78,6 +78,33 @@ function trackSessionChange(session: ChatSession, operation: "put" | "delete" = 
   }).catch(console.error);
 }
 
+/**
+ * Tombstone-merge path used by the sync pull merger. Removes a session (and
+ * its cached messages, which live inside the per-bookId session array value)
+ * from IDB, and clears the active-session pointer if it still points at the
+ * removed session.
+ *
+ * Does NOT enqueue a sync change: the caller is reconciling a server-side
+ * tombstone that the server already knows about. Enqueuing a delete here
+ * would echo the same tombstone back on the next push.
+ */
+export async function removeSessionLocally(bookId: string, sessionId: string): Promise<void> {
+  const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
+  const filtered = sessions.filter((s) => s.id !== sessionId);
+  if (filtered.length === sessions.length) return;
+
+  await set(bookId, filtered, getSessionStore());
+
+  const activeId = await get<string>(bookId, getActiveSessionStore());
+  if (activeId === sessionId) {
+    if (filtered.length > 0) {
+      await set(bookId, filtered[filtered.length - 1].id, getActiveSessionStore());
+    } else {
+      await del(bookId, getActiveSessionStore());
+    }
+  }
+}
+
 // --- Service interface ---
 
 export class ChatService extends Context.Tag("ChatService")<
