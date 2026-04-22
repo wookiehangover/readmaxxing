@@ -10,7 +10,7 @@ import {
   updateBookBlobUrls,
 } from "~/lib/database/book/book";
 import { upsertPosition } from "~/lib/database/book/reading-position";
-import { upsertSession, softDeleteSession, upsertMessage } from "~/lib/database/chat/chat-session";
+import { upsertSession, softDeleteSession } from "~/lib/database/chat/chat-session";
 import { upsertSettings } from "~/lib/database/settings/user-settings";
 import { upsertUser } from "~/lib/database/user/user";
 import type { SyncPushRequest, SyncPushResponse, ChangeEntry } from "~/lib/sync/types";
@@ -176,26 +176,16 @@ export async function processEntry(
     }
 
     case "chat_message": {
-      if (entry.operation === "put") {
-        const data = entry.data as {
-          id: string;
-          sessionId: string;
-          role: string;
-          content?: string | null;
-          parts?: unknown | null;
-          createdAt?: number | null;
-        };
-        await upsertMessage({
-          id: entry.entityId,
-          sessionId: data.sessionId,
-          role: data.role,
-          content: data.content,
-          parts: data.parts,
-          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
-        });
-      }
-      // delete is a no-op for append-only messages
-      return { accepted: true };
+      // Chat messages are server-authoritative: only /api/chat writes them
+      // (see AGENTS.md "Chat architecture"). Wave 1 audit flagged that this
+      // branch still accepted an unclamped client `createdAt`, leaving a
+      // latent vector for clock-skewed clients to poison message ordering.
+      // After Task B, the client no longer pushes chat_message entries; this
+      // endpoint now rejects any that slip through rather than trusting them.
+      return {
+        accepted: false,
+        reason: "chat_message entries are not accepted via /api/sync/push",
+      };
     }
 
     case "settings": {

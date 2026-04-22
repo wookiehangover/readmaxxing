@@ -36,6 +36,7 @@ import {
   getBookByIdForUser,
   updateBookBlobUrls,
 } from "~/lib/database/book/book";
+import { upsertMessage } from "~/lib/database/chat/chat-session";
 
 const upsertBookMock = upsertBook as ReturnType<typeof vi.fn>;
 const findMock = findBookByUserAndHash as ReturnType<typeof vi.fn>;
@@ -226,5 +227,54 @@ describe("processEntry book blob URLs", () => {
 
     expect(result.canonicalId).toBe("book-canonical");
     expect(updateUrlsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("processEntry chat_message branch", () => {
+  const upsertMessageMock = upsertMessage as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    upsertMessageMock.mockClear();
+  });
+
+  it("rejects put entries without hitting the DB", async () => {
+    const entry: ChangeEntry = {
+      id: "change-msg-1",
+      entity: "chat_message",
+      entityId: "msg-1",
+      operation: "put",
+      data: {
+        id: "msg-1",
+        sessionId: "sess-1",
+        role: "user",
+        content: "hi",
+        createdAt: 9999999999999,
+      },
+      timestamp: 2000,
+      synced: false,
+    };
+
+    const result = await processEntry("u1", entry);
+
+    expect(result.accepted).toBe(false);
+    expect(result.reason).toMatch(/not accepted/i);
+    expect(upsertMessageMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects delete entries without hitting the DB", async () => {
+    const entry: ChangeEntry = {
+      id: "change-msg-2",
+      entity: "chat_message",
+      entityId: "msg-2",
+      operation: "delete",
+      data: null,
+      timestamp: 2000,
+      synced: false,
+    };
+
+    const result = await processEntry("u1", entry);
+
+    expect(result.accepted).toBe(false);
+    expect(upsertMessageMock).not.toHaveBeenCalled();
   });
 });
