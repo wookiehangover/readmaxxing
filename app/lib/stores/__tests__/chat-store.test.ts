@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Effect, Layer } from "effect";
+import { createStore, set } from "idb-keyval";
 
 // Mock the sync changelog so we can assert on recordChange invocations
 // without touching the real changelog IDB store.
@@ -137,5 +138,61 @@ describe("ChatService.cacheServerMessages", () => {
     );
     expect(after!.title).toBe("Renamed");
     expect(after!.updatedAt).toBe(renamedUpdatedAt);
+  });
+});
+
+describe("ChatService migrateOldMessages", () => {
+  beforeEach(() => {
+    vi.mocked(recordChange).mockClear();
+  });
+
+  it("enqueues exactly one chat_session change per migrated session", async () => {
+    const bookId = uniqueBookId();
+
+    // Seed the legacy store directly — same db/object-store name the
+    // production code uses for backward-compat reads.
+    const legacyStore = createStore("ebook-reader-chats", "chats");
+    await set(
+      bookId,
+      [
+        { id: "old-1", role: "user", content: "hello", createdAt: 1000 },
+        { id: "old-2", role: "assistant", content: "hi", createdAt: 2000 },
+      ],
+      legacyStore,
+    );
+
+    // Triggering migration via the public read path.
+    const sessions = await run(
+      ChatService.pipe(Effect.andThen((s) => s.getSessionsByBook(bookId))),
+    );
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].messages).toHaveLength(2);
+
+    const chatSessionCalls = vi
+      .mocked(recordChange)
+      .mock.calls.filter(([arg]) => arg.entity === "chat_session");
+    expect(chatSessionCalls).toHaveLength(1);
+    expect(chatSessionCalls[0][0]).toMatchObject({
+      entity: "chat_session",
+      entityId: sessions[0].id,
+      operation: "put",
+    });
+    // Messages must not be included in the tracked payload — chat_session is
+    // metadata-only LWW.
+    const tracked = chatSessionCalls[0][0].data as Record<string, unknown>;
+    expect(tracked).not.toHaveProperty("messages");
+    expect(tracked).toMatchObject({ bookId, title: "" });
+  });
+
+  it("does not enqueue any change when there are no legacy messages", async () => {
+    const bookId = uniqueBookId();
+
+    const sessions = await run(
+      ChatService.pipe(Effect.andThen((s) => s.getSessionsByBook(bookId))),
+    );
+
+    expect(sessions).toHaveLength(0);
+    expect(recordChange).not.toHaveBeenCalled();
   });
 });

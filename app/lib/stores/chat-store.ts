@@ -179,6 +179,9 @@ async function migrateOldMessages(bookId: string): Promise<ChatSession[]> {
   await set(bookId, [session], getSessionStore());
   // Set as active
   await set(bookId, session.id, getActiveSessionStore());
+  // Enqueue a sync change so the migrated session is pushed to the server on
+  // its own, without waiting for runInitialSyncIfNeeded to scan everything.
+  trackSessionChange(session);
 
   return [session];
 }
