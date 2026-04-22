@@ -85,9 +85,17 @@ export interface SyncPushResponse {
 // Pull protocol (server → client)
 // ---------------------------------------------------------------------------
 
-/** Request parameters for pulling changes from the server. */
+/**
+ * Request parameters for pulling changes from the server.
+ *
+ * Wire encoding: sent as a URL-encoded JSON array on the `cursors` query
+ * param of `GET /api/sync/pull`. Each entry carries a per-entity `since`
+ * value so one entity falling behind does not force the other entities
+ * to re-scan. An entity absent from the array means "pull that entity
+ * from the beginning" (unchanged behavior for a fresh device).
+ */
 export interface SyncPullRequest {
-  /** Per-entity-type cursors. Missing entries mean "pull everything". */
+  /** Per-entity-type cursors. Missing entries mean "pull from the beginning". */
   cursors: SyncCursor[];
   /** Maximum number of records to return per entity type. */
   limit?: number;
