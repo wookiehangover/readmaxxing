@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/react";
 import { sql } from "pg-sql";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
+import { clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface NotebookRow {
@@ -24,9 +25,10 @@ export async function upsertNotebook(
   updatedAt: Date,
 ): Promise<NotebookRow | null> {
   const pool = getPool();
+  const ts = clampUpdatedAt(updatedAt);
   const result = await pool.query<NotebookRow>(sql`
     INSERT INTO readmax.notebook (user_id, book_id, content, updated_at)
-    VALUES (${userId}, ${bookId}, ${JSON.stringify(content)}::jsonb, ${updatedAt.toISOString()})
+    VALUES (${userId}, ${bookId}, ${JSON.stringify(content)}::jsonb, ${ts})
     ON CONFLICT (user_id, book_id) DO UPDATE
       SET content = EXCLUDED.content,
           updated_at = EXCLUDED.updated_at

@@ -1,4 +1,5 @@
 import { sql } from "pg-sql";
+import { clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface BookRow {
@@ -40,7 +41,7 @@ const BOOK_COLUMNS = sql`
 
 export async function upsertBook(userId: string, book: UpsertBookData): Promise<BookRow | null> {
   const pool = getPool();
-  const ts = book.updatedAt ? book.updatedAt.toISOString() : new Date().toISOString();
+  const ts = clampUpdatedAt(book.updatedAt);
   const result = await pool.query<BookRow>(sql`
     INSERT INTO readmax.book (id, user_id, title, author, format, file_hash, updated_at)
     VALUES (${book.id}, ${userId}, ${book.title ?? null}, ${book.author ?? null}, ${book.format ?? null}, ${book.fileHash ?? null}, ${ts})

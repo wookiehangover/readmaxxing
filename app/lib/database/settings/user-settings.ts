@@ -1,4 +1,5 @@
 import { sql } from "pg-sql";
+import { clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface UserSettingsRow {
@@ -19,9 +20,10 @@ export async function upsertSettings(
   updatedAt: Date,
 ): Promise<UserSettingsRow | null> {
   const pool = getPool();
+  const ts = clampUpdatedAt(updatedAt);
   const result = await pool.query<UserSettingsRow>(sql`
     INSERT INTO readmax.user_settings (user_id, settings, updated_at)
-    VALUES (${userId}, ${JSON.stringify(settings)}::jsonb, ${updatedAt.toISOString()})
+    VALUES (${userId}, ${JSON.stringify(settings)}::jsonb, ${ts})
     ON CONFLICT (user_id) DO UPDATE
       SET settings = EXCLUDED.settings,
           updated_at = EXCLUDED.updated_at

@@ -5,6 +5,7 @@ import { getBooksByUserSince } from "~/lib/database/book/book";
 import { getPositionsByUserSince } from "~/lib/database/book/reading-position";
 import { getSessionsByUserSince, getMessagesByUserSince } from "~/lib/database/chat/chat-session";
 import { getSettingsSince } from "~/lib/database/settings/user-settings";
+import { parseCursorsParam } from "~/lib/sync/sync-cursors";
 import type { EntityType, SyncPullResponse } from "~/lib/sync/types";
 
 const SUPPORTED_ENTITY_TYPES: EntityType[] = [
@@ -25,12 +26,16 @@ export async function loader({ request }: { request: Request }) {
   const { userId } = await requireAuth(request);
 
   const url = new URL(request.url);
-  const sinceParam = url.searchParams.get("since");
+  const cursorsParam = url.searchParams.get("cursors");
   const entityTypeParam = url.searchParams.get("entityType");
 
-  const since = sinceParam ? new Date(sinceParam) : new Date(0);
-  if (isNaN(since.getTime())) {
-    return Response.json({ error: "Invalid 'since' parameter" }, { status: 400 });
+  // Per-entity cursors: each entity has its own `since` so one entity's lag
+  // does not force the others to re-scan. Entities missing from the payload
+  // default to epoch (pull from the beginning), preserving fresh-device
+  // behavior.
+  const { cursorsByEntity, error: cursorsError } = parseCursorsParam(cursorsParam);
+  if (cursorsError) {
+    return Response.json({ error: cursorsError }, { status: 400 });
   }
 
   const requestedTypes: EntityType[] = entityTypeParam
@@ -42,6 +47,7 @@ export async function loader({ request }: { request: Request }) {
   const changes: SyncPullResponse["changes"] = [];
 
   for (const entityType of requestedTypes) {
+    const since = cursorsByEntity[entityType];
     switch (entityType) {
       case "book": {
         const books = await getBooksByUserSince(userId, since);

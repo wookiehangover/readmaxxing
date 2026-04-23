@@ -1,6 +1,15 @@
-import { createStore, get, set, del, entries } from "idb-keyval";
+import { get, set, del, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { appendOnlyMerge, lwwMerge } from "./merge";
+import {
+  getActiveSessionStore,
+  getBookDataStore,
+  getBookStore,
+  getChatSessionStore,
+  getHighlightStore,
+  getNotebookStore,
+  getPositionStore,
+} from "./stores";
 
 export interface RemapStores {
   readonly bookStore: UseStore;
@@ -16,13 +25,13 @@ let _defaults: RemapStores | null = null;
 function getDefaultStores(): RemapStores {
   if (!_defaults) {
     _defaults = {
-      bookStore: createStore("ebook-reader-db", "books"),
-      bookDataStore: createStore("ebook-reader-book-data", "book-data"),
-      positionStore: createStore("ebook-reader-positions", "positions"),
-      highlightStore: createStore("ebook-reader-highlights", "highlights"),
-      notebookStore: createStore("ebook-reader-notebooks", "notebooks"),
-      chatSessionStore: createStore("ebook-reader-chat-sessions", "sessions"),
-      activeSessionStore: createStore("ebook-reader-active-session", "active-session"),
+      bookStore: getBookStore(),
+      bookDataStore: getBookDataStore(),
+      positionStore: getPositionStore(),
+      highlightStore: getHighlightStore(),
+      notebookStore: getNotebookStore(),
+      chatSessionStore: getChatSessionStore(),
+      activeSessionStore: getActiveSessionStore(),
     };
   }
   return _defaults;

@@ -1,8 +1,9 @@
-import { createStore, get, set } from "idb-keyval";
+import { get, set } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer } from "effect";
 import { PositionError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
+import { getPositionStore } from "~/lib/sync/stores";
 
 // --- Types ---
 
@@ -12,14 +13,7 @@ export interface PositionRecord {
   updatedAt: number;
 }
 
-// --- idb-keyval store (lazy-initialized for SSR safety) ---
-
-let _positionStore: ReturnType<typeof createStore> | null = null;
-
-function getPositionStore() {
-  if (!_positionStore) _positionStore = createStore("ebook-reader-positions", "positions");
-  return _positionStore;
-}
+// --- idb-keyval store imported from ~/lib/sync/stores ---
 
 /**
  * Migrate a raw IDB value to PositionRecord.

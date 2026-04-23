@@ -1,8 +1,9 @@
-import { createStore, get, set, entries } from "idb-keyval";
+import { get, set, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer, Schema } from "effect";
 import { StorageError, BookNotFoundError, DecodeError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
+import { getBookStore, getBookDataStore } from "~/lib/sync/stores";
 
 // --- Schema ---
 
@@ -47,20 +48,7 @@ export interface Book extends BookMeta {
   data: ArrayBuffer;
 }
 
-// --- idb-keyval stores (lazy-initialized for SSR safety) ---
-
-let _bookStore: ReturnType<typeof createStore> | null = null;
-let _bookDataStore: ReturnType<typeof createStore> | null = null;
-
-function getBookStore() {
-  if (!_bookStore) _bookStore = createStore("ebook-reader-db", "books");
-  return _bookStore;
-}
-
-function getBookDataStore() {
-  if (!_bookDataStore) _bookDataStore = createStore("ebook-reader-book-data", "book-data");
-  return _bookDataStore;
-}
+// --- idb-keyval stores imported from ~/lib/sync/stores ---
 
 let _migrated = false;
 

@@ -1,4 +1,5 @@
 import { sql } from "pg-sql";
+import { clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface ReadingPositionRow {
@@ -22,9 +23,10 @@ export async function upsertPosition(
   updatedAt: Date,
 ): Promise<ReadingPositionRow | null> {
   const pool = getPool();
+  const ts = clampUpdatedAt(updatedAt);
   const result = await pool.query<ReadingPositionRow>(sql`
     INSERT INTO readmax.reading_position (user_id, book_id, cfi, updated_at)
-    VALUES (${userId}, ${bookId}, ${cfi}, ${updatedAt.toISOString()})
+    VALUES (${userId}, ${bookId}, ${cfi}, ${ts})
     ON CONFLICT (user_id, book_id) DO UPDATE
       SET cfi = EXCLUDED.cfi,
           updated_at = EXCLUDED.updated_at

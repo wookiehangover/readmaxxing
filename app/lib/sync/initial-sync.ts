@@ -1,6 +1,13 @@
-import { createStore, get, set, entries } from "idb-keyval";
-import type { UseStore } from "idb-keyval";
+import { get, set, entries } from "idb-keyval";
 import { recordChange } from "./change-log";
+import {
+  getBookStore,
+  getChatSessionStore,
+  getHighlightStore,
+  getNotebookStore,
+  getPositionStore,
+  getSyncFlagsStore,
+} from "./stores";
 import type { ChatSession } from "~/lib/stores/chat-store";
 
 const INITIAL_SYNC_KEY = "initial-sync-complete";
@@ -16,26 +23,19 @@ function safeEntry(entry: unknown): [IDBValidKey, unknown] | null {
   return [entry[0] as IDBValidKey, entry[1]];
 }
 
-// Lazy store for the flag (separate DB to avoid conflicts)
-let _flagStore: ReturnType<typeof createStore> | null = null;
-function getFlagStore(): UseStore {
-  if (!_flagStore) _flagStore = createStore("ebook-reader-sync-flags", "flags");
-  return _flagStore;
-}
-
 /**
  * One-time scan of all IDB stores to create change-log entries for
  * existing data. This ensures users who had data before the sync
  * feature was added get their data pushed to the server on first sync.
  */
 export async function runInitialSyncIfNeeded(): Promise<void> {
-  const done = await get(INITIAL_SYNC_KEY, getFlagStore());
+  const done = await get(INITIAL_SYNC_KEY, getSyncFlagsStore());
   if (done) return;
 
   console.log("[sync] Running initial sync push for existing data...");
 
   // 1. Books (key = bookId, value = BookMeta)
-  const bookStore = createStore("ebook-reader-db", "books");
+  const bookStore = getBookStore();
   const books = await entries(bookStore);
   for (const entry of books) {
     const tuple = safeEntry(entry);
@@ -51,7 +51,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   }
 
   // 2. Reading positions (key = bookId, value = PositionRecord)
-  const posStore = createStore("ebook-reader-positions", "positions");
+  const posStore = getPositionStore();
   const positions = await entries(posStore);
   for (const entry of positions) {
     const tuple = safeEntry(entry);
@@ -67,7 +67,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   }
 
   // 3. Highlights (key = highlightId, value = Highlight)
-  const hlStore = createStore("ebook-reader-highlights", "highlights");
+  const hlStore = getHighlightStore();
   const highlights = await entries(hlStore);
   for (const entry of highlights) {
     const tuple = safeEntry(entry);
@@ -86,7 +86,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   }
 
   // 4. Notebooks (key = bookId, value = Notebook)
-  const nbStore = createStore("ebook-reader-notebooks", "notebooks");
+  const nbStore = getNotebookStore();
   const notebooks = await entries(nbStore);
   for (const entry of notebooks) {
     const tuple = safeEntry(entry);
@@ -102,7 +102,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   }
 
   // 5. Chat sessions (key = bookId, value = ChatSession[])
-  const chatStore = createStore("ebook-reader-chat-sessions", "sessions");
+  const chatStore = getChatSessionStore();
   const sessions = await entries(chatStore);
   for (const entry of sessions) {
     const tuple = safeEntry(entry);
@@ -111,8 +111,9 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     if (!Array.isArray(sessionList)) continue;
     for (const session of sessionList) {
       if (!session || typeof session !== "object") continue;
-      // Record session metadata (without messages)
-      const { messages, ...metadata } = session;
+      // Record session metadata only. Chat messages are server-authoritative
+      // and persisted by /api/chat — they must not be pushed from clients.
+      const { messages: _messages, ...metadata } = session;
       await recordChange({
         entity: "chat_session",
         entityId: session.id,
@@ -120,20 +121,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
         data: metadata,
         timestamp: session.updatedAt ?? Date.now(),
       });
-      // Record each message individually
-      if (Array.isArray(messages)) {
-        for (const msg of messages) {
-          if (msg?.id) {
-            await recordChange({
-              entity: "chat_message",
-              entityId: msg.id,
-              operation: "put",
-              data: { ...msg, sessionId: session.id },
-              timestamp: msg.createdAt ?? Date.now(),
-            });
-          }
-        }
-      }
     }
   }
 
@@ -155,6 +142,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   }
 
   // Mark initial sync as done
-  await set(INITIAL_SYNC_KEY, true, getFlagStore());
+  await set(INITIAL_SYNC_KEY, true, getSyncFlagsStore());
   console.log("[sync] Initial sync push complete — changes queued for push");
 }

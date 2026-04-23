@@ -1,4 +1,5 @@
 import { sql } from "pg-sql";
+import { clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface ChatSessionRow {
@@ -53,6 +54,7 @@ export async function upsertSession(
   },
 ): Promise<ChatSessionRow | null> {
   const pool = getPool();
+  const updatedAtIso = clampUpdatedAt(session.updatedAt);
   const result = await pool.query<ChatSessionRow>(sql`
     INSERT INTO readmax.chat_session (id, user_id, book_id, title, created_at, updated_at, deleted_at)
     VALUES (
@@ -61,7 +63,7 @@ export async function upsertSession(
       ${session.bookId ?? null},
       ${session.title ?? null},
       ${session.createdAt.toISOString()},
-      ${session.updatedAt.toISOString()},
+      ${updatedAtIso},
       ${session.deletedAt?.toISOString() ?? null}
     )
     ON CONFLICT (id) DO UPDATE

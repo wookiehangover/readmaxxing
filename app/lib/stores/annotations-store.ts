@@ -1,9 +1,10 @@
-import { createStore, get, set, entries } from "idb-keyval";
+import { get, set, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer, Schema } from "effect";
 import type { JSONContent } from "@tiptap/react";
 import { HighlightError, NotebookError, DecodeError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
+import { getHighlightStore, getNotebookStore } from "~/lib/sync/stores";
 
 // --- Schemas ---
 
@@ -95,20 +96,7 @@ export class AnnotationService extends Context.Tag("AnnotationService")<
   }
 >() {}
 
-// --- idb-keyval stores (lazy-initialized for SSR safety) ---
-
-let _highlightStore: ReturnType<typeof createStore> | null = null;
-let _notebookStore: ReturnType<typeof createStore> | null = null;
-
-function getHighlightStore() {
-  if (!_highlightStore) _highlightStore = createStore("ebook-reader-highlights", "highlights");
-  return _highlightStore;
-}
-
-function getNotebookStore() {
-  if (!_notebookStore) _notebookStore = createStore("ebook-reader-notebooks", "notebooks");
-  return _notebookStore;
-}
+// --- idb-keyval stores imported from ~/lib/sync/stores ---
 
 // --- Factory + Live implementation ---
 
