@@ -1,4 +1,5 @@
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
+import { isPublicBlobUrl } from "~/lib/blob-url";
 import { cn } from "~/lib/utils";
 
 export function CoverImage({
@@ -14,10 +15,12 @@ export function CoverImage({
   bookId?: string;
   needsDownload?: boolean;
 }) {
-  const remoteUrl =
-    remoteCoverUrl && bookId
+  const directUrl = remoteCoverUrl && isPublicBlobUrl(remoteCoverUrl) ? remoteCoverUrl : null;
+  const proxyUrl =
+    !directUrl && remoteCoverUrl && bookId
       ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`
       : null;
+  const remoteUrl = directUrl ?? proxyUrl;
   const fallbackBlobUrl = useBlobObjectUrl(remoteUrl ? null : coverImage, bookId ?? null);
   const url = remoteUrl ?? fallbackBlobUrl;
 

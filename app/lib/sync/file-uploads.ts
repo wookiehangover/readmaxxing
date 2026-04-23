@@ -1,5 +1,6 @@
 import { upload } from "@vercel/blob/client";
 import { get, set, entries } from "idb-keyval";
+import { isPublicBlobUrl } from "~/lib/blob-url";
 import { recordChange } from "./change-log";
 import { getBookStore, getBookDataStore } from "./stores";
 import { syncDebugLog } from "./sync-debug";
@@ -42,7 +43,7 @@ export async function uploadFile(
   const result = await runUploadWithRetry(
     () =>
       upload(pathname, blob, {
-        access: "private",
+        access: type === "cover" ? "public" : "private",
         handleUploadUrl: "/api/sync/files/upload",
         clientPayload: JSON.stringify({ bookId, type }),
         contentType,
@@ -157,9 +158,16 @@ export async function uploadPendingFiles(
       }
     }
 
-    // Upload cover image if missing remoteCoverUrl
-    if (!meta.remoteCoverUrl && meta.coverImage instanceof Blob) {
-      const url = await uploadFileWithBackoff(ctx, bookId, meta.coverImage, "cover");
+    // Upload cover image if missing remoteCoverUrl, or if the stored URL
+    // is a legacy private blob (pre-public-cover migration). The local
+    // coverImage blob is the source of truth for re-upload; users without
+    // a local blob continue to be served via the proxy fallback.
+    const existingCoverUrl =
+      typeof meta.remoteCoverUrl === "string" ? meta.remoteCoverUrl : undefined;
+    const needsCoverUpload =
+      meta.coverImage instanceof Blob && (!existingCoverUrl || !isPublicBlobUrl(existingCoverUrl));
+    if (needsCoverUpload) {
+      const url = await uploadFileWithBackoff(ctx, bookId, meta.coverImage as Blob, "cover");
       if (url) {
         // Re-read in case the file upload above already updated meta
         const current = (await get<Record<string, unknown>>(bookId, bookStore)) ?? meta;
@@ -254,7 +262,34 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
   }
 
   // --- Cover ---
-  if (meta.remoteCoverUrl) {
+  // Re-upload covers that are missing a remote URL or still live on a
+  // legacy private blob URL, provided we have the local blob to source
+  // from. Otherwise fall back to downloading the existing remote copy
+  // (the proxy still handles legacy private URLs for users without a
+  // local blob).
+  const existingCoverUrl =
+    typeof meta.remoteCoverUrl === "string" ? meta.remoteCoverUrl : undefined;
+  const needsCoverUpload =
+    meta.coverImage instanceof Blob && (!existingCoverUrl || !isPublicBlobUrl(existingCoverUrl));
+  if (needsCoverUpload) {
+    const url = await uploadFileWithBackoff(ctx, bookId, meta.coverImage as Blob, "cover");
+    if (url) {
+      meta = {
+        ...meta,
+        remoteCoverUrl: url,
+        hasLocalFile: true,
+        updatedAt: Date.now(),
+      };
+      metaChanged = true;
+      recordChange({
+        entity: "book",
+        entityId: bookId,
+        operation: "put",
+        data: meta,
+        timestamp: meta.updatedAt as number,
+      }).catch(console.error);
+    }
+  } else if (existingCoverUrl) {
     try {
       const res = await fetch(
         `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover`,
@@ -269,23 +304,6 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
       }
     } catch (err) {
       console.error("[sync] reload cover download failed:", err);
-    }
-  } else if (meta.coverImage instanceof Blob) {
-    const url = await uploadFileWithBackoff(ctx, bookId, meta.coverImage, "cover");
-    if (url) {
-      meta = {
-        ...meta,
-        remoteCoverUrl: url,
-        updatedAt: Date.now(),
-      };
-      metaChanged = true;
-      recordChange({
-        entity: "book",
-        entityId: bookId,
-        operation: "put",
-        data: meta,
-        timestamp: meta.updatedAt as number,
-      }).catch(console.error);
     }
   }
 
