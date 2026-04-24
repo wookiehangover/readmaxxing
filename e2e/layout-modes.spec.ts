@@ -187,7 +187,7 @@ test.describe("Layout modes", () => {
   test("freeform mode hides the cluster bar and re-enables tab drag", async ({ page }) => {
     // Force freeform mode via localStorage and reload. This test covers the
     // render-level guarantees of freeform mode in isolation; the switcher
-    // UI + confirmation dialog flow is covered by the dedicated test below.
+    // UI flow is covered by the dedicated test below.
     await page.evaluate(() => {
       localStorage.setItem(
         "app-settings",
@@ -211,37 +211,22 @@ test.describe("Layout modes", () => {
     await expect(page.locator(".dv-tab").first()).toHaveAttribute("draggable", "true");
   });
 
-  test("switcher UI toggles focused ↔ freeform via dropdown + confirm dialog", async ({ page }) => {
+  test("switcher UI toggles focused ↔ freeform via dropdown", async ({ page }) => {
     await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
 
     // Start in focused mode: cluster bar visible, no freeform badge.
     await expect(clusterPills(page)).toHaveCount(1);
     await expect(page.getByTestId("freeform-badge")).toHaveCount(0);
 
-    // Open the dropdown and pick Freeform → confirm dialog appears.
+    // Open the dropdown and pick Freeform → mode flips immediately.
     await page.getByTestId("layout-mode-trigger").click();
     await page.getByTestId("layout-mode-freeform").click();
-    const confirm = page.getByTestId("freeform-confirm");
-    await expect(confirm).toBeVisible();
-
-    // Cancel first — mode must remain focused.
-    await page.getByTestId("freeform-confirm-cancel").click();
-    await expect(confirm).toBeHidden();
-    await expect(clusterPills(page)).toHaveCount(1);
-    await expect(page.getByTestId("freeform-badge")).toHaveCount(0);
-
-    // Re-open, confirm enable → freeform takes effect.
-    await page.getByTestId("layout-mode-trigger").click();
-    await page.getByTestId("layout-mode-freeform").click();
-    await expect(confirm).toBeVisible();
-    await page.getByTestId("freeform-confirm-enable").click();
-    await expect(confirm).toBeHidden();
 
     // Cluster bar is gone; freeform badge is shown.
     await expect(page.getByRole("tablist", { name: "Open books" })).toHaveCount(0);
     await expect(page.getByTestId("freeform-badge")).toBeVisible();
 
-    // Click the freeform badge to restore focused mode (no confirm needed).
+    // Click the freeform badge to restore focused mode.
     await page.getByTestId("freeform-badge").click();
     await expect(page.getByTestId("freeform-badge")).toHaveCount(0);
     await expect(clusterPills(page)).toHaveCount(1);
