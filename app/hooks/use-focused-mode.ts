@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { DockviewApi, AddPanelPositionOptions } from "dockview";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { truncateTitle } from "~/lib/workspace-utils";
-import type { LayoutMode } from "~/lib/settings";
+import { clampFocusedSplitRatio, type LayoutMode } from "~/lib/settings";
 
 /**
  * Session-scoped state for a single focused-mode cluster. Persisted only in
@@ -30,6 +30,12 @@ export interface UseFocusedModeParams {
   layoutMode: LayoutMode;
   /** Mobile viewport ref, read during cluster swap for tab/split decisions. */
   isMobileRef: React.MutableRefObject<boolean | undefined>;
+  /**
+   * Persisted book-group / total-width fraction to apply after each swap.
+   * Read via ref so the swap callback doesn't re-create when the ratio
+   * changes. Held in `app-ui-settings` (local-only).
+   */
+  focusedSplitRatioRef: React.MutableRefObject<number>;
 }
 
 export interface UseFocusedModeResult {
@@ -70,6 +76,7 @@ export function useFocusedMode({
   apiRef,
   layoutMode,
   isMobileRef,
+  focusedSplitRatioRef,
 }: UseFocusedModeParams): UseFocusedModeResult {
   const ws = useWorkspace();
   const focusedClustersRef = useRef(new Map<string, FocusedCluster>());
@@ -188,11 +195,34 @@ export function useFocusedMode({
         else if (activeTab === "notebook" && hasNotebook) focusId = `notebook-${bookId}`;
         const focusPanel = api.panels.find((p) => p.id === focusId);
         if (focusPanel) focusPanel.focus();
+
+        // Reapply the persisted book-group / right-group ratio. Mobile is a
+        // tabbed layout (no split), so skip there. Reading the latest ratio
+        // from a ref avoids re-creating this callback when settings change,
+        // which would re-run the cluster-change subscriber.
+        if (rightSplit && (hasChat || hasNotebook)) {
+          const bookPanel = api.panels.find((p) => p.id === bookPanelId);
+          const rightAnchor = api.panels.find(
+            (p) => p.id === (hasChat ? `chat-${bookId}` : `notebook-${bookId}`),
+          );
+          const bookGroup = bookPanel?.group;
+          const rightGroup = rightAnchor?.group;
+          if (bookGroup && rightGroup && bookGroup !== rightGroup) {
+            const total = bookGroup.api.width + rightGroup.api.width;
+            if (total > 0) {
+              const ratio = clampFocusedSplitRatio(focusedSplitRatioRef.current);
+              const targetRight = Math.round(total * (1 - ratio));
+              if (targetRight > 0 && Math.abs(rightGroup.api.width - targetRight) > 1) {
+                rightGroup.api.setSize({ width: targetRight });
+              }
+            }
+          }
+        }
       } finally {
         swapInProgressRef.current = false;
       }
     },
-    [apiRef, isMobileRef],
+    [apiRef, isMobileRef, focusedSplitRatioRef],
   );
 
   // Subscribe to cluster-change notifications and run the swap whenever the

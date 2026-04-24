@@ -40,6 +40,21 @@ export const SyncedSettingsSchema = Schema.Struct({
   updatedAt: Schema.optional(Schema.Number),
 });
 
+/** Bounds for `focusedSplitRatio` so a degenerate value can't strand a panel. */
+export const FOCUSED_SPLIT_RATIO_MIN = 0.2;
+export const FOCUSED_SPLIT_RATIO_MAX = 0.8;
+export const FOCUSED_SPLIT_RATIO_DEFAULT = 0.5;
+
+/**
+ * Clamp `focusedSplitRatio` to the supported bounds. Falls back to the default
+ * for non-finite inputs so a corrupt localStorage entry can't permanently
+ * collapse a panel.
+ */
+export function clampFocusedSplitRatio(v: number): number {
+  if (!Number.isFinite(v)) return FOCUSED_SPLIT_RATIO_DEFAULT;
+  return Math.min(FOCUSED_SPLIT_RATIO_MAX, Math.max(FOCUSED_SPLIT_RATIO_MIN, v));
+}
+
 /** Settings that stay local to the browser/device and never sync. */
 export const LocalUISettingsSchema = Schema.Struct({
   readerLayout: Schema.optionalWith(Schema.Literal("single", "spread", "scroll"), {
@@ -58,6 +73,15 @@ export const LocalUISettingsSchema = Schema.Struct({
   }),
   layoutMode: Schema.optionalWith(Schema.Literal("focused", "freeform"), {
     default: () => "focused" as const,
+  }),
+  /**
+   * Fraction of the focused-mode workspace allocated to the book-reader group
+   * (the right-side chat/notebook group gets `1 - focusedSplitRatio`). Single
+   * global value across all clusters. Bounded on read and on write via
+   * `clampFocusedSplitRatio`.
+   */
+  focusedSplitRatio: Schema.optionalWith(Schema.Number, {
+    default: () => FOCUSED_SPLIT_RATIO_DEFAULT,
   }),
 });
 
@@ -86,6 +110,7 @@ export const LOCAL_UI_SETTINGS_KEYS = [
   "libraryView",
   "workspaceSortBy",
   "layoutMode",
+  "focusedSplitRatio",
 ] as const satisfies readonly (keyof LocalUISettings)[];
 
 const decodeSynced = Schema.decodeUnknownSync(SyncedSettingsSchema);
@@ -106,6 +131,7 @@ const defaultSettings: Settings = {
   libraryView: "grid",
   colorTheme: "default",
   layoutMode: "focused",
+  focusedSplitRatio: FOCUSED_SPLIT_RATIO_DEFAULT,
 };
 
 function readRaw(key: string): Record<string, unknown> | null {
@@ -158,11 +184,15 @@ function readLocalUI(): LocalUISettings {
   const raw = readRaw(LOCAL_UI_STORAGE_KEY) ?? {};
   // Migrate legacy "fit" value to "fit-height"
   if (raw.pdfLayout === "fit") raw.pdfLayout = "fit-height";
+  let decoded: LocalUISettings;
   try {
-    return decodeLocalUI(raw);
+    decoded = decodeLocalUI(raw);
   } catch {
-    return decodeLocalUI({});
+    decoded = decodeLocalUI({});
   }
+  // Clamp on read so a corrupt or out-of-range stored value can't strand a
+  // panel. Mirrors the clamp applied in `saveSettings`.
+  return { ...decoded, focusedSplitRatio: clampFocusedSplitRatio(decoded.focusedSplitRatio) };
 }
 
 export function getSettings(): Settings {
@@ -203,7 +233,16 @@ export function saveSettings(settings: Settings): void {
   const currentLocal = readLocalUI();
 
   const nextSynced = pickKeys(settings as SyncedSettings, SYNCED_SETTINGS_KEYS);
-  const nextLocal = pickKeys(settings as LocalUISettings, LOCAL_UI_SETTINGS_KEYS);
+  const nextLocalRaw = pickKeys(settings as LocalUISettings, LOCAL_UI_SETTINGS_KEYS);
+  // Clamp on write so callers that persist a raw computed ratio can't push an
+  // out-of-range value into localStorage. Mirrors the clamp on read.
+  const nextLocal: Partial<LocalUISettings> =
+    "focusedSplitRatio" in nextLocalRaw && typeof nextLocalRaw.focusedSplitRatio === "number"
+      ? {
+          ...nextLocalRaw,
+          focusedSplitRatio: clampFocusedSplitRatio(nextLocalRaw.focusedSplitRatio),
+        }
+      : nextLocalRaw;
 
   const mergedSynced = { ...currentSynced, ...nextSynced } as SyncedSettings;
   const mergedLocal = { ...currentLocal, ...nextLocal } as LocalUISettings;

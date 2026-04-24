@@ -11,6 +11,10 @@ import {
   resolveTheme,
   SYNCED_SETTINGS_KEYS,
   LOCAL_UI_SETTINGS_KEYS,
+  FOCUSED_SPLIT_RATIO_DEFAULT,
+  FOCUSED_SPLIT_RATIO_MIN,
+  FOCUSED_SPLIT_RATIO_MAX,
+  clampFocusedSplitRatio,
 } from "../settings";
 import type { Settings } from "../settings";
 
@@ -29,6 +33,7 @@ const defaultSettings: Settings = {
   pdfLayout: "fit-height",
   colorTheme: "default",
   layoutMode: "focused",
+  focusedSplitRatio: FOCUSED_SPLIT_RATIO_DEFAULT,
 };
 
 beforeEach(() => {
@@ -255,5 +260,51 @@ describe("resolveTheme", () => {
     }));
     expect(resolveTheme("system")).toBe("light");
     vi.unstubAllGlobals();
+  });
+});
+
+describe("focusedSplitRatio", () => {
+  it("is included in the local bucket key list", () => {
+    expect(LOCAL_UI_SETTINGS_KEYS).toContain("focusedSplitRatio");
+    expect(SYNCED_SETTINGS_KEYS as readonly string[]).not.toContain("focusedSplitRatio");
+  });
+
+  it("defaults to FOCUSED_SPLIT_RATIO_DEFAULT when nothing is stored", () => {
+    expect(getSettings().focusedSplitRatio).toBe(FOCUSED_SPLIT_RATIO_DEFAULT);
+  });
+
+  it("clampFocusedSplitRatio enforces bounds and falls back on non-finite values", () => {
+    expect(clampFocusedSplitRatio(0)).toBe(FOCUSED_SPLIT_RATIO_MIN);
+    expect(clampFocusedSplitRatio(0.1)).toBe(FOCUSED_SPLIT_RATIO_MIN);
+    expect(clampFocusedSplitRatio(0.5)).toBe(0.5);
+    expect(clampFocusedSplitRatio(0.99)).toBe(FOCUSED_SPLIT_RATIO_MAX);
+    expect(clampFocusedSplitRatio(NaN)).toBe(FOCUSED_SPLIT_RATIO_DEFAULT);
+    expect(clampFocusedSplitRatio(Infinity)).toBe(FOCUSED_SPLIT_RATIO_DEFAULT);
+  });
+
+  it("clamps an out-of-range stored value on read", () => {
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ focusedSplitRatio: 0.05 }));
+    expect(getSettings().focusedSplitRatio).toBe(FOCUSED_SPLIT_RATIO_MIN);
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ focusedSplitRatio: 0.95 }));
+    expect(getSettings().focusedSplitRatio).toBe(FOCUSED_SPLIT_RATIO_MAX);
+  });
+
+  it("persists to the local bucket without recording a sync change", () => {
+    saveSettings({ ...defaultSettings, focusedSplitRatio: 0.65 });
+    const local = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
+    expect(local.focusedSplitRatio).toBe(0.65);
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(recordChange).not.toHaveBeenCalled();
+  });
+
+  it("clamps an out-of-range value on write", () => {
+    saveSettings({ ...defaultSettings, focusedSplitRatio: 0.99 });
+    const local = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
+    expect(local.focusedSplitRatio).toBe(FOCUSED_SPLIT_RATIO_MAX);
+  });
+
+  it("round-trips a valid value through saveSettings → getSettings", () => {
+    saveSettings({ ...defaultSettings, focusedSplitRatio: 0.6 });
+    expect(getSettings().focusedSplitRatio).toBe(0.6);
   });
 });
