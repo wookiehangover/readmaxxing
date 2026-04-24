@@ -220,7 +220,10 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
           else if (panel.id.startsWith("notebook-")) entry.notebookPanelId = panel.id;
           accum.set(bookId, entry);
         }
-        const next = new Map<string, { bookPanelId: string; chatPanelId?: string; notebookPanelId?: string }>();
+        const next = new Map<
+          string,
+          { bookPanelId: string; chatPanelId?: string; notebookPanelId?: string }
+        >();
         for (const [bookId, entry] of accum) {
           if (!entry.bookPanelId) continue;
           next.set(bookId, {
@@ -235,7 +238,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         if (activeId && !next.has(activeId)) {
           ws.activeClusterBookIdRef.current = null;
         }
-        ws.clustersChangeListener.current?.();
+        ws.notifyClusterChanges();
       };
       rebuildClusters();
 
@@ -249,7 +252,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         if (!ws.clustersRef.current.has(bookId)) return;
         if (ws.activeClusterBookIdRef.current === bookId) return;
         ws.activeClusterBookIdRef.current = bookId;
-        ws.clustersChangeListener.current?.();
+        ws.notifyClusterChanges();
       };
 
       // Store disposables for cleanup on unmount
@@ -443,10 +446,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   }, []);
 
   const openBook = useCallback(
-    // `forceNew` is accepted for backward compatibility with the sidebar UI
-    // but is intentionally a no-op: duplicate book panels are disallowed in
-    // both layout modes. The UI entry point is removed in Wave 2.
-    (book: BookMeta, _forceNew = false) => {
+    (book: BookMeta) => {
       const api = apiRef.current;
       if (!api) return;
 
@@ -666,8 +666,8 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     openBooks,
     otherBooks,
     onUpdateSettings: updateSettings,
-    onOpenBook: (book: BookMeta, forceNew?: boolean) => {
-      openBook(book, forceNew);
+    onOpenBook: (book: BookMeta) => {
+      openBook(book);
       setMobileOpen(false);
     },
     onOpenNotebook: (book: BookMeta) => {

@@ -23,7 +23,7 @@ export function ChatMessage({
   isStreaming?: boolean;
 }) {
   const isUser = message.role === "user";
-  const { waitForNavForBook, findTocForBook, applyTempHighlightForBook } = useWorkspace();
+  const { navigateInCluster, findTocForBook, applyTempHighlightForBook } = useWorkspace();
 
   const textParts =
     message.parts?.filter((p): p is { type: "text"; text: string } => p.type === "text") ?? [];
@@ -79,12 +79,6 @@ export function ChatMessage({
             return;
           }
 
-          const navigate = await waitForNavForBook(bookId);
-          if (!navigate) {
-            console.warn("Ref navigation: no navigate callback for book", bookId);
-            return;
-          }
-
           try {
             if (bookFormat === "pdf") {
               // PDF path: search for text and navigate to page
@@ -97,7 +91,7 @@ export function ChatMessage({
               try {
                 const results = await searchPdf(doc, queryStr);
                 if (results.length > 0) {
-                  navigate(`page:${results[0].page}`);
+                  await navigateInCluster(bookId, `page:${results[0].page}`);
                   return;
                 }
               } finally {
@@ -108,7 +102,7 @@ export function ChatMessage({
               if (chapterStr) {
                 const pageNum = parseInt(chapterStr, 10);
                 if (!isNaN(pageNum)) {
-                  navigate(`page:${pageNum + 1}`);
+                  await navigateInCluster(bookId, `page:${pageNum + 1}`);
                   return;
                 }
               }
@@ -123,7 +117,7 @@ export function ChatMessage({
 
                 if (results.length > 0) {
                   const cfi = results[0].cfi;
-                  navigate(cfi);
+                  await navigateInCluster(bookId, cfi);
                   applyTempHighlightForBook(bookId, cfi);
                   return;
                 }
@@ -138,7 +132,7 @@ export function ChatMessage({
                   const toc = findTocForBook(bookId);
                   if (toc && toc[chapterIndex]) {
                     console.debug("Ref navigation: falling back to chapter", chapterIndex);
-                    navigate(toc[chapterIndex].href);
+                    await navigateInCluster(bookId, toc[chapterIndex].href);
                     return;
                   }
                 }
@@ -167,7 +161,7 @@ export function ChatMessage({
         );
       },
     }),
-    [bookId, bookFormat, bookDataRef, waitForNavForBook, findTocForBook, applyTempHighlightForBook],
+    [bookId, bookFormat, bookDataRef, navigateInCluster, findTocForBook, applyTempHighlightForBook],
   );
 
   return (

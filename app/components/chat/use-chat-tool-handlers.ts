@@ -27,7 +27,7 @@ export function useChatToolHandlers({
   streamedToolCallIdRef,
 }: UseChatToolHandlersOptions) {
   const {
-    waitForNavForBook,
+    navigateInCluster,
     applyTempHighlightForBook,
     notebookCallbackMap,
     notebookEditorCallbackMap,
@@ -251,8 +251,7 @@ export function useChatToolHandlers({
                       yield* svc.saveHighlight(highlight);
                     }),
                   );
-                  const navigate = await waitForNavForBook(bookId);
-                  if (navigate) navigate(cfiRange);
+                  await navigateInCluster(bookId, cfiRange);
 
                   // Append highlight to notebook (same as epub path)
                   const attrs = {
@@ -321,8 +320,7 @@ export function useChatToolHandlers({
                 );
 
                 if (cfiRange !== "") {
-                  const navigate = await waitForNavForBook(bookId);
-                  if (navigate) navigate(cfiRange);
+                  await navigateInCluster(bookId, cfiRange);
                   applyTempHighlightForBook(bookId, cfiRange);
                 }
 
@@ -353,7 +351,7 @@ export function useChatToolHandlers({
       bookId,
       bookFormat,
       bookDataRef,
-      waitForNavForBook,
+      navigateInCluster,
       applyTempHighlightForBook,
       notebookCallbackMap,
       notebookEditorCallbackMap,

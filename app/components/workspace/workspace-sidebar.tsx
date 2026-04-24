@@ -72,7 +72,7 @@ export interface WorkspaceSidebarProps {
     sidebarCollapsed?: boolean;
     workspaceSortBy?: WorkspaceSortBy;
   }) => void;
-  onOpenBook: (book: BookMeta, forceNew?: boolean) => void;
+  onOpenBook: (book: BookMeta) => void;
   onOpenNotebook: (book: BookMeta) => void;
   onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
@@ -209,7 +209,7 @@ export function WorkspaceSidebar({
                       render={
                         <button
                           type="button"
-                          onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
+                          onClick={() => onOpenBook(book)}
                           className={cn(
                             "flex w-full items-center rounded-md text-left hover:bg-accent bg-accent/50",
                             {
@@ -233,7 +233,7 @@ export function WorkspaceSidebar({
                     <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
                       <button
                         type="button"
-                        onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
+                        onClick={() => onOpenBook(book)}
                         className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                         title="Open book"
                       >
@@ -262,7 +262,7 @@ export function WorkspaceSidebar({
                         render={
                           <button
                             type="button"
-                            onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
+                            onClick={() => onOpenBook(book)}
                             className={cn(
                               "flex w-full items-center rounded-md text-left hover:bg-accent",
                               { "gap-3 px-3 py-2": !collapsed },
@@ -282,7 +282,7 @@ export function WorkspaceSidebar({
                     <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
                       <button
                         type="button"
-                        onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
+                        onClick={() => onOpenBook(book)}
                         className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                         title="Open book"
                       >

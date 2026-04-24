@@ -3,6 +3,7 @@ import type { DockviewApi } from "dockview";
 import type { TocEntry } from "~/lib/context/reader-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { JSONContent } from "@tiptap/react";
+import { getSettings } from "~/lib/settings";
 
 export interface NotebookEditorCallbacks {
   appendContent: (nodes: JSONContent[]) => void;
@@ -90,14 +91,33 @@ interface WorkspaceContextValue {
   clustersRef: React.MutableRefObject<Map<string, BookCluster>>;
   /** Book ID of the currently-active cluster, or null if none */
   activeClusterBookIdRef: React.MutableRefObject<string | null>;
-  /** Listener notified when clustersRef or activeClusterBookIdRef change */
-  clustersChangeListener: React.MutableRefObject<(() => void) | null>;
+  /**
+   * Notify all subscribed listeners that clustersRef or activeClusterBookIdRef
+   * changed. Called by the focused-mode layout owner (workspace.tsx) whenever
+   * it rebuilds clusters from dockview or changes the active cluster.
+   */
+  notifyClusterChanges: () => void;
+  /** Subscribe to cluster changes. Returns an unsubscribe function. */
+  subscribeClusterChanges: (listener: () => void) => () => void;
   /** Look up the cluster for a given bookId */
   getClusterForBook: (bookId: string) => BookCluster | undefined;
   /** Look up the cluster that owns a given panelId (returns bookId + cluster) */
   getClusterForPanel: (panelId: string) => { bookId: string; cluster: BookCluster } | undefined;
   /** Set (or clear) the currently-active cluster and notify listeners */
   setActiveCluster: (bookId: string | null) => void;
+  /**
+   * Route a cross-panel navigation through the cluster that owns `bookId`.
+   *
+   * - In focused mode: if `bookId` is not the active cluster, swap to it first
+   *   so the book-reader panel for this book becomes the mounted/visible one.
+   * - In freeform mode: focus the book-reader panel bound to the cluster so
+   *   the navigate call lands on the reader tied to the originating chat/notes,
+   *   not whichever reader happens to match by bookId scan first.
+   *
+   * After the panel is (re)activated, the book's registered navigate callback
+   * is invoked with `target` (a CFI string for epub, `page:N` for PDF).
+   */
+  navigateInCluster: (bookId: string, target: string) => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -139,7 +159,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const notebookContentChangeMap = useRef(new Map<string, (markdown: string) => void>());
   const clustersRef = useRef(new Map<string, BookCluster>());
   const activeClusterBookIdRef = useRef<string | null>(null);
-  const clustersChangeListener = useRef<(() => void) | null>(null);
+  const clusterListenersRef = useRef(new Set<() => void>());
+
+  const notifyClusterChanges = useCallback(() => {
+    for (const fn of clusterListenersRef.current) fn();
+  }, []);
+
+  const subscribeClusterChanges = useCallback((listener: () => void) => {
+    clusterListenersRef.current.add(listener);
+    return () => {
+      clusterListenersRef.current.delete(listener);
+    };
+  }, []);
 
   const getClusterForBook = useCallback((bookId: string): BookCluster | undefined => {
     return clustersRef.current.get(bookId);
@@ -161,11 +192,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const setActiveCluster = useCallback((bookId: string | null): void => {
-    if (activeClusterBookIdRef.current === bookId) return;
-    activeClusterBookIdRef.current = bookId;
-    clustersChangeListener.current?.();
-  }, []);
+  const setActiveCluster = useCallback(
+    (bookId: string | null): void => {
+      if (activeClusterBookIdRef.current === bookId) return;
+      activeClusterBookIdRef.current = bookId;
+      notifyClusterChanges();
+    },
+    [notifyClusterChanges],
+  );
 
   const findNavForBook = useCallback((bookId: string): ((cfi: string) => void) | undefined => {
     const api = dockviewApi.current;
@@ -232,6 +266,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [findNavForBook],
   );
 
+  const navigateInCluster = useCallback(
+    async (bookId: string, target: string): Promise<void> => {
+      const mode = getSettings().layoutMode;
+      if (mode === "focused") {
+        // Ensure the target book's cluster is the active one before navigating.
+        // The focused-mode layout owner reacts to this ref change by swapping
+        // the visible panels; `waitForNavForBook` then polls until the book
+        // reader has remounted and registered its navigate callback.
+        if (activeClusterBookIdRef.current !== bookId) {
+          setActiveCluster(bookId);
+        }
+      } else {
+        // Freeform: focus the book-reader panel bound to this book's cluster
+        // so the navigate call lands on the reader tied to the originating
+        // chat/notes panel, not whichever reader matches a global scan first.
+        const cluster = clustersRef.current.get(bookId);
+        const api = dockviewApi.current;
+        if (cluster && api) {
+          const panel = api.panels.find((p) => p.id === cluster.bookPanelId);
+          if (panel) panel.focus();
+        }
+      }
+
+      const nav = await waitForNavForBook(bookId);
+      if (nav) nav(target);
+    },
+    [setActiveCluster, waitForNavForBook],
+  );
+
   const findTocForBook = useCallback((bookId: string): TocEntry[] | undefined => {
     const api = dockviewApi.current;
     if (!api) return undefined;
@@ -275,10 +338,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       notebookContentChangeMap,
       clustersRef,
       activeClusterBookIdRef,
-      clustersChangeListener,
+      notifyClusterChanges,
+      subscribeClusterChanges,
       getClusterForBook,
       getClusterForPanel,
       setActiveCluster,
+      navigateInCluster,
     }),
     [
       findNavForBook,
@@ -286,9 +351,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       findTocForBook,
       applyTempHighlightForBook,
       removeHighlightAnnotationForBook,
+      notifyClusterChanges,
+      subscribeClusterChanges,
       getClusterForBook,
       getClusterForPanel,
       setActiveCluster,
+      navigateInCluster,
     ],
   );
 

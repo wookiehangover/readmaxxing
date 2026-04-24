@@ -44,25 +44,14 @@ export function BookReaderPanel({
 export function NotebookPanel({
   params,
 }: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
-  const { waitForNavForBook, notebookCallbackMap, removeHighlightAnnotationForBook, dockviewApi } =
+  const { navigateInCluster, notebookCallbackMap, removeHighlightAnnotationForBook } =
     useWorkspace();
 
   const handleNavigateToCfi = useCallback(
     async (cfi: string) => {
-      // Focus the book reader panel first so it becomes visible
-      const api = dockviewApi.current;
-      if (api) {
-        const bookPanel = api.panels.find(
-          (p) =>
-            p.id.startsWith("book-") &&
-            (p.params as Record<string, unknown>)?.bookId === params.bookId,
-        );
-        if (bookPanel) bookPanel.focus();
-      }
-      const nav = await waitForNavForBook(params.bookId);
-      nav?.(cfi);
+      await navigateInCluster(params.bookId, cfi);
     },
-    [waitForNavForBook, params.bookId, dockviewApi],
+    [navigateInCluster, params.bookId],
   );
 
   const handleRegisterAppendHighlight = useCallback(
