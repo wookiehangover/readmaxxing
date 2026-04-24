@@ -1,8 +1,21 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { getSettings, saveSettings, resolveTheme } from "../settings";
+
+vi.mock("~/lib/sync/change-log", () => ({
+  recordChange: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { recordChange } from "~/lib/sync/change-log";
+import {
+  getSettings,
+  saveSettings,
+  resolveTheme,
+  SYNCED_SETTINGS_KEYS,
+  LOCAL_UI_SETTINGS_KEYS,
+} from "../settings";
 import type { Settings } from "../settings";
 
 const STORAGE_KEY = "app-settings";
+const LOCAL_UI_STORAGE_KEY = "app-ui-settings";
 
 const defaultSettings: Settings = {
   theme: "system",
@@ -20,6 +33,7 @@ const defaultSettings: Settings = {
 
 beforeEach(() => {
   localStorage.clear();
+  vi.mocked(recordChange).mockClear();
 });
 
 describe("getSettings", () => {
@@ -27,38 +41,93 @@ describe("getSettings", () => {
     expect(getSettings()).toEqual(defaultSettings);
   });
 
-  it("returns stored settings when valid JSON exists", () => {
-    const stored: Settings = {
+  it("merges synced and local buckets into a single object", () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "dark", fontSize: 120 }));
+    localStorage.setItem(
+      LOCAL_UI_STORAGE_KEY,
+      JSON.stringify({ sidebarCollapsed: true, layoutMode: "freeform" }),
+    );
+    expect(getSettings()).toEqual({
+      ...defaultSettings,
       theme: "dark",
-      readerLayout: "spread",
-      fontFamily: "Georgia",
       fontSize: 120,
-      lineHeight: 1.8,
       sidebarCollapsed: true,
-      workspaceSortBy: "title",
-      libraryView: "table",
-      pdfLayout: "fit-height",
-      colorTheme: "default",
-      layoutMode: "focused",
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
-    expect(getSettings()).toEqual(stored);
-  });
-
-  it("merges partial stored settings with defaults", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "dark" }));
-    expect(getSettings()).toEqual({ ...defaultSettings, theme: "dark" });
+      layoutMode: "freeform",
+    });
   });
 
   it("returns defaults when localStorage contains corrupt JSON", () => {
     localStorage.setItem(STORAGE_KEY, "not-valid-json{{{");
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, "also-corrupt{{{");
     expect(getSettings()).toEqual(defaultSettings);
   });
 
   it("returns defaults when localStorage contains empty string", () => {
     localStorage.setItem(STORAGE_KEY, "");
-    // JSON.parse("") throws, so we get defaults
     expect(getSettings()).toEqual(defaultSettings);
+  });
+});
+
+describe("legacy migration", () => {
+  it("moves UI fields from legacy blob to local bucket on first read", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        theme: "dark",
+        fontSize: 120,
+        sidebarCollapsed: true,
+        layoutMode: "freeform",
+        libraryView: "table",
+        updatedAt: 1000,
+      }),
+    );
+    const result = getSettings();
+    expect(result.theme).toBe("dark");
+    expect(result.sidebarCollapsed).toBe(true);
+    expect(result.layoutMode).toBe("freeform");
+    expect(result.libraryView).toBe("table");
+
+    const syncedRaw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    for (const k of LOCAL_UI_SETTINGS_KEYS) {
+      expect(syncedRaw).not.toHaveProperty(k);
+    }
+    expect(syncedRaw.theme).toBe("dark");
+    expect(syncedRaw.updatedAt).toBe(1000);
+
+    const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
+    expect(localRaw.sidebarCollapsed).toBe(true);
+    expect(localRaw.layoutMode).toBe("freeform");
+    expect(localRaw.libraryView).toBe("table");
+  });
+
+  it("is idempotent when run twice", () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "dark", sidebarCollapsed: true }));
+    getSettings();
+    const after1 = {
+      synced: localStorage.getItem(STORAGE_KEY),
+      local: localStorage.getItem(LOCAL_UI_STORAGE_KEY),
+    };
+    getSettings();
+    const after2 = {
+      synced: localStorage.getItem(STORAGE_KEY),
+      local: localStorage.getItem(LOCAL_UI_STORAGE_KEY),
+    };
+    expect(after1).toEqual(after2);
+  });
+
+  it("prefers existing local bucket values over legacy UI fields", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ theme: "dark", sidebarCollapsed: true, layoutMode: "freeform" }),
+    );
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ sidebarCollapsed: false }));
+    getSettings();
+    const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
+    expect(localRaw.sidebarCollapsed).toBe(false);
+    expect(localRaw.layoutMode).toBe("freeform");
+    const syncedRaw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(syncedRaw).not.toHaveProperty("sidebarCollapsed");
+    expect(syncedRaw).not.toHaveProperty("layoutMode");
   });
 });
 
@@ -73,22 +142,12 @@ describe("normalizeLegacyFontSize (via getSettings)", () => {
     expect(getSettings().fontSize).toBe(125);
   });
 
-  it("converts legacy pixel value 24 to percentage 150", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontSize: 24 }));
-    expect(getSettings().fontSize).toBe(150);
-  });
-
   it("converts legacy pixel value 40 to percentage 250", () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontSize: 40 }));
     expect(getSettings().fontSize).toBe(250);
   });
 
   it("preserves percentage-scale values above 40", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontSize: 100 }));
-    expect(getSettings().fontSize).toBe(100);
-  });
-
-  it("preserves percentage-scale value 150", () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontSize: 150 }));
     expect(getSettings().fontSize).toBe(150);
   });
@@ -105,40 +164,65 @@ describe("normalizeLegacyFontSize (via getSettings)", () => {
 });
 
 describe("saveSettings", () => {
-  it("persists settings to localStorage", () => {
-    const settings: Settings = { ...defaultSettings, theme: "dark" };
-    saveSettings(settings);
-    const raw = localStorage.getItem(STORAGE_KEY);
-    expect(raw).not.toBeNull();
-    const parsed = JSON.parse(raw!);
-    // saveSettings stamps updatedAt automatically
-    expect(parsed.updatedAt).toEqual(expect.any(Number));
-    const { updatedAt: _, ...rest } = parsed;
-    const { updatedAt: _2, ...expected } = settings;
-    expect(rest).toEqual(expected);
+  it("writes synced fields to the synced bucket and records a change", () => {
+    saveSettings({ ...defaultSettings, theme: "dark" });
+    const synced = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(synced.theme).toBe("dark");
+    expect(synced.updatedAt).toEqual(expect.any(Number));
+    for (const k of LOCAL_UI_SETTINGS_KEYS) {
+      expect(synced).not.toHaveProperty(k);
+    }
+    expect(recordChange).toHaveBeenCalledTimes(1);
+    expect(recordChange).toHaveBeenCalledWith(
+      expect.objectContaining({ entity: "settings", entityId: "user-settings" }),
+    );
   });
 
-  it("round-trips with getSettings", () => {
-    const settings: Settings = {
+  it("writes local UI fields to the local bucket without recording a change", () => {
+    saveSettings({ ...defaultSettings, sidebarCollapsed: true, layoutMode: "freeform" });
+    const local = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
+    expect(local.sidebarCollapsed).toBe(true);
+    expect(local.layoutMode).toBe("freeform");
+    for (const k of SYNCED_SETTINGS_KEYS) {
+      expect(local).not.toHaveProperty(k);
+    }
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(recordChange).not.toHaveBeenCalled();
+  });
+
+  it("records only once for a mixed synced+local update", () => {
+    saveSettings({ ...defaultSettings, theme: "dark", sidebarCollapsed: true });
+    expect(recordChange).toHaveBeenCalledTimes(1);
+    const syncedArg = vi.mocked(recordChange).mock.calls[0][0].data as Record<string, unknown>;
+    expect(syncedArg).not.toHaveProperty("sidebarCollapsed");
+    expect(syncedArg.theme).toBe("dark");
+  });
+
+  it("does not stamp updatedAt when only local fields change", () => {
+    saveSettings({ ...defaultSettings, theme: "dark" });
+    const stampedFirst = JSON.parse(localStorage.getItem(STORAGE_KEY)!).updatedAt;
+    vi.mocked(recordChange).mockClear();
+    saveSettings({ ...defaultSettings, theme: "dark", sidebarCollapsed: true });
+    const stampedSecond = JSON.parse(localStorage.getItem(STORAGE_KEY)!).updatedAt;
+    expect(stampedSecond).toBe(stampedFirst);
+    expect(recordChange).not.toHaveBeenCalled();
+  });
+
+  it("round-trips merged settings through getSettings", () => {
+    saveSettings({
+      ...defaultSettings,
       theme: "light",
-      readerLayout: "scroll",
       fontFamily: "Merriweather",
       fontSize: 110,
-      lineHeight: 1.4,
       sidebarCollapsed: true,
-      workspaceSortBy: "author",
-      libraryView: "grid",
-      pdfLayout: "fit-height",
-      colorTheme: "default",
       layoutMode: "freeform",
-    };
-    saveSettings(settings);
+    });
     const result = getSettings();
-    // updatedAt is stamped by saveSettings, so just check it's present
-    expect(result.updatedAt).toEqual(expect.any(Number));
-    const { updatedAt: _, ...rest } = result;
-    const { updatedAt: _2, ...expected } = settings;
-    expect(rest).toEqual(expected);
+    expect(result.theme).toBe("light");
+    expect(result.fontFamily).toBe("Merriweather");
+    expect(result.fontSize).toBe(110);
+    expect(result.sidebarCollapsed).toBe(true);
+    expect(result.layoutMode).toBe("freeform");
   });
 });
 

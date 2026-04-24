@@ -14,7 +14,6 @@ export type LayoutMode = "focused" | "freeform";
 /**
  * Font size schema with legacy migration transform.
  * Old values were pixel-based (≤40); new values are percentage-based (>40).
- * The transform converts legacy pixel values to percentages.
  */
 const LegacyFontSize = Schema.transform(Schema.Unknown, Schema.Number, {
   strict: true,
@@ -25,43 +24,75 @@ const LegacyFontSize = Schema.transform(Schema.Unknown, Schema.Number, {
   encode: (val) => val,
 });
 
-export const SettingsSchema = Schema.Struct({
+/** Settings that sync across devices via the "settings" entity (LWW). */
+export const SyncedSettingsSchema = Schema.Struct({
   theme: Schema.optionalWith(Schema.Literal("light", "dark", "system"), {
     default: () => "system" as const,
-  }),
-  readerLayout: Schema.optionalWith(Schema.Literal("single", "spread", "scroll"), {
-    default: () => "single" as const,
   }),
   fontFamily: Schema.optionalWith(Schema.String, { default: () => "Literata" }),
   fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
   lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
-  sidebarCollapsed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
-  pdfLayout: Schema.optionalWith(
-    Schema.Literal("original", "fit-height", "fit-width", "two-page", "continuous"),
-    { default: () => "fit-height" as const },
-  ),
-  workspaceSortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), {
-    default: () => "recent" as const,
-  }),
-  libraryView: Schema.optionalWith(Schema.Literal("grid", "table"), {
-    default: () => "grid" as const,
-  }),
   colorTheme: Schema.optionalWith(
     Schema.Literal("default", "dracula", "nord", "rose-pine", "tokyo-night", "solarized"),
     { default: () => "default" as const },
   ),
-  layoutMode: Schema.optionalWith(Schema.Literal("focused", "freeform"), {
-    default: () => "focused" as const,
-  }),
-  /** Timestamp of last settings change. Used for LWW sync. */
+  /** Timestamp of last synced settings change. Used for LWW sync. */
   updatedAt: Schema.optional(Schema.Number),
 });
 
+/** Settings that stay local to the browser/device and never sync. */
+export const LocalUISettingsSchema = Schema.Struct({
+  readerLayout: Schema.optionalWith(Schema.Literal("single", "spread", "scroll"), {
+    default: () => "single" as const,
+  }),
+  pdfLayout: Schema.optionalWith(
+    Schema.Literal("original", "fit-height", "fit-width", "two-page", "continuous"),
+    { default: () => "fit-height" as const },
+  ),
+  sidebarCollapsed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  libraryView: Schema.optionalWith(Schema.Literal("grid", "table"), {
+    default: () => "grid" as const,
+  }),
+  workspaceSortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), {
+    default: () => "recent" as const,
+  }),
+  layoutMode: Schema.optionalWith(Schema.Literal("focused", "freeform"), {
+    default: () => "focused" as const,
+  }),
+});
+
+/** Backward-compatible merged shape exposed to call sites. */
+export const SettingsSchema = Schema.Struct({
+  ...SyncedSettingsSchema.fields,
+  ...LocalUISettingsSchema.fields,
+});
+
+export type SyncedSettings = typeof SyncedSettingsSchema.Type;
+export type LocalUISettings = typeof LocalUISettingsSchema.Type;
 export type Settings = typeof SettingsSchema.Type;
 
-const decodeSettings = Schema.decodeUnknownSync(SettingsSchema);
+export const SYNCED_SETTINGS_KEYS = [
+  "theme",
+  "fontFamily",
+  "fontSize",
+  "lineHeight",
+  "colorTheme",
+] as const satisfies readonly (keyof SyncedSettings)[];
+
+export const LOCAL_UI_SETTINGS_KEYS = [
+  "readerLayout",
+  "pdfLayout",
+  "sidebarCollapsed",
+  "libraryView",
+  "workspaceSortBy",
+  "layoutMode",
+] as const satisfies readonly (keyof LocalUISettings)[];
+
+const decodeSynced = Schema.decodeUnknownSync(SyncedSettingsSchema);
+const decodeLocalUI = Schema.decodeUnknownSync(LocalUISettingsSchema);
 
 const STORAGE_KEY = "app-settings";
+const LOCAL_UI_STORAGE_KEY = "app-ui-settings";
 
 const defaultSettings: Settings = {
   theme: "system",
@@ -77,17 +108,68 @@ const defaultSettings: Settings = {
   layoutMode: "focused",
 };
 
+function readRaw(key: string): Record<string, unknown> | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Move any UI fields out of the legacy `app-settings` blob into the dedicated
+ * local-only bucket, leaving only synced fields behind. Idempotent: if the
+ * local bucket already has a key, that value wins and the legacy copy is
+ * pruned.
+ */
+function migrateLegacySettings(): void {
+  const legacy = readRaw(STORAGE_KEY);
+  if (!legacy) return;
+  const hasUIFields = LOCAL_UI_SETTINGS_KEYS.some((k) => k in legacy);
+  if (!hasUIFields) return;
+
+  const existingLocal = readRaw(LOCAL_UI_STORAGE_KEY) ?? {};
+  const promoted: Record<string, unknown> = { ...existingLocal };
+  for (const k of LOCAL_UI_SETTINGS_KEYS) {
+    if (k in existingLocal) continue;
+    if (k in legacy) promoted[k] = legacy[k];
+  }
+  localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify(promoted));
+
+  const localKeySet = new Set<string>(LOCAL_UI_SETTINGS_KEYS);
+  const pruned: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(legacy)) {
+    if (!localKeySet.has(k)) pruned[k] = v;
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned));
+}
+
+function readSynced(): SyncedSettings {
+  try {
+    return decodeSynced(readRaw(STORAGE_KEY) ?? {});
+  } catch {
+    return decodeSynced({});
+  }
+}
+
+function readLocalUI(): LocalUISettings {
+  const raw = readRaw(LOCAL_UI_STORAGE_KEY) ?? {};
+  // Migrate legacy "fit" value to "fit-height"
+  if (raw.pdfLayout === "fit") raw.pdfLayout = "fit-height";
+  try {
+    return decodeLocalUI(raw);
+  } catch {
+    return decodeLocalUI({});
+  }
+}
+
 export function getSettings(): Settings {
   if (typeof window === "undefined") return defaultSettings;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultSettings;
-    const parsed = JSON.parse(raw);
-    // Migrate legacy "fit" value to "fit-height"
-    if (parsed.pdfLayout === "fit") {
-      parsed.pdfLayout = "fit-height";
-    }
-    return decodeSettings(parsed);
+    migrateLegacySettings();
+    return { ...readSynced(), ...readLocalUI() };
   } catch {
     return defaultSettings;
   }
@@ -95,20 +177,73 @@ export function getSettings(): Settings {
 
 const SETTINGS_CHANGED_EVENT = "settings-changed";
 
+function pickKeys<T>(obj: T, keys: readonly (keyof T)[]): Partial<T> {
+  const out: Partial<T> = {};
+  for (const k of keys) {
+    if (obj != null && k in (obj as object)) out[k] = obj[k];
+  }
+  return out;
+}
+
+function equalByKeys<T extends Record<string, unknown>>(
+  a: T,
+  b: T,
+  keys: readonly (keyof T)[],
+): boolean {
+  for (const k of keys) {
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
+}
+
 export function saveSettings(settings: Settings): void {
   if (typeof window === "undefined") return;
-  const stamped = { ...settings, updatedAt: Date.now() };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(stamped));
-  queueMicrotask(() => {
-    window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT));
-  });
-  recordChange({
-    entity: "settings",
-    entityId: "user-settings",
-    operation: "put",
-    data: stamped,
-    timestamp: stamped.updatedAt!,
-  }).catch(console.error);
+  migrateLegacySettings();
+  const currentSynced = readSynced();
+  const currentLocal = readLocalUI();
+
+  const nextSynced = pickKeys(settings as SyncedSettings, SYNCED_SETTINGS_KEYS);
+  const nextLocal = pickKeys(settings as LocalUISettings, LOCAL_UI_SETTINGS_KEYS);
+
+  const mergedSynced = { ...currentSynced, ...nextSynced } as SyncedSettings;
+  const mergedLocal = { ...currentLocal, ...nextLocal } as LocalUISettings;
+
+  const syncedChanged = !equalByKeys(
+    currentSynced as Record<string, unknown>,
+    mergedSynced as Record<string, unknown>,
+    SYNCED_SETTINGS_KEYS,
+  );
+  const localChanged = !equalByKeys(
+    currentLocal as Record<string, unknown>,
+    mergedLocal as Record<string, unknown>,
+    LOCAL_UI_SETTINGS_KEYS,
+  );
+
+  let shouldEmit = false;
+
+  if (syncedChanged) {
+    const stamped: SyncedSettings = { ...mergedSynced, updatedAt: Date.now() };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(stamped));
+    recordChange({
+      entity: "settings",
+      entityId: "user-settings",
+      operation: "put",
+      data: stamped,
+      timestamp: stamped.updatedAt!,
+    }).catch(console.error);
+    shouldEmit = true;
+  }
+
+  if (localChanged) {
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify(mergedLocal));
+    shouldEmit = true;
+  }
+
+  if (shouldEmit) {
+    queueMicrotask(() => {
+      window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT));
+    });
+  }
 }
 
 export function useSettings(): [Settings, (update: Partial<Settings>) => void] {
@@ -121,7 +256,7 @@ export function useSettings(): [Settings, (update: Partial<Settings>) => void] {
     const handler = () => setSettings(getSettings());
     window.addEventListener(SETTINGS_CHANGED_EVENT, handler);
     const storageHandler = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setSettings(getSettings());
+      if (e.key === STORAGE_KEY || e.key === LOCAL_UI_STORAGE_KEY) setSettings(getSettings());
     };
     window.addEventListener("storage", storageHandler);
     return () => {
