@@ -14,11 +14,12 @@ import {
 import { BookCover, FILTER_THRESHOLD } from "~/components/book-list";
 import { filterBooks } from "~/lib/workspace-utils";
 import { SyncStatus } from "~/components/sync-status";
+import { LayoutModeSwitcher } from "~/components/workspace/layout-mode-switcher";
 import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
-import type { WorkspaceSortBy } from "~/lib/settings";
+import type { WorkspaceSortBy, LayoutMode } from "~/lib/settings";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
 
@@ -66,13 +67,15 @@ function WorkspaceSidebarBookContent({ book, collapsed }: { book: BookMeta; coll
 export interface WorkspaceSidebarProps {
   collapsed: boolean;
   sortBy: WorkspaceSortBy;
+  layoutMode: LayoutMode;
   openBooks: BookMeta[];
   otherBooks: BookMeta[];
   onUpdateSettings: (patch: {
     sidebarCollapsed?: boolean;
     workspaceSortBy?: WorkspaceSortBy;
+    layoutMode?: LayoutMode;
   }) => void;
-  onOpenBook: (book: BookMeta, forceNew?: boolean) => void;
+  onOpenBook: (book: BookMeta) => void;
   onOpenNotebook: (book: BookMeta) => void;
   onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
@@ -80,6 +83,7 @@ export interface WorkspaceSidebarProps {
 export function WorkspaceSidebar({
   collapsed,
   sortBy,
+  layoutMode,
   openBooks,
   otherBooks,
   onUpdateSettings,
@@ -209,7 +213,7 @@ export function WorkspaceSidebar({
                       render={
                         <button
                           type="button"
-                          onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
+                          onClick={() => onOpenBook(book)}
                           className={cn(
                             "flex w-full items-center rounded-md text-left hover:bg-accent bg-accent/50",
                             {
@@ -233,7 +237,7 @@ export function WorkspaceSidebar({
                     <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
                       <button
                         type="button"
-                        onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
+                        onClick={() => onOpenBook(book)}
                         className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                         title="Open book"
                       >
@@ -262,7 +266,7 @@ export function WorkspaceSidebar({
                         render={
                           <button
                             type="button"
-                            onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
+                            onClick={() => onOpenBook(book)}
                             className={cn(
                               "flex w-full items-center rounded-md text-left hover:bg-accent",
                               { "gap-3 px-3 py-2": !collapsed },
@@ -282,7 +286,7 @@ export function WorkspaceSidebar({
                     <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
                       <button
                         type="button"
-                        onClick={(e) => onOpenBook(book, e.metaKey || e.ctrlKey)}
+                        onClick={() => onOpenBook(book)}
                         className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                         title="Open book"
                       >
@@ -320,6 +324,12 @@ export function WorkspaceSidebar({
           <Settings className="size-4" />
           {!collapsed && <span>Settings</span>}
         </Link>
+
+        <LayoutModeSwitcher
+          layoutMode={layoutMode}
+          collapsed={collapsed}
+          onChange={(mode) => onUpdateSettings({ layoutMode: mode })}
+        />
 
         <div className={cn({ "order-first": collapsed })}>
           <TooltipProvider delay={300}>

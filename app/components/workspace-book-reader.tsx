@@ -28,7 +28,6 @@ import { useIsMobile } from "~/hooks/use-mobile";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { truncateTitle } from "~/lib/workspace-utils";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 
@@ -174,15 +173,15 @@ function WorkspaceBookReaderInner({
   /** Called once the rendition is ready so the outer component can connect the real navigate callback */
   onRenditionReady?: (navigateToCfi: (cfi: string) => void) => void;
 }) {
+  const ws = useWorkspace();
   const {
     tocMap,
     tocChangeListener,
-    dockviewApi,
     notebookCallbackMap,
     chatContextMap,
     tempHighlightMap,
     highlightDeleteMap,
-  } = useWorkspace();
+  } = ws;
   const isMobile = useIsMobile();
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -473,92 +472,18 @@ function WorkspaceBookReaderInner({
       .catch((err) => console.error("Failed to append highlight to notebook:", err));
   }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
 
+  // Delegate to the workspace-level openers so focused-mode cluster rules
+  // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
-    const dockApi = dockviewApi.current;
-    if (!dockApi || !panelApi) return;
-
-    const panelId = `notebook-${book.id}`;
-    const existing = dockApi.panels.find((p) => p.id === panelId);
-    if (existing) {
-      existing.focus();
-      return;
-    }
-
-    const title = book.title ?? "Untitled";
-
-    if (isMobile) {
-      dockApi.addPanel({
-        id: panelId,
-        component: "notebook",
-        title: truncateTitle(`Notes: ${title}`),
-        params: { bookId: book.id, bookTitle: title },
-        renderer: "always",
-      });
-      return;
-    }
-
-    const bookGroup = panelApi.group;
-    const bookRect = bookGroup.element.getBoundingClientRect();
-    const rightGroup = dockApi.groups.find(
-      (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
-    );
-
-    dockApi.addPanel({
-      id: panelId,
-      component: "notebook",
-      title: truncateTitle(`Notes: ${title}`),
-      params: { bookId: book.id, bookTitle: title },
-      renderer: "always",
-      position: rightGroup
-        ? { referenceGroup: rightGroup }
-        : { referencePanel: panelApi.id, direction: "right" as const },
-    });
-  }, [dockviewApi, book.id, book.title, panelApi, isMobile]);
+    ws.openNotebookRef.current?.(book);
+  }, [ws, book]);
 
   // Keep ref in sync so useHighlights click handler always calls latest version
   handleOpenNotebookRef.current = handleOpenNotebook;
 
   const handleOpenChat = useCallback(() => {
-    const dockApi = dockviewApi.current;
-    if (!dockApi || !panelApi) return;
-
-    const panelId = `chat-${book.id}`;
-    const existing = dockApi.panels.find((p) => p.id === panelId);
-    if (existing) {
-      existing.focus();
-      return;
-    }
-
-    const title = book.title ?? "Untitled";
-
-    if (isMobile) {
-      dockApi.addPanel({
-        id: panelId,
-        component: "chat",
-        title: truncateTitle(`Discuss: ${title}`),
-        params: { bookId: book.id, bookTitle: title },
-        renderer: "always",
-      });
-      return;
-    }
-
-    const bookGroup = panelApi.group;
-    const bookRect = bookGroup.element.getBoundingClientRect();
-    const rightGroup = dockApi.groups.find(
-      (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
-    );
-
-    dockApi.addPanel({
-      id: panelId,
-      component: "chat",
-      title: truncateTitle(`Discuss: ${title}`),
-      params: { bookId: book.id, bookTitle: title },
-      renderer: "always",
-      position: rightGroup
-        ? { referenceGroup: rightGroup }
-        : { referencePanel: panelApi.id, direction: "right" as const },
-    });
-  }, [dockviewApi, book.id, book.title, panelApi, isMobile]);
+    ws.openChatRef.current?.(book);
+  }, [ws, book]);
 
   const isScrollMode = localReaderLayout === "scroll";
 

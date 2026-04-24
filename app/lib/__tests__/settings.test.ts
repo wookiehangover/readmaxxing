@@ -15,6 +15,7 @@ const defaultSettings: Settings = {
   libraryView: "grid",
   pdfLayout: "fit-height",
   colorTheme: "default",
+  layoutMode: "focused",
 };
 
 beforeEach(() => {
@@ -38,6 +39,7 @@ describe("getSettings", () => {
       libraryView: "table",
       pdfLayout: "fit-height",
       colorTheme: "default",
+      layoutMode: "focused",
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     expect(getSettings()).toEqual(stored);
@@ -128,6 +130,7 @@ describe("saveSettings", () => {
       libraryView: "grid",
       pdfLayout: "fit-height",
       colorTheme: "default",
+      layoutMode: "freeform",
     };
     saveSettings(settings);
     const result = getSettings();

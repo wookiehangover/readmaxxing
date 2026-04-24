@@ -4,7 +4,6 @@ import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
-import { useIsMobile } from "~/hooks/use-mobile";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import type { DockviewPanelApi } from "dockview";
 
@@ -29,15 +28,14 @@ export function usePdfWorkspacePanels({
   removeHighlight,
   handleOpenNotebookRef,
 }: UsePdfWorkspacePanelsOptions) {
+  const ws = useWorkspace();
   const {
     navigationMap,
-    dockviewApi,
     notebookCallbackMap,
     chatContextMap,
     tempHighlightMap,
     highlightDeleteMap,
-  } = useWorkspace();
-  const isMobile = useIsMobile();
+  } = ws;
 
   // Register navigation callback for PDF (accepts "page:N" format or page number string)
   const goToPageRef = useRef<(page: number) => void>(() => {});
@@ -110,92 +108,18 @@ export function usePdfWorkspacePanels({
       .catch((err) => console.error("Failed to append highlight to notebook:", err));
   }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
 
+  // Delegate to the workspace-level openers so focused-mode cluster rules
+  // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
-    const dockApi = dockviewApi.current;
-    if (!dockApi || !panelApi) return;
-
-    const panelId = `notebook-${book.id}`;
-    const existing = dockApi.panels.find((p) => p.id === panelId);
-    if (existing) {
-      existing.focus();
-      return;
-    }
-
-    const title = book.title ?? "Untitled";
-
-    if (isMobile) {
-      dockApi.addPanel({
-        id: panelId,
-        component: "notebook",
-        title: `Notes: ${title}`.slice(0, 30),
-        params: { bookId: book.id, bookTitle: title },
-        renderer: "always",
-      });
-      return;
-    }
-
-    const bookGroup = panelApi.group;
-    const bookRect = bookGroup.element.getBoundingClientRect();
-    const rightGroup = dockApi.groups.find(
-      (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
-    );
-
-    dockApi.addPanel({
-      id: panelId,
-      component: "notebook",
-      title: `Notes: ${title}`.slice(0, 30),
-      params: { bookId: book.id, bookTitle: title },
-      renderer: "always",
-      position: rightGroup
-        ? { referenceGroup: rightGroup }
-        : { referencePanel: panelApi.id, direction: "right" as const },
-    });
-  }, [dockviewApi, book.id, book.title, panelApi, isMobile]);
+    ws.openNotebookRef.current?.(book);
+  }, [ws, book]);
 
   // Keep ref in sync so usePdfHighlights click handler always calls latest version
   handleOpenNotebookRef.current = handleOpenNotebook;
 
   const handleOpenChat = useCallback(() => {
-    const dockApi = dockviewApi.current;
-    if (!dockApi || !panelApi) return;
-
-    const chatPanelId = `chat-${book.id}`;
-    const existing = dockApi.panels.find((p) => p.id === chatPanelId);
-    if (existing) {
-      existing.focus();
-      return;
-    }
-
-    const title = book.title ?? "Untitled";
-
-    if (isMobile) {
-      dockApi.addPanel({
-        id: chatPanelId,
-        component: "chat",
-        title: `Discuss: ${title}`.slice(0, 30),
-        params: { bookId: book.id, bookTitle: title },
-        renderer: "always",
-      });
-      return;
-    }
-
-    const bookGroup = panelApi.group;
-    const bookRect = bookGroup.element.getBoundingClientRect();
-    const rightGroup = dockApi.groups.find(
-      (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
-    );
-
-    dockApi.addPanel({
-      id: chatPanelId,
-      component: "chat",
-      title: `Discuss: ${title}`.slice(0, 30),
-      params: { bookId: book.id, bookTitle: title },
-      renderer: "always",
-      position: rightGroup
-        ? { referenceGroup: rightGroup }
-        : { referencePanel: panelApi.id, direction: "right" as const },
-    });
-  }, [dockviewApi, book.id, book.title, panelApi, isMobile]);
+    ws.openChatRef.current?.(book);
+  }, [ws, book]);
 
   // Populate chatContextMap with current page text for AI chat
   // Prefer the already-loaded pdfDocRef to avoid re-creating the document per page

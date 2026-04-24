@@ -1,8 +1,9 @@
-import { createStore, get, set, entries } from "idb-keyval";
+import { createStore, get, set, del, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer, Schema } from "effect";
 import type { SerializedDockview } from "dockview";
 import { WorkspaceError, DecodeError } from "~/lib/errors";
+import type { LayoutMode } from "~/lib/settings";
 
 // --- Schema ---
 
@@ -35,16 +36,25 @@ function getLastOpenedStore() {
 
 // --- Effect Service ---
 
-const LAYOUT_KEY = "dockview-layout";
+/**
+ * Legacy single-key layout storage. Before layout modes were introduced, the
+ * serialized dockview state was saved here. On first read after the mode
+ * upgrade, the value is migrated into the freeform slot (see design decision
+ * in the spec) and the legacy key is deleted.
+ */
+const LEGACY_LAYOUT_KEY = "dockview-layout";
+const layoutKey = (mode: LayoutMode) => `dockview-layout-${mode}`;
 
 export class WorkspaceService extends Context.Tag("WorkspaceService")<
   WorkspaceService,
   {
-    readonly saveLayout: (layout: SerializedDockview) => Effect.Effect<void, WorkspaceError>;
-    readonly getLayout: () => Effect.Effect<
-      SerializedDockview | null,
-      WorkspaceError | DecodeError
-    >;
+    readonly saveLayout: (
+      mode: LayoutMode,
+      layout: SerializedDockview,
+    ) => Effect.Effect<void, WorkspaceError>;
+    readonly getLayout: (
+      mode: LayoutMode,
+    ) => Effect.Effect<SerializedDockview | null, WorkspaceError | DecodeError>;
     readonly saveLastOpened: (
       bookId: string,
       timestamp: number,
@@ -60,17 +70,34 @@ export interface WorkspaceServiceStores {
 
 export function makeWorkspaceService(stores: WorkspaceServiceStores): WorkspaceService["Type"] {
   const { layoutStore, lastOpenedStore } = stores;
+
+  // One-time migration: move any legacy single-key layout into the freeform
+  // slot. Idempotent — once the legacy key is deleted this becomes a no-op.
+  const migrateLegacyLayout = Effect.tryPromise({
+    try: async () => {
+      const legacy = await get<unknown>(LEGACY_LAYOUT_KEY, layoutStore);
+      if (legacy === undefined) return;
+      const existing = await get<unknown>(layoutKey("freeform"), layoutStore);
+      if (existing === undefined) {
+        await set(layoutKey("freeform"), legacy, layoutStore);
+      }
+      await del(LEGACY_LAYOUT_KEY, layoutStore);
+    },
+    catch: (cause) => new WorkspaceError({ operation: "migrateLegacyLayout", cause }),
+  });
+
   return {
-    saveLayout: (layout: SerializedDockview) =>
+    saveLayout: (mode: LayoutMode, layout: SerializedDockview) =>
       Effect.tryPromise({
-        try: () => set(LAYOUT_KEY, layout, layoutStore),
+        try: () => set(layoutKey(mode), layout, layoutStore),
         catch: (cause) => new WorkspaceError({ operation: "saveLayout", cause }),
       }),
 
-    getLayout: () =>
+    getLayout: (mode: LayoutMode) =>
       Effect.gen(function* () {
+        yield* migrateLegacyLayout;
         const raw = yield* Effect.tryPromise({
-          try: () => get<unknown>(LAYOUT_KEY, layoutStore),
+          try: () => get<unknown>(layoutKey(mode), layoutStore),
           catch: (cause) => new WorkspaceError({ operation: "getLayout", cause }),
         });
         if (!raw) return null;

@@ -1,8 +1,12 @@
 /**
- * Generate a minimal valid EPUB 3 file for E2E testing.
+ * Generate minimal valid EPUB 3 files for E2E testing.
  * Run: node e2e/fixtures/create-test-epub.mjs
  *
- * Produces e2e/fixtures/test-book.epub — a two-chapter book with a TOC.
+ * Produces:
+ *   e2e/fixtures/test-book.epub   — primary fixture, "Test Book for E2E"
+ *   e2e/fixtures/test-book-2.epub — secondary fixture used by layout-modes
+ *     tests that need a second distinct book (different title + identifier,
+ *     so the file hash differs and the app treats it as a separate book).
  */
 import { writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -161,3 +165,64 @@ const epub = createZip(entries);
 const outPath = join(__dirname, "test-book.epub");
 writeFileSync(outPath, epub);
 console.log(`Created ${outPath} (${epub.length} bytes)`);
+
+// --- Second fixture ---------------------------------------------------------
+// Minimal sibling book with a different title + identifier so its file hash
+// does not collide with test-book.epub. Used by layout-modes.spec.ts to open
+// two distinct books and verify cluster-switching behavior.
+
+const opf2 = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="uid">urn:uuid:abcdef01-2345-6789-abcd-ef0123456789</dc:identifier>
+    <dc:title>Second Test Book</dc:title>
+    <dc:creator>Another Author</dc:creator>
+    <dc:language>en</dc:language>
+    <meta property="dcterms:modified">2024-01-02T00:00:00Z</meta>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="ch1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="ch1"/>
+  </spine>
+</package>`;
+
+const nav2 = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head><title>Navigation</title></head>
+<body>
+<nav epub:type="toc" id="toc">
+  <h1>Table of Contents</h1>
+  <ol>
+    <li><a href="chapter1.xhtml">Only Chapter</a></li>
+  </ol>
+</nav>
+</body>
+</html>`;
+
+const chapter1b = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Only Chapter</title></head>
+<body>
+<h1>Only Chapter</h1>
+<p>This book exists solely so end-to-end tests can open two distinct books at once.</p>
+<p>The word zebra appears here so fuzzy searches across books can be distinguished.</p>
+</body>
+</html>`;
+
+const entries2 = [
+  { name: "mimetype", data: mimetype },
+  { name: "META-INF/container.xml", data: container },
+  { name: "OEBPS/content.opf", data: opf2 },
+  { name: "OEBPS/nav.xhtml", data: nav2 },
+  { name: "OEBPS/chapter1.xhtml", data: chapter1b },
+];
+
+const epub2 = createZip(entries2);
+const outPath2 = join(__dirname, "test-book-2.epub");
+writeFileSync(outPath2, epub2);
+console.log(`Created ${outPath2} (${epub2.length} bytes)`);

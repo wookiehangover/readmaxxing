@@ -7,6 +7,7 @@ export type ReaderLayout = "single" | "spread" | "scroll";
 export type PdfLayout = "original" | "fit-height" | "fit-width" | "two-page" | "continuous";
 export type WorkspaceSortBy = "title" | "author" | "recent";
 export type LibraryView = "grid" | "table";
+export type LayoutMode = "focused" | "freeform";
 
 // --- Schema ---
 
@@ -49,6 +50,9 @@ export const SettingsSchema = Schema.Struct({
     Schema.Literal("default", "dracula", "nord", "rose-pine", "tokyo-night", "solarized"),
     { default: () => "default" as const },
   ),
+  layoutMode: Schema.optionalWith(Schema.Literal("focused", "freeform"), {
+    default: () => "focused" as const,
+  }),
   /** Timestamp of last settings change. Used for LWW sync. */
   updatedAt: Schema.optional(Schema.Number),
 });
@@ -70,6 +74,7 @@ const defaultSettings: Settings = {
   workspaceSortBy: "recent",
   libraryView: "grid",
   colorTheme: "default",
+  layoutMode: "focused",
 };
 
 export function getSettings(): Settings {
