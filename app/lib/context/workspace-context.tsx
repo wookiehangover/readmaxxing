@@ -20,6 +20,19 @@ export interface NotebookEditorCallbacks {
   seedLastContent: (content: JSONContent) => void;
 }
 
+/**
+ * A BookCluster is the canonical grouping of panels that belong to a single
+ * book: the book reader on the left and the chat/notebook tabs on the right.
+ * In focused mode exactly one cluster is visible; in freeform mode clusters
+ * still exist as a logical grouping so link navigation can resolve "which
+ * chat belongs to which book".
+ */
+export interface BookCluster {
+  readonly bookPanelId: string;
+  readonly chatPanelId?: string;
+  readonly notebookPanelId?: string;
+}
+
 interface WorkspaceContextValue {
   /** panelId -> navigateToCfi callback */
   navigationMap: React.MutableRefObject<Map<string, (cfi: string) => void>>;
@@ -73,6 +86,18 @@ interface WorkspaceContextValue {
   notebookEditorCallbackMap: React.MutableRefObject<Map<string, NotebookEditorCallbacks>>;
   /** bookId -> callback notified when notebook content changes (user edits or programmatic) */
   notebookContentChangeMap: React.MutableRefObject<Map<string, (markdown: string) => void>>;
+  /** bookId -> BookCluster (the panels belonging to that book) */
+  clustersRef: React.MutableRefObject<Map<string, BookCluster>>;
+  /** Book ID of the currently-active cluster, or null if none */
+  activeClusterBookIdRef: React.MutableRefObject<string | null>;
+  /** Listener notified when clustersRef or activeClusterBookIdRef change */
+  clustersChangeListener: React.MutableRefObject<(() => void) | null>;
+  /** Look up the cluster for a given bookId */
+  getClusterForBook: (bookId: string) => BookCluster | undefined;
+  /** Look up the cluster that owns a given panelId (returns bookId + cluster) */
+  getClusterForPanel: (panelId: string) => { bookId: string; cluster: BookCluster } | undefined;
+  /** Set (or clear) the currently-active cluster and notify listeners */
+  setActiveCluster: (bookId: string | null) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -112,6 +137,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const highlightDeleteMap = useRef(new Map<string, (cfiRange: string) => void>());
   const notebookEditorCallbackMap = useRef(new Map<string, NotebookEditorCallbacks>());
   const notebookContentChangeMap = useRef(new Map<string, (markdown: string) => void>());
+  const clustersRef = useRef(new Map<string, BookCluster>());
+  const activeClusterBookIdRef = useRef<string | null>(null);
+  const clustersChangeListener = useRef<(() => void) | null>(null);
+
+  const getClusterForBook = useCallback((bookId: string): BookCluster | undefined => {
+    return clustersRef.current.get(bookId);
+  }, []);
+
+  const getClusterForPanel = useCallback(
+    (panelId: string): { bookId: string; cluster: BookCluster } | undefined => {
+      for (const [bookId, cluster] of clustersRef.current) {
+        if (
+          cluster.bookPanelId === panelId ||
+          cluster.chatPanelId === panelId ||
+          cluster.notebookPanelId === panelId
+        ) {
+          return { bookId, cluster };
+        }
+      }
+      return undefined;
+    },
+    [],
+  );
+
+  const setActiveCluster = useCallback((bookId: string | null): void => {
+    if (activeClusterBookIdRef.current === bookId) return;
+    activeClusterBookIdRef.current = bookId;
+    clustersChangeListener.current?.();
+  }, []);
 
   const findNavForBook = useCallback((bookId: string): ((cfi: string) => void) | undefined => {
     const api = dockviewApi.current;
@@ -219,6 +273,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       removeHighlightAnnotationForBook,
       notebookEditorCallbackMap,
       notebookContentChangeMap,
+      clustersRef,
+      activeClusterBookIdRef,
+      clustersChangeListener,
+      getClusterForBook,
+      getClusterForPanel,
+      setActiveCluster,
     }),
     [
       findNavForBook,
@@ -226,6 +286,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       findTocForBook,
       applyTempHighlightForBook,
       removeHighlightAnnotationForBook,
+      getClusterForBook,
+      getClusterForPanel,
+      setActiveCluster,
     ],
   );
 

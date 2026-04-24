@@ -201,6 +201,57 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       };
       updateOpenBooks();
 
+      // Rebuild the BookCluster map from current dockview panels. Each cluster
+      // is keyed by bookId and groups that book's reader/chat/notebook panels.
+      // Clusters without a book-reader panel are excluded (transient state).
+      const rebuildClusters = () => {
+        type MutableCluster = {
+          bookPanelId?: string;
+          chatPanelId?: string;
+          notebookPanelId?: string;
+        };
+        const accum = new Map<string, MutableCluster>();
+        for (const panel of event.api.panels) {
+          const bookId = (panel.params as Record<string, unknown>)?.bookId;
+          if (typeof bookId !== "string") continue;
+          const entry = accum.get(bookId) ?? {};
+          if (panel.id.startsWith("book-")) entry.bookPanelId = panel.id;
+          else if (panel.id.startsWith("chat-")) entry.chatPanelId = panel.id;
+          else if (panel.id.startsWith("notebook-")) entry.notebookPanelId = panel.id;
+          accum.set(bookId, entry);
+        }
+        const next = new Map<string, { bookPanelId: string; chatPanelId?: string; notebookPanelId?: string }>();
+        for (const [bookId, entry] of accum) {
+          if (!entry.bookPanelId) continue;
+          next.set(bookId, {
+            bookPanelId: entry.bookPanelId,
+            chatPanelId: entry.chatPanelId,
+            notebookPanelId: entry.notebookPanelId,
+          });
+        }
+        ws.clustersRef.current = next;
+        // If the active cluster's book was closed, clear the active bookId.
+        const activeId = ws.activeClusterBookIdRef.current;
+        if (activeId && !next.has(activeId)) {
+          ws.activeClusterBookIdRef.current = null;
+        }
+        ws.clustersChangeListener.current?.();
+      };
+      rebuildClusters();
+
+      // Track the active cluster based on which panel is focused. Panels
+      // outside any cluster (Standard Ebooks, new-tab) leave the active
+      // cluster unchanged.
+      const updateActiveCluster = (panel: { params?: unknown } | undefined) => {
+        if (!panel) return;
+        const bookId = (panel.params as Record<string, unknown>)?.bookId;
+        if (typeof bookId !== "string") return;
+        if (!ws.clustersRef.current.has(bookId)) return;
+        if (ws.activeClusterBookIdRef.current === bookId) return;
+        ws.activeClusterBookIdRef.current = bookId;
+        ws.clustersChangeListener.current?.();
+      };
+
       // Store disposables for cleanup on unmount
       // In dockview v5, onDidLayoutChange does not fire for panel add/remove/move,
       // so we must also listen to those events to persist layout changes.
@@ -209,6 +260,9 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         event.api.onDidRemovePanel(updatePanelCount),
         event.api.onDidAddPanel(updateOpenBooks),
         event.api.onDidRemovePanel(updateOpenBooks),
+        event.api.onDidAddPanel(rebuildClusters),
+        event.api.onDidRemovePanel(rebuildClusters),
+        event.api.onDidActivePanelChange(updateActiveCluster),
         event.api.onDidAddPanel(saveLayout),
         event.api.onDidRemovePanel(saveLayout),
         event.api.onDidMovePanel(saveLayout),
@@ -268,6 +322,8 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       ws.tocMap.current.clear();
       ws.notebookCallbackMap.current.clear();
       ws.tempHighlightMap.current.clear();
+      ws.clustersRef.current.clear();
+      ws.activeClusterBookIdRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -387,7 +443,10 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   }, []);
 
   const openBook = useCallback(
-    (book: BookMeta, forceNew = false) => {
+    // `forceNew` is accepted for backward compatibility with the sidebar UI
+    // but is intentionally a no-op: duplicate book panels are disallowed in
+    // both layout modes. The UI entry point is removed in Wave 2.
+    (book: BookMeta, _forceNew = false) => {
       const api = apiRef.current;
       if (!api) return;
 
@@ -396,22 +455,20 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
       ).catch(console.error);
 
-      if (!forceNew) {
-        // Focus first existing panel for this book
-        const existing = api.panels.find(
-          (p) =>
-            p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
-        );
-        if (existing) {
-          existing.focus();
-          return;
-        }
+      // Always focus the existing panel for this book if one is open.
+      const existing = api.panels.find(
+        (p) =>
+          p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
+      );
+      if (existing) {
+        existing.focus();
+        return;
       }
 
       // Check if this will be the first panel (companion new-tab logic)
       const isFirstPanel = !api.panels.some((p) => p.id.startsWith("book-"));
 
-      const panelId = `book-${book.id}-${crypto.randomUUID().slice(0, 8)}`;
+      const panelId = `book-${book.id}`;
       api.addPanel({
         id: panelId,
         component: "book-reader",
