@@ -17,11 +17,20 @@ const ASSISTANT_BUBBLE = ".max-w-prose.text-foreground";
 async function uploadTestBook(page: Page) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_EPUB);
-  // The first book upload auto-opens a reader panel and auto-collapses the
-  // sidebar, so we wait on the dockview tab rather than the sidebar entry.
-  await expect(page.locator(".dv-default-tab", { hasText: BOOK_TITLE }).first()).toBeVisible({
-    timeout: 15_000,
-  });
+  const focusedPill = page
+    .getByRole("tablist", { name: "Open books" })
+    .getByRole("tab", { name: new RegExp(BOOK_TITLE) });
+  const freeformTab = page.locator(".dv-default-tab", { hasText: BOOK_TITLE }).first();
+  await expect
+    .poll(
+      async () =>
+        (await focusedPill
+          .first()
+          .isVisible()
+          .catch(() => false)) || (await freeformTab.isVisible().catch(() => false)),
+      { timeout: 15_000 },
+    )
+    .toBe(true);
 }
 
 // Chapter text matches e2e/fixtures/create-test-epub.mjs. Used to seed the

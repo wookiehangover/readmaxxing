@@ -8,11 +8,12 @@ const TEST_EPUB = resolve(__dirname, "fixtures/test-book.epub");
 
 /**
  * Upload a test epub via the hidden file input in the sidebar.
- * Returns once the book's reader panel tab appears in dockview.
+ * Returns once the book is visible in the current layout.
  *
  * Note: the upload flow auto-opens the first book and auto-collapses the
- * sidebar, so asserting on the sidebar entry is unreliable. The dockview
- * tab is a cleaner signal that the upload completed and the reader mounted.
+ * sidebar, so asserting on the sidebar entry is unreliable. Focused mode
+ * hides the book-reader Dockview tab, so the ClusterBar pill is the visible
+ * completion signal there; freeform keeps the tab.
  */
 async function uploadTestBook(page: Page) {
   // The sidebar has a hidden file input for epub uploads — use .first() since
@@ -20,12 +21,20 @@ async function uploadTestBook(page: Page) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_EPUB);
 
-  // Wait for the dockview tab — the upload triggers handleBookAdded which
-  // calls openBook and adds a book-reader panel whose tab title is the book
-  // title (truncated to 30 chars).
-  await expect(
-    page.locator(".dv-default-tab", { hasText: "Test Book for E2E" }).first(),
-  ).toBeVisible({ timeout: 15_000 });
+  const focusedPill = page
+    .getByRole("tablist", { name: "Open books" })
+    .getByRole("tab", { name: /Test Book for E2E/ });
+  const freeformTab = page.locator(".dv-default-tab", { hasText: "Test Book for E2E" }).first();
+  await expect
+    .poll(
+      async () =>
+        (await focusedPill
+          .first()
+          .isVisible()
+          .catch(() => false)) || (await freeformTab.isVisible().catch(() => false)),
+      { timeout: 15_000 },
+    )
+    .toBe(true);
 }
 
 /**
@@ -97,8 +106,10 @@ test.describe("Workspace route", () => {
   test("uploaded book opens in a reader panel", async ({ page }) => {
     await uploadAndOpenBook(page);
 
-    // Verify a dockview panel tab appeared
-    await expect(page.locator(".dv-default-tab").first()).toBeVisible({ timeout: 10_000 });
+    // Verify the reader panel mounted. In focused mode the book tab is hidden.
+    await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
+      timeout: 10_000,
+    });
   });
 
   test("reader has navigation buttons", async ({ page }) => {
@@ -165,11 +176,7 @@ test.describe("Workspace route", () => {
     // Wait for notebook panel to render
     await page.waitForTimeout(1_000);
 
-    // Click the book reader tab to go back to the reader
-    const bookTab = page.locator(".dv-default-tab", { hasText: "Test Book" });
-    await bookTab.first().click();
-
-    // Wait for epub iframe content to be ready again
+    // The reader stays visible beside the notebook in focused mode.
     await expect(chapterText).toBeVisible({ timeout: 15_000 });
 
     // Programmatically select text inside the epub iframe to trigger epubjs "selected" event

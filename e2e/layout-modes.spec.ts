@@ -8,16 +8,27 @@ const TEST_EPUB_1 = resolve(__dirname, "fixtures/test-book.epub");
 const TEST_EPUB_2 = resolve(__dirname, "fixtures/test-book-2.epub");
 
 /**
- * Upload an epub by path and wait for its dockview tab to appear. Uses the
- * first hidden file input, which is the sidebar's upload input. The reader
- * mounts automatically on upload (handleBookAdded → openBook).
+ * Upload an epub by path and wait for the opened book to be visible in the
+ * current layout. Focused mode hides the book-reader Dockview tab, so the
+ * cluster pill is the visible completion signal there; freeform keeps the tab.
  */
 async function uploadBook(page: Page, path: string, expectedTitle: string) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(path);
-  await expect(page.locator(".dv-default-tab", { hasText: expectedTitle }).first()).toBeVisible({
-    timeout: 15_000,
-  });
+  const focusedPill = page
+    .getByRole("tablist", { name: "Open books" })
+    .getByRole("tab", { name: new RegExp(expectedTitle) });
+  const freeformTab = page.locator(".dv-default-tab", { hasText: expectedTitle }).first();
+  await expect
+    .poll(
+      async () =>
+        (await focusedPill
+          .first()
+          .isVisible()
+          .catch(() => false)) || (await freeformTab.isVisible().catch(() => false)),
+      { timeout: 15_000 },
+    )
+    .toBe(true);
 }
 
 /** ClusterBar pills are scoped to the tablist with aria-label "Open books". */
@@ -84,8 +95,8 @@ test.describe("Layout modes", () => {
     await expect(pills.nth(1)).toHaveAttribute("aria-selected", "true");
     await expect(pills.nth(0)).toHaveAttribute("aria-selected", "false");
 
-    // Focused mode mounts at most one book-reader panel at a time. Use
-    // anchored regexes to exclude the auto-opened "Discuss: …" chat tab.
+    // Focused mode mounts at most one book-reader panel at a time. The
+    // book-reader Dockview tab is hidden, but remains in the DOM.
     await expect(
       page.locator(".dv-default-tab").filter({ hasText: /^Second Test Book$/ }),
     ).toHaveCount(1);
@@ -161,8 +172,10 @@ test.describe("Layout modes", () => {
     await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
 
     // dockview reflects disableDnd by setting draggable=false on .dv-tab.
+    // The book tab is intentionally hidden in focused mode, so assert the
+    // attribute without requiring visibility.
     const tab = page.locator(".dv-tab").first();
-    await expect(tab).toBeVisible();
+    await expect(tab).toBeAttached();
     await expect(tab).toHaveAttribute("draggable", "false");
   });
 
