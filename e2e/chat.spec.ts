@@ -40,6 +40,8 @@ const FIXTURE_CHAPTERS = [
   {
     index: 0,
     title: "Chapter 1: The Beginning",
+    spineStart: 0,
+    spineEnd: 1,
     text:
       "Chapter 1: The Beginning\n" +
       "This is the first chapter of our test book. It contains enough text to verify that the epub reader is working correctly.\n" +
@@ -49,6 +51,8 @@ const FIXTURE_CHAPTERS = [
   {
     index: 1,
     title: "Chapter 2: The End",
+    spineStart: 1,
+    spineEnd: 2,
     text:
       "Chapter 2: The End\n" +
       "This is the second and final chapter. It concludes our brief test book.\n" +

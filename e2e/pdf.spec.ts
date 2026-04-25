@@ -187,7 +187,7 @@ test.describe("PDF support", () => {
     await expect(page.getByText("1 of 1")).toBeVisible({ timeout: 10_000 });
 
     // Verify we're on page 1
-    await expect(page.getByText("Page 1 of 2")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("1 / 2")).toBeVisible({ timeout: 5_000 });
   });
 
   test("selecting text in PDF shows highlight popover", async ({ page }) => {
