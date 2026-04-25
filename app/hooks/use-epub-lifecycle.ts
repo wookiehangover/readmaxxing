@@ -77,6 +77,15 @@ function flattenToc(entries: TocEntry[]): TocEntry[] {
   return entries.flatMap((entry) => [entry, ...(entry.subitems ? flattenToc(entry.subitems) : [])]);
 }
 
+function flattenTocToUsefulEntries(entries: TocEntry[]): TocEntry[] {
+  return entries.flatMap((entry) => {
+    if (entry.subitems && entry.subitems.length > 0) {
+      return flattenTocToUsefulEntries(entry.subitems);
+    }
+    return [entry];
+  });
+}
+
 function normalizeEpubHref(href: string): string {
   const withoutFragment = href.split("#")[0]?.split("?")[0] ?? "";
   const withoutLeadingSlash = withoutFragment.replace(/^\/+/, "");
@@ -143,6 +152,63 @@ function findLastTocEntry(
   }
 
   return null;
+}
+
+interface LogicalChapterRange {
+  index: number;
+  spineStart: number;
+  spineEnd: number;
+}
+
+function buildLogicalChapterRanges(toc: TocEntry[], book: EpubBook | null): LogicalChapterRange[] {
+  if (!book || toc.length === 0) {
+    return [];
+  }
+
+  const starts = flattenTocToUsefulEntries(toc)
+    .map((entry) => {
+      const spineStart = getSpineIndexForHref(book, entry.href);
+      return spineStart === null ? null : { spineStart };
+    })
+    .filter((entry): entry is { spineStart: number } => entry !== null)
+    .sort((left, right) => left.spineStart - right.spineStart);
+
+  const deduped: { spineStart: number }[] = [];
+  for (const start of starts) {
+    if (deduped[deduped.length - 1]?.spineStart === start.spineStart) {
+      continue;
+    }
+    deduped.push(start);
+  }
+
+  const spine = book.spine as any;
+  let spineLength = 0;
+  if (typeof spine.each === "function") {
+    spine.each(() => {
+      spineLength += 1;
+    });
+  }
+
+  return deduped.map((start, index) => ({
+    index,
+    spineStart: start.spineStart,
+    spineEnd: deduped[index + 1]?.spineStart ?? spineLength,
+  }));
+}
+
+function resolveLogicalChapterIndex(
+  ranges: LogicalChapterRange[],
+  currentSpineIndex: number | undefined,
+): number | null {
+  if (currentSpineIndex == null) {
+    return null;
+  }
+
+  return (
+    ranges.find(
+      (range) => currentSpineIndex >= range.spineStart && currentSpineIndex < range.spineEnd,
+    )?.index ?? null
+  );
 }
 
 function resolveCurrentChapterLabel({
@@ -258,6 +324,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     let epubBook: EpubBook | null = null;
     let rendition: Rendition | null = null;
     let tocData: TocEntry[] = [];
+    let logicalChapterRanges: LogicalChapterRange[] = [];
 
     const init = async () => {
       const bookData = await AppRuntime.runPromise(
@@ -367,6 +434,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
             ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
           }));
         tocData = mapToc(nav.toc);
+        logicalChapterRanges = buildLogicalChapterRanges(tocData, epubBook);
         setToc(tocData);
         configRef.current.onTocExtracted?.(tocData);
       }
@@ -399,8 +467,11 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         }
         const loc = rendition.currentLocation() as any;
         if (loc?.start) {
+          const currentSpineIndex = loc.start.index ?? 0;
           configRef.current.chatContextMap.current.set(bookId, {
-            currentChapterIndex: loc.start.index ?? 0,
+            currentChapterIndex:
+              resolveLogicalChapterIndex(logicalChapterRanges, currentSpineIndex) ??
+              currentSpineIndex,
             currentSpineHref: loc.start.href ?? "",
             visibleText,
           });
@@ -505,7 +576,9 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
               // fallback
             }
             configRef.current.chatContextMap.current.set(bookId, {
-              currentChapterIndex: location.start.index,
+              currentChapterIndex:
+                resolveLogicalChapterIndex(logicalChapterRanges, location.start.index) ??
+                location.start.index,
               currentSpineHref: location.start.href ?? "",
               visibleText,
             });

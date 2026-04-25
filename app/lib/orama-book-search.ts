@@ -78,7 +78,9 @@ function chunkText(text: string): string[] {
  * Uses chapter count, titles, and total text length as a fast proxy.
  */
 function computeCacheKey(chapters: BookChapter[]): string {
-  const parts = chapters.map((ch) => `${ch.index}:${ch.title}:${ch.text.length}`);
+  const parts = chapters.map(
+    (ch) => `${ch.index}:${ch.spineStart}-${ch.spineEnd}:${ch.title}:${ch.text.length}`,
+  );
   return `${chapters.length}|${parts.join(";")}`;
 }
 

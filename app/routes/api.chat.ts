@@ -53,12 +53,38 @@ interface SystemPromptContext {
   visibleText?: string;
 }
 
+const CURRENT_CHAPTER_CONTEXT_CHARS = 8000;
+const VISIBLE_PAGE_CONTEXT_CHARS = 2000;
+
+function truncateContext(text: string, limit: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= limit) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, limit)}\n[truncated — text continues]`;
+}
+
+function hasLogicalChapterShape(chapters: unknown): chapters is BookChapter[] {
+  return (
+    Array.isArray(chapters) &&
+    chapters.every(
+      (chapter) =>
+        chapter &&
+        typeof chapter === "object" &&
+        typeof (chapter as BookChapter).index === "number" &&
+        typeof (chapter as BookChapter).title === "string" &&
+        typeof (chapter as BookChapter).text === "string" &&
+        typeof (chapter as BookChapter).spineStart === "number" &&
+        typeof (chapter as BookChapter).spineEnd === "number",
+    )
+  );
+}
+
 function buildSystemPrompt(bookContext: SystemPromptContext): string {
   const toc = bookContext.chapters.map((c) => `  ${c.index}. ${c.title}`).join("\n");
 
   let currentChapterSection = "";
 
-  // Prefer the actual visible text from the reader iframe
   const pageText = bookContext.visibleText?.trim();
   const chapter =
     bookContext.currentChapterIndex != null
@@ -77,9 +103,14 @@ function buildSystemPrompt(bookContext: SystemPromptContext): string {
 ## Current context
 The reader is currently on: ${chapterLabel}
 
+Logical chapter text:
+---
+${chapter ? truncateContext(chapter.text, CURRENT_CHAPTER_CONTEXT_CHARS) : "(unable to identify logical chapter text)"}
+---
+
 Here is what they are currently looking at:
 ---
-${pageText || chapter?.text.slice(0, 2000) || "(unable to extract page text)"}
+${pageText ? truncateContext(pageText, VISIBLE_PAGE_CONTEXT_CHARS) : "(unable to extract page text)"}
 ---`;
   }
 
@@ -212,7 +243,16 @@ export async function action({ request }: Route.ActionArgs) {
       { status: 400 },
     );
   }
-  const chapters = chaptersRow.chapters as BookChapter[];
+  if (!hasLogicalChapterShape(chaptersRow.chapters)) {
+    return Response.json(
+      {
+        error:
+          "Book chapters cache is stale. Reopen the book to upload logical chapter ranges before starting a chat.",
+      },
+      { status: 400 },
+    );
+  }
+  const chapters = chaptersRow.chapters;
 
   const priorRows = await getMessagesBySession(sessionId);
   const priorMessages: UIMessage[] = priorRows.map(rowToUIMessage);

@@ -11,9 +11,30 @@ function makeChapter(overrides: Partial<BookChapter> & { index: number }): BookC
   return {
     title: `Chapter ${overrides.index + 1}`,
     text: "",
+    spineStart: overrides.index,
+    spineEnd: overrides.index + 1,
     ...overrides,
   };
 }
+
+describe("BookChapter logical shape", () => {
+  it("uses logical chapter indexes independently from spine ranges", () => {
+    const chapters: BookChapter[] = [
+      makeChapter({
+        index: 0,
+        title: "Chapter Five",
+        text: "This logical chapter spans several spine files and mentions linnets.",
+        spineStart: 2,
+        spineEnd: 5,
+      }),
+    ];
+    const db = buildBookIndex(chapters);
+    const results = searchBook(db, "linnets");
+    expect(results.length).toBe(1);
+    expect(results[0].chapterIndex).toBe(0);
+    expect(results[0].chapterTitle).toBe("Chapter Five");
+  });
+});
 
 describe("buildBookIndex", () => {
   it("builds an index from multiple chapters", () => {
