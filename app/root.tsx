@@ -13,7 +13,9 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import { ThemeEffect } from "~/components/theme-effect";
+import { CommandBar } from "~/components/command-bar";
 import { AuthProvider } from "~/lib/context/auth-context";
+import { WorkspaceProvider } from "~/lib/context/workspace-context";
 import { useSync, SyncContext } from "~/lib/sync/use-sync";
 import { COLOR_THEMES } from "~/lib/color-themes";
 
@@ -160,8 +162,11 @@ export default function App() {
   return (
     <AuthProvider>
       <SyncProvider>
-        <SettingsShortcut />
-        <Outlet />
+        <WorkspaceProvider>
+          <SettingsShortcut />
+          <CommandBar />
+          <Outlet />
+        </WorkspaceProvider>
       </SyncProvider>
     </AuthProvider>
   );

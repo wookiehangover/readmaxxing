@@ -34,7 +34,7 @@ export interface BookCluster {
   readonly notebookPanelId?: string;
 }
 
-interface WorkspaceContextValue {
+export interface WorkspaceContextValue {
   /** panelId -> navigateToCfi callback */
   navigationMap: React.MutableRefObject<Map<string, (cfi: string) => void>>;
   /** panelId -> TOC entries */
@@ -128,6 +128,10 @@ export function useWorkspace(): WorkspaceContextValue {
     throw new Error("useWorkspace must be used within a WorkspaceProvider");
   }
   return ctx;
+}
+
+export function useOptionalWorkspace(): WorkspaceContextValue | null {
+  return useContext(WorkspaceContext);
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {

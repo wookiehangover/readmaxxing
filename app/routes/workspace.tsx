@@ -17,7 +17,7 @@ import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { sortBooks } from "~/lib/workspace-utils";
 import { cn } from "~/lib/utils";
-import { WorkspaceProvider, useWorkspace } from "~/lib/context/workspace-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
 import { BookReaderPanel, NotebookPanel, ChatPanel } from "~/components/workspace/panel-components";
 import { NewTabPanel } from "~/components/workspace/new-tab-panel";
 import { StandardEbooksPanel } from "~/components/workspace/standard-ebooks-panel";
@@ -74,11 +74,7 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any
 };
 
 export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
-  return (
-    <WorkspaceProvider>
-      <WorkspaceRouteInner loaderData={loaderData} />
-    </WorkspaceProvider>
-  );
+  return <WorkspaceRouteInner loaderData={loaderData} />;
 }
 
 function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps["loaderData"] }) {
@@ -260,6 +256,17 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     openStandardEbooks,
     ws,
   ]);
+
+  useEffect(() => {
+    return () => {
+      ws.openBookRef.current = null;
+      ws.openNotebookRef.current = null;
+      ws.openChatRef.current = null;
+      ws.openStandardEbooksRef.current = null;
+      ws.onBookAddedRef.current = null;
+      ws.onBookDeletedRef.current = null;
+    };
+  }, [ws]);
 
   const sidebarProps = {
     collapsed,
