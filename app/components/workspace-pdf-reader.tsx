@@ -313,7 +313,7 @@ function WorkspacePdfReaderInner({
         <div className="absolute left-2 flex items-center gap-1.5">
           {totalPages > 0 ? (
             <span className="text-muted-foreground text-xs tabular-nums">
-              Page {currentPage} of {totalPages}
+              {currentPage} / {totalPages}
             </span>
           ) : (
             <span className="text-muted-foreground text-xs tabular-nums">

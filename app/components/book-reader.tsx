@@ -226,7 +226,7 @@ export function BookReader({ book }: BookReaderProps) {
                   </>
                 ) : null}
                 <span className="shrink-0 tabular-nums">
-                  Page {currentPage} of {totalPages}
+                  {currentPage} / {totalPages}
                 </span>
               </div>
             ) : null}
