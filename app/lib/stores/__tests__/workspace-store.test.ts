@@ -121,6 +121,21 @@ describe("WorkspaceService", () => {
       const legacyAfter = await get("dockview-layout", stores.layoutStore);
       expect(legacyAfter).toBeUndefined();
     });
+
+    it("clears and ignores malformed saved layouts", async () => {
+      const stores = makeTestStores();
+      await set("dockview-layout-focused", { panels: {} }, stores.layoutStore);
+      const layer = makeTestLayer(stores);
+      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
+        Effect.runPromise(Effect.provide(e, layer));
+
+      const result = await run(
+        WorkspaceService.pipe(Effect.andThen((s) => s.getLayout("focused"))),
+      );
+
+      expect(result).toBeNull();
+      await expect(get("dockview-layout-focused", stores.layoutStore)).resolves.toBeUndefined();
+    });
   });
 
   describe("saveLastOpened + getLastOpenedMap", () => {
@@ -212,6 +227,19 @@ describe("WorkspaceService", () => {
       const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getFocusedState())));
 
       expect(result).toBeNull();
+    });
+
+    it("clears and ignores malformed focused state", async () => {
+      const stores = makeTestStores();
+      await set("focused-workspace-state", { order: ["book-1"] }, stores.layoutStore);
+      const layer = makeTestLayer(stores);
+      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
+        Effect.runPromise(Effect.provide(e, layer));
+
+      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getFocusedState())));
+
+      expect(result).toBeNull();
+      await expect(get("focused-workspace-state", stores.layoutStore)).resolves.toBeUndefined();
     });
   });
 });

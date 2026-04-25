@@ -2,22 +2,20 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Effect } from "effect";
 import {
   DockviewReact,
-  type DockviewReadyEvent,
   type IDockviewPanelProps,
   type DockviewApi,
   type DockviewTheme,
-  type AddPanelPositionOptions,
 } from "dockview";
 import { PanelLeft, X } from "lucide-react";
 import type { Route } from "./+types/workspace";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useBookUpload } from "~/hooks/use-book-upload";
 import { DropZone } from "~/components/drop-zone";
-import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
+import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { useEffectQuery } from "~/hooks/use-effect-query";
-import { truncateTitle, sortBooks } from "~/lib/workspace-utils";
+import { sortBooks } from "~/lib/workspace-utils";
 import { cn } from "~/lib/utils";
 import { WorkspaceProvider, useWorkspace } from "~/lib/context/workspace-context";
 import { BookReaderPanel, NotebookPanel, ChatPanel } from "~/components/workspace/panel-components";
@@ -29,7 +27,10 @@ import { WorkspaceSidebar } from "~/components/workspace/workspace-sidebar";
 import { ClusterBar } from "~/components/workspace/cluster-bar";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useSyncListener } from "~/hooks/use-sync-listener";
-import { useFocusedMode, type FocusedCluster } from "~/hooks/use-focused-mode";
+import { useFocusedMode } from "~/hooks/use-focused-mode";
+import { useWorkspaceLayout } from "~/hooks/use-workspace-layout";
+import { useWorkspacePanels } from "~/hooks/use-workspace-panels";
+import { useWorkspaceShortcuts } from "~/hooks/use-workspace-shortcuts";
 import {
   Sheet,
   SheetContent,
@@ -37,18 +38,6 @@ import {
   SheetTitle,
   SheetDescription,
 } from "~/components/ui/sheet";
-
-/** Delay after sidebar CSS transition before dispatching resize (ms) */
-const SIDEBAR_TRANSITION_MS = 270;
-/** Debounce delay for persisting dockview layout changes (ms) */
-const LAYOUT_SAVE_DEBOUNCE_MS = 500;
-/** Debounce delay for persisting focused-mode open cluster state (ms) */
-const FOCUSED_STATE_SAVE_DEBOUNCE_MS = 300;
-/** Debounce delay for persisting the focused-mode split ratio (ms) */
-const FOCUSED_RATIO_SAVE_DEBOUNCE_MS = 300;
-/** Minimum ratio delta to trigger a persist (avoids feedback loops). */
-const FOCUSED_RATIO_EPSILON = 0.005;
-const FOCUSED_BOOK_GROUP_CLASS = "dv-focused-book-group";
 
 export function meta(_args: Route.MetaArgs) {
   return [
@@ -108,35 +97,16 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const layoutModeRef = useRef(layoutMode);
   layoutModeRef.current = layoutMode;
   const apiRef = useRef<DockviewApi | null>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const focusedStateSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
-  // Tracks the mode the dockview state currently represents. Advances only
-  // after a mode-switch swap completes, so `flushLayout` always writes to
-  // the slot the visible arrangement belongs to — even while the user's
-  // settings have already flipped to the other mode.
-  const prevLayoutModeRef = useRef(layoutMode);
-  // Gate used by `flushLayout` and the debounced `saveLayout` to skip writes
-  // while a mode-switch swap is mid-flight (between saving the previous
-  // mode and loading the new mode).
-  const modeSwitchInProgressRef = useRef(false);
-  // Generation token for mode-switch swaps so a rapid flip cancels
-  // in-flight work from the prior switch before it applies stale state.
-  const modeSwitchTokenRef = useRef(0);
   // Track which books have TOC data via a version counter (triggers re-render)
   const [_tocVersion, setTocVersion] = useState(0);
   // Track which books currently have open panels in dockview
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(new Set());
-  // Track whether dockview layout has been restored (controls fade-in)
-  const [layoutReady, setLayoutReady] = useState(false);
 
   // Focused-mode book/right split ratio (book-group width / total width).
   // Held in a ref so the swap callback in `useFocusedMode` can read the
   // latest value without re-creating itself when settings change.
   const focusedSplitRatioRef = useRef(clampFocusedSplitRatio(settings.focusedSplitRatio));
   focusedSplitRatioRef.current = clampFocusedSplitRatio(settings.focusedSplitRatio);
-  // Debounce timer for persisting the focused-mode ratio after splitter drags.
-  const focusedRatioSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Focused-mode session state, swap effect, Cmd+1..9 shortcut, and ClusterBar
   // getters live in a dedicated hook. The refs it returns are shared with
@@ -178,469 +148,23 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     className: "dockview-theme-app",
   };
 
-  const serializeFocusedState = useCallback((): FocusedWorkspaceState => {
-    const order = focusedOrderRef.current.filter((bookId) =>
-      focusedClustersRef.current.has(bookId),
-    );
-    return {
-      order,
-      activeBookId: ws.activeClusterBookIdRef.current,
-      clusters: order.map((bookId) => focusedClustersRef.current.get(bookId)!),
-    };
-  }, [focusedClustersRef, focusedOrderRef, ws]);
-
-  const restoreFocusedState = useCallback(
-    (state: FocusedWorkspaceState | null) => {
-      if (!state) return;
-
-      const booksById = new Map(books.map((book) => [book.id, book]));
-      const clustersById = new Map(state.clusters.map((cluster) => [cluster.bookId, cluster]));
-      const restored = new Map<string, FocusedCluster>();
-      const order: string[] = [];
-
-      for (const bookId of state.order) {
-        const cluster = clustersById.get(bookId);
-        const book = booksById.get(bookId);
-        if (!cluster || !book || restored.has(bookId)) continue;
-        restored.set(bookId, {
-          ...cluster,
-          bookTitle: book.title,
-          bookFormat: book.format,
-        });
-        order.push(bookId);
-      }
-
-      focusedClustersRef.current = restored;
-      focusedOrderRef.current = order;
-      ws.activeClusterBookIdRef.current =
-        state.activeBookId && restored.has(state.activeBookId)
-          ? state.activeBookId
-          : (order[order.length - 1] ?? null);
-    },
-    [books, focusedClustersRef, focusedOrderRef, ws],
-  );
-
-  const flushFocusedState = useCallback(() => {
-    if (layoutModeRef.current !== "focused") return;
-    AppRuntime.runPromise(
-      WorkspaceService.pipe(Effect.andThen((s) => s.saveFocusedState(serializeFocusedState()))),
-    ).catch(console.error);
-  }, [serializeFocusedState]);
-
-  const saveFocusedState = useCallback(() => {
-    if (layoutModeRef.current !== "focused") return;
-    if (focusedStateSaveTimerRef.current) clearTimeout(focusedStateSaveTimerRef.current);
-    focusedStateSaveTimerRef.current = setTimeout(() => {
-      focusedStateSaveTimerRef.current = null;
-      flushFocusedState();
-    }, FOCUSED_STATE_SAVE_DEBOUNCE_MS);
-  }, [flushFocusedState]);
-
-  // Flush layout to IndexedDB immediately (non-debounced). Writes to
-  // `prevLayoutModeRef` — the mode the dockview state currently represents
-  // — not the settings' `layoutModeRef`, which may have already flipped to
-  // the other mode. Skips while a mode-switch swap is mid-flight so we
-  // don't persist a half-loaded transitional state.
-  const flushLayout = useCallback(() => {
-    if (modeSwitchInProgressRef.current) return;
-    const api = apiRef.current;
-    if (!api) return;
-    const layout = api.toJSON();
-    const mode = prevLayoutModeRef.current;
-    AppRuntime.runPromise(
-      WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(mode, layout))),
-    ).catch(console.error);
-  }, []);
-
-  // Debounced layout save
-  const saveLayout = useCallback(() => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(flushLayout, LAYOUT_SAVE_DEBOUNCE_MS);
-  }, [flushLayout]);
-
-  // Capture the current book-group / right-group split ratio while in focused
-  // mode and persist it to local-only settings. Skips on mobile (no split),
-  // during cluster swaps and mode-switches (transitional widths), and in
-  // freeform mode (where the listener must not write `focusedSplitRatio`).
-  // Debounced so a splitter drag results in a single write.
-  const captureFocusedRatio = useCallback(() => {
-    if (isMobileRef.current) return;
-    if (layoutModeRef.current !== "focused") return;
-    if (swapInProgressRef.current || modeSwitchInProgressRef.current) return;
-    const api = apiRef.current;
-    if (!api) return;
-
-    const activeBookId = getActiveClusterId();
-    if (!activeBookId) return;
-    const cluster = focusedClustersRef.current.get(activeBookId);
-    if (!cluster) return;
-    const { hasChat, hasNotebook } = cluster;
-    if (!hasChat && !hasNotebook) return;
-
-    const bookPanel = api.panels.find((p) => p.id === `book-${activeBookId}`);
-    const rightAnchor = api.panels.find(
-      (p) => p.id === (hasChat ? `chat-${activeBookId}` : `notebook-${activeBookId}`),
-    );
-    const bookGroup = bookPanel?.group;
-    const rightGroup = rightAnchor?.group;
-    if (!bookGroup || !rightGroup || bookGroup === rightGroup) return;
-
-    const total = bookGroup.api.width + rightGroup.api.width;
-    if (total <= 0) return;
-    const rawRatio = bookGroup.api.width / total;
-    const nextRatio = clampFocusedSplitRatio(rawRatio);
-    if (Math.abs(nextRatio - focusedSplitRatioRef.current) < FOCUSED_RATIO_EPSILON) return;
-
-    if (focusedRatioSaveTimerRef.current) clearTimeout(focusedRatioSaveTimerRef.current);
-    focusedRatioSaveTimerRef.current = setTimeout(() => {
-      // Re-check the latest ref to avoid persisting a stale value if the
-      // user resized again while the debounce was pending.
-      if (Math.abs(nextRatio - focusedSplitRatioRef.current) < FOCUSED_RATIO_EPSILON) return;
-      updateSettings({ focusedSplitRatio: nextRatio });
-    }, FOCUSED_RATIO_SAVE_DEBOUNCE_MS);
-  }, [
+  const { layoutReady, onReady } = useWorkspaceLayout({
+    apiRef,
+    ws,
+    books,
+    layoutMode,
+    layoutModeRef,
+    isMobile,
     isMobileRef,
+    focusedSplitRatioRef,
+    focusedClustersRef,
+    focusedOrderRef,
     swapInProgressRef,
     getActiveClusterId,
-    focusedClustersRef,
-    focusedSplitRatioRef,
+    enforceSingleFocusedCluster,
     updateSettings,
-  ]);
-
-  const updateFocusedBookGroupChrome = useCallback(() => {
-    const api = apiRef.current;
-    if (!api) return;
-
-    for (const group of api.groups) {
-      const isFocusedBookGroup =
-        layoutModeRef.current === "focused" &&
-        !isMobileRef.current &&
-        group.panels.length === 1 &&
-        group.panels[0]?.id.startsWith("book-");
-      group.element.classList.toggle(FOCUSED_BOOK_GROUP_CLASS, isFocusedBookGroup);
-    }
-  }, []);
-
-  const onReady = useCallback(
-    (event: DockviewReadyEvent) => {
-      apiRef.current = event.api;
-      ws.dockviewApi.current = event.api;
-
-      // Try to restore saved layout for the active mode
-      const mode = layoutModeRef.current;
-      Promise.all([
-        AppRuntime.runPromise(
-          WorkspaceService.pipe(
-            Effect.andThen((s) => s.getLayout(mode)),
-            Effect.catchAll(() => Effect.succeed(null)),
-          ),
-        ),
-        mode === "focused"
-          ? AppRuntime.runPromise(
-              WorkspaceService.pipe(
-                Effect.andThen((s) => s.getFocusedState()),
-                Effect.catchAll(() => Effect.succeed(null)),
-              ),
-            )
-          : Promise.resolve(null),
-      ])
-        .then(([layout, focusedState]) => {
-          if (mode === "focused") restoreFocusedState(focusedState);
-          const hasFocusedRestore = mode === "focused" && focusedOrderRef.current.length > 0;
-          if (layout && !hasFocusedRestore) {
-            try {
-              event.api.fromJSON(layout);
-            } catch (err) {
-              console.error("Failed to restore dockview layout:", err);
-            }
-          }
-          // In focused mode, reconcile any restored/carried panels into
-          // tracked clusters and enforce the single-cluster-visible
-          // invariant. No-op when no cluster panels are mounted.
-          if (mode === "focused") {
-            enforceSingleFocusedCluster();
-          }
-          updateFocusedBookGroupChrome();
-          setLayoutReady(true);
-        })
-        .catch((err) => {
-          console.error(err);
-          updateFocusedBookGroupChrome();
-          setLayoutReady(true);
-        });
-
-      // Track open book panels
-      const updateOpenBooks = () => {
-        const ids = new Set<string>();
-        for (const panel of event.api.panels) {
-          if (panel.id.startsWith("book-")) {
-            const bookId = (panel.params as Record<string, unknown>)?.bookId;
-            if (typeof bookId === "string") ids.add(bookId);
-          }
-        }
-        setOpenBookIds(ids);
-      };
-      updateOpenBooks();
-
-      // Rebuild the BookCluster map from current dockview panels. Each cluster
-      // is keyed by bookId and groups that book's reader/chat/notebook panels.
-      // Clusters without a book-reader panel are excluded (transient state).
-      const rebuildClusters = () => {
-        type MutableCluster = {
-          bookPanelId?: string;
-          chatPanelId?: string;
-          notebookPanelId?: string;
-        };
-        const accum = new Map<string, MutableCluster>();
-        for (const panel of event.api.panels) {
-          const bookId = (panel.params as Record<string, unknown>)?.bookId;
-          if (typeof bookId !== "string") continue;
-          const entry = accum.get(bookId) ?? {};
-          if (panel.id.startsWith("book-")) entry.bookPanelId = panel.id;
-          else if (panel.id.startsWith("chat-")) entry.chatPanelId = panel.id;
-          else if (panel.id.startsWith("notebook-")) entry.notebookPanelId = panel.id;
-          accum.set(bookId, entry);
-        }
-        const next = new Map<
-          string,
-          { bookPanelId: string; chatPanelId?: string; notebookPanelId?: string }
-        >();
-        for (const [bookId, entry] of accum) {
-          if (!entry.bookPanelId) continue;
-          next.set(bookId, {
-            bookPanelId: entry.bookPanelId,
-            chatPanelId: entry.chatPanelId,
-            notebookPanelId: entry.notebookPanelId,
-          });
-        }
-        ws.clustersRef.current = next;
-        // Keep the focused-mode session map in sync: when a chat/notebook
-        // panel is added/removed for a tracked cluster, update its flags so
-        // future swaps recreate the same tab set.
-        for (const [bookId, fc] of focusedClustersRef.current) {
-          const entry = next.get(bookId);
-          if (!entry) continue;
-          fc.hasChat = entry.chatPanelId !== undefined;
-          fc.hasNotebook = entry.notebookPanelId !== undefined;
-        }
-        // If the active cluster's book was closed, clear the active bookId.
-        // Skip this during a focused-mode swap: dockview fires remove/add
-        // events synchronously while swapFocusedCluster is mid-flight, and
-        // the intermediate state (old panels gone, new ones not yet added)
-        // would spuriously clear the active cluster.
-        if (!swapInProgressRef.current) {
-          const activeId = ws.activeClusterBookIdRef.current;
-          if (activeId && !next.has(activeId)) {
-            ws.activeClusterBookIdRef.current = null;
-          }
-        }
-        ws.notifyClusterChanges();
-      };
-      rebuildClusters();
-
-      // Track the active cluster based on which panel is focused. Panels
-      // outside any cluster (Standard Ebooks, new-tab) leave the active
-      // cluster unchanged.
-      const updateActiveCluster = (panel: { params?: unknown } | undefined) => {
-        if (!panel) return;
-        // Ignore focus changes we triggered ourselves during a swap.
-        if (swapInProgressRef.current) return;
-        const bookId = (panel.params as Record<string, unknown>)?.bookId;
-        if (typeof bookId !== "string") return;
-        if (!ws.clustersRef.current.has(bookId)) return;
-        // Remember which tab the user focused so the next swap restores it.
-        const fc = focusedClustersRef.current.get(bookId);
-        let activeTabChanged = false;
-        if (fc) {
-          const id = (panel as { id?: string }).id;
-          const activeTab = id?.startsWith("chat-")
-            ? "chat"
-            : id?.startsWith("notebook-")
-              ? "notebook"
-              : id?.startsWith("book-")
-                ? "book"
-                : fc.activeTab;
-          activeTabChanged = fc.activeTab !== activeTab;
-          fc.activeTab = activeTab;
-        }
-        if (ws.activeClusterBookIdRef.current === bookId) {
-          if (activeTabChanged) ws.notifyClusterChanges();
-          return;
-        }
-        ws.activeClusterBookIdRef.current = bookId;
-        ws.notifyClusterChanges();
-      };
-
-      // Store disposables for cleanup on unmount
-      // In dockview v5, onDidLayoutChange does not fire for panel add/remove/move,
-      // so we must also listen to those events to persist layout changes.
-      disposablesRef.current = [
-        event.api.onDidAddPanel(updateOpenBooks),
-        event.api.onDidRemovePanel(updateOpenBooks),
-        event.api.onDidAddPanel(rebuildClusters),
-        event.api.onDidRemovePanel(rebuildClusters),
-        event.api.onDidActivePanelChange(updateActiveCluster),
-        event.api.onDidAddPanel(saveLayout),
-        event.api.onDidRemovePanel(saveLayout),
-        event.api.onDidMovePanel(saveLayout),
-        event.api.onDidLayoutChange(saveLayout),
-        event.api.onDidAddPanel(updateFocusedBookGroupChrome),
-        event.api.onDidRemovePanel(updateFocusedBookGroupChrome),
-        event.api.onDidMovePanel(updateFocusedBookGroupChrome),
-        event.api.onDidLayoutChange(updateFocusedBookGroupChrome),
-        // Persist focused-mode split ratio after splitter drags. The
-        // callback no-ops in freeform mode and during transitional states.
-        event.api.onDidLayoutChange(captureFocusedRatio),
-      ];
-    },
-    [
-      saveLayout,
-      captureFocusedRatio,
-      updateFocusedBookGroupChrome,
-      restoreFocusedState,
-      ws,
-      enforceSingleFocusedCluster,
-    ],
-  );
-
-  useEffect(() => {
-    updateFocusedBookGroupChrome();
-  }, [layoutMode, isMobile, updateFocusedBookGroupChrome]);
-
-  useEffect(() => {
-    if (layoutMode !== "focused") return;
-    return ws.subscribeClusterChanges(saveFocusedState);
-  }, [layoutMode, saveFocusedState, ws]);
-
-  useEffect(() => {
-    if (layoutMode !== "focused") return;
-    const syncFocusedOpenBooks = () => setOpenBookIds(new Set(focusedOrderRef.current));
-    syncFocusedOpenBooks();
-    return ws.subscribeClusterChanges(syncFocusedOpenBooks);
-  }, [layoutMode, focusedOrderRef, ws]);
-
-  // Flush pending layout save on page unload / tab hide
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-        flushLayout();
-      }
-      if (focusedStateSaveTimerRef.current) {
-        clearTimeout(focusedStateSaveTimerRef.current);
-        focusedStateSaveTimerRef.current = null;
-        flushFocusedState();
-      }
-    };
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden" && saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-        flushLayout();
-      }
-      if (document.visibilityState === "hidden" && focusedStateSaveTimerRef.current) {
-        clearTimeout(focusedStateSaveTimerRef.current);
-        focusedStateSaveTimerRef.current = null;
-        flushFocusedState();
-      }
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [flushLayout, flushFocusedState]);
-
-  // React to `layoutMode` settings changes by swapping the dockview state:
-  //   1. Flush the current dockview JSON to the *previous* mode's IDB slot.
-  //   2. Load the new mode's saved layout (if any) into dockview; otherwise
-  //      keep the current panels so the user doesn't lose their open books.
-  //   3. If the new mode is focused, reconcile focusedClustersRef from the
-  //      mounted panels and enforce the single-cluster-visible invariant.
-  // `modeSwitchInProgressRef` gates `flushLayout` so partial transitional
-  // states don't get persisted, and `modeSwitchTokenRef` cancels stale
-  // in-flight work if the user flips modes rapidly.
-  useEffect(() => {
-    const prevMode = prevLayoutModeRef.current;
-    if (prevMode === layoutMode) return;
-
-    const api = apiRef.current;
-    if (!api) {
-      // Dockview hasn't mounted yet; `onReady` will pick up the new mode.
-      prevLayoutModeRef.current = layoutMode;
-      return;
-    }
-
-    const token = ++modeSwitchTokenRef.current;
-    modeSwitchInProgressRef.current = true;
-    // Advance the ref up-front so any flush that slips past the guard
-    // writes to the destination slot rather than the source slot.
-    prevLayoutModeRef.current = layoutMode;
-    // Cancel any pending debounced save so it doesn't fire with the old
-    // mode's layout JSON after we've already started the swap.
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-
-    const doSwap = async () => {
-      try {
-        const currentLayout = api.toJSON();
-        await AppRuntime.runPromise(
-          WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(prevMode, currentLayout))),
-        ).catch(console.error);
-        if (prevMode === "focused") {
-          if (focusedStateSaveTimerRef.current) {
-            clearTimeout(focusedStateSaveTimerRef.current);
-            focusedStateSaveTimerRef.current = null;
-          }
-          await AppRuntime.runPromise(
-            WorkspaceService.pipe(
-              Effect.andThen((s) => s.saveFocusedState(serializeFocusedState())),
-            ),
-          ).catch(console.error);
-        }
-        if (token !== modeSwitchTokenRef.current) return;
-
-        if (layoutMode === "focused") {
-          // Focused mode derives its visible layout from `focusedClustersRef`
-          // (session-scoped "open books" set) plus the single active cluster
-          // — not the saved JSON, which only ever captured the active cluster.
-          // `enforceSingleFocusedCluster` reconciles the tracked-cluster map
-          // from any currently-mounted book panels (so freeform panels carry
-          // over as pills) and drives a swap to the active cluster, which
-          // in turn removes any non-active cluster panels still mounted.
-          enforceSingleFocusedCluster();
-        } else {
-          // Freeform mode: restore the saved multi-panel arrangement if
-          // one exists. Otherwise keep the current panels so the user
-          // doesn't lose their open books when switching from focused
-          // the first time.
-          const saved = await AppRuntime.runPromise(
-            WorkspaceService.pipe(
-              Effect.andThen((s) => s.getLayout(layoutMode)),
-              Effect.catchAll(() => Effect.succeed(null)),
-            ),
-          );
-          if (token !== modeSwitchTokenRef.current) return;
-          if (saved) {
-            try {
-              api.fromJSON(saved);
-            } catch (err) {
-              console.error("Failed to restore dockview layout for mode:", layoutMode, err);
-            }
-          }
-        }
-      } finally {
-        if (token === modeSwitchTokenRef.current) {
-          modeSwitchInProgressRef.current = false;
-        }
-      }
-    };
-    doSwap();
-  }, [layoutMode, enforceSingleFocusedCluster, serializeFocusedState]);
+    setOpenBookIds,
+  });
 
   // Sync books to context ref so NewTabPanel (and other consumers) can read them.
   // Done in an effect so it happens after commit, not during render.
@@ -656,432 +180,19 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     };
   }, [ws]);
 
-  // Cleanup dockview disposables and maps only on unmount —
-  // these must NOT be disposed on context value changes, because
-  // onReady only registers them once per mount.
-  useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (focusedStateSaveTimerRef.current) {
-        clearTimeout(focusedStateSaveTimerRef.current);
-        flushFocusedState();
-      }
-      if (focusedRatioSaveTimerRef.current) clearTimeout(focusedRatioSaveTimerRef.current);
-      for (const d of disposablesRef.current) d.dispose();
-      disposablesRef.current = [];
-      ws.navigationMap.current.clear();
-      ws.tocMap.current.clear();
-      ws.notebookCallbackMap.current.clear();
-      ws.tempHighlightMap.current.clear();
-      ws.clustersRef.current.clear();
-      ws.activeClusterBookIdRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useWorkspaceShortcuts({ apiRef, collapsed, updateSettings });
 
-  // Cmd+B / Ctrl+B to toggle sidebar
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
-        e.preventDefault();
-        updateSettings({ sidebarCollapsed: !collapsed });
-        // After the sidebar CSS transition completes, notify dockview
-        // and epub renditions that the container dimensions changed.
-        setTimeout(() => {
-          window.dispatchEvent(new Event("resize"));
-        }, SIDEBAR_TRANSITION_MS);
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [collapsed, updateSettings]);
-
-  // Keyboard shortcuts: Cmd+[/] for tab cycling, Ctrl+h/j/k/l for pane navigation
-  useEffect(() => {
-    function isEditableElement(): boolean {
-      const el = document.activeElement;
-      if (!el) return false;
-      const tag = el.tagName.toLowerCase();
-      if (tag === "input" || tag === "textarea") return true;
-      if ((el as HTMLElement).isContentEditable) return true;
-      return false;
-    }
-
-    function handleKeyDown(e: KeyboardEvent) {
-      const api = apiRef.current;
-      if (!api) return;
-
-      // Cmd+[ / Cmd+] — cycle tabs in active group
-      if (e.metaKey && (e.key === "[" || e.key === "]")) {
-        if (isEditableElement()) return;
-        const group = api.activeGroup;
-        if (!group || group.panels.length < 2) return;
-        e.preventDefault();
-        const panels = group.panels;
-        const activePanel = group.activePanel;
-        const currentIndex = activePanel ? panels.indexOf(activePanel) : 0;
-        const delta = e.key === "]" ? 1 : -1;
-        const nextIndex = (currentIndex + delta + panels.length) % panels.length;
-        panels[nextIndex].focus();
-        return;
-      }
-
-      // Ctrl+h/j/k/l — directional pane navigation (skip when typing)
-      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-        const dirMap: Record<string, "left" | "down" | "up" | "right"> = {
-          h: "left",
-          j: "down",
-          k: "up",
-          l: "right",
-        };
-        const direction = dirMap[e.key];
-        if (!direction) return;
-        if (isEditableElement()) return;
-
-        const group = api.activeGroup;
-        if (!group) return;
-        e.preventDefault();
-
-        const currentRect = group.element.getBoundingClientRect();
-        const cx = currentRect.left + currentRect.width / 2;
-        const cy = currentRect.top + currentRect.height / 2;
-
-        let bestGroup: typeof group | null = null;
-        let bestDist = Infinity;
-
-        for (const g of api.groups) {
-          if (g === group) continue;
-          const r = g.element.getBoundingClientRect();
-          const gx = r.left + r.width / 2;
-          const gy = r.top + r.height / 2;
-
-          let isCandidate = false;
-          let dist = 0;
-          switch (direction) {
-            case "left":
-              isCandidate = gx < cx;
-              dist = cx - gx;
-              break;
-            case "right":
-              isCandidate = gx > cx;
-              dist = gx - cx;
-              break;
-            case "up":
-              isCandidate = gy < cy;
-              dist = cy - gy;
-              break;
-            case "down":
-              isCandidate = gy > cy;
-              dist = gy - cy;
-              break;
-          }
-
-          if (isCandidate && dist < bestDist) {
-            bestDist = dist;
-            bestGroup = g;
-          }
-        }
-
-        if (bestGroup) {
-          const target = bestGroup.activePanel ?? bestGroup.panels[0];
-          if (target) target.focus();
-        }
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
-  // Add a book-reader panel for `book` (no companion panels). Returns nothing.
-  const addBookPanel = useCallback((book: BookMeta) => {
-    const api = apiRef.current;
-    if (!api) return;
-    const panelId = `book-${book.id}`;
-    if (api.panels.some((p) => p.id === panelId)) return;
-    api.addPanel({
-      id: panelId,
-      component: "book-reader",
-      title: truncateTitle(book.title),
-      params: { bookId: book.id, bookTitle: book.title, bookFormat: book.format },
-      renderer: "always",
+  const { openBook, openNotebook, openChat, openStandardEbooks, closeBookPanels } =
+    useWorkspacePanels({
+      apiRef,
+      ws,
+      isMobileRef,
+      collapsedRef,
+      layoutModeRef,
+      focusedClustersRef,
+      focusedOrderRef,
+      updateSettings,
     });
-  }, []);
-
-  const openBook = useCallback(
-    (book: BookMeta) => {
-      const api = apiRef.current;
-      if (!api) return;
-
-      // Record last-opened timestamp
-      AppRuntime.runPromise(
-        WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
-      ).catch(console.error);
-
-      const mode = layoutModeRef.current;
-      const isFirstCluster =
-        mode === "focused"
-          ? focusedClustersRef.current.size === 0
-          : !api.panels.some((p) => p.id.startsWith("book-"));
-
-      if (mode === "focused") {
-        // Ensure a focused cluster entry exists for this book. Chat is
-        // eager on desktop (matches the prior companion-chat behavior);
-        // notebook is lazy — added the first time the user clicks the
-        // "Open Notebook" button so the right group stays uncluttered
-        // until explicitly requested.
-        if (!focusedClustersRef.current.has(book.id)) {
-          focusedClustersRef.current.set(book.id, {
-            bookId: book.id,
-            bookTitle: book.title,
-            bookFormat: book.format,
-            hasChat: !isMobileRef.current,
-            hasNotebook: false,
-            activeTab: isMobileRef.current ? "book" : "chat",
-          });
-          focusedOrderRef.current = [...focusedOrderRef.current, book.id];
-        }
-        // Activate the cluster; the swap effect reacts and mounts panels.
-        ws.setActiveCluster(book.id);
-      } else {
-        // Freeform: preserve legacy behavior — focus existing panel if any,
-        // otherwise add book panel (+ companion chat when opening into an
-        // empty workspace on a wide screen).
-        const existing = api.panels.find(
-          (p) =>
-            p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
-        );
-        if (existing) {
-          existing.focus();
-          return;
-        }
-        addBookPanel(book);
-        if (isFirstCluster && !isMobileRef.current && window.innerWidth > 1000) {
-          const chatId = `chat-${book.id}`;
-          api.addPanel({
-            id: chatId,
-            component: "chat",
-            title: truncateTitle(`Discuss: ${book.title}`),
-            params: { bookId: book.id, bookTitle: book.title },
-            renderer: "always",
-            position: { referencePanel: `book-${book.id}`, direction: "right" },
-          });
-        }
-      }
-
-      // Auto-collapse sidebar on first book in either mode.
-      if (isFirstCluster && !isMobileRef.current && !collapsedRef.current) {
-        updateSettings({ sidebarCollapsed: true });
-        setTimeout(() => {
-          window.dispatchEvent(new Event("resize"));
-        }, SIDEBAR_TRANSITION_MS);
-      }
-    },
-    [addBookPanel, updateSettings, ws],
-  );
-
-  const openNotebook = useCallback(
-    (book: BookMeta) => {
-      const api = apiRef.current;
-      if (!api) return;
-
-      const panelId = `notebook-${book.id}`;
-      const mode = layoutModeRef.current;
-
-      if (mode === "focused") {
-        // Ensure a cluster exists and is the active one, then add/focus the
-        // notebook tab inside its right group.
-        let fc = focusedClustersRef.current.get(book.id);
-        if (!fc) {
-          fc = {
-            bookId: book.id,
-            bookTitle: book.title,
-            bookFormat: book.format,
-            hasChat: !isMobileRef.current,
-            hasNotebook: true,
-            activeTab: "notebook",
-          };
-          focusedClustersRef.current.set(book.id, fc);
-          focusedOrderRef.current = [...focusedOrderRef.current, book.id];
-          ws.setActiveCluster(book.id);
-          return;
-        }
-        fc.hasNotebook = true;
-        fc.activeTab = "notebook";
-        if (ws.activeClusterBookIdRef.current !== book.id) {
-          ws.setActiveCluster(book.id);
-          return;
-        }
-        const existing = api.panels.find((p) => p.id === panelId);
-        if (existing) {
-          existing.focus();
-          return;
-        }
-        // Active cluster but notebook not mounted — add as tab in the right
-        // group if one exists, else split right from the book panel.
-        const bookPanel = api.panels.find((p) => p.id === `book-${book.id}`);
-        const chatPanel = api.panels.find((p) => p.id === `chat-${book.id}`);
-        const rightSplit = !isMobileRef.current;
-        const position: AddPanelPositionOptions | undefined = rightSplit
-          ? chatPanel
-            ? { referenceGroup: chatPanel.group }
-            : bookPanel
-              ? { referencePanel: bookPanel.id, direction: "right" as const }
-              : undefined
-          : undefined;
-        api.addPanel({
-          id: panelId,
-          component: "notebook",
-          title: truncateTitle(`Notes: ${book.title}`),
-          params: { bookId: book.id, bookTitle: book.title },
-          renderer: "always",
-          ...(position ? { position } : {}),
-        });
-        return;
-      }
-
-      // Freeform: legacy behavior — split right next to the book panel.
-      const existing = api.panels.find((p) => p.id === panelId);
-      if (existing) {
-        existing.focus();
-        return;
-      }
-      const bookPanel = api.panels.find(
-        (p) =>
-          p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
-      );
-      let position: AddPanelPositionOptions | undefined;
-      if (!isMobileRef.current && bookPanel) {
-        const bookGroup = bookPanel.group;
-        const bookRect = bookGroup.element.getBoundingClientRect();
-        const rightGroup = api.groups.find(
-          (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
-        );
-        if (rightGroup) {
-          position = { referenceGroup: rightGroup };
-        } else {
-          position = { referencePanel: bookPanel.id, direction: "right" as const };
-        }
-      }
-      api.addPanel({
-        id: panelId,
-        component: "notebook",
-        title: truncateTitle(`Notes: ${book.title}`),
-        params: { bookId: book.id, bookTitle: book.title },
-        renderer: "always",
-        ...(position ? { position } : {}),
-      });
-    },
-    [ws],
-  );
-
-  const openStandardEbooks = useCallback(() => {
-    const api = apiRef.current;
-    if (!api) return;
-    const existing = api.panels.find((p) => p.id.startsWith("standard-ebooks-"));
-    if (existing) {
-      existing.focus();
-      return;
-    }
-    const panelId = `standard-ebooks-${crypto.randomUUID().slice(0, 8)}`;
-    api.addPanel({
-      id: panelId,
-      component: "standard-ebooks",
-      title: "Standard Ebooks",
-      params: {},
-    });
-  }, []);
-
-  const openChat = useCallback(
-    (book: BookMeta) => {
-      const api = apiRef.current;
-      if (!api) return;
-
-      const panelId = `chat-${book.id}`;
-      const mode = layoutModeRef.current;
-
-      if (mode === "focused") {
-        let fc = focusedClustersRef.current.get(book.id);
-        if (!fc) {
-          fc = {
-            bookId: book.id,
-            bookTitle: book.title,
-            bookFormat: book.format,
-            hasChat: true,
-            hasNotebook: false,
-            activeTab: "chat",
-          };
-          focusedClustersRef.current.set(book.id, fc);
-          focusedOrderRef.current = [...focusedOrderRef.current, book.id];
-          ws.setActiveCluster(book.id);
-          return;
-        }
-        fc.hasChat = true;
-        fc.activeTab = "chat";
-        if (ws.activeClusterBookIdRef.current !== book.id) {
-          ws.setActiveCluster(book.id);
-          return;
-        }
-        const existing = api.panels.find((p) => p.id === panelId);
-        if (existing) {
-          existing.focus();
-          return;
-        }
-        const bookPanel = api.panels.find((p) => p.id === `book-${book.id}`);
-        const notebookPanel = api.panels.find((p) => p.id === `notebook-${book.id}`);
-        const rightSplit = !isMobileRef.current;
-        const position: AddPanelPositionOptions | undefined = rightSplit
-          ? notebookPanel
-            ? { referenceGroup: notebookPanel.group }
-            : bookPanel
-              ? { referencePanel: bookPanel.id, direction: "right" as const }
-              : undefined
-          : undefined;
-        api.addPanel({
-          id: panelId,
-          component: "chat",
-          title: truncateTitle(`Discuss: ${book.title}`),
-          params: { bookId: book.id, bookTitle: book.title },
-          renderer: "always",
-          ...(position ? { position } : {}),
-        });
-        return;
-      }
-
-      // Freeform: legacy behavior.
-      const existing = api.panels.find((p) => p.id === panelId);
-      if (existing) {
-        existing.focus();
-        return;
-      }
-      const bookPanel = api.panels.find(
-        (p) =>
-          p.id.startsWith("book-") && (p.params as Record<string, unknown>)?.bookId === book.id,
-      );
-      let position: AddPanelPositionOptions | undefined;
-      if (!isMobileRef.current && bookPanel) {
-        const bookGroup = bookPanel.group;
-        const bookRect = bookGroup.element.getBoundingClientRect();
-        const rightGroup = api.groups.find(
-          (g) => g !== bookGroup && g.element.getBoundingClientRect().left >= bookRect.right - 1,
-        );
-        if (rightGroup) {
-          position = { referenceGroup: rightGroup };
-        } else {
-          position = { referencePanel: bookPanel.id, direction: "right" as const };
-        }
-      }
-      api.addPanel({
-        id: panelId,
-        component: "chat",
-        title: truncateTitle(`Discuss: ${book.title}`),
-        params: { bookId: book.id, bookTitle: book.title },
-        renderer: "always",
-        ...(position ? { position } : {}),
-      });
-    },
-    [ws],
-  );
 
   // Wrap setBooks to also update booksRef and notify booksChangeListener.
   // Both the ref mutation and listener notification happen in a queueMicrotask
@@ -1124,20 +235,31 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
   const handleBookDeleted = useCallback(
     (bookId: string) => {
+      closeBookPanels(bookId);
       updateBooks((prev) => prev.filter((b) => b.id !== bookId));
     },
-    [updateBooks],
+    [closeBookPanels, updateBooks],
   );
 
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
 
-  // Sync context refs so child panels can open books/notebooks/chats and trigger uploads
-  ws.openBookRef.current = openBook;
-  ws.openNotebookRef.current = openNotebook;
-  ws.openChatRef.current = openChat;
-  ws.openStandardEbooksRef.current = openStandardEbooks;
-  ws.onBookAddedRef.current = handleBookAdded;
-  ws.onBookDeletedRef.current = handleBookDeleted;
+  // Sync context refs so child panels can open books/notebooks/chats and trigger uploads.
+  useEffect(() => {
+    ws.openBookRef.current = openBook;
+    ws.openNotebookRef.current = openNotebook;
+    ws.openChatRef.current = openChat;
+    ws.openStandardEbooksRef.current = openStandardEbooks;
+    ws.onBookAddedRef.current = handleBookAdded;
+    ws.onBookDeletedRef.current = handleBookDeleted;
+  }, [
+    handleBookAdded,
+    handleBookDeleted,
+    openBook,
+    openChat,
+    openNotebook,
+    openStandardEbooks,
+    ws,
+  ]);
 
   const sidebarProps = {
     collapsed,

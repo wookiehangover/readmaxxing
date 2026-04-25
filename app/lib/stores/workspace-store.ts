@@ -11,10 +11,21 @@ import type { LayoutMode } from "~/lib/settings";
  * SerializedDockview is an external type we don't deeply validate.
  * We only check that it's a non-null object with expected top-level shape.
  */
-const SerializedDockviewSchema = Schema.Record({ key: Schema.String, value: Schema.Unknown });
+const SerializedDockviewSchema = Schema.Struct({
+  grid: Schema.Unknown,
+  panels: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+});
 
 const decodeLayout = (raw: unknown): SerializedDockview => {
   Schema.decodeUnknownSync(SerializedDockviewSchema)(raw);
+  if (
+    !raw ||
+    typeof raw !== "object" ||
+    !Object.hasOwn(raw, "grid") ||
+    !Object.hasOwn(raw, "panels")
+  ) {
+    throw new Error("Invalid serialized dockview layout");
+  }
   return raw as SerializedDockview;
 };
 
@@ -135,7 +146,14 @@ export function makeWorkspaceService(stores: WorkspaceServiceStores): WorkspaceS
         return yield* Effect.try({
           try: () => decodeLayout(raw),
           catch: (cause) => new DecodeError({ operation: "getLayout", cause }),
-        });
+        }).pipe(
+          Effect.catchAll(() =>
+            Effect.tryPromise({
+              try: () => del(layoutKey(mode), layoutStore),
+              catch: (cause) => new WorkspaceError({ operation: "clearInvalidLayout", cause }),
+            }).pipe(Effect.as(null)),
+          ),
+        );
       }),
 
     saveFocusedState: (state: FocusedWorkspaceState) =>
@@ -154,7 +172,15 @@ export function makeWorkspaceService(stores: WorkspaceServiceStores): WorkspaceS
         return yield* Effect.try({
           try: () => decodeFocusedWorkspaceState(raw),
           catch: (cause) => new DecodeError({ operation: "getFocusedState", cause }),
-        });
+        }).pipe(
+          Effect.catchAll(() =>
+            Effect.tryPromise({
+              try: () => del(FOCUSED_STATE_KEY, layoutStore),
+              catch: (cause) =>
+                new WorkspaceError({ operation: "clearInvalidFocusedState", cause }),
+            }).pipe(Effect.as(null)),
+          ),
+        );
       }),
 
     saveLastOpened: (bookId: string, timestamp: number) =>

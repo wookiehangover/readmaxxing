@@ -5,9 +5,9 @@ import { truncateTitle } from "~/lib/workspace-utils";
 import { clampFocusedSplitRatio, type LayoutMode } from "~/lib/settings";
 
 /**
- * Session-scoped state for a single focused-mode cluster. Persisted only in
- * memory — if the user reloads, focused clusters re-populate as they open
- * books (cluster panel content is re-mounted from IDB/Postgres on demand).
+ * State for a single focused-mode cluster. The workspace layout hook persists
+ * the ordered cluster list, while panel content rehydrates from IDB/Postgres
+ * when the cluster remounts.
  */
 export interface FocusedCluster {
   bookId: string;
