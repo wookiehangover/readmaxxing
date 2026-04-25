@@ -17,6 +17,7 @@ import {
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import { getTypographyCss, getRenditionOptions } from "~/lib/epub/epub-rendering-utils";
 import type { TocEntry } from "~/lib/context/reader-context";
+import { showToast } from "~/lib/toast";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
@@ -69,9 +70,16 @@ export interface UseEpubLifecycleReturn {
   currentPage: number | null;
   totalPages: number | null;
   navigateToCfi: (cfi: string) => void;
+  navigateToTocHref: (href: string) => void;
   flushPositionSave: () => void;
   latestCfiRef: React.MutableRefObject<string | null>;
 }
+
+export type TocNavigationTarget =
+  | { kind: "href"; href: string }
+  | { kind: "spineIndex"; index: number; label?: string }
+  | { kind: "fallback"; href: string; label: string }
+  | { kind: "unresolved" };
 
 function flattenToc(entries: TocEntry[]): TocEntry[] {
   return entries.flatMap((entry) => [entry, ...(entry.subitems ? flattenToc(entry.subitems) : [])]);
@@ -86,15 +94,38 @@ function flattenTocToUsefulEntries(entries: TocEntry[]): TocEntry[] {
   });
 }
 
+function normalizePathSegments(href: string): string {
+  const segments: string[] = [];
+
+  for (const segment of href.split("/")) {
+    if (!segment || segment === ".") {
+      continue;
+    }
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+
+  return segments.join("/");
+}
+
 function normalizeEpubHref(href: string): string {
   const withoutFragment = href.split("#")[0]?.split("?")[0] ?? "";
   const withoutLeadingSlash = withoutFragment.replace(/^\/+/, "");
 
   try {
-    return decodeURIComponent(withoutLeadingSlash);
+    return normalizePathSegments(decodeURIComponent(withoutLeadingSlash));
   } catch {
-    return withoutLeadingSlash;
+    return normalizePathSegments(withoutLeadingSlash);
   }
+}
+
+function getDirectSpineSectionForHref(book: EpubBook, href: string): any | null {
+  const spine = book.spine as any;
+  const normalizedHref = normalizeEpubHref(href);
+  return spine.get?.(href) ?? (normalizedHref ? spine.get?.(normalizedHref) : null) ?? null;
 }
 
 function hrefsMatch(left: string, right: string): boolean {
@@ -115,7 +146,7 @@ function hrefsMatch(left: string, right: string): boolean {
 function getSpineIndexForHref(book: EpubBook, href: string): number | null {
   const normalizedHref = normalizeEpubHref(href);
   const spine = book.spine as any;
-  const section = spine.get?.(normalizedHref) ?? spine.get?.(href);
+  const section = getDirectSpineSectionForHref(book, href);
 
   if (typeof section?.index === "number") {
     return section.index;
@@ -139,6 +170,92 @@ function getSpineIndexForHref(book: EpubBook, href: string): number | null {
   });
 
   return matchedIndex;
+}
+
+function getSpineHrefForIndex(book: EpubBook, index: number): string | null {
+  const spine = book.spine as any;
+  const section = spine.get?.(index);
+  return typeof section?.href === "string" ? section.href : null;
+}
+
+function resolveDirectTocNavigationTarget(
+  book: EpubBook,
+  rawHref: string,
+  label?: string,
+): TocNavigationTarget {
+  const spine = book.spine as any;
+  const rawSection = spine.get?.(rawHref);
+
+  if (typeof rawSection?.index === "number") {
+    return { kind: "href", href: rawHref };
+  }
+
+  const normalizedHref = normalizeEpubHref(rawHref);
+  if (normalizedHref && normalizedHref !== rawHref) {
+    const normalizedSection = spine.get?.(normalizedHref);
+    if (typeof normalizedSection?.index === "number") {
+      return { kind: "href", href: normalizedHref };
+    }
+  }
+
+  const index = getSpineIndexForHref(book, rawHref);
+  if (index !== null) {
+    return { kind: "spineIndex", index, ...(label ? { label } : {}) };
+  }
+
+  return { kind: "unresolved" };
+}
+
+function hrefForResolvedTarget(book: EpubBook, target: TocNavigationTarget): string | null {
+  switch (target.kind) {
+    case "href":
+      return target.href;
+    case "spineIndex":
+      return getSpineHrefForIndex(book, target.index);
+    default:
+      return null;
+  }
+}
+
+export function resolveTocNavigationTarget(
+  book: EpubBook,
+  toc: TocEntry[],
+  rawHref: string,
+): TocNavigationTarget {
+  const directTarget = resolveDirectTocNavigationTarget(book, rawHref);
+  if (directTarget.kind !== "unresolved") {
+    return directTarget;
+  }
+
+  const flattenedToc = flattenToc(toc).filter((entry) => entry.href.trim().length > 0);
+  const currentIndex = flattenedToc.findIndex(
+    (entry) => entry.href === rawHref || hrefsMatch(entry.href, rawHref),
+  );
+
+  if (currentIndex === -1) {
+    return { kind: "unresolved" };
+  }
+
+  const findSibling = (start: number, end: number, step: number): TocNavigationTarget => {
+    for (let index = start; step > 0 ? index < end : index > end; index += step) {
+      const entry = flattenedToc[index]!;
+      const target = resolveDirectTocNavigationTarget(book, entry.href, entry.label);
+      const href = hrefForResolvedTarget(book, target);
+
+      if (href) {
+        return { kind: "fallback", href, label: entry.label };
+      }
+    }
+
+    return { kind: "unresolved" };
+  };
+
+  const nextSibling = findSibling(currentIndex + 1, flattenedToc.length, 1);
+  if (nextSibling.kind !== "unresolved") {
+    return nextSibling;
+  }
+
+  return findSibling(currentIndex - 1, -1, -1);
 }
 
 function findLastTocEntry(
@@ -273,6 +390,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   const renditionRef = config.renditionRef ?? internalRenditionRef;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestCfiRef = useRef<string | null>(null);
+  const warnedBrokenTocBookIdsRef = useRef<Set<string>>(new Set());
 
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [currentChapterLabel, setCurrentChapterLabel] = useState<string | null>(null);
@@ -313,6 +431,48 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       console.warn("CFI navigation failed:", err);
     });
   }, []);
+
+  const navigateToTocHref = useCallback(
+    (href: string) => {
+      const book = bookRef.current;
+      const rendition = renditionRef.current;
+      if (!book || !rendition) {
+        return;
+      }
+
+      const tryDisplay = (target: string | number) =>
+        (typeof target === "number" ? rendition.display(target) : rendition.display(target))
+          .then(() => true)
+          .catch(() => false);
+
+      void (async () => {
+        if (await tryDisplay(href)) {
+          return;
+        }
+
+        const normalizedHref = normalizeEpubHref(href);
+        if (normalizedHref && normalizedHref !== href && (await tryDisplay(normalizedHref))) {
+          return;
+        }
+
+        const target = resolveTocNavigationTarget(book, toc, href);
+        if (target.kind === "spineIndex" && (await tryDisplay(target.index))) {
+          return;
+        }
+
+        if (target.kind === "fallback" && (await tryDisplay(target.href))) {
+          return;
+        }
+
+        if (!warnedBrokenTocBookIdsRef.current.has(bookId)) {
+          warnedBrokenTocBookIdsRef.current.add(bookId);
+          console.warn("TOC navigation failed:", { bookId, href });
+          showToast("This book's table of contents may have broken links.");
+        }
+      })();
+    },
+    [bookId, bookRef, renditionRef, toc],
+  );
 
   // Main epub lifecycle effect
   useEffect(() => {
@@ -679,6 +839,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     currentPage,
     totalPages,
     navigateToCfi,
+    navigateToTocHref,
     flushPositionSave,
     latestCfiRef,
   };
