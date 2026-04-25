@@ -58,6 +58,8 @@ export async function extractPdfChapters(data: ArrayBuffer): Promise<BookChapter
           index: pageNum - 1,
           title: `Page ${pageNum}`,
           text,
+          spineStart: pageNum - 1,
+          spineEnd: pageNum,
         });
       } catch (err) {
         failedPages++;

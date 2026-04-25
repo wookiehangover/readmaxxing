@@ -80,35 +80,36 @@ export function BookReader({ book }: BookReaderProps) {
     [highlightsRef],
   );
 
-  const { toc, currentPage, totalPages, navigateToCfi } = useEpubLifecycle({
-    bookId: book.id,
-    containerRef,
-    readerLayout: settings.readerLayout,
-    fontFamily: settings.fontFamily,
-    fontSize: settings.fontSize,
-    lineHeight: settings.lineHeight,
-    theme: settings.theme,
-    loadAndApplyHighlights,
-    registerSelectionHandler,
-    onTocExtracted: (tocData) => {
-      setToc(tocData);
-      setNavigateToHref((href: string) => {
-        renditionRef.current?.display(href).catch((err: unknown) => {
-          console.warn("TOC navigation failed:", err);
-        });
-      });
-    },
-    onCleanupToc: () => {
-      setToc([]);
-      setNavigateToHref(() => {});
-    },
-    onSearchOpen: handleSearchOpenFromIframe,
-    bookRef,
-    renditionRef,
-  });
+  const { toc, currentChapterLabel, currentPage, totalPages, navigateToCfi, navigateToTocHref } =
+    useEpubLifecycle({
+      bookId: book.id,
+      containerRef,
+      readerLayout: settings.readerLayout,
+      fontFamily: settings.fontFamily,
+      fontSize: settings.fontSize,
+      lineHeight: settings.lineHeight,
+      theme: settings.theme,
+      loadAndApplyHighlights,
+      registerSelectionHandler,
+      onTocExtracted: (tocData) => {
+        setToc(tocData);
+      },
+      onCleanupToc: () => {
+        setToc([]);
+        setNavigateToHref(() => {});
+      },
+      onSearchOpen: handleSearchOpenFromIframe,
+      bookRef,
+      renditionRef,
+    });
 
   // Use contextToc from the navigation context (synced via onTocExtracted)
   const activeToc = contextToc.length > 0 ? contextToc : toc;
+
+  useEffect(() => {
+    setNavigateToHref(navigateToTocHref);
+    return () => setNavigateToHref(() => {});
+  }, [navigateToTocHref, setNavigateToHref]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -213,11 +214,21 @@ export function BookReader({ book }: BookReaderProps) {
           )}
         </div>
         <div className="flex items-center justify-between border-t px-2 min-h-14 md:min-h-10">
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-2">
             {totalPages !== null && currentPage !== null ? (
-              <span className="text-muted-foreground text-[10px] tabular-nums md:text-xs">
-                Page {currentPage} of {totalPages}
-              </span>
+              <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-[10px] md:text-xs">
+                {currentChapterLabel ? (
+                  <>
+                    <span className="max-w-24 truncate sm:max-w-40 md:max-w-56">
+                      {currentChapterLabel}
+                    </span>
+                    <span className="shrink-0">·</span>
+                  </>
+                ) : null}
+                <span className="shrink-0 tabular-nums">
+                  Page {currentPage} of {totalPages}
+                </span>
+              </div>
             ) : null}
           </div>
           <div className="flex items-center gap-0 md:gap-1">

@@ -246,7 +246,15 @@ function WorkspaceBookReaderInner({
     theme: settings.theme,
   });
 
-  const { toc, currentPage, totalPages, flushPositionSave, latestCfiRef } = useEpubLifecycle({
+  const {
+    toc,
+    currentChapterLabel,
+    currentPage,
+    totalPages,
+    navigateToTocHref,
+    flushPositionSave,
+    latestCfiRef,
+  } = useEpubLifecycle({
     bookId: book.id,
     containerRef,
     readerLayout: localReaderLayout,
@@ -556,11 +564,21 @@ function WorkspaceBookReaderInner({
             },
           )}
         >
-          <div className="absolute left-2 flex items-center gap-1.5">
+          <div className="absolute left-2 flex max-w-[calc(100%-8rem)] items-center gap-1.5">
             {totalPages !== null && currentPage !== null ? (
-              <span className="text-muted-foreground text-xs tabular-nums">
-                Page {currentPage} of {totalPages}
-              </span>
+              <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
+                {currentChapterLabel ? (
+                  <>
+                    <span className="max-w-28 truncate sm:max-w-48 md:max-w-64">
+                      {currentChapterLabel}
+                    </span>
+                    <span className="shrink-0">·</span>
+                  </>
+                ) : null}
+                <span className="shrink-0 tabular-nums">
+                  Page {currentPage} of {totalPages}
+                </span>
+              </div>
             ) : null}
           </div>
           {!isScrollMode && (
@@ -614,9 +632,7 @@ function WorkspaceBookReaderInner({
                     <TocList
                       entries={toc}
                       onNavigate={(href) => {
-                        renditionRef.current?.display(href).catch((err: unknown) => {
-                          console.warn("TOC navigation failed:", err);
-                        });
+                        navigateToTocHref(href);
                         setTocOpen(false);
                       }}
                     />

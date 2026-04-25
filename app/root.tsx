@@ -14,6 +14,7 @@ import type { Route } from "./+types/root";
 import "./app.css";
 import { ThemeEffect } from "~/components/theme-effect";
 import { CommandBar } from "~/components/command-bar";
+import { Toaster } from "~/components/ui/sonner";
 import { AuthProvider } from "~/lib/context/auth-context";
 import { WorkspaceProvider } from "~/lib/context/workspace-context";
 import { useSync, SyncContext } from "~/lib/sync/use-sync";
@@ -166,6 +167,7 @@ export default function App() {
           <SettingsShortcut />
           <CommandBar />
           <Outlet />
+          <Toaster />
         </WorkspaceProvider>
       </SyncProvider>
     </AuthProvider>
