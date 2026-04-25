@@ -171,7 +171,7 @@ export function PdfReader({ book }: PdfReaderProps) {
           <div className="flex items-center gap-1.5">
             {totalPages > 0 ? (
               <span className="text-muted-foreground text-[10px] tabular-nums md:text-xs">
-               {currentPage} / {totalPages}
+                {currentPage} / {totalPages}
               </span>
             ) : (
               <span className="text-muted-foreground text-[10px] tabular-nums md:text-xs">
