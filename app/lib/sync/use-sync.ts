@@ -22,7 +22,8 @@ export interface SyncState {
   triggerSync: () => void;
   /**
    * Re-download a single book's file and cover, or upload them if the DB
-   * row is missing the blob URLs. No-op when the engine is not running.
+   * row is missing the blob URLs. Also re-uploads extracted chapter text.
+   * No-op when the engine is not running.
    */
   reloadBookFiles: (bookId: string) => Promise<void>;
 }

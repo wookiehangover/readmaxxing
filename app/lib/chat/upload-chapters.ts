@@ -48,12 +48,13 @@ function createChapterUploadId(bookId: string): string {
   return globalThis.crypto?.randomUUID?.() ?? `${bookId}-${Date.now()}-${Math.random()}`;
 }
 
-export async function uploadChaptersOnce(
+export async function uploadChapters(
   bookId: string,
   chapters: BookChapter[],
   format: string | undefined,
+  options: { force?: boolean } = {},
 ): Promise<void> {
-  if (await isChaptersUploaded(bookId)) return;
+  if (!options.force && (await isChaptersUploaded(bookId))) return;
 
   const chunks = createChapterUploadChunks(chapters);
   if (chunks.length === 0) return;
@@ -94,4 +95,12 @@ export async function uploadChaptersOnce(
   }
 
   await markChaptersUploaded(bookId);
+}
+
+export async function uploadChaptersOnce(
+  bookId: string,
+  chapters: BookChapter[],
+  format: string | undefined,
+): Promise<void> {
+  await uploadChapters(bookId, chapters, format);
 }
