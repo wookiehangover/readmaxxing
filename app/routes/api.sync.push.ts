@@ -13,6 +13,7 @@ import { upsertPosition } from "~/lib/database/book/reading-position";
 import { upsertSession, softDeleteSession } from "~/lib/database/chat/chat-session";
 import { upsertSettings } from "~/lib/database/settings/user-settings";
 import { upsertUser } from "~/lib/database/user/user";
+import { getEnv } from "~/lib/env.server";
 import type { SyncPushRequest, SyncPushResponse, ChangeEntry } from "~/lib/sync/types";
 
 export async function processEntry(
@@ -204,7 +205,8 @@ export async function processEntry(
 }
 
 export async function action({ request }: { request: Request }) {
-  if (!process.env.DATABASE_URL) {
+  const env = getEnv();
+  if (!env.DATABASE_URL && !env.HYPERDRIVE) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 

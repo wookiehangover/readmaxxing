@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { useReaderNavigation, type TocEntry } from "~/lib/context/reader-context";
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
-import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
+import { coverCacheKey } from "~/lib/blob-url";
 import { filterBooks } from "~/lib/workspace-utils";
 import { cn } from "~/lib/utils";
 
@@ -27,14 +27,13 @@ export function BookCover({
   bookId?: string;
   updatedAt?: number;
 }) {
-  const directUrl = remoteCoverUrl && isPublicBlobUrl(remoteCoverUrl) ? remoteCoverUrl : null;
   const cacheKey = coverCacheKey({ remoteCoverUrl, updatedAt });
   const versionParam = cacheKey ? `&v=${encodeURIComponent(cacheKey)}` : "";
   const proxyUrl =
-    !directUrl && remoteCoverUrl && bookId
+    remoteCoverUrl && bookId
       ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover${versionParam}`
       : null;
-  const remoteUrl = directUrl ?? proxyUrl;
+  const remoteUrl = proxyUrl;
   const fallbackBlobUrl = useBlobObjectUrl(remoteUrl ? null : coverImage, bookId ?? null);
   const url = remoteUrl ?? fallbackBlobUrl;
 
