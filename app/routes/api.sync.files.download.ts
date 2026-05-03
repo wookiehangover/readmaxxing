@@ -1,4 +1,3 @@
-import { get as getVercelBlob } from "@vercel/blob";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { parseStoredBlobReference } from "~/lib/blob-url";
@@ -13,7 +12,6 @@ import { getEnv } from "~/lib/env.server";
  *   - bookId: string (required)
  *   - type: "file" (default) | "cover"
  *
- * Legacy Vercel Blob URLs are still supported during the migration window.
  */
 export async function loader({ request }: { request: Request }) {
   const env = getEnv();
@@ -53,57 +51,33 @@ export async function loader({ request }: { request: Request }) {
     return Response.json({ error: "Unsupported storage reference" }, { status: 400 });
   }
 
-  if (reference.kind === "r2") {
-    const bucket = reference.bucket === "covers" ? env.R2_COVERS : env.R2_FILES;
-    if (!bucket) {
-      return Response.json({ error: "R2 storage is not configured" }, { status: 500 });
-    }
-
-    const object = await bucket.get(reference.key, { range: request.headers });
-    if (!object) {
-      return Response.json({ error: "File not found in storage" }, { status: 404 });
-    }
-
-    const headers = new Headers();
-    object.writeHttpMetadata(headers);
-    headers.set("Accept-Ranges", "bytes");
-    headers.set("ETag", object.httpEtag);
-    if (!headers.has("Content-Type")) headers.set("Content-Type", "application/octet-stream");
-    if (type === "cover") headers.set("Cache-Control", "private, max-age=31536000, immutable");
-
-    const range = object.range;
-    if (range) {
-      const { start, end, length } = r2RangeBounds(range, object.size);
-      headers.set("Content-Range", `bytes ${start}-${end}/${object.size}`);
-      headers.set("Content-Length", String(length));
-      return new Response(object.body, { status: 206, headers });
-    }
-
-    headers.set("Content-Length", String(object.size));
-    return new Response(object.body, { headers });
+  const bucket = reference.bucket === "covers" ? env.R2_COVERS : env.R2_FILES;
+  if (!bucket) {
+    return Response.json({ error: "R2 storage is not configured" }, { status: 500 });
   }
 
-  const token = env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
-    return Response.json({ error: "Legacy blob storage is not configured" }, { status: 500 });
+  const object = await bucket.get(reference.key, { range: request.headers });
+  if (!object) {
+    return Response.json({ error: "File not found in storage" }, { status: 404 });
   }
 
-  const result = await getVercelBlob(reference.url, { access: "private", token });
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("Accept-Ranges", "bytes");
+  headers.set("ETag", object.httpEtag);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/octet-stream");
+  if (type === "cover") headers.set("Cache-Control", "private, max-age=31536000, immutable");
 
-  if (!result || result.statusCode !== 200 || !result.stream) {
-    return Response.json({ error: "Failed to retrieve file from blob storage" }, { status: 502 });
+  const range = object.range;
+  if (range) {
+    const { start, end, length } = r2RangeBounds(range, object.size);
+    headers.set("Content-Range", `bytes ${start}-${end}/${object.size}`);
+    headers.set("Content-Length", String(length));
+    return new Response(object.body, { status: 206, headers });
   }
 
-  const headers: Record<string, string> = {
-    "Content-Type": result.blob.contentType ?? "application/octet-stream",
-    "Content-Disposition": result.blob.contentDisposition,
-  };
-
-  if (type === "cover") {
-    headers["Cache-Control"] = "private, max-age=31536000, immutable";
-  }
-
-  return new Response(result.stream, { headers });
+  headers.set("Content-Length", String(object.size));
+  return new Response(object.body, { headers });
 }
 
 function r2RangeBounds(

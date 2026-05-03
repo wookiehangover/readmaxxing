@@ -27,19 +27,22 @@ A browser-based ebook reader. Drag and drop `.epub` or `.pdf` files to load them
 - [Effect.ts](https://effect.website/) — typed error handling and service architecture
 - [pg](https://github.com/brianc/node-postgres) + [pg-sql](https://github.com/calebmer/pg-sql) — Postgres database access
 - [@simplewebauthn/server](https://simplewebauthn.dev/) + [@simplewebauthn/browser](https://simplewebauthn.dev/) — WebAuthn passkey authentication
+- [Cloudflare Workers](https://developers.cloudflare.com/workers/) — app runtime and API routes
 - [Cloudflare R2](https://developers.cloudflare.com/r2/) — private file and cover storage
+- [Cloudflare Hyperdrive](https://developers.cloudflare.com/hyperdrive/) — Postgres connectivity from Workers
+- [Cloudflare Agents](https://developers.cloudflare.com/agents/) — Durable Object-backed chat sessions and resumable streams
 
 ## Getting Started
 
 ```bash
-cp .env.example .env.local  # fill in values for sync features
+cp .env.example .env.local  # fill in local sync values if needed
 pnpm install
 pnpm run dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) and drop an `.epub` file to get started.
 
-The app works fully offline without any environment variables. Sync features require a Postgres database and private Cloudflare R2 buckets — see [Environment Variables](#environment-variables) below.
+The app works fully offline without any environment variables. Sync features require Postgres plus private Cloudflare R2 buckets — see [Environment Variables](#environment-variables) below.
 
 ## Environment Variables
 
@@ -49,14 +52,30 @@ Copy `.env.example` to `.env.local`:
 cp .env.example .env.local
 ```
 
-All environment variables are optional — the app works fully offline without them. Sync features require:
+All environment variables are optional for local offline reading. Sync and chat features require:
 
-- `DATABASE_URL` — Postgres connection string
+- `DATABASE_URL` — local development Postgres connection string; production uses the `HYPERDRIVE` Worker binding
 - `WEBAUTHN_RP_ID` — WebAuthn Relying Party ID (e.g. `localhost` for dev, your domain for prod)
 - `WEBAUTHN_RP_ORIGIN` — WebAuthn origin URL (e.g. `http://localhost:5173` for dev)
-- `R2_FILES` / `R2_COVERS` — Cloudflare Worker R2 bucket bindings for private book files and covers
-- `BLOB_READ_WRITE_TOKEN` — legacy Vercel Blob token kept temporarily for the Wave 3 backfill from old blob URLs
-- `REDIS_URL` — Redis connection string for resumable AI chat streaming (Vercel KV, Upstash, or any Redis-compatible service). Required in production; in development the chat panel works without it but mid-stream reconnect is disabled.
+- `AI_GATEWAY_API_KEY` — Cloudflare AI Gateway API key for chat
+- `ANTHROPIC_API_KEY` — Anthropic API key for chat model access
+- `ANTHROPIC_BASE_URL` — optional custom Anthropic-compatible endpoint
+
+Production resources are configured in `wrangler.jsonc` as Worker bindings:
+
+- `HYPERDRIVE` — Cloudflare Hyperdrive config pointing at PlanetScale Postgres
+- `R2_FILES` / `R2_COVERS` — private R2 bucket bindings for book files and covers
+- `AGENTS` — Durable Object namespace for Cloudflare Agents chat sessions
+
+Set production secrets with Wrangler:
+
+```bash
+pnpm exec wrangler secret put WEBAUTHN_RP_ID
+pnpm exec wrangler secret put WEBAUTHN_RP_ORIGIN
+pnpm exec wrangler secret put AI_GATEWAY_API_KEY
+pnpm exec wrangler secret put ANTHROPIC_API_KEY
+pnpm exec wrangler secret put ANTHROPIC_BASE_URL  # optional
+```
 
 Create the private R2 buckets before deploying the Worker:
 
@@ -99,7 +118,44 @@ Wave 3 includes a one-shot local migration script that copies legacy Vercel Blob
       OR cover_blob_url ILIKE '%blob.vercel-storage.com%';
    ```
    The count must be `0`.
-6. Only after that verification passes, proceed to Wave 4 cleanup.
+6. Only after that verification passes, proceed to Wave 4 cleanup or merge. This is a required manual gate before deploying the Cloudflare-only runtime.
+
+## Deploy and Cutover
+
+Cloudflare is the only production runtime. Deployments use Workers, R2, Hyperdrive, and Cloudflare Agents; do not configure a separate Node server.
+
+1. Create Cloudflare resources:
+   - R2 buckets: `readmax-files` and `readmax-covers`
+   - Hyperdrive config pointing at PlanetScale Postgres
+   - Worker using `wrangler.jsonc`
+2. Add required Worker secrets:
+   ```bash
+   pnpm exec wrangler secret put WEBAUTHN_RP_ID
+   pnpm exec wrangler secret put WEBAUTHN_RP_ORIGIN
+   pnpm exec wrangler secret put AI_GATEWAY_API_KEY
+   pnpm exec wrangler secret put ANTHROPIC_API_KEY
+   pnpm exec wrangler secret put ANTHROPIC_BASE_URL  # optional
+   ```
+3. Run the Wave 3 backfill script against the production database.
+4. Before merging or deploying Wave 4, verify no legacy storage URLs remain:
+   ```sql
+   SELECT count(*)
+   FROM readmax.book
+   WHERE file_url ILIKE '%blob.vercel-storage.com%'
+      OR cover_url ILIKE '%blob.vercel-storage.com%'
+      OR file_blob_url ILIKE '%blob.vercel-storage.com%'
+      OR cover_blob_url ILIKE '%blob.vercel-storage.com%';
+   ```
+   Confirm the count is `0`.
+5. Build and deploy:
+   ```bash
+   pnpm build
+   pnpm exec wrangler deploy
+   ```
+6. Cut DNS over to the Worker route.
+7. After traffic is healthy, decommission the old Vercel deployment.
+
+Use `pnpm run dev` for local development (`react-router dev`) and `pnpm run start` for `wrangler dev` against the built Worker configuration. Use `pnpm exec wrangler deploy --dry-run` to validate Worker packaging without deploying.
 
 ## Scripts
 

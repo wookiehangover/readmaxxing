@@ -1,9 +1,11 @@
 export type StoredBlobType = "file" | "cover";
 export type R2StorageBucket = "files" | "covers";
 
-export type StoredBlobReference =
-  | { readonly kind: "r2"; readonly bucket: R2StorageBucket; readonly key: string }
-  | { readonly kind: "legacy-vercel"; readonly url: string };
+export type StoredBlobReference = {
+  readonly kind: "r2";
+  readonly bucket: R2StorageBucket;
+  readonly key: string;
+};
 
 const R2_BUCKET_BY_TYPE = {
   file: "files",
@@ -12,14 +14,6 @@ const R2_BUCKET_BY_TYPE = {
 
 export function r2StorageUrl(type: StoredBlobType, key: string): string {
   return `r2://${R2_BUCKET_BY_TYPE[type]}/${key.replace(/^\/+/, "")}`;
-}
-
-export function isLegacyVercelBlobUrl(value: string): boolean {
-  try {
-    return new URL(value).host.includes("blob.vercel-storage.com");
-  } catch {
-    return false;
-  }
 }
 
 export function parseStoredBlobReference(
@@ -47,7 +41,6 @@ export function parseStoredBlobReference(
     }
   }
 
-  if (isLegacyVercelBlobUrl(value)) return { kind: "legacy-vercel", url: value };
   return null;
 }
 
