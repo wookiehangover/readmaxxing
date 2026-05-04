@@ -1,4 +1,5 @@
 import { mergeBookRecord, mergeChatMessageRecord, mergeChatSessionRecord } from "./entity-mergers";
+import { reuploadBookChapters } from "./book-chapter-uploads";
 import { reloadBookFiles as reloadBookFilesImpl, type FileUploadContext } from "./file-uploads";
 import { PUSH_BATCH_SIZE, pushChanges as pushChangesImpl } from "./push";
 import { pullChanges as pullChangesImpl } from "./pull";
@@ -27,7 +28,8 @@ export interface SyncEngine {
   /**
    * Re-download the book file and cover from the server, overwriting local
    * copies. If the book is missing a remote storage reference, upload the
-   * local file / cover to R2 storage instead so the DB row gets populated.
+   * local file / cover to R2 storage instead so the DB row gets populated. Also
+   * re-extract and re-upload chapter text when local book data is available.
    */
   reloadBookFiles(bookId: string): Promise<void>;
 }
@@ -175,6 +177,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
     async reloadBookFiles(bookId: string) {
       await reloadBookFilesImpl(fileUploadContext, bookId);
+      await reuploadBookChapters(bookId);
     },
   };
 }

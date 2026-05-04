@@ -6,7 +6,6 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
-import tsconfigPaths from "vite-tsconfig-paths";
 
 const indexHtmlPath = resolve("build/client/index.html");
 const serviceWorkerPath = resolve("build/client/sw.js");
@@ -103,7 +102,6 @@ export default defineConfig(({ mode }) => ({
     cloudflare({ viteEnvironment: { name: "ssr" } }),
     tailwindcss(),
     reactRouter(),
-    tsconfigPaths(),
     VitePWA({
       registerType: "prompt",
       strategies: "generateSW",
@@ -207,5 +205,10 @@ export default defineConfig(({ mode }) => ({
       getSiteOrigin({ ...loadEnv(mode, process.cwd(), ""), ...process.env }),
     ),
     "console.createTask": "undefined",
+  },
+  resolve: {
+    alias: {
+      "~": resolve("app"),
+    },
   },
 }));

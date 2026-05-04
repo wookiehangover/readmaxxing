@@ -6,9 +6,11 @@
 # React Router
 /.react-router/
 /build/
+/dist/
 .intent/
 playwright-report/
 test-results/
 .last-run.json
 .vercel
+/.wrangler/
 .env*.local
