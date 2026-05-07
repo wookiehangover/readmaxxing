@@ -1,9 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { Effect, Layer } from "effect";
-import { createStore, get, set } from "idb-keyval";
+import { createStore, entries, get, set } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { WorkspaceService, makeWorkspaceService } from "~/lib/stores/workspace-store";
 import type { SerializedDockview } from "dockview";
+
+vi.mock("idb-keyval", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("idb-keyval")>();
+  return { ...actual, entries: vi.fn(actual.entries) };
+});
 
 let testCounter = 0;
 
@@ -158,6 +163,27 @@ describe("WorkspaceService", () => {
       const map = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())));
       expect(map).toBeInstanceOf(Map);
       expect(map.size).toBe(0);
+    });
+
+    it("does not use the idb-keyval entries fast path for last-opened timestamps", async () => {
+      const stores = makeTestStores();
+      const layer = makeTestLayer(stores);
+      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
+        Effect.runPromise(Effect.provide(e, layer));
+      await set("book-1", 1000, stores.lastOpenedStore);
+      await set("bad-timestamp", "not-a-number", stores.lastOpenedStore);
+      await set("book-2", 2000, stores.lastOpenedStore);
+      vi.mocked(entries).mockRejectedValueOnce(
+        new TypeError("Cannot read properties of undefined (reading '0')"),
+      );
+
+      const map = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())));
+
+      expect(entries).not.toHaveBeenCalled();
+      expect(Array.from(map.entries())).toEqual([
+        ["book-1", 1000],
+        ["book-2", 2000],
+      ]);
     });
 
     it("tracks multiple books", async () => {

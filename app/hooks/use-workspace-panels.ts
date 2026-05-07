@@ -94,45 +94,49 @@ export function useWorkspacePanels({
         mode === "focused"
           ? focusedClustersRef.current.size === 0
           : !api.panels.some((p) => p.id.startsWith("book-"));
+      const shouldAutoCollapse = isFirstCluster && !isMobileRef.current && !collapsedRef.current;
 
-      if (mode === "focused") {
-        if (!focusedClustersRef.current.has(book.id)) {
-          focusedClustersRef.current.set(book.id, {
-            bookId: book.id,
-            bookTitle: book.title,
-            bookFormat: book.format,
-            hasChat: !isMobileRef.current,
-            hasNotebook: false,
-            activeTab: isMobileRef.current ? "book" : "chat",
-          });
-          focusedOrderRef.current = [...focusedOrderRef.current, book.id];
+      const openPanels = () => {
+        if (mode === "focused") {
+          if (!focusedClustersRef.current.has(book.id)) {
+            focusedClustersRef.current.set(book.id, {
+              bookId: book.id,
+              bookTitle: book.title,
+              bookFormat: book.format,
+              hasChat: !isMobileRef.current,
+              hasNotebook: false,
+              activeTab: isMobileRef.current ? "book" : "chat",
+            });
+            focusedOrderRef.current = [...focusedOrderRef.current, book.id];
+          }
+          ws.setActiveCluster(book.id);
+        } else {
+          const existing = findBookPanel(api, book.id);
+          if (existing) {
+            existing.focus();
+            return;
+          }
+          addBookPanel(book);
+          if (isFirstCluster && !isMobileRef.current && window.innerWidth > 1000) {
+            api.addPanel({
+              id: `chat-${book.id}`,
+              component: "chat",
+              title: truncateTitle(`Discuss: ${book.title}`),
+              params: { bookId: book.id, bookTitle: book.title },
+              renderer: "always",
+              position: { referencePanel: `book-${book.id}`, direction: "right" },
+            });
+          }
         }
-        ws.setActiveCluster(book.id);
-      } else {
-        const existing = findBookPanel(api, book.id);
-        if (existing) {
-          existing.focus();
-          return;
-        }
-        addBookPanel(book);
-        if (isFirstCluster && !isMobileRef.current && window.innerWidth > 1000) {
-          api.addPanel({
-            id: `chat-${book.id}`,
-            component: "chat",
-            title: truncateTitle(`Discuss: ${book.title}`),
-            params: { bookId: book.id, bookTitle: book.title },
-            renderer: "always",
-            position: { referencePanel: `book-${book.id}`, direction: "right" },
-          });
-        }
-      }
+      };
 
-      if (isFirstCluster && !isMobileRef.current && !collapsedRef.current) {
+      if (shouldAutoCollapse) {
         updateSettings({ sidebarCollapsed: true });
-        setTimeout(() => {
-          window.dispatchEvent(new Event("resize"));
-        }, SIDEBAR_TRANSITION_MS);
+        window.setTimeout(openPanels, SIDEBAR_TRANSITION_MS);
+        return;
       }
+
+      openPanels();
     },
     [
       addBookPanel,
