@@ -43,6 +43,7 @@ export interface UseFocusedModeResult {
   readonly focusedOrderRef: React.MutableRefObject<string[]>;
   readonly swapInProgressRef: React.MutableRefObject<boolean>;
   readonly closeFocusedCluster: (bookId: string) => void;
+  readonly reorderFocusedClusters: (newOrder: string[]) => void;
   readonly getClusterEntries: () => ClusterBarEntry[];
   readonly getActiveClusterId: () => string | null;
   /**
@@ -301,6 +302,41 @@ export function useFocusedMode({
     [swapFocusedCluster, ws],
   );
 
+  const reorderFocusedClusters = useCallback(
+    (newOrder: string[]) => {
+      const trackedClusters = focusedClustersRef.current;
+      const seen = new Set<string>();
+      const next: string[] = [];
+
+      for (const bookId of newOrder) {
+        if (seen.has(bookId) || !trackedClusters.has(bookId)) continue;
+        seen.add(bookId);
+        next.push(bookId);
+      }
+
+      for (const bookId of focusedOrderRef.current) {
+        if (seen.has(bookId) || !trackedClusters.has(bookId)) continue;
+        seen.add(bookId);
+        next.push(bookId);
+      }
+
+      for (const bookId of trackedClusters.keys()) {
+        if (seen.has(bookId)) continue;
+        seen.add(bookId);
+        next.push(bookId);
+      }
+
+      const current = focusedOrderRef.current;
+      if (current.length === next.length && current.every((bookId, idx) => bookId === next[idx])) {
+        return;
+      }
+
+      focusedOrderRef.current = next;
+      ws.notifyClusterChanges();
+    },
+    [ws],
+  );
+
   // Reconcile the tracked-cluster map from dockview's panel list, then swap
   // down to a single active cluster. Used after a mode toggle (freeform →
   // focused) and on initial `onReady` when layoutMode is "focused" to absorb
@@ -395,6 +431,7 @@ export function useFocusedMode({
     focusedOrderRef,
     swapInProgressRef,
     closeFocusedCluster,
+    reorderFocusedClusters,
     getClusterEntries,
     getActiveClusterId,
     enforceSingleFocusedCluster,
