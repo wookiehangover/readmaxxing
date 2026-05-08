@@ -36,6 +36,10 @@ function clusterPills(page: Page) {
   return page.getByRole("tablist", { name: "Open books" }).getByRole("tab");
 }
 
+function clusterItems(page: Page) {
+  return page.getByRole("tablist", { name: "Open books" }).locator(":scope > div");
+}
+
 test.describe("Layout modes", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
@@ -144,6 +148,71 @@ test.describe("Layout modes", () => {
     // Shortcut should not have swapped clusters and the input keeps focus.
     await expect(pills.nth(0)).toHaveAttribute("aria-selected", "true");
     await expect(searchInput).toHaveValue(/hello/);
+  });
+
+  test("keyboard reorder moves focused cluster pills and updates shortcut order", async ({
+    page,
+  }) => {
+    await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
+    await uploadBook(page, TEST_EPUB_2, "Second Test Book");
+
+    const pills = clusterPills(page);
+    await expect(pills).toHaveCount(2);
+    await expect(pills.nth(0)).toContainText("Test Book for E2E");
+    await expect(pills.nth(1)).toContainText("Second Test Book");
+
+    await pills.nth(1).focus();
+    await page.keyboard.press("Meta+Shift+ArrowLeft");
+
+    await expect(pills.nth(0)).toContainText("Second Test Book");
+    await expect(pills.nth(0)).toBeFocused();
+    await expect(pills.nth(0)).toHaveAttribute("aria-selected", "true");
+
+    await page.keyboard.press("Meta+2");
+    await expect(pills.nth(1)).toContainText("Test Book for E2E");
+    await expect(pills.nth(1)).toHaveAttribute("aria-selected", "true", { timeout: 5_000 });
+  });
+
+  test("dragging a cluster pill reorders it with a visible drop indicator", async ({ page }) => {
+    await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
+    await uploadBook(page, TEST_EPUB_2, "Second Test Book");
+
+    const pills = clusterPills(page);
+    const items = clusterItems(page);
+    await expect(pills).toHaveCount(2);
+    await expect(pills.nth(0)).toContainText("Test Book for E2E");
+    await expect(pills.nth(1)).toContainText("Second Test Book");
+
+    const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+    await items.nth(1).dispatchEvent("dragstart", { dataTransfer });
+    await expect(items.nth(1)).toHaveClass(/opacity-50/);
+
+    const targetBox = await items.nth(0).boundingBox();
+    if (!targetBox) throw new Error("Expected first cluster pill bounds");
+
+    await items.nth(0).dispatchEvent("dragover", {
+      clientX: targetBox.x + 1,
+      clientY: targetBox.y + targetBox.height / 2,
+      dataTransfer,
+    });
+    await expect(
+      page.getByRole("tablist", { name: "Open books" }).locator('span[aria-hidden="true"]'),
+    ).toHaveCount(1);
+
+    await items.nth(0).dispatchEvent("drop", {
+      clientX: targetBox.x + 1,
+      clientY: targetBox.y + targetBox.height / 2,
+      dataTransfer,
+    });
+
+    await expect(pills.nth(0)).toContainText("Second Test Book");
+    await expect(pills.nth(1)).toContainText("Test Book for E2E");
+
+    await page.waitForTimeout(400);
+    await page.reload();
+    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await expect(clusterPills(page).nth(0)).toContainText("Second Test Book");
+    await expect(clusterPills(page).nth(1)).toContainText("Test Book for E2E");
   });
 
   test("opening the same book twice does not create a duplicate cluster", async ({ page }) => {

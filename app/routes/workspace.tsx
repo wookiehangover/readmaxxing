@@ -113,6 +113,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     focusedOrderRef,
     swapInProgressRef,
     closeFocusedCluster,
+    reorderFocusedClusters,
     getClusterEntries,
     getActiveClusterId,
     enforceSingleFocusedCluster,
@@ -335,6 +336,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
               getActiveId={getActiveClusterId}
               onActivate={(bookId) => ws.setActiveCluster(bookId)}
               onClose={closeFocusedCluster}
+              onReorder={reorderFocusedClusters}
             />
           )}
           <div className="flex-1 min-h-0">
