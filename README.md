@@ -74,6 +74,34 @@ See `AGENTS.md` for the full architecture rules — Effect.ts conventions, sync 
 
 Cloudflare is the only production runtime. There is no Node server.
 
+### First-time clean deploy (no Vercel data)
+
+Use this flow for a fresh Cloudflare account when there is no Vercel Blob data to migrate.
+
+1. Log in to Wrangler:
+   ```bash
+   pnpm exec wrangler login
+   ```
+2. Provision the private R2 buckets and Hyperdrive config declared in `wrangler.jsonc`:
+   ```bash
+   SETUP_PG_URL="$PG_URL" pnpm setup:cloudflare
+   ```
+   The script is idempotent, reads bucket names from `wrangler.jsonc`, creates/reuses Hyperdrive, writes the resolved `hyperdrive[0].id` in place, and prints the required `wrangler secret put` commands. It does not configure public R2 access and does not run database migrations.
+3. Set the Worker secrets printed by the script.
+4. Apply the Postgres schema once from your operator shell:
+   ```bash
+   psql "$PG_URL" -f database/readmax/core.sql
+   for f in database/migrations/*.sql; do psql "$PG_URL" -f "$f"; done
+   ```
+5. Update `PUBLIC_SITE_URL` in `wrangler.jsonc` to the deployed origin.
+6. Validate and deploy:
+   ```bash
+   pnpm exec wrangler deploy --dry-run
+   pnpm exec wrangler deploy
+   ```
+
+For clean deploys, skip step 4 (the blob backfill) in the migration checklist below.
+
 1. **Provision Cloudflare resources.**
    - Private R2 buckets (do not enable public access; reads are auth-proxied):
      ```bash
@@ -88,6 +116,7 @@ Cloudflare is the only production runtime. There is no Node server.
    - The Workers project, R2 bindings, and `ChatAgent` Durable Object migration are already declared in `wrangler.jsonc`; you only need a Workers slot in your account.
 
 2. **Set Worker secrets.**
+
    ```bash
    pnpm exec wrangler secret put WEBAUTHN_RP_ID
    pnpm exec wrangler secret put WEBAUTHN_RP_ORIGIN
@@ -99,26 +128,32 @@ Cloudflare is the only production runtime. There is no Node server.
 3. **Set non-secret vars.** `PUBLIC_SITE_URL` and `WEBAUTHN_RP_NAME` live in the `vars` block of `wrangler.jsonc`; update `PUBLIC_SITE_URL` to the deployed origin before shipping.
 
 4. **(Only if migrating from a previous Vercel + Vercel Blob deployment.)** Run the one-shot backfill that copies legacy Vercel Blob objects into R2 and rewrites `readmax.book.file_blob_url` / `cover_blob_url` to `r2://...` references. Always dry-run first:
+
    ```bash
    pnpm exec tsx scripts/backfill-blob-to-r2.ts --dry-run --audit-csv migration.csv
    pnpm exec tsx scripts/backfill-blob-to-r2.ts --audit-csv migration.csv
    ```
+
    See [Migration script reference](#migration-script-reference) for flags.
 
 5. **(Only if step 4 was needed.) Mandatory pre-deploy gate.** Confirm no legacy storage URLs remain in production:
+
    ```sql
    SELECT count(*)
    FROM readmax.book
    WHERE file_url ILIKE '%blob.vercel-storage.com%'
       OR cover_url ILIKE '%blob.vercel-storage.com%';
    ```
+
    The count must be `0` before proceeding.
 
 6. **Build and deploy.**
+
    ```bash
    pnpm build
    pnpm exec wrangler deploy
    ```
+
    Use `pnpm exec wrangler deploy --dry-run` first to validate Worker packaging.
 
 7. **Cut DNS over** to the Worker route once health checks pass.
@@ -155,7 +190,7 @@ pnpm exec tsx scripts/backfill-blob-to-r2.ts \
 ```
 app/         React Router v7 app: routes, components, hooks, Effect services, lib
 workers/     Cloudflare Worker entry (app.ts) and ChatAgent Durable Object
-scripts/     Operational scripts (backfill-blob-to-r2.ts)
+scripts/     Operational scripts (setup-cloudflare.sh, backfill-blob-to-r2.ts)
 database/    readmax schema (readmax/core.sql) and sequential SQL migrations/
 e2e/         Playwright tests and fixture epubs
 public/      Static assets, icons, self-hosted Geist fonts

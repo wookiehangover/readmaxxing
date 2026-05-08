@@ -5,6 +5,7 @@
   "scripts": {
     "build": "react-router build",
     "dev": "react-router dev",
+    "setup:cloudflare": "bash scripts/setup-cloudflare.sh \"$@\"",
     "start": "wrangler dev",
     "typecheck": "react-router typegen && tsc",
     "lint": "oxlint .",
