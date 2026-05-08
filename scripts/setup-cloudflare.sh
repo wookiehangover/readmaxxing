@@ -6,6 +6,8 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 WRANGLER_CONFIG="wrangler.jsonc"
 PLACEHOLDER_ID="00000000-0000-0000-0000-000000000000"
+UNDASHED_PLACEHOLDER_ID="00000000000000000000000000000000"
+HYPERDRIVE_ID_PATTERN="[0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 HYPERDRIVE_NAME="readmaxxing-pg"
 PG_URL="${SETUP_PG_URL:-}"
 DRY_RUN=0
@@ -253,16 +255,27 @@ extract_id() {
   local input="$1"
   local id
   while IFS= read -r id; do
-    if [ -n "$id" ] && [ "$id" != "$PLACEHOLDER_ID" ]; then
+    if [ -n "$id" ] && ! is_placeholder_id "$id"; then
       printf '%s' "$id"
       return 0
     fi
   done < <(
     {
+      # Human-readable wrangler output can contain extra hex; prefer the last
+      # 32-hex token from confirmation/id lines, then fall back to any id token.
+      printf '%s\n' "$input" | grep -Ei 'created|success|id' | grep_hyperdrive_ids | grep -E '^[0-9a-fA-F]{32}$' | tail -1 || true
       printf '%s' "$input" | jq -r '.. | objects | .id? // empty' 2>/dev/null || true
-      printf '%s' "$input" | grep -Eo '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' || true
+      printf '%s' "$input" | grep_hyperdrive_ids || true
     } | awk '!seen[$0]++'
   )
+}
+
+grep_hyperdrive_ids() {
+  grep -Eo "(^|[^0-9a-fA-F])($HYPERDRIVE_ID_PATTERN)([^0-9a-fA-F]|$)" | sed -E "s/^[^0-9a-fA-F]*($HYPERDRIVE_ID_PATTERN)[^0-9a-fA-F]*$/\\1/"
+}
+
+is_placeholder_id() {
+  [ "$1" = "$PLACEHOLDER_ID" ] || [ "$1" = "$UNDASHED_PLACEHOLDER_ID" ]
 }
 
 escape_sed_replacement() {
@@ -284,14 +297,24 @@ write_hyperdrive_id() {
 
 create_or_reuse_hyperdrive() {
   local current_id
+  local list_output
+  local existing_id
   local create_output
   local resolved_id
   current_id="$(jsonc_query '.hyperdrive[0].id // ""')"
 
-  if [ -n "$current_id" ] && [ "$current_id" != "$PLACEHOLDER_ID" ]; then
+  if [ -n "$current_id" ] && ! is_placeholder_id "$current_id"; then
     echo "[setup] Reusing existing Hyperdrive id '$current_id'."
     run pnpm exec wrangler hyperdrive get "$current_id"
     echo "[skip] $WRANGLER_CONFIG already contains a real Hyperdrive id."
+    return 0
+  fi
+
+  list_output="$(run_capture pnpm exec wrangler hyperdrive list)"
+  existing_id="$(printf '%s' "$list_output" | grep -F "$HYPERDRIVE_NAME" | grep_hyperdrive_ids | grep -E '^[0-9a-fA-F]{32}$' | head -1 || true)"
+  if [ -n "$existing_id" ] && ! is_placeholder_id "$existing_id"; then
+    echo "[setup] Found existing Hyperdrive '$HYPERDRIVE_NAME' with id '$existing_id'. Reusing."
+    write_hyperdrive_id "$existing_id"
     return 0
   fi
 
