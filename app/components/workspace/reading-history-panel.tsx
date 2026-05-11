@@ -163,6 +163,19 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
                   {group.label}
                 </h3>
                 <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr>
+                      <th className="w-0 pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
+                        Time
+                      </th>
+                      <th className="pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
+                        Page
+                      </th>
+                      <th className="pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
+                        Chapter
+                      </th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {group.entries.map((entry) => (
                       <tr
@@ -170,11 +183,11 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
                         className="cursor-pointer transition-colors hover:bg-accent/50"
                         onClick={() => handleNavigateToEntry(entry.cfi)}
                       >
-                        <td className="whitespace-nowrap py-1.5 pr-3 font-mono text-xs tabular-nums text-muted-foreground">
+                        <td className="w-0 whitespace-nowrap py-1.5 pr-3 text-xs tabular-nums text-muted-foreground">
                           {formatTime(entry.timestamp)}
                         </td>
-                        <td className="whitespace-nowrap py-1.5 pr-3 font-semibold tabular-nums">
-                          p.&nbsp;{entry.pageIndex ?? "—"}
+                        <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums">
+                          {entry.pageIndex ?? "—"}
                         </td>
                         <td className="max-w-0 truncate py-1.5 text-xs text-muted-foreground">
                           {entry.chapterLabel ?? "Unknown chapter"}
