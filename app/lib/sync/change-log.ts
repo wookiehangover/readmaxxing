@@ -54,7 +54,11 @@ export async function recordChange(
   // Signal the sync engine to push immediately rather than waiting for the
   // next interval (reduces cross-device latency from ~30s+ to near-instant).
   // Deferred to a microtask to avoid triggering React state updates during render.
-  if (typeof window !== "undefined") {
+  // Position changes are not urgent enough to trigger an immediate push.
+  // They batch with the regular 30s push interval. Triggering immediate
+  // pushes causes SyncStatus re-renders → Dockview dimension changes →
+  // resize+display cycles that fight the reader's current position.
+  if (typeof window !== "undefined" && entry.entity !== "position") {
     queueMicrotask(() => {
       window.dispatchEvent(new CustomEvent("sync:push-needed"));
     });
