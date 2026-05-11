@@ -1,6 +1,7 @@
 import { get, set, entries } from "idb-keyval";
 import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
 import { removeSessionLocally } from "~/lib/stores/chat-store";
+import { isActiveReader } from "./active-readers";
 import { isWellFormedEntry } from "./idb-entry";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
@@ -22,8 +23,6 @@ import {
   getPositionStore,
 } from "./stores";
 import type { EntityType } from "./types";
-
-const POSITION_MERGE_EPSILON_MS = 5;
 
 export async function mergeBookRecord(record: Record<string, unknown>): Promise<void> {
   const store = getBookStore();
@@ -99,16 +98,13 @@ async function mergePositionRecord(record: Record<string, unknown>): Promise<voi
   const store = getPositionStore();
   const localRecord = serverPositionToLocal(record);
   const id = localRecord.id;
+
+  if (isActiveReader(id)) return;
+
   const local = await get<Record<string, unknown>>(id, store);
 
   if (!local) {
     await set(id, localRecord, store);
-    return;
-  }
-
-  const localUpdatedAt = (local as { updatedAt: number }).updatedAt;
-  const remoteUpdatedAt = localRecord.updatedAt;
-  if (Math.abs(remoteUpdatedAt - localUpdatedAt) <= POSITION_MERGE_EPSILON_MS) {
     return;
   }
 

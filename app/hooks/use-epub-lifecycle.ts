@@ -8,6 +8,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { LocationCacheService } from "~/lib/stores/location-cache-store";
 import { ReadingHistoryService } from "~/lib/stores/reading-history-store";
 import { ReadingPositionService } from "~/lib/stores/position-store";
+import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-readers";
 import { resolveTheme } from "~/lib/settings";
 import type { ReaderLayout, Theme } from "~/lib/settings";
 import {
@@ -559,6 +560,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         ...("gap" in opts && { gap: opts.gap }),
       });
       renditionRef.current = rendition;
+      registerActiveReader(bookId);
 
       // Inject Google Fonts, typography CSS, and styles into epub iframe
       rendition.hooks.content.register((contents: any) => {
@@ -844,6 +846,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       document.removeEventListener("keydown", handleKeyDown);
       flushPositionSave();
       clearNavigationInProgress();
+      unregisterActiveReader(bookId);
       setToc([]);
       setCurrentChapterLabel(null);
       configRef.current.onCleanupToc?.();
