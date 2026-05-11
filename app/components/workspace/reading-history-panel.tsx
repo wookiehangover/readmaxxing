@@ -5,6 +5,7 @@ import { BookOpen, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { useEffectQuery } from "~/hooks/use-effect-query";
+import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import {
   ReadingHistoryService,
@@ -59,6 +60,11 @@ function formatProgress(percentage: number): string {
   return `${Math.round(clamped)}%`;
 }
 
+function formatEntryLocation(entry: ReadingHistoryEntry): string {
+  if (entry.pageIndex !== null) return `Page ${entry.pageIndex}`;
+  return `Location ${formatProgress(entry.percentage)}`;
+}
+
 function groupHistoryByDay(history: ReadingHistoryEntry[]): GroupedReadingHistory[] {
   const groups = new Map<string, GroupedReadingHistory>();
 
@@ -81,6 +87,7 @@ function groupHistoryByDay(history: ReadingHistoryEntry[]): GroupedReadingHistor
 
 export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHistoryPanelParams>) {
   const { bookId, bookTitle } = params;
+  const { navigateInCluster } = useWorkspace();
   const [refreshKey, setRefreshKey] = useState(0);
   const [isClearing, setIsClearing] = useState(false);
 
@@ -111,6 +118,15 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
         setIsClearing(false);
       });
   }, [bookId, bookTitle, entries.length, isClearing]);
+
+  const handleNavigateToEntry = useCallback(
+    (cfi: string) => {
+      navigateInCluster(bookId, cfi).catch((err: unknown) => {
+        console.error("Failed to navigate from reading history:", err);
+      });
+    },
+    [bookId, navigateInCluster],
+  );
 
   return (
     <div className="flex h-full flex-col bg-card">
@@ -147,22 +163,28 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
                   {group.entries.map((entry, index) => {
                     const isLast = index === group.entries.length - 1;
                     return (
-                      <li key={entry.id} className="flex gap-3 pb-4 last:pb-0">
-                        <time className="w-14 shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">
-                          {formatTime(entry.timestamp)}
-                        </time>
-                        <div className="relative flex w-3 shrink-0 justify-center">
-                          <span className="mt-1.5 size-2 rounded-full border border-border bg-card" />
-                          {!isLast && <span className="absolute top-4 bottom-0 w-px bg-border" />}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">
-                            {entry.chapterLabel ?? "Unknown chapter"}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatProgress(entry.percentage)} progress
-                          </p>
-                        </div>
+                      <li key={entry.id} className="pb-2 last:pb-0">
+                        <button
+                          type="button"
+                          className="flex w-full cursor-pointer gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => handleNavigateToEntry(entry.cfi)}
+                        >
+                          <time className="w-14 shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">
+                            {formatTime(entry.timestamp)}
+                          </time>
+                          <div className="relative flex w-3 shrink-0 justify-center">
+                            <span className="mt-1.5 size-2 rounded-full border border-border bg-card" />
+                            {!isLast && <span className="absolute top-4 bottom-0 w-px bg-border" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              {entry.chapterLabel ?? "Unknown chapter"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatEntryLocation(entry)}
+                            </p>
+                          </div>
+                        </button>
                       </li>
                     );
                   })}
