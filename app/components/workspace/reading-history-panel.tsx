@@ -170,7 +170,7 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
                         className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => handleNavigateToEntry(entry.cfi)}
                       >
-                        <time className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                        <time className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
                           {formatTime(entry.timestamp)}
                         </time>
                         <span className="shrink-0 text-sm font-semibold tabular-nums">
