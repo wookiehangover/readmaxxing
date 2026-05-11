@@ -50,23 +50,9 @@ function formatDayLabel(timestamp: number): string {
 
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString(undefined, {
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
-    second: "2-digit",
   });
-}
-
-function formatProgress(percentage: number): string {
-  const clamped = Math.min(100, Math.max(0, percentage));
-  return `${Math.round(clamped)}%`;
-}
-
-function formatEntryLocation(entry: ReadingHistoryEntry): string {
-  if (entry.pageIndex !== null && entry.totalPages != null) {
-    return `${entry.pageIndex} / ${entry.totalPages}`;
-  }
-  if (entry.pageIndex !== null) return String(entry.pageIndex);
-  return formatProgress(entry.percentage);
 }
 
 function groupHistoryByDay(history: ReadingHistoryEntry[]): GroupedReadingHistory[] {
@@ -177,34 +163,25 @@ export function ReadingHistoryPanel({ params }: IDockviewPanelProps<ReadingHisto
                   {group.label}
                 </h3>
                 <ol className="flex flex-col">
-                  {group.entries.map((entry, index) => {
-                    const isLast = index === group.entries.length - 1;
-                    return (
-                      <li key={entry.id} className="pb-2 last:pb-0">
-                        <button
-                          type="button"
-                          className="flex w-full cursor-pointer gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => handleNavigateToEntry(entry.cfi)}
-                        >
-                          <time className="w-14 shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">
-                            {formatTime(entry.timestamp)}
-                          </time>
-                          <div className="relative flex w-3 shrink-0 justify-center">
-                            <span className="mt-1.5 size-2 rounded-full border border-border bg-card" />
-                            {!isLast && <span className="absolute top-4 bottom-0 w-px bg-border" />}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">
-                              {entry.chapterLabel ?? "Unknown chapter"}
-                            </p>
-                            <p className="text-xs tabular-nums text-muted-foreground">
-                              {formatEntryLocation(entry)}
-                            </p>
-                          </div>
-                        </button>
-                      </li>
-                    );
-                  })}
+                  {group.entries.map((entry) => (
+                    <li key={entry.id} className="pb-2 last:pb-0">
+                      <button
+                        type="button"
+                        className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => handleNavigateToEntry(entry.cfi)}
+                      >
+                        <time className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                          {formatTime(entry.timestamp)}
+                        </time>
+                        <span className="shrink-0 text-sm font-semibold tabular-nums">
+                          p. {entry.pageIndex ?? "—"}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                          {entry.chapterLabel ?? "Unknown chapter"}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
                 </ol>
               </section>
             ))}
