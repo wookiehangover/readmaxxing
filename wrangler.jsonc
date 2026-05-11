@@ -13,7 +13,7 @@
   "vars": {
     "WEBAUTHN_RP_NAME": "Readmaxxing",
     // Non-secret canonical Worker origin used for absolute social preview URLs.
-    "PUBLIC_SITE_URL": "https://readmaxxing.example.com",
+    "PUBLIC_SITE_URL": "https://readmaxxing.0x01ai.workers.dev",
     // TODO(secrets): set with `pnpm exec wrangler secret put WEBAUTHN_RP_ID`.
     // "WEBAUTHN_RP_ID": "",
     // TODO(secrets): set with `pnpm exec wrangler secret put WEBAUTHN_RP_ORIGIN`.
