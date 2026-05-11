@@ -9,6 +9,7 @@ import type { UseStore } from "idb-keyval";
 let _bookStore: UseStore | null = null;
 let _bookDataStore: UseStore | null = null;
 let _positionStore: UseStore | null = null;
+let _readingHistoryStore: UseStore | null = null;
 let _highlightStore: UseStore | null = null;
 let _notebookStore: UseStore | null = null;
 let _chatSessionStore: UseStore | null = null;
@@ -32,6 +33,13 @@ export function getBookDataStore(): UseStore {
 export function getPositionStore(): UseStore {
   if (!_positionStore) _positionStore = createStore("ebook-reader-positions", "positions");
   return _positionStore;
+}
+
+/** Reading history entries (ReadingHistoryEntry, key = `${bookId}:${ulid}`). */
+export function getReadingHistoryStore(): UseStore {
+  if (!_readingHistoryStore)
+    _readingHistoryStore = createStore("ebook-reader-reading-history", "history");
+  return _readingHistoryStore;
 }
 
 /** Highlights (Highlight records, key = highlightId). */

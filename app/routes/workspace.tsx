@@ -19,6 +19,7 @@ import { sortBooks } from "~/lib/workspace-utils";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { BookReaderPanel, NotebookPanel, ChatPanel } from "~/components/workspace/panel-components";
+import { ReadingHistoryPanel } from "~/components/workspace/reading-history-panel";
 import { NewTabPanel } from "~/components/workspace/new-tab-panel";
 import { StandardEbooksPanel } from "~/components/workspace/standard-ebooks-panel";
 import { WatermarkPanel } from "~/components/workspace/watermark-panel";
@@ -71,6 +72,7 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any
   "new-tab": NewTabPanel,
   "standard-ebooks": StandardEbooksPanel,
   chat: ChatPanel,
+  "reading-history": ReadingHistoryPanel,
 };
 
 export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
@@ -179,17 +181,23 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
   useWorkspaceShortcuts({ apiRef, collapsed, updateSettings });
 
-  const { openBook, openNotebook, openChat, openStandardEbooks, closeBookPanels } =
-    useWorkspacePanels({
-      apiRef,
-      ws,
-      isMobileRef,
-      collapsedRef,
-      layoutModeRef,
-      focusedClustersRef,
-      focusedOrderRef,
-      updateSettings,
-    });
+  const {
+    openBook,
+    openNotebook,
+    openChat,
+    openReadingHistory,
+    openStandardEbooks,
+    closeBookPanels,
+  } = useWorkspacePanels({
+    apiRef,
+    ws,
+    isMobileRef,
+    collapsedRef,
+    layoutModeRef,
+    focusedClustersRef,
+    focusedOrderRef,
+    updateSettings,
+  });
 
   // Wrap setBooks to also update booksRef and notify booksChangeListener.
   // Both the ref mutation and listener notification happen in a queueMicrotask
@@ -288,6 +296,10 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     },
     onOpenNotebook: (book: BookMeta) => {
       openNotebook(book);
+      setMobileOpen(false);
+    },
+    onOpenReadingHistory: (book: BookMeta) => {
+      openReadingHistory(book);
       setMobileOpen(false);
     },
     onFileInput: handleFileInput,
