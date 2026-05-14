@@ -29,9 +29,6 @@ export const SyncedSettingsSchema = Schema.Struct({
   theme: Schema.optionalWith(Schema.Literal("light", "dark", "system"), {
     default: () => "system" as const,
   }),
-  fontFamily: Schema.optionalWith(Schema.String, { default: () => "Literata" }),
-  fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
-  lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
   colorTheme: Schema.optionalWith(
     Schema.Literal("default", "dracula", "nord", "rose-pine", "tokyo-night", "solarized"),
     { default: () => "default" as const },
@@ -62,7 +59,7 @@ export const LocalUISettingsSchema = Schema.Struct({
   }),
   pdfLayout: Schema.optionalWith(
     Schema.Literal("original", "fit-height", "fit-width", "two-page", "continuous"),
-    { default: () => "fit-height" as const },
+    { default: () => "fit-height" as const }
   ),
   sidebarCollapsed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   libraryView: Schema.optionalWith(Schema.Literal("grid", "table"), {
@@ -83,6 +80,9 @@ export const LocalUISettingsSchema = Schema.Struct({
   focusedSplitRatio: Schema.optionalWith(Schema.Number, {
     default: () => FOCUSED_SPLIT_RATIO_DEFAULT,
   }),
+  fontFamily: Schema.optionalWith(Schema.String, { default: () => "Literata" }),
+  fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
+  lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
 });
 
 /** Backward-compatible merged shape exposed to call sites. */
@@ -97,9 +97,6 @@ export type Settings = typeof SettingsSchema.Type;
 
 export const SYNCED_SETTINGS_KEYS = [
   "theme",
-  "fontFamily",
-  "fontSize",
-  "lineHeight",
   "colorTheme",
 ] as const satisfies readonly (keyof SyncedSettings)[];
 
@@ -111,6 +108,9 @@ export const LOCAL_UI_SETTINGS_KEYS = [
   "workspaceSortBy",
   "layoutMode",
   "focusedSplitRatio",
+  "fontFamily",
+  "fontSize",
+  "lineHeight",
 ] as const satisfies readonly (keyof LocalUISettings)[];
 
 const decodeSynced = Schema.decodeUnknownSync(SyncedSettingsSchema);

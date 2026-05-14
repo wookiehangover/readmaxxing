@@ -47,10 +47,10 @@ describe("getSettings", () => {
   });
 
   it("merges synced and local buckets into a single object", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "dark", fontSize: 120 }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "dark" }));
     localStorage.setItem(
       LOCAL_UI_STORAGE_KEY,
-      JSON.stringify({ sidebarCollapsed: true, layoutMode: "freeform" }),
+      JSON.stringify({ fontSize: 120, sidebarCollapsed: true, layoutMode: "freeform" }),
     );
     expect(getSettings()).toEqual({
       ...defaultSettings,
@@ -88,6 +88,7 @@ describe("legacy migration", () => {
     );
     const result = getSettings();
     expect(result.theme).toBe("dark");
+    expect(result.fontSize).toBe(120);
     expect(result.sidebarCollapsed).toBe(true);
     expect(result.layoutMode).toBe("freeform");
     expect(result.libraryView).toBe("table");
@@ -100,6 +101,7 @@ describe("legacy migration", () => {
     expect(syncedRaw.updatedAt).toBe(1000);
 
     const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
+    expect(localRaw.fontSize).toBe(120);
     expect(localRaw.sidebarCollapsed).toBe(true);
     expect(localRaw.layoutMode).toBe("freeform");
     expect(localRaw.libraryView).toBe("table");
@@ -138,32 +140,32 @@ describe("legacy migration", () => {
 
 describe("normalizeLegacyFontSize (via getSettings)", () => {
   it("converts legacy pixel value 16 to percentage 100", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontSize: 16 }));
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ fontSize: 16 }));
     expect(getSettings().fontSize).toBe(100);
   });
 
   it("converts legacy pixel value 20 to percentage 125", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontSize: 20 }));
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ fontSize: 20 }));
     expect(getSettings().fontSize).toBe(125);
   });
 
   it("converts legacy pixel value 40 to percentage 250", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontSize: 40 }));
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ fontSize: 40 }));
     expect(getSettings().fontSize).toBe(250);
   });
 
   it("preserves percentage-scale values above 40", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontSize: 150 }));
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ fontSize: 150 }));
     expect(getSettings().fontSize).toBe(150);
   });
 
   it("returns default fontSize for NaN", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontSize: NaN }));
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ fontSize: NaN }));
     expect(getSettings().fontSize).toBe(defaultSettings.fontSize);
   });
 
   it("returns default fontSize for non-number", () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ fontSize: "big" }));
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ fontSize: "big" }));
     expect(getSettings().fontSize).toBe(defaultSettings.fontSize);
   });
 });
@@ -213,6 +215,28 @@ describe("saveSettings", () => {
     expect(recordChange).not.toHaveBeenCalled();
   });
 
+  it("saves formatting preferences locally without syncing", () => {
+    saveSettings({
+      ...defaultSettings,
+      fontSize: 120,
+      fontFamily: "Georgia",
+      lineHeight: 1.8
+    });
+
+    // Verify they're stored in local bucket
+    const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
+    expect(localRaw.fontSize).toBe(120);
+    expect(localRaw.fontFamily).toBe("Georgia");
+    expect(localRaw.lineHeight).toBe(1.8);
+
+    // Verify they're NOT in synced bucket
+    const syncedRaw = localStorage.getItem(STORAGE_KEY);
+    expect(syncedRaw).toBeNull();
+
+    // Verify no sync was triggered
+    expect(recordChange).not.toHaveBeenCalled();
+  });
+
   it("round-trips merged settings through getSettings", () => {
     saveSettings({
       ...defaultSettings,
@@ -228,6 +252,16 @@ describe("saveSettings", () => {
     expect(result.fontSize).toBe(110);
     expect(result.sidebarCollapsed).toBe(true);
     expect(result.layoutMode).toBe("freeform");
+
+    // Verify formatting preferences are stored locally, not synced
+    const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
+    expect(localRaw.fontFamily).toBe("Merriweather");
+    expect(localRaw.fontSize).toBe(110);
+
+    const syncedRaw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
+    expect(syncedRaw).not.toHaveProperty("fontFamily");
+    expect(syncedRaw).not.toHaveProperty("fontSize");
+    expect(syncedRaw).not.toHaveProperty("lineHeight");
   });
 });
 
