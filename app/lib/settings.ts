@@ -59,7 +59,7 @@ export const LocalUISettingsSchema = Schema.Struct({
   }),
   pdfLayout: Schema.optionalWith(
     Schema.Literal("original", "fit-height", "fit-width", "two-page", "continuous"),
-    { default: () => "fit-height" as const }
+    { default: () => "fit-height" as const },
   ),
   sidebarCollapsed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   libraryView: Schema.optionalWith(Schema.Literal("grid", "table"), {

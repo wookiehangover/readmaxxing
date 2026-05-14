@@ -220,7 +220,7 @@ describe("saveSettings", () => {
       ...defaultSettings,
       fontSize: 120,
       fontFamily: "Georgia",
-      lineHeight: 1.8
+      lineHeight: 1.8,
     });
 
     // Verify they're stored in local bucket
