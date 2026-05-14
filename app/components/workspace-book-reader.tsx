@@ -466,7 +466,7 @@ function WorkspaceBookReaderInner({
       if (update.fontFamily !== undefined) setLocalFontFamily(update.fontFamily);
       if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
       if (update.lineHeight !== undefined) setLocalLineHeight(update.lineHeight);
-      if (update.textAlign !== undefined) setLocalTextAlign(update.textAlign);
+      if ("textAlign" in update) setLocalTextAlign(update.textAlign);
       if (update.readerLayout !== undefined && update.readerLayout !== localReaderLayout) {
         const cfi = renditionRef.current?.location?.start?.cfi;
         setLocalReaderLayout(update.readerLayout);
@@ -547,6 +547,7 @@ function WorkspaceBookReaderInner({
     fontFamily: localFontFamily,
     fontSize: localFontSize,
     lineHeight: localLineHeight,
+    textAlign: localTextAlign,
     readerLayout: localReaderLayout,
   };
 
