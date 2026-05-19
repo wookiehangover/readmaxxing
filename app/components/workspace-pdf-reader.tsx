@@ -253,6 +253,13 @@ function WorkspacePdfReaderInner({
       handleOpenNotebookRef,
     });
 
+  const handleCopyAsMarkdown = useCallback(async () => {
+    if (!selectionPopover) return;
+    await navigator.clipboard.writeText(selectionPopover.text);
+    dismissPopovers();
+    window.getSelection()?.removeAllRanges();
+  }, [selectionPopover, dismissPopovers]);
+
   // Keep goToPage in sync for navigation map
   useEffect(() => {
     setGoToPage(goToPage);
@@ -420,7 +427,7 @@ function WorkspacePdfReaderInner({
         createPortal(
           <HighlightPopover
             position={selectionPopover.position}
-            selectedText={selectionPopover.text}
+            onCopyAsMarkdown={handleCopyAsMarkdown}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
           />,

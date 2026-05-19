@@ -3,14 +3,14 @@ import { Button } from "~/components/ui/button";
 
 interface HighlightPopoverProps {
   position: { x: number; y: number };
-  selectedText: string;
+  onCopyAsMarkdown: () => void;
   onSave: () => void;
   onDismiss: () => void;
 }
 
 export function HighlightPopover({
   position,
-  selectedText,
+  onCopyAsMarkdown,
   onSave,
   onDismiss,
 }: HighlightPopoverProps) {
@@ -63,8 +63,6 @@ export function HighlightPopover({
     };
   }, [onDismiss]);
 
-  const truncatedText = selectedText.length > 120 ? selectedText.slice(0, 120) + "…" : selectedText;
-
   return (
     <div
       ref={popoverRef}
@@ -74,15 +72,17 @@ export function HighlightPopover({
         top: position.y + 8,
         zIndex: 9999,
       }}
-      className="w-72 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
+      className="w-auto rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
     >
-      <p className="mb-2 text-xs text-muted-foreground line-clamp-3">"{truncatedText}"</p>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onDismiss}>
           Cancel
         </Button>
+        <Button variant="outline" size="sm" onClick={onCopyAsMarkdown}>
+          Copy as Markdown
+        </Button>
         <Button size="sm" onClick={onSave}>
-          Highlight
+          Add to Notebook
         </Button>
       </div>
     </div>
