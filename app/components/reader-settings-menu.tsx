@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { MoreHorizontal, Minus, Plus } from "lucide-react";
+import { ClipboardCopy, MoreHorizontal, Minus, Plus } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,6 +19,7 @@ import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/setting
 interface ReaderSettingsMenuProps {
   settings: Settings;
   onUpdateSettings: (update: Partial<Settings>) => void;
+  onCopyPageAsMarkdown?: () => void;
   isPdf?: boolean;
 }
 
@@ -70,7 +71,12 @@ const textAlignOptions: { value: string; label: string; actualValue: TextAlign }
   { value: "justify", label: "Justify", actualValue: "justify" },
 ];
 
-export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: ReaderSettingsMenuProps) {
+export function ReaderSettingsMenu({
+  settings,
+  onUpdateSettings,
+  onCopyPageAsMarkdown,
+  isPdf,
+}: ReaderSettingsMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
@@ -78,6 +84,16 @@ export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: Reader
         <span className="sr-only">Reader settings</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
+        {onCopyPageAsMarkdown && (
+          <>
+            <DropdownMenuItem onClick={onCopyPageAsMarkdown}>
+              <ClipboardCopy className="size-4" />
+              Copy page as Markdown
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
+
         <DropdownMenuGroup>
           <DropdownMenuLabel>Layout</DropdownMenuLabel>
           {isPdf ? (
