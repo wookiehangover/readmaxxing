@@ -5,9 +5,9 @@ import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
-import type { BookMeta } from "~/lib/stores/book-store";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
-import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
@@ -191,6 +191,26 @@ export function BookReader({ book }: BookReaderProps) {
     }
   }, []);
 
+  const handleDownload = useCallback(async () => {
+    const data = await AppRuntime.runPromise(
+      BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))),
+    );
+    if (!data) return;
+    const blob = new Blob([data], {
+      type: book.format === "pdf" ? "application/pdf" : "application/epub+zip",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = book.title + (book.format === "pdf" ? ".pdf" : ".epub");
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [book.id, book.title, book.format]);
+
+  const handleBookmarkPage = useCallback(() => {}, []);
+
   const isScrollMode = settings.readerLayout === "scroll";
 
   return (
@@ -332,10 +352,11 @@ export function BookReader({ book }: BookReaderProps) {
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderSettingsMenu
-              settings={settings}
-              onUpdateSettings={handleUpdateSettings}
+            <ReaderFormattingMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
+            <ReaderActionsMenu
               onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+              onDownload={handleDownload}
+              onBookmarkPage={handleBookmarkPage}
             />
           </div>
         </div>

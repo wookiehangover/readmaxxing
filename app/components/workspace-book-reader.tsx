@@ -17,7 +17,7 @@ import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { PdfLayout, ReaderLayout, Settings } from "~/lib/settings";
-import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
 import { useEffectQuery } from "~/hooks/use-effect-query";
@@ -547,6 +547,26 @@ function WorkspaceBookReaderInner({
     }
   }, []);
 
+  const handleDownload = useCallback(async () => {
+    const data = await AppRuntime.runPromise(
+      BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))),
+    );
+    if (!data) return;
+    const blob = new Blob([data], {
+      type: book.format === "pdf" ? "application/pdf" : "application/epub+zip",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = book.title + (book.format === "pdf" ? ".pdf" : ".epub");
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [book.id, book.title, book.format]);
+
+  const handleBookmarkPage = useCallback(() => {}, []);
+
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
@@ -722,10 +742,14 @@ function WorkspaceBookReaderInner({
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderSettingsMenu
+            <ReaderFormattingMenu
               settings={localSettings}
               onUpdateSettings={handleUpdateSettings}
+            />
+            <ReaderActionsMenu
               onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+              onDownload={handleDownload}
+              onBookmarkPage={handleBookmarkPage}
             />
           </div>
         </div>

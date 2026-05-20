@@ -1,11 +1,12 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
-import type { BookMeta } from "~/lib/stores/book-store";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
-import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { SearchBar } from "~/components/search-bar";
@@ -14,6 +15,7 @@ import { usePdfSearch } from "~/hooks/use-pdf-search";
 import { usePdfHighlights } from "~/hooks/use-pdf-highlights";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
+import { AppRuntime } from "~/lib/effect-runtime";
 
 interface PdfReaderProps {
   book: BookMeta;
@@ -121,6 +123,26 @@ export function PdfReader({ book }: PdfReaderProps) {
     },
     [removeHighlight],
   );
+
+  const handleDownload = useCallback(async () => {
+    const data = await AppRuntime.runPromise(
+      BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))),
+    );
+    if (!data) return;
+    const blob = new Blob([data], {
+      type: book.format === "pdf" ? "application/pdf" : "application/epub+zip",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = book.title + (book.format === "pdf" ? ".pdf" : ".epub");
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [book.id, book.title, book.format]);
+
+  const handleBookmarkPage = useCallback(() => {}, []);
 
   const handleNavigateToHighlight = useCallback(
     (cfi: string) => {
@@ -276,7 +298,12 @@ export function PdfReader({ book }: PdfReaderProps) {
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} isPdf />
+            <ReaderFormattingMenu
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              isPdf
+            />
+            <ReaderActionsMenu onDownload={handleDownload} onBookmarkPage={handleBookmarkPage} />
           </div>
         </div>
         {selectionPopover && (

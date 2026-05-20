@@ -15,7 +15,7 @@ import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
-import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { SearchBar } from "~/components/search-bar";
 import { useEffectQuery } from "~/hooks/use-effect-query";
@@ -29,6 +29,7 @@ import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { usePdfWorkspacePanels } from "~/hooks/use-pdf-workspace-panels";
 import type { PanelTypographyParams } from "~/components/workspace-book-reader";
+import { AppRuntime } from "~/lib/effect-runtime";
 
 interface WorkspacePdfReaderProps {
   bookId: string;
@@ -260,6 +261,26 @@ function WorkspacePdfReaderInner({
     window.getSelection()?.removeAllRanges();
   }, [selectionPopover, dismissPopovers]);
 
+  const handleDownload = useCallback(async () => {
+    const data = await AppRuntime.runPromise(
+      BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))),
+    );
+    if (!data) return;
+    const blob = new Blob([data], {
+      type: book.format === "pdf" ? "application/pdf" : "application/epub+zip",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = book.title + (book.format === "pdf" ? ".pdf" : ".epub");
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [book.id, book.title, book.format]);
+
+  const handleBookmarkPage = useCallback(() => {}, []);
+
   // Keep goToPage in sync for navigation map
   useEffect(() => {
     setGoToPage(goToPage);
@@ -415,11 +436,12 @@ function WorkspacePdfReaderInner({
               </PopoverContent>
             </Popover>
           )}
-          <ReaderSettingsMenu
+          <ReaderFormattingMenu
             settings={localSettings}
             onUpdateSettings={handleUpdateSettings}
             isPdf
           />
+          <ReaderActionsMenu onDownload={handleDownload} onBookmarkPage={handleBookmarkPage} />
         </div>
       </div>
       {/* Portal popovers to document.body to escape dockview's CSS transforms */}
