@@ -1,5 +1,14 @@
 import { Fragment } from "react";
-import { Bookmark, ClipboardCopy, Download, MoreHorizontal, Minus, Plus, Type } from "lucide-react";
+import {
+  Bookmark,
+  BookmarkCheck,
+  ClipboardCopy,
+  Download,
+  MoreHorizontal,
+  Minus,
+  Plus,
+  Type,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,8 +33,9 @@ interface ReaderFormattingMenuProps {
 
 interface ReaderActionsMenuProps {
   onDownload: () => void | Promise<void>;
-  onBookmarkPage: () => void;
+  onBookmarkPage: () => void | Promise<void>;
   onCopyPageAsMarkdown?: () => void;
+  isBookmarked?: boolean;
 }
 
 const layoutOptions: { value: ReaderLayout; label: string }[] = [
@@ -243,7 +253,10 @@ export function ReaderActionsMenu({
   onDownload,
   onBookmarkPage,
   onCopyPageAsMarkdown,
+  isBookmarked,
 }: ReaderActionsMenuProps) {
+  const BookmarkIcon = isBookmarked ? BookmarkCheck : Bookmark;
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
@@ -263,8 +276,8 @@ export function ReaderActionsMenu({
             Download
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onBookmarkPage}>
-            <Bookmark className="size-4" />
-            Bookmark Page
+            <BookmarkIcon className="size-4" />
+            {isBookmarked ? "Remove Bookmark" : "Bookmark Page"}
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
