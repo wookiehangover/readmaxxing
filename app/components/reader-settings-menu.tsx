@@ -83,12 +83,12 @@ export function ReaderSettingsMenu({
         <MoreHorizontal className="size-4" />
         <span className="sr-only">Reader settings</span>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-52 text-xs">
         {onCopyPageAsMarkdown && (
           <>
             <DropdownMenuItem onClick={onCopyPageAsMarkdown}>
               <ClipboardCopy className="size-4" />
-              Copy page as Markdown
+              Copy Chapter as Markdown
             </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
