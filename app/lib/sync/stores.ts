@@ -11,6 +11,7 @@ let _bookDataStore: UseStore | null = null;
 let _positionStore: UseStore | null = null;
 let _readingHistoryStore: UseStore | null = null;
 let _highlightStore: UseStore | null = null;
+let _bookmarkStore: UseStore | null = null;
 let _notebookStore: UseStore | null = null;
 let _chatSessionStore: UseStore | null = null;
 let _activeSessionStore: UseStore | null = null;
@@ -46,6 +47,12 @@ export function getReadingHistoryStore(): UseStore {
 export function getHighlightStore(): UseStore {
   if (!_highlightStore) _highlightStore = createStore("ebook-reader-highlights", "highlights");
   return _highlightStore;
+}
+
+/** Bookmarks (Bookmark records, key = bookmarkId). */
+export function getBookmarkStore(): UseStore {
+  if (!_bookmarkStore) _bookmarkStore = createStore("ebook-reader-bookmarks", "bookmarks");
+  return _bookmarkStore;
 }
 
 /** Notebooks (Notebook records, key = bookId). */
