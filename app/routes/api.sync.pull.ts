@@ -1,6 +1,7 @@
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getHighlightsByUserSince } from "~/lib/database/annotation/highlight";
 import { getNotebooksByUserSince } from "~/lib/database/annotation/notebook";
+import { getBookmarksByUser } from "~/lib/database/bookmark/bookmark";
 import { getBooksByUserSince } from "~/lib/database/book/book";
 import { getPositionsByUserSince } from "~/lib/database/book/reading-position";
 import { getSessionsByUserSince, getMessagesByUserSince } from "~/lib/database/chat/chat-session";
@@ -12,6 +13,7 @@ const SUPPORTED_ENTITY_TYPES: EntityType[] = [
   "book",
   "position",
   "highlight",
+  "bookmark",
   "notebook",
   "chat_session",
   "chat_message",
@@ -84,6 +86,20 @@ export async function loader({ request }: { request: Request }) {
           changes.push({
             entity: "highlight",
             records: highlights,
+            cursor: latestUpdatedAt.toISOString(),
+            hasMore: false,
+          });
+        }
+        break;
+      }
+
+      case "bookmark": {
+        const bookmarks = await getBookmarksByUser(userId, since);
+        if (bookmarks.length > 0) {
+          const latestUpdatedAt = bookmarks[bookmarks.length - 1].updatedAt;
+          changes.push({
+            entity: "bookmark",
+            records: bookmarks,
             cursor: latestUpdatedAt.toISOString(),
             hasMore: false,
           });

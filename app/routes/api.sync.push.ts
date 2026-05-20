@@ -1,6 +1,7 @@
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { upsertHighlight, softDeleteHighlight } from "~/lib/database/annotation/highlight";
 import { upsertNotebook } from "~/lib/database/annotation/notebook";
+import { upsertBookmark, softDeleteBookmark } from "~/lib/database/bookmark/bookmark";
 import {
   upsertBook,
   softDeleteBook,
@@ -133,6 +134,34 @@ export async function processEntry(
       return { accepted: true };
     }
 
+    case "bookmark": {
+      if (entry.operation === "put") {
+        const data = entry.data as {
+          id: string;
+          bookId: string;
+          cfi?: string | null;
+          label?: string | null;
+          pageNumber?: number | null;
+          createdAt?: number | null;
+          updatedAt?: number | null;
+          deletedAt?: number | null;
+        };
+        await upsertBookmark(userId, {
+          id: entry.entityId,
+          bookId: data.bookId,
+          cfi: data.cfi ?? null,
+          label: data.label ?? null,
+          pageNumber: data.pageNumber ?? null,
+          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
+          updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
+          deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
+        });
+      } else {
+        await softDeleteBookmark(userId, entry.entityId);
+      }
+      return { accepted: true };
+    }
+
     case "notebook": {
       if (entry.operation === "put") {
         const data = entry.data as {
@@ -231,10 +260,11 @@ export async function action({ request }: { request: Request }) {
     book: 0,
     position: 1,
     highlight: 2,
-    notebook: 3,
-    chat_session: 4,
-    chat_message: 5,
-    settings: 6,
+    bookmark: 3,
+    notebook: 4,
+    chat_session: 5,
+    chat_message: 6,
+    settings: 7,
   };
   const sortedChanges = [...body.changes].sort(
     (a, b) => (entityOrder[a.entity] ?? 99) - (entityOrder[b.entity] ?? 99),
