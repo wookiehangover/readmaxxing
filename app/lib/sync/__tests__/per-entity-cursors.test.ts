@@ -14,6 +14,7 @@ describe("parseCursorsParam", () => {
       "book",
       "position",
       "highlight",
+      "bookmark",
       "notebook",
       "chat_session",
       "chat_message",
@@ -33,6 +34,7 @@ describe("parseCursorsParam", () => {
     expect(error).toBeUndefined();
     expect(cursorsByEntity.book.toISOString()).toBe("2026-04-22T12:00:00.000Z");
     expect(cursorsByEntity.highlight.toISOString()).toBe("2026-04-22T13:00:00.000Z");
+    expect(cursorsByEntity.bookmark.getTime()).toBe(0);
     expect(cursorsByEntity.position.getTime()).toBe(0);
     expect(cursorsByEntity.notebook.getTime()).toBe(0);
     expect(cursorsByEntity.chat_session.getTime()).toBe(0);
