@@ -100,6 +100,13 @@ export function PdfReader({ book }: PdfReaderProps) {
     }
   }, [saveHighlightFromPopover]);
 
+  const handleCopyAsMarkdown = useCallback(async () => {
+    if (!selectionPopover) return;
+    await navigator.clipboard.writeText(selectionPopover.text);
+    dismissPopovers();
+    window.getSelection()?.removeAllRanges();
+  }, [selectionPopover, dismissPopovers]);
+
   // Flush pending highlight once the editor is mounted
   useEffect(() => {
     if (pendingHighlight && editorRef.current) {
@@ -275,7 +282,7 @@ export function PdfReader({ book }: PdfReaderProps) {
         {selectionPopover && (
           <HighlightPopover
             position={selectionPopover.position}
-            selectedText={selectionPopover.text}
+            onCopyAsMarkdown={handleCopyAsMarkdown}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
           />

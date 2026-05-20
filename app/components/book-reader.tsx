@@ -170,6 +170,27 @@ export function BookReader({ book }: BookReaderProps) {
     setAnnotationsPanelOpen(true);
   }, [saveHighlightFromPopover, book.id]);
 
+  const handleCopyAsMarkdown = useCallback(async () => {
+    if (!selectionPopover) return;
+    await navigator.clipboard.writeText(selectionPopover.text);
+    dismissPopovers();
+
+    const contents = (renditionRef.current as any)?.getContents() as any[] | undefined;
+    contents?.forEach((content: any) => {
+      const win = content.document?.defaultView;
+      if (win) win.getSelection()?.removeAllRanges();
+    });
+  }, [selectionPopover, dismissPopovers]);
+
+  const handleCopyPageAsMarkdown = useCallback(async () => {
+    const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
+    if (contents?.length) {
+      const doc = contents[0].document as Document;
+      const text = doc.body?.innerText || doc.body?.textContent || "";
+      await navigator.clipboard.writeText(text);
+    }
+  }, []);
+
   const isScrollMode = settings.readerLayout === "scroll";
 
   return (
@@ -311,13 +332,17 @@ export function BookReader({ book }: BookReaderProps) {
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
+            <ReaderSettingsMenu
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+            />
           </div>
         </div>
         {selectionPopover && (
           <HighlightPopover
             position={selectionPopover.position}
-            selectedText={selectionPopover.text}
+            onCopyAsMarkdown={handleCopyAsMarkdown}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
           />

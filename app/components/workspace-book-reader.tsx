@@ -526,6 +526,27 @@ function WorkspaceBookReaderInner({
       .catch((err) => console.error("Failed to append highlight to notebook:", err));
   }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
 
+  const handleCopyAsMarkdown = useCallback(async () => {
+    if (!selectionPopover) return;
+    await navigator.clipboard.writeText(selectionPopover.text);
+    dismissPopovers();
+
+    const contents = (renditionRef.current as any)?.getContents() as any[] | undefined;
+    contents?.forEach((content: any) => {
+      const win = content.document?.defaultView;
+      if (win) win.getSelection()?.removeAllRanges();
+    });
+  }, [selectionPopover, dismissPopovers]);
+
+  const handleCopyPageAsMarkdown = useCallback(async () => {
+    const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
+    if (contents?.length) {
+      const doc = contents[0].document as Document;
+      const text = doc.body?.innerText || doc.body?.textContent || "";
+      await navigator.clipboard.writeText(text);
+    }
+  }, []);
+
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
@@ -701,7 +722,11 @@ function WorkspaceBookReaderInner({
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderSettingsMenu settings={localSettings} onUpdateSettings={handleUpdateSettings} />
+            <ReaderSettingsMenu
+              settings={localSettings}
+              onUpdateSettings={handleUpdateSettings}
+              onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+            />
           </div>
         </div>
         {/* Portal popovers to document.body to escape dockview's CSS transforms,
@@ -710,7 +735,7 @@ function WorkspaceBookReaderInner({
           createPortal(
             <HighlightPopover
               position={selectionPopover.position}
-              selectedText={selectionPopover.text}
+              onCopyAsMarkdown={handleCopyAsMarkdown}
               onSave={handleSaveHighlight}
               onDismiss={dismissPopovers}
             />,
