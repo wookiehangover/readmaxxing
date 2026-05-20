@@ -10,6 +10,7 @@ function makeStores() {
     bookDataStore: createStore(`${suffix}-book-data`, "book-data"),
     positionStore: createStore(`${suffix}-positions`, "positions"),
     highlightStore: createStore(`${suffix}-highlights`, "highlights"),
+    bookmarkStore: createStore(`${suffix}-bookmarks`, "bookmarks"),
     notebookStore: createStore(`${suffix}-notebooks`, "notebooks"),
     chatSessionStore: createStore(`${suffix}-sessions`, "sessions"),
     activeSessionStore: createStore(`${suffix}-active`, "active"),
