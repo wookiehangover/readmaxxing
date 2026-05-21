@@ -1,8 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
 import { Effect } from "effect";
 import type { IDockviewPanelProps } from "dockview";
-import { Bookmark as BookmarkIcon, Trash2 } from "lucide-react";
+import { Bookmark as BookmarkIcon, MoreHorizontal, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { useSyncListener } from "~/hooks/use-sync-listener";
@@ -120,6 +126,19 @@ export function BookmarksPanel({ params }: IDockviewPanelProps<BookmarksPanelPar
     [bookId, navigateInCluster],
   );
 
+  const handleDeleteBookmark = useCallback((bookmarkId: string) => {
+    AppRuntime.runPromise(BookmarkService.pipe(Effect.andThen((s) => s.deleteBookmark(bookmarkId))))
+      .then(() => {
+        setRefreshKey((key) => key + 1);
+        queueMicrotask(() => {
+          window.dispatchEvent(
+            new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
+          );
+        });
+      })
+      .catch(console.error);
+  }, []);
+
   return (
     <div className="flex h-full flex-col bg-card">
       <div className="border-b px-4 py-3">
@@ -161,6 +180,7 @@ export function BookmarksPanel({ params }: IDockviewPanelProps<BookmarksPanelPar
                       <th className="w-auto pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
                         Chapter
                       </th>
+                      <th className="w-8 pb-1" />
                     </tr>
                   </thead>
                   <tbody>
@@ -184,6 +204,30 @@ export function BookmarksPanel({ params }: IDockviewPanelProps<BookmarksPanelPar
                         </td>
                         <td className="max-w-0 truncate py-1.5 text-xs text-muted-foreground">
                           {bookmark.label ?? "Unknown chapter"}
+                        </td>
+                        <td className="w-8 py-1.5 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                              render={<button type="button" />}
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label="Bookmark actions"
+                            >
+                              <MoreHorizontal className="size-3.5" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="text-xs">
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteBookmark(bookmark.id);
+                                }}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="size-3.5" />
+                                Delete bookmark
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </td>
                       </tr>
                     ))}
