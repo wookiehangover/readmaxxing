@@ -9,6 +9,7 @@ export interface BookmarkRow {
   cfi: string | null;
   label: string | null;
   pageNumber: number | null;
+  displayPage: number | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -20,6 +21,7 @@ export interface UpsertBookmarkData {
   cfi?: string | null;
   label?: string | null;
   pageNumber?: number | null;
+  displayPage?: number | null;
   createdAt: Date;
   updatedAt?: Date | null;
   deletedAt?: Date | null;
@@ -32,6 +34,7 @@ const BOOKMARK_COLUMNS = sql`
   cfi,
   label,
   page_number AS "pageNumber",
+  display_page AS "displayPage",
   created_at AS "createdAt",
   updated_at AS "updatedAt",
   deleted_at AS "deletedAt"
@@ -44,7 +47,7 @@ export async function upsertBookmark(
   const pool = getPool();
   const updatedAtIso = clampUpdatedAt(bookmark.updatedAt ?? bookmark.createdAt);
   const result = await pool.query<BookmarkRow>(sql`
-    INSERT INTO readmax.bookmark (id, user_id, book_id, cfi, label, page_number, created_at, updated_at, deleted_at)
+    INSERT INTO readmax.bookmark (id, user_id, book_id, cfi, label, page_number, display_page, created_at, updated_at, deleted_at)
     VALUES (
       ${bookmark.id},
       ${userId},
@@ -52,6 +55,7 @@ export async function upsertBookmark(
       ${bookmark.cfi ?? null},
       ${bookmark.label ?? null},
       ${bookmark.pageNumber ?? null},
+      ${bookmark.displayPage ?? null},
       ${bookmark.createdAt.toISOString()},
       ${updatedAtIso},
       ${bookmark.deletedAt?.toISOString() ?? null}
@@ -62,6 +66,7 @@ export async function upsertBookmark(
           cfi = EXCLUDED.cfi,
           label = EXCLUDED.label,
           page_number = EXCLUDED.page_number,
+          display_page = EXCLUDED.display_page,
           created_at = EXCLUDED.created_at,
           updated_at = EXCLUDED.updated_at,
           deleted_at = EXCLUDED.deleted_at

@@ -269,6 +269,7 @@ export function BookReader({ book }: BookReaderProps) {
                 bookId: book.id,
                 cfi,
                 label: currentChapterLabel ?? undefined,
+                displayPage: currentPage ?? undefined,
                 createdAt: now,
                 updatedAt: now,
               }),
@@ -281,7 +282,7 @@ export function BookReader({ book }: BookReaderProps) {
         new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
       );
     });
-  }, [book.id, bookmarks, currentChapterLabel, getCurrentCfi]);
+  }, [book.id, bookmarks, currentChapterLabel, currentPage, getCurrentCfi]);
 
   const isScrollMode = settings.readerLayout === "scroll";
 

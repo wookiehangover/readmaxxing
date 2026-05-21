@@ -142,6 +142,7 @@ export async function processEntry(
           cfi?: string | null;
           label?: string | null;
           pageNumber?: number | null;
+          displayPage?: number | null;
           createdAt?: number | null;
           updatedAt?: number | null;
           deletedAt?: number | null;
@@ -152,6 +153,7 @@ export async function processEntry(
           cfi: data.cfi ?? null,
           label: data.label ?? null,
           pageNumber: data.pageNumber ?? null,
+          displayPage: data.displayPage ?? null,
           createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
           updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
           deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,

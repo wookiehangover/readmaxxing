@@ -12,6 +12,7 @@ function makeBookmark(overrides: Partial<Bookmark> = {}): Bookmark {
     cfi: overrides.cfi ?? "epubcfi(/6/4!/4/2)",
     label: overrides.label,
     pageNumber: overrides.pageNumber,
+    displayPage: overrides.displayPage,
     createdAt: overrides.createdAt ?? Date.now(),
     updatedAt: overrides.updatedAt,
     deletedAt: overrides.deletedAt,
@@ -45,7 +46,9 @@ describe("BookmarkService", () => {
       Effect.runPromise(Effect.provide(effect, layer));
 
     await run(
-      BookmarkService.pipe(Effect.andThen((service) => service.saveBookmark(makeBookmark()))),
+      BookmarkService.pipe(
+        Effect.andThen((service) => service.saveBookmark(makeBookmark({ displayPage: 12 }))),
+      ),
     );
     await run(
       BookmarkService.pipe(
@@ -60,6 +63,7 @@ describe("BookmarkService", () => {
     );
     expect(bookmarks).toHaveLength(1);
     expect(bookmarks[0].id).toBe("bookmark-1");
+    expect(bookmarks[0].displayPage).toBe(12);
   });
 
   it("soft-deletes bookmarks and records the delete change", async () => {

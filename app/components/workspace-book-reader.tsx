@@ -617,6 +617,7 @@ function WorkspaceBookReaderInner({
                 bookId: book.id,
                 cfi,
                 label: currentChapterLabel ?? undefined,
+                displayPage: currentPage ?? undefined,
                 createdAt: now,
                 updatedAt: now,
               }),
@@ -629,7 +630,7 @@ function WorkspaceBookReaderInner({
         new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
       );
     });
-  }, [book.id, bookmarks, currentChapterLabel, getCurrentCfi]);
+  }, [book.id, bookmarks, currentChapterLabel, currentPage, getCurrentCfi]);
 
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
