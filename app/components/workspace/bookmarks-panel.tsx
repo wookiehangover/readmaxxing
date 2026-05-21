@@ -205,7 +205,7 @@ export function BookmarksPanel({ params }: IDockviewPanelProps<BookmarksPanelPar
                         <td className="max-w-0 truncate py-1.5 text-xs text-muted-foreground">
                           {bookmark.label ?? "Unknown chapter"}
                         </td>
-                        <td className="w-8 py-1.5 text-right">
+                        <td className="w-8 py-1.5 pr-2 text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger
                               className="inline-flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -224,7 +224,7 @@ export function BookmarksPanel({ params }: IDockviewPanelProps<BookmarksPanelPar
                                 className="text-destructive focus:text-destructive"
                               >
                                 <Trash2 className="size-3.5" />
-                                Delete bookmark
+                                Delete
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
