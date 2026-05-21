@@ -12,6 +12,7 @@ export const BookmarkSchema = Schema.Struct({
   cfi: Schema.optional(Schema.String),
   label: Schema.optional(Schema.String),
   pageNumber: Schema.optional(Schema.Number),
+  displayPage: Schema.optional(Schema.Number),
   createdAt: Schema.Number,
   updatedAt: Schema.optional(Schema.Number),
   deletedAt: Schema.optional(Schema.Number),
