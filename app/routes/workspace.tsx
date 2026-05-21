@@ -19,6 +19,7 @@ import { sortBooks } from "~/lib/workspace-utils";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { BookReaderPanel, NotebookPanel, ChatPanel } from "~/components/workspace/panel-components";
+import { BookmarksPanel } from "~/components/workspace/bookmarks-panel";
 import { ReadingHistoryPanel } from "~/components/workspace/reading-history-panel";
 import { NewTabPanel } from "~/components/workspace/new-tab-panel";
 import { StandardEbooksPanel } from "~/components/workspace/standard-ebooks-panel";
@@ -72,6 +73,7 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any
   "new-tab": NewTabPanel,
   "standard-ebooks": StandardEbooksPanel,
   chat: ChatPanel,
+  bookmarks: BookmarksPanel,
   "reading-history": ReadingHistoryPanel,
 };
 
@@ -185,6 +187,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     openBook,
     openNotebook,
     openChat,
+    openBookmarks,
     openReadingHistory,
     openStandardEbooks,
     closeBookPanels,
@@ -253,6 +256,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     ws.openBookRef.current = openBook;
     ws.openNotebookRef.current = openNotebook;
     ws.openChatRef.current = openChat;
+    ws.openBookmarksRef.current = openBookmarks;
     ws.openStandardEbooksRef.current = openStandardEbooks;
     ws.onBookAddedRef.current = handleBookAdded;
     ws.onBookDeletedRef.current = handleBookDeleted;
@@ -260,6 +264,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     handleBookAdded,
     handleBookDeleted,
     openBook,
+    openBookmarks,
     openChat,
     openNotebook,
     openStandardEbooks,
@@ -271,6 +276,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       ws.openBookRef.current = null;
       ws.openNotebookRef.current = null;
       ws.openChatRef.current = null;
+      ws.openBookmarksRef.current = null;
       ws.openStandardEbooksRef.current = null;
       ws.onBookAddedRef.current = null;
       ws.onBookDeletedRef.current = null;
@@ -296,6 +302,10 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     },
     onOpenNotebook: (book: BookMeta) => {
       openNotebook(book);
+      setMobileOpen(false);
+    },
+    onOpenBookmarks: (book: BookMeta) => {
+      openBookmarks(book);
       setMobileOpen(false);
     },
     onOpenReadingHistory: (book: BookMeta) => {
