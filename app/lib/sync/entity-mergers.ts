@@ -7,6 +7,7 @@ import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
 import {
   serverBookToLocal,
+  serverBookmarkToLocal,
   serverChatMessageToLocal,
   serverChatSessionToLocal,
   serverHighlightToLocal,
@@ -17,6 +18,7 @@ import {
 } from "./server-transforms";
 import {
   getBookStore,
+  getBookmarkStore,
   getChatSessionStore,
   getHighlightStore,
   getNotebookStore,
@@ -50,6 +52,7 @@ export async function mergeBookRecord(record: Record<string, unknown>): Promise<
             "book",
             "position",
             "highlight",
+            "bookmark",
             "notebook",
             "chat_session",
           ] as const) {
@@ -143,6 +146,31 @@ async function mergeHighlightRecord(record: Record<string, unknown>): Promise<vo
     (item) => (item as Record<string, unknown>).id as string,
   );
   // Write if the merge result differs from local
+  if (merged !== local) {
+    await set(id, merged, store);
+  }
+}
+
+/**
+ * Merge a single bookmark record using set-union semantics.
+ * If either side has deletedAt, tombstone propagates. Otherwise LWW by updatedAt.
+ */
+export async function mergeBookmarkRecord(record: Record<string, unknown>): Promise<void> {
+  const store = getBookmarkStore();
+  const remoteRecord = serverBookmarkToLocal(record);
+  const id = remoteRecord.id as string;
+  const local = await get<Record<string, unknown>>(id, store);
+
+  if (!local) {
+    await set(id, remoteRecord, store);
+    return;
+  }
+
+  const [merged] = setUnionMerge(
+    [local as { deletedAt?: number | null }],
+    [remoteRecord as { deletedAt?: number | null }],
+    (item) => (item as Record<string, unknown>).id as string,
+  );
   if (merged !== local) {
     await set(id, merged, store);
   }
@@ -305,6 +333,7 @@ export const ENTITY_MERGERS: Partial<
   book: mergeBookRecord,
   position: mergePositionRecord,
   highlight: mergeHighlightRecord,
+  bookmark: mergeBookmarkRecord,
   notebook: mergeNotebookRecord,
   chat_session: mergeChatSessionRecord,
   chat_message: mergeChatMessageRecord,

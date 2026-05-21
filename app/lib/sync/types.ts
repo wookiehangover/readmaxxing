@@ -8,7 +8,7 @@
  *
  * Merge strategies per entity type:
  * - book, reading_position, notebook, settings → LWW (last-write-wins by updatedAt)
- * - highlight → set_union (union by ID, tombstone-based deletion via deletedAt)
+ * - highlight, bookmark → set_union (union by ID, tombstone-based deletion via deletedAt)
  * - chat_session → LWW for metadata
  * - chat_message → append_only (union by message ID, never remove)
  */
@@ -21,6 +21,7 @@
 export type EntityType =
   | "book"
   | "highlight"
+  | "bookmark"
   | "notebook"
   | "chat_session"
   | "chat_message"
@@ -145,6 +146,7 @@ export type MergeStrategy = "lww" | "set_union" | "append_only";
 export const ENTITY_MERGE_STRATEGIES: Record<EntityType, MergeStrategy> = {
   book: "lww",
   highlight: "set_union",
+  bookmark: "set_union",
   notebook: "lww",
   chat_session: "lww",
   chat_message: "append_only",

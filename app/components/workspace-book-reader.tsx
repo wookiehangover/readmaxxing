@@ -30,6 +30,8 @@ import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
+import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -210,6 +212,7 @@ function WorkspaceBookReaderInner({
   );
 
   const [tocOpen, setTocOpen] = useState(false);
+  const [bookmarkVersion, setBookmarkVersion] = useState(0);
 
   // Mobile toolbar auto-hide
   const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
@@ -302,6 +305,21 @@ function WorkspaceBookReaderInner({
     bookRef,
     renditionRef,
   });
+
+  const bookmarkSyncVersion = useSyncListener(["bookmark"]);
+  const { data: bookmarks } = useEffectQuery(
+    () =>
+      BookmarkService.pipe(
+        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to load bookmarks:", error);
+            return [] as BookmarkRecord[];
+          }),
+        ),
+      ),
+    [book.id, bookmarkVersion, bookmarkSyncVersion],
+  );
 
   // Temporary highlight: briefly flash a CFI range in the reader
   const applyTempHighlight = useCallback((cfi: string) => {
@@ -577,6 +595,47 @@ function WorkspaceBookReaderInner({
     navigator.clipboard.writeText(text).catch(console.error);
   }, []);
 
+  const getCurrentCfi = useCallback(() => {
+    const latestCfi = latestCfiRef.current;
+    if (latestCfi) return latestCfi;
+    const rendition = renditionRef.current as any;
+    const location = rendition?.location ?? rendition?.currentLocation?.();
+    return (location?.start?.cfi as string | undefined) ?? null;
+  }, [latestCfiRef]);
+
+  const currentCfi = getCurrentCfi();
+  const currentBookmark = bookmarks?.find((bookmark) => bookmark.cfi === currentCfi);
+
+  const handleBookmarkPage = useCallback(async () => {
+    const cfi = getCurrentCfi();
+    if (!cfi) return;
+    const existingBookmark = bookmarks?.find((bookmark) => bookmark.cfi === cfi);
+    const now = Date.now();
+
+    await AppRuntime.runPromise(
+      BookmarkService.pipe(
+        Effect.andThen((s) =>
+          existingBookmark
+            ? s.deleteBookmark(existingBookmark.id)
+            : s.saveBookmark({
+                id: `bookmark:${book.id}:cfi:${encodeURIComponent(cfi)}`,
+                bookId: book.id,
+                cfi,
+                label: currentChapterLabel ?? undefined,
+                createdAt: now,
+                updatedAt: now,
+              }),
+        ),
+      ),
+    );
+    setBookmarkVersion((version) => version + 1);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
+      );
+    });
+  }, [book.id, bookmarks, currentChapterLabel, getCurrentCfi]);
+
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
@@ -759,6 +818,8 @@ function WorkspaceBookReaderInner({
             <ReaderActionsMenu
               onDownload={handleDownload}
               onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+              onBookmarkPage={handleBookmarkPage}
+              isBookmarked={Boolean(currentBookmark)}
             />
           </div>
         </div>

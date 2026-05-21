@@ -8,6 +8,7 @@ export const SYNCABLE_ENTITIES: EntityType[] = [
   "book",
   "position",
   "highlight",
+  "bookmark",
   "notebook",
   "chat_session",
   "chat_message",
