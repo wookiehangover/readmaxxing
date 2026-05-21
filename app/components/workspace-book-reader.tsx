@@ -599,7 +599,14 @@ function WorkspaceBookReaderInner({
     const latestCfi = latestCfiRef.current;
     if (latestCfi) return latestCfi;
     const rendition = renditionRef.current as any;
-    const location = rendition?.location ?? rendition?.currentLocation?.();
+    let location = rendition?.location;
+    if (!location) {
+      try {
+        location = rendition?.currentLocation?.();
+      } catch {
+        // epubjs may call into an uninitialized internal manager.
+      }
+    }
     return (location?.start?.cfi as string | undefined) ?? null;
   }, [latestCfiRef]);
 
