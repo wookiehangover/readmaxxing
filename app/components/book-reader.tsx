@@ -21,6 +21,9 @@ import { useReaderSearch } from "~/hooks/use-reader-search";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
+import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
+import { useEffectQuery } from "~/hooks/use-effect-query";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 interface BookReaderProps {
   book: BookMeta;
@@ -33,6 +36,7 @@ export function BookReader({ book }: BookReaderProps) {
 
   const [settings, updateSettings] = useSettings();
   const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
+  const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const editorRef = useRef<TiptapEditorHandle>(null);
   const { toc: contextToc, navigateToHref, setToc, setNavigateToHref } = useReaderNavigation();
   const [tocOpen, setTocOpen] = useState(false);
@@ -80,29 +84,51 @@ export function BookReader({ book }: BookReaderProps) {
     [highlightsRef],
   );
 
-  const { toc, currentChapterLabel, currentPage, totalPages, navigateToCfi, navigateToTocHref } =
-    useEpubLifecycle({
-      bookId: book.id,
-      containerRef,
-      readerLayout: settings.readerLayout,
-      fontFamily: settings.fontFamily,
-      fontSize: settings.fontSize,
-      lineHeight: settings.lineHeight,
-      textAlign: settings.textAlign,
-      theme: settings.theme,
-      loadAndApplyHighlights,
-      registerSelectionHandler,
-      onTocExtracted: (tocData) => {
-        setToc(tocData);
-      },
-      onCleanupToc: () => {
-        setToc([]);
-        setNavigateToHref(() => {});
-      },
-      onSearchOpen: handleSearchOpenFromIframe,
-      bookRef,
-      renditionRef,
-    });
+  const {
+    toc,
+    currentChapterLabel,
+    currentPage,
+    totalPages,
+    navigateToCfi,
+    navigateToTocHref,
+    latestCfiRef,
+  } = useEpubLifecycle({
+    bookId: book.id,
+    containerRef,
+    readerLayout: settings.readerLayout,
+    fontFamily: settings.fontFamily,
+    fontSize: settings.fontSize,
+    lineHeight: settings.lineHeight,
+    textAlign: settings.textAlign,
+    theme: settings.theme,
+    loadAndApplyHighlights,
+    registerSelectionHandler,
+    onTocExtracted: (tocData) => {
+      setToc(tocData);
+    },
+    onCleanupToc: () => {
+      setToc([]);
+      setNavigateToHref(() => {});
+    },
+    onSearchOpen: handleSearchOpenFromIframe,
+    bookRef,
+    renditionRef,
+  });
+
+  const bookmarkSyncVersion = useSyncListener(["bookmark"]);
+  const { data: bookmarks } = useEffectQuery(
+    () =>
+      BookmarkService.pipe(
+        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to load bookmarks:", error);
+            return [] as BookmarkRecord[];
+          }),
+        ),
+      ),
+    [book.id, bookmarkVersion, bookmarkSyncVersion],
+  );
 
   // Use contextToc from the navigation context (synced via onTocExtracted)
   const activeToc = contextToc.length > 0 ? contextToc : toc;
@@ -209,7 +235,46 @@ export function BookReader({ book }: BookReaderProps) {
     URL.revokeObjectURL(url);
   }, [book.id, book.title, book.format]);
 
-  const handleBookmarkPage = useCallback(() => {}, []);
+  const getCurrentCfi = useCallback(() => {
+    const latestCfi = latestCfiRef.current;
+    if (latestCfi) return latestCfi;
+    const rendition = renditionRef.current as any;
+    const location = rendition?.location ?? rendition?.currentLocation?.();
+    return (location?.start?.cfi as string | undefined) ?? null;
+  }, [latestCfiRef]);
+
+  const currentCfi = getCurrentCfi();
+  const currentBookmark = bookmarks?.find((bookmark) => bookmark.cfi === currentCfi);
+
+  const handleBookmarkPage = useCallback(async () => {
+    const cfi = getCurrentCfi();
+    if (!cfi) return;
+    const existingBookmark = bookmarks?.find((bookmark) => bookmark.cfi === cfi);
+    const now = Date.now();
+
+    await AppRuntime.runPromise(
+      BookmarkService.pipe(
+        Effect.andThen((s) =>
+          existingBookmark
+            ? s.deleteBookmark(existingBookmark.id)
+            : s.saveBookmark({
+                id: `bookmark:${book.id}:cfi:${encodeURIComponent(cfi)}`,
+                bookId: book.id,
+                cfi,
+                label: currentChapterLabel ?? undefined,
+                createdAt: now,
+                updatedAt: now,
+              }),
+        ),
+      ),
+    );
+    setBookmarkVersion((version) => version + 1);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
+      );
+    });
+  }, [book.id, bookmarks, currentChapterLabel, getCurrentCfi]);
 
   const isScrollMode = settings.readerLayout === "scroll";
 
@@ -357,6 +422,7 @@ export function BookReader({ book }: BookReaderProps) {
               onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
               onDownload={handleDownload}
               onBookmarkPage={handleBookmarkPage}
+              isBookmarked={Boolean(currentBookmark)}
             />
           </div>
         </div>

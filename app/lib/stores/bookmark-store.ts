@@ -9,7 +9,7 @@ import { getBookmarkStore } from "~/lib/sync/stores";
 export const BookmarkSchema = Schema.Struct({
   id: Schema.String,
   bookId: Schema.String,
-  cfi: Schema.String,
+  cfi: Schema.optional(Schema.String),
   label: Schema.optional(Schema.String),
   pageNumber: Schema.optional(Schema.Number),
   createdAt: Schema.Number,

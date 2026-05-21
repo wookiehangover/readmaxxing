@@ -70,6 +70,7 @@ const PULL_ENTITY_TYPES: readonly EntityType[] = [
   "book",
   "position",
   "highlight",
+  "bookmark",
   "notebook",
   "chat_session",
   "chat_message",

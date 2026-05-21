@@ -20,6 +20,12 @@ export class HighlightError extends Data.TaggedError("HighlightError")<{
   readonly cause?: unknown;
 }> {}
 
+export class BookmarkError extends Data.TaggedError("BookmarkError")<{
+  readonly operation: string;
+  readonly bookmarkId?: string;
+  readonly cause?: unknown;
+}> {}
+
 export class NotebookError extends Data.TaggedError("NotebookError")<{
   readonly operation: string;
   readonly bookId?: string;

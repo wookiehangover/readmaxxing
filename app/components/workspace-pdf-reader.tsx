@@ -30,6 +30,8 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { usePdfWorkspacePanels } from "~/hooks/use-pdf-workspace-panels";
 import type { PanelTypographyParams } from "~/components/workspace-book-reader";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 interface WorkspacePdfReaderProps {
   bookId: string;
@@ -122,6 +124,7 @@ function WorkspacePdfReaderInner({
   );
 
   const [tocOpen, setTocOpen] = useState(false);
+  const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
 
   // Ref-based callback so usePdfHighlights always calls the latest handleOpenNotebook
@@ -175,6 +178,21 @@ function WorkspacePdfReaderInner({
     panelRef,
     onAfterRender: reapplyAllHighlights,
   });
+
+  const bookmarkSyncVersion = useSyncListener(["bookmark"]);
+  const { data: bookmarks } = useEffectQuery(
+    () =>
+      BookmarkService.pipe(
+        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to load bookmarks:", error);
+            return [] as BookmarkRecord[];
+          }),
+        ),
+      ),
+    [book.id, bookmarkVersion, bookmarkSyncVersion],
+  );
 
   // Load highlights once after initial render
   const highlightsLoadedRef = useRef(false);
@@ -279,7 +297,36 @@ function WorkspacePdfReaderInner({
     URL.revokeObjectURL(url);
   }, [book.id, book.title, book.format]);
 
-  const handleBookmarkPage = useCallback(() => {}, []);
+  const currentBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+
+  const handleBookmarkPage = useCallback(async () => {
+    if (currentPage < 1) return;
+    const existingBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+    const now = Date.now();
+
+    await AppRuntime.runPromise(
+      BookmarkService.pipe(
+        Effect.andThen((s) =>
+          existingBookmark
+            ? s.deleteBookmark(existingBookmark.id)
+            : s.saveBookmark({
+                id: `bookmark:${book.id}:page:${currentPage}`,
+                bookId: book.id,
+                pageNumber: currentPage,
+                label: `Page ${currentPage}`,
+                createdAt: now,
+                updatedAt: now,
+              }),
+        ),
+      ),
+    );
+    setBookmarkVersion((version) => version + 1);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
+      );
+    });
+  }, [book.id, bookmarks, currentPage]);
 
   // Keep goToPage in sync for navigation map
   useEffect(() => {
@@ -441,7 +488,11 @@ function WorkspacePdfReaderInner({
             onUpdateSettings={handleUpdateSettings}
             isPdf
           />
-          <ReaderActionsMenu onDownload={handleDownload} onBookmarkPage={handleBookmarkPage} />
+          <ReaderActionsMenu
+            onDownload={handleDownload}
+            onBookmarkPage={handleBookmarkPage}
+            isBookmarked={Boolean(currentBookmark)}
+          />
         </div>
       </div>
       {/* Portal popovers to document.body to escape dockview's CSS transforms */}
