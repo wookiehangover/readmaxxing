@@ -104,6 +104,7 @@ export function serverBookmarkToLocal(record: Record<string, unknown>): Record<s
     cfi: (record.cfi as string) ?? undefined,
     label: (record.label as string) ?? undefined,
     pageNumber: (record.pageNumber as number) ?? undefined,
+    displayPage: (record.displayPage as number) ?? undefined,
     createdAt: toTimestamp(record.createdAt),
     updatedAt: toTimestamp(record.updatedAt ?? record.createdAt),
     deletedAt: toOptionalTimestamp(record.deletedAt),

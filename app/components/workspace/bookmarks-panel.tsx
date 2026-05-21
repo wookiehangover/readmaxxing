@@ -155,6 +155,9 @@ export function BookmarksPanel({ params }: IDockviewPanelProps<BookmarksPanelPar
                       <th className="w-[140px] pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
                         Created
                       </th>
+                      <th className="w-16 pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
+                        Page
+                      </th>
                       <th className="w-auto pb-1 text-left text-[10px] font-normal text-muted-foreground/60">
                         Chapter
                       </th>
@@ -175,6 +178,9 @@ export function BookmarksPanel({ params }: IDockviewPanelProps<BookmarksPanelPar
                       >
                         <td className="w-[140px] whitespace-nowrap py-1.5 pr-5 text-xs tabular-nums text-muted-foreground">
                           {formatCreatedAt(bookmark.createdAt)}
+                        </td>
+                        <td className="w-16 whitespace-nowrap py-1.5 pr-4 text-xs tabular-nums text-muted-foreground">
+                          {bookmark.displayPage ?? bookmark.pageNumber ?? "—"}
                         </td>
                         <td className="max-w-0 truncate py-1.5 text-xs text-muted-foreground">
                           {bookmark.label ?? "Unknown chapter"}
