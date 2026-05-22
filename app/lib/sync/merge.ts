@@ -27,7 +27,7 @@ interface Deletable {
 
 /**
  * Union two collections by ID. When the same ID exists in both:
- * - If either copy is non-deleted, prefer the non-deleted one.
+ * - If either copy is deleted, prefer the tombstone.
  * - If both are deleted, prefer the one deleted most recently.
  * - If both are non-deleted, prefer the one with the later updatedAt (if present).
  */
@@ -50,14 +50,14 @@ export function setUnionMerge<T extends Deletable>(
       continue;
     }
 
-    // Prefer non-deleted over deleted
+    // Prefer tombstones so deletes propagate across devices
     const existingDeleted = existing.deletedAt != null;
     const incomingDeleted = item.deletedAt != null;
 
     if (existingDeleted && !incomingDeleted) {
-      merged.set(id, item);
+      // keep existing tombstone
     } else if (!existingDeleted && incomingDeleted) {
-      // keep existing (non-deleted)
+      merged.set(id, item);
     } else if (existingDeleted && incomingDeleted) {
       // Both deleted — keep the one deleted most recently
       if ((item.deletedAt ?? 0) > (existing.deletedAt ?? 0)) {
