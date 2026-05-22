@@ -282,28 +282,36 @@ export function BookReader({ book }: BookReaderProps) {
   const handleCopyPageAsMarkdown = useCallback(async () => {
     const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
     if (contents?.length) {
-      const doc = contents[0].document as Document;
-      const text = doc.body?.innerText || doc.body?.textContent || "";
+      const text = contents
+        .map((content) => {
+          const doc = content.document as Document;
+          return doc.body?.innerText || doc.body?.textContent || "";
+        })
+        .join("\n\n");
       await navigator.clipboard.writeText(text);
     }
   }, []);
 
   const handleDownload = useCallback(async () => {
-    const data = await AppRuntime.runPromise(
-      BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))),
-    );
-    if (!data) return;
-    const blob = new Blob([data], {
-      type: book.format === "pdf" ? "application/pdf" : "application/epub+zip",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = book.title + (book.format === "pdf" ? ".pdf" : ".epub");
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      const data = await AppRuntime.runPromise(
+        BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))),
+      );
+      if (!data) return;
+      const blob = new Blob([data], {
+        type: book.format === "pdf" ? "application/pdf" : "application/epub+zip",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = book.title + (book.format === "pdf" ? ".pdf" : ".epub");
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download book:", error);
+    }
   }, [book.id, book.title, book.format]);
 
   const getCurrentCfi = useCallback(() => {

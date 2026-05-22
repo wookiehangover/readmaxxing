@@ -144,21 +144,25 @@ export function PdfReader({ book }: PdfReaderProps) {
   );
 
   const handleDownload = useCallback(async () => {
-    const data = await AppRuntime.runPromise(
-      BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))),
-    );
-    if (!data) return;
-    const blob = new Blob([data], {
-      type: book.format === "pdf" ? "application/pdf" : "application/epub+zip",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = book.title + (book.format === "pdf" ? ".pdf" : ".epub");
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      const data = await AppRuntime.runPromise(
+        BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))),
+      );
+      if (!data) return;
+      const blob = new Blob([data], {
+        type: book.format === "pdf" ? "application/pdf" : "application/epub+zip",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = book.title + (book.format === "pdf" ? ".pdf" : ".epub");
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download book:", error);
+    }
   }, [book.id, book.title, book.format]);
 
   const currentBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);

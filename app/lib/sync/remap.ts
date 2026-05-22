@@ -141,7 +141,9 @@ export async function remapBookId(
     if (!isWellFormedEntry(entry)) continue;
     const [bookmarkId, bookmark] = entry;
     if (!bookmark || bookmark.bookId !== fromId) continue;
-    await set(bookmarkId, { ...bookmark, bookId: toId }, bookmarkStore);
+    const newId = bookmarkId.replace(`bookmark:${fromId}:`, `bookmark:${toId}:`);
+    await del(bookmarkId, bookmarkStore);
+    await set(newId, { ...bookmark, id: newId, bookId: toId }, bookmarkStore);
   }
 
   const fromSessions = await get<ChatSessionLike[]>(fromId, chatSessionStore);

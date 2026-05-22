@@ -188,12 +188,14 @@ export function BookmarksPanel({ params }: IDockviewPanelProps<BookmarksPanelPar
                       <tr
                         key={bookmark.id}
                         className={
-                          bookmark.cfi
+                          bookmark.cfi || bookmark.pageNumber != null
                             ? "cursor-pointer transition-colors hover:bg-accent/50"
                             : "text-muted-foreground/60"
                         }
                         onClick={() => {
                           if (bookmark.cfi) handleNavigateToBookmark(bookmark.cfi);
+                          else if (bookmark.pageNumber != null)
+                            handleNavigateToBookmark(`page:${bookmark.pageNumber}`);
                         }}
                       >
                         <td className="w-[140px] whitespace-nowrap py-1.5 pr-5 text-xs tabular-nums text-muted-foreground">

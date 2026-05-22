@@ -110,7 +110,7 @@ export async function getBookmarksByUser(userId: string, since?: Date): Promise<
     SELECT ${BOOKMARK_COLUMNS}
     FROM readmax.bookmark
     WHERE user_id = ${userId}
-    ORDER BY created_at DESC
+    ORDER BY updated_at ASC
   `);
   return result.rows;
 }
