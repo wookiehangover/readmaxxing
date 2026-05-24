@@ -24,9 +24,7 @@ interface ReaderFormattingMenuProps {
 
 interface ReaderActionsMenuProps {
   onDownload: () => void;
-  onBookmarkPage: () => void;
   onCopyPageAsMarkdown?: () => void;
-  isBookmarked?: boolean;
 }
 
 const layoutOptions: { value: ReaderLayout; label: string }[] = [

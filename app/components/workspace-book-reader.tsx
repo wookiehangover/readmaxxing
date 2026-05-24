@@ -758,7 +758,6 @@ function WorkspaceBookReaderInner({
             />
             <ReaderActionsMenu
               onDownload={handleDownload}
-              onBookmarkPage={() => undefined}
               onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
             />
           </div>

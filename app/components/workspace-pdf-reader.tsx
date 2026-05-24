@@ -451,7 +451,7 @@ function WorkspacePdfReaderInner({
             onUpdateSettings={handleUpdateSettings}
             isPdf
           />
-          <ReaderActionsMenu onDownload={handleDownload} onBookmarkPage={() => undefined} />
+          <ReaderActionsMenu onDownload={handleDownload} />
         </div>
       </div>
       {/* Portal popovers to document.body to escape dockview's CSS transforms */}

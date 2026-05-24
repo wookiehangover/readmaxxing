@@ -365,7 +365,6 @@ export function BookReader({ book }: BookReaderProps) {
             <ReaderFormattingMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
             <ReaderActionsMenu
               onDownload={handleDownload}
-              onBookmarkPage={() => undefined}
               onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
             />
           </div>

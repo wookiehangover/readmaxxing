@@ -313,7 +313,7 @@ export function PdfReader({ book }: PdfReaderProps) {
               onUpdateSettings={handleUpdateSettings}
               isPdf
             />
-            <ReaderActionsMenu onDownload={handleDownload} onBookmarkPage={() => undefined} />
+            <ReaderActionsMenu onDownload={handleDownload} />
           </div>
         </div>
         {selectionPopover && (
