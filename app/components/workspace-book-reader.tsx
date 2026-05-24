@@ -570,7 +570,7 @@ function WorkspaceBookReaderInner({
   const handleCopyPageAsMarkdown = useCallback(() => {
     const text = renditionRef.current
       ?.getContents()
-      .map((content) => content.document?.body?.innerText ?? "")
+      .map((content: any) => content.document?.body?.innerText ?? "")
       .join("\n\n")
       .trim();
     if (!text) return;
