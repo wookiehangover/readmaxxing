@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { MoreHorizontal, Minus, Plus } from "lucide-react";
+import { MoreHorizontal, Minus, Plus, Type } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,10 +16,17 @@ import {
 } from "~/components/ui/dropdown-menu";
 import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/settings";
 
-interface ReaderSettingsMenuProps {
+interface ReaderFormattingMenuProps {
   settings: Settings;
   onUpdateSettings: (update: Partial<Settings>) => void;
   isPdf?: boolean;
+}
+
+interface ReaderActionsMenuProps {
+  onDownload: () => void;
+  onBookmarkPage: () => void;
+  onCopyPageAsMarkdown?: () => void;
+  isBookmarked?: boolean;
 }
 
 const layoutOptions: { value: ReaderLayout; label: string }[] = [
@@ -70,14 +77,14 @@ const textAlignOptions: { value: string; label: string; actualValue: TextAlign }
   { value: "justify", label: "Justify", actualValue: "justify" },
 ];
 
-export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: ReaderSettingsMenuProps) {
+export function ReaderFormattingMenu({ settings, onUpdateSettings, isPdf }: ReaderFormattingMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
-        <MoreHorizontal className="size-4" />
-        <span className="sr-only">Reader settings</span>
+        <Type className="size-4" />
+        <span className="sr-only">Reader formatting</span>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-52 text-xs">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Layout</DropdownMenuLabel>
           {isPdf ? (
@@ -224,6 +231,25 @@ export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: Reader
             </DropdownMenuSubContent>
           </DropdownMenuSub>
         )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+export function ReaderActionsMenu({ onDownload, onCopyPageAsMarkdown }: ReaderActionsMenuProps) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+        <MoreHorizontal className="size-4" />
+        <span className="sr-only">Reader actions</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52 text-xs">
+        <DropdownMenuGroup>
+          {onCopyPageAsMarkdown && (
+            <DropdownMenuItem onClick={onCopyPageAsMarkdown}>Copy Chapter as Markdown</DropdownMenuItem>
+          )}
+          <DropdownMenuItem onClick={onDownload}>Download</DropdownMenuItem>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
