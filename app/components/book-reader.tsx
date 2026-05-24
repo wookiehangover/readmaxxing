@@ -5,9 +5,9 @@ import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
-import type { BookMeta } from "~/lib/stores/book-store";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
-import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
@@ -135,6 +135,45 @@ export function BookReader({ book }: BookReaderProps) {
     [settings.readerLayout, updateSettings],
   );
 
+  const handleDownload = useCallback(() => {
+    AppRuntime.runPromise(
+      BookService.pipe(
+        Effect.andThen((s) => s.getBookData(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to download book:", error);
+            return null as ArrayBuffer | null;
+          }),
+        ),
+      ),
+    )
+      .then((data) => {
+        if (!data) return;
+        const format = book.format ?? "epub";
+        const type = format === "pdf" ? "application/pdf" : "application/epub+zip";
+        const blob = new Blob([data], { type });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${book.title.replace(/[\\/:*?"<>|]/g, "-")}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      })
+      .catch(console.error);
+  }, [book.id, book.title, book.format]);
+
+  const handleCopyPageAsMarkdown = useCallback(() => {
+    const text = renditionRef.current
+      ?.getContents()
+      .map((content) => content.document?.body?.innerText ?? "")
+      .join("\n\n")
+      .trim();
+    if (!text) return;
+    navigator.clipboard.writeText(text).catch(console.error);
+  }, []);
+
   const handleSaveHighlight = useCallback(async () => {
     const highlight = await saveHighlightFromPopover();
     if (!highlight) return;
@@ -169,6 +208,18 @@ export function BookReader({ book }: BookReaderProps) {
       .catch((err) => console.error("Failed to append highlight to notebook:", err));
     setAnnotationsPanelOpen(true);
   }, [saveHighlightFromPopover, book.id]);
+
+  const handleCopyAsMarkdown = useCallback(async () => {
+    if (!selectionPopover) return;
+
+    await navigator.clipboard.writeText(selectionPopover.text);
+    dismissPopovers();
+
+    const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
+    contents?.forEach((content: any) => {
+      content.document?.defaultView?.getSelection()?.removeAllRanges();
+    });
+  }, [selectionPopover, dismissPopovers]);
 
   const isScrollMode = settings.readerLayout === "scroll";
 
@@ -311,13 +362,18 @@ export function BookReader({ book }: BookReaderProps) {
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
+            <ReaderFormattingMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
+            <ReaderActionsMenu
+              onDownload={handleDownload}
+              onBookmarkPage={() => undefined}
+              onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+            />
           </div>
         </div>
         {selectionPopover && (
           <HighlightPopover
             position={selectionPopover.position}
-            selectedText={selectionPopover.text}
+            onCopyAsMarkdown={handleCopyAsMarkdown}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
           />

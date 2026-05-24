@@ -15,11 +15,12 @@ import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
-import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { SearchBar } from "~/components/search-bar";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { cn } from "~/lib/utils";
+import { AppRuntime } from "~/lib/effect-runtime";
 import type { DockviewPanelApi } from "dockview";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
@@ -253,6 +254,43 @@ function WorkspacePdfReaderInner({
       handleOpenNotebookRef,
     });
 
+  const handleCopyAsMarkdown = useCallback(async () => {
+    if (!selectionPopover) return;
+
+    await navigator.clipboard.writeText(selectionPopover.text);
+    dismissPopovers();
+    window.getSelection()?.removeAllRanges();
+  }, [selectionPopover, dismissPopovers]);
+
+  const handleDownload = useCallback(() => {
+    AppRuntime.runPromise(
+      BookService.pipe(
+        Effect.andThen((s) => s.getBookData(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to download book:", error);
+            return null as ArrayBuffer | null;
+          }),
+        ),
+      ),
+    )
+      .then((data) => {
+        if (!data) return;
+        const format = book.format ?? "pdf";
+        const type = format === "pdf" ? "application/pdf" : "application/epub+zip";
+        const blob = new Blob([data], { type });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${book.title.replace(/[\\/:*?"<>|]/g, "-")}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      })
+      .catch(console.error);
+  }, [book.id, book.title, book.format]);
+
   // Keep goToPage in sync for navigation map
   useEffect(() => {
     setGoToPage(goToPage);
@@ -408,11 +446,12 @@ function WorkspacePdfReaderInner({
               </PopoverContent>
             </Popover>
           )}
-          <ReaderSettingsMenu
+          <ReaderFormattingMenu
             settings={localSettings}
             onUpdateSettings={handleUpdateSettings}
             isPdf
           />
+          <ReaderActionsMenu onDownload={handleDownload} onBookmarkPage={() => undefined} />
         </div>
       </div>
       {/* Portal popovers to document.body to escape dockview's CSS transforms */}
@@ -420,7 +459,7 @@ function WorkspacePdfReaderInner({
         createPortal(
           <HighlightPopover
             position={selectionPopover.position}
-            selectedText={selectionPopover.text}
+            onCopyAsMarkdown={handleCopyAsMarkdown}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
           />,
