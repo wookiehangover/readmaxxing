@@ -77,7 +77,11 @@ const textAlignOptions: { value: string; label: string; actualValue: TextAlign }
   { value: "justify", label: "Justify", actualValue: "justify" },
 ];
 
-export function ReaderFormattingMenu({ settings, onUpdateSettings, isPdf }: ReaderFormattingMenuProps) {
+export function ReaderFormattingMenu({
+  settings,
+  onUpdateSettings,
+  isPdf,
+}: ReaderFormattingMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
@@ -246,7 +250,9 @@ export function ReaderActionsMenu({ onDownload, onCopyPageAsMarkdown }: ReaderAc
       <DropdownMenuContent align="end" className="w-52 text-xs">
         <DropdownMenuGroup>
           {onCopyPageAsMarkdown && (
-            <DropdownMenuItem onClick={onCopyPageAsMarkdown}>Copy Chapter as Markdown</DropdownMenuItem>
+            <DropdownMenuItem onClick={onCopyPageAsMarkdown}>
+              Copy Chapter as Markdown
+            </DropdownMenuItem>
           )}
           <DropdownMenuItem onClick={onDownload}>Download</DropdownMenuItem>
         </DropdownMenuGroup>
