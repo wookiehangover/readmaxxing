@@ -363,6 +363,7 @@ export function PdfReader({ book }: PdfReaderProps) {
               isPdf
             />
             <ReaderActionsMenu
+              book={book}
               onDownload={handleDownload}
               onBookmarkPage={handleBookmarkPage}
               isBookmarked={Boolean(currentBookmark)}

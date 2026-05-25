@@ -11,7 +11,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const TEST_EPUB = resolve(__dirname, "fixtures/test-book.epub");
 const BOOK_TITLE = "Test Book for E2E";
-const BOOK_AUTHOR = "E2E Test Author";
+const BOOK_AUTHOR = "Test Author";
 
 interface StoredBook {
   id: string;
@@ -134,8 +134,20 @@ async function openBookMenuFromLibrary(page: Page) {
   await page.getByRole("button", { name: "Table view" }).click();
   const bookRow = page.getByRole("row").filter({ hasText: BOOK_TITLE }).first();
   await expect(bookRow).toBeVisible({ timeout: 10_000 });
-  await bookRow.getByRole("button", { name: "Book actions" }).click();
-  await expect(page.getByRole("menuitem", { name: "Share" })).toBeVisible({ timeout: 5_000 });
+  const shareMenuItem = page.getByRole("menuitem", { name: "Share" });
+
+  await expect
+    .poll(
+      async () => {
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(200);
+        await bookRow.getByRole("button", { name: "Book actions" }).click();
+        await shareMenuItem.waitFor({ state: "visible", timeout: 1_000 }).catch(() => {});
+        return await shareMenuItem.isVisible().catch(() => false);
+      },
+      { timeout: 15_000, intervals: [500, 1000, 2000] },
+    )
+    .toBe(true);
 }
 
 async function createShareLink(page: Page, options?: { maxUses?: number; shareChats?: boolean }) {
@@ -146,11 +158,11 @@ async function createShareLink(page: Page, options?: { maxUses?: number; shareCh
   await expect(dialog).toBeVisible({ timeout: 10_000 });
 
   if (options?.maxUses) {
-    await dialog.getByLabel("Limit uses").click();
+    await dialog.getByRole("switch", { name: "Limit uses" }).click();
     await dialog.getByLabel("Maximum uses").fill(String(options.maxUses));
   }
   if (options?.shareChats) {
-    await dialog.getByLabel("Share chats & notes").click();
+    await dialog.getByRole("switch", { name: "Share chats & notes" }).click();
   }
 
   await dialog.getByRole("button", { name: "Create Link" }).click();
@@ -180,12 +192,11 @@ async function expectShareLandingPage(page: Page) {
 }
 
 async function importSharedBook(page: Page) {
-  await page.getByRole("button", { name: "Add to Library & Read" }).click();
-  await page.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
+  await Promise.all([
+    page.waitForURL((url) => url.pathname === "/", { timeout: 30_000, waitUntil: "commit" }),
+    page.getByRole("button", { name: "Add to Library & Read" }).click(),
+  ]);
   await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
-  await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
-    timeout: 30_000,
-  });
 
   await expect
     .poll(

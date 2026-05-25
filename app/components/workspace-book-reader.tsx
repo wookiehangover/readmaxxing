@@ -896,6 +896,7 @@ function WorkspaceBookReaderInner({
               onUpdateSettings={handleUpdateSettings}
             />
             <ReaderActionsMenu
+              book={book}
               onDownload={handleDownload}
               onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
               onBookmarkPage={handleBookmarkPage}

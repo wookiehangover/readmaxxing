@@ -43,6 +43,7 @@
     "linkedom": "^0.18.12",
     "lucide-react": "^0.577.0",
     "markdown-it": "^14.1.1",
+    "nanoid": "^5.1.11",
     "pdfjs-dist": "^5.7.284",
     "pg": "^8.20.0",
     "pg-sql": "^1.1.0",
