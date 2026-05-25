@@ -616,17 +616,19 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           if ((e.metaKey || e.ctrlKey) && e.key === ".") {
             e.preventDefault();
             e.stopPropagation();
-            window.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                key: e.key,
-                metaKey: e.metaKey,
-                ctrlKey: e.ctrlKey,
-                altKey: e.altKey,
-                shiftKey: e.shiftKey,
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key: e.key,
+                  metaKey: e.metaKey,
+                  ctrlKey: e.ctrlKey,
+                  altKey: e.altKey,
+                  shiftKey: e.shiftKey,
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+            });
             return;
           }
           if (layoutRef.current === "scroll") return;
