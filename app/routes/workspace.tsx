@@ -13,7 +13,7 @@ import { useBookUpload } from "~/hooks/use-book-upload";
 import { DropZone } from "~/components/drop-zone";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
+import { clampFocusedSplitRatio, type ReaderLayout, useSettings } from "~/lib/settings";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { sortBooks } from "~/lib/workspace-utils";
 import { cn } from "~/lib/utils";
@@ -77,6 +77,14 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any
   "reading-history": ReadingHistoryPanel,
 };
 
+const SIDEBAR_TRANSITION_MS = 270;
+
+type ZenPreState = {
+  readonly sidebarCollapsed: boolean;
+  readonly readerLayout: ReaderLayout;
+  readonly dockviewJson: ReturnType<DockviewApi["toJSON"]> | undefined;
+};
+
 export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
   return <WorkspaceRouteInner loaderData={loaderData} />;
 }
@@ -90,8 +98,14 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
+  const zenMode = settings.zenMode;
   const collapsedRef = useRef(collapsed);
   collapsedRef.current = collapsed;
+  const readerLayout = settings.readerLayout;
+  const readerLayoutRef = useRef(readerLayout);
+  readerLayoutRef.current = readerLayout;
+  const prevZenModeRef = useRef(zenMode);
+  const zenPreStateRef = useRef<ZenPreState | null>(null);
   const sortBy = settings.workspaceSortBy;
   const layoutMode = settings.layoutMode;
   const layoutModeRef = useRef(layoutMode);
@@ -181,7 +195,53 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     };
   }, [ws]);
 
-  useWorkspaceShortcuts({ apiRef, collapsed, updateSettings });
+  useWorkspaceShortcuts({ apiRef, collapsed, zenMode, updateSettings });
+
+  useEffect(() => {
+    const prevZenMode = prevZenModeRef.current;
+    if (prevZenMode === zenMode) return;
+
+    prevZenModeRef.current = zenMode;
+
+    if (zenMode) {
+      const api = apiRef.current;
+      zenPreStateRef.current = {
+        sidebarCollapsed: collapsedRef.current,
+        readerLayout: readerLayoutRef.current,
+        dockviewJson: api?.toJSON(),
+      };
+
+      if (api) {
+        for (const panel of [...api.panels]) {
+          if (!panel.id.startsWith("book-")) api.removePanel(panel);
+        }
+      }
+
+      updateSettings({ sidebarCollapsed: true, readerLayout: "spread" });
+      setTimeout(() => window.dispatchEvent(new Event("resize")), SIDEBAR_TRANSITION_MS);
+      return;
+    }
+
+    const previous = zenPreStateRef.current;
+    if (!previous) return;
+
+    updateSettings({
+      sidebarCollapsed: previous.sidebarCollapsed,
+      readerLayout: previous.readerLayout,
+      zenMode: false,
+    });
+
+    if (previous.dockviewJson) {
+      try {
+        apiRef.current?.fromJSON(previous.dockviewJson);
+      } catch (err) {
+        console.error("Failed to restore zen mode dockview layout:", err);
+      }
+    }
+
+    window.dispatchEvent(new Event("resize"));
+    zenPreStateRef.current = null;
+  }, [zenMode, updateSettings]);
 
   const {
     openBook,
@@ -321,6 +381,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         className={cn(
           "flex h-dvh",
           layoutReady ? "animate-in fade-in-0 duration-300" : "opacity-0",
+          { "zen-mode": zenMode },
         )}
       >
         {/* Desktop sidebar — hidden on mobile */}
@@ -356,7 +417,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
         {/* Dockview container — full width when sidebar is collapsed or on mobile */}
         <div className="flex flex-1 flex-col">
-          {layoutMode === "focused" && (
+          {layoutMode === "focused" && !zenMode && (
             <ClusterBar
               getEntries={getClusterEntries}
               getActiveId={getActiveClusterId}
