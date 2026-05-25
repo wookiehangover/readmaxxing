@@ -110,32 +110,32 @@ export function ShareDialog({ book, open, onOpenChange }: ShareDialogProps) {
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+          <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col gap-1">
               <label htmlFor={limitUsesId} className="text-sm font-medium">
                 Limit uses
               </label>
               <p className="text-xs text-muted-foreground">Leave off for an unlimited link.</p>
             </div>
-            <Switch id={limitUsesId} checked={limitUses} onCheckedChange={setLimitUses} />
+            <div className="flex items-center gap-3">
+              {limitUses && (
+                <Input
+                  id={maxUsesId}
+                  aria-label="Maximum uses"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={maxUses}
+                  disabled={isCreating || Boolean(shareUrl)}
+                  onChange={(event) => setMaxUses(Math.max(1, Number(event.target.value) || 1))}
+                  className="w-20"
+                />
+              )}
+              <Switch id={limitUsesId} checked={limitUses} onCheckedChange={setLimitUses} />
+            </div>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <label htmlFor={maxUsesId} className="text-sm font-medium">
-              Maximum uses
-            </label>
-            <Input
-              id={maxUsesId}
-              type="number"
-              min={1}
-              step={1}
-              value={maxUses}
-              disabled={!limitUses || isCreating || Boolean(shareUrl)}
-              onChange={(event) => setMaxUses(Math.max(1, Number(event.target.value) || 1))}
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+          <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col gap-1">
               <label htmlFor={shareChatsId} className="text-sm font-medium">
                 Share chats &amp; notes

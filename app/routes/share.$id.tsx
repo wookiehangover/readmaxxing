@@ -6,6 +6,7 @@ import { Streamdown } from "streamdown";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { getBookByIdForUser } from "~/lib/database/book/book";
+import { getPositionsByUser } from "~/lib/database/book/reading-position";
 import { getShareLink, type ShareLinkRow } from "~/lib/database/share/share-link";
 import { getUser } from "~/lib/database/user/user";
 import { parseEpubEffect } from "~/lib/epub/epub-service";
@@ -22,6 +23,7 @@ interface ShareBookData {
   author: string;
   coverUrl: string | null;
   format: BookFormat;
+  currentPageUpdatedAt: string | null;
 }
 
 interface ShareLoaderData {
@@ -81,6 +83,15 @@ function normalizeFormat(format: string | null | undefined): BookFormat {
 function getBookFileName(book: ShareBookData): string {
   const extension = book.format === "pdf" ? "pdf" : "epub";
   return `${book.title}.${extension}`;
+}
+
+function formatCurrentPageInfo(updatedAt: string | null): string {
+  if (!updatedAt) return "Opens at the beginning";
+  return `Current page saved ${new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(updatedAt))}`;
 }
 
 async function readApiError(response: Response): Promise<string> {
@@ -179,9 +190,10 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     };
   }
 
-  const [book, sharer] = await Promise.all([
+  const [book, sharer, positions] = await Promise.all([
     getBookByIdForUser(shareLink.bookId, shareLink.userId),
     getUser(shareLink.userId),
+    getPositionsByUser(shareLink.userId),
   ]);
   if (!book || book.deletedAt || !book.fileBlobUrl) {
     return {
@@ -192,11 +204,15 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     };
   }
 
+  const currentPosition = positions.find(
+    (position) => position.bookId === shareLink.bookId && position.cfi,
+  );
   const bookData: ShareBookData = {
     title: book.title ?? "Untitled",
     author: book.author ?? "Unknown Author",
     coverUrl: book.coverBlobUrl ? new URL(`/api/share/${id}/cover`, request.url).toString() : null,
     format: normalizeFormat(book.format),
+    currentPageUpdatedAt: currentPosition?.updatedAt.toISOString() ?? null,
   };
   const sharerData = { id: shareLink.userId, displayName: sharer?.displayName ?? null };
 
@@ -279,7 +295,7 @@ async function fetchSharedJson<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-function SharedReadingSection({ shareId }: { shareId: string }) {
+function SharedReadingSection({ shareId, book }: { shareId: string; book: ShareBookData }) {
   const [tab, setTab] = useState<"chats" | "notes">("chats");
   const [chats, setChats] = useState<SharedChatSession[]>([]);
   const [markdown, setMarkdown] = useState("");
@@ -314,17 +330,20 @@ function SharedReadingSection({ shareId }: { shareId: string }) {
     };
   }, [shareId]);
 
+  const visibleChats = chats.slice(0, 2);
+  const hiddenChatCount = Math.max(0, chats.length - visibleChats.length);
+
   return (
     <section className="rounded-3xl border bg-card/70 p-6 shadow-sm backdrop-blur sm:p-8">
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Co-reading
             </p>
-            <h2 className="text-2xl font-semibold tracking-tight">Shared chats and notes</h2>
+            <h2 className="text-2xl font-semibold tracking-tight">Preview the reading workspace</h2>
           </div>
-          <div className="inline-flex rounded-lg border bg-background p-1">
+          <div className="inline-flex rounded-lg bg-background/80 p-1 shadow-sm">
             {(["chats", "notes"] as const).map((item) => (
               <Button
                 key={item}
@@ -345,57 +364,102 @@ function SharedReadingSection({ shareId }: { shareId: string }) {
             <Skeleton className="h-14 w-full" />
             <Skeleton className="h-24 w-full" />
           </div>
-        ) : tab === "chats" ? (
-          chats.length > 0 ? (
-            <div className="flex flex-col gap-3">
-              {chats.map((session) => (
-                <details key={session.id} className="group rounded-xl border bg-background/60 p-4">
-                  <summary className="cursor-pointer list-none font-medium [&::-webkit-details-marker]:hidden">
-                    {session.title || "Untitled chat"}
-                    <span className="ml-2 text-sm text-muted-foreground">
-                      {session.messages.length} messages
-                    </span>
-                  </summary>
-                  <div className="mt-4 flex flex-col gap-3">
-                    {session.messages.map((message, index) => (
-                      <div
-                        key={`${session.id}-${message.createdAt}-${index}`}
-                        className={cn("flex", { "justify-end": message.role === "user" })}
-                      >
-                        <div
-                          className={cn("max-w-prose rounded-lg px-3 py-2 text-sm", {
-                            "bg-secondary text-secondary-foreground": message.role === "user",
-                            "bg-muted text-foreground": message.role !== "user",
-                          })}
-                        >
-                          <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-                            {message.role}
-                          </p>
-                          {message.role === "user" ? (
-                            <p className="whitespace-pre-wrap">{message.content}</p>
-                          ) : (
-                            <Streamdown>{message.content}</Streamdown>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              ))}
-            </div>
-          ) : (
-            <p className="rounded-xl border bg-background/60 p-6 text-center text-sm text-muted-foreground">
-              No chats yet.
-            </p>
-          )
-        ) : markdown.trim() ? (
-          <div className="prose prose-sm max-w-none rounded-xl border bg-background/60 p-5 text-foreground dark:prose-invert">
-            <Streamdown>{markdown}</Streamdown>
-          </div>
         ) : (
-          <p className="rounded-xl border bg-background/60 p-6 text-center text-sm text-muted-foreground">
-            No notes yet.
-          </p>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+            <div className="rounded-2xl bg-background/70 p-5 shadow-inner">
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span>{book.format.toUpperCase()} reader preview</span>
+                <span>{formatCurrentPageInfo(book.currentPageUpdatedAt)}</span>
+              </div>
+              <div className="my-4 h-px bg-border/70" />
+              <div className="mx-auto max-w-prose rounded-xl bg-card/80 p-6 shadow-sm">
+                <p className="text-sm font-medium text-muted-foreground">Now reading</p>
+                <h3 className="mt-2 text-2xl font-semibold tracking-tight">{book.title}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">by {book.author}</p>
+                <p className="mt-6 text-sm leading-7 text-muted-foreground">
+                  Import this shared copy to open the reader, continue from the shared page context,
+                  and keep the co-reading conversation nearby.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex min-h-96 flex-col overflow-hidden rounded-2xl bg-background/80 shadow-inner">
+              <div className="flex items-center justify-between gap-3 bg-muted/50 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium">
+                    {tab === "chats" ? "Shared chat panel" : "Shared notebook"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Read-only preview</p>
+                </div>
+                {tab === "chats" && (
+                  <span className="text-xs text-muted-foreground">{chats.length} sessions</span>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-4 py-4">
+                {tab === "chats" ? (
+                  visibleChats.length > 0 ? (
+                    <div className="flex flex-col gap-5">
+                      {visibleChats.map((session) => (
+                        <div key={session.id} className="flex flex-col gap-3">
+                          <div>
+                            <p className="text-sm font-medium">
+                              {session.title || "Untitled chat"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {session.messages.length} messages
+                            </p>
+                          </div>
+                          <div className="flex flex-col gap-3">
+                            {session.messages.map((message, index) => (
+                              <div
+                                key={`${session.id}-${message.createdAt}-${index}`}
+                                className={cn("flex", { "justify-end": message.role === "user" })}
+                              >
+                                <div
+                                  className={cn("max-w-prose rounded-lg px-3 py-2 text-sm", {
+                                    "bg-secondary text-secondary-foreground":
+                                      message.role === "user",
+                                    "bg-muted/80 text-foreground": message.role !== "user",
+                                  })}
+                                >
+                                  <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                                    {message.role}
+                                  </p>
+                                  {message.role === "user" ? (
+                                    <p className="whitespace-pre-wrap">{message.content}</p>
+                                  ) : (
+                                    <Streamdown>{message.content}</Streamdown>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      {hiddenChatCount > 0 && (
+                        <p className="text-center text-xs text-muted-foreground">
+                          Plus {hiddenChatCount} more shared sessions after import.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="rounded-xl bg-muted/50 p-6 text-center text-sm text-muted-foreground">
+                      No chats yet.
+                    </p>
+                  )
+                ) : markdown.trim() ? (
+                  <div className="prose prose-sm max-w-none rounded-xl bg-muted/40 p-5 text-foreground dark:prose-invert">
+                    <Streamdown>{markdown}</Streamdown>
+                  </div>
+                ) : (
+                  <p className="rounded-xl bg-muted/50 p-6 text-center text-sm text-muted-foreground">
+                    No notes yet.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </section>
@@ -488,7 +552,9 @@ export default function SharePage({ loaderData }: ComponentProps) {
               </div>
             </div>
           </section>
-          {loaderData.shareChats && canImport && <SharedReadingSection shareId={loaderData.id} />}
+          {loaderData.shareChats && canImport && loaderData.book && (
+            <SharedReadingSection shareId={loaderData.id} book={loaderData.book} />
+          )}
         </div>
       </div>
     </main>
