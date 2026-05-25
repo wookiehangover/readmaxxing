@@ -27,7 +27,6 @@ interface ShareBookData {
   coverUrl: string | null;
   format: BookFormat;
   currentCfi: string | null;
-  currentPageUpdatedAt: string | null;
 }
 
 interface ShareLoaderData {
@@ -88,15 +87,6 @@ function normalizeFormat(format: string | null | undefined): BookFormat {
 function getBookFileName(book: ShareBookData): string {
   const extension = book.format === "pdf" ? "pdf" : "epub";
   return `${book.title}.${extension}`;
-}
-
-function formatCurrentPageInfo(updatedAt: string | null): string {
-  if (!updatedAt) return "Opens at the beginning";
-  return `Current page saved ${new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(updatedAt))}`;
 }
 
 async function readApiError(response: Response): Promise<string> {
@@ -218,7 +208,6 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     coverUrl: book.coverBlobUrl ? new URL(`/api/share/${id}/cover`, request.url).toString() : null,
     format: normalizeFormat(book.format),
     currentCfi: currentPosition?.cfi ?? null,
-    currentPageUpdatedAt: currentPosition?.updatedAt.toISOString() ?? null,
   };
   const sharerData = { id: shareLink.userId, displayName: sharer?.displayName ?? null };
 
@@ -409,8 +398,7 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
 
   if (book.format === "pdf") {
     return (
-      <div className="flex min-h-[600px] flex-col overflow-hidden bg-background">
-        <ReaderPreviewHeader book={book} />
+      <div className="flex h-[600px] flex-col overflow-hidden bg-background lg:h-full">
         <div className="flex flex-1 items-center justify-center bg-muted/40 p-8">
           {book.coverUrl ? (
             <img
@@ -429,8 +417,7 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
   }
 
   return (
-    <div className="flex min-h-[600px] flex-col overflow-hidden bg-background">
-      <ReaderPreviewHeader book={book} />
+    <div className="flex h-[600px] flex-col overflow-hidden bg-background lg:h-full">
       <div className="relative min-h-0 flex-1 bg-white">
         <div ref={containerRef} className="size-full" />
         {loading && (
@@ -458,7 +445,6 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
           <ChevronLeft className="size-4" />
           Previous
         </Button>
-        <p className="text-xs text-muted-foreground">Read-only preview</p>
         <Button
           type="button"
           variant="ghost"
@@ -468,21 +454,6 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
           Next
           <ChevronRight className="size-4" />
         </Button>
-      </div>
-    </div>
-  );
-}
-
-function ReaderPreviewHeader({ book }: { book: ShareBookData }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{book.title}</p>
-        <p className="truncate text-xs text-muted-foreground">by {book.author}</p>
-      </div>
-      <div className="text-right text-xs text-muted-foreground">
-        <p>{book.format.toUpperCase()} preview</p>
-        <p>{formatCurrentPageInfo(book.currentPageUpdatedAt)}</p>
       </div>
     </div>
   );
@@ -522,8 +493,7 @@ function SharedChatPanel({ shareId, enabled }: { shareId: string; enabled: boole
 
   if (!enabled) {
     return (
-      <aside className="flex min-h-[600px] flex-col overflow-hidden bg-background">
-        <ChatPanelHeader sessionCount={0} />
+      <aside className="flex h-[600px] flex-col overflow-hidden bg-background lg:h-full">
         <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
           Chat sessions were not included with this share link.
         </div>
@@ -532,8 +502,7 @@ function SharedChatPanel({ shareId, enabled }: { shareId: string; enabled: boole
   }
 
   return (
-    <aside className="flex min-h-[600px] flex-col overflow-hidden bg-background">
-      <ChatPanelHeader sessionCount={chats.length} />
+    <aside className="flex h-[600px] flex-col overflow-hidden bg-background lg:h-full">
       {error && <p className="px-4 py-3 text-sm text-destructive">{error}</p>}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {loading ? (
@@ -571,20 +540,6 @@ function SharedChatPanel({ shareId, enabled }: { shareId: string; enabled: boole
   );
 }
 
-function ChatPanelHeader({ sessionCount }: { sessionCount: number }) {
-  return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3">
-      <div>
-        <h2 className="text-sm font-semibold">Chat sessions</h2>
-        <p className="text-xs text-muted-foreground">Shared read-only conversation</p>
-      </div>
-      <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-        {sessionCount} {sessionCount === 1 ? "session" : "sessions"}
-      </span>
-    </div>
-  );
-}
-
 function SharedChatBubble({ message }: { message: SharedChatMessage }) {
   const isUser = message.role === "user";
   return (
@@ -617,8 +572,8 @@ function SharedReadingSection({
   shareChats: boolean;
 }) {
   return (
-    <section className="p-0">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
+    <section className="min-h-0 flex-1 border-t pt-6">
+      <div className="grid min-h-0 gap-5 lg:h-full lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
         <SharedEpubPreview book={book} fileUrl={fileUrl} />
         <SharedChatPanel shareId={shareId} enabled={shareChats} />
       </div>
@@ -657,9 +612,9 @@ export default function SharePage({ loaderData }: ComponentProps) {
 
   return (
     <main className="min-h-dvh bg-background px-4 py-10 text-foreground sm:px-6 lg:px-8">
-      <div className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-7xl items-start justify-center">
-        <div className="flex w-full flex-col gap-6">
-          <section className="grid w-full gap-10 p-0 md:grid-cols-[auto_1fr] md:items-center">
+      <div className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-7xl items-start justify-center lg:h-[calc(100dvh-5rem)]">
+        <div className="flex w-full flex-col gap-6 lg:h-full lg:min-h-0">
+          <section className="grid w-full shrink-0 gap-10 p-0 md:grid-cols-[auto_1fr] md:items-center">
             <div className="flex justify-center md:justify-start">
               <CoverArt book={loaderData.book} />
             </div>
