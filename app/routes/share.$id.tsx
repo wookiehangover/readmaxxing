@@ -469,7 +469,7 @@ function SharedChatPanel({ shareId, enabled }: { shareId: string; enabled: boole
 
   if (!enabled) {
     return (
-      <aside className="flex h-[600px] flex-col overflow-hidden bg-background lg:h-full">
+      <aside className="flex h-[600px] flex-col overflow-hidden border-t bg-background pt-5 lg:h-full lg:border-t-0 lg:border-l lg:pt-0 lg:pl-5">
         <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
           Chat sessions were not included with this share link.
         </div>
@@ -478,7 +478,7 @@ function SharedChatPanel({ shareId, enabled }: { shareId: string; enabled: boole
   }
 
   return (
-    <aside className="flex h-[600px] flex-col overflow-hidden bg-background lg:h-full">
+    <aside className="flex h-[600px] flex-col overflow-hidden border-t bg-background pt-5 lg:h-full lg:border-t-0 lg:border-l lg:pt-0 lg:pl-5">
       {error && <p className="px-4 py-3 text-sm text-destructive">{error}</p>}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {loading ? (
