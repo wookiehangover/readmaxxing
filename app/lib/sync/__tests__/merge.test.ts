@@ -47,20 +47,20 @@ describe("setUnionMerge", () => {
     expect(result.map((r) => r.id).sort()).toEqual(["a", "b", "c"]);
   });
 
-  it("prefers non-deleted over deleted (remote deleted, local not)", () => {
+  it("prefers tombstone over non-deleted (remote deleted)", () => {
     const local: TestItem[] = [{ id: "a" }];
     const remote: TestItem[] = [{ id: "a", deletedAt: 100 }];
     const result = setUnionMerge(local, remote, getId);
     expect(result).toHaveLength(1);
-    expect(result[0].deletedAt).toBeUndefined();
+    expect(result[0].deletedAt).toBe(100);
   });
 
-  it("prefers non-deleted over deleted (local deleted, remote not)", () => {
+  it("prefers tombstone over non-deleted (local deleted)", () => {
     const local: TestItem[] = [{ id: "a", deletedAt: 100 }];
     const remote: TestItem[] = [{ id: "a" }];
     const result = setUnionMerge(local, remote, getId);
     expect(result).toHaveLength(1);
-    expect(result[0].deletedAt).toBeUndefined();
+    expect(result[0].deletedAt).toBe(100);
   });
 
   it("keeps the more recently deleted when both are deleted", () => {
@@ -151,20 +151,20 @@ describe("setUnionMerge — highlights", () => {
     expect(result[0].updatedAt).toBe(300);
   });
 
-  it("deleted on remote side — non-deleted local wins", () => {
+  it("deleted on remote side — tombstone wins", () => {
     const local = [makeHighlight({ id: "h1", updatedAt: 100 })];
     const remote = [makeHighlight({ id: "h1", updatedAt: 200, deletedAt: 200 })];
     const result = setUnionMerge(local, remote, getHighlightId);
     expect(result).toHaveLength(1);
-    expect(result[0].deletedAt).toBeUndefined();
+    expect(result[0].deletedAt).toBe(200);
   });
 
-  it("deleted on local side — non-deleted remote wins", () => {
+  it("deleted on local side — tombstone wins", () => {
     const local = [makeHighlight({ id: "h1", updatedAt: 100, deletedAt: 150 })];
     const remote = [makeHighlight({ id: "h1", updatedAt: 200 })];
     const result = setUnionMerge(local, remote, getHighlightId);
     expect(result).toHaveLength(1);
-    expect(result[0].deletedAt).toBeUndefined();
+    expect(result[0].deletedAt).toBe(150);
   });
 
   it("deleted on both sides — keeps the more recently deleted", () => {

@@ -94,6 +94,24 @@ export function serverHighlightToLocal(record: Record<string, unknown>): Record<
 }
 
 /**
+ * Transform a server BookmarkRow into the local Bookmark shape expected by
+ * bookmark-store.ts.
+ */
+export function serverBookmarkToLocal(record: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: record.id,
+    bookId: record.bookId,
+    cfi: (record.cfi as string) ?? undefined,
+    label: (record.label as string) ?? undefined,
+    pageNumber: (record.pageNumber as number) ?? undefined,
+    displayPage: (record.displayPage as number) ?? undefined,
+    createdAt: toTimestamp(record.createdAt),
+    updatedAt: toTimestamp(record.updatedAt ?? record.createdAt),
+    deletedAt: toOptionalTimestamp(record.deletedAt),
+  };
+}
+
+/**
  * Transform a server NotebookRow into the local Notebook shape
  * expected by annotations-store.ts.
  */

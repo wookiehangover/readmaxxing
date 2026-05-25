@@ -13,9 +13,12 @@ import { SearchBar } from "~/components/search-bar";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { usePdfSearch } from "~/hooks/use-pdf-search";
 import { usePdfHighlights } from "~/hooks/use-pdf-highlights";
+import { useEffectQuery } from "~/hooks/use-effect-query";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 
 interface PdfReaderProps {
   book: BookMeta;
@@ -26,6 +29,7 @@ export function PdfReader({ book }: PdfReaderProps) {
   const [settings, updateSettings] = useSettings();
   const [tocOpen, setTocOpen] = useState(false);
   const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
+  const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const editorRef = useRef<TiptapEditorHandle>(null);
   const [pendingHighlight, setPendingHighlight] = useState<HighlightReferenceAttrs | null>(null);
 
@@ -52,6 +56,21 @@ export function PdfReader({ book }: PdfReaderProps) {
       fontSize: settings.fontSize,
       onAfterRender: reapplyAllHighlights,
     });
+
+  const bookmarkSyncVersion = useSyncListener(["bookmark"]);
+  const { data: bookmarks } = useEffectQuery(
+    () =>
+      BookmarkService.pipe(
+        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to load bookmarks:", error);
+            return [] as BookmarkRecord[];
+          }),
+        ),
+      ),
+    [book.id, bookmarkVersion, bookmarkSyncVersion],
+  );
 
   // Load highlights once after initial render
   const highlightsLoadedRef = useRef(false);
@@ -154,6 +173,36 @@ export function PdfReader({ book }: PdfReaderProps) {
     [removeHighlight],
   );
 
+  const currentBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+
+  const handleBookmarkPage = useCallback(async () => {
+    if (currentPage < 1) return;
+    const existingBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+    const now = Date.now();
+
+    await AppRuntime.runPromise(
+      BookmarkService.pipe(
+        Effect.andThen((s) =>
+          existingBookmark
+            ? s.deleteBookmark(existingBookmark.id)
+            : s.saveBookmark({
+                id: `bookmark:${book.id}:page:${currentPage}`,
+                bookId: book.id,
+                pageNumber: currentPage,
+                label: `Page ${currentPage}`,
+                createdAt: now,
+                updatedAt: now,
+              }),
+        ),
+      ),
+    );
+    setBookmarkVersion((version) => version + 1);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
+      );
+    });
+  }, [book.id, bookmarks, currentPage]);
   const handleNavigateToHighlight = useCallback(
     (cfi: string) => {
       // Parse synthetic PDF cfiRange to navigate to the page
@@ -313,7 +362,11 @@ export function PdfReader({ book }: PdfReaderProps) {
               onUpdateSettings={handleUpdateSettings}
               isPdf
             />
-            <ReaderActionsMenu onDownload={handleDownload} />
+            <ReaderActionsMenu
+              onDownload={handleDownload}
+              onBookmarkPage={handleBookmarkPage}
+              isBookmarked={Boolean(currentBookmark)}
+            />
           </div>
         </div>
         {selectionPopover && (

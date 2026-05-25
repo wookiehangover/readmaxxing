@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lu
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import { useSettings } from "~/lib/settings";
+import { useSettings, type ReaderLayout, type Settings, type TextAlign } from "~/lib/settings";
 import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
@@ -21,6 +21,14 @@ import { useReaderSearch } from "~/hooks/use-reader-search";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
+import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
+import {
+  getBookPreferences,
+  saveBookPreferences,
+  type BookPreferences,
+} from "~/lib/stores/book-preferences-store";
+import { useEffectQuery } from "~/hooks/use-effect-query";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 interface BookReaderProps {
   book: BookMeta;
@@ -32,7 +40,15 @@ export function BookReader({ book }: BookReaderProps) {
   const renditionRef = useRef<Rendition | null>(null);
 
   const [settings, updateSettings] = useSettings();
+  const [localFontFamily, setLocalFontFamily] = useState<string>(() => settings.fontFamily);
+  const [localFontSize, setLocalFontSize] = useState<number>(() => settings.fontSize);
+  const [localLineHeight, setLocalLineHeight] = useState<number>(() => settings.lineHeight);
+  const [localTextAlign, setLocalTextAlign] = useState<TextAlign>(() => settings.textAlign);
+  const [localReaderLayout, setLocalReaderLayout] = useState<ReaderLayout>(
+    () => settings.readerLayout,
+  );
   const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
+  const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const editorRef = useRef<TiptapEditorHandle>(null);
   const { toc: contextToc, navigateToHref, setToc, setNavigateToHref } = useReaderNavigation();
   const [tocOpen, setTocOpen] = useState(false);
@@ -80,32 +96,80 @@ export function BookReader({ book }: BookReaderProps) {
     [highlightsRef],
   );
 
-  const { toc, currentChapterLabel, currentPage, totalPages, navigateToCfi, navigateToTocHref } =
-    useEpubLifecycle({
-      bookId: book.id,
-      containerRef,
-      readerLayout: settings.readerLayout,
-      fontFamily: settings.fontFamily,
-      fontSize: settings.fontSize,
-      lineHeight: settings.lineHeight,
-      textAlign: settings.textAlign,
-      theme: settings.theme,
-      loadAndApplyHighlights,
-      registerSelectionHandler,
-      onTocExtracted: (tocData) => {
-        setToc(tocData);
-      },
-      onCleanupToc: () => {
-        setToc([]);
-        setNavigateToHref(() => {});
-      },
-      onSearchOpen: handleSearchOpenFromIframe,
-      bookRef,
-      renditionRef,
-    });
+  const {
+    toc,
+    currentChapterLabel,
+    currentPage,
+    totalPages,
+    navigateToCfi,
+    navigateToTocHref,
+    latestCfiRef,
+  } = useEpubLifecycle({
+    bookId: book.id,
+    containerRef,
+    readerLayout: localReaderLayout,
+    fontFamily: localFontFamily,
+    fontSize: localFontSize,
+    lineHeight: localLineHeight,
+    textAlign: localTextAlign,
+    theme: settings.theme,
+    loadAndApplyHighlights,
+    registerSelectionHandler,
+    onTocExtracted: (tocData) => {
+      setToc(tocData);
+    },
+    onCleanupToc: () => {
+      setToc([]);
+      setNavigateToHref(() => {});
+    },
+    onSearchOpen: handleSearchOpenFromIframe,
+    bookRef,
+    renditionRef,
+  });
+
+  const bookmarkSyncVersion = useSyncListener(["bookmark"]);
+  const { data: bookmarks } = useEffectQuery(
+    () =>
+      BookmarkService.pipe(
+        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to load bookmarks:", error);
+            return [] as BookmarkRecord[];
+          }),
+        ),
+      ),
+    [book.id, bookmarkVersion, bookmarkSyncVersion],
+  );
 
   // Use contextToc from the navigation context (synced via onTocExtracted)
   const activeToc = contextToc.length > 0 ? contextToc : toc;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getBookPreferences(book.id)
+      .then((prefs) => {
+        if (cancelled) return;
+        setLocalFontFamily(prefs?.fontFamily ?? settings.fontFamily);
+        setLocalFontSize(prefs?.fontSize ?? settings.fontSize);
+        setLocalLineHeight(prefs?.lineHeight ?? settings.lineHeight);
+        setLocalTextAlign(prefs && "textAlign" in prefs ? prefs.textAlign : settings.textAlign);
+        setLocalReaderLayout(prefs?.readerLayout ?? settings.readerLayout);
+      })
+      .catch((error) => console.error("Failed to load book preferences:", error));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    book.id,
+    settings.fontFamily,
+    settings.fontSize,
+    settings.lineHeight,
+    settings.textAlign,
+    settings.readerLayout,
+  ]);
 
   useEffect(() => {
     setNavigateToHref(navigateToTocHref);
@@ -123,16 +187,49 @@ export function BookReader({ book }: BookReaderProps) {
   const handleNext = useCallback(() => renditionRef.current?.next(), []);
 
   const handleUpdateSettings = useCallback(
-    (update: Partial<typeof settings>) => {
-      if (update.readerLayout && update.readerLayout !== settings.readerLayout) {
+    (update: Partial<Settings>) => {
+      if (update.theme !== undefined) updateSettings({ theme: update.theme });
+
+      const hasBookPreferenceUpdate =
+        update.fontFamily !== undefined ||
+        update.fontSize !== undefined ||
+        update.lineHeight !== undefined ||
+        "textAlign" in update ||
+        update.readerLayout !== undefined;
+
+      if (!hasBookPreferenceUpdate) return;
+
+      if (update.fontFamily !== undefined) setLocalFontFamily(update.fontFamily);
+      if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
+      if (update.lineHeight !== undefined) setLocalLineHeight(update.lineHeight);
+      if ("textAlign" in update) setLocalTextAlign(update.textAlign);
+      if (update.readerLayout !== undefined && update.readerLayout !== localReaderLayout) {
         const cfi = renditionRef.current?.location?.start?.cfi;
-        updateSettings(update);
+        setLocalReaderLayout(update.readerLayout);
         if (cfi) queueMicrotask(() => renditionRef.current?.display(cfi));
-        return;
       }
-      updateSettings(update);
+
+      const updatedPrefs: BookPreferences = {
+        fontFamily: update.fontFamily ?? localFontFamily,
+        fontSize: update.fontSize ?? localFontSize,
+        lineHeight: update.lineHeight ?? localLineHeight,
+        textAlign: "textAlign" in update ? update.textAlign : localTextAlign,
+        readerLayout: update.readerLayout ?? localReaderLayout,
+      };
+
+      saveBookPreferences(book.id, updatedPrefs).catch((error) =>
+        console.error("Failed to save book preferences:", error),
+      );
     },
-    [settings.readerLayout, updateSettings],
+    [
+      book.id,
+      localFontFamily,
+      localFontSize,
+      localLineHeight,
+      localTextAlign,
+      localReaderLayout,
+      updateSettings,
+    ],
   );
 
   const handleDownload = useCallback(() => {
@@ -221,7 +318,65 @@ export function BookReader({ book }: BookReaderProps) {
     });
   }, [selectionPopover, dismissPopovers]);
 
-  const isScrollMode = settings.readerLayout === "scroll";
+  const getCurrentCfi = useCallback(() => {
+    const latestCfi = latestCfiRef.current;
+    if (latestCfi) return latestCfi;
+    const rendition = renditionRef.current as any;
+    let location = rendition?.location;
+    if (!location) {
+      try {
+        location = rendition?.currentLocation?.();
+      } catch {
+        // epubjs may call into an uninitialized internal manager.
+      }
+    }
+    return (location?.start?.cfi as string | undefined) ?? null;
+  }, [latestCfiRef]);
+
+  const currentCfi = getCurrentCfi();
+  const currentBookmark = bookmarks?.find((bookmark) => bookmark.cfi === currentCfi);
+
+  const handleBookmarkPage = useCallback(async () => {
+    const cfi = getCurrentCfi();
+    if (!cfi) return;
+    const existingBookmark = bookmarks?.find((bookmark) => bookmark.cfi === cfi);
+    const now = Date.now();
+
+    await AppRuntime.runPromise(
+      BookmarkService.pipe(
+        Effect.andThen((s) =>
+          existingBookmark
+            ? s.deleteBookmark(existingBookmark.id)
+            : s.saveBookmark({
+                id: `bookmark:${book.id}:cfi:${encodeURIComponent(cfi)}`,
+                bookId: book.id,
+                cfi,
+                label: currentChapterLabel ?? undefined,
+                displayPage: currentPage ?? undefined,
+                createdAt: now,
+                updatedAt: now,
+              }),
+        ),
+      ),
+    );
+    setBookmarkVersion((version) => version + 1);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
+      );
+    });
+  }, [book.id, bookmarks, currentChapterLabel, currentPage, getCurrentCfi]);
+
+  const isScrollMode = localReaderLayout === "scroll";
+
+  const localSettings: Settings = {
+    ...settings,
+    fontFamily: localFontFamily,
+    fontSize: localFontSize,
+    lineHeight: localLineHeight,
+    textAlign: localTextAlign,
+    readerLayout: localReaderLayout,
+  };
 
   return (
     <div className="flex h-full">
@@ -243,7 +398,7 @@ export function BookReader({ book }: BookReaderProps) {
           <div
             ref={containerRef}
             className={cn("h-full overflow-hidden", {
-              "px-4 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": settings.readerLayout,
+              "px-4 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": localReaderLayout,
             })}
           />
           {!isScrollMode && (
@@ -362,10 +517,15 @@ export function BookReader({ book }: BookReaderProps) {
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderFormattingMenu settings={settings} onUpdateSettings={handleUpdateSettings} />
+            <ReaderFormattingMenu
+              settings={localSettings}
+              onUpdateSettings={handleUpdateSettings}
+            />
             <ReaderActionsMenu
               onDownload={handleDownload}
               onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+              onBookmarkPage={handleBookmarkPage}
+              isBookmarked={Boolean(currentBookmark)}
             />
           </div>
         </div>

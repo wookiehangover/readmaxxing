@@ -19,6 +19,10 @@ vi.mock("~/lib/database/annotation/highlight", () => ({
   softDeleteHighlight: vi.fn(),
 }));
 vi.mock("~/lib/database/annotation/notebook", () => ({ upsertNotebook: vi.fn() }));
+vi.mock("~/lib/database/bookmark/bookmark", () => ({
+  upsertBookmark: vi.fn(),
+  softDeleteBookmark: vi.fn(),
+}));
 vi.mock("~/lib/database/book/reading-position", () => ({ upsertPosition: vi.fn() }));
 vi.mock("~/lib/database/chat/chat-session", () => ({
   upsertSession: vi.fn(),
@@ -37,12 +41,15 @@ import {
   updateBookBlobUrls,
 } from "~/lib/database/book/book";
 import { upsertMessage } from "~/lib/database/chat/chat-session";
+import { upsertBookmark, softDeleteBookmark } from "~/lib/database/bookmark/bookmark";
 
 const upsertBookMock = upsertBook as ReturnType<typeof vi.fn>;
 const findMock = findBookByUserAndHash as ReturnType<typeof vi.fn>;
 const insertTombstoneMock = insertTombstonedBook as ReturnType<typeof vi.fn>;
 const getByIdMock = getBookByIdForUser as ReturnType<typeof vi.fn>;
 const updateUrlsMock = updateBookBlobUrls as ReturnType<typeof vi.fn>;
+const upsertBookmarkMock = upsertBookmark as ReturnType<typeof vi.fn>;
+const softDeleteBookmarkMock = softDeleteBookmark as ReturnType<typeof vi.fn>;
 
 function makeBookEntry(overrides: Partial<ChangeEntry> = {}): ChangeEntry {
   return {
@@ -70,6 +77,8 @@ beforeEach(() => {
   insertTombstoneMock.mockReset();
   getByIdMock.mockReset();
   updateUrlsMock.mockClear();
+  upsertBookmarkMock.mockClear();
+  softDeleteBookmarkMock.mockClear();
 });
 
 describe("processEntry book dedup branch", () => {
@@ -227,6 +236,57 @@ describe("processEntry book blob URLs", () => {
 
     expect(result.canonicalId).toBe("book-canonical");
     expect(updateUrlsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("processEntry bookmark branch", () => {
+  it("upserts bookmark put entries", async () => {
+    const result = await processEntry("u1", {
+      id: "change-bookmark-1",
+      entity: "bookmark",
+      entityId: "bookmark-1",
+      operation: "put",
+      data: {
+        id: "bookmark-1",
+        bookId: "book-1",
+        cfi: "epubcfi(/6/2)",
+        label: "Chapter 1",
+        pageNumber: null,
+        displayPage: 12,
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+      timestamp: 2000,
+      synced: false,
+    });
+
+    expect(result).toEqual({ accepted: true });
+    expect(upsertBookmarkMock).toHaveBeenCalledWith("u1", {
+      id: "bookmark-1",
+      bookId: "book-1",
+      cfi: "epubcfi(/6/2)",
+      label: "Chapter 1",
+      pageNumber: null,
+      displayPage: 12,
+      createdAt: new Date(1000),
+      updatedAt: new Date(2000),
+      deletedAt: null,
+    });
+  });
+
+  it("soft-deletes bookmark delete entries", async () => {
+    const result = await processEntry("u1", {
+      id: "change-bookmark-2",
+      entity: "bookmark",
+      entityId: "bookmark-1",
+      operation: "delete",
+      data: null,
+      timestamp: 2000,
+      synced: false,
+    });
+
+    expect(result).toEqual({ accepted: true });
+    expect(softDeleteBookmarkMock).toHaveBeenCalledWith("u1", "bookmark-1");
   });
 });
 

@@ -16,7 +16,7 @@ import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
-import type { PdfLayout, ReaderLayout, Settings } from "~/lib/settings";
+import type { PdfLayout, ReaderLayout, Settings, TextAlign } from "~/lib/settings";
 import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
@@ -30,6 +30,13 @@ import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
+import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
+import {
+  getBookPreferences,
+  saveBookPreferences,
+  type BookPreferences,
+} from "~/lib/stores/book-preferences-store";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -202,7 +209,7 @@ function WorkspaceBookReaderInner({
   const [localLineHeight, setLocalLineHeight] = useState<number>(
     () => panelTypography?.lineHeight ?? settings.lineHeight,
   );
-  const [localTextAlign, setLocalTextAlign] = useState<import("~/lib/settings").TextAlign>(
+  const [localTextAlign, setLocalTextAlign] = useState<TextAlign>(
     () => panelTypography?.textAlign ?? settings.textAlign,
   );
   const [localReaderLayout, setLocalReaderLayout] = useState<ReaderLayout>(
@@ -210,6 +217,44 @@ function WorkspaceBookReaderInner({
   );
 
   const [tocOpen, setTocOpen] = useState(false);
+  const [bookmarkVersion, setBookmarkVersion] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getBookPreferences(book.id)
+      .then((prefs) => {
+        if (cancelled) return;
+        setLocalFontFamily(prefs?.fontFamily ?? panelTypography?.fontFamily ?? settings.fontFamily);
+        setLocalFontSize(prefs?.fontSize ?? panelTypography?.fontSize ?? settings.fontSize);
+        setLocalLineHeight(prefs?.lineHeight ?? panelTypography?.lineHeight ?? settings.lineHeight);
+        setLocalTextAlign(
+          prefs && "textAlign" in prefs
+            ? prefs.textAlign
+            : (panelTypography?.textAlign ?? settings.textAlign),
+        );
+        setLocalReaderLayout(
+          prefs?.readerLayout ?? panelTypography?.readerLayout ?? settings.readerLayout,
+        );
+      })
+      .catch((error) => console.error("Failed to load book preferences:", error));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    book.id,
+    panelTypography?.fontFamily,
+    panelTypography?.fontSize,
+    panelTypography?.lineHeight,
+    panelTypography?.textAlign,
+    panelTypography?.readerLayout,
+    settings.fontFamily,
+    settings.fontSize,
+    settings.lineHeight,
+    settings.textAlign,
+    settings.readerLayout,
+  ]);
 
   // Mobile toolbar auto-hide
   const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
@@ -302,6 +347,21 @@ function WorkspaceBookReaderInner({
     bookRef,
     renditionRef,
   });
+
+  const bookmarkSyncVersion = useSyncListener(["bookmark"]);
+  const { data: bookmarks } = useEffectQuery(
+    () =>
+      BookmarkService.pipe(
+        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to load bookmarks:", error);
+            return [] as BookmarkRecord[];
+          }),
+        ),
+      ),
+    [book.id, bookmarkVersion, bookmarkSyncVersion],
+  );
 
   // Temporary highlight: briefly flash a CFI range in the reader
   const applyTempHighlight = useCallback((cfi: string) => {
@@ -463,6 +523,15 @@ function WorkspaceBookReaderInner({
     (update: Partial<Settings>) => {
       // Update local state only — do NOT propagate to global settings.
       // Theme changes are ignored here (theme stays global).
+      const hasBookPreferenceUpdate =
+        update.fontFamily !== undefined ||
+        update.fontSize !== undefined ||
+        update.lineHeight !== undefined ||
+        "textAlign" in update ||
+        update.readerLayout !== undefined;
+
+      if (!hasBookPreferenceUpdate) return;
+
       if (update.fontFamily !== undefined) setLocalFontFamily(update.fontFamily);
       if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
       if (update.lineHeight !== undefined) setLocalLineHeight(update.lineHeight);
@@ -481,6 +550,18 @@ function WorkspaceBookReaderInner({
         }
       }
 
+      const updatedPrefs: BookPreferences = {
+        fontFamily: update.fontFamily ?? localFontFamily,
+        fontSize: update.fontSize ?? localFontSize,
+        lineHeight: update.lineHeight ?? localLineHeight,
+        textAlign: "textAlign" in update ? update.textAlign : localTextAlign,
+        readerLayout: update.readerLayout ?? localReaderLayout,
+      };
+
+      saveBookPreferences(book.id, updatedPrefs).catch((error) =>
+        console.error("Failed to save book preferences:", error),
+      );
+
       // Persist overrides in dockview panel params so they survive layout save/restore
       if (panelApi) {
         const paramUpdates: Record<string, unknown> = {};
@@ -494,7 +575,16 @@ function WorkspaceBookReaderInner({
         }
       }
     },
-    [localReaderLayout, markNavigationInProgress, panelApi],
+    [
+      book.id,
+      localFontFamily,
+      localFontSize,
+      localLineHeight,
+      localTextAlign,
+      localReaderLayout,
+      markNavigationInProgress,
+      panelApi,
+    ],
   );
 
   const handleSaveHighlight = useCallback(async () => {
@@ -576,6 +666,55 @@ function WorkspaceBookReaderInner({
     if (!text) return;
     navigator.clipboard.writeText(text).catch(console.error);
   }, []);
+
+  const getCurrentCfi = useCallback(() => {
+    const latestCfi = latestCfiRef.current;
+    if (latestCfi) return latestCfi;
+    const rendition = renditionRef.current as any;
+    let location = rendition?.location;
+    if (!location) {
+      try {
+        location = rendition?.currentLocation?.();
+      } catch {
+        // epubjs may call into an uninitialized internal manager.
+      }
+    }
+    return (location?.start?.cfi as string | undefined) ?? null;
+  }, [latestCfiRef]);
+
+  const currentCfi = getCurrentCfi();
+  const currentBookmark = bookmarks?.find((bookmark) => bookmark.cfi === currentCfi);
+
+  const handleBookmarkPage = useCallback(async () => {
+    const cfi = getCurrentCfi();
+    if (!cfi) return;
+    const existingBookmark = bookmarks?.find((bookmark) => bookmark.cfi === cfi);
+    const now = Date.now();
+
+    await AppRuntime.runPromise(
+      BookmarkService.pipe(
+        Effect.andThen((s) =>
+          existingBookmark
+            ? s.deleteBookmark(existingBookmark.id)
+            : s.saveBookmark({
+                id: `bookmark:${book.id}:cfi:${encodeURIComponent(cfi)}`,
+                bookId: book.id,
+                cfi,
+                label: currentChapterLabel ?? undefined,
+                displayPage: currentPage ?? undefined,
+                createdAt: now,
+                updatedAt: now,
+              }),
+        ),
+      ),
+    );
+    setBookmarkVersion((version) => version + 1);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
+      );
+    });
+  }, [book.id, bookmarks, currentChapterLabel, currentPage, getCurrentCfi]);
 
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
@@ -759,6 +898,8 @@ function WorkspaceBookReaderInner({
             <ReaderActionsMenu
               onDownload={handleDownload}
               onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+              onBookmarkPage={handleBookmarkPage}
+              isBookmarked={Boolean(currentBookmark)}
             />
           </div>
         </div>
