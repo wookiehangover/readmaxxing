@@ -1,11 +1,13 @@
 import { get, set, entries } from "idb-keyval";
 import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
 import { removeSessionLocally } from "~/lib/stores/chat-store";
+import { deferPositionMerge, isActiveReader } from "./active-readers";
 import { isWellFormedEntry } from "./idb-entry";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
 import {
   serverBookToLocal,
+  serverBookmarkToLocal,
   serverChatMessageToLocal,
   serverChatSessionToLocal,
   serverHighlightToLocal,
@@ -16,6 +18,7 @@ import {
 } from "./server-transforms";
 import {
   getBookStore,
+  getBookmarkStore,
   getChatSessionStore,
   getHighlightStore,
   getNotebookStore,
@@ -49,6 +52,7 @@ export async function mergeBookRecord(record: Record<string, unknown>): Promise<
             "book",
             "position",
             "highlight",
+            "bookmark",
             "notebook",
             "chat_session",
           ] as const) {
@@ -93,10 +97,20 @@ export async function mergeBookRecord(record: Record<string, unknown>): Promise<
   }
 }
 
-async function mergePositionRecord(record: Record<string, unknown>): Promise<void> {
+export async function mergePositionRecord(record: Record<string, unknown>): Promise<void> {
   const store = getPositionStore();
   const localRecord = serverPositionToLocal(record);
   const id = localRecord.id;
+
+  if (isActiveReader(id)) {
+    // Reader is currently active for this book — defer the remote merge so
+    // it can be re-applied when the reader unregisters. The pull cursor has
+    // already advanced past this row, so without this we would permanently
+    // lose the remote position update.
+    deferPositionMerge(id, record);
+    return;
+  }
+
   const local = await get<Record<string, unknown>>(id, store);
 
   if (!local) {
@@ -132,6 +146,31 @@ async function mergeHighlightRecord(record: Record<string, unknown>): Promise<vo
     (item) => (item as Record<string, unknown>).id as string,
   );
   // Write if the merge result differs from local
+  if (merged !== local) {
+    await set(id, merged, store);
+  }
+}
+
+/**
+ * Merge a single bookmark record using set-union semantics.
+ * If either side has deletedAt, tombstone propagates. Otherwise LWW by updatedAt.
+ */
+export async function mergeBookmarkRecord(record: Record<string, unknown>): Promise<void> {
+  const store = getBookmarkStore();
+  const remoteRecord = serverBookmarkToLocal(record);
+  const id = remoteRecord.id as string;
+  const local = await get<Record<string, unknown>>(id, store);
+
+  if (!local) {
+    await set(id, remoteRecord, store);
+    return;
+  }
+
+  const [merged] = setUnionMerge(
+    [local as { deletedAt?: number | null }],
+    [remoteRecord as { deletedAt?: number | null }],
+    (item) => (item as Record<string, unknown>).id as string,
+  );
   if (merged !== local) {
     await set(id, merged, store);
   }
@@ -294,6 +333,7 @@ export const ENTITY_MERGERS: Partial<
   book: mergeBookRecord,
   position: mergePositionRecord,
   highlight: mergeHighlightRecord,
+  bookmark: mergeBookmarkRecord,
   notebook: mergeNotebookRecord,
   chat_session: mergeChatSessionRecord,
   chat_message: mergeChatMessageRecord,

@@ -4,6 +4,7 @@ import { isWellFormedEntry } from "./idb-entry";
 import { appendOnlyMerge, lwwMerge } from "./merge";
 import {
   getActiveSessionStore,
+  getBookmarkStore,
   getBookDataStore,
   getBookStore,
   getChatSessionStore,
@@ -17,6 +18,7 @@ export interface RemapStores {
   readonly bookDataStore: UseStore;
   readonly positionStore: UseStore;
   readonly highlightStore: UseStore;
+  readonly bookmarkStore: UseStore;
   readonly notebookStore: UseStore;
   readonly chatSessionStore: UseStore;
   readonly activeSessionStore: UseStore;
@@ -30,6 +32,7 @@ function getDefaultStores(): RemapStores {
       bookDataStore: getBookDataStore(),
       positionStore: getPositionStore(),
       highlightStore: getHighlightStore(),
+      bookmarkStore: getBookmarkStore(),
       notebookStore: getNotebookStore(),
       chatSessionStore: getChatSessionStore(),
       activeSessionStore: getActiveSessionStore(),
@@ -74,7 +77,7 @@ function mergeSessionArrays(a: ChatSessionLike[], b: ChatSessionLike[]): ChatSes
 /**
  * Remap all local references from `fromId` to `toId` when cross-device
  * dedup identifies a canonical book id. Moves book data, merges positions,
- * notebooks, highlights, chat sessions, and the active-session pointer,
+ * notebooks, highlights, bookmarks, chat sessions, and the active-session pointer,
  * then tombstones the losing book record locally. Idempotent.
  */
 export async function remapBookId(
@@ -89,6 +92,7 @@ export async function remapBookId(
     bookDataStore,
     positionStore,
     highlightStore,
+    bookmarkStore,
     notebookStore,
     chatSessionStore,
     activeSessionStore,
@@ -130,6 +134,16 @@ export async function remapBookId(
     const [hId, h] = entry;
     if (!h || h.bookId !== fromId) continue;
     await set(hId, { ...h, bookId: toId }, highlightStore);
+  }
+
+  const allBookmarks = await entries<string, Record<string, unknown>>(bookmarkStore);
+  for (const entry of allBookmarks) {
+    if (!isWellFormedEntry(entry)) continue;
+    const [bookmarkId, bookmark] = entry;
+    if (!bookmark || bookmark.bookId !== fromId) continue;
+    const newId = bookmarkId.replace(`bookmark:${fromId}:`, `bookmark:${toId}:`);
+    await del(bookmarkId, bookmarkStore);
+    await set(newId, { ...bookmark, id: newId, bookId: toId }, bookmarkStore);
   }
 
   const fromSessions = await get<ChatSessionLike[]>(fromId, chatSessionStore);

@@ -1,9 +1,11 @@
 import { Layer, ManagedRuntime } from "effect";
 import { AnnotationServiceLive } from "~/lib/stores/annotations-store";
+import { BookmarkServiceLive } from "~/lib/stores/bookmark-store";
 import { BookServiceLive } from "~/lib/stores/book-store";
 import { EpubServiceLive } from "~/lib/epub/epub-service";
 import { LocationCacheServiceLive } from "~/lib/stores/location-cache-store";
 import { ReadingPositionServiceLive } from "~/lib/stores/position-store";
+import { ReadingHistoryServiceLive } from "~/lib/stores/reading-history-store";
 import { StandardEbooksServiceLive } from "~/lib/standard-ebooks";
 import { WorkspaceServiceLive } from "~/lib/stores/workspace-store";
 import { ChatServiceLive } from "~/lib/stores/chat-store";
@@ -19,8 +21,10 @@ export const AppLayer = Layer.mergeAll(
   EpubServiceLive,
   PdfServiceLive,
   AnnotationServiceLive,
+  BookmarkServiceLive,
   LocationCacheServiceLive,
   ReadingPositionServiceLive,
+  ReadingHistoryServiceLive,
   StandardEbooksServiceLive,
   WorkspaceServiceLive,
   ChatServiceLive,

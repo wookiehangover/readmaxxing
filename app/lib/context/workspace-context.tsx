@@ -59,6 +59,8 @@ export interface WorkspaceContextValue {
   openNotebookRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback to open a chat panel */
   openChatRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
+  /** Callback to open a bookmarks panel */
+  openBookmarksRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback to open the Standard Ebooks browser panel */
   openStandardEbooksRef: React.MutableRefObject<(() => void) | null>;
   /** Find the navigation callback for a book by scanning dockview panels */
@@ -148,6 +150,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const openBookRef = useRef<((book: BookMeta) => void) | null>(null);
   const openNotebookRef = useRef<((book: BookMeta) => void) | null>(null);
   const openChatRef = useRef<((book: BookMeta) => void) | null>(null);
+  const openBookmarksRef = useRef<((book: BookMeta) => void) | null>(null);
   const openStandardEbooksRef = useRef<(() => void) | null>(null);
   const onBookAddedRef = useRef<((book: BookMeta) => void) | null>(null);
   const onBookDeletedRef = useRef<((bookId: string) => void) | null>(null);
@@ -327,6 +330,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       openBookRef,
       openNotebookRef,
       openChatRef,
+      openBookmarksRef,
       openStandardEbooksRef,
       onBookAddedRef,
       onBookDeletedRef,
