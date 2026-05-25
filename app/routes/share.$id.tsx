@@ -288,7 +288,7 @@ function CoverArt({ book }: { book?: ShareBookData }) {
   const [failed, setFailed] = useState(false);
 
   return (
-    <div className="flex aspect-[2/3] w-48 items-center justify-center overflow-hidden rounded-xl border bg-muted shadow-xl sm:w-56">
+    <div className="flex aspect-[2/3] w-48 items-center justify-center overflow-hidden bg-muted sm:w-56">
       {book?.coverUrl && !failed ? (
         <img
           src={book.coverUrl}
@@ -409,17 +409,17 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
 
   if (book.format === "pdf") {
     return (
-      <div className="flex min-h-[600px] flex-col overflow-hidden rounded-2xl bg-background shadow-inner">
+      <div className="flex min-h-[600px] flex-col overflow-hidden bg-background">
         <ReaderPreviewHeader book={book} />
         <div className="flex flex-1 items-center justify-center bg-muted/40 p-8">
           {book.coverUrl ? (
             <img
               src={book.coverUrl}
               alt={`Cover for ${book.title}`}
-              className="max-h-[520px] rounded-xl object-contain shadow-2xl"
+              className="max-h-[520px] object-contain"
             />
           ) : (
-            <div className="flex aspect-[2/3] w-56 items-center justify-center rounded-xl bg-card shadow-lg">
+            <div className="flex aspect-[2/3] w-56 items-center justify-center bg-muted">
               <BookOpen className="size-16 text-muted-foreground/50" />
             </div>
           )}
@@ -429,7 +429,7 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
   }
 
   return (
-    <div className="flex min-h-[600px] flex-col overflow-hidden rounded-2xl bg-background shadow-inner">
+    <div className="flex min-h-[600px] flex-col overflow-hidden bg-background">
       <ReaderPreviewHeader book={book} />
       <div className="relative min-h-0 flex-1 bg-white">
         <div ref={containerRef} className="size-full" />
@@ -448,7 +448,7 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
           </div>
         )}
       </div>
-      <div className="flex items-center justify-between bg-card px-3 py-2">
+      <div className="flex items-center justify-between px-3 py-2">
         <Button
           type="button"
           variant="ghost"
@@ -475,7 +475,7 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
 
 function ReaderPreviewHeader({ book }: { book: ShareBookData }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 bg-card px-4 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium">{book.title}</p>
         <p className="truncate text-xs text-muted-foreground">by {book.author}</p>
@@ -522,7 +522,7 @@ function SharedChatPanel({ shareId, enabled }: { shareId: string; enabled: boole
 
   if (!enabled) {
     return (
-      <aside className="flex min-h-[600px] flex-col overflow-hidden rounded-2xl bg-background shadow-inner">
+      <aside className="flex min-h-[600px] flex-col overflow-hidden bg-background">
         <ChatPanelHeader sessionCount={0} />
         <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
           Chat sessions were not included with this share link.
@@ -532,7 +532,7 @@ function SharedChatPanel({ shareId, enabled }: { shareId: string; enabled: boole
   }
 
   return (
-    <aside className="flex min-h-[600px] flex-col overflow-hidden rounded-2xl bg-background shadow-inner">
+    <aside className="flex min-h-[600px] flex-col overflow-hidden bg-background">
       <ChatPanelHeader sessionCount={chats.length} />
       {error && <p className="px-4 py-3 text-sm text-destructive">{error}</p>}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
@@ -564,9 +564,7 @@ function SharedChatPanel({ shareId, enabled }: { shareId: string; enabled: boole
             ))}
           </div>
         ) : (
-          <p className="rounded-xl bg-muted/50 p-6 text-center text-sm text-muted-foreground">
-            No chats yet.
-          </p>
+          <p className="bg-muted/50 p-6 text-center text-sm text-muted-foreground">No chats yet.</p>
         )}
       </div>
     </aside>
@@ -575,7 +573,7 @@ function SharedChatPanel({ shareId, enabled }: { shareId: string; enabled: boole
 
 function ChatPanelHeader({ sessionCount }: { sessionCount: number }) {
   return (
-    <div className="flex items-center justify-between gap-3 bg-card px-4 py-3">
+    <div className="flex items-center justify-between gap-3 px-4 py-3">
       <div>
         <h2 className="text-sm font-semibold">Chat sessions</h2>
         <p className="text-xs text-muted-foreground">Shared read-only conversation</p>
@@ -594,7 +592,7 @@ function SharedChatBubble({ message }: { message: SharedChatMessage }) {
       <div
         className={cn("max-w-[85%] rounded-lg px-3 py-2 text-sm", {
           "bg-secondary text-secondary-foreground": isUser,
-          "bg-card text-foreground shadow-sm": !isUser,
+          "text-foreground": !isUser,
         })}
       >
         {isUser ? (
@@ -619,7 +617,7 @@ function SharedReadingSection({
   shareChats: boolean;
 }) {
   return (
-    <section className="rounded-3xl bg-card/70 p-4 shadow-sm backdrop-blur sm:p-6 lg:p-8">
+    <section className="p-0">
       <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
         <SharedEpubPreview book={book} fileUrl={fileUrl} />
         <SharedChatPanel shareId={shareId} enabled={shareChats} />
@@ -661,7 +659,7 @@ export default function SharePage({ loaderData }: ComponentProps) {
     <main className="min-h-dvh bg-background px-4 py-10 text-foreground sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-7xl items-start justify-center">
         <div className="flex w-full flex-col gap-6">
-          <section className="grid w-full gap-10 rounded-3xl bg-card/70 p-6 shadow-sm backdrop-blur sm:p-10 md:grid-cols-[auto_1fr] md:items-center">
+          <section className="grid w-full gap-10 p-0 md:grid-cols-[auto_1fr] md:items-center">
             <div className="flex justify-center md:justify-start">
               <CoverArt book={loaderData.book} />
             </div>
@@ -683,14 +681,14 @@ export default function SharePage({ loaderData }: ComponentProps) {
               </div>
 
               {loaderData.status !== "available" && (
-                <div className="inline-flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
+                <div className="inline-flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
                   <AlertCircle className="mt-0.5 size-4 shrink-0" />
                   <span>{loaderData.message ?? "This share link is not available."}</span>
                 </div>
               )}
 
               {error && (
-                <div className="inline-flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
+                <div className="inline-flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
                   <AlertCircle className="mt-0.5 size-4 shrink-0" />
                   <span>{error}</span>
                 </div>
