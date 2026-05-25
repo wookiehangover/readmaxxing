@@ -256,8 +256,11 @@ function WorkspaceBookReaderInner({
     settings.readerLayout,
   ]);
 
-  // Mobile toolbar auto-hide
-  const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
+  const zenMode = settings.zenMode ?? false;
+
+  // Mobile and zen mode toolbar auto-hide
+  const { toolbarVisible, showToolbar, showToolbarPersistent, toggleToolbar, resetToolbarTimer } =
+    useToolbarAutoHide(isMobile ?? false, zenMode);
 
   // Search state (shared hook)
   const {
@@ -743,7 +746,7 @@ function WorkspaceBookReaderInner({
 
   return (
     <div ref={panelRef} className="flex h-full outline-none" tabIndex={0}>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col">
         <div className="relative flex-1 overflow-hidden">
           {searchOpen && (
             <div className="absolute top-0 right-0 left-0 z-10">
@@ -793,115 +796,122 @@ function WorkspaceBookReaderInner({
           )}
         </div>
         <div
-          className={cn(
-            "relative flex items-center justify-center px-2 h-10 transition-all duration-300 ease-in-out",
-            {
-              "max-h-0 overflow-hidden border-t-0 opacity-0": isMobile && !toolbarVisible,
-              "max-h-20 opacity-100": !isMobile || toolbarVisible,
-            },
-          )}
+          className={cn({ "absolute right-0 bottom-0 left-0 z-20 pt-10": zenMode })}
+          onMouseEnter={zenMode ? showToolbarPersistent : undefined}
+          onMouseLeave={zenMode ? resetToolbarTimer : undefined}
         >
-          <div className="absolute left-2 flex max-w-[calc(100%-8rem)] items-center gap-1.5">
-            {totalPages !== null && currentPage !== null ? (
-              <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
-                {currentChapterLabel ? (
-                  <>
-                    <span className="max-w-28 truncate sm:max-w-48 md:max-w-64">
-                      {currentChapterLabel}
-                    </span>
-                    <span className="shrink-0">·</span>
-                  </>
-                ) : null}
-                <span className="shrink-0 tabular-nums">
-                  {currentPage} / {totalPages}
-                </span>
-              </div>
-            ) : null}
-          </div>
-          {!isScrollMode && (
-            <div className="hidden items-center gap-4 md:flex">
-              <Button variant="ghost" size="icon" onClick={handlePrev}>
-                <ChevronLeft className="size-4" />
-                <span className="sr-only">Previous page</span>
-              </Button>
-              <Button variant="ghost" size="icon" onClick={handleNext}>
-                <ChevronRight className="size-4" />
-                <span className="sr-only">Next page</span>
-              </Button>
+          <div
+            className={cn(
+              "relative flex h-10 items-center justify-center px-2 transition-all duration-300 ease-in-out",
+              {
+                "max-h-0 overflow-hidden border-t-0 opacity-0":
+                  (isMobile || zenMode) && !toolbarVisible,
+                "max-h-20 opacity-100": (!isMobile && !zenMode) || toolbarVisible,
+              },
+            )}
+          >
+            <div className="absolute left-2 flex max-w-[calc(100%-8rem)] items-center gap-1.5">
+              {totalPages !== null && currentPage !== null ? (
+                <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
+                  {currentChapterLabel ? (
+                    <>
+                      <span className="max-w-28 truncate sm:max-w-48 md:max-w-64">
+                        {currentChapterLabel}
+                      </span>
+                      <span className="shrink-0">·</span>
+                    </>
+                  ) : null}
+                  <span className="shrink-0 tabular-nums">
+                    {currentPage} / {totalPages}
+                  </span>
+                </div>
+              ) : null}
             </div>
-          )}
-          <div className="absolute right-2 flex items-center gap-1">
-            {isMobile && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleSearchOpen}
-                  title="Search in book (Cmd+F)"
-                >
-                  <Search className="size-4" />
-                  <span className="sr-only">Search in book</span>
+            {!isScrollMode && (
+              <div className="hidden items-center gap-4 md:flex">
+                <Button variant="ghost" size="icon" onClick={handlePrev}>
+                  <ChevronLeft className="size-4" />
+                  <span className="sr-only">Previous page</span>
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleOpenNotebook}
-                  title="Open Notebook"
-                >
-                  <Notebook className="size-4" />
-                  <span className="sr-only">Open Notebook</span>
+                <Button variant="ghost" size="icon" onClick={handleNext}>
+                  <ChevronRight className="size-4" />
+                  <span className="sr-only">Next page</span>
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleOpenChat}
-                  title="Chat about book"
-                >
-                  <MessageSquare className="size-4" />
-                  <span className="sr-only">Chat about book</span>
-                </Button>
-              </>
+              </div>
             )}
-            {toc.length > 0 && (
-              <Popover open={tocOpen} onOpenChange={setTocOpen}>
-                <PopoverTrigger
-                  render={<Button variant="ghost" size="icon" title="Table of Contents" />}
-                >
-                  <TableOfContents className="size-4" />
-                  <span className="sr-only">Table of Contents</span>
-                </PopoverTrigger>
-                <PopoverContent
-                  side="top"
-                  align="end"
-                  sideOffset={8}
-                  className="max-h-80 w-64 overflow-y-auto p-1.5"
-                >
-                  <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                    Table of Contents
-                  </p>
-                  <ul>
-                    <TocList
-                      entries={toc}
-                      onNavigate={(href) => {
-                        navigateToTocHref(href);
-                        setTocOpen(false);
-                      }}
-                    />
-                  </ul>
-                </PopoverContent>
-              </Popover>
-            )}
-            <ReaderFormattingMenu
-              settings={localSettings}
-              onUpdateSettings={handleUpdateSettings}
-            />
-            <ReaderActionsMenu
-              book={book}
-              onDownload={handleDownload}
-              onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
-              onBookmarkPage={handleBookmarkPage}
-              isBookmarked={Boolean(currentBookmark)}
-            />
+            <div className="absolute right-2 flex items-center gap-1">
+              {isMobile && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleSearchOpen}
+                    title="Search in book (Cmd+F)"
+                  >
+                    <Search className="size-4" />
+                    <span className="sr-only">Search in book</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleOpenNotebook}
+                    title="Open Notebook"
+                  >
+                    <Notebook className="size-4" />
+                    <span className="sr-only">Open Notebook</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleOpenChat}
+                    title="Chat about book"
+                  >
+                    <MessageSquare className="size-4" />
+                    <span className="sr-only">Chat about book</span>
+                  </Button>
+                </>
+              )}
+              {toc.length > 0 && (
+                <Popover open={tocOpen} onOpenChange={setTocOpen}>
+                  <PopoverTrigger
+                    render={<Button variant="ghost" size="icon" title="Table of Contents" />}
+                  >
+                    <TableOfContents className="size-4" />
+                    <span className="sr-only">Table of Contents</span>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="top"
+                    align="end"
+                    sideOffset={8}
+                    className="max-h-80 w-64 overflow-y-auto p-1.5"
+                  >
+                    <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                      Table of Contents
+                    </p>
+                    <ul>
+                      <TocList
+                        entries={toc}
+                        onNavigate={(href) => {
+                          navigateToTocHref(href);
+                          setTocOpen(false);
+                        }}
+                      />
+                    </ul>
+                  </PopoverContent>
+                </Popover>
+              )}
+              <ReaderFormattingMenu
+                settings={localSettings}
+                onUpdateSettings={handleUpdateSettings}
+              />
+              <ReaderActionsMenu
+                book={book}
+                onDownload={handleDownload}
+                onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+                onBookmarkPage={handleBookmarkPage}
+                isBookmarked={Boolean(currentBookmark)}
+              />
+            </div>
           </div>
         </div>
         {/* Portal popovers to document.body to escape dockview's CSS transforms,

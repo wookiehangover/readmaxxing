@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Auto-hide delay for mobile toolbar (ms) */
+/** Auto-hide delay for mobile and zen mode toolbar (ms) */
 const TOOLBAR_AUTO_HIDE_MS = 3000;
 
 /**
- * Manages mobile toolbar auto-hide behavior.
+ * Manages toolbar auto-hide behavior.
  *
- * On mobile, the toolbar auto-hides after a delay. On desktop it stays visible.
+ * On mobile and in zen mode, the toolbar auto-hides after a delay. On desktop it stays visible.
  */
-export function useToolbarAutoHide(isMobile: boolean) {
+export function useToolbarAutoHide(isMobile: boolean, zenMode = false) {
   const [toolbarVisible, setToolbarVisible] = useState(true);
   const toolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shouldAutoHide = isMobile || zenMode;
 
   const resetToolbarTimer = useCallback(() => {
     if (toolbarTimerRef.current) clearTimeout(toolbarTimerRef.current);
@@ -19,24 +20,33 @@ export function useToolbarAutoHide(isMobile: boolean) {
     }, TOOLBAR_AUTO_HIDE_MS);
   }, []);
 
-  /** Show toolbar and start auto-hide countdown (mobile only) */
+  /** Show toolbar and start auto-hide countdown when auto-hide is enabled */
   const showToolbar = useCallback(() => {
     setToolbarVisible(true);
-    if (isMobile) resetToolbarTimer();
-  }, [isMobile, resetToolbarTimer]);
+    if (shouldAutoHide) resetToolbarTimer();
+  }, [shouldAutoHide, resetToolbarTimer]);
+
+  /** Show toolbar without starting an auto-hide countdown */
+  const showToolbarPersistent = useCallback(() => {
+    setToolbarVisible(true);
+    if (toolbarTimerRef.current) {
+      clearTimeout(toolbarTimerRef.current);
+      toolbarTimerRef.current = null;
+    }
+  }, []);
 
   /** Toggle toolbar visibility (for center-tap on mobile) */
   const toggleToolbar = useCallback(() => {
     setToolbarVisible((prev) => {
       const next = !prev;
-      if (next && isMobile) resetToolbarTimer();
+      if (next && shouldAutoHide) resetToolbarTimer();
       return next;
     });
-  }, [isMobile, resetToolbarTimer]);
+  }, [shouldAutoHide, resetToolbarTimer]);
 
-  // Start auto-hide timer on mount for mobile
+  // Start auto-hide timer on mount for mobile or zen mode
   useEffect(() => {
-    if (isMobile) {
+    if (shouldAutoHide) {
       resetToolbarTimer();
     } else {
       // On desktop, ensure toolbar is always visible
@@ -49,7 +59,13 @@ export function useToolbarAutoHide(isMobile: boolean) {
     return () => {
       if (toolbarTimerRef.current) clearTimeout(toolbarTimerRef.current);
     };
-  }, [isMobile, resetToolbarTimer]);
+  }, [shouldAutoHide, resetToolbarTimer]);
 
-  return { toolbarVisible, showToolbar, toggleToolbar } as const;
+  return {
+    toolbarVisible,
+    showToolbar,
+    showToolbarPersistent,
+    toggleToolbar,
+    resetToolbarTimer,
+  } as const;
 }
