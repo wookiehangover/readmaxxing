@@ -115,7 +115,6 @@ export const LOCAL_UI_SETTINGS_KEYS = [
   "readerLayout",
   "pdfLayout",
   "sidebarCollapsed",
-  "zenMode",
   "libraryView",
   "workspaceSortBy",
   "layoutMode",

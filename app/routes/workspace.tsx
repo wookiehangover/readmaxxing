@@ -218,7 +218,10 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       }
 
       updateSettings({ sidebarCollapsed: true, readerLayout: "spread" });
-      setTimeout(() => window.dispatchEvent(new Event("resize")), SIDEBAR_TRANSITION_MS);
+      setTimeout(
+        () => queueMicrotask(() => window.dispatchEvent(new Event("resize"))),
+        SIDEBAR_TRANSITION_MS,
+      );
       return;
     }
 
@@ -239,7 +242,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       }
     }
 
-    window.dispatchEvent(new Event("resize"));
+    queueMicrotask(() => window.dispatchEvent(new Event("resize")));
     zenPreStateRef.current = null;
   }, [zenMode, updateSettings]);
 

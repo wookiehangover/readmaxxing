@@ -26,6 +26,15 @@ export function useToolbarAutoHide(isMobile: boolean, zenMode = false) {
     if (shouldAutoHide) resetToolbarTimer();
   }, [shouldAutoHide, resetToolbarTimer]);
 
+  /** Show toolbar without starting an auto-hide countdown */
+  const showToolbarPersistent = useCallback(() => {
+    setToolbarVisible(true);
+    if (toolbarTimerRef.current) {
+      clearTimeout(toolbarTimerRef.current);
+      toolbarTimerRef.current = null;
+    }
+  }, []);
+
   /** Toggle toolbar visibility (for center-tap on mobile) */
   const toggleToolbar = useCallback(() => {
     setToolbarVisible((prev) => {
@@ -52,5 +61,11 @@ export function useToolbarAutoHide(isMobile: boolean, zenMode = false) {
     };
   }, [shouldAutoHide, resetToolbarTimer]);
 
-  return { toolbarVisible, showToolbar, toggleToolbar, resetToolbarTimer } as const;
+  return {
+    toolbarVisible,
+    showToolbar,
+    showToolbarPersistent,
+    toggleToolbar,
+    resetToolbarTimer,
+  } as const;
 }

@@ -259,10 +259,8 @@ function WorkspaceBookReaderInner({
   const zenMode = settings.zenMode ?? false;
 
   // Mobile and zen mode toolbar auto-hide
-  const { toolbarVisible, showToolbar, toggleToolbar, resetToolbarTimer } = useToolbarAutoHide(
-    isMobile ?? false,
-    zenMode,
-  );
+  const { toolbarVisible, showToolbar, showToolbarPersistent, toggleToolbar, resetToolbarTimer } =
+    useToolbarAutoHide(isMobile ?? false, zenMode);
 
   // Search state (shared hook)
   const {
@@ -799,7 +797,7 @@ function WorkspaceBookReaderInner({
         </div>
         <div
           className={cn({ "absolute right-0 bottom-0 left-0 z-20 pt-10": zenMode })}
-          onMouseEnter={zenMode ? showToolbar : undefined}
+          onMouseEnter={zenMode ? showToolbarPersistent : undefined}
           onMouseLeave={zenMode ? resetToolbarTimer : undefined}
         >
           <div
