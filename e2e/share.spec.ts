@@ -215,6 +215,17 @@ test.describe("Share", () => {
     await waitForBookSyncedForSharing(page);
     await page.reload();
     await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await expect
+      .poll(
+        async () => {
+          const res = await page.request.get("/api/auth/session");
+          if (!res.ok()) return null;
+          const body = (await res.json()) as { user?: { id?: string } | null };
+          return body.user?.id ?? null;
+        },
+        { timeout: 15_000, intervals: [200, 300, 500, 750, 1000] },
+      )
+      .not.toBeNull();
   });
 
   test("creates a share link and imports it from an unauthenticated context", async ({
