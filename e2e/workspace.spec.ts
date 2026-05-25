@@ -198,10 +198,10 @@ test.describe("Workspace route", () => {
     });
 
     // Wait for the highlight popover to appear (portaled to document.body)
-    const highlightBtn = page.getByRole("button", { name: "Highlight" });
+    const highlightBtn = page.getByRole("button", { name: "Add to Notebook" });
     await expect(highlightBtn).toBeVisible({ timeout: 10_000 });
 
-    // Click "Highlight" to save the highlight
+    // Click "Add to Notebook" to save the highlight
     await highlightBtn.click();
 
     // Switch to the notebook tab to see the highlight reference
@@ -266,7 +266,7 @@ test.describe("Workspace route", () => {
       document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     });
 
-    const highlightBtn = page.getByRole("button", { name: "Highlight" });
+    const highlightBtn = page.getByRole("button", { name: "Add to Notebook" });
     await expect(highlightBtn).toBeVisible({ timeout: 10_000 });
     await highlightBtn.click();
 
@@ -291,8 +291,8 @@ test.describe("Workspace route", () => {
   test("reader settings menu opens", async ({ page }) => {
     await uploadAndOpenBook(page);
 
-    // Wait for the reader settings button
-    const settingsButton = page.getByRole("button", { name: "Reader settings" });
+    // Wait for the reader formatting button
+    const settingsButton = page.getByRole("button", { name: "Reader formatting" });
     await expect(settingsButton.first()).toBeVisible({ timeout: 15_000 });
 
     // Open settings dropdown

@@ -124,8 +124,8 @@ test.describe("PDF support", () => {
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 
-    // Click the settings button (the MoreHorizontal icon button with "Reader settings" sr-only text)
-    const settingsBtn = page.getByRole("button", { name: "Reader settings" });
+    // Click the formatting button (the Type icon button with "Reader formatting" sr-only text)
+    const settingsBtn = page.getByRole("button", { name: "Reader formatting" });
     await expect(settingsBtn).toBeVisible({ timeout: 5_000 });
     await settingsBtn.click();
 
@@ -205,8 +205,8 @@ test.describe("PDF support", () => {
     await expect(textSpan).toBeAttached({ timeout: 5_000 });
     await textSpan.click({ clickCount: 3, force: true });
 
-    // The highlight popover should appear with the "Highlight" button
-    const highlightBtn = page.getByRole("button", { name: "Highlight" });
+    // The highlight popover should appear with the "Add to Notebook" button
+    const highlightBtn = page.getByRole("button", { name: "Add to Notebook" });
     await expect(highlightBtn).toBeVisible({ timeout: 5_000 });
   });
 
@@ -226,8 +226,8 @@ test.describe("PDF support", () => {
     await expect(textSpan).toBeAttached({ timeout: 5_000 });
     await textSpan.click({ clickCount: 3, force: true });
 
-    // Click the Highlight button in the popover
-    const highlightBtn = page.getByRole("button", { name: "Highlight" });
+    // Click the Add to Notebook button in the popover
+    const highlightBtn = page.getByRole("button", { name: "Add to Notebook" });
     await expect(highlightBtn).toBeVisible({ timeout: 5_000 });
     await highlightBtn.click();
 

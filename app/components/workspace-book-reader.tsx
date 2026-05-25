@@ -17,7 +17,7 @@ import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
 import type { PdfLayout, ReaderLayout, Settings } from "~/lib/settings";
-import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
 import { useEffectQuery } from "~/hooks/use-effect-query";
@@ -526,6 +526,57 @@ function WorkspaceBookReaderInner({
       .catch((err) => console.error("Failed to append highlight to notebook:", err));
   }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
 
+  const handleCopyAsMarkdown = useCallback(async () => {
+    if (!selectionPopover) return;
+
+    await navigator.clipboard.writeText(selectionPopover.text);
+    dismissPopovers();
+
+    const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
+    contents?.forEach((content: any) => {
+      content.document?.defaultView?.getSelection()?.removeAllRanges();
+    });
+  }, [selectionPopover, dismissPopovers]);
+
+  const handleDownload = useCallback(() => {
+    AppRuntime.runPromise(
+      BookService.pipe(
+        Effect.andThen((s) => s.getBookData(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to download book:", error);
+            return null as ArrayBuffer | null;
+          }),
+        ),
+      ),
+    )
+      .then((data) => {
+        if (!data) return;
+        const format = book.format ?? "epub";
+        const type = format === "pdf" ? "application/pdf" : "application/epub+zip";
+        const blob = new Blob([data], { type });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${book.title.replace(/[\\/:*?"<>|]/g, "-")}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      })
+      .catch(console.error);
+  }, [book.id, book.title, book.format]);
+
+  const handleCopyPageAsMarkdown = useCallback(() => {
+    const text = renditionRef.current
+      ?.getContents()
+      .map((content: any) => content.document?.body?.innerText ?? "")
+      .join("\n\n")
+      .trim();
+    if (!text) return;
+    navigator.clipboard.writeText(text).catch(console.error);
+  }, []);
+
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
@@ -701,7 +752,14 @@ function WorkspaceBookReaderInner({
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderSettingsMenu settings={localSettings} onUpdateSettings={handleUpdateSettings} />
+            <ReaderFormattingMenu
+              settings={localSettings}
+              onUpdateSettings={handleUpdateSettings}
+            />
+            <ReaderActionsMenu
+              onDownload={handleDownload}
+              onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+            />
           </div>
         </div>
         {/* Portal popovers to document.body to escape dockview's CSS transforms,
@@ -710,7 +768,7 @@ function WorkspaceBookReaderInner({
           createPortal(
             <HighlightPopover
               position={selectionPopover.position}
-              selectedText={selectionPopover.text}
+              onCopyAsMarkdown={handleCopyAsMarkdown}
               onSave={handleSaveHighlight}
               onDismiss={dismissPopovers}
             />,

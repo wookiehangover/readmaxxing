@@ -1,11 +1,12 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
-import type { BookMeta } from "~/lib/stores/book-store";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
-import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { SearchBar } from "~/components/search-bar";
@@ -14,6 +15,7 @@ import { usePdfSearch } from "~/hooks/use-pdf-search";
 import { usePdfHighlights } from "~/hooks/use-pdf-highlights";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
+import { AppRuntime } from "~/lib/effect-runtime";
 
 interface PdfReaderProps {
   book: BookMeta;
@@ -82,6 +84,35 @@ export function PdfReader({ book }: PdfReaderProps) {
     [updateSettings],
   );
 
+  const handleDownload = useCallback(() => {
+    AppRuntime.runPromise(
+      BookService.pipe(
+        Effect.andThen((s) => s.getBookData(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to download book:", error);
+            return null as ArrayBuffer | null;
+          }),
+        ),
+      ),
+    )
+      .then((data) => {
+        if (!data) return;
+        const format = book.format ?? "pdf";
+        const type = format === "pdf" ? "application/pdf" : "application/epub+zip";
+        const blob = new Blob([data], { type });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${book.title.replace(/[\\/:*?"<>|]/g, "-")}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      })
+      .catch(console.error);
+  }, [book.id, book.title, book.format]);
+
   const handleSaveHighlight = useCallback(async () => {
     const highlight = await saveHighlightFromPopover();
     if (highlight) {
@@ -99,6 +130,14 @@ export function PdfReader({ book }: PdfReaderProps) {
       setAnnotationsPanelOpen(true);
     }
   }, [saveHighlightFromPopover]);
+
+  const handleCopyAsMarkdown = useCallback(async () => {
+    if (!selectionPopover) return;
+
+    await navigator.clipboard.writeText(selectionPopover.text);
+    dismissPopovers();
+    window.getSelection()?.removeAllRanges();
+  }, [selectionPopover, dismissPopovers]);
 
   // Flush pending highlight once the editor is mounted
   useEffect(() => {
@@ -269,13 +308,18 @@ export function PdfReader({ book }: PdfReaderProps) {
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} isPdf />
+            <ReaderFormattingMenu
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              isPdf
+            />
+            <ReaderActionsMenu onDownload={handleDownload} />
           </div>
         </div>
         {selectionPopover && (
           <HighlightPopover
             position={selectionPopover.position}
-            selectedText={selectionPopover.text}
+            onCopyAsMarkdown={handleCopyAsMarkdown}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
           />

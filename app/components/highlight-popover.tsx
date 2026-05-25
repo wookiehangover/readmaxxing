@@ -1,16 +1,19 @@
 import { useRef, useEffect } from "react";
-import { Button } from "~/components/ui/button";
+import { ClipboardCopy, NotebookPen } from "lucide-react";
 
 interface HighlightPopoverProps {
   position: { x: number; y: number };
-  selectedText: string;
+  onCopyAsMarkdown: () => void;
   onSave: () => void;
   onDismiss: () => void;
 }
 
+const menuItemClassName =
+  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:outline-none";
+
 export function HighlightPopover({
   position,
-  selectedText,
+  onCopyAsMarkdown,
   onSave,
   onDismiss,
 }: HighlightPopoverProps) {
@@ -63,8 +66,6 @@ export function HighlightPopover({
     };
   }, [onDismiss]);
 
-  const truncatedText = selectedText.length > 120 ? selectedText.slice(0, 120) + "…" : selectedText;
-
   return (
     <div
       ref={popoverRef}
@@ -74,17 +75,16 @@ export function HighlightPopover({
         top: position.y + 8,
         zIndex: 9999,
       }}
-      className="w-72 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
+      className="w-auto min-w-[160px] rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
     >
-      <p className="mb-2 text-xs text-muted-foreground line-clamp-3">"{truncatedText}"</p>
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onDismiss}>
-          Cancel
-        </Button>
-        <Button size="sm" onClick={onSave}>
-          Highlight
-        </Button>
-      </div>
+      <button type="button" className={menuItemClassName} onClick={onCopyAsMarkdown}>
+        <ClipboardCopy className="size-4" />
+        <span>Copy as Markdown</span>
+      </button>
+      <button type="button" className={menuItemClassName} onClick={onSave}>
+        <NotebookPen className="size-4" />
+        <span>Add to Notebook</span>
+      </button>
     </div>
   );
 }
