@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Effect } from "effect";
 import { AlertCircle, BookOpen, Check, Loader2 } from "lucide-react";
+import { Streamdown } from "streamdown";
 import { Button } from "~/components/ui/button";
+import { Skeleton } from "~/components/ui/skeleton";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { getShareLink, type ShareLinkRow } from "~/lib/database/share/share-link";
 import { getUser } from "~/lib/database/user/user";
@@ -25,6 +27,7 @@ interface ShareBookData {
 interface ShareLoaderData {
   status: ShareStatus;
   id: string;
+  shareChats: boolean;
   message?: string;
   book?: ShareBookData;
   sharer?: {
@@ -43,13 +46,13 @@ interface ShareResolveResponse {
   sharerId: string;
 }
 
+type SharedChatMessage = { role: string; content: string; createdAt: string };
+
+type SharedChatSession = { id: string; title: string | null; messages: SharedChatMessage[] };
+
 interface LoaderArgs {
   request: Request;
   params: { id: string };
-}
-
-interface MetaArgs {
-  data?: ShareLoaderData;
 }
 
 interface ComponentProps {
@@ -161,6 +164,7 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     return {
       status: "unavailable",
       id,
+      shareChats: false,
       message: "Sharing is not configured for this deployment.",
     };
   }
@@ -170,6 +174,7 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     return {
       status: "not_found",
       id,
+      shareChats: false,
       message: "This share link could not be found.",
     };
   }
@@ -182,6 +187,7 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     return {
       status: "not_found",
       id,
+      shareChats: shareLink.shareChats,
       message: "The shared book is no longer available.",
     };
   }
@@ -198,6 +204,7 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     return {
       status: "expired",
       id,
+      shareChats: shareLink.shareChats,
       book: bookData,
       sharer: sharerData,
       message: "This share link has expired.",
@@ -208,6 +215,7 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     return {
       status: "exhausted",
       id,
+      shareChats: shareLink.shareChats,
       book: bookData,
       sharer: sharerData,
       message: "This share link has reached its use limit.",
@@ -217,12 +225,13 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
   return {
     status: "available",
     id,
+    shareChats: shareLink.shareChats,
     book: bookData,
     sharer: sharerData,
   };
 }
 
-export function meta({ data }: MetaArgs) {
+export function meta({ data }: { data?: ShareLoaderData }) {
   const title = data?.book
     ? `📖 ${data.book.title} — Shared on Readmaxxing`
     : "Shared book — Readmaxxing";
@@ -264,6 +273,135 @@ function CoverArt({ book }: { book?: ShareBookData }) {
   );
 }
 
+async function fetchSharedJson<T>(url: string): Promise<T> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(await readApiError(response));
+  return (await response.json()) as T;
+}
+
+function SharedReadingSection({ shareId }: { shareId: string }) {
+  const [tab, setTab] = useState<"chats" | "notes">("chats");
+  const [chats, setChats] = useState<SharedChatSession[]>([]);
+  const [markdown, setMarkdown] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSharedContent() {
+      try {
+        const [chatsData, notebookData] = await Promise.all([
+          fetchSharedJson<{ sessions: SharedChatSession[] }>(`/api/share/${shareId}/chats`),
+          fetchSharedJson<{ markdown: string }>(`/api/share/${shareId}/notebook`),
+        ]);
+        if (cancelled) return;
+        setChats(chatsData.sessions);
+        setMarkdown(notebookData.markdown);
+        setError(null);
+      } catch (cause) {
+        if (!cancelled)
+          setError(cause instanceof Error ? cause.message : "Failed to load shared content");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadSharedContent();
+    const interval = window.setInterval(loadSharedContent, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [shareId]);
+
+  return (
+    <section className="rounded-3xl border bg-card/70 p-6 shadow-sm backdrop-blur sm:p-8">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+              Co-reading
+            </p>
+            <h2 className="text-2xl font-semibold tracking-tight">Shared chats and notes</h2>
+          </div>
+          <div className="inline-flex rounded-lg border bg-background p-1">
+            {(["chats", "notes"] as const).map((item) => (
+              <Button
+                key={item}
+                type="button"
+                variant={tab === item ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setTab(item)}
+              >
+                {item === "chats" ? "Chats" : "Notes"}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {loading ? (
+          <div className="flex flex-col gap-3">
+            <Skeleton className="h-14 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : tab === "chats" ? (
+          chats.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {chats.map((session) => (
+                <details key={session.id} className="group rounded-xl border bg-background/60 p-4">
+                  <summary className="cursor-pointer list-none font-medium [&::-webkit-details-marker]:hidden">
+                    {session.title || "Untitled chat"}
+                    <span className="ml-2 text-sm text-muted-foreground">
+                      {session.messages.length} messages
+                    </span>
+                  </summary>
+                  <div className="mt-4 flex flex-col gap-3">
+                    {session.messages.map((message, index) => (
+                      <div
+                        key={`${session.id}-${message.createdAt}-${index}`}
+                        className={cn("flex", { "justify-end": message.role === "user" })}
+                      >
+                        <div
+                          className={cn("max-w-prose rounded-lg px-3 py-2 text-sm", {
+                            "bg-secondary text-secondary-foreground": message.role === "user",
+                            "bg-muted text-foreground": message.role !== "user",
+                          })}
+                        >
+                          <p className="mb-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                            {message.role}
+                          </p>
+                          {message.role === "user" ? (
+                            <p className="whitespace-pre-wrap">{message.content}</p>
+                          ) : (
+                            <Streamdown>{message.content}</Streamdown>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-xl border bg-background/60 p-6 text-center text-sm text-muted-foreground">
+              No chats yet.
+            </p>
+          )
+        ) : markdown.trim() ? (
+          <div className="prose prose-sm max-w-none rounded-xl border bg-background/60 p-5 text-foreground dark:prose-invert">
+            <Streamdown>{markdown}</Streamdown>
+          </div>
+        ) : (
+          <p className="rounded-xl border bg-background/60 p-6 text-center text-sm text-muted-foreground">
+            No notes yet.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function SharePage({ loaderData }: ComponentProps) {
   const navigate = useNavigate();
   const [state, setState] = useState<"idle" | "importing" | "done">("idle");
@@ -296,59 +434,62 @@ export default function SharePage({ loaderData }: ComponentProps) {
   return (
     <main className="min-h-dvh bg-background px-4 py-10 text-foreground sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-5xl items-center justify-center">
-        <section className="grid w-full gap-10 rounded-3xl border bg-card/70 p-6 shadow-sm backdrop-blur sm:p-10 md:grid-cols-[auto_1fr] md:items-center">
-          <div className="flex justify-center md:justify-start">
-            <CoverArt book={loaderData.book} />
-          </div>
-
-          <div className="space-y-6 text-center md:text-left">
-            <div className="space-y-3">
-              <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-                Shared on Readmaxxing
-              </p>
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-5xl">
-                {loaderData.book?.title ?? "Shared book unavailable"}
-              </h1>
-              {loaderData.book && (
-                <p className="text-lg text-muted-foreground">by {loaderData.book.author}</p>
-              )}
-              {loaderData.sharer && (
-                <p className="text-sm text-muted-foreground">Shared by {sharerName}</p>
-              )}
+        <div className="flex w-full flex-col gap-6">
+          <section className="grid w-full gap-10 rounded-3xl border bg-card/70 p-6 shadow-sm backdrop-blur sm:p-10 md:grid-cols-[auto_1fr] md:items-center">
+            <div className="flex justify-center md:justify-start">
+              <CoverArt book={loaderData.book} />
             </div>
 
-            {loaderData.status !== "available" && (
-              <div className="inline-flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                <span>{loaderData.message ?? "This share link is not available."}</span>
+            <div className="space-y-6 text-center md:text-left">
+              <div className="space-y-3">
+                <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+                  Shared on Readmaxxing
+                </p>
+                <h1 className="text-3xl font-semibold tracking-tight sm:text-5xl">
+                  {loaderData.book?.title ?? "Shared book unavailable"}
+                </h1>
+                {loaderData.book && (
+                  <p className="text-lg text-muted-foreground">by {loaderData.book.author}</p>
+                )}
+                {loaderData.sharer && (
+                  <p className="text-sm text-muted-foreground">Shared by {sharerName}</p>
+                )}
               </div>
-            )}
 
-            {error && (
-              <div className="inline-flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
-                <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                <span>{error}</span>
+              {loaderData.status !== "available" && (
+                <div className="inline-flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
+                  <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                  <span>{loaderData.message ?? "This share link is not available."}</span>
+                </div>
+              )}
+
+              {error && (
+                <div className="inline-flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
+                  <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <div className="flex flex-col items-center gap-3 sm:flex-row md:justify-start">
+                <Button
+                  type="button"
+                  size="lg"
+                  disabled={!canImport || state === "importing" || state === "done"}
+                  onClick={handleImport}
+                  className={cn("min-w-48", { "opacity-80": state !== "idle" })}
+                >
+                  {state === "importing" && <Loader2 className="animate-spin" />}
+                  {state === "done" && <Check />}
+                  {state === "idle" ? "Add to Library & Read" : "Adding to library…"}
+                </Button>
+                <p className="max-w-sm text-sm text-muted-foreground">
+                  The book will be saved locally in this browser and opened in your workspace.
+                </p>
               </div>
-            )}
-
-            <div className="flex flex-col items-center gap-3 sm:flex-row md:justify-start">
-              <Button
-                type="button"
-                size="lg"
-                disabled={!canImport || state === "importing" || state === "done"}
-                onClick={handleImport}
-                className={cn("min-w-48", { "opacity-80": state !== "idle" })}
-              >
-                {state === "importing" && <Loader2 className="animate-spin" />}
-                {state === "done" && <Check />}
-                {state === "idle" ? "Add to Library & Read" : "Adding to library…"}
-              </Button>
-              <p className="max-w-sm text-sm text-muted-foreground">
-                The book will be saved locally in this browser and opened in your workspace.
-              </p>
             </div>
-          </div>
-        </section>
+          </section>
+          {loaderData.shareChats && canImport && <SharedReadingSection shareId={loaderData.id} />}
+        </div>
       </div>
     </main>
   );
