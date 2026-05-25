@@ -212,7 +212,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       };
 
       if (api) {
-        for (const panel of [...api.panels]) {
+        for (const panel of Array.from(api.panels)) {
           if (!panel.id.startsWith("book-")) api.removePanel(panel);
         }
       }
@@ -385,10 +385,10 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         )}
       >
         {/* Desktop sidebar — hidden on mobile */}
-        {isMobile !== true && <WorkspaceSidebar {...sidebarProps} />}
+        {isMobile !== true && !zenMode && <WorkspaceSidebar {...sidebarProps} />}
 
         {/* Mobile floating pill + sheet sidebar */}
-        {isMobile === true && (
+        {isMobile === true && !zenMode && (
           <>
             <button
               type="button"
