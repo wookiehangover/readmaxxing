@@ -261,11 +261,19 @@ export function ReaderActionsMenu({
               Copy Chapter as Markdown
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem onClick={onDownload}>
+          <DropdownMenuItem
+            onClick={() => {
+              void Promise.resolve(onDownload()).catch(console.error);
+            }}
+          >
             <Download className="size-4" />
             Download
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onBookmarkPage}>
+          <DropdownMenuItem
+            onClick={() => {
+              void Promise.resolve(onBookmarkPage()).catch(console.error);
+            }}
+          >
             <BookmarkIcon className="size-4" />
             {isBookmarked ? "Remove Bookmark" : "Bookmark Page"}
           </DropdownMenuItem>

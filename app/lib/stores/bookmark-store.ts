@@ -136,10 +136,14 @@ export function makeBookmarkService(stores: BookmarkServiceStores): BookmarkServ
               if (!isWellFormedEntry(entry)) return false;
               const [, raw] = entry;
               if (raw == null || typeof raw !== "object") return false;
-              const bookmark = decodeBookmark(raw);
-              return (
-                bookmark.bookId === bookId && bookmark.cfi === cfi && isActiveBookmark(bookmark)
-              );
+              try {
+                const bookmark = decodeBookmark(raw);
+                return (
+                  bookmark.bookId === bookId && bookmark.cfi === cfi && isActiveBookmark(bookmark)
+                );
+              } catch {
+                return false;
+              }
             }),
           catch: (cause) => new DecodeError({ operation: "isBookmarked", cause }),
         });
