@@ -1,13 +1,5 @@
 import { Fragment } from "react";
-import {
-  Bookmark,
-  BookmarkCheck,
-  Download,
-  MoreHorizontal,
-  Minus,
-  Plus,
-  Type,
-} from "lucide-react";
+import { Bookmark, BookmarkCheck, Download, MoreHorizontal, Minus, Plus, Type } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
