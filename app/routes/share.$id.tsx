@@ -334,7 +334,7 @@ function SharedReadingSection({ shareId, book }: { shareId: string; book: ShareB
   const hiddenChatCount = Math.max(0, chats.length - visibleChats.length);
 
   return (
-    <section className="rounded-3xl border bg-card/70 p-6 shadow-sm backdrop-blur sm:p-8">
+    <section className="rounded-3xl bg-card/70 p-6 shadow-sm backdrop-blur sm:p-8">
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -499,7 +499,7 @@ export default function SharePage({ loaderData }: ComponentProps) {
     <main className="min-h-dvh bg-background px-4 py-10 text-foreground sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-5xl items-center justify-center">
         <div className="flex w-full flex-col gap-6">
-          <section className="grid w-full gap-10 rounded-3xl border bg-card/70 p-6 shadow-sm backdrop-blur sm:p-10 md:grid-cols-[auto_1fr] md:items-center">
+          <section className="grid w-full gap-10 rounded-3xl bg-card/70 p-6 shadow-sm backdrop-blur sm:p-10 md:grid-cols-[auto_1fr] md:items-center">
             <div className="flex justify-center md:justify-start">
               <CoverArt book={loaderData.book} />
             </div>
