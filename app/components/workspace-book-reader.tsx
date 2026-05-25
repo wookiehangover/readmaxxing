@@ -256,8 +256,13 @@ function WorkspaceBookReaderInner({
     settings.readerLayout,
   ]);
 
-  // Mobile toolbar auto-hide
-  const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
+  const zenMode = settings.zenMode ?? false;
+
+  // Mobile and zen mode toolbar auto-hide
+  const { toolbarVisible, showToolbar, toggleToolbar, resetToolbarTimer } = useToolbarAutoHide(
+    isMobile ?? false,
+    zenMode,
+  );
 
   // Search state (shared hook)
   const {
@@ -743,7 +748,7 @@ function WorkspaceBookReaderInner({
 
   return (
     <div ref={panelRef} className="flex h-full outline-none" tabIndex={0}>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col">
         <div className="relative flex-1 overflow-hidden">
           {searchOpen && (
             <div className="absolute top-0 right-0 left-0 z-10">
@@ -793,31 +798,37 @@ function WorkspaceBookReaderInner({
           )}
         </div>
         <div
-          className={cn(
-            "relative flex items-center justify-center px-2 h-10 transition-all duration-300 ease-in-out",
-            {
-              "max-h-0 overflow-hidden border-t-0 opacity-0": isMobile && !toolbarVisible,
-              "max-h-20 opacity-100": !isMobile || toolbarVisible,
-            },
-          )}
+          className={cn({ "absolute right-0 bottom-0 left-0 z-20 pt-10": zenMode })}
+          onMouseEnter={zenMode ? showToolbar : undefined}
+          onMouseLeave={zenMode ? resetToolbarTimer : undefined}
         >
-          <div className="absolute left-2 flex max-w-[calc(100%-8rem)] items-center gap-1.5">
-            {totalPages !== null && currentPage !== null ? (
-              <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
-                {currentChapterLabel ? (
-                  <>
-                    <span className="max-w-28 truncate sm:max-w-48 md:max-w-64">
-                      {currentChapterLabel}
-                    </span>
-                    <span className="shrink-0">·</span>
-                  </>
-                ) : null}
-                <span className="shrink-0 tabular-nums">
-                  {currentPage} / {totalPages}
-                </span>
-              </div>
-            ) : null}
-          </div>
+          <div
+            className={cn(
+              "relative flex h-10 items-center justify-center px-2 transition-all duration-300 ease-in-out",
+              {
+                "max-h-0 overflow-hidden border-t-0 opacity-0":
+                  (isMobile || zenMode) && !toolbarVisible,
+                "max-h-20 opacity-100": (!isMobile && !zenMode) || toolbarVisible,
+              },
+            )}
+          >
+            <div className="absolute left-2 flex max-w-[calc(100%-8rem)] items-center gap-1.5">
+              {totalPages !== null && currentPage !== null ? (
+                <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
+                  {currentChapterLabel ? (
+                    <>
+                      <span className="max-w-28 truncate sm:max-w-48 md:max-w-64">
+                        {currentChapterLabel}
+                      </span>
+                      <span className="shrink-0">·</span>
+                    </>
+                  ) : null}
+                  <span className="shrink-0 tabular-nums">
+                    {currentPage} / {totalPages}
+                  </span>
+                </div>
+              ) : null}
+            </div>
           {!isScrollMode && (
             <div className="hidden items-center gap-4 md:flex">
               <Button variant="ghost" size="icon" onClick={handlePrev}>
@@ -902,6 +913,7 @@ function WorkspaceBookReaderInner({
               onBookmarkPage={handleBookmarkPage}
               isBookmarked={Boolean(currentBookmark)}
             />
+          </div>
           </div>
         </div>
         {/* Portal popovers to document.body to escape dockview's CSS transforms,

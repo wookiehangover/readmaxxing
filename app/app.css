@@ -252,6 +252,15 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.zen-mode .dv-tabs-and-actions-container {
+  display: none !important;
+}
+
+.zen-mode .dv-left-actions-container,
+.zen-mode .dv-void-container {
+  border-bottom: none;
+}
+
 .dockview-theme-app .dv-tab.dv-active-tab {
   border-bottom-color: transparent;
 }
