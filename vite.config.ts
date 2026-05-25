@@ -1,20 +1,7 @@
 import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
-import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
-
-const indexHtmlPath = resolve("build/client/index.html");
-const serviceWorkerPath = resolve("build/client/sw.js");
-const indexHtmlPrecacheEntryPatterns = [
-  /\{\s*("?url"?)\s*:\s*"\/index\.html"\s*,\s*("?revision"?)\s*:\s*(?:null|"[a-f0-9]+")\s*\}/,
-  /\{\s*("?revision"?)\s*:\s*(?:null|"[a-f0-9]+")\s*,\s*("?url"?)\s*:\s*"\/index\.html"\s*\}/,
-] as const;
-
-let isIndexHtmlRevisionPatchScheduled = false;
-let isIndexHtmlRevisionPatched = false;
 
 function getSiteOrigin() {
   const productionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL;
@@ -22,79 +9,6 @@ function getSiteOrigin() {
   const vercelUrl = process.env.VERCEL_URL;
   if (vercelUrl) return `https://${vercelUrl}`;
   return "";
-}
-
-function isMissingFile(cause: unknown) {
-  return cause instanceof Error && "code" in cause && cause.code === "ENOENT";
-}
-
-async function writeIndexHtmlPrecacheRevision() {
-  const indexHtml = await readFile(indexHtmlPath);
-  const revision = createHash("sha256").update(indexHtml).digest("hex");
-  const serviceWorker = await readFile(serviceWorkerPath, "utf8");
-  const patchedServiceWorker = serviceWorker
-    .replace(indexHtmlPrecacheEntryPatterns[0], (_entry, urlKey, revisionKey) => {
-      return `{${urlKey}:"/index.html",${revisionKey}:"${revision}"}`;
-    })
-    .replace(indexHtmlPrecacheEntryPatterns[1], (_entry, revisionKey, urlKey) => {
-      return `{${revisionKey}:"${revision}",${urlKey}:"/index.html"}`;
-    });
-
-  if (patchedServiceWorker === serviceWorker) {
-    if (
-      indexHtmlPrecacheEntryPatterns.some((pattern) => pattern.test(serviceWorker)) &&
-      serviceWorker.includes(`"${revision}"`)
-    ) {
-      isIndexHtmlRevisionPatched = true;
-      return;
-    }
-
-    throw new Error("Unable to patch /index.html precache revision in build/client/sw.js");
-  }
-
-  await writeFile(serviceWorkerPath, patchedServiceWorker);
-  isIndexHtmlRevisionPatched = true;
-}
-
-function scheduleIndexHtmlPrecacheRevisionPatch() {
-  if (isIndexHtmlRevisionPatchScheduled) return;
-  isIndexHtmlRevisionPatchScheduled = true;
-
-  process.once("beforeExit", () => {
-    if (isIndexHtmlRevisionPatched) {
-      isIndexHtmlRevisionPatchScheduled = false;
-      return;
-    }
-
-    writeIndexHtmlPrecacheRevision()
-      .catch((cause) => {
-        console.error(cause);
-        process.exitCode = 1;
-      })
-      .finally(() => {
-        isIndexHtmlRevisionPatchScheduled = false;
-      });
-  });
-}
-
-function patchIndexHtmlPrecacheRevision(): Plugin {
-  return {
-    name: "patch-index-html-precache-revision",
-    enforce: "post",
-    apply: "build",
-    async closeBundle() {
-      try {
-        await writeIndexHtmlPrecacheRevision();
-      } catch (cause) {
-        if (isMissingFile(cause)) {
-          scheduleIndexHtmlPrecacheRevisionPatch();
-          return;
-        }
-
-        throw cause;
-      }
-    },
-  };
 }
 
 export default defineConfig({
@@ -115,9 +29,6 @@ export default defineConfig({
           "og-image.png",
         ],
         cleanupOutdatedCaches: true,
-        additionalManifestEntries: [{ url: "/index.html", revision: null }],
-        navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/,
@@ -162,6 +73,21 @@ export default defineConfig({
           {
             urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith("/api/"),
             handler: "NetworkOnly",
+          },
+          {
+            urlPattern: ({ request, sameOrigin }) =>
+              sameOrigin && request.mode === "navigate",
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "pages-cache",
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+              cacheableResponse: {
+                statuses: [200],
+              },
+            },
           },
         ],
       },
@@ -211,7 +137,6 @@ export default defineConfig({
         ],
       },
     }),
-    patchIndexHtmlPrecacheRevision(),
   ],
   define: {
     __SITE_ORIGIN__: JSON.stringify(getSiteOrigin()),
