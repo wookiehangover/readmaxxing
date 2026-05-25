@@ -63,6 +63,7 @@ export const LocalUISettingsSchema = Schema.Struct({
     { default: () => "fit-height" as const },
   ),
   sidebarCollapsed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  zenMode: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   libraryView: Schema.optionalWith(Schema.Literal("grid", "table"), {
     default: () => "grid" as const,
   }),
@@ -114,6 +115,7 @@ export const LOCAL_UI_SETTINGS_KEYS = [
   "readerLayout",
   "pdfLayout",
   "sidebarCollapsed",
+  "zenMode",
   "libraryView",
   "workspaceSortBy",
   "layoutMode",
@@ -139,6 +141,7 @@ const defaultSettings: Settings = {
   lineHeight: 1.6,
   textAlign: undefined,
   sidebarCollapsed: false,
+  zenMode: false,
   workspaceSortBy: "recent",
   libraryView: "grid",
   colorTheme: "default",
