@@ -522,6 +522,7 @@ export function BookReader({ book }: BookReaderProps) {
               onUpdateSettings={handleUpdateSettings}
             />
             <ReaderActionsMenu
+              book={book}
               onDownload={handleDownload}
               onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
               onBookmarkPage={handleBookmarkPage}

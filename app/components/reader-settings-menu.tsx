@@ -1,5 +1,16 @@
-import { Fragment } from "react";
-import { Bookmark, BookmarkCheck, Download, MoreHorizontal, Minus, Plus, Type } from "lucide-react";
+import { Fragment, useState } from "react";
+import {
+  Bookmark,
+  BookmarkCheck,
+  Download,
+  MoreHorizontal,
+  Minus,
+  Plus,
+  Share2,
+  Type,
+} from "lucide-react";
+import { toast } from "sonner";
+import { ShareDialog } from "~/components/share-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +25,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { useAuth } from "~/lib/context/auth-context";
+import type { BookMeta } from "~/lib/stores/book-store";
 import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/settings";
 
 interface ReaderFormattingMenuProps {
@@ -23,6 +36,7 @@ interface ReaderFormattingMenuProps {
 }
 
 interface ReaderActionsMenuProps {
+  book?: BookMeta;
   onDownload: () => void | Promise<void>;
   onBookmarkPage: () => void | Promise<void>;
   onCopyPageAsMarkdown?: () => void;
@@ -241,44 +255,64 @@ export function ReaderFormattingMenu({
 }
 
 export function ReaderActionsMenu({
+  book,
   onDownload,
   onBookmarkPage,
   onCopyPageAsMarkdown,
   isBookmarked,
 }: ReaderActionsMenuProps) {
+  const { isAuthenticated } = useAuth();
+  const [shareOpen, setShareOpen] = useState(false);
   const BookmarkIcon = isBookmarked ? BookmarkCheck : Bookmark;
 
+  function handleShare() {
+    if (!book?.remoteFileUrl) {
+      toast.warning("Sign in and sync this book before sharing it.");
+      return;
+    }
+    setShareOpen(true);
+  }
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
-        <MoreHorizontal className="size-4" />
-        <span className="sr-only">Reader actions</span>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52 text-xs">
-        <DropdownMenuGroup>
-          {onCopyPageAsMarkdown && (
-            <DropdownMenuItem onClick={onCopyPageAsMarkdown}>
-              Copy Chapter as Markdown
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+          <MoreHorizontal className="size-4" />
+          <span className="sr-only">Reader actions</span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52 text-xs">
+          <DropdownMenuGroup>
+            {onCopyPageAsMarkdown && (
+              <DropdownMenuItem onClick={onCopyPageAsMarkdown}>
+                Copy Chapter as Markdown
+              </DropdownMenuItem>
+            )}
+            {isAuthenticated && book && (
+              <DropdownMenuItem onClick={handleShare}>
+                <Share2 className="size-4" />
+                Share
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              onClick={() => {
+                void Promise.resolve(onDownload()).catch(console.error);
+              }}
+            >
+              <Download className="size-4" />
+              Download
             </DropdownMenuItem>
-          )}
-          <DropdownMenuItem
-            onClick={() => {
-              void Promise.resolve(onDownload()).catch(console.error);
-            }}
-          >
-            <Download className="size-4" />
-            Download
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => {
-              void Promise.resolve(onBookmarkPage()).catch(console.error);
-            }}
-          >
-            <BookmarkIcon className="size-4" />
-            {isBookmarked ? "Remove Bookmark" : "Bookmark Page"}
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+            <DropdownMenuItem
+              onClick={() => {
+                void Promise.resolve(onBookmarkPage()).catch(console.error);
+              }}
+            >
+              <BookmarkIcon className="size-4" />
+              {isBookmarked ? "Remove Bookmark" : "Bookmark Page"}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ShareDialog book={book ?? null} open={shareOpen} onOpenChange={setShareOpen} />
+    </>
   );
 }

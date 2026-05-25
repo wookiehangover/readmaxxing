@@ -7,12 +7,15 @@ import {
   Ellipsis,
   Globe,
   RefreshCw,
+  Share2,
   Trash2,
   Upload,
 } from "lucide-react";
+import { toast } from "sonner";
 import { CoverImage } from "~/components/book-grid/cover-image";
 import { CoverPlaceholder } from "~/components/book-grid/cover-placeholder";
 import { AddBookCard } from "~/components/book-grid/add-book-card";
+import { ShareDialog } from "~/components/share-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +31,7 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { useSyncState } from "~/lib/sync/use-sync";
 import { useSettings } from "~/lib/settings";
 import { filterBooks } from "~/lib/workspace-utils";
+import { useAuth } from "~/lib/context/auth-context";
 
 interface LibraryBrowseContentProps {
   /** Dockview panel API — when provided, enables visibility-based refresh. */
@@ -39,8 +43,10 @@ const PANEL_REFRESH_THROTTLE_MS = 5000;
 
 export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {}) {
   const ws = useWorkspace();
+  const { isAuthenticated } = useAuth();
   const [books, setBooks] = useState<BookMeta[]>(ws.booksRef.current);
   const [searchQuery, setSearchQuery] = useState("");
+  const [shareBook, setShareBook] = useState<BookMeta | null>(null);
   const [settings] = useSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastRefreshedAtRef = useRef(0);
@@ -76,6 +82,14 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
     },
     [ws],
   );
+
+  const handleShareBook = useCallback((book: BookMeta) => {
+    if (!book.remoteFileUrl) {
+      toast.warning("Sign in and sync this book before sharing it.");
+      return;
+    }
+    setShareBook(book);
+  }, []);
 
   const handleBookAdded = useCallback(
     (book: BookMeta) => {
@@ -237,6 +251,12 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
                             <MessageSquare className="size-4" />
                             Open chat
                           </DropdownMenuItem>
+                          {isAuthenticated && (
+                            <DropdownMenuItem onClick={() => handleShareBook(book)}>
+                              <Share2 className="size-4" />
+                              Share
+                            </DropdownMenuItem>
+                          )}
                           {syncActive && (
                             <DropdownMenuItem onClick={() => handleReloadBook(book.id)}>
                               <RefreshCw className="size-4" />
@@ -273,6 +293,13 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
           )}
         </>
       )}
+      <ShareDialog
+        book={shareBook}
+        open={shareBook !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setShareBook(null);
+        }}
+      />
     </div>
   );
 }

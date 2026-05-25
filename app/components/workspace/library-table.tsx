@@ -9,9 +9,12 @@ import {
   MessageSquare,
   NotebookPen,
   RefreshCw,
+  Share2,
   Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { BookCover } from "~/components/book-list";
+import { ShareDialog } from "~/components/share-dialog";
 import {
   Table,
   TableBody,
@@ -30,6 +33,7 @@ import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { sortBooksForTable, type SortDirection, type TableSortColumn } from "~/lib/workspace-utils";
+import { useAuth } from "~/lib/context/auth-context";
 import { cn } from "~/lib/utils";
 
 interface LibraryTableProps {
@@ -92,12 +96,14 @@ export function LibraryTable({
   onReloadBook,
   syncActive,
 }: LibraryTableProps) {
+  const { isAuthenticated } = useAuth();
   const { data: lastOpenedMap } = useEffectQuery(
     () => WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())),
     [],
   );
 
   const [sort, setSort] = useState<SortState>({ column: "lastOpened", direction: "desc" });
+  const [shareBook, setShareBook] = useState<BookMeta | null>(null);
 
   const handleSort = useCallback((column: TableSortColumn) => {
     setSort((prev) => {
@@ -112,6 +118,14 @@ export function LibraryTable({
     () => sortBooksForTable(books, sort.column, sort.direction, lastOpenedMap),
     [books, sort, lastOpenedMap],
   );
+
+  const handleShareBook = useCallback((book: BookMeta) => {
+    if (!book.remoteFileUrl) {
+      toast.warning("Sign in and sync this book before sharing it.");
+      return;
+    }
+    setShareBook(book);
+  }, []);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -212,6 +226,12 @@ export function LibraryTable({
                         <MessageSquare className="size-4" />
                         Open chat
                       </DropdownMenuItem>
+                      {isAuthenticated && (
+                        <DropdownMenuItem onClick={() => handleShareBook(book)}>
+                          <Share2 className="size-4" />
+                          Share
+                        </DropdownMenuItem>
+                      )}
                       {syncActive && (
                         <DropdownMenuItem onClick={() => onReloadBook(book.id)}>
                           <RefreshCw className="size-4" />
@@ -230,6 +250,13 @@ export function LibraryTable({
           })}
         </TableBody>
       </Table>
+      <ShareDialog
+        book={shareBook}
+        open={shareBook !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setShareBook(null);
+        }}
+      />
     </div>
   );
 }
