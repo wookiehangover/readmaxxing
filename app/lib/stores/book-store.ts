@@ -22,6 +22,10 @@ export const BookMetaSchema = Schema.Struct({
   remoteFileUrl: Schema.optional(Schema.String),
   /** SHA-256 hash of the file data, used for deduplication during sync. */
   fileHash: Schema.optional(Schema.String),
+  /** User ID of the person who shared this book, if imported via share link. */
+  sharedBy: Schema.optional(Schema.String),
+  /** Share link ID used to import this book, if imported via share link. */
+  shareId: Schema.optional(Schema.String),
   /** Timestamp of last mutation (creation or update). Used for LWW sync. */
   updatedAt: Schema.optional(Schema.Number),
   /** Soft-delete timestamp. When set, the book is considered deleted. */
