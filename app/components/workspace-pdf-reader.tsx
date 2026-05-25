@@ -500,6 +500,7 @@ function WorkspacePdfReaderInner({
             isPdf
           />
           <ReaderActionsMenu
+            book={book}
             onDownload={handleDownload}
             onBookmarkPage={handleBookmarkPage}
             isBookmarked={Boolean(currentBookmark)}
