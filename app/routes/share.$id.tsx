@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import type EpubBook from "epubjs/types/book";
-import type Rendition from "epubjs/types/rendition";
 import { Effect } from "effect";
-import { AlertCircle, BookOpen, Check, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { AlertCircle, BookOpen, Check, Loader2 } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -277,7 +276,7 @@ function CoverArt({ book }: { book?: ShareBookData }) {
   const [failed, setFailed] = useState(false);
 
   return (
-    <div className="flex aspect-[2/3] w-48 items-center justify-center overflow-hidden bg-muted sm:w-56">
+    <div className="flex aspect-[2/3] w-28 items-center justify-center overflow-hidden bg-muted sm:w-36">
       {book?.coverUrl && !failed ? (
         <img
           src={book.coverUrl}
@@ -286,7 +285,7 @@ function CoverArt({ book }: { book?: ShareBookData }) {
           onError={() => setFailed(true)}
         />
       ) : (
-        <BookOpen className="size-16 text-muted-foreground/50" />
+        <BookOpen className="size-12 text-muted-foreground/50" />
       )}
     </div>
   );
@@ -301,7 +300,6 @@ async function fetchSharedJson<T>(url: string): Promise<T> {
 function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: string | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<EpubBook | null>(null);
-  const renditionRef = useRef<Rendition | null>(null);
   const [loading, setLoading] = useState(book.format === "epub");
   const [error, setError] = useState<string | null>(null);
 
@@ -320,7 +318,7 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
     const abortController = new AbortController();
     let cancelled = false;
     let epubBook: EpubBook | null = null;
-    let rendition: Rendition | null = null;
+    let rendition: ReturnType<EpubBook["renderTo"]> | null = null;
 
     async function initPreview() {
       try {
@@ -343,7 +341,6 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
           height: "100%",
           spread: "none",
         });
-        renditionRef.current = rendition;
 
         rendition.hooks.content.register((contents: { document?: Document }) => {
           const doc = contents.document;
@@ -390,7 +387,6 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
       abortController.abort();
       rendition?.destroy();
       epubBook?.destroy();
-      renditionRef.current = null;
       bookRef.current = null;
       previewContainer.replaceChildren();
     };
@@ -434,26 +430,6 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
             <p className="max-w-sm text-sm text-destructive">{error}</p>
           </div>
         )}
-      </div>
-      <div className="flex items-center justify-between px-3 py-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => renditionRef.current?.prev()}
-        >
-          <ChevronLeft className="size-4" />
-          Previous
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => renditionRef.current?.next()}
-        >
-          Next
-          <ChevronRight className="size-4" />
-        </Button>
       </div>
     </div>
   );
@@ -572,7 +548,7 @@ function SharedReadingSection({
   shareChats: boolean;
 }) {
   return (
-    <section className="min-h-0 flex-1 border-t pt-6">
+    <section className="min-h-0 flex-1 self-center border-t pt-6 w-[calc(100vw-2rem)] sm:w-[calc(100vw-3rem)] lg:w-[calc(100vw-4rem)]">
       <div className="grid min-h-0 gap-5 lg:h-full lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
         <SharedEpubPreview book={book} fileUrl={fileUrl} />
         <SharedChatPanel shareId={shareId} enabled={shareChats} />
