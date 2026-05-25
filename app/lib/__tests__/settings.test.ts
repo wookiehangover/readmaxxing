@@ -34,6 +34,7 @@ const defaultSettings: Settings = {
   pdfLayout: "fit-height",
   colorTheme: "default",
   layoutMode: "focused",
+  zenMode: false,
   focusedSplitRatio: FOCUSED_SPLIT_RATIO_DEFAULT,
 };
 
