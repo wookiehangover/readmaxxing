@@ -32,7 +32,6 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import { AnnotationService } from "~/lib/stores/annotations-store";
-import { ChatService } from "~/lib/stores/chat-store";
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
 import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 import {
@@ -669,30 +668,9 @@ function WorkspaceBookReaderInner({
   const handleAskQuestion = useCallback(async () => {
     if (!selectionPopover) return;
 
-    const text = selectionPopover.text;
-
     try {
       const highlight = await saveHighlightFromPopover();
       if (!highlight) return;
-
-      const session = await AppRuntime.runPromise(
-        Effect.gen(function* () {
-          const svc = yield* ChatService;
-          const newSession = yield* svc.createSession(book.id);
-          yield* svc.setActiveSessionId(book.id, newSession.id);
-          return newSession;
-        }),
-      );
-      const prompt = `I highlighted the following passage and want to discuss it:\n\n> ${text}\n\nWhat does this mean?`;
-      const pendingChatPromptMap = (
-        ws as unknown as {
-          pendingChatPromptMap?: {
-            current: Map<string, { prompt: string; sessionId: string }>;
-          };
-        }
-      ).pendingChatPromptMap;
-      pendingChatPromptMap?.current.set(book.id, { prompt, sessionId: session.id });
-      ws.pendingHighlightPillMap.current.set(book.id, text);
 
       const attrs = {
         highlightId: highlight.id,
@@ -717,6 +695,7 @@ function WorkspaceBookReaderInner({
         });
       }
 
+      ws.pendingHighlightPillMap.current.set(book.id, selectionPopover.text);
       ws.openChatRef.current?.(book);
     } catch (err) {
       console.error("Failed to ask a question about highlight:", err);
