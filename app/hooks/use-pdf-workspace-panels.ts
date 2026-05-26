@@ -1,20 +1,51 @@
 import { useEffect, useRef, useCallback } from "react";
 import { Effect } from "effect";
+import type { JSONContent } from "@tiptap/react";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
+import { AnnotationService } from "~/lib/stores/annotations-store";
 import type { DockviewPanelApi } from "dockview";
+
+type SavedHighlight = { id: string; cfiRange: string; text: string };
+type HighlightAttrs = { highlightId: string; cfiRange: string; text: string };
+
+function highlightQuestionNodes(attrs: HighlightAttrs): JSONContent[] {
+  return [
+    { type: "highlightReference", attrs },
+    {
+      type: "paragraph",
+      content: [{ type: "text", text: "Asked a question about this highlight" }],
+    },
+  ];
+}
+
+function appendHighlightQuestionToNotebook(bookId: string, attrs: HighlightAttrs) {
+  return Effect.gen(function* () {
+    const svc = yield* AnnotationService;
+    const notebook = yield* svc.getNotebook(bookId);
+    const existingContent: JSONContent[] = Array.isArray(notebook?.content?.content)
+      ? (notebook!.content!.content as JSONContent[])
+      : [];
+    yield* svc.saveNotebook({
+      bookId,
+      content: { type: "doc", content: [...existingContent, ...highlightQuestionNodes(attrs)] },
+      updatedAt: Date.now(),
+    });
+  });
+}
 
 interface UsePdfWorkspacePanelsOptions {
   book: BookMeta;
   panelApi?: DockviewPanelApi;
   currentPage: number;
   pdfDocRef?: React.RefObject<any>;
-  saveHighlightFromPopover: () => Promise<{ id: string; cfiRange: string; text: string } | null>;
+  saveHighlightFromPopover: () => Promise<SavedHighlight | null>;
   applyTempHighlight: (text: string) => void;
   removeHighlight: (cfiRange: string) => void;
+  dismissPopovers: () => void;
   handleOpenNotebookRef: React.MutableRefObject<() => void>;
 }
 
@@ -26,13 +57,16 @@ export function usePdfWorkspacePanels({
   saveHighlightFromPopover,
   applyTempHighlight,
   removeHighlight,
+  dismissPopovers,
   handleOpenNotebookRef,
 }: UsePdfWorkspacePanelsOptions) {
   const ws = useWorkspace();
   const {
     navigationMap,
     notebookCallbackMap,
+    notebookEditorCallbackMap,
     chatContextMap,
+    pendingHighlightPillMap,
     tempHighlightMap,
     highlightDeleteMap,
   } = ws;
@@ -108,6 +142,43 @@ export function usePdfWorkspacePanels({
       .catch((err) => console.error("Failed to append highlight to notebook:", err));
   }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
 
+  const handleAskQuestion = useCallback(async () => {
+    const highlight = await saveHighlightFromPopover();
+    if (!highlight) return;
+
+    const attrs = {
+      highlightId: highlight.id,
+      cfiRange: highlight.cfiRange,
+      text: highlight.text,
+    };
+    const editorCallbacks = notebookEditorCallbackMap.current.get(book.id);
+    if (editorCallbacks) {
+      editorCallbacks.appendContent(highlightQuestionNodes(attrs));
+    } else {
+      AppRuntime.runPromise(appendHighlightQuestionToNotebook(book.id, attrs))
+        .then(() => {
+          queueMicrotask(() => {
+            window.dispatchEvent(
+              new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
+            );
+          });
+        })
+        .catch((err) => console.error("Failed to append highlight question to notebook:", err));
+    }
+
+    pendingHighlightPillMap.current.set(book.id, highlight.text);
+    ws.openChatRef.current?.(book);
+    dismissPopovers();
+    window.getSelection()?.removeAllRanges();
+  }, [
+    book,
+    dismissPopovers,
+    notebookEditorCallbackMap,
+    pendingHighlightPillMap,
+    saveHighlightFromPopover,
+    ws.openChatRef,
+  ]);
+
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
@@ -182,6 +253,7 @@ export function usePdfWorkspacePanels({
 
   return {
     handleSaveHighlight,
+    handleAskQuestion,
     handleOpenNotebook,
     handleOpenChat,
     setGoToPage,
