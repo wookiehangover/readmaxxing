@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
+import type { JSONContent } from "@tiptap/react";
 import { Button } from "~/components/ui/button";
 import {
   ChevronLeft,
@@ -30,6 +31,9 @@ import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
+import { AnnotationService } from "~/lib/stores/annotations-store";
+import { ChatService } from "~/lib/stores/chat-store";
+import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
 import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 import {
   getBookPreferences,
@@ -53,6 +57,49 @@ interface WorkspaceBookReaderProps {
   panelApi?: DockviewPanelApi;
   /** Initial typography overrides from restored panel params */
   panelTypography?: PanelTypographyParams;
+}
+
+function createAskedQuestionParagraphNode(): JSONContent {
+  return {
+    type: "paragraph",
+    content: [{ type: "text", text: "💬 Asked a question about this highlight" }],
+  };
+}
+
+function appendHighlightQuestionToNotebook(bookId: string, attrs: HighlightReferenceAttrs) {
+  return Effect.gen(function* () {
+    yield* appendHighlightReferenceToNotebook(bookId, attrs);
+
+    const svc = yield* AnnotationService;
+    const notebook = yield* svc.getNotebook(bookId);
+    const existingContent: JSONContent[] = Array.isArray(notebook?.content.content)
+      ? (notebook.content.content as JSONContent[])
+      : [];
+    const updatedContent = [...existingContent];
+    let highlightIndex = -1;
+
+    for (let i = updatedContent.length - 1; i >= 0; i--) {
+      if (
+        updatedContent[i]?.type === "highlightReference" &&
+        updatedContent[i]?.attrs?.highlightId === attrs.highlightId
+      ) {
+        highlightIndex = i;
+        break;
+      }
+    }
+
+    updatedContent.splice(
+      highlightIndex >= 0 ? highlightIndex + 1 : updatedContent.length,
+      0,
+      createAskedQuestionParagraphNode(),
+    );
+
+    yield* svc.saveNotebook({
+      bookId,
+      content: { type: "doc", content: updatedContent },
+      updatedAt: Date.now(),
+    });
+  });
 }
 
 export function WorkspaceBookReader({
@@ -619,6 +666,69 @@ function WorkspaceBookReaderInner({
       .catch((err) => console.error("Failed to append highlight to notebook:", err));
   }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
 
+  const handleAskQuestion = useCallback(async () => {
+    if (!selectionPopover) return;
+
+    const text = selectionPopover.text;
+
+    try {
+      const highlight = await saveHighlightFromPopover();
+      if (!highlight) return;
+
+      const session = await AppRuntime.runPromise(
+        Effect.gen(function* () {
+          const svc = yield* ChatService;
+          const newSession = yield* svc.createSession(book.id);
+          yield* svc.setActiveSessionId(book.id, newSession.id);
+          return newSession;
+        }),
+      );
+      const prompt = `I highlighted the following passage and want to discuss it:\n\n> ${text}\n\nWhat does this mean?`;
+      const pendingChatPromptMap = (
+        ws as unknown as {
+          pendingChatPromptMap?: {
+            current: Map<string, { prompt: string; sessionId: string }>;
+          };
+        }
+      ).pendingChatPromptMap;
+      pendingChatPromptMap?.current.set(book.id, { prompt, sessionId: session.id });
+      ws.pendingHighlightPillMap.current.set(book.id, text);
+
+      const attrs = {
+        highlightId: highlight.id,
+        cfiRange: highlight.cfiRange,
+        text: highlight.text,
+      };
+      const editorCallbacks = ws.notebookEditorCallbackMap.current.get(book.id);
+      if (editorCallbacks) {
+        editorCallbacks.appendContent([
+          { type: "highlightReference", attrs },
+          createAskedQuestionParagraphNode(),
+          { type: "paragraph" },
+        ]);
+      } else {
+        await AppRuntime.runPromise(appendHighlightQuestionToNotebook(book.id, attrs));
+        queueMicrotask(() => {
+          window.dispatchEvent(
+            new CustomEvent("sync:entity-updated", {
+              detail: { entity: "notebook" },
+            }),
+          );
+        });
+      }
+
+      ws.openChatRef.current?.(book);
+    } catch (err) {
+      console.error("Failed to ask a question about highlight:", err);
+    } finally {
+      dismissPopovers();
+      const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
+      contents?.forEach((content: any) => {
+        content.document?.defaultView?.getSelection()?.removeAllRanges();
+      });
+    }
+  }, [selectionPopover, saveHighlightFromPopover, book, ws, dismissPopovers]);
+
   const handleCopyAsMarkdown = useCallback(async () => {
     if (!selectionPopover) return;
 
@@ -921,6 +1031,7 @@ function WorkspaceBookReaderInner({
             <HighlightPopover
               position={selectionPopover.position}
               onCopyAsMarkdown={handleCopyAsMarkdown}
+              onAskQuestion={handleAskQuestion}
               onSave={handleSaveHighlight}
               onDismiss={dismissPopovers}
             />,
