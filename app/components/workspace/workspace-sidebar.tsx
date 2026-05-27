@@ -123,6 +123,14 @@ export function WorkspaceSidebar({
     return ws.subscribeClusterChanges(() => setClusterVersion((v) => v + 1));
   }, [layoutMode, ws]);
 
+  const [, setPanelVersion] = useState(0);
+  useEffect(() => {
+    const api = ws.dockviewApi.current;
+    if (!api) return;
+    const disposable = api.onDidLayoutChange(() => setPanelVersion((v) => v + 1));
+    return () => disposable.dispose();
+  }, [ws.dockviewApi]);
+
   const totalBooks = openBooks.length + otherBooks.length;
   const showFilter = !collapsed && totalBooks > FILTER_THRESHOLD;
   const filteredOpenBooks = useMemo(
@@ -380,6 +388,12 @@ export function WorkspaceSidebar({
             <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
               {railOpenBooks.map((book) => {
                 const isActive = isCollapsedFocused && book.id === activeClusterId;
+                const hasBookmarks =
+                  ws.dockviewApi.current?.panels.some((p) => p.id === `bookmarks-${book.id}`) ??
+                  false;
+                const hasHistory =
+                  ws.dockviewApi.current?.panels.some((p) => p.id === `history-${book.id}`) ??
+                  false;
                 return (
                   <li key={book.id} className="group/book relative">
                     <Tooltip>
@@ -411,7 +425,12 @@ export function WorkspaceSidebar({
                         <button
                           type="button"
                           onClick={() => onOpenBookmarks(book)}
-                          className="flex size-5 items-center justify-center rounded-full bg-card text-muted-foreground shadow-sm ring-1 ring-border/50 hover:bg-accent hover:text-foreground"
+                          className={cn(
+                            "flex size-5 items-center justify-center rounded-full shadow-sm ring-1 ring-border/50",
+                            hasBookmarks
+                              ? "bg-accent text-foreground"
+                              : "bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+                          )}
                           title="Open bookmarks"
                         >
                           <Bookmark className="size-3" />
@@ -419,7 +438,12 @@ export function WorkspaceSidebar({
                         <button
                           type="button"
                           onClick={() => onOpenReadingHistory(book)}
-                          className="flex size-5 items-center justify-center rounded-full bg-card text-muted-foreground shadow-sm ring-1 ring-border/50 hover:bg-accent hover:text-foreground"
+                          className={cn(
+                            "flex size-5 items-center justify-center rounded-full shadow-sm ring-1 ring-border/50",
+                            hasHistory
+                              ? "bg-accent text-foreground"
+                              : "bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+                          )}
                           title="Open reading history"
                         >
                           <ChartLine className="size-3" />
