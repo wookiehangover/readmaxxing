@@ -7,14 +7,17 @@ import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-tex
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import type { DockviewPanelApi } from "dockview";
 
+type SavedHighlight = { id: string; cfiRange: string; text: string };
+
 interface UsePdfWorkspacePanelsOptions {
   book: BookMeta;
   panelApi?: DockviewPanelApi;
   currentPage: number;
   pdfDocRef?: React.RefObject<any>;
-  saveHighlightFromPopover: () => Promise<{ id: string; cfiRange: string; text: string } | null>;
+  saveHighlightFromPopover: () => Promise<SavedHighlight | null>;
   applyTempHighlight: (text: string) => void;
   removeHighlight: (cfiRange: string) => void;
+  dismissPopovers: () => void;
   handleOpenNotebookRef: React.MutableRefObject<() => void>;
 }
 
@@ -26,13 +29,16 @@ export function usePdfWorkspacePanels({
   saveHighlightFromPopover,
   applyTempHighlight,
   removeHighlight,
+  dismissPopovers,
   handleOpenNotebookRef,
 }: UsePdfWorkspacePanelsOptions) {
   const ws = useWorkspace();
   const {
     navigationMap,
     notebookCallbackMap,
+    notebookEditorCallbackMap,
     chatContextMap,
+    pendingHighlightPillMap,
     tempHighlightMap,
     highlightDeleteMap,
   } = ws;
@@ -108,6 +114,54 @@ export function usePdfWorkspacePanels({
       .catch((err) => console.error("Failed to append highlight to notebook:", err));
   }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
 
+  const handleAskQuestion = useCallback(async () => {
+    try {
+      const highlight = await saveHighlightFromPopover();
+      if (!highlight) return;
+
+      const attrs = {
+        highlightId: highlight.id,
+        cfiRange: highlight.cfiRange,
+        text: highlight.text,
+      };
+      const editorCallbacks = notebookEditorCallbackMap.current.get(book.id);
+      if (editorCallbacks) {
+        editorCallbacks.appendContent([
+          { type: "highlightReference", attrs },
+          { type: "paragraph" },
+        ]);
+      } else {
+        AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
+          .then(() => {
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
+              );
+            });
+          })
+          .catch((err) => console.error("Failed to append highlight to notebook:", err));
+      }
+
+      pendingHighlightPillMap.current.set(book.id, {
+        text: highlight.text,
+        pageLabel: `p${currentPage}`,
+      });
+      ws.openChatRef.current?.(book);
+      dismissPopovers();
+      window.getSelection()?.removeAllRanges();
+    } catch (err) {
+      console.error("Failed to handle ask question:", err);
+    }
+  }, [
+    book,
+    currentPage,
+    dismissPopovers,
+    notebookEditorCallbackMap,
+    pendingHighlightPillMap,
+    saveHighlightFromPopover,
+    ws.openChatRef,
+  ]);
+
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
@@ -182,6 +236,7 @@ export function usePdfWorkspacePanels({
 
   return {
     handleSaveHighlight,
+    handleAskQuestion,
     handleOpenNotebook,
     handleOpenChat,
     setGoToPage,

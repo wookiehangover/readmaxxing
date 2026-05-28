@@ -260,17 +260,23 @@ function WorkspacePdfReaderInner({
     [panelApi],
   );
 
-  const { handleSaveHighlight, handleOpenNotebook, handleOpenChat, setGoToPage } =
-    usePdfWorkspacePanels({
-      book,
-      panelApi,
-      currentPage,
-      pdfDocRef,
-      saveHighlightFromPopover,
-      applyTempHighlight,
-      removeHighlight,
-      handleOpenNotebookRef,
-    });
+  const {
+    handleSaveHighlight,
+    handleAskQuestion,
+    handleOpenNotebook,
+    handleOpenChat,
+    setGoToPage,
+  } = usePdfWorkspacePanels({
+    book,
+    panelApi,
+    currentPage,
+    pdfDocRef,
+    saveHighlightFromPopover,
+    applyTempHighlight,
+    removeHighlight,
+    dismissPopovers,
+    handleOpenNotebookRef,
+  });
 
   const handleCopyAsMarkdown = useCallback(async () => {
     if (!selectionPopover) return;
@@ -513,6 +519,7 @@ function WorkspacePdfReaderInner({
           <HighlightPopover
             position={selectionPopover.position}
             onCopyAsMarkdown={handleCopyAsMarkdown}
+            onAskQuestion={handleAskQuestion}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
           />,

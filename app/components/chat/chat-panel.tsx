@@ -12,7 +12,10 @@ import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
 import { uploadChaptersOnce } from "~/lib/chat/upload-chapters";
 import { cn } from "~/lib/utils";
 import { useSyncListener } from "~/hooks/use-sync-listener";
-import { useWorkspace } from "~/lib/context/workspace-context";
+import {
+  useOptionalWorkspace,
+  type NotebookEditorCallbacks,
+} from "~/lib/context/workspace-context";
 import { useAuth } from "~/lib/context/auth-context";
 import {
   toUIMessages,
@@ -393,8 +396,39 @@ function ChatPanelInner({
   onSessionTitleChange: (title: string) => void;
   onRegisterSetMessages?: (fn: (msgs: UIMessage[]) => void) => void;
 }) {
-  const { chatContextMap, notebookEditorCallbackMap } = useWorkspace();
+  const workspace = useOptionalWorkspace();
+  const fallbackChatContextMap = useRef(
+    new Map<
+      string,
+      { currentChapterIndex: number; currentSpineHref: string; visibleText: string }
+    >(),
+  );
+  const fallbackNotebookEditorCallbackMap = useRef(new Map<string, NotebookEditorCallbacks>());
+  const chatContextMap = workspace?.chatContextMap ?? fallbackChatContextMap;
+  const notebookEditorCallbackMap =
+    workspace?.notebookEditorCallbackMap ?? fallbackNotebookEditorCallbackMap;
+  const pendingHighlightPillMap = workspace?.pendingHighlightPillMap;
   const [showSessionList, setShowSessionList] = useState(false);
+  const [highlightPill, setHighlightPill] = useState<{
+    text: string;
+    pageLabel: string;
+  } | null>(null);
+
+  const consumePendingHighlightPill = useCallback(() => {
+    if (!pendingHighlightPillMap) return;
+    const pendingPill = pendingHighlightPillMap.current.get(bookId);
+    if (!pendingPill) return;
+    setHighlightPill(pendingPill);
+    pendingHighlightPillMap.current.delete(bookId);
+    // Focus the textarea so the pill is immediately visible and the user can type
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+    });
+  }, [bookId, pendingHighlightPillMap, textareaRef]);
+
+  useEffect(() => {
+    consumePendingHighlightPill();
+  }, [consumePendingHighlightPill]);
 
   // Refs that stay up-to-date with the reader's current chapter index and visible text
   const currentChapterRef = useRef<number | undefined>(undefined);
@@ -569,7 +603,7 @@ function ChatPanelInner({
   }, [onNewSession]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" onFocusCapture={consumePendingHighlightPill}>
       {/* Header */}
       <div className="flex items-center gap-1 border-b px-2 py-1.5">
         <SessionMenuButton
@@ -670,6 +704,8 @@ function ChatPanelInner({
             isLoading={isLoading}
             onSubmit={handleSubmit}
             onStop={stop}
+            highlightPill={highlightPill ?? undefined}
+            onClearHighlightPill={() => setHighlightPill(null)}
           />
         </>
       )}

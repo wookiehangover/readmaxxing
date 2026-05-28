@@ -425,7 +425,7 @@ function WorkspaceBookReaderInner({
   useEffect(() => {
     if (!panelApi) return;
 
-    const handleBecameVisible = () => {
+    const applyTheme = () => {
       const rendition = renditionRef.current;
       if (!rendition) return;
 
@@ -437,7 +437,9 @@ function WorkspaceBookReaderInner({
       injectThemeColors(rendition, effectiveTheme);
 
       rendition.themes.select(effectiveTheme);
+    };
 
+    const resizeAndRestore = () => {
       // Save the current reading position before resize — epubjs resize()
       // recalculates pagination and can jump to a different page.
       const cfiBeforeResize = latestCfiRef.current;
@@ -445,6 +447,8 @@ function WorkspaceBookReaderInner({
       // Resize in case container dimensions changed, then restore position
       requestAnimationFrame(() => {
         if (!renditionRef.current) return;
+        // If a navigation occurred since capture, the new position is authoritative.
+        if (latestCfiRef.current !== cfiBeforeResize) return;
         try {
           (renditionRef.current as any).resize();
         } catch {
@@ -459,14 +463,18 @@ function WorkspaceBookReaderInner({
 
     const visDisposable = panelApi.onDidVisibilityChange((e) => {
       if (e.isVisible) {
-        handleBecameVisible();
+        applyTheme();
+        resizeAndRestore();
       } else {
         flushPositionSave();
       }
     });
 
+    // Active change only needs theme reapplication — no resize or position
+    // restore. Clicking inside the epub to turn a page also triggers an active
+    // change; resizing here would revert the navigation.
     const activeDisposable = panelApi.onDidActiveChange((e) => {
-      if (e.isActive) handleBecameVisible();
+      if (e.isActive) applyTheme();
     });
 
     // Resize the epub rendition when the panel dimensions change (e.g. a new
@@ -483,6 +491,8 @@ function WorkspaceBookReaderInner({
       resizeRafId = requestAnimationFrame(() => {
         resizeRafId = null;
         if (!renditionRef.current) return;
+        // If a navigation occurred since capture, the new position is authoritative.
+        if (latestCfiRef.current !== cfiBeforeResize) return;
         try {
           (renditionRef.current as any).resize();
         } catch {
@@ -618,6 +628,54 @@ function WorkspaceBookReaderInner({
       })
       .catch((err) => console.error("Failed to append highlight to notebook:", err));
   }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
+
+  const handleAskQuestion = useCallback(async () => {
+    if (!selectionPopover) return;
+
+    try {
+      const highlight = await saveHighlightFromPopover();
+      if (!highlight) return;
+
+      const attrs = {
+        highlightId: highlight.id,
+        cfiRange: highlight.cfiRange,
+        text: highlight.text,
+      };
+      const editorCallbacks = ws.notebookEditorCallbackMap.current.get(book.id);
+      if (editorCallbacks) {
+        editorCallbacks.appendContent([
+          { type: "highlightReference", attrs },
+          { type: "paragraph" },
+        ]);
+      } else {
+        AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
+          .then(() => {
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new CustomEvent("sync:entity-updated", {
+                  detail: { entity: "notebook" },
+                }),
+              );
+            });
+          })
+          .catch((err) => console.error("Failed to append highlight to notebook:", err));
+      }
+
+      ws.pendingHighlightPillMap.current.set(book.id, {
+        text: selectionPopover.text,
+        pageLabel: currentPage ? `p${currentPage}` : "",
+      });
+      ws.openChatRef.current?.(book);
+    } catch (err) {
+      console.error("Failed to ask a question about highlight:", err);
+    } finally {
+      dismissPopovers();
+      const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
+      contents?.forEach((content: any) => {
+        content.document?.defaultView?.getSelection()?.removeAllRanges();
+      });
+    }
+  }, [selectionPopover, saveHighlightFromPopover, book, ws, dismissPopovers, currentPage]);
 
   const handleCopyAsMarkdown = useCallback(async () => {
     if (!selectionPopover) return;
@@ -921,6 +979,7 @@ function WorkspaceBookReaderInner({
             <HighlightPopover
               position={selectionPopover.position}
               onCopyAsMarkdown={handleCopyAsMarkdown}
+              onAskQuestion={handleAskQuestion}
               onSave={handleSaveHighlight}
               onDismiss={dismissPopovers}
             />,
