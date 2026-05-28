@@ -127,8 +127,13 @@ export function WorkspaceSidebar({
   useEffect(() => {
     const api = ws.dockviewApi.current;
     if (!api) return;
-    const disposable = api.onDidLayoutChange(() => setPanelVersion((v) => v + 1));
-    return () => disposable.dispose();
+    const bump = () => setPanelVersion((v) => v + 1);
+    const d1 = api.onDidAddPanel(bump);
+    const d2 = api.onDidRemovePanel(bump);
+    return () => {
+      d1.dispose();
+      d2.dispose();
+    };
   }, [ws.dockviewApi, clusterVersion]);
 
   const totalBooks = openBooks.length + otherBooks.length;
@@ -285,97 +290,128 @@ export function WorkspaceSidebar({
       )}
       <ScrollArea className="min-h-0 flex-1 scroll-fog-container" hideScrollbar>
         {isCollapsedFocused ? (
-          activeClusterBook && (
-            <TooltipProvider delay={400}>
-              <div className="flex flex-col items-center gap-1 p-1">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        onClick={() => handleOpenSearch(activeClusterBook)}
-                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                      />
-                    }
-                  >
-                    <Search className="size-4" />
-                    <span className="sr-only">Open search</span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={8}>
-                    Search
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        onClick={() => onOpenNotebook(activeClusterBook)}
-                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                      />
-                    }
-                  >
-                    <Notebook className="size-4" />
-                    <span className="sr-only">Open notebook</span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={8}>
-                    Notebook
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        onClick={() => onOpenChat(activeClusterBook)}
-                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                      />
-                    }
-                  >
-                    <MessageSquare className="size-4" />
-                    <span className="sr-only">Open chat</span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={8}>
-                    Chat
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        onClick={() => onOpenBookmarks(activeClusterBook)}
-                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                      />
-                    }
-                  >
-                    <Bookmark className="size-4" />
-                    <span className="sr-only">Open bookmarks</span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={8}>
-                    Bookmarks
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        onClick={() => onOpenReadingHistory(activeClusterBook)}
-                        className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                      />
-                    }
-                  >
-                    <ChartLine className="size-4" />
-                    <span className="sr-only">Open reading history</span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={8}>
-                    History
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            </TooltipProvider>
-          )
+          activeClusterBook &&
+          (() => {
+            const activeBookId = activeClusterBook.id;
+            const api = ws.dockviewApi.current;
+            const hasNotebook =
+              api?.panels.some((p) => p.id === `notebook-${activeBookId}`) ?? false;
+            const hasChat = api?.panels.some((p) => p.id === `chat-${activeBookId}`) ?? false;
+            const hasBookmarks =
+              api?.panels.some((p) => p.id === `bookmarks-${activeBookId}`) ?? false;
+            const hasHistory = api?.panels.some((p) => p.id === `history-${activeBookId}`) ?? false;
+            return (
+              <TooltipProvider delay={400}>
+                <div className="flex flex-col items-center gap-1 p-1">
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSearch(activeClusterBook)}
+                          className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                        />
+                      }
+                    >
+                      <Search className="size-4" />
+                      <span className="sr-only">Open search</span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      Search
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => onOpenNotebook(activeClusterBook)}
+                          className={cn(
+                            "flex size-10 items-center justify-center rounded-md",
+                            hasNotebook
+                              ? "bg-accent text-foreground"
+                              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                          )}
+                        />
+                      }
+                    >
+                      <Notebook className="size-4" />
+                      <span className="sr-only">Open notebook</span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      Notebook
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => onOpenChat(activeClusterBook)}
+                          className={cn(
+                            "flex size-10 items-center justify-center rounded-md",
+                            hasChat
+                              ? "bg-accent text-foreground"
+                              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                          )}
+                        />
+                      }
+                    >
+                      <MessageSquare className="size-4" />
+                      <span className="sr-only">Open chat</span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      Chat
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => onOpenBookmarks(activeClusterBook)}
+                          className={cn(
+                            "flex size-10 items-center justify-center rounded-md",
+                            hasBookmarks
+                              ? "bg-accent text-foreground"
+                              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                          )}
+                        />
+                      }
+                    >
+                      <Bookmark className="size-4" />
+                      <span className="sr-only">Open bookmarks</span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      Bookmarks
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => onOpenReadingHistory(activeClusterBook)}
+                          className={cn(
+                            "flex size-10 items-center justify-center rounded-md",
+                            hasHistory
+                              ? "bg-accent text-foreground"
+                              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                          )}
+                        />
+                      }
+                    >
+                      <ChartLine className="size-4" />
+                      <span className="sr-only">Open reading history</span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={8}>
+                      History
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </TooltipProvider>
+            );
+          })()
         ) : openBooks.length === 0 && otherBooks.length === 0 ? (
           !collapsed && (
             <div className="p-4 text-xs text-muted-foreground space-y-4">
