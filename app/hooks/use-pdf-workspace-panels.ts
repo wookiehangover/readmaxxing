@@ -115,36 +115,43 @@ export function usePdfWorkspacePanels({
   }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
 
   const handleAskQuestion = useCallback(async () => {
-    const highlight = await saveHighlightFromPopover();
-    if (!highlight) return;
+    try {
+      const highlight = await saveHighlightFromPopover();
+      if (!highlight) return;
 
-    const attrs = {
-      highlightId: highlight.id,
-      cfiRange: highlight.cfiRange,
-      text: highlight.text,
-    };
-    const editorCallbacks = notebookEditorCallbackMap.current.get(book.id);
-    if (editorCallbacks) {
-      editorCallbacks.appendContent([{ type: "highlightReference", attrs }, { type: "paragraph" }]);
-    } else {
-      AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
-        .then(() => {
-          queueMicrotask(() => {
-            window.dispatchEvent(
-              new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-            );
-          });
-        })
-        .catch((err) => console.error("Failed to append highlight to notebook:", err));
+      const attrs = {
+        highlightId: highlight.id,
+        cfiRange: highlight.cfiRange,
+        text: highlight.text,
+      };
+      const editorCallbacks = notebookEditorCallbackMap.current.get(book.id);
+      if (editorCallbacks) {
+        editorCallbacks.appendContent([
+          { type: "highlightReference", attrs },
+          { type: "paragraph" },
+        ]);
+      } else {
+        AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
+          .then(() => {
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
+              );
+            });
+          })
+          .catch((err) => console.error("Failed to append highlight to notebook:", err));
+      }
+
+      pendingHighlightPillMap.current.set(book.id, {
+        text: highlight.text,
+        pageLabel: `p${currentPage}`,
+      });
+      ws.openChatRef.current?.(book);
+      dismissPopovers();
+      window.getSelection()?.removeAllRanges();
+    } catch (err) {
+      console.error("Failed to handle ask question:", err);
     }
-
-    pendingHighlightPillMap.current.set(book.id, {
-      text: highlight.text,
-      pageLabel: `p${currentPage}`,
-    });
-    ws.openChatRef.current?.(book);
-    dismissPopovers();
-    window.getSelection()?.removeAllRanges();
   }, [
     book,
     currentPage,

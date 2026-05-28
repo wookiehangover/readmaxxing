@@ -117,7 +117,7 @@ export function WorkspaceSidebar({
   // Bump on cluster add/remove/activate so the collapsed focused-mode rail
   // re-derives its entries from `getClusterEntries()`. Subscribed only in
   // focused mode to avoid unnecessary work in freeform.
-  const [, setClusterVersion] = useState(0);
+  const [clusterVersion, setClusterVersion] = useState(0);
   useEffect(() => {
     if (layoutMode !== "focused") return;
     return ws.subscribeClusterChanges(() => setClusterVersion((v) => v + 1));
@@ -129,7 +129,7 @@ export function WorkspaceSidebar({
     if (!api) return;
     const disposable = api.onDidLayoutChange(() => setPanelVersion((v) => v + 1));
     return () => disposable.dispose();
-  }, [ws.dockviewApi]);
+  }, [ws.dockviewApi, clusterVersion]);
 
   const totalBooks = openBooks.length + otherBooks.length;
   const showFilter = !collapsed && totalBooks > FILTER_THRESHOLD;

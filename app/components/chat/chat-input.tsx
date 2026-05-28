@@ -46,7 +46,11 @@ export function ChatInput({
     (e: React.FormEvent) => {
       if (highlightText) {
         const userMessage = inputRef.current.trim() || "What does this mean?";
-        inputRef.current = `> ${highlightText}\n\n${userMessage}`;
+        const quotedText = highlightText
+          .split("\n")
+          .map((line) => `> ${line}`)
+          .join("\n");
+        inputRef.current = `${quotedText}\n\n${userMessage}`;
       }
 
       onSubmit(e);

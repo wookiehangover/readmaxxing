@@ -425,7 +425,7 @@ function WorkspaceBookReaderInner({
   useEffect(() => {
     if (!panelApi) return;
 
-    const handleBecameVisible = () => {
+    const applyTheme = () => {
       const rendition = renditionRef.current;
       if (!rendition) return;
 
@@ -437,7 +437,9 @@ function WorkspaceBookReaderInner({
       injectThemeColors(rendition, effectiveTheme);
 
       rendition.themes.select(effectiveTheme);
+    };
 
+    const resizeAndRestore = () => {
       // Save the current reading position before resize — epubjs resize()
       // recalculates pagination and can jump to a different page.
       const cfiBeforeResize = latestCfiRef.current;
@@ -445,6 +447,8 @@ function WorkspaceBookReaderInner({
       // Resize in case container dimensions changed, then restore position
       requestAnimationFrame(() => {
         if (!renditionRef.current) return;
+        // If a navigation occurred since capture, the new position is authoritative.
+        if (latestCfiRef.current !== cfiBeforeResize) return;
         try {
           (renditionRef.current as any).resize();
         } catch {
@@ -459,14 +463,18 @@ function WorkspaceBookReaderInner({
 
     const visDisposable = panelApi.onDidVisibilityChange((e) => {
       if (e.isVisible) {
-        handleBecameVisible();
+        applyTheme();
+        resizeAndRestore();
       } else {
         flushPositionSave();
       }
     });
 
+    // Active change only needs theme reapplication — no resize or position
+    // restore. Clicking inside the epub to turn a page also triggers an active
+    // change; resizing here would revert the navigation.
     const activeDisposable = panelApi.onDidActiveChange((e) => {
-      if (e.isActive) handleBecameVisible();
+      if (e.isActive) applyTheme();
     });
 
     // Resize the epub rendition when the panel dimensions change (e.g. a new
@@ -483,6 +491,8 @@ function WorkspaceBookReaderInner({
       resizeRafId = requestAnimationFrame(() => {
         resizeRafId = null;
         if (!renditionRef.current) return;
+        // If a navigation occurred since capture, the new position is authoritative.
+        if (latestCfiRef.current !== cfiBeforeResize) return;
         try {
           (renditionRef.current as any).resize();
         } catch {
