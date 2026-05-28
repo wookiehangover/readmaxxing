@@ -30,7 +30,7 @@ export function ChatInput({
           words.length > HIGHLIGHT_PILL_PREVIEW_WORDS
             ? `${words.slice(0, HIGHLIGHT_PILL_PREVIEW_WORDS).join(" ")}…`
             : highlightText;
-        return highlightPill.pageLabel ? `${highlightPill.pageLabel}: ${truncated}` : truncated;
+        return highlightPill?.pageLabel ? `${highlightPill.pageLabel}: ${truncated}` : truncated;
       })()
     : null;
 
