@@ -109,6 +109,37 @@ export function useHighlights({
 
       setSelectionPopover({ position: { x, y }, cfiRange, text });
     });
+
+    // Dismiss popover when user clicks inside the epub iframe without making a selection.
+    // We need to attach to both already-loaded and future content documents because
+    // this function is called after the initial content has loaded.
+    const attachDismissListener = (doc: Document) => {
+      doc.addEventListener("mousedown", () => {
+        setTimeout(() => {
+          const sel = doc.defaultView?.getSelection();
+          if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+            setSelectionPopover(null);
+          }
+        }, 50);
+      });
+    };
+
+    // Attach to already-loaded iframe documents
+    try {
+      const contents = (rendition as any).getContents?.() as any[] | undefined;
+      if (contents) {
+        for (const c of contents) {
+          if (c.document) attachDismissListener(c.document);
+        }
+      }
+    } catch {
+      // ignore if getContents isn't available
+    }
+
+    // Attach to future content (page turns load new iframe documents)
+    rendition.hooks.content.register((contents: any) => {
+      if (contents.document) attachDismissListener(contents.document);
+    });
   }, []);
 
   /** Create and persist a new highlight, apply it to the rendition. Returns the created highlight. */

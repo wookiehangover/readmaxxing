@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
-import type { JSONContent } from "@tiptap/react";
 import { Button } from "~/components/ui/button";
 import {
   ChevronLeft,
@@ -31,8 +30,6 @@ import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
-import { AnnotationService } from "~/lib/stores/annotations-store";
-import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
 import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 import {
   getBookPreferences,
@@ -56,49 +53,6 @@ interface WorkspaceBookReaderProps {
   panelApi?: DockviewPanelApi;
   /** Initial typography overrides from restored panel params */
   panelTypography?: PanelTypographyParams;
-}
-
-function createAskedQuestionParagraphNode(): JSONContent {
-  return {
-    type: "paragraph",
-    content: [{ type: "text", text: "💬 Asked a question about this highlight" }],
-  };
-}
-
-function appendHighlightQuestionToNotebook(bookId: string, attrs: HighlightReferenceAttrs) {
-  return Effect.gen(function* () {
-    yield* appendHighlightReferenceToNotebook(bookId, attrs);
-
-    const svc = yield* AnnotationService;
-    const notebook = yield* svc.getNotebook(bookId);
-    const existingContent: JSONContent[] = Array.isArray(notebook?.content.content)
-      ? (notebook.content.content as JSONContent[])
-      : [];
-    const updatedContent = [...existingContent];
-    let highlightIndex = -1;
-
-    for (let i = updatedContent.length - 1; i >= 0; i--) {
-      if (
-        updatedContent[i]?.type === "highlightReference" &&
-        updatedContent[i]?.attrs?.highlightId === attrs.highlightId
-      ) {
-        highlightIndex = i;
-        break;
-      }
-    }
-
-    updatedContent.splice(
-      highlightIndex >= 0 ? highlightIndex + 1 : updatedContent.length,
-      0,
-      createAskedQuestionParagraphNode(),
-    );
-
-    yield* svc.saveNotebook({
-      bookId,
-      content: { type: "doc", content: updatedContent },
-      updatedAt: Date.now(),
-    });
-  });
 }
 
 export function WorkspaceBookReader({
@@ -681,21 +635,26 @@ function WorkspaceBookReaderInner({
       if (editorCallbacks) {
         editorCallbacks.appendContent([
           { type: "highlightReference", attrs },
-          createAskedQuestionParagraphNode(),
           { type: "paragraph" },
         ]);
       } else {
-        await AppRuntime.runPromise(appendHighlightQuestionToNotebook(book.id, attrs));
-        queueMicrotask(() => {
-          window.dispatchEvent(
-            new CustomEvent("sync:entity-updated", {
-              detail: { entity: "notebook" },
-            }),
-          );
-        });
+        AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
+          .then(() => {
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new CustomEvent("sync:entity-updated", {
+                  detail: { entity: "notebook" },
+                }),
+              );
+            });
+          })
+          .catch((err) => console.error("Failed to append highlight to notebook:", err));
       }
 
-      ws.pendingHighlightPillMap.current.set(book.id, selectionPopover.text);
+      ws.pendingHighlightPillMap.current.set(book.id, {
+        text: selectionPopover.text,
+        pageLabel: currentPage ? `p${currentPage}` : "",
+      });
       ws.openChatRef.current?.(book);
     } catch (err) {
       console.error("Failed to ask a question about highlight:", err);
@@ -706,7 +665,7 @@ function WorkspaceBookReaderInner({
         content.document?.defaultView?.getSelection()?.removeAllRanges();
       });
     }
-  }, [selectionPopover, saveHighlightFromPopover, book, ws, dismissPopovers]);
+  }, [selectionPopover, saveHighlightFromPopover, book, ws, dismissPopovers, currentPage]);
 
   const handleCopyAsMarkdown = useCallback(async () => {
     if (!selectionPopover) return;

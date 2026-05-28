@@ -409,7 +409,10 @@ function ChatPanelInner({
     workspace?.notebookEditorCallbackMap ?? fallbackNotebookEditorCallbackMap;
   const pendingHighlightPillMap = workspace?.pendingHighlightPillMap;
   const [showSessionList, setShowSessionList] = useState(false);
-  const [highlightPill, setHighlightPill] = useState<string | null>(null);
+  const [highlightPill, setHighlightPill] = useState<{
+    text: string;
+    pageLabel: string;
+  } | null>(null);
 
   const consumePendingHighlightPill = useCallback(() => {
     if (!pendingHighlightPillMap) return;
@@ -417,7 +420,11 @@ function ChatPanelInner({
     if (!pendingPill) return;
     setHighlightPill(pendingPill);
     pendingHighlightPillMap.current.delete(bookId);
-  }, [bookId, pendingHighlightPillMap]);
+    // Focus the textarea so the pill is immediately visible and the user can type
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+    });
+  }, [bookId, pendingHighlightPillMap, textareaRef]);
 
   useEffect(() => {
     consumePendingHighlightPill();

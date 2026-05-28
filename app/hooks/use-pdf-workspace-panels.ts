@@ -1,41 +1,13 @@
 import { useEffect, useRef, useCallback } from "react";
 import { Effect } from "effect";
-import type { JSONContent } from "@tiptap/react";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
-import { AnnotationService } from "~/lib/stores/annotations-store";
 import type { DockviewPanelApi } from "dockview";
 
 type SavedHighlight = { id: string; cfiRange: string; text: string };
-type HighlightAttrs = { highlightId: string; cfiRange: string; text: string };
-
-function highlightQuestionNodes(attrs: HighlightAttrs): JSONContent[] {
-  return [
-    { type: "highlightReference", attrs },
-    {
-      type: "paragraph",
-      content: [{ type: "text", text: "Asked a question about this highlight" }],
-    },
-  ];
-}
-
-function appendHighlightQuestionToNotebook(bookId: string, attrs: HighlightAttrs) {
-  return Effect.gen(function* () {
-    const svc = yield* AnnotationService;
-    const notebook = yield* svc.getNotebook(bookId);
-    const existingContent: JSONContent[] = Array.isArray(notebook?.content?.content)
-      ? (notebook!.content!.content as JSONContent[])
-      : [];
-    yield* svc.saveNotebook({
-      bookId,
-      content: { type: "doc", content: [...existingContent, ...highlightQuestionNodes(attrs)] },
-      updatedAt: Date.now(),
-    });
-  });
-}
 
 interface UsePdfWorkspacePanelsOptions {
   book: BookMeta;
@@ -153,9 +125,9 @@ export function usePdfWorkspacePanels({
     };
     const editorCallbacks = notebookEditorCallbackMap.current.get(book.id);
     if (editorCallbacks) {
-      editorCallbacks.appendContent(highlightQuestionNodes(attrs));
+      editorCallbacks.appendContent([{ type: "highlightReference", attrs }, { type: "paragraph" }]);
     } else {
-      AppRuntime.runPromise(appendHighlightQuestionToNotebook(book.id, attrs))
+      AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
         .then(() => {
           queueMicrotask(() => {
             window.dispatchEvent(
@@ -163,15 +135,19 @@ export function usePdfWorkspacePanels({
             );
           });
         })
-        .catch((err) => console.error("Failed to append highlight question to notebook:", err));
+        .catch((err) => console.error("Failed to append highlight to notebook:", err));
     }
 
-    pendingHighlightPillMap.current.set(book.id, highlight.text);
+    pendingHighlightPillMap.current.set(book.id, {
+      text: highlight.text,
+      pageLabel: `p${currentPage}`,
+    });
     ws.openChatRef.current?.(book);
     dismissPopovers();
     window.getSelection()?.removeAllRanges();
   }, [
     book,
+    currentPage,
     dismissPopovers,
     notebookEditorCallbackMap,
     pendingHighlightPillMap,

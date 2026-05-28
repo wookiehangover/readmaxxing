@@ -3,7 +3,7 @@ import { Button } from "~/components/ui/button";
 import { SendHorizonal, Loader2, X } from "lucide-react";
 import { cn } from "~/lib/utils";
 
-const HIGHLIGHT_PILL_PREVIEW_LENGTH = 80;
+const HIGHLIGHT_PILL_PREVIEW_WORDS = 5;
 
 export function ChatInput({
   textareaRef,
@@ -19,14 +19,19 @@ export function ChatInput({
   isLoading: boolean;
   onSubmit: (e: React.FormEvent) => void;
   onStop: () => void;
-  highlightPill?: string;
+  highlightPill?: { text: string; pageLabel: string };
   onClearHighlightPill?: () => void;
 }) {
-  const highlightText = highlightPill?.trim();
+  const highlightText = highlightPill?.text?.trim();
   const highlightPreview = highlightText
-    ? highlightText.length > HIGHLIGHT_PILL_PREVIEW_LENGTH
-      ? `${highlightText.slice(0, HIGHLIGHT_PILL_PREVIEW_LENGTH)}…`
-      : highlightText
+    ? (() => {
+        const words = highlightText.split(/\s+/);
+        const truncated =
+          words.length > HIGHLIGHT_PILL_PREVIEW_WORDS
+            ? `${words.slice(0, HIGHLIGHT_PILL_PREVIEW_WORDS).join(" ")}…`
+            : highlightText;
+        return highlightPill.pageLabel ? `${highlightPill.pageLabel}: ${truncated}` : truncated;
+      })()
     : null;
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -57,7 +62,7 @@ export function ChatInput({
     <form onSubmit={handleSubmit} className="px-4 py-3">
       {highlightPreview ? (
         <div className="mb-2 flex">
-          <div className="flex max-w-full items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+          <div className="flex max-w-[200px] items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
             <span className="truncate">{highlightPreview}</span>
             <Button
               type="button"
