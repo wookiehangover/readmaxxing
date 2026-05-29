@@ -22,6 +22,7 @@ import {
   uiMessagesToChatMessages,
   parseSuggestedPrompts,
   createChatTransport,
+  joinTextParts,
 } from "./chat-utils";
 import { ChatMessage } from "./chat-message";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
@@ -893,12 +894,13 @@ function ChatPanelInner({
                       {isLastAssistant && !isLoading && (
                         <SuggestedPrompts
                           prompts={parseSuggestedPrompts(
-                            message.parts
-                              ?.filter(
-                                (p): p is { type: "text"; text: string } => p.type === "text",
-                              )
-                              .map((p) => p.text)
-                              .join("") ?? "",
+                            joinTextParts(
+                              message.parts
+                                ?.filter(
+                                  (p): p is { type: "text"; text: string } => p.type === "text",
+                                )
+                                .map((p) => p.text) ?? [],
+                            ),
                           )}
                           sendMessage={sendMessage}
                         />

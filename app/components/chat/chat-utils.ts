@@ -21,6 +21,34 @@ export function getToolInfo(part: any): {
   return null;
 }
 
+/**
+ * Join assistant text parts back into a single display string.
+ *
+ * Assistant responses can be split into multiple `text` parts at step/tool
+ * boundaries. A naive `.join("")` drops any whitespace that originally
+ * separated two parts (e.g. the space/newline between sentences that the model
+ * emitted right at a boundary), producing run-together text like
+ * "...end of chunk.Next sentence". This re-inserts a single space ONLY when the
+ * previous part ends with a non-whitespace character AND the next part begins
+ * with a non-whitespace character, so genuine sentence/paragraph boundaries keep
+ * a separator while mid-word splits and markdown (code fences, lists) are not
+ * corrupted by spurious spaces.
+ */
+export function joinTextParts(parts: string[]): string {
+  let out = "";
+  for (const part of parts) {
+    if (out.length > 0 && part.length > 0) {
+      const prevChar = out[out.length - 1];
+      const nextChar = part[0];
+      if (!/\s/.test(prevChar) && !/\s/.test(nextChar)) {
+        out += " ";
+      }
+    }
+    out += part;
+  }
+  return out;
+}
+
 /** Convert our persisted ChatMessage[] to UIMessage[] for useChat */
 export function toUIMessages(messages: ChatMessage[]): UIMessage[] {
   return messages.map((m) => ({
@@ -46,11 +74,11 @@ export function uiMessagesToChatMessages(messages: UIMessage[]): ChatMessage[] {
     .map((m) => ({
       id: m.id,
       role: m.role as "user" | "assistant",
-      content:
+      content: joinTextParts(
         m.parts
           ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-          .map((p) => p.text)
-          .join("") ?? "",
+          .map((p) => p.text) ?? [],
+      ),
       createdAt: Date.now(),
       parts: m.parts?.map((p: any) => {
         if (p.type === "text") return { type: "text", text: p.text };
