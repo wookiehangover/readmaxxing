@@ -376,3 +376,20 @@ body {
   color: transparent;
   border-radius: 1px;
 }
+
+/* suggested question indicator*/
+
+.suggested-questions .suggestion-item:hover {
+  anchor-name: --suggestion-item;
+  background: red;
+}
+
+.next-suggestion {
+  position: absolute;
+  position-anchor: --suggestion-item;
+  border: 1px solid red;
+}
+
+/*.suggested-questions:has(.suggestion-item:hover) .next-suggestion {
+    opacity: 0;
+}*/

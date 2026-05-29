@@ -1,3 +1,4 @@
+import { SendHorizonalIcon } from "lucide-react";
 import { Fragment } from "react";
 import { cn } from "~/lib/utils";
 
@@ -110,24 +111,22 @@ export function ChatEmptyState({
       : SUGGESTION_CATEGORIES;
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-2">
-      <p className="text-center text-sm text-muted-foreground">
+      <p className="max-w-sm w-full text-sm text-muted-foreground">
         Discuss <TitleList titles={bookTitles} />
       </p>
-      <div className="flex w-full max-w-sm flex-col gap-4">
+      <div className="flex w-full max-w-sm flex-col gap-4 relative suggested-questions">
         {categories.map((category) => (
           <div key={category.label} className="flex flex-col gap-1.5">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">
-              {category.label}
-            </span>
-            <div className="flex flex-wrap gap-1.5">
+            <span className="text-xs tracking-wide text-muted-foreground">{category.label}</span>
+            <div className="flex flex-wrap gap-1.5 text-sm text-foreground">
               {category.suggestions.map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
                   className={cn(
-                    "rounded-full border px-3 py-1 text-sm text-foreground",
-                    "transition-colors hover:bg-accent hover:text-accent-foreground",
-                    "cursor-pointer",
+                    "suggestion-item",
+                    // "transition-colors hover:bg-accent hover:text-accent-foreground",
+                    "cursor-pointer text-left",
                   )}
                   onClick={() => sendMessage({ text: suggestion })}
                 >
@@ -137,6 +136,7 @@ export function ChatEmptyState({
             </div>
           </div>
         ))}
+        <SendHorizonalIcon className="size-3 next-suggestion opacity-100" />
       </div>
     </div>
   );
