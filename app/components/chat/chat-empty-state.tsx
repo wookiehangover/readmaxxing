@@ -1,5 +1,5 @@
 import { SendHorizonalIcon } from "lucide-react";
-import { Fragment } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
 import { cn } from "~/lib/utils";
 
 export const SUGGESTION_CATEGORIES = [
@@ -109,12 +109,33 @@ export function ChatEmptyState({
     bookTitles.length >= 2
       ? [crossBookCategory(bookTitles), ...SUGGESTION_CATEGORIES]
       : SUGGESTION_CATEGORIES;
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const iconRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(false);
+
+  const moveIconTo = useCallback((target: HTMLElement) => {
+    const container = containerRef.current;
+    const icon = iconRef.current;
+    if (!container || !icon) return;
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const left = targetRect.left - containerRect.left;
+    const centerY = targetRect.top - containerRect.top + targetRect.height / 2;
+    icon.style.transform = `translate(calc(${left}px - 100% - 0.375rem), calc(${centerY}px - 50%))`;
+    setActive(true);
+  }, []);
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-2">
       <p className="max-w-sm w-full text-sm text-muted-foreground">
         Discuss <TitleList titles={bookTitles} />
       </p>
-      <div className="flex w-full max-w-sm flex-col gap-4 relative suggested-questions">
+      <div
+        ref={containerRef}
+        className="flex w-full max-w-sm flex-col gap-4 relative suggested-questions"
+        onPointerLeave={() => setActive(false)}
+      >
         {categories.map((category) => (
           <div key={category.label} className="flex flex-col gap-1.5">
             <span className="text-xs tracking-wide text-muted-foreground">{category.label}</span>
@@ -128,6 +149,8 @@ export function ChatEmptyState({
                     // "transition-colors hover:bg-accent hover:text-accent-foreground",
                     "cursor-pointer text-left",
                   )}
+                  onPointerEnter={(e) => moveIconTo(e.currentTarget)}
+                  onFocus={(e) => moveIconTo(e.currentTarget)}
                   onClick={() => sendMessage({ text: suggestion })}
                 >
                   {suggestion}
@@ -136,7 +159,13 @@ export function ChatEmptyState({
             </div>
           </div>
         ))}
-        <SendHorizonalIcon className="size-3 next-suggestion opacity-100" />
+        <div
+          ref={iconRef}
+          aria-hidden
+          className={cn("next-suggestion", { "next-suggestion-active": active })}
+        >
+          <SendHorizonalIcon className="size-4 text-muted-foreground" />
+        </div>
       </div>
     </div>
   );
