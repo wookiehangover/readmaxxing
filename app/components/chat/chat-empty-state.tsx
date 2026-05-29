@@ -1,3 +1,5 @@
+import { SendHorizonalIcon } from "lucide-react";
+import { Fragment, useCallback, useRef, useState } from "react";
 import { cn } from "~/lib/utils";
 
 export const SUGGESTION_CATEGORIES = [
@@ -55,34 +57,122 @@ export function SuggestedPrompts({
   );
 }
 
+/**
+ * Builds an italicized, naturally-joined list of book titles for the empty-state
+ * header (e.g. "*A*", "*A* and *B*", "*A*, *B*, and *C*").
+ */
+function TitleList({ titles }: { titles: string[] }) {
+  return (
+    <>
+      {titles.map((title, i) => {
+        let separator = "";
+        if (i > 0) {
+          if (titles.length === 2) separator = " and ";
+          else if (i === titles.length - 1) separator = ", and ";
+          else separator = ", ";
+        }
+        return (
+          <Fragment key={`${i}-${title}`}>
+            {separator}
+            <span className="italic">{title}</span>
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * Static cross-book starter prompts shown when 2+ books are selected. Titles are
+ * interpolated where natural; no LLM call.
+ */
+function crossBookCategory(titles: string[]) {
+  const [a, b] = titles;
+  return {
+    label: "Across These Books",
+    suggestions: [
+      "Compare how these books treat their central themes",
+      `What do ${a} and ${b} disagree on?`,
+      `What would the author of ${a} say about ${b}?`,
+    ],
+  };
+}
+
 export function ChatEmptyState({
-  bookTitle,
+  bookTitles,
   sendMessage,
 }: {
-  bookTitle: string;
+  bookTitles: string[];
   sendMessage: (message: { text: string }) => void;
 }) {
+  const categories =
+    bookTitles.length >= 2
+      ? [crossBookCategory(bookTitles), ...SUGGESTION_CATEGORIES]
+      : SUGGESTION_CATEGORIES;
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const iconRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(false);
+
+  const activeRef = useRef(false);
+
+  const moveIconTo = useCallback((target: HTMLElement) => {
+    const container = containerRef.current;
+    const icon = iconRef.current;
+    if (!container || !icon) return;
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const left = targetRect.left - containerRect.left;
+    const centerY = targetRect.top - containerRect.top + targetRect.height / 2;
+    const restingTransform = `translate(calc(${left}px - 100% - 0.375rem), calc(${centerY}px - 50%))`;
+
+    if (activeRef.current) {
+      // Already visible: glide from its current position to the new target.
+      icon.style.transform = restingTransform;
+    } else {
+      // First appearance: start shifted left + invisible, then slide in.
+      icon.style.transition = "none";
+      icon.style.transform = `translate(calc(${left}px - 100% - 0.875rem), calc(${centerY}px - 50%))`;
+      void icon.offsetWidth; // force reflow so the next change transitions
+      icon.style.transition = "";
+      icon.style.transform = restingTransform;
+    }
+
+    activeRef.current = true;
+    setActive(true);
+  }, []);
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-2">
-      <p className="text-center text-sm text-muted-foreground">
-        Ask about <span className="italic">{bookTitle}</span>
+      <p className="max-w-sm w-full text-sm text-muted-foreground">
+        Discuss <TitleList titles={bookTitles} />
       </p>
-      <div className="flex w-full max-w-sm flex-col gap-4">
-        {SUGGESTION_CATEGORIES.map((category) => (
-          <div key={category.label} className="flex flex-col gap-1.5">
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">
-              {category.label}
-            </span>
-            <div className="flex flex-wrap gap-1.5">
+      <div
+        ref={containerRef}
+        className="flex w-full max-w-sm flex-col gap-4 relative suggested-questions"
+        onPointerLeave={() => {
+          activeRef.current = false;
+          setActive(false);
+        }}
+      >
+        {categories.map((category) => (
+          <div
+            key={category.label}
+            className="flex flex-col gap-1.5 animate-in fade-in slide-in-from-bottom-2 duration-300"
+          >
+            <span className="text-xs tracking-wide text-muted-foreground">{category.label}</span>
+            <div className="flex flex-wrap gap-1.5 text-sm text-foreground">
               {category.suggestions.map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
                   className={cn(
-                    "rounded-full border px-3 py-1 text-sm text-foreground",
-                    "transition-colors hover:bg-accent hover:text-accent-foreground",
-                    "cursor-pointer",
+                    "suggestion-item",
+                    // "transition-colors hover:bg-accent hover:text-accent-foreground",
+                    "cursor-pointer text-left",
                   )}
+                  onPointerEnter={(e) => moveIconTo(e.currentTarget)}
+                  onFocus={(e) => moveIconTo(e.currentTarget)}
                   onClick={() => sendMessage({ text: suggestion })}
                 >
                   {suggestion}
@@ -91,6 +181,13 @@ export function ChatEmptyState({
             </div>
           </div>
         ))}
+        <div
+          ref={iconRef}
+          aria-hidden
+          className={cn("next-suggestion", { "next-suggestion-active": active })}
+        >
+          <SendHorizonalIcon className="size-4 text-muted-foreground" />
+        </div>
       </div>
     </div>
   );

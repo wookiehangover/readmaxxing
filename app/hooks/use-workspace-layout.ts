@@ -67,6 +67,10 @@ export function useWorkspaceLayout({
   const restoreTokenRef = useRef(0);
   const mountedRef = useRef(true);
   const flushFocusedStateRef = useRef<() => void>(() => {});
+  // Mirrors `layoutReady` for the debounced save callbacks. Until the initial
+  // restore resolves, `focusedOrderRef` is empty/partial; saving in that window
+  // would clobber the persisted multi-book focused state with an empty one.
+  const layoutReadyRef = useRef(false);
 
   const serializeFocusedState = useCallback((): FocusedWorkspaceState => {
     const order = focusedOrderRef.current.filter((bookId) =>
@@ -112,6 +116,9 @@ export function useWorkspaceLayout({
 
   const flushFocusedState = useCallback(() => {
     if (layoutModeRef.current !== "focused") return;
+    // Don't persist before the initial restore completes — the cluster refs are
+    // still empty/partial and would overwrite the saved multi-book state.
+    if (!layoutReadyRef.current) return;
     AppRuntime.runPromise(
       WorkspaceService.pipe(Effect.andThen((s) => s.saveFocusedState(serializeFocusedState()))),
     ).catch(console.error);
@@ -247,12 +254,14 @@ export function useWorkspaceLayout({
             enforceSingleFocusedCluster();
           }
           updateFocusedBookGroupChrome();
+          layoutReadyRef.current = true;
           setLayoutReady(true);
         })
         .catch((err) => {
           if (!mountedRef.current || restoreToken !== restoreTokenRef.current) return;
           console.error(err);
           updateFocusedBookGroupChrome();
+          layoutReadyRef.current = true;
           setLayoutReady(true);
         });
 

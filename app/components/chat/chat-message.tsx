@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import { ChevronRight } from "lucide-react";
 import { Streamdown } from "streamdown";
@@ -6,7 +6,7 @@ import type { Components } from "streamdown";
 import type { SEBook } from "~/lib/standard-ebooks";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { getToolInfo, stripSuggestedPrompts } from "./chat-utils";
+import { getToolInfo, joinTextParts, stripSuggestedPrompts } from "./chat-utils";
 import { SEBookCardsInChat } from "./se-book-cards";
 
 export function ChatMessage({
@@ -23,14 +23,29 @@ export function ChatMessage({
   isStreaming?: boolean;
 }) {
   const isUser = message.role === "user";
-  const { navigateInCluster, findTocForBook, applyTempHighlightForBook } = useWorkspace();
+  const { navigateInCluster, findTocForBook, applyTempHighlightForBook, booksRef } = useWorkspace();
+
+  // Resolve a book id to its title via the workspace books list. Falls back to
+  // the chat's own/primary book when the id is absent (back-compat with the
+  // old search_book output shape) or unknown.
+  const resolveBookTitle = useCallback(
+    (id: string | undefined): string | undefined => {
+      const targetId = id ?? bookId;
+      return booksRef.current.find((b) => b.id === targetId)?.title;
+    },
+    [booksRef, bookId],
+  );
+
+  // Whether more than one book is currently in the workspace. When only one
+  // book is in play the per-search book label can stay subtle/omitted.
+  const hasMultipleBooks = booksRef.current.length > 1;
 
   const textParts =
     message.parts?.filter((p): p is { type: "text"; text: string } => p.type === "text") ?? [];
   const toolParts = message.parts?.filter((p: any) => getToolInfo(p) !== null) ?? [];
   const reasoningParts = message.parts?.filter((p) => p.type === "reasoning") ?? [];
 
-  const rawText = textParts.map((p) => p.text).join("");
+  const rawText = joinTextParts(textParts.map((p) => p.text));
   const text = isUser ? rawText : stripSuggestedPrompts(rawText);
   const hasProcessSteps = toolParts.length > 0 || reasoningParts.length > 0;
 
@@ -182,6 +197,8 @@ export function ChatMessage({
             toolParts={toolParts}
             reasoningParts={reasoningParts}
             isStreaming={isStreaming}
+            resolveBookTitle={resolveBookTitle}
+            showBookLabel={hasMultipleBooks}
           />
         )}
         {seBooks.length > 0 && <SEBookCardsInChat books={seBooks} />}
@@ -203,38 +220,118 @@ export function ChatMessage({
   );
 }
 
+interface SearchHit {
+  chapterIndex?: number;
+  chapterTitle?: string;
+  excerpt?: string;
+}
+
+/** Normalize a search_book tool output into its results array, staying
+ *  back-compatible with the old shape where `output` was the array directly. */
+function getSearchResults(output: any): SearchHit[] | null {
+  if (Array.isArray(output)) return output;
+  if (Array.isArray(output?.results)) return output.results;
+  return null;
+}
+
+/** Map a non-search tool part to its display label for the summary line. */
+function nonSearchLabel(info: { toolName: string; output?: any }): string {
+  switch (info.toolName) {
+    case "read_chapter":
+      return "Read chapter";
+    case "read_notes":
+      return "Read notebook";
+    case "append_to_notes":
+      return "Added to notebook";
+    case "edit_notes":
+      return info.output?.executed === false ? "Failed to edit notebook" : "Edited notebook";
+    case "create_highlight":
+      return "Highlighted";
+    case "search_standard_ebooks":
+      return "Searched Standard Ebooks";
+    default:
+      return info.toolName;
+  }
+}
+
+/**
+ * Build a condensed, deduped summary string for the tool-steps `<summary>`.
+ * Collapses all `search_book` calls into one entry (distinct books + total
+ * count) and dedupes other repeated actions with a "(K×)" multiplier, in
+ * first-occurrence order.
+ */
+function buildStepsSummary(
+  toolParts: any[],
+  resolveBookTitle: (id: string | undefined) => string | undefined,
+  showBookLabel: boolean,
+): string {
+  // Tracks first-occurrence order of entries. Searches are folded into a
+  // single synthetic key so they appear once at their first position.
+  const SEARCH_KEY = "__search__";
+  const order: string[] = [];
+  const counts = new Map<string, number>();
+  // Distinct searched book titles, in first-seen order.
+  const searchBooks: string[] = [];
+  let searchTotal = 0;
+
+  for (const part of toolParts) {
+    const info = getToolInfo(part);
+    if (!info) continue;
+    if (info.toolName === "search_book") {
+      searchTotal += 1;
+      if (showBookLabel) {
+        const title = resolveBookTitle(info.output?.bookId as string | undefined);
+        if (title && !searchBooks.includes(title)) searchBooks.push(title);
+      }
+      if (!counts.has(SEARCH_KEY)) order.push(SEARCH_KEY);
+      counts.set(SEARCH_KEY, searchTotal);
+      continue;
+    }
+    const label = nonSearchLabel(info);
+    if (!counts.has(label)) order.push(label);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+
+  return order
+    .map((key) => {
+      if (key === SEARCH_KEY) {
+        // Choose the cleaner book phrasing: ≤2 distinct titles -> join with
+        // " & "; 3+ -> "N books". Fall back to "book(s)" when titles unknown.
+        let target: string;
+        if (searchBooks.length === 0) {
+          target = searchTotal > 1 ? "books" : "book";
+        } else if (searchBooks.length <= 2) {
+          target = searchBooks.join(" & ");
+        } else {
+          target = `${searchBooks.length} books`;
+        }
+        const times = searchTotal > 1 ? ` (${searchTotal}×)` : "";
+        return `Searched ${target}${times}`;
+      }
+      const n = counts.get(key) ?? 1;
+      return n > 1 ? `${key} (${n}×)` : key;
+    })
+    .join(", ");
+}
+
 function ToolStepsDetails({
   toolParts,
   reasoningParts,
   isStreaming,
+  resolveBookTitle,
+  showBookLabel,
 }: {
   toolParts: any[];
   reasoningParts: any[];
   isStreaming?: boolean;
+  resolveBookTitle: (id: string | undefined) => string | undefined;
+  showBookLabel: boolean;
 }) {
   return (
     <details className="group mb-5 -ml-4" open={isStreaming || undefined}>
       <summary className="cursor-pointer text-[11px] text-muted-foreground font-mono flex items-center gap-1 list-none [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
-        {toolParts
-          .map((part) => {
-            const info = getToolInfo(part);
-            if (!info) return null;
-            if (info.toolName === "search_book") return "Searched book";
-            if (info.toolName === "read_chapter") return "Read chapter";
-            if (info.toolName === "read_notes") return "Read notebook";
-            if (info.toolName === "append_to_notes") return "Added to notebook";
-            if (info.toolName === "edit_notes") {
-              return info.output?.executed === false
-                ? "Failed to edit notebook"
-                : "Edited notebook";
-            }
-            if (info.toolName === "create_highlight") return "Highlighted";
-            if (info.toolName === "search_standard_ebooks") return "Searched Standard Ebooks";
-            return info.toolName;
-          })
-          .filter(Boolean)
-          .join(", ")}
+        {buildStepsSummary(toolParts, resolveBookTitle, showBookLabel)}
         {toolParts.length > 0 && ` → ${toolParts.length} step${toolParts.length > 1 ? "s" : ""}`}
         {reasoningParts.length > 0 && toolParts.length === 0 && "Reasoning"}
       </summary>
@@ -247,15 +344,23 @@ function ToolStepsDetails({
           const info = getToolInfo(part);
           if (!info) return null;
           const isComplete = info.state === "output-available";
-          let label = info.toolName;
+
+          // search_book renders its own expandable disclosure so the user can
+          // reveal the matched passages and see which book was searched.
           if (info.toolName === "search_book") {
-            const query = typeof info.input?.query === "string" ? info.input.query : "";
-            if (isComplete && Array.isArray(info.output)) {
-              label = `Searched for "${query}" → ${info.output.length} result${info.output.length !== 1 ? "s" : ""}`;
-            } else {
-              label = `Searching for "${query}"...`;
-            }
-          } else if (info.toolName === "read_chapter") {
+            return (
+              <SearchBookStep
+                key={i}
+                info={info}
+                isComplete={isComplete}
+                resolveBookTitle={resolveBookTitle}
+                showBookLabel={showBookLabel}
+              />
+            );
+          }
+
+          let label = info.toolName;
+          if (info.toolName === "read_chapter") {
             const title = info.input?.chapterTitle
               ? String(info.input.chapterTitle)
               : `chapter ${info.input?.chapterIndex}`;
@@ -324,5 +429,80 @@ function ToolStepsDetails({
         ))}
       </div>
     </details>
+  );
+}
+
+/** A single `search_book` tool step. Shows which book was searched and, when
+ *  complete with results, is individually expandable to reveal the matched
+ *  passages (chapter title + excerpt). */
+function SearchBookStep({
+  info,
+  isComplete,
+  resolveBookTitle,
+  showBookLabel,
+}: {
+  info: { input?: Record<string, unknown>; output?: any };
+  isComplete: boolean;
+  resolveBookTitle: (id: string | undefined) => string | undefined;
+  showBookLabel: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const query = typeof info.input?.query === "string" ? info.input.query : "";
+  const results = getSearchResults(info.output);
+  const bookTitle = showBookLabel
+    ? resolveBookTitle(info.output?.bookId as string | undefined)
+    : undefined;
+  const target = bookTitle ? bookTitle : "book";
+
+  let label: string;
+  if (isComplete && results) {
+    label = `Searched ${target} for "${query}" → ${results.length} result${results.length !== 1 ? "s" : ""}`;
+  } else {
+    label = `Searching ${target} for "${query}"...`;
+  }
+
+  const canExpand = isComplete && results !== null && results.length > 0;
+
+  const dot = isComplete ? (
+    <span className="size-1 rounded-full shrink-0 bg-muted-foreground/50" />
+  ) : (
+    <span className="size-1.5 rounded-full bg-muted-foreground/70 animate-pulse shrink-0" />
+  );
+
+  if (!canExpand) {
+    return (
+      <div className="flex items-center gap-1.5 leading-tight">
+        {dot}
+        {label}
+      </div>
+    );
+  }
+
+  return (
+    <div className="leading-tight">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="flex items-center gap-1.5 w-full text-left cursor-pointer hover:text-foreground/80 transition-colors"
+      >
+        <ChevronRight
+          className={cn("size-3 shrink-0 transition-transform", { "rotate-90": expanded })}
+        />
+        {label}
+      </button>
+      {expanded && (
+        <ul className="mt-0.5 ml-4 space-y-1">
+          {results.map((hit, j) => (
+            <li key={j} className="border-l border-muted-foreground/20 pl-2">
+              <div className="text-muted-foreground/80">
+                {hit.chapterTitle ? hit.chapterTitle : `Chapter ${hit.chapterIndex ?? "?"}`}
+              </div>
+              {hit.excerpt && <div className="text-muted-foreground/60">{hit.excerpt}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

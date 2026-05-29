@@ -37,20 +37,40 @@ import {
   type ChatMessageRow,
 } from "~/lib/database/chat/chat-session";
 
-interface ChatRequestBody {
-  sessionId?: string;
-  bookId?: string;
-  message?: UIMessage;
+interface PerBookContext {
   visibleText?: string;
   currentChapterIndex?: number;
 }
 
-interface SystemPromptContext {
+interface ChatRequestBody {
+  sessionId?: string;
+  bookId?: string;
+  bookIds?: string[];
+  message?: UIMessage;
+  visibleText?: string;
+  currentChapterIndex?: number;
+  /** Optional per-book visible-text/current-chapter context, keyed by bookId. */
+  bookContexts?: Record<string, PerBookContext>;
+}
+
+/** A single selected book that loaded successfully and is included in the prompt. */
+interface LoadedBook {
+  bookId: string;
   title: string;
   author: string;
+  format: string | null;
   chapters: BookChapter[];
+  bookIndex: ReturnType<typeof getOrBuildBookIndex>;
+  isPrimary: boolean;
   currentChapterIndex?: number;
   visibleText?: string;
+}
+
+interface SystemPromptContext {
+  /** Books that loaded successfully, primary first. */
+  books: LoadedBook[];
+  /** Non-fatal warnings about books that were skipped (e.g. missing chapters). */
+  warnings: string[];
 }
 
 const CURRENT_CHAPTER_CONTEXT_CHARS = 8000;
@@ -81,28 +101,27 @@ function hasLogicalChapterShape(chapters: unknown): chapters is BookChapter[] {
   );
 }
 
-function buildSystemPrompt(bookContext: SystemPromptContext): string {
-  const toc = bookContext.chapters.map((c) => `  ${c.index}. ${c.title}`).join("\n");
-
-  let currentChapterSection = "";
-
-  const pageText = bookContext.visibleText?.trim();
+function buildCurrentContextSection(book: LoadedBook): string {
+  const pageText = book.visibleText?.trim();
   const chapter =
-    bookContext.currentChapterIndex != null
-      ? bookContext.chapters.find((c) => c.index === bookContext.currentChapterIndex)
+    book.currentChapterIndex != null
+      ? book.chapters.find((c) => c.index === book.currentChapterIndex)
       : undefined;
 
-  if (pageText || chapter) {
-    const chapterLabel = chapter
-      ? `Chapter ${chapter.index} — "${chapter.title}"`
-      : bookContext.currentChapterIndex != null
-        ? `Chapter ${bookContext.currentChapterIndex}`
-        : "an unknown position";
+  if (!pageText && !chapter) {
+    return "";
+  }
 
-    currentChapterSection = `
+  const chapterLabel = chapter
+    ? `Chapter ${chapter.index} — "${chapter.title}"`
+    : book.currentChapterIndex != null
+      ? `Chapter ${book.currentChapterIndex}`
+      : "an unknown position";
+
+  return `
 
 ## Current context
-The reader is currently on: ${chapterLabel}
+The reader is currently on: ${chapterLabel} (in "${book.title}")
 
 Logical chapter text:
 ---
@@ -113,9 +132,44 @@ Here is what they are currently looking at:
 ---
 ${pageText ? truncateContext(pageText, VISIBLE_PAGE_CONTEXT_CHARS) : "(unable to extract page text)"}
 ---`;
-  }
+}
 
-  return `You are a reading companion for "${bookContext.title}" by ${bookContext.author}.
+function buildSystemPrompt(bookContext: SystemPromptContext): string {
+  const { books, warnings } = bookContext;
+  const primary = books[0];
+  const multiBook = books.length > 1;
+
+  const bookSections = books
+    .map((book) => {
+      const toc = book.chapters.map((c) => `  ${c.index}. ${c.title}`).join("\n");
+      const label = book.isPrimary ? " (primary — the book the reader is currently reading)" : "";
+      return `### "${book.title}" by ${book.author}${label}
+bookId: ${book.bookId}
+Table of contents:
+${toc}`;
+    })
+    .join("\n\n");
+
+  const currentChapterSection = primary ? buildCurrentContextSection(primary) : "";
+
+  const titleList = books.map((b) => `"${b.title}" by ${b.author}`).join(", ");
+
+  const multiBookGuidance = multiBook
+    ? `
+
+## Working with multiple books
+The reader has selected multiple books for this conversation (listed under "Books in this conversation" below). When you call a book-scoped tool (search_book, read_notes, append_to_notes, create_highlight), you MUST pass the \`bookId\` of the book you intend to act on. If you omit \`bookId\`, the tool defaults to the primary book ("${primary?.title ?? ""}"). Be explicit about which book a passage, quote, or note belongs to so the reader is not confused.`
+    : "";
+
+  const warningsSection =
+    warnings.length > 0
+      ? `
+
+## Notes on availability
+${warnings.map((w) => `- ${w}`).join("\n")}`
+      : "";
+
+  return `You are a reading companion for ${titleList}.
 
 ## Your role
 You help the reader engage deeply with this book. You are curious, intellectually honest, and willing to challenge ideas. You are not a generic assistant — you are a close reader of this specific text and an intellectual discussion partner.
@@ -160,8 +214,8 @@ What counterarguments does the author address?
 Compare this to the introduction's thesis.
 -->
 
-## Book structure
-${toc}
+## Books in this conversation
+${bookSections}${multiBookGuidance}${warningsSection}
 ${currentChapterSection}`;
 }
 
@@ -209,20 +263,34 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { sessionId, bookId, message, visibleText, currentChapterIndex } = body;
+  const { sessionId, bookId, bookIds, message, visibleText, currentChapterIndex, bookContexts } =
+    body;
 
   if (!sessionId || typeof sessionId !== "string") {
     return Response.json({ error: "sessionId is required" }, { status: 400 });
-  }
-  if (!bookId || typeof bookId !== "string") {
-    return Response.json({ error: "bookId is required" }, { status: 400 });
   }
   if (!message || typeof message !== "object" || !message.id || message.role !== "user") {
     return Response.json({ error: "message with role='user' is required" }, { status: 400 });
   }
 
-  const book = await getBookByIdForUser(bookId, userId);
-  if (!book) {
+  // Resolve the selected set of books. When `bookIds` is present, `bookIds[0]`
+  // is the primary book; otherwise fall back to the legacy single `bookId`.
+  // The primary always comes first and the set is de-duplicated. We do NOT
+  // require top-level `bookId` when `bookIds` is non-empty.
+  const requestedBookIds =
+    Array.isArray(bookIds) && bookIds.length > 0
+      ? bookIds.filter((id): id is string => typeof id === "string")
+      : [];
+  const primaryId =
+    requestedBookIds[0] ?? (typeof bookId === "string" && bookId ? bookId : undefined);
+  if (!primaryId) {
+    return Response.json({ error: "bookId is required" }, { status: 400 });
+  }
+  // Fully de-duplicate while preserving order, with primaryId once at the front.
+  const selectedBookIds = [...new Set([primaryId, ...requestedBookIds])];
+
+  const primaryBook = await getBookByIdForUser(primaryId, userId);
+  if (!primaryBook) {
     return Response.json({ error: "Book not found" }, { status: 404 });
   }
 
@@ -234,8 +302,9 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Session not found" }, { status: 404 });
   }
 
-  const chaptersRow = await getBookChaptersForUser(userId, bookId);
-  if (!chaptersRow) {
+  // Primary book: chapters are required (current strict behavior).
+  const primaryChaptersRow = await getBookChaptersForUser(userId, primaryId);
+  if (!primaryChaptersRow) {
     return Response.json(
       {
         error:
@@ -244,7 +313,7 @@ export async function action({ request }: Route.ActionArgs) {
       { status: 400 },
     );
   }
-  if (!hasLogicalChapterShape(chaptersRow.chapters)) {
+  if (!hasLogicalChapterShape(primaryChaptersRow.chapters)) {
     return Response.json(
       {
         error:
@@ -253,7 +322,68 @@ export async function action({ request }: Route.ActionArgs) {
       { status: 400 },
     );
   }
-  const chapters = chaptersRow.chapters;
+
+  const perBookContext = (id: string): PerBookContext | undefined => {
+    const fromMap = bookContexts?.[id];
+    if (fromMap) return fromMap;
+    // Back-compat: top-level visibleText/currentChapterIndex apply to the primary.
+    if (id === primaryId) return { visibleText, currentChapterIndex };
+    return undefined;
+  };
+
+  const loadedBooks: LoadedBook[] = [];
+  const warnings: string[] = [];
+
+  // Primary book is already validated above. Its visible-text/current-chapter
+  // context comes from bookContexts[primaryId], falling back to the legacy
+  // top-level fields via perBookContext.
+  const primaryCtx = perBookContext(primaryId);
+  loadedBooks.push({
+    bookId: primaryId,
+    title: primaryBook.title ?? "Untitled",
+    author: primaryBook.author ?? "Unknown",
+    format: primaryBook.format ?? null,
+    chapters: primaryChaptersRow.chapters,
+    bookIndex: getOrBuildBookIndex(primaryChaptersRow.chapters),
+    isPrimary: true,
+    currentChapterIndex: primaryCtx?.currentChapterIndex,
+    visibleText: primaryCtx?.visibleText,
+  });
+
+  // Secondary books: load leniently. Skip (with a warning) on missing book,
+  // missing chapters, or stale chapter shape rather than failing the request.
+  for (const id of selectedBookIds.slice(1)) {
+    const secondaryBook = await getBookByIdForUser(id, userId);
+    if (!secondaryBook) {
+      warnings.push(
+        `A selected book (${id}) was not found and is not included in this conversation.`,
+      );
+      continue;
+    }
+    const label = secondaryBook.title ?? id;
+    const chaptersRow = await getBookChaptersForUser(userId, id);
+    if (!chaptersRow || !hasLogicalChapterShape(chaptersRow.chapters)) {
+      warnings.push(
+        `"${label}" has no usable chapter text yet, so its contents are not available in this conversation.`,
+      );
+      continue;
+    }
+    const ctx = perBookContext(id);
+    loadedBooks.push({
+      bookId: id,
+      title: secondaryBook.title ?? "Untitled",
+      author: secondaryBook.author ?? "Unknown",
+      format: secondaryBook.format ?? null,
+      chapters: chaptersRow.chapters,
+      bookIndex: getOrBuildBookIndex(chaptersRow.chapters),
+      isPrimary: false,
+      currentChapterIndex: ctx?.currentChapterIndex,
+      visibleText: ctx?.visibleText,
+    });
+  }
+
+  const booksById = new Map(loadedBooks.map((b) => [b.bookId, b]));
+  const primary = loadedBooks[0];
 
   const priorRows = await getMessagesBySession(sessionId);
   const priorMessages: UIMessage[] = priorRows.map(rowToUIMessage);
@@ -270,15 +400,34 @@ export async function action({ request }: Route.ActionArgs) {
     createdAt: new Date(),
   });
 
-  const bookIndex = getOrBuildBookIndex(chapters);
+  /**
+   * Resolve a tool's optional `bookId` arg to a loaded book. Defaults to the
+   * primary book; an unknown id also falls back to primary so a model mistake
+   * never fails the tool call.
+   */
+  const resolveTargetBook = (requestedId?: string): LoadedBook =>
+    (requestedId && booksById.get(requestedId)) || primary;
 
   const systemPromptContext: SystemPromptContext = {
-    title: book.title ?? "Untitled",
-    author: book.author ?? "Unknown",
-    chapters,
-    currentChapterIndex,
-    visibleText,
+    books: loadedBooks,
+    warnings,
   };
+
+  // Shared, book-aware tool argument + description hint. When multiple books
+  // are loaded the model must specify which book a tool acts on; otherwise it
+  // defaults to the primary book.
+  const multiBook = loadedBooks.length > 1;
+  const multiBookToolHint = multiBook
+    ? ` Multiple books are loaded in this conversation; pass the \`bookId\` of the book you intend to act on. Valid ids: ${loadedBooks.map((b) => `${b.bookId} ("${b.title}")`).join(", ")}. If omitted, defaults to the primary book ("${primary.title}").`
+    : "";
+  const bookIdArgSchema = z
+    .string()
+    .optional()
+    .describe(
+      multiBook
+        ? "The id of the book to act on. Must be one of the loaded book ids. Defaults to the primary book if omitted."
+        : "The id of the book to act on. Optional; defaults to the primary book.",
+    );
 
   const uiStream = createUIMessageStream<UIMessage>({
     originalMessages,
@@ -291,38 +440,48 @@ export async function action({ request }: Route.ActionArgs) {
           web_search: anthropic.tools.webSearch_20250305(),
           search_book: tool({
             description:
-              "Search the book for passages matching a query. Uses fuzzy, typo-tolerant full-text search to find relevant excerpts across all chapters. Use this to find specific quotes, topics, characters, or themes — even with approximate or misspelled terms.",
+              "Search a book for passages matching a query. Uses fuzzy, typo-tolerant full-text search to find relevant excerpts across all chapters. Use this to find specific quotes, topics, characters, or themes — even with approximate or misspelled terms." +
+              multiBookToolHint,
             inputSchema: z.object({
               query: z.string().describe("Text, keywords, or phrase to search for in the book"),
+              bookId: bookIdArgSchema,
             }),
-            execute: async ({ query }) => {
-              return searchBook(bookIndex, query);
+            execute: async ({ query, bookId: targetBookId }) => {
+              const target = resolveTargetBook(targetBookId);
+              return { bookId: target.bookId, results: searchBook(target.bookIndex, query) };
             },
           }),
           read_notes: tool({
             description:
-              "Read the reader's personal notes and annotations for this book. Returns their notebook content as markdown.",
-            inputSchema: z.object({}),
-            execute: async () => {
-              const content = await getNotebookMarkdownForUser(userId, bookId);
-              return { content: content || "(No notes yet)" };
+              "Read the reader's personal notes and annotations for a book. Returns their notebook content as markdown." +
+              multiBookToolHint,
+            inputSchema: z.object({
+              bookId: bookIdArgSchema,
+            }),
+            execute: async ({ bookId: targetBookId }) => {
+              const target = resolveTargetBook(targetBookId);
+              const content = await getNotebookMarkdownForUser(userId, target.bookId);
+              return { bookId: target.bookId, content: content || "(No notes yet)" };
             },
           }),
           append_to_notes: tool({
             description:
-              "Add a note to the reader's notebook for this book. Use when they ask to save something, bookmark a passage, or jot down a thought. The text is appended to their existing notes.",
+              "Add a note to the reader's notebook for a book. Use when they ask to save something, bookmark a passage, or jot down a thought. The text is appended to their existing notes." +
+              multiBookToolHint,
             inputSchema: z.object({
               text: z.string().describe("The text to add (markdown format)"),
+              bookId: bookIdArgSchema,
             }),
-            execute: async ({ text }) => {
+            execute: async ({ text, bookId: targetBookId }) => {
+              const target = resolveTargetBook(targetBookId);
               const parsed = markdownToTiptapJsonServer(text);
               const appendedNodes = (parsed.content ?? []) as JSONContent[];
 
               if (appendedNodes.length === 0) {
-                return { appended: false, text, appendedNodes: [] };
+                return { bookId: target.bookId, appended: false, text, appendedNodes: [] };
               }
 
-              const existing = await getNotebookForUser(userId, bookId);
+              const existing = await getNotebookForUser(userId, target.bookId);
               const existingDoc = (existing?.content as JSONContent | null | undefined) ?? null;
               const existingNodes = existingDoc?.content ?? [];
 
@@ -334,11 +493,12 @@ export async function action({ request }: Route.ActionArgs) {
               const now = new Date();
               let updatedAtMs = now.getTime();
               try {
-                const row = await upsertNotebook(userId, bookId, updatedContent, now);
+                const row = await upsertNotebook(userId, target.bookId, updatedContent, now);
                 if (row) updatedAtMs = row.updatedAt.getTime();
               } catch (err) {
                 console.error("append_to_notes: failed to persist notebook:", err);
                 return {
+                  bookId: target.bookId,
                   appended: false,
                   text,
                   appendedNodes: [],
@@ -347,6 +507,7 @@ export async function action({ request }: Route.ActionArgs) {
               }
 
               return {
+                bookId: target.bookId,
                 appended: true,
                 text,
                 appendedNodes,
@@ -382,7 +543,7 @@ export async function action({ request }: Route.ActionArgs) {
                 ),
             }),
             execute: async ({ code }) => {
-              const existing = await getNotebookForUser(userId, bookId);
+              const existing = await getNotebookForUser(userId, primaryId);
               const currentContent: JSONContent = (existing?.content as
                 | JSONContent
                 | null
@@ -400,7 +561,7 @@ export async function action({ request }: Route.ActionArgs) {
 
               let row: Awaited<ReturnType<typeof upsertNotebook>>;
               try {
-                row = await upsertNotebook(userId, bookId, result.updatedContent, new Date());
+                row = await upsertNotebook(userId, primaryId, result.updatedContent, new Date());
               } catch (err) {
                 console.error("edit_notes: failed to persist updated notebook:", err);
                 return {
@@ -431,7 +592,8 @@ export async function action({ request }: Route.ActionArgs) {
           }),
           create_highlight: tool({
             description:
-              "Highlight a passage in the book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. The highlight will appear in the epub reader and be saved to the reader's notebook.",
+              "Highlight a passage in a book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. The highlight will appear in the epub reader and be saved to the reader's notebook." +
+              multiBookToolHint,
             inputSchema: z.object({
               text: z
                 .string()
@@ -440,17 +602,31 @@ export async function action({ request }: Route.ActionArgs) {
                 .string()
                 .optional()
                 .describe("A brief note explaining why this passage is significant"),
+              bookId: bookIdArgSchema,
             }),
-            execute: async ({ text, note }) => {
+            execute: async ({ text, note, bookId: targetBookId }) => {
+              const target = resolveTargetBook(targetBookId);
               // PDF is not supported server-side yet — client falls back to
               // its own PDF search + persist path on unsupported responses.
-              if (book.format === "pdf") {
-                return { created: false, unsupported: "pdf", text, note: note ?? null };
+              if (target.format === "pdf") {
+                return {
+                  bookId: target.bookId,
+                  created: false,
+                  unsupported: "pdf",
+                  text,
+                  note: note ?? null,
+                };
               }
 
-              const anchor = locateTextAnchor(chapters, bookIndex, text);
+              const anchor = locateTextAnchor(target.chapters, target.bookIndex, text);
               if (!anchor) {
-                return { created: false, error: "not_found", text, note: note ?? null };
+                return {
+                  bookId: target.bookId,
+                  created: false,
+                  error: "not_found",
+                  text,
+                  note: note ?? null,
+                };
               }
 
               const id = generateId();
@@ -459,7 +635,7 @@ export async function action({ request }: Route.ActionArgs) {
               try {
                 await upsertHighlight(userId, {
                   id,
-                  bookId,
+                  bookId: target.bookId,
                   cfiRange: null,
                   text,
                   color,
@@ -469,14 +645,21 @@ export async function action({ request }: Route.ActionArgs) {
                 });
               } catch (err) {
                 console.error("create_highlight: failed to persist:", err);
-                return { created: false, error: "persist_failed", text, note: note ?? null };
+                return {
+                  bookId: target.bookId,
+                  created: false,
+                  error: "persist_failed",
+                  text,
+                  note: note ?? null,
+                };
               }
 
               return {
+                bookId: target.bookId,
                 created: true,
                 highlight: {
                   id,
-                  bookId,
+                  bookId: target.bookId,
                   text,
                   note: note ?? null,
                   color,
@@ -488,21 +671,24 @@ export async function action({ request }: Route.ActionArgs) {
           }),
           read_chapter: tool({
             description:
-              "Read the full text of a specific chapter. Use this to understand a chapter's full argument before answering detailed questions about it.",
+              "Read the full text of a specific chapter. Use this to understand a chapter's full argument before answering detailed questions about it." +
+              multiBookToolHint,
             inputSchema: z.object({
               chapterIndex: z.number().optional().describe("The 0-based chapter index"),
               chapterTitle: z
                 .string()
                 .optional()
                 .describe("The chapter title to look up (partial match OK)"),
+              bookId: bookIdArgSchema,
             }),
-            execute: async ({ chapterIndex, chapterTitle }) => {
+            execute: async ({ chapterIndex, chapterTitle, bookId: targetBookId }) => {
+              const target = resolveTargetBook(targetBookId);
               let chapter: BookChapter | undefined;
               if (chapterIndex != null) {
-                chapter = chapters.find((c) => c.index === chapterIndex);
+                chapter = target.chapters.find((c) => c.index === chapterIndex);
               } else if (chapterTitle) {
                 const lower = chapterTitle.toLowerCase();
-                chapter = chapters.find((c) => c.title.toLowerCase().includes(lower));
+                chapter = target.chapters.find((c) => c.title.toLowerCase().includes(lower));
               }
               if (!chapter) return { error: "Chapter not found" };
               const text =
@@ -536,7 +722,7 @@ export async function action({ request }: Route.ActionArgs) {
               const data = parseSearchHtml(html, 1);
               const books = data.books
                 .filter((b) => b.urlPath && b.title && b.urlPath.startsWith("/ebooks/"))
-                .filter((b) => b.title.toLowerCase() !== systemPromptContext.title.toLowerCase())
+                .filter((b) => b.title.toLowerCase() !== primary.title.toLowerCase())
                 .slice(0, 4)
                 .map((b) => ({
                   title: b.title,

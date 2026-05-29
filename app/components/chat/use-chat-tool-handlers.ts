@@ -3,6 +3,7 @@ import type { UIMessage } from "@ai-sdk/react";
 import type { JSONContent } from "@tiptap/react";
 import { Effect } from "effect";
 import { AnnotationService } from "~/lib/stores/annotations-store";
+import { BookService } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
@@ -69,6 +70,7 @@ export function useChatToolHandlers({
         const info = getToolInfo(part);
         const output = info?.output as
           | {
+              bookId?: string;
               appended?: boolean;
               text?: string;
               appendedNodes?: JSONContent[];
@@ -84,11 +86,14 @@ export function useChatToolHandlers({
         const streamingPreviewed =
           !!toolCallId && !!streamedToolCallIdRef?.current.delete(toolCallId);
 
-        if (!output?.appended || !bookId) continue;
+        // Route to the book named in the tool output (multi-book chat). Falls
+        // back to the bound (primary) bookId for back-compat when absent.
+        const targetBookId = output?.bookId ?? bookId;
+        if (!output?.appended || !targetBookId) continue;
         const appendedNodes = Array.isArray(output.appendedNodes) ? output.appendedNodes : [];
         if (appendedNodes.length === 0) continue;
 
-        const editorCbs = notebookEditorCallbackMap.current.get(bookId);
+        const editorCbs = notebookEditorCallbackMap.current.get(targetBookId);
 
         // Editor update: if the streaming preview already inserted these nodes
         // during input-streaming, skip — re-applying would duplicate.
@@ -106,7 +111,7 @@ export function useChatToolHandlers({
             AnnotationService.pipe(
               Effect.andThen((svc) =>
                 svc.cacheNotebook({
-                  bookId,
+                  bookId: targetBookId,
                   content: nextContent,
                   updatedAt: nextUpdatedAt,
                 }),
@@ -136,16 +141,21 @@ export function useChatToolHandlers({
         const info = getToolInfo(part);
         const output = info?.output as
           | {
+              bookId?: string;
               executed?: boolean;
               updatedContent?: JSONContent;
               updatedAt?: number;
               error?: string;
             }
           | undefined;
-        if (!output?.executed || !output.updatedContent || !bookId) continue;
+        // edit_notes runs server-side against the primary notebook today, but
+        // route via the echoed bookId when present, falling back to the bound
+        // (primary) bookId for back-compat.
+        const targetBookId = output?.bookId ?? bookId;
+        if (!output?.executed || !output.updatedContent || !targetBookId) continue;
 
         const updatedContent = output.updatedContent;
-        const editorCbs = notebookEditorCallbackMap.current.get(bookId);
+        const editorCbs = notebookEditorCallbackMap.current.get(targetBookId);
         if (editorCbs) {
           editorCbs.setContent(updatedContent);
           editorCbs.seedLastContent(updatedContent);
@@ -171,7 +181,7 @@ export function useChatToolHandlers({
           AnnotationService.pipe(
             Effect.andThen((svc) =>
               svc.cacheNotebook({
-                bookId,
+                bookId: targetBookId,
                 content: updatedContent,
                 updatedAt: nextUpdatedAt,
               }),
@@ -198,7 +208,9 @@ export function useChatToolHandlers({
         const info = getToolInfo(part);
         const output = info?.output as
           | {
+              bookId?: string;
               created?: boolean;
+              unsupported?: string;
               highlight?: {
                 id: string;
                 bookId: string;
@@ -211,10 +223,19 @@ export function useChatToolHandlers({
             }
           | undefined;
         const highlightText = typeof info?.input?.text === "string" ? info.input.text : undefined;
-        if (!highlightText || !bookId) continue;
+        // Route to the book named in the tool output (multi-book chat). Falls
+        // back to the bound (primary) bookId for back-compat when absent.
+        const targetBookId = output?.bookId ?? bookId;
+        if (!highlightText || !targetBookId) continue;
 
-        const data = bookDataRef.current;
-        if (!data) continue;
+        // Resolve the target book's file data + format. For the primary book we
+        // reuse the already-loaded bookDataRef/bookFormat; for any other selected
+        // book we load its ArrayBuffer on demand so CFI resolution targets the
+        // correct reader. Format is taken from the server's `unsupported: "pdf"`
+        // signal when present, else the bound primary format.
+        const isPrimaryTarget = targetBookId === bookId;
+        const targetFormat =
+          output?.unsupported === "pdf" ? "pdf" : isPrimaryTarget ? bookFormat : undefined;
 
         // Server-path: if the tool executed server-side and returned a highlight
         // row with a text-anchor, resolve its CFI inside the iframe and update
@@ -225,7 +246,14 @@ export function useChatToolHandlers({
         // Search for the text in the book to get a location, then persist the highlight
         (async () => {
           try {
-            if (bookFormat === "pdf") {
+            const data = isPrimaryTarget
+              ? bookDataRef.current
+              : await AppRuntime.runPromise(
+                  BookService.pipe(Effect.andThen((s) => s.getBookData(targetBookId))),
+                );
+            if (!data) return;
+
+            if (targetFormat === "pdf") {
               // PDF path: search for text and navigate to page
               const pdfjs = await import("pdfjs-dist");
               const { searchPdf } = await import("~/lib/pdf/pdf-search");
@@ -239,7 +267,7 @@ export function useChatToolHandlers({
                   const cfiRange = `page:${results[0].page}`;
                   const highlight = {
                     id: crypto.randomUUID(),
-                    bookId,
+                    bookId: targetBookId,
                     cfiRange,
                     text: highlightText,
                     color: "rgba(255, 213, 79, 0.4)",
@@ -251,7 +279,7 @@ export function useChatToolHandlers({
                       yield* svc.saveHighlight(highlight);
                     }),
                   );
-                  await navigateInCluster(bookId, cfiRange);
+                  await navigateInCluster(targetBookId, cfiRange);
 
                   // Append highlight to notebook (same as epub path)
                   const attrs = {
@@ -259,13 +287,13 @@ export function useChatToolHandlers({
                     cfiRange: highlight.cfiRange,
                     text: highlight.text,
                   };
-                  const appendFn = notebookCallbackMap.current.get(bookId);
+                  const appendFn = notebookCallbackMap.current.get(targetBookId);
                   if (appendFn) {
                     appendFn(attrs);
                   } else {
-                    AppRuntime.runPromise(appendHighlightReferenceToNotebook(bookId, attrs)).catch(
-                      console.error,
-                    );
+                    AppRuntime.runPromise(
+                      appendHighlightReferenceToNotebook(targetBookId, attrs),
+                    ).catch(console.error);
                   }
                 } else {
                   console.warn(
@@ -294,7 +322,7 @@ export function useChatToolHandlers({
                 const cfiRange = results[0]?.cfi ?? "";
                 const highlight = {
                   id: serverHighlight?.id ?? crypto.randomUUID(),
-                  bookId,
+                  bookId: targetBookId,
                   cfiRange,
                   text: highlightText,
                   color: serverHighlight?.color ?? "rgba(255, 213, 79, 0.4)",
@@ -320,8 +348,8 @@ export function useChatToolHandlers({
                 );
 
                 if (cfiRange !== "") {
-                  await navigateInCluster(bookId, cfiRange);
-                  applyTempHighlightForBook(bookId, cfiRange);
+                  await navigateInCluster(targetBookId, cfiRange);
+                  applyTempHighlightForBook(targetBookId, cfiRange);
                 }
 
                 const attrs = {
@@ -329,13 +357,13 @@ export function useChatToolHandlers({
                   cfiRange: highlight.cfiRange,
                   text: highlight.text,
                 };
-                const appendFn = notebookCallbackMap.current.get(bookId);
+                const appendFn = notebookCallbackMap.current.get(targetBookId);
                 if (appendFn) {
                   appendFn(attrs);
                 } else {
-                  AppRuntime.runPromise(appendHighlightReferenceToNotebook(bookId, attrs)).catch(
-                    console.error,
-                  );
+                  AppRuntime.runPromise(
+                    appendHighlightReferenceToNotebook(targetBookId, attrs),
+                  ).catch(console.error);
                 }
               } finally {
                 tempBook.destroy();
