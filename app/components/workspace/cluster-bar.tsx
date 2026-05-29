@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { BookOpen, X } from "lucide-react";
+import { BookPlus, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { BookCover } from "~/components/book-list";
 import { cn } from "~/lib/utils";
@@ -275,7 +275,7 @@ export function ClusterBar({
         title="Open book"
         aria-label="Open book"
       >
-        <BookOpen aria-hidden="true" />
+        <BookPlus aria-hidden="true" />
       </Button>
     </div>
   );

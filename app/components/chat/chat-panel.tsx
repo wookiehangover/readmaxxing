@@ -699,6 +699,7 @@ function ChatPanelInner({
 
           {/* Input */}
           <ChatInput
+            bookTitle={bookTitle}
             textareaRef={textareaRef}
             inputRef={inputRef}
             isLoading={isLoading}

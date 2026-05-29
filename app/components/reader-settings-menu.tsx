@@ -8,6 +8,7 @@ import {
   Plus,
   Share2,
   Type,
+  ClipboardCopyIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ShareDialog } from "~/components/share-dialog";
@@ -28,6 +29,7 @@ import {
 import { useAuth } from "~/lib/context/auth-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/settings";
+import { Button } from "./ui/button";
 
 interface ReaderFormattingMenuProps {
   settings: Settings;
@@ -98,7 +100,9 @@ export function ReaderFormattingMenu({
 }: ReaderFormattingMenuProps) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+      <DropdownMenuTrigger
+        render={<Button variant="ghost" size="icon" title="Reader formatting" />}
+      >
         <Type className="size-4" />
         <span className="sr-only">Reader formatting</span>
       </DropdownMenuTrigger>
@@ -276,7 +280,7 @@ export function ReaderActionsMenu({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" title="Reader actions" />}>
           <MoreHorizontal className="size-4" />
           <span className="sr-only">Reader actions</span>
         </DropdownMenuTrigger>
@@ -284,7 +288,8 @@ export function ReaderActionsMenu({
           <DropdownMenuGroup>
             {onCopyPageAsMarkdown && (
               <DropdownMenuItem onClick={onCopyPageAsMarkdown}>
-                Copy Chapter as Markdown
+                <ClipboardCopyIcon className="size-4" />
+                Copy chapter
               </DropdownMenuItem>
             )}
             {isAuthenticated && book && (
@@ -307,7 +312,7 @@ export function ReaderActionsMenu({
               }}
             >
               <BookmarkIcon className="size-4" />
-              {isBookmarked ? "Remove Bookmark" : "Bookmark Page"}
+              {isBookmarked ? "Remove bookmark" : "Bookmark page"}
             </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>

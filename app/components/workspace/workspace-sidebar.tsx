@@ -329,8 +329,8 @@ export function WorkspaceSidebar({
                           className={cn(
                             "flex size-10 items-center justify-center rounded-md",
                             hasNotebook
-                              ? "bg-accent text-foreground"
-                              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                              ? "bg-muted text-foreground"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground",
                           )}
                         />
                       }
@@ -351,8 +351,8 @@ export function WorkspaceSidebar({
                           className={cn(
                             "flex size-10 items-center justify-center rounded-md",
                             hasChat
-                              ? "bg-accent text-foreground"
-                              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                              ? "bg-muted text-foreground"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground",
                           )}
                         />
                       }
@@ -373,8 +373,8 @@ export function WorkspaceSidebar({
                           className={cn(
                             "flex size-10 items-center justify-center rounded-md",
                             hasBookmarks
-                              ? "bg-accent text-foreground"
-                              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                              ? "bg-muted text-foreground"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground",
                           )}
                         />
                       }
@@ -395,8 +395,8 @@ export function WorkspaceSidebar({
                           className={cn(
                             "flex size-10 items-center justify-center rounded-md",
                             hasHistory
-                              ? "bg-accent text-foreground"
-                              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                              ? "bg-muted text-foreground"
+                              : "text-muted-foreground hover:bg-muted hover:text-foreground",
                           )}
                         />
                       }
@@ -464,8 +464,8 @@ export function WorkspaceSidebar({
                           className={cn(
                             "flex size-5 items-center justify-center rounded-full shadow-sm ring-1 ring-border/50",
                             hasBookmarks
-                              ? "bg-accent text-foreground"
-                              : "bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+                              ? "bg-muted text-foreground"
+                              : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
                           )}
                           title="Open bookmarks"
                         >
@@ -477,8 +477,8 @@ export function WorkspaceSidebar({
                           className={cn(
                             "flex size-5 items-center justify-center rounded-full shadow-sm ring-1 ring-border/50",
                             hasHistory
-                              ? "bg-accent text-foreground"
-                              : "bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+                              ? "bg-muted text-foreground"
+                              : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
                           )}
                           title="Open reading history"
                         >

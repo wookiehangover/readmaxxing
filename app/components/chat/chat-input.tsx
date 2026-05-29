@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { Button } from "~/components/ui/button";
-import { SendHorizonal, Loader2, X } from "lucide-react";
+import { Loader2, X, ForwardIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 
 const HIGHLIGHT_PILL_PREVIEW_WORDS = 5;
@@ -13,10 +13,12 @@ export function ChatInput({
   onStop,
   highlightPill,
   onClearHighlightPill,
+  bookTitle,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
   isLoading: boolean;
+  bookTitle: string;
   onSubmit: (e: React.FormEvent) => void;
   onStop: () => void;
   highlightPill?: { text: string; pageLabel: string };
@@ -90,7 +92,7 @@ export function ChatInput({
             "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             "field-sizing-content max-h-[6lh] min-h-10",
           )}
-          placeholder="Ask about this book…"
+          placeholder={`Ask about ${bookTitle}...`}
           onChange={(e) => {
             inputRef.current = e.target.value;
           }}
@@ -98,17 +100,19 @@ export function ChatInput({
           disabled={isLoading}
           rows={1}
         />
-        {isLoading ? (
-          <Button type="button" variant="ghost" size="icon" onClick={onStop} title="Stop">
-            <Loader2 className="size-4 animate-spin" />
-            <span className="sr-only">Stop</span>
-          </Button>
-        ) : (
-          <Button type="submit" size="icon" title="Send">
-            <SendHorizonal className="size-4" />
-            <span className="sr-only">Send</span>
-          </Button>
-        )}
+        <div className="pb-1">
+          {isLoading ? (
+            <Button type="button" variant="ghost" size="icon" onClick={onStop} title="Stop">
+              <Loader2 className="size-4 animate-spin" />
+              <span className="sr-only">Stop</span>
+            </Button>
+          ) : (
+            <Button type="submit" variant="outline" size="icon" title="Send">
+              <ForwardIcon className="size-4" />
+              <span className="sr-only">Send</span>
+            </Button>
+          )}
+        </div>
       </div>
     </form>
   );
