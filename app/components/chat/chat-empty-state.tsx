@@ -156,7 +156,10 @@ export function ChatEmptyState({
         }}
       >
         {categories.map((category) => (
-          <div key={category.label} className="flex flex-col gap-1.5">
+          <div
+            key={category.label}
+            className="flex flex-col gap-1.5 animate-in fade-in slide-in-from-bottom-2 duration-300"
+          >
             <span className="text-xs tracking-wide text-muted-foreground">{category.label}</span>
             <div className="flex flex-wrap gap-1.5 text-sm text-foreground">
               {category.suggestions.map((suggestion) => (
