@@ -41,7 +41,7 @@ function makeAppendOutputMessage(
   toolCallId: string,
   text: string,
   appendedNodes: JSONContent[],
-  extras?: { updatedContent?: JSONContent; updatedAt?: number },
+  extras?: { updatedContent?: JSONContent; updatedAt?: number; bookId?: string },
 ): UIMessage {
   return {
     id: "msg-1",
@@ -57,6 +57,7 @@ function makeAppendOutputMessage(
           appended: true,
           text,
           appendedNodes,
+          ...(extras?.bookId !== undefined ? { bookId: extras.bookId } : {}),
           ...(extras?.updatedContent !== undefined
             ? { updatedContent: extras.updatedContent }
             : {}),
@@ -123,6 +124,31 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
 
     expect(appendContentSpy).toHaveBeenCalledTimes(1);
     expect(appendContentSpy).toHaveBeenCalledWith(appendedNodes);
+  });
+
+  it("routes appendedNodes to the book named in the tool output (multi-book)", () => {
+    const primarySpy = vi.fn();
+    const secondarySpy = vi.fn();
+    mockNotebookEditorCallbackMap.current.set(
+      "book-1",
+      makeEditorCallbacks({ appendContent: primarySpy }),
+    );
+    mockNotebookEditorCallbackMap.current.set(
+      "book-2",
+      makeEditorCallbacks({ appendContent: secondarySpy }),
+    );
+
+    const appendedNodes: JSONContent[] = [
+      { type: "paragraph", content: [{ type: "text", text: "for book 2" }] },
+    ];
+    const onFinish = getOnFinish();
+    onFinish({
+      message: makeAppendOutputMessage("tc-1", "for book 2", appendedNodes, { bookId: "book-2" }),
+    });
+
+    // Routed to the secondary book's editor, not the bound primary.
+    expect(secondarySpy).toHaveBeenCalledWith(appendedNodes);
+    expect(primarySpy).not.toHaveBeenCalled();
   });
 
   it("skips appendContent when the streaming preview already inserted the nodes", () => {

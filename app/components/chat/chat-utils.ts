@@ -83,8 +83,12 @@ export function stripSuggestedPrompts(text: string): string {
  * Creates a DefaultChatTransport wired to the server-authoritative chat API.
  *
  * - `sendMessages` POSTs only the latest user message plus routing context
- *   (`sessionId`, `bookId`, `visibleText`, `currentChapterIndex`). The server
- *   loads prior history from Postgres, so we don't ship the full message list.
+ *   (`sessionId`, `bookId`, `visibleText`, `currentChapterIndex`). When more
+ *   than the primary book is selected it also sends `bookIds` (primary first)
+ *   and a per-book `bookContexts` map. The server loads prior history from
+ *   Postgres, so we don't ship the full message list.
+ * - The selected-book set is read from `selectedBookIdsRef` at send time (not a
+ *   stale closure) so a selection change between renders is always reflected.
  * - `reconnectToStream` is redirected to the custom resume endpoint
  *   `/api/chat/resume/:sessionId`, which replays an in-flight Redis stream.
  * - The custom `fetch` wrapper retries once on a 404 from `/api/chat`, which
@@ -99,6 +103,13 @@ export function createChatTransport(opts: {
   bookId: string;
   visibleTextRef: React.MutableRefObject<string>;
   currentChapterRef: React.MutableRefObject<number | undefined>;
+  /** Latest selected book IDs (primary first), read at send time. */
+  selectedBookIdsRef: React.MutableRefObject<string[]>;
+  /** Per-book reader context accessor, keyed by bookId. */
+  getBookContext: (bookId: string) => {
+    visibleText?: string;
+    currentChapterIndex?: number;
+  };
 }) {
   const fetchWithSessionRetry: typeof fetch = async (input, init) => {
     const res = await fetch(input, init);
@@ -122,15 +133,30 @@ export function createChatTransport(opts: {
   return new DefaultChatTransport<UIMessage>({
     api: "/api/chat",
     fetch: fetchWithSessionRetry,
-    prepareSendMessagesRequest: ({ messages }) => ({
-      body: {
-        sessionId: opts.sessionId,
-        bookId: opts.bookId,
-        visibleText: opts.visibleTextRef.current,
-        currentChapterIndex: opts.currentChapterRef.current,
-        message: messages[messages.length - 1],
-      },
-    }),
+    prepareSendMessagesRequest: ({ messages }) => {
+      // Read the latest selection at send time. Always include the primary
+      // book first; dedupe defensively in case the same id appears twice.
+      const selected = opts.selectedBookIdsRef.current ?? [opts.bookId];
+      const bookIds = Array.from(new Set([opts.bookId, ...selected]));
+      const bookContexts: Record<string, { visibleText?: string; currentChapterIndex?: number }> =
+        {};
+      for (const id of bookIds) {
+        bookContexts[id] = opts.getBookContext(id);
+      }
+      return {
+        body: {
+          sessionId: opts.sessionId,
+          // Primary book + its context, kept for back-compat.
+          bookId: opts.bookId,
+          visibleText: opts.visibleTextRef.current,
+          currentChapterIndex: opts.currentChapterRef.current,
+          // Multi-book contract (additive): all selected books, primary first.
+          bookIds,
+          bookContexts,
+          message: messages[messages.length - 1],
+        },
+      };
+    },
     prepareReconnectToStreamRequest: () => ({
       api: `/api/chat/resume/${encodeURIComponent(opts.sessionId)}`,
     }),

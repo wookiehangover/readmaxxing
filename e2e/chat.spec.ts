@@ -69,7 +69,7 @@ async function openBookAndChat(page: Page) {
 
   const textarea = page.locator('textarea[placeholder*="Ask"]');
   if ((await textarea.count()) === 0) {
-    await page.getByRole("button", { name: "Chat about book" }).first().click();
+    await page.getByRole("button", { name: "Open chat" }).first().click();
   }
   await expect(textarea.first()).toBeVisible({ timeout: 15_000 });
 

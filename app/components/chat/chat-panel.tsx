@@ -5,7 +5,7 @@ import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "~/components/ui/button";
 import { Plus } from "lucide-react";
 import { ChatService } from "~/lib/stores/chat-store";
-import { BookService } from "~/lib/stores/book-store";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
@@ -29,10 +29,27 @@ import { useChatToolHandlers } from "./use-chat-tool-handlers";
 import { useStreamingAppend } from "./use-streaming-append";
 import { ChatInput } from "./chat-input";
 import { SessionMenuButton, ChatSessionList, EditableTitle } from "./chat-session-menu";
+import { ChatBookSelector } from "./chat-book-selector";
 
 interface ChatPanelProps {
   bookId: string;
   bookTitle: string;
+}
+
+/**
+ * The book-selection state shared with the chat-header book-selector dropdown
+ * (built in a separate task). The chat's own book (`ownBookId`) is always part
+ * of `selectedBookIds`, is the primary book, and cannot be toggled off.
+ */
+export interface BookSelection {
+  /** Currently-open books the user may include in the chat. */
+  openBooks: BookMeta[];
+  /** Book IDs included in the chat (always contains `ownBookId`). */
+  selectedBookIds: string[];
+  /** The chat's own book; locked-checked and never removable. */
+  ownBookId: string;
+  /** Toggle a book in/out of the selection (no-op for `ownBookId`). */
+  onToggleBook: (id: string) => void;
 }
 
 // Signature for the last message's parts — enough to detect in-flight streaming
@@ -367,6 +384,31 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   );
 }
 
+/**
+ * Derives the list of currently-open books (those with an open panel) from the
+ * workspace context. Reads `openBookIdsRef` — the authoritative open-book set
+ * the workspace tracks for the active layout mode (freeform: mounted `book-*`
+ * panels; focused: the full focused-order set, since inactive focused clusters
+ * are unmounted and so would be missing from dockview / `clustersRef`). Resolves
+ * those IDs to `BookMeta` via `booksRef` and re-derives on cluster changes via
+ * `subscribeClusterChanges` (workspace.tsx also notifies when the set changes).
+ * Returns an empty list when there is no workspace (standalone reader), so the
+ * dropdown task can hide itself.
+ */
+function useOpenBooks(workspace: ReturnType<typeof useOptionalWorkspace>): BookMeta[] {
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    if (!workspace) return;
+    return workspace.subscribeClusterChanges(() => setVersion((v) => v + 1));
+  }, [workspace]);
+  return useMemo(() => {
+    if (!workspace) return [];
+    void version; // re-derive whenever the open-book set / clusters change
+    const openIds = workspace.openBookIdsRef.current;
+    return workspace.booksRef.current.filter((b) => openIds.has(b.id));
+  }, [workspace, version]);
+}
+
 function ChatPanelInner({
   bookId,
   bookTitle,
@@ -452,6 +494,71 @@ function ChatPanelInner({
     return () => clearInterval(interval);
   }, [bookId, chatContextMap]);
 
+  // Books the user can choose to include in the chat (currently-open books).
+  const openBooks = useOpenBooks(workspace);
+
+  // Set of book IDs included in the chat. The chat's own book is always present
+  // and is the primary (first) book. The dropdown task toggles additional books
+  // in/out via `toggleSelectedBook` (own book is a no-op).
+  const [selectedBookIds, setSelectedBookIds] = useState<string[]>([bookId]);
+  // Ref mirror so the transport reads the latest selection at send time rather
+  // than a stale closure captured when the transport was memoized.
+  const selectedBookIdsRef = useRef<string[]>(selectedBookIds);
+  selectedBookIdsRef.current = selectedBookIds;
+
+  const toggleSelectedBook = useCallback(
+    (id: string) => {
+      // The chat's own book can never be removed.
+      if (id === bookId) return;
+      setSelectedBookIds((prev) =>
+        prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id],
+      );
+    },
+    [bookId],
+  );
+
+  // Selection bundle handed to the book-selector dropdown (separate task). The
+  // dropdown renders the open books with circular checkboxes, keeps the own
+  // book (`ownBookId`) locked-checked, and toggles the rest via `onToggleBook`.
+  const bookSelection: BookSelection = useMemo(
+    () => ({
+      openBooks,
+      selectedBookIds,
+      ownBookId: bookId,
+      onToggleBook: toggleSelectedBook,
+    }),
+    [openBooks, selectedBookIds, bookId, toggleSelectedBook],
+  );
+
+  // Drop any selected books that are no longer open, but always keep the own book.
+  useEffect(() => {
+    const openIds = new Set(openBooks.map((b) => b.id));
+    setSelectedBookIds((prev) => {
+      const next = prev.filter((id) => id === bookId || openIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [openBooks, bookId]);
+
+  // Per-book reader context accessor for the transport. The primary book reads
+  // from the live refs (kept fresh by the poll above); other books read their
+  // last-known context from the shared chatContextMap.
+  const getBookContext = useCallback(
+    (id: string) => {
+      if (id === bookId) {
+        return {
+          visibleText: visibleTextRef.current,
+          currentChapterIndex: currentChapterRef.current,
+        };
+      }
+      const ctx = chatContextMap.current.get(id);
+      return {
+        visibleText: ctx?.visibleText,
+        currentChapterIndex: ctx?.currentChapterIndex,
+      };
+    },
+    [bookId, chatContextMap],
+  );
+
   const transport = useMemo(
     () =>
       createChatTransport({
@@ -459,8 +566,10 @@ function ChatPanelInner({
         bookId,
         visibleTextRef,
         currentChapterRef,
+        selectedBookIdsRef,
+        getBookContext,
       }),
-    [activeSessionId, bookId],
+    [activeSessionId, bookId, getBookContext],
   );
 
   // Track latest messages for onFinish callbacks (e.g. title generation)
@@ -629,16 +738,19 @@ function ChatPanelInner({
           />
         ) : null}
         {!showSessionList && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onNewSession}
-            title="New chat"
-            className="size-7 ml-auto"
-          >
-            <Plus className="size-3.5" />
-            <span className="sr-only">New chat</span>
-          </Button>
+          <div className="ml-auto flex items-center gap-1">
+            <ChatBookSelector {...bookSelection} />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onNewSession}
+              title="New chat"
+              className="size-7"
+            >
+              <Plus className="size-3.5" />
+              <span className="sr-only">New chat</span>
+            </Button>
+          </div>
         )}
       </div>
 

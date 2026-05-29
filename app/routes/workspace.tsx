@@ -187,6 +187,14 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     ws.booksRef.current = books;
   }, [books, ws]);
 
+  // Expose the authoritative open-book set to context consumers (e.g. the chat
+  // book-selector). `openBookIds` already accounts for focused mode, where
+  // inactive clusters are unmounted. Consumers re-read it on cluster changes.
+  useEffect(() => {
+    ws.openBookIdsRef.current = openBookIds;
+    ws.notifyClusterChanges();
+  }, [openBookIds, ws]);
+
   // Register TOC change listener (safe to re-run when ws changes)
   useEffect(() => {
     ws.tocChangeListener.current = () => setTocVersion((v) => v + 1);
