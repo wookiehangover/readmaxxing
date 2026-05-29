@@ -37,6 +37,19 @@ interface ChatPanelProps {
 }
 
 /**
+ * A client-only, ephemeral marker rendered inline in the chat stream when the
+ * user adds/removes a book from the selection mid-session. These are never sent
+ * to the server and never persisted; they disappear on reload (acceptable).
+ */
+interface BookAnnotation {
+  id: string;
+  action: "added" | "removed";
+  title: string;
+  /** Id of the message this marker renders after; null = after current last. */
+  afterMessageId: string | null;
+}
+
+/**
  * The book-selection state shared with the chat-header book-selector dropdown
  * (built in a separate task). The chat's own book (`ownBookId`) is always part
  * of `selectedBookIds`, is the primary book, and cannot be toggled off.
@@ -496,6 +509,17 @@ function ChatPanelInner({
 
   // Books the user can choose to include in the chat (currently-open books).
   const openBooks = useOpenBooks(workspace);
+  // `useOpenBooks` returns a NEW array reference on every cluster-change bump,
+  // even when the actual open-book set is unchanged. Effects must not key off
+  // that identity or they re-run (and potentially setState) on every bump,
+  // which loops with the workspace's `notifyClusterChanges()`. Derive a stable
+  // content key and read the latest array via a ref inside effects instead.
+  const openBooksRef = useRef(openBooks);
+  openBooksRef.current = openBooks;
+  const openBooksKey = useMemo(
+    () => openBooks.map((b) => `${b.id}:${b.title}`).join("\u0000"),
+    [openBooks],
+  );
 
   // Set of book IDs included in the chat. The chat's own book is always present
   // and is the primary (first) book. The dropdown task toggles additional books
@@ -517,6 +541,13 @@ function ChatPanelInner({
     [bookId],
   );
 
+  // Client-only, ephemeral markers shown inline when the user adds/removes a
+  // book mid-session. They are NEVER sent to the server (kept out of the
+  // useChat message list) and NEVER persisted to IDB. Each marker records the
+  // id of the message it should render after, so it stays in stream order.
+  // `null` means "after the current last message".
+  const [bookAnnotations, setBookAnnotations] = useState<BookAnnotation[]>([]);
+
   // Selection bundle handed to the book-selector dropdown (separate task). The
   // dropdown renders the open books with circular checkboxes, keeps the own
   // book (`ownBookId`) locked-checked, and toggles the rest via `onToggleBook`.
@@ -530,14 +561,27 @@ function ChatPanelInner({
     [openBooks, selectedBookIds, bookId, toggleSelectedBook],
   );
 
-  // Drop any selected books that are no longer open, but always keep the own book.
+  // Titles of the selected books, primary (own book) first, for the empty state.
+  // Keyed on the stable `openBooksKey` (not the array identity) so it only
+  // recomputes when the open-book content actually changes.
+  const selectedBookTitles = useMemo(() => {
+    const titleById = new Map(openBooksRef.current.map((b) => [b.id, b.title]));
+    titleById.set(bookId, bookTitle);
+    return selectedBookIds.map((id) => titleById.get(id) ?? bookTitle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBookIds, openBooksKey, bookId, bookTitle]);
+
+  // Drop any selected books that are no longer open, but always keep the own
+  // book. Depends on `openBooksKey` (content) rather than the array identity so
+  // it does not re-run on every cluster-change bump.
   useEffect(() => {
-    const openIds = new Set(openBooks.map((b) => b.id));
+    const openIds = new Set(openBooksRef.current.map((b) => b.id));
     setSelectedBookIds((prev) => {
       const next = prev.filter((id) => id === bookId || openIds.has(id));
       return next.length === prev.length ? prev : next;
     });
-  }, [openBooks, bookId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openBooksKey, bookId]);
 
   // Per-book reader context accessor for the transport. The primary book reads
   // from the live refs (kept fresh by the poll above); other books read their
@@ -664,6 +708,49 @@ function ChatPanelInner({
   // Keep messagesRef in sync
   messagesRef.current = messages;
 
+  // Detect mid-session book add/remove and emit an ephemeral inline marker.
+  // We diff `selectedBookIds` against the previous selection rather than doing
+  // this in `toggleSelectedBook` so the marker can be anchored to the current
+  // last message id (read from `messagesRef`) without reordering hooks.
+  //
+  // Gated on a non-empty message list: the initial/default selection and any
+  // toggles while the chat is still empty produce no markers (the empty-state
+  // reflects those separately).
+  const prevSelectedBookIdsRef = useRef<string[]>(selectedBookIds);
+  useEffect(() => {
+    const prev = prevSelectedBookIdsRef.current;
+    prevSelectedBookIdsRef.current = selectedBookIds;
+    if (messagesRef.current.length === 0) return;
+
+    const prevSet = new Set(prev);
+    const nextSet = new Set(selectedBookIds);
+    const added = selectedBookIds.filter((id) => !prevSet.has(id));
+    const removed = prev.filter((id) => !nextSet.has(id));
+    if (added.length === 0 && removed.length === 0) return;
+
+    const titleById = new Map(openBooksRef.current.map((b) => [b.id, b.title]));
+    titleById.set(bookId, bookTitle);
+    const afterMessageId = messagesRef.current[messagesRef.current.length - 1]?.id ?? null;
+    const newMarkers: BookAnnotation[] = [
+      ...added.map((id) => ({
+        id: `annot-${crypto.randomUUID()}`,
+        action: "added" as const,
+        title: titleById.get(id) ?? id,
+        afterMessageId,
+      })),
+      ...removed.map((id) => ({
+        id: `annot-${crypto.randomUUID()}`,
+        action: "removed" as const,
+        title: titleById.get(id) ?? id,
+        afterMessageId,
+      })),
+    ];
+    setBookAnnotations((prevMarkers) => [...prevMarkers, ...newMarkers]);
+    // Triggered by selection changes; `openBooksKey` keeps title lookups fresh
+    // without re-running on every cluster-change array-identity bump.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBookIds, openBooksKey, bookId, bookTitle]);
+
   // Expose setMessages to the parent so sync can update messages in-place
   useEffect(() => {
     onRegisterSetMessages?.(setMessages);
@@ -679,6 +766,11 @@ function ChatPanelInner({
   });
 
   const isLoading = status === "streaming" || status === "submitted";
+
+  // Ids of currently-rendered messages, used to place ephemeral markers in
+  // stream order (and to absorb orphans whose anchor is gone) without ever
+  // touching the useChat message list.
+  const messageIdSet = useMemo(() => new Set(messages.map((m) => m.id)), [messages]);
 
   const { scrollRef, contentRef } = useStickToBottom();
 
@@ -773,12 +865,21 @@ function ChatPanelInner({
           >
             <div ref={contentRef} className="flex flex-col flex-1">
               {messages.length === 0 && (
-                <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
+                <ChatEmptyState bookTitles={selectedBookTitles} sendMessage={sendMessage} />
               )}
               <div className="space-y-3">
                 {messages.map((message, i) => {
                   const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
                   const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
+                  // Ephemeral add/remove markers anchored after this message.
+                  // The last rendered message also absorbs orphan markers whose
+                  // anchor is no longer present.
+                  const isLast = i === messages.length - 1;
+                  const inlineAnnotations = bookAnnotations.filter(
+                    (a) =>
+                      a.afterMessageId === message.id ||
+                      (isLast && !messageIdSet.has(a.afterMessageId ?? "")),
+                  );
 
                   return (
                     <div key={message.id}>
@@ -802,6 +903,9 @@ function ChatPanelInner({
                           sendMessage={sendMessage}
                         />
                       )}
+                      {inlineAnnotations.map((a) => (
+                        <BookAnnotationMarker key={a.id} action={a.action} title={a.title} />
+                      ))}
                     </div>
                   );
                 })}
@@ -822,6 +926,21 @@ function ChatPanelInner({
           />
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * Ephemeral, client-only inline marker for a mid-session book add/remove.
+ * Rendered as a centered, muted divider — visually distinct from chat bubbles.
+ */
+function BookAnnotationMarker({ action, title }: { action: "added" | "removed"; title: string }) {
+  return (
+    <div className="flex items-center justify-center gap-1 py-1 text-xs text-muted-foreground">
+      <span aria-hidden>{action === "added" ? "+" : "−"}</span>
+      <span>
+        {action === "added" ? "Added" : "Removed"} <span className="italic">{title}</span>
+      </span>
     </div>
   );
 }

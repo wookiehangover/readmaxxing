@@ -116,6 +116,24 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   // Track which books currently have open panels in dockview
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(new Set());
 
+  // Identity-stable setter: bail when the new set has the same contents as the
+  // current one. Callers (`updateOpenBooks`, `syncFocusedOpenBooks`) always pass
+  // a fresh `new Set(...)`, so without this guard the `openBookIds` effect below
+  // re-fires `notifyClusterChanges()` on every cluster notification, which calls
+  // `syncFocusedOpenBooks` again -> new Set -> notify -> ... an infinite loop.
+  const setOpenBookIdsStable = useCallback<React.Dispatch<React.SetStateAction<Set<string>>>>(
+    (action) => {
+      setOpenBookIds((prev) => {
+        const next = typeof action === "function" ? action(prev) : action;
+        if (next.size === prev.size && [...next].every((id) => prev.has(id))) {
+          return prev;
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
   // Focused-mode book/right split ratio (book-group width / total width).
   // Held in a ref so the swap callback in `useFocusedMode` can read the
   // latest value without re-creating itself when settings change.
@@ -178,7 +196,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     getActiveClusterId,
     enforceSingleFocusedCluster,
     updateSettings,
-    setOpenBookIds,
+    setOpenBookIds: setOpenBookIdsStable,
   });
 
   // Sync books to context ref so NewTabPanel (and other consumers) can read them.

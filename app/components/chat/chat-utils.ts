@@ -38,30 +38,35 @@ export function toUIMessages(messages: ChatMessage[]): UIMessage[] {
  *  messages; this is only used when reconciling server history into IDB so a
  *  subsequent cold reload renders the right thing immediately. */
 export function uiMessagesToChatMessages(messages: UIMessage[]): ChatMessage[] {
-  return messages.map((m) => ({
-    id: m.id,
-    role: m.role as "user" | "assistant",
-    content:
-      m.parts
-        ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-        .map((p) => p.text)
-        .join("") ?? "",
-    createdAt: Date.now(),
-    parts: m.parts?.map((p: any) => {
-      if (p.type === "text") return { type: "text", text: p.text };
-      if (p.type === "step-start") return { type: "step-start" };
-      if (typeof p.type === "string" && p.type.startsWith("tool-")) {
-        return {
-          type: p.type,
-          toolCallId: p.toolCallId,
-          state: p.state,
-          input: p.input,
-          output: p.output,
-        };
-      }
-      return { type: p.type };
-    }),
-  }));
+  // Defensive: drop ephemeral, client-only book add/remove markers (`annot-`)
+  // so they are never written to the warm-start IDB cache. They live in a
+  // separate render-only list today, but this guards against accidental leaks.
+  return messages
+    .filter((m) => !m.id.startsWith("annot-"))
+    .map((m) => ({
+      id: m.id,
+      role: m.role as "user" | "assistant",
+      content:
+        m.parts
+          ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
+          .map((p) => p.text)
+          .join("") ?? "",
+      createdAt: Date.now(),
+      parts: m.parts?.map((p: any) => {
+        if (p.type === "text") return { type: "text", text: p.text };
+        if (p.type === "step-start") return { type: "step-start" };
+        if (typeof p.type === "string" && p.type.startsWith("tool-")) {
+          return {
+            type: p.type,
+            toolCallId: p.toolCallId,
+            state: p.state,
+            input: p.input,
+            output: p.output,
+          };
+        }
+        return { type: p.type };
+      }),
+    }));
 }
 
 /** Parse suggested prompts from an HTML comment at the end of assistant text. */

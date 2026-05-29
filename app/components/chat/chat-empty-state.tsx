@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { cn } from "~/lib/utils";
 
 export const SUGGESTION_CATEGORIES = [
@@ -55,20 +56,65 @@ export function SuggestedPrompts({
   );
 }
 
+/**
+ * Builds an italicized, naturally-joined list of book titles for the empty-state
+ * header (e.g. "*A*", "*A* and *B*", "*A*, *B*, and *C*").
+ */
+function TitleList({ titles }: { titles: string[] }) {
+  return (
+    <>
+      {titles.map((title, i) => {
+        let separator = "";
+        if (i > 0) {
+          if (titles.length === 2) separator = " and ";
+          else if (i === titles.length - 1) separator = ", and ";
+          else separator = ", ";
+        }
+        return (
+          <Fragment key={title}>
+            {separator}
+            <span className="italic">{title}</span>
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * Static cross-book starter prompts shown when 2+ books are selected. Titles are
+ * interpolated where natural; no LLM call.
+ */
+function crossBookCategory(titles: string[]) {
+  const [a, b] = titles;
+  return {
+    label: "Across These Books",
+    suggestions: [
+      "Compare how these books treat their central themes",
+      `What do ${a} and ${b} disagree on?`,
+      `What would the author of ${a} say about ${b}?`,
+    ],
+  };
+}
+
 export function ChatEmptyState({
-  bookTitle,
+  bookTitles,
   sendMessage,
 }: {
-  bookTitle: string;
+  bookTitles: string[];
   sendMessage: (message: { text: string }) => void;
 }) {
+  const categories =
+    bookTitles.length >= 2
+      ? [crossBookCategory(bookTitles), ...SUGGESTION_CATEGORIES]
+      : SUGGESTION_CATEGORIES;
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-2">
       <p className="text-center text-sm text-muted-foreground">
-        Ask about <span className="italic">{bookTitle}</span>
+        Discuss <TitleList titles={bookTitles} />
       </p>
       <div className="flex w-full max-w-sm flex-col gap-4">
-        {SUGGESTION_CATEGORIES.map((category) => (
+        {categories.map((category) => (
           <div key={category.label} className="flex flex-col gap-1.5">
             <span className="text-xs uppercase tracking-wide text-muted-foreground">
               {category.label}
