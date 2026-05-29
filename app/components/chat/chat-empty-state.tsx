@@ -114,6 +114,8 @@ export function ChatEmptyState({
   const iconRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(false);
 
+  const activeRef = useRef(false);
+
   const moveIconTo = useCallback((target: HTMLElement) => {
     const container = containerRef.current;
     const icon = iconRef.current;
@@ -122,7 +124,21 @@ export function ChatEmptyState({
     const targetRect = target.getBoundingClientRect();
     const left = targetRect.left - containerRect.left;
     const centerY = targetRect.top - containerRect.top + targetRect.height / 2;
-    icon.style.transform = `translate(calc(${left}px - 100% - 0.375rem), calc(${centerY}px - 50%))`;
+    const restingTransform = `translate(calc(${left}px - 100% - 0.375rem), calc(${centerY}px - 50%))`;
+
+    if (activeRef.current) {
+      // Already visible: glide from its current position to the new target.
+      icon.style.transform = restingTransform;
+    } else {
+      // First appearance: start shifted left + invisible, then slide in.
+      icon.style.transition = "none";
+      icon.style.transform = `translate(calc(${left}px - 100% - 0.875rem), calc(${centerY}px - 50%))`;
+      void icon.offsetWidth; // force reflow so the next change transitions
+      icon.style.transition = "";
+      icon.style.transform = restingTransform;
+    }
+
+    activeRef.current = true;
     setActive(true);
   }, []);
 
@@ -134,7 +150,10 @@ export function ChatEmptyState({
       <div
         ref={containerRef}
         className="flex w-full max-w-sm flex-col gap-4 relative suggested-questions"
-        onPointerLeave={() => setActive(false)}
+        onPointerLeave={() => {
+          activeRef.current = false;
+          setActive(false);
+        }}
       >
         {categories.map((category) => (
           <div key={category.label} className="flex flex-col gap-1.5">
