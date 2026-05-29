@@ -72,7 +72,7 @@ function TitleList({ titles }: { titles: string[] }) {
           else separator = ", ";
         }
         return (
-          <Fragment key={title}>
+          <Fragment key={`${i}-${title}`}>
             {separator}
             <span className="italic">{title}</span>
           </Fragment>

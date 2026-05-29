@@ -250,8 +250,15 @@ function ToolStepsDetails({
           let label = info.toolName;
           if (info.toolName === "search_book") {
             const query = typeof info.input?.query === "string" ? info.input.query : "";
-            if (isComplete && Array.isArray(info.output)) {
-              label = `Searched for "${query}" → ${info.output.length} result${info.output.length !== 1 ? "s" : ""}`;
+            // Server returns `{ bookId, results }` now; stay back-compatible
+            // with the old shape where `output` was the results array directly.
+            const results = Array.isArray(info.output)
+              ? info.output
+              : Array.isArray(info.output?.results)
+                ? info.output.results
+                : null;
+            if (isComplete && results) {
+              label = `Searched for "${query}" → ${results.length} result${results.length !== 1 ? "s" : ""}`;
             } else {
               label = `Searching for "${query}"...`;
             }
