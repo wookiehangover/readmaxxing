@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { BookPlus, X } from "lucide-react";
+import { BookPlus, Library, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { BookCover } from "~/components/book-list";
 import { cn } from "~/lib/utils";
@@ -18,6 +18,8 @@ interface ClusterBarProps {
   readonly getActiveId: () => string | null;
   /** Activate the Nth cluster (bookId), triggering a swap in focused mode. */
   readonly onActivate: (bookId: string) => void;
+  /** Activate the top-level Library destination. */
+  readonly onActivateLibrary: () => void;
   /** Close the cluster for `bookId` (remove pill; may swap active if needed). */
   readonly onClose: (bookId: string) => void;
   /** Persist a reordered list of cluster book IDs. */
@@ -60,6 +62,7 @@ export function ClusterBar({
   getEntries,
   getActiveId,
   onActivate,
+  onActivateLibrary,
   onClose,
   onReorder,
 }: ClusterBarProps) {
@@ -163,21 +166,41 @@ export function ClusterBar({
     );
   }
 
-  if (entries.length === 0) return null;
-
   const bookById = new Map<string, BookMeta>();
   for (const b of booksRef.current) bookById.set(b.id, b);
+  const isLibraryActive = activeId === null;
 
   return (
     <div
       role="tablist"
-      aria-label="Open books"
+      aria-label="Focused destinations"
       className="flex h-11 items-center gap-1.5 overflow-x-auto scrollbar-none border-b border-border/60 bg-background px-2 py-1.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
     >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={isLibraryActive}
+        title="Library (⌘1)"
+        onClick={onActivateLibrary}
+        className={cn(
+          "flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+          {
+            "border-primary/50 bg-primary/15 text-foreground": isLibraryActive,
+            "border-border/70 bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground":
+              !isLibraryActive,
+          },
+        )}
+      >
+        <Library className="size-3.5" aria-hidden="true" />
+        <span>Library</span>
+        <span className="ml-1 hidden text-[10px] text-muted-foreground/70 tabular-nums md:inline">
+          ⌘1
+        </span>
+      </button>
       {entries.map((entry, idx) => {
         const isActive = entry.bookId === activeId;
         const book = bookById.get(entry.bookId);
-        const shortcut = idx < 9 ? `⌘${idx + 1}` : undefined;
+        const shortcut = idx < 8 ? `⌘${idx + 2}` : undefined;
         const indicatorPosition =
           dropIndicator?.targetBookId === entry.bookId ? dropIndicator.position : null;
         return (
