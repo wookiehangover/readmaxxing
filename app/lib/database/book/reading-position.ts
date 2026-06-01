@@ -40,13 +40,17 @@ export async function upsertPosition(
   return result.rows[0];
 }
 
-export async function getPositionsByUser(userId: string): Promise<ReadingPositionRow[]> {
+export async function getPositionsByUser(
+  userId: string,
+  limit?: number,
+): Promise<ReadingPositionRow[]> {
   const pool = getPool();
   const result = await pool.query<ReadingPositionRow>(sql`
     SELECT ${POSITION_COLUMNS}
     FROM readmax.reading_position
     WHERE user_id = ${userId}
     ORDER BY updated_at DESC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }
@@ -54,14 +58,35 @@ export async function getPositionsByUser(userId: string): Promise<ReadingPositio
 export async function getPositionsByUserSince(
   userId: string,
   cursor: Date,
+  limit?: number,
+  cursorId?: string | null,
 ): Promise<ReadingPositionRow[]> {
   const pool = getPool();
   const result = await pool.query<ReadingPositionRow>(sql`
     SELECT ${POSITION_COLUMNS}
     FROM readmax.reading_position
     WHERE user_id = ${userId}
-      AND updated_at > ${cursor.toISOString()}
-    ORDER BY updated_at ASC
+      AND (
+        updated_at > ${cursor.toISOString()}
+        OR (${cursorId ?? null} IS NOT NULL AND updated_at = ${cursor.toISOString()} AND book_id > ${cursorId ?? null})
+      )
+    ORDER BY updated_at ASC, book_id ASC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
+}
+
+export async function getPositionForBook(
+  userId: string,
+  bookId: string,
+): Promise<ReadingPositionRow | null> {
+  const pool = getPool();
+  const result = await pool.query<ReadingPositionRow>(sql`
+    SELECT ${POSITION_COLUMNS}
+    FROM readmax.reading_position
+    WHERE user_id = ${userId}
+      AND book_id = ${bookId}
+    LIMIT 1
+  `);
+  return result.rows[0] ?? null;
 }
