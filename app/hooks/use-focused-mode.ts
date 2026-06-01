@@ -24,10 +24,6 @@ export interface ClusterBarEntry {
   readonly bookTitle: string;
 }
 
-function isLibraryPanel(panelId: string) {
-  return panelId === "new-tab" || panelId.startsWith("new-tab-");
-}
-
 export interface UseFocusedModeParams {
   /** Current dockview API ref owned by workspace.tsx. */
   apiRef: React.MutableRefObject<DockviewApi | null>;
@@ -114,7 +110,7 @@ export function useFocusedMode({
         // carried over from freeform mode but haven't been added to
         // `focusedClustersRef` yet.
         const toRemove = api.panels.filter((p) => {
-          if (isLibraryPanel(p.id)) return targetBookId !== null || p.id !== "new-tab";
+          if (p.id === "new-tab") return targetBookId !== null;
           const isClusterPanel =
             p.id.startsWith("book-") || p.id.startsWith("chat-") || p.id.startsWith("notebook-");
           if (!isClusterPanel) return false;
@@ -264,8 +260,8 @@ export function useFocusedMode({
     ws.setActiveCluster(null);
   }, [swapFocusedCluster, ws]);
 
-  // Cmd+1..9 to activate Library (⌘1) or the Nth open focused cluster.
-  // Skips editable elements so typing "1" in an input doesn't swap clusters.
+  // Cmd+1..9 to activate the Nth open focused cluster. Skips editable
+  // elements so typing "1" in an input doesn't swap clusters.
   useEffect(() => {
     if (layoutMode !== "focused") return;
     function handler(e: KeyboardEvent) {
@@ -274,20 +270,15 @@ export function useFocusedMode({
       const digit = Number.parseInt(e.key, 10);
       if (!Number.isInteger(digit) || digit < 1 || digit > 9) return;
       if (isEditableElement()) return;
-      if (digit === 1) {
-        e.preventDefault();
-        activateFocusedLibrary();
-        return;
-      }
       const order = focusedOrderRef.current;
-      const target = order[digit - 2];
+      const target = order[digit - 1];
       if (!target) return;
       e.preventDefault();
       ws.setActiveCluster(target);
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activateFocusedLibrary, layoutMode, ws]);
+  }, [layoutMode, ws]);
 
   // Close a focused-mode cluster: remove from the session map and either
   // activate the next cluster in order or clear panels entirely. When the
