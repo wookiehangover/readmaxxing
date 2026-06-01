@@ -874,6 +874,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     document.addEventListener("keydown", handleKeyDown);
 
     init().catch((err) => {
+      unregisterActiveReader(bookId);
       if (!cancelled) console.error("Failed to load book data:", err);
     });
 
