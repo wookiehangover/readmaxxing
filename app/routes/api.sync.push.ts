@@ -32,6 +32,7 @@ export async function processEntry(
           remoteCoverUrl?: string | null;
           remoteFileUrl?: string | null;
           updatedAt?: number | null;
+          deletedAt?: number | null;
         };
 
         // Cross-device dedup: if another non-deleted book for this user
@@ -61,6 +62,7 @@ export async function processEntry(
           format: data.format,
           fileHash: data.fileHash,
           updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
+          deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
         });
 
         // Persist blob URLs if the client carried them. Additive to the
