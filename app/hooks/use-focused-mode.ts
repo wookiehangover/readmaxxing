@@ -43,6 +43,7 @@ export interface UseFocusedModeResult {
   readonly focusedClustersRef: React.MutableRefObject<Map<string, FocusedCluster>>;
   readonly focusedOrderRef: React.MutableRefObject<string[]>;
   readonly swapInProgressRef: React.MutableRefObject<boolean>;
+  readonly activateFocusedLibrary: () => void;
   readonly closeFocusedCluster: (bookId: string) => void;
   readonly reorderFocusedClusters: (newOrder: string[]) => void;
   readonly getClusterEntries: () => ClusterBarEntry[];
@@ -109,6 +110,7 @@ export function useFocusedMode({
         // carried over from freeform mode but haven't been added to
         // `focusedClustersRef` yet.
         const toRemove = api.panels.filter((p) => {
+          if (p.id === "new-tab") return targetBookId !== null;
           const isClusterPanel =
             p.id.startsWith("book-") || p.id.startsWith("chat-") || p.id.startsWith("notebook-");
           if (!isClusterPanel) return false;
@@ -118,7 +120,13 @@ export function useFocusedMode({
         });
         for (const p of toRemove) api.removePanel(p);
 
-        if (!targetBookId) return;
+        if (!targetBookId) {
+          const libraryPanel =
+            api.panels.find((p) => p.id === "new-tab") ??
+            api.addPanel({ id: "new-tab", component: "new-tab", title: "Library", params: {} });
+          libraryPanel.focus();
+          return;
+        }
         const cluster = focusedClustersRef.current.get(targetBookId);
         if (!cluster) return;
 
@@ -242,6 +250,15 @@ export function useFocusedMode({
     run();
     return ws.subscribeClusterChanges(run);
   }, [layoutMode, swapFocusedCluster, ws]);
+
+  const activateFocusedLibrary = useCallback(() => {
+    if (ws.activeClusterBookIdRef.current === null) {
+      swapFocusedCluster(null);
+      ws.notifyClusterChanges();
+      return;
+    }
+    ws.setActiveCluster(null);
+  }, [swapFocusedCluster, ws]);
 
   // Cmd+1..9 to activate the Nth open focused cluster. Skips editable
   // elements so typing "1" in an input doesn't swap clusters.
@@ -422,6 +439,7 @@ export function useFocusedMode({
     focusedClustersRef,
     focusedOrderRef,
     swapInProgressRef,
+    activateFocusedLibrary,
     closeFocusedCluster,
     reorderFocusedClusters,
     getClusterEntries,

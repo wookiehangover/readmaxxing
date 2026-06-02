@@ -205,7 +205,7 @@ export function useWorkspaceLayout({
         layoutModeRef.current === "focused" &&
         !isMobileRef.current &&
         group.panels.length === 1 &&
-        group.panels[0]?.id.startsWith("book-");
+        (group.panels[0]?.id.startsWith("book-") || group.panels[0]?.id === "new-tab");
       group.element.classList.toggle(FOCUSED_BOOK_GROUP_CLASS, isFocusedBookGroup);
     }
   }, [apiRef, isMobileRef, layoutModeRef]);

@@ -1,7 +1,7 @@
 import { get, set, entries } from "idb-keyval";
 import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
 import { removeSessionLocally } from "~/lib/stores/chat-store";
-import { deferPositionMerge, isActiveReader } from "./active-readers";
+import { isActiveReader } from "./active-readers";
 import { isWellFormedEntry } from "./idb-entry";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
@@ -115,11 +115,7 @@ export async function mergePositionRecord(record: Record<string, unknown>): Prom
   const id = localRecord.id;
 
   if (isActiveReader(id)) {
-    // Reader is currently active for this book — defer the remote merge so
-    // it can be re-applied when the reader unregisters. The pull cursor has
-    // already advanced past this row, so without this we would permanently
-    // lose the remote position update.
-    deferPositionMerge(id, record);
+    // Local always wins for the open book; remote position is intentionally dropped.
     return;
   }
 
