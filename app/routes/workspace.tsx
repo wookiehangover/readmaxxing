@@ -148,6 +148,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     focusedClustersRef,
     focusedOrderRef,
     swapInProgressRef,
+    activateFocusedLibrary,
     closeFocusedCluster,
     reorderFocusedClusters,
     getClusterEntries,
@@ -451,6 +452,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
               getEntries={getClusterEntries}
               getActiveId={getActiveClusterId}
               onActivate={(bookId) => ws.setActiveCluster(bookId)}
+              onActivateLibrary={activateFocusedLibrary}
               onClose={closeFocusedCluster}
               onReorder={reorderFocusedClusters}
             />
