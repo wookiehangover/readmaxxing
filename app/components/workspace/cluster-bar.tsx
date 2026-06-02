@@ -178,11 +178,9 @@ export function ClusterBar({
         title="Library"
         onClick={onActivateLibrary}
         className={cn(
-          "flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+          "flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-muted/50",
           {
-            "border-primary/50 bg-primary/15 text-foreground": isLibraryActive,
-            "border-border/70 bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground":
-              !isLibraryActive,
+            "bg-muted text-foreground dark:bg-muted/50": isLibraryActive,
           },
         )}
       >
