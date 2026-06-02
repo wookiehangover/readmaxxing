@@ -143,6 +143,25 @@ describe("processEntry book dedup branch", () => {
     expect(insertTombstoneMock).not.toHaveBeenCalled();
   });
 
+  it("passes null deletedAt for restored book put entries", async () => {
+    findMock.mockResolvedValue(null);
+
+    await processEntry("u1", makeBookEntry({ data: { id: "book-new", deletedAt: null } }));
+
+    expect(upsertBookMock).toHaveBeenCalledWith("u1", expect.objectContaining({ deletedAt: null }));
+  });
+
+  it("passes deletedAt for soft-deleted book put entries", async () => {
+    findMock.mockResolvedValue(null);
+
+    await processEntry("u1", makeBookEntry({ data: { id: "book-new", deletedAt: 3000 } }));
+
+    expect(upsertBookMock).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({ deletedAt: new Date(3000) }),
+    );
+  });
+
   it("upserts normally when the matching canonical is the same id (idempotent re-push)", async () => {
     findMock.mockResolvedValue({
       id: "book-new",

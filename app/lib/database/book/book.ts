@@ -23,6 +23,7 @@ export interface UpsertBookData {
   format?: string | null;
   fileHash?: string | null;
   updatedAt?: Date;
+  deletedAt?: Date | null;
 }
 
 const BOOK_COLUMNS = sql`
@@ -43,14 +44,15 @@ export async function upsertBook(userId: string, book: UpsertBookData): Promise<
   const pool = getPool();
   const ts = clampUpdatedAt(book.updatedAt);
   const result = await pool.query<BookRow>(sql`
-    INSERT INTO readmax.book (id, user_id, title, author, format, file_hash, updated_at)
-    VALUES (${book.id}, ${userId}, ${book.title ?? null}, ${book.author ?? null}, ${book.format ?? null}, ${book.fileHash ?? null}, ${ts})
+    INSERT INTO readmax.book (id, user_id, title, author, format, file_hash, updated_at, deleted_at)
+    VALUES (${book.id}, ${userId}, ${book.title ?? null}, ${book.author ?? null}, ${book.format ?? null}, ${book.fileHash ?? null}, ${ts}, ${book.deletedAt?.toISOString() ?? null})
     ON CONFLICT (id) DO UPDATE
       SET title = COALESCE(EXCLUDED.title, readmax.book.title),
           author = COALESCE(EXCLUDED.author, readmax.book.author),
           format = COALESCE(EXCLUDED.format, readmax.book.format),
           file_hash = COALESCE(EXCLUDED.file_hash, readmax.book.file_hash),
-          updated_at = EXCLUDED.updated_at
+          updated_at = EXCLUDED.updated_at,
+          deleted_at = EXCLUDED.deleted_at
       WHERE EXCLUDED.updated_at > readmax.book.updated_at
     RETURNING ${BOOK_COLUMNS}
   `);

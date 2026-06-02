@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { Effect } from "effect";
-import { ArrowLeft, BookOpen, BookOpenText, Download } from "lucide-react";
+import { ArrowLeft, BookOpen, BookOpenText, CloudUpload, Download, RotateCcw } from "lucide-react";
 import type { Route } from "./+types/book-details";
 import type { JSONContent } from "@tiptap/react";
 import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { AnnotationService } from "~/lib/stores/annotations-store";
+import { useSyncState } from "~/lib/sync/use-sync";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
@@ -24,7 +25,7 @@ export function meta({ data }: Route.MetaArgs) {
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const book = await AppRuntime.runPromise(
     BookService.pipe(
-      Effect.andThen((s) => s.getBook(params.id)),
+      Effect.andThen((s) => s.getBookIncludingDeleted(params.id)),
       Effect.catchTag("BookNotFoundError", () =>
         Effect.die(new Response("Book not found", { status: 404 })),
       ),
@@ -95,10 +96,18 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const { book } = loaderData;
   const navigate = useNavigate();
 
+  const { triggerSync, isActive } = useSyncState();
+
   const [title, setTitle] = useState(book.title);
   const [author, setAuthor] = useState(book.author);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [deletedAt, setDeletedAt] = useState(book.deletedAt);
+  const [restoring, setRestoring] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const [pushed, setPushed] = useState(false);
+
+  const isDeleted = deletedAt !== undefined;
 
   // Load notebook for this book
   const { data: notebook, isLoading: notebookLoading } = useEffectQuery(
@@ -140,7 +149,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     setSaving(true);
     setSaved(false);
     try {
-      const updatedBook: BookMeta = { ...book, title, author };
+      const updatedBook: BookMeta = { ...book, title, author, deletedAt };
       await AppRuntime.runPromise(
         BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))),
       );
@@ -151,7 +160,33 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     } finally {
       setSaving(false);
     }
+  }, [book, title, author, deletedAt]);
+
+  const handleRestore = useCallback(async () => {
+    setRestoring(true);
+    try {
+      const updatedBook: BookMeta = { ...book, title, author, deletedAt: undefined };
+      await AppRuntime.runPromise(
+        BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))),
+      );
+      setDeletedAt(undefined);
+    } catch (err) {
+      console.error("Failed to restore book:", err);
+    } finally {
+      setRestoring(false);
+    }
   }, [book, title, author]);
+
+  const handlePush = useCallback(() => {
+    setPushing(true);
+    setPushed(false);
+    triggerSync();
+    setTimeout(() => {
+      setPushing(false);
+      setPushed(true);
+      setTimeout(() => setPushed(false), 2000);
+    }, 600);
+  }, [triggerSync]);
 
   return (
     <div className="h-dvh overflow-y-auto p-4 md:p-6">
@@ -181,6 +216,16 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
         </div>
 
         <div className="flex flex-1 flex-col gap-4">
+          {isDeleted && (
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <span>This book is soft-deleted.</span>
+              <Button variant="outline" size="sm" onClick={handleRestore} disabled={restoring}>
+                <RotateCcw className="size-4" />
+                {restoring ? "Restoring…" : "Restore"}
+              </Button>
+            </div>
+          )}
+
           <div>
             <label htmlFor="title" className="mb-1 block text-sm font-medium">
               Title
@@ -199,6 +244,12 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : saved ? "Saved" : "Save"}
             </Button>
+            {isActive && (
+              <Button variant="outline" onClick={handlePush} disabled={pushing}>
+                <CloudUpload className="size-4" />
+                {pushing ? "Pushing…" : pushed ? "Pushed" : "Push"}
+              </Button>
+            )}
             {bookNeedsDownload(book) ? (
               <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
                 <Download className="size-4" />
