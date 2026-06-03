@@ -154,11 +154,22 @@ describe("processEntry book dedup branch", () => {
   it("passes deletedAt for soft-deleted book put entries", async () => {
     findMock.mockResolvedValue(null);
 
-    await processEntry("u1", makeBookEntry({ data: { id: "book-new", deletedAt: 3000 } }));
+    await processEntry("u1", makeBookEntry({ data: { id: "book-new", deletedAt: 0 } }));
 
     expect(upsertBookMock).toHaveBeenCalledWith(
       "u1",
-      expect.objectContaining({ deletedAt: new Date(3000) }),
+      expect.objectContaining({ deletedAt: new Date(0) }),
+    );
+  });
+
+  it("omits deletedAt for book put entries with no deletedAt field", async () => {
+    findMock.mockResolvedValue(null);
+
+    await processEntry("u1", makeBookEntry({ data: { id: "book-new", updatedAt: 2000 } }));
+
+    expect(upsertBookMock).toHaveBeenCalledWith(
+      "u1",
+      expect.not.objectContaining({ deletedAt: expect.anything() }),
     );
   });
 

@@ -143,8 +143,10 @@ describe("upsertBook (clamped updated_at)", () => {
     });
 
     const query = queryMock.mock.calls[0][0] as SqlQuery;
-    expect(extractValues(query)[7]).toBeNull();
-    expect(extractSqlText(query)).toContain("deleted_at = EXCLUDED.deleted_at");
+    const boundValues = extractValues(query);
+    expect(boundValues[7]).toBeNull();
+    expect(boundValues[8]).toBe(true);
+    expect(extractSqlText(query)).toContain("THEN EXCLUDED.deleted_at");
     expect(extractSqlText(query)).toContain("WHERE EXCLUDED.updated_at > readmax.book.updated_at");
   });
 
@@ -158,5 +160,19 @@ describe("upsertBook (clamped updated_at)", () => {
 
     const boundValues = extractValues(queryMock.mock.calls[0][0] as SqlQuery);
     expect(boundValues[7]).toBe(deletedAt.toISOString());
+    expect(boundValues[8]).toBe(true);
+  });
+
+  it("leaves deleted_at unchanged on conflict when deletedAt is omitted", async () => {
+    await upsertBook("user-1", {
+      id: "book-1",
+      updatedAt: new Date(FIXED_NOW),
+    });
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    const boundValues = extractValues(query);
+    expect(boundValues[7]).toBeNull();
+    expect(boundValues[8]).toBe(false);
+    expect(extractSqlText(query)).toContain("ELSE readmax.book.deleted_at");
   });
 });

@@ -119,6 +119,8 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
 
   // Debounced notebook save
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pushFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pushedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleNotebookUpdate = useCallback(
     (newContent: JSONContent) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -142,6 +144,8 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (pushFeedbackTimerRef.current) clearTimeout(pushFeedbackTimerRef.current);
+      if (pushedResetTimerRef.current) clearTimeout(pushedResetTimerRef.current);
     };
   }, []);
 
@@ -178,13 +182,19 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   }, [book, title, author]);
 
   const handlePush = useCallback(() => {
+    if (pushFeedbackTimerRef.current) clearTimeout(pushFeedbackTimerRef.current);
+    if (pushedResetTimerRef.current) clearTimeout(pushedResetTimerRef.current);
     setPushing(true);
     setPushed(false);
     triggerSync();
-    setTimeout(() => {
+    pushFeedbackTimerRef.current = setTimeout(() => {
       setPushing(false);
       setPushed(true);
-      setTimeout(() => setPushed(false), 2000);
+      pushFeedbackTimerRef.current = null;
+      pushedResetTimerRef.current = setTimeout(() => {
+        setPushed(false);
+        pushedResetTimerRef.current = null;
+      }, 2000);
     }, 600);
   }, [triggerSync]);
 
