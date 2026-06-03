@@ -28,6 +28,8 @@ export interface SyncEngine {
   stopSync(): void;
   /** Trigger an immediate push (e.g. after a local write). */
   triggerPush(): void;
+  /** Trigger an awaitable manual push, including file upload recovery. */
+  triggerManualPush(): Promise<void>;
   /** Trigger an immediate pull (e.g. on window focus). */
   triggerPull(): void;
   /**
@@ -117,14 +119,16 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
   const isStopped = () => stopped;
 
-  async function runCycle(fn: () => Promise<void>): Promise<void> {
+  async function runCycle(fn: () => Promise<void>, rethrow = false): Promise<void> {
     let success = false;
     try {
       config.onSyncStart?.();
       await fn();
       success = true;
     } catch (err) {
-      config.onSyncError?.(normalizeSyncError(err));
+      const error = normalizeSyncError(err);
+      config.onSyncError?.(error);
+      if (rethrow) throw error;
     } finally {
       config.onSyncEnd?.({ success });
     }
@@ -185,6 +189,8 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     triggerPush() {
       runCycle(doPush);
     },
+
+    triggerManualPush: () => runCycle(doRecoverFiles, true),
 
     triggerPull() {
       runCycle(doPull);

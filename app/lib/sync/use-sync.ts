@@ -18,8 +18,8 @@ export interface SyncState {
   isOnline: boolean;
   /** Whether the sync engine is active (user is authenticated). */
   isActive: boolean;
-  /** Manually trigger a push+pull cycle. */
-  triggerSync: () => void;
+  /** Manually trigger a push cycle, including file upload recovery. */
+  triggerSync: () => Promise<void>;
   /**
    * Re-download a single book's file and cover, or upload them if the DB
    * row is missing the blob URLs. Also re-uploads extracted chapter text.
@@ -35,7 +35,7 @@ const defaultSyncState: SyncState = {
   syncError: null,
   isOnline: true,
   isActive: false,
-  triggerSync: () => {},
+  triggerSync: async () => {},
   reloadBookFiles: async () => {},
 };
 
@@ -67,10 +67,13 @@ export function useSync(): SyncState {
   );
 
   // Stable trigger function
-  const triggerSync = useCallback(() => {
-    if (engineRef.current) {
-      engineRef.current.triggerPush();
+  const triggerSync = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      throw new Error("Cannot push while offline");
     }
+    await engine.triggerManualPush();
   }, []);
 
   const reloadBookFiles = useCallback(async (bookId: string) => {
