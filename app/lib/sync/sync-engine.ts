@@ -1,6 +1,11 @@
 import { mergeBookRecord, mergeChatMessageRecord, mergeChatSessionRecord } from "./entity-mergers";
 import { reuploadBookChapters } from "./book-chapter-uploads";
-import { reloadBookFiles as reloadBookFilesImpl, type FileUploadContext } from "./file-uploads";
+import {
+  reloadBookFiles as reloadBookFilesImpl,
+  resetUploadBackoff,
+  uploadPendingFiles,
+  type FileUploadContext,
+} from "./file-uploads";
 import { PUSH_BATCH_SIZE, pushChanges as pushChangesImpl } from "./push";
 import { pullChanges as pullChangesImpl } from "./pull";
 import type { UploadRetryEntry } from "./upload-retry";
@@ -143,6 +148,15 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
       onAuthExpired: config.onAuthExpired,
     });
 
+  const doRecoverFiles = async () => {
+    resetUploadBackoff(fileUploadContext);
+    await uploadPendingFiles(fileUploadContext, {
+      isStopped,
+      verifyExistingRemoteUrls: true,
+    });
+    await doPush();
+  };
+
   return {
     pushChanges: () => runCycle(doPush),
     pullChanges: () => runCycle(doPull),
@@ -151,6 +165,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
       stopped = false;
       // Immediate pull on start
       runCycle(doPull);
+      runCycle(doRecoverFiles);
       pushTimer = setInterval(() => runCycle(doPush), PUSH_INTERVAL_MS);
       pullTimer = setInterval(() => runCycle(doPull), PULL_INTERVAL_MS);
     },
