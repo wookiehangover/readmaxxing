@@ -1,4 +1,4 @@
-import { getMessagesBySession, getSessionsByUser } from "~/lib/database/chat/chat-session";
+import { getMessagesBySessions, getSessionsByUserAndBook } from "~/lib/database/chat/chat-session";
 import { getShareLink, type ShareLinkRow } from "~/lib/database/share/share-link";
 
 interface ValidationResult {
@@ -40,20 +40,25 @@ export async function loader({ params }: { params: { id: string } }) {
   const shareLink = validation.shareLink;
   if (!shareLink) return Response.json({ error: "Share link not found" }, { status: 404 });
 
-  const sessions = (await getSessionsByUser(shareLink.userId)).filter(
-    (session) => session.bookId === shareLink.bookId,
-  );
-  const sessionsWithMessages = await Promise.all(
-    sessions.map(async (session) => ({
-      id: session.id,
-      title: session.title,
-      messages: (await getMessagesBySession(session.id)).map((message) => ({
-        role: message.role,
-        content: message.content ?? "",
-        createdAt: message.createdAt.toISOString(),
-      })),
+  const sessions = await getSessionsByUserAndBook(shareLink.userId, shareLink.bookId);
+  const messages = await getMessagesBySessions(sessions.map((session) => session.id));
+  const messagesBySession = new Map<string, typeof messages>();
+
+  for (const message of messages) {
+    const existing = messagesBySession.get(message.sessionId) ?? [];
+    existing.push(message);
+    messagesBySession.set(message.sessionId, existing);
+  }
+
+  const sessionsWithMessages = sessions.map((session) => ({
+    id: session.id,
+    title: session.title,
+    messages: (messagesBySession.get(session.id) ?? []).map((message) => ({
+      role: message.role,
+      content: message.content ?? "",
+      createdAt: message.createdAt.toISOString(),
     })),
-  );
+  }));
 
   return Response.json({ sessions: sessionsWithMessages });
 }

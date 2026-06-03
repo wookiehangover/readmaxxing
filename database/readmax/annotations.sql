@@ -21,6 +21,9 @@ CREATE TABLE readmax.highlight (
 
 CREATE INDEX highlight_user_id_idx ON readmax.highlight (user_id);
 CREATE INDEX highlight_book_id_idx ON readmax.highlight (book_id);
+CREATE INDEX highlight_user_updated_idx ON readmax.highlight (user_id, updated_at, id);
+CREATE INDEX highlight_user_deleted_idx ON readmax.highlight (user_id, deleted_at, id)
+    WHERE deleted_at IS NOT NULL;
 
 -- Notebooks (per-book user notes, stored as JSONB)
 
@@ -31,3 +34,4 @@ CREATE TABLE readmax.notebook (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, book_id)
 );
+CREATE INDEX notebook_user_updated_idx ON readmax.notebook (user_id, updated_at, book_id);
