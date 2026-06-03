@@ -58,6 +58,12 @@ export async function upsertBook(userId: string, book: UpsertBookData): Promise<
             ELSE readmax.book.deleted_at
           END
       WHERE EXCLUDED.updated_at > readmax.book.updated_at
+         OR (
+           ${shouldUpdateDeletedAt}
+           AND EXCLUDED.updated_at = readmax.book.updated_at
+           AND EXCLUDED.deleted_at IS NULL
+           AND readmax.book.deleted_at IS NOT NULL
+         )
     RETURNING ${BOOK_COLUMNS}
   `);
 

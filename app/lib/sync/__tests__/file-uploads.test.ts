@@ -20,6 +20,19 @@ const recordChangeMock = vi.mocked(recordChange);
 const bookStore = createStore("ebook-reader-db", "books");
 const bookDataStore = createStore("ebook-reader-book-data", "book-data");
 const originalBlob = globalThis.Blob;
+type UploadResult = Awaited<ReturnType<typeof upload>>;
+
+function makeUploadResult(pathname: string): UploadResult {
+  const url = `blob://${pathname}`;
+  return {
+    url,
+    downloadUrl: `${url}?download=1`,
+    pathname,
+    contentType: pathname.endsWith("cover.jpg") ? "image/jpeg" : "application/epub+zip",
+    contentDisposition: 'attachment; filename="file"',
+    etag: `etag:${pathname}`,
+  };
+}
 
 async function seedPendingBook(bookId: string): Promise<void> {
   await set(
@@ -66,7 +79,7 @@ describe("uploadPendingFiles", () => {
     await set("book-remote", new TextEncoder().encode("file:remote").buffer, bookDataStore);
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    uploadMock.mockImplementation(async (pathname) => ({ url: `blob://${pathname}` }));
+    uploadMock.mockImplementation(async (pathname) => makeUploadResult(pathname));
 
     await uploadPendingFiles({ userId: "user-1", uploadRetryState: new Map() });
 
@@ -89,9 +102,9 @@ describe("uploadPendingFiles", () => {
           get() {
             throw new Error("bad file result");
           },
-        }) as { url: string };
+        }) as UploadResult;
       }
-      return { url: `blob://${pathname}` };
+      return makeUploadResult(pathname);
     });
 
     await uploadPendingFiles({ userId: "user-1", uploadRetryState: new Map() });
@@ -128,7 +141,7 @@ describe("uploadPendingFiles", () => {
     await set("book-stale", new TextEncoder().encode("file:stale").buffer, bookDataStore);
     const fetchMock = vi.fn(async () => new Response("missing", { status: 404 }));
     vi.stubGlobal("fetch", fetchMock);
-    uploadMock.mockImplementation(async (pathname) => ({ url: `blob://${pathname}` }));
+    uploadMock.mockImplementation(async (pathname) => makeUploadResult(pathname));
 
     await uploadPendingFiles(
       { userId: "user-1", uploadRetryState: new Map() },
@@ -148,7 +161,7 @@ describe("uploadPendingFiles", () => {
 
   it("keeps backoff skips isolated by book and upload type", async () => {
     await Promise.all([seedPendingBook("book-1"), seedPendingBook("book-2")]);
-    uploadMock.mockImplementation(async (pathname) => ({ url: `blob://${pathname}` }));
+    uploadMock.mockImplementation(async (pathname) => makeUploadResult(pathname));
     const uploadRetryState = new Map<string, UploadRetryEntry>();
     uploadRetryState.set(uploadRetryKey("book-1", "file"), {
       attempts: 1,
@@ -190,7 +203,7 @@ describe("reloadBookFiles", () => {
     await set("book-stale", new TextEncoder().encode("file:stale").buffer, bookDataStore);
     const fetchMock = vi.fn(async () => new Response("missing", { status: 404 }));
     vi.stubGlobal("fetch", fetchMock);
-    uploadMock.mockImplementation(async (pathname) => ({ url: `blob://${pathname}` }));
+    uploadMock.mockImplementation(async (pathname) => makeUploadResult(pathname));
 
     await reloadBookFiles({ userId: "user-1", uploadRetryState: new Map() }, "book-stale");
 
