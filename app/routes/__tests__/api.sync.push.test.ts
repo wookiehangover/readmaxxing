@@ -162,15 +162,41 @@ describe("processEntry book dedup branch", () => {
     );
   });
 
-  it("omits deletedAt for book put entries with no deletedAt field", async () => {
+  it("passes null deletedAt for live book put entries with no deletedAt field", async () => {
     findMock.mockResolvedValue(null);
 
     await processEntry("u1", makeBookEntry({ data: { id: "book-new", updatedAt: 2000 } }));
 
+    expect(upsertBookMock).toHaveBeenCalledWith("u1", expect.objectContaining({ deletedAt: null }));
+  });
+
+  it("upserts a live new id when only same-hash rows are soft-deleted", async () => {
+    findMock.mockResolvedValue(null);
+    const entry = makeBookEntry({
+      entityId: "book-reupload",
+      data: {
+        id: "book-reupload",
+        title: "Re-upload",
+        fileHash: "hash-abc",
+        remoteFileUrl: "https://blob.vercel-storage.com/file.epub",
+        remoteCoverUrl: "https://blob.vercel-storage.com/cover.jpg",
+        updatedAt: 3000,
+      },
+      timestamp: 3000,
+    });
+
+    const result = await processEntry("u1", entry);
+
+    expect(result).toEqual({ accepted: true });
     expect(upsertBookMock).toHaveBeenCalledWith(
       "u1",
-      expect.not.objectContaining({ deletedAt: expect.anything() }),
+      expect.objectContaining({ id: "book-reupload", fileHash: "hash-abc", deletedAt: null }),
     );
+    expect(insertTombstoneMock).not.toHaveBeenCalled();
+    expect(updateUrlsMock).toHaveBeenCalledWith("book-reupload", {
+      fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
+      coverBlobUrl: "https://blob.vercel-storage.com/cover.jpg",
+    });
   });
 
   it("upserts normally when the matching canonical is the same id (idempotent re-push)", async () => {

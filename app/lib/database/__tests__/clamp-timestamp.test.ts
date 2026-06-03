@@ -175,4 +175,18 @@ describe("upsertBook (clamped updated_at)", () => {
     expect(boundValues[8]).toBe(false);
     expect(extractSqlText(query)).toContain("ELSE readmax.book.deleted_at");
   });
+
+  it("allows same-timestamp live restores of existing tombstones", async () => {
+    await upsertBook("user-1", {
+      id: "book-1",
+      updatedAt: new Date(FIXED_NOW),
+      deletedAt: null,
+    });
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    const sqlText = extractSqlText(query);
+    expect(sqlText).toContain("EXCLUDED.updated_at = readmax.book.updated_at");
+    expect(sqlText).toContain("EXCLUDED.deleted_at IS NULL");
+    expect(sqlText).toContain("readmax.book.deleted_at IS NOT NULL");
+  });
 });
