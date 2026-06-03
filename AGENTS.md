@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Ebook reader web app: React Router v7 (framework mode) + TypeScript, Tailwind v4, shadcn/ui (Base UI), epubjs, Effect.ts, Postgres (`pg`), WebAuthn passkeys, Vercel Blob, local-first sync.
+Ebook/PDF reader web app: React Router v7 (framework mode) + TypeScript, Tailwind v4, shadcn/ui (Base UI), epubjs + pdfjs, dockview workspace, TipTap notebooks, Effect.ts, Postgres (`pg`), WebAuthn passkeys, Vercel Blob, local-first sync.
 
 ## Package Manager
 - Use **pnpm** (`pnpm@10.29.2`): `pnpm install`
@@ -25,7 +25,7 @@ Run `pnpm oxfmt .` and `pnpm oxlint` before committing; fix all warnings. Run `p
 ## External References
 | Need | File |
 |------|------|
-| Architecture (storage, epub iframe, sync, chat) | `docs/architecture.md` |
+| Architecture (workspace, storage, sync, chat, sharing) | `docs/architecture.md` |
 | Effect.ts conventions (services, errors, runtime) | `docs/effect-conventions.md` |
 | E2E fixture epub | `e2e/fixtures/test-book.epub` |
 
@@ -36,7 +36,8 @@ Run `pnpm oxfmt .` and `pnpm oxlint` before committing; fix all warnings. Run `p
 - Prefer self-hosted fonts (`public/fonts/`) over CDN when files are local.
 - Wrap custom event dispatches in `queueMicrotask()` to avoid React `flushSync` errors.
 - Use `useSyncListener(["entity"])` for sync reactivity, not raw event listeners.
-- Use `clientLoader` (not `loader`); all epub/IndexedDB/render work is client-side only.
+- Use `clientLoader` (not `loader`); all epub/pdf/IndexedDB/render work is client-side only.
+- Add IDB store accessors to `app/lib/sync/stores.ts` (lazy getters, one db per entity); never `createStore()` at module scope (SSR breaks).
 
 ## Component Architecture
 - No file over ~500 lines — extract hooks or decompose into sub-components.
