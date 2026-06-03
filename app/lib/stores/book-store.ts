@@ -98,6 +98,9 @@ export class BookService extends Context.Tag("BookService")<
     readonly getBook: (
       id: string,
     ) => Effect.Effect<BookMeta, BookNotFoundError | StorageError | DecodeError>;
+    readonly getBookIncludingDeleted: (
+      id: string,
+    ) => Effect.Effect<BookMeta, BookNotFoundError | StorageError | DecodeError>;
     readonly getBookData: (
       id: string,
     ) => Effect.Effect<ArrayBuffer, BookNotFoundError | StorageError | DecodeError>;
@@ -194,6 +197,24 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
         return yield* Effect.try({
           try: () => decodeBookMeta(raw),
           catch: (cause) => new DecodeError({ operation: "getBook", cause }),
+        });
+      }),
+
+    // Same as getBook, but explicitly returns the record even when soft-deleted
+    // (deletedAt set). Used by the power-user details editor so a soft-deleted
+    // book can still be inspected and restored.
+    getBookIncludingDeleted: (id: string) =>
+      Effect.gen(function* () {
+        const raw = yield* Effect.tryPromise({
+          try: () => get<unknown>(id, bookStore),
+          catch: (cause) => new StorageError({ operation: "getBookIncludingDeleted", cause }),
+        });
+        if (!raw) {
+          return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
+        }
+        return yield* Effect.try({
+          try: () => decodeBookMeta(raw),
+          catch: (cause) => new DecodeError({ operation: "getBookIncludingDeleted", cause }),
         });
       }),
 

@@ -518,6 +518,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     const el = containerRef.current;
     if (!el) return;
 
+    registerActiveReader(bookId);
+
     let cancelled = false;
     let epubBook: EpubBook | null = null;
     let rendition: Rendition | null = null;
@@ -563,7 +565,6 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         ...("gap" in opts && { gap: opts.gap }),
       });
       renditionRef.current = rendition;
-      registerActiveReader(bookId);
 
       // Inject Google Fonts, typography CSS, and styles into epub iframe
       rendition.hooks.content.register((contents: any) => {
@@ -873,6 +874,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     document.addEventListener("keydown", handleKeyDown);
 
     init().catch((err) => {
+      unregisterActiveReader(bookId);
       if (!cancelled) console.error("Failed to load book data:", err);
     });
 

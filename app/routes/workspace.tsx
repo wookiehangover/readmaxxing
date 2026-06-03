@@ -148,6 +148,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     focusedClustersRef,
     focusedOrderRef,
     swapInProgressRef,
+    activateFocusedLibrary,
     closeFocusedCluster,
     reorderFocusedClusters,
     getClusterEntries,
@@ -445,12 +446,13 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         )}
 
         {/* Dockview container — full width when sidebar is collapsed or on mobile */}
-        <div className="flex flex-1 flex-col">
+        <div className="flex flex-1 flex-col min-w-0">
           {layoutMode === "focused" && !zenMode && (
             <ClusterBar
               getEntries={getClusterEntries}
               getActiveId={getActiveClusterId}
               onActivate={(bookId) => ws.setActiveCluster(bookId)}
+              onActivateLibrary={activateFocusedLibrary}
               onClose={closeFocusedCluster}
               onReorder={reorderFocusedClusters}
             />

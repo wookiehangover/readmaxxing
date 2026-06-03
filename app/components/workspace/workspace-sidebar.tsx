@@ -2,26 +2,20 @@ import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router";
 import {
   Bookmark,
-  BookOpen,
   ChartLine,
-  CloudDownload,
   MessageSquare,
   Plus,
-  ArrowUpDown,
   Settings,
   PanelLeft,
   PanelLeftClose,
   Search,
   Notebook,
 } from "lucide-react";
-import { BookCover, FILTER_THRESHOLD } from "~/components/book-list";
-import { filterBooks } from "~/lib/workspace-utils";
 import { SyncStatus } from "~/components/sync-status";
 import { LayoutModeSwitcher } from "~/components/workspace/layout-mode-switcher";
-import { Input } from "~/components/ui/input";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
-import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
+import type { BookMeta } from "~/lib/stores/book-store";
 import type { WorkspaceSortBy, LayoutMode } from "~/lib/settings";
 import type { ClusterBarEntry } from "~/hooks/use-focused-mode";
 import { cn } from "~/lib/utils";
@@ -30,42 +24,49 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 /** Delay after sidebar CSS transition before dispatching resize (ms) */
 const SIDEBAR_TRANSITION_MS = 270;
 
-const SORT_OPTIONS: { value: WorkspaceSortBy; label: string }[] = [
-  { value: "recent", label: "Recently Opened" },
-  { value: "title", label: "Title (A\u2013Z)" },
-  { value: "author", label: "Author (A\u2013Z)" },
-];
-
-function WorkspaceSidebarBookContent({ book, collapsed }: { book: BookMeta; collapsed: boolean }) {
-  const needsDownload = bookNeedsDownload(book);
+function WorkspaceSidebarActionButton({
+  collapsed,
+  label,
+  srLabel,
+  icon: Icon,
+  active,
+  onClick,
+}: {
+  collapsed: boolean;
+  label: string;
+  srLabel: string;
+  icon: typeof Search;
+  active?: boolean;
+  onClick: () => void;
+}) {
   return (
-    <>
-      <div className="relative shrink-0">
-        {book.coverImage || book.remoteCoverUrl ? (
-          <BookCover
-            coverImage={book.coverImage}
-            remoteCoverUrl={book.remoteCoverUrl}
-            bookId={book.id}
-            updatedAt={book.updatedAt}
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            onClick={onClick}
+            className={cn(
+              "flex rounded-md",
+              collapsed
+                ? "size-10 items-center justify-center"
+                : "h-10 w-full items-center gap-3 px-3 text-sm",
+              active === undefined
+                ? "text-muted-foreground hover:bg-accent hover:text-foreground"
+                : active
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
           />
-        ) : (
-          <div className="flex h-12 w-8 items-center justify-center rounded bg-muted">
-            <span className="text-xs text-muted-foreground">📖</span>
-          </div>
-        )}
-        {needsDownload && (
-          <div className="absolute inset-0 flex items-center justify-center rounded bg-black/30">
-            <CloudDownload className="size-4 text-white" />
-          </div>
-        )}
-      </div>
-      {!collapsed && (
-        <div className={cn("min-w-0 flex-1", { "opacity-60": needsDownload })}>
-          <p className="truncate text-sm font-medium">{book.title}</p>
-          <p className="truncate text-xs text-muted-foreground">{book.author}</p>
-        </div>
-      )}
-    </>
+        }
+      >
+        <Icon className="size-4" />
+        {collapsed ? <span className="sr-only">{srLabel}</span> : <span>{label}</span>}
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8} hidden={!collapsed}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -98,14 +99,12 @@ export interface WorkspaceSidebarProps {
 
 export function WorkspaceSidebar({
   collapsed,
-  sortBy,
   layoutMode,
   openBooks,
   otherBooks,
   getClusterEntries,
   getActiveClusterId,
   onUpdateSettings,
-  onOpenBook,
   onOpenChat,
   onOpenNotebook,
   onOpenBookmarks,
@@ -113,7 +112,6 @@ export function WorkspaceSidebar({
   onFileInput,
 }: WorkspaceSidebarProps) {
   const ws = useWorkspace();
-  const [filterQuery, setFilterQuery] = useState("");
   // Bump on cluster add/remove/activate so the collapsed focused-mode rail
   // re-derives its entries from `getClusterEntries()`. Subscribed only in
   // focused mode to avoid unnecessary work in freeform.
@@ -136,24 +134,13 @@ export function WorkspaceSidebar({
     };
   }, [ws.dockviewApi, clusterVersion]);
 
-  const totalBooks = openBooks.length + otherBooks.length;
-  const showFilter = !collapsed && totalBooks > FILTER_THRESHOLD;
-  const filteredOpenBooks = useMemo(
-    () => (filterQuery ? filterBooks(openBooks, filterQuery) : openBooks),
-    [openBooks, filterQuery],
-  );
-  const filteredOtherBooks = useMemo(
-    () => (filterQuery ? filterBooks(otherBooks, filterQuery) : otherBooks),
-    [otherBooks, filterQuery],
-  );
-
-  // In focused mode + collapsed sidebar, actions operate on the active
+  // In focused mode, actions operate on the active
   // cluster's book. Resolve it from the lists the parent already passes; fall
   // back to a stub if the book hasn't loaded yet so buttons remain clickable.
-  const isCollapsedFocused = collapsed && layoutMode === "focused";
-  const activeClusterId = isCollapsedFocused ? getActiveClusterId() : null;
+  const isFocused = layoutMode === "focused";
+  const activeClusterId = isFocused ? getActiveClusterId() : null;
   const activeClusterBook = useMemo(() => {
-    if (!isCollapsedFocused || !activeClusterId) return null;
+    if (!isFocused || !activeClusterId) return null;
 
     const byId = new Map<string, BookMeta>();
     for (const b of openBooks) byId.set(b.id, b);
@@ -170,27 +157,7 @@ export function WorkspaceSidebar({
       title: entry.bookTitle,
       author: "",
     } as BookMeta;
-  }, [isCollapsedFocused, activeClusterId, openBooks, otherBooks, getClusterEntries]);
-  const railOpenBooks = useMemo(() => {
-    if (!isCollapsedFocused) return filteredOpenBooks;
-    const byId = new Map<string, BookMeta>();
-    for (const b of openBooks) byId.set(b.id, b);
-    for (const b of otherBooks) byId.set(b.id, b);
-    return getClusterEntries().map(
-      (entry) =>
-        byId.get(entry.bookId) ??
-        ({
-          id: entry.bookId,
-          title: entry.bookTitle,
-          author: "",
-        } as BookMeta),
-    );
-    // `getClusterEntries` reads from refs, so we additionally depend on the
-    // cluster-version state above via the subscriber effect (which calls
-    // setClusterVersion). Including it here would be a no-op since this
-    // useMemo runs on every render anyway when version changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isCollapsedFocused, openBooks, otherBooks, getClusterEntries, activeClusterId]);
+  }, [isFocused, activeClusterId, openBooks, otherBooks, getClusterEntries]);
 
   function handleOpenSearch(book: BookMeta) {
     queueMicrotask(() => {
@@ -205,28 +172,12 @@ export function WorkspaceSidebar({
         { "w-14": collapsed, "w-75": !collapsed },
       )}
     >
-      <div className="flex items-center justify-between h-11 border-b px-2">
-        {!collapsed && (
-          <div className="relative">
-            <ArrowUpDown className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <select
-              value={sortBy}
-              onChange={(e) =>
-                onUpdateSettings({
-                  workspaceSortBy: e.target.value as WorkspaceSortBy,
-                })
-              }
-              className="h-7 appearance-none rounded border-none bg-transparent py-0 pr-2 pl-6 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus:outline-none"
-              title="Sort books"
-            >
-              {SORT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+      <div
+        className={cn("flex h-11 items-center border-b px-2", {
+          "justify-center": collapsed,
+          "justify-end": !collapsed,
+        })}
+      >
         {collapsed ? (
           <button
             type="button"
@@ -275,322 +226,73 @@ export function WorkspaceSidebar({
           onChange={onFileInput}
         />
       </div>
-      {showFilter && (
-        <div className="px-2 pt-2">
-          <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={filterQuery}
-              onChange={(e) => setFilterQuery(e.target.value)}
-              placeholder="Filter books…"
-              className="h-7 pl-7 text-xs"
-            />
-          </div>
-        </div>
-      )}
       <ScrollArea className="min-h-0 flex-1 scroll-fog-container" hideScrollbar>
-        {isCollapsedFocused ? (
-          activeClusterBook &&
-          (() => {
-            const activeBookId = activeClusterBook.id;
-            const api = ws.dockviewApi.current;
-            const hasNotebook =
-              api?.panels.some((p) => p.id === `notebook-${activeBookId}`) ?? false;
-            const hasChat = api?.panels.some((p) => p.id === `chat-${activeBookId}`) ?? false;
-            const hasBookmarks =
-              api?.panels.some((p) => p.id === `bookmarks-${activeBookId}`) ?? false;
-            const hasHistory = api?.panels.some((p) => p.id === `history-${activeBookId}`) ?? false;
-            return (
-              <TooltipProvider delay={400}>
-                <div className="flex flex-col items-center gap-1 p-1">
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          onClick={() => handleOpenSearch(activeClusterBook)}
-                          className="flex size-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                        />
-                      }
-                    >
-                      <Search className="size-4" />
-                      <span className="sr-only">Open search</span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={8}>
-                      Search
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          onClick={() => onOpenNotebook(activeClusterBook)}
-                          className={cn(
-                            "flex size-10 items-center justify-center rounded-md",
-                            hasNotebook
-                              ? "bg-muted text-foreground"
-                              : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                          )}
-                        />
-                      }
-                    >
-                      <Notebook className="size-4" />
-                      <span className="sr-only">Open notebook</span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={8}>
-                      Notebook
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          onClick={() => onOpenChat(activeClusterBook)}
-                          className={cn(
-                            "flex size-10 items-center justify-center rounded-md",
-                            hasChat
-                              ? "bg-muted text-foreground"
-                              : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                          )}
-                        />
-                      }
-                    >
-                      <MessageSquare className="size-4" />
-                      <span className="sr-only">Open chat</span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={8}>
-                      Chat
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          onClick={() => onOpenBookmarks(activeClusterBook)}
-                          className={cn(
-                            "flex size-10 items-center justify-center rounded-md",
-                            hasBookmarks
-                              ? "bg-muted text-foreground"
-                              : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                          )}
-                        />
-                      }
-                    >
-                      <Bookmark className="size-4" />
-                      <span className="sr-only">Open bookmarks</span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={8}>
-                      Bookmarks
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <button
-                          type="button"
-                          onClick={() => onOpenReadingHistory(activeClusterBook)}
-                          className={cn(
-                            "flex size-10 items-center justify-center rounded-md",
-                            hasHistory
-                              ? "bg-muted text-foreground"
-                              : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                          )}
-                        />
-                      }
-                    >
-                      <ChartLine className="size-4" />
-                      <span className="sr-only">Open reading history</span>
-                    </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={8}>
-                      History
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              </TooltipProvider>
-            );
-          })()
-        ) : openBooks.length === 0 && otherBooks.length === 0 ? (
-          !collapsed && (
-            <div className="p-4 text-xs text-muted-foreground space-y-4">
-              <p>No books yet.</p>
-              <p>Drop epub or click + to add.</p>
-            </div>
-          )
-        ) : (
-          <TooltipProvider delay={400}>
-            <ul className="flex flex-col gap-0.5 p-1 grayscale hover:grayscale-0 transition-all">
-              {railOpenBooks.map((book) => {
-                const isActive = isCollapsedFocused && book.id === activeClusterId;
-                const hasBookmarks =
-                  ws.dockviewApi.current?.panels.some((p) => p.id === `bookmarks-${book.id}`) ??
-                  false;
-                const hasHistory =
-                  ws.dockviewApi.current?.panels.some((p) => p.id === `history-${book.id}`) ??
-                  false;
-                return (
-                  <li key={book.id} className="group/book relative">
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <button
-                            type="button"
-                            onClick={() => onOpenBook(book)}
-                            className={cn("flex w-full items-center rounded-md text-left", {
-                              "justify-center p-1.5": collapsed,
-                              "gap-3 px-3 py-2": !collapsed,
-                              "bg-primary/10 ring-1 ring-primary/40 hover:bg-primary/15": isActive,
-                              "bg-accent/50 hover:bg-accent": !isActive,
-                            })}
-                          />
-                        }
-                      >
-                        <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
-                      </TooltipTrigger>
-                      <TooltipContent side="right" sideOffset={8} hidden={!collapsed}>
-                        <div>
-                          <p>{book.title}</p>
-                          {book.author && <p className="text-background/70">{book.author}</p>}
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                    {collapsed ? (
-                      <div className="absolute right-0.5 bottom-0.5 flex gap-0.5 opacity-0 group-hover/book:opacity-100">
-                        <button
-                          type="button"
-                          onClick={() => onOpenBookmarks(book)}
-                          className={cn(
-                            "flex size-5 items-center justify-center rounded-full shadow-sm ring-1 ring-border/50",
-                            hasBookmarks
-                              ? "bg-muted text-foreground"
-                              : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
-                          )}
-                          title="Open bookmarks"
-                        >
-                          <Bookmark className="size-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onOpenReadingHistory(book)}
-                          className={cn(
-                            "flex size-5 items-center justify-center rounded-full shadow-sm ring-1 ring-border/50",
-                            hasHistory
-                              ? "bg-muted text-foreground"
-                              : "bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
-                          )}
-                          title="Open reading history"
-                        >
-                          <ChartLine className="size-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
-                        <button
-                          type="button"
-                          onClick={() => onOpenBook(book)}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Open book"
-                        >
-                          <BookOpen className="size-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onOpenNotebook(book)}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Open notebook"
-                        >
-                          <Notebook className="size-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onOpenBookmarks(book)}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Open bookmarks"
-                        >
-                          <Bookmark className="size-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onOpenReadingHistory(book)}
-                          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                          title="Open reading history"
-                        >
-                          <ChartLine className="size-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-              {!collapsed && filteredOpenBooks.length > 0 && filteredOtherBooks.length > 0 && (
-                <li className="my-1 border-b border-border/50" />
-              )}
-              {!collapsed &&
-                filteredOtherBooks.map((book) => (
-                  <li key={book.id} className="group/book relative">
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <button
-                            type="button"
-                            onClick={() => onOpenBook(book)}
-                            className={cn(
-                              "flex w-full items-center rounded-md text-left hover:bg-accent",
-                              { "gap-3 px-3 py-2": !collapsed },
-                            )}
-                          />
-                        }
-                      >
-                        <WorkspaceSidebarBookContent book={book} collapsed={collapsed} />
-                      </TooltipTrigger>
-                      <TooltipContent side="right" sideOffset={8} hidden={!collapsed}>
-                        <div>
-                          <p>{book.title}</p>
-                          {book.author && <p className="text-background/70">{book.author}</p>}
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                    <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-0.5 opacity-0 group-hover/book:opacity-100">
-                      <button
-                        type="button"
-                        onClick={() => onOpenBook(book)}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Open book"
-                      >
-                        <BookOpen className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onOpenNotebook(book)}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Open notebook"
-                      >
-                        <Notebook className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onOpenBookmarks(book)}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Open bookmarks"
-                      >
-                        <Bookmark className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onOpenReadingHistory(book)}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Open reading history"
-                      >
-                        <ChartLine className="size-3.5" />
-                      </button>
-                    </div>
-                  </li>
-                ))}
-            </ul>
-          </TooltipProvider>
-        )}
+        {activeClusterBook
+          ? (() => {
+              const activeBookId = activeClusterBook.id;
+              const api = ws.dockviewApi.current;
+              const hasNotebook =
+                api?.panels.some((p) => p.id === `notebook-${activeBookId}`) ?? false;
+              const hasChat = api?.panels.some((p) => p.id === `chat-${activeBookId}`) ?? false;
+              const hasBookmarks =
+                api?.panels.some((p) => p.id === `bookmarks-${activeBookId}`) ?? false;
+              const hasHistory =
+                api?.panels.some((p) => p.id === `history-${activeBookId}`) ?? false;
+              return (
+                <TooltipProvider delay={400}>
+                  <div
+                    className={cn("flex flex-col gap-1 p-1", {
+                      "items-center": collapsed,
+                    })}
+                  >
+                    <WorkspaceSidebarActionButton
+                      collapsed={collapsed}
+                      label="Search"
+                      srLabel="Open search"
+                      icon={Search}
+                      onClick={() => handleOpenSearch(activeClusterBook)}
+                    />
+                    <WorkspaceSidebarActionButton
+                      collapsed={collapsed}
+                      label="Notebook"
+                      srLabel="Open notebook"
+                      icon={Notebook}
+                      active={hasNotebook}
+                      onClick={() => onOpenNotebook(activeClusterBook)}
+                    />
+                    <WorkspaceSidebarActionButton
+                      collapsed={collapsed}
+                      label="Chat"
+                      srLabel="Open chat"
+                      icon={MessageSquare}
+                      active={hasChat}
+                      onClick={() => onOpenChat(activeClusterBook)}
+                    />
+                    <WorkspaceSidebarActionButton
+                      collapsed={collapsed}
+                      label="Bookmarks"
+                      srLabel="Open bookmarks"
+                      icon={Bookmark}
+                      active={hasBookmarks}
+                      onClick={() => onOpenBookmarks(activeClusterBook)}
+                    />
+                    <WorkspaceSidebarActionButton
+                      collapsed={collapsed}
+                      label="History"
+                      srLabel="Open reading history"
+                      icon={ChartLine}
+                      active={hasHistory}
+                      onClick={() => onOpenReadingHistory(activeClusterBook)}
+                    />
+                  </div>
+                </TooltipProvider>
+              );
+            })()
+          : !collapsed && (
+              <div className="p-4 text-xs text-muted-foreground space-y-4">
+                <p>{isFocused ? "Open a book to show actions." : "Use Library to browse books."}</p>
+              </div>
+            )}
       </ScrollArea>
       <div
         className={cn("flex  @container items-center ", {

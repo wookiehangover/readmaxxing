@@ -294,6 +294,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     };
 
     init().catch((err) => {
+      unregisterActiveReader(bookId);
       if (!cancelled) console.error("Failed to load PDF:", err);
     });
 
