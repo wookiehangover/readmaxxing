@@ -1,10 +1,7 @@
 const COVER_PROXY_CACHE = "covers-proxy";
 const COVER_PUBLIC_CACHE = "covers-public";
 
-export async function evictCachedCover(
-  bookId: string,
-  remoteCoverUrl?: string,
-): Promise<void> {
+export async function evictCachedCover(bookId: string, remoteCoverUrl?: string): Promise<void> {
   const cacheStorage = globalThis.caches;
   if (!cacheStorage) return;
 

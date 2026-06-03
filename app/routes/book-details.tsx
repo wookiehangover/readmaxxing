@@ -105,7 +105,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const [deletedAt, setDeletedAt] = useState(book.deletedAt);
   const [restoring, setRestoring] = useState(false);
   const [pushing, setPushing] = useState(false);
-  const [pushed, setPushed] = useState(false);
+  const [pushStatus, setPushStatus] = useState<"idle" | "success" | "failed">("idle");
 
   const isDeleted = deletedAt !== undefined;
 
@@ -181,21 +181,30 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     }
   }, [book, title, author]);
 
-  const handlePush = useCallback(() => {
+  const handlePush = useCallback(async () => {
     if (pushFeedbackTimerRef.current) clearTimeout(pushFeedbackTimerRef.current);
     if (pushedResetTimerRef.current) clearTimeout(pushedResetTimerRef.current);
+    pushFeedbackTimerRef.current = null;
+    pushedResetTimerRef.current = null;
     setPushing(true);
-    setPushed(false);
-    triggerSync();
-    pushFeedbackTimerRef.current = setTimeout(() => {
-      setPushing(false);
-      setPushed(true);
-      pushFeedbackTimerRef.current = null;
+    setPushStatus("idle");
+    try {
+      await triggerSync();
+      setPushStatus("success");
       pushedResetTimerRef.current = setTimeout(() => {
-        setPushed(false);
+        setPushStatus("idle");
         pushedResetTimerRef.current = null;
       }, 2000);
-    }, 600);
+    } catch (err) {
+      console.error("Failed to push book:", err);
+      setPushStatus("failed");
+      pushFeedbackTimerRef.current = setTimeout(() => {
+        setPushStatus("idle");
+        pushFeedbackTimerRef.current = null;
+      }, 2000);
+    } finally {
+      setPushing(false);
+    }
   }, [triggerSync]);
 
   return (
@@ -257,7 +266,13 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
             {isActive && (
               <Button variant="outline" onClick={handlePush} disabled={pushing}>
                 <CloudUpload className="size-4" />
-                {pushing ? "Pushing…" : pushed ? "Pushed" : "Push"}
+                {pushing
+                  ? "Pushing…"
+                  : pushStatus === "success"
+                    ? "Pushed"
+                    : pushStatus === "failed"
+                      ? "Failed"
+                      : "Push"}
               </Button>
             )}
             {bookNeedsDownload(book) ? (
