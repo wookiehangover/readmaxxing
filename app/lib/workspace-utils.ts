@@ -5,6 +5,17 @@ export function truncateTitle(title: string, maxLength = 30): string {
   return title.length > maxLength ? title.slice(0, maxLength) + "…" : title;
 }
 
+function getAuthorSortKey(author: string): string {
+  const trimmed = author.trim();
+  if (!trimmed) return "";
+  return (trimmed.split(/\s+/).at(-1) ?? trimmed).toLowerCase();
+}
+
+function compareAuthorsBySortKey(a: string, b: string): number {
+  const keyComparison = getAuthorSortKey(a).localeCompare(getAuthorSortKey(b));
+  return keyComparison === 0 ? a.localeCompare(b) : keyComparison;
+}
+
 export function sortBooks(
   books: BookMeta[],
   sortBy: WorkspaceSortBy,
@@ -16,7 +27,7 @@ export function sortBooks(
       sorted.sort((a, b) => a.title.localeCompare(b.title));
       break;
     case "author":
-      sorted.sort((a, b) => a.author.localeCompare(b.author));
+      sorted.sort((a, b) => compareAuthorsBySortKey(a.author, b.author));
       break;
     case "recent": {
       const map = lastOpenedMap ?? new Map<string, number>();
@@ -56,7 +67,7 @@ export function sortBooksForTable(
       sorted.sort((a, b) => a.title.localeCompare(b.title) * dir);
       break;
     case "author":
-      sorted.sort((a, b) => a.author.localeCompare(b.author) * dir);
+      sorted.sort((a, b) => compareAuthorsBySortKey(a.author, b.author) * dir);
       break;
     case "format":
       sorted.sort((a, b) => (a.format ?? "").localeCompare(b.format ?? "") * dir);
