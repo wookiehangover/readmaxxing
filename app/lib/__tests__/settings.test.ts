@@ -30,7 +30,6 @@ const defaultSettings: Settings = {
   textAlign: undefined,
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
-  librarySortBy: "author",
   libraryView: "grid",
   pdfLayout: "fit-height",
   colorTheme: "default",
@@ -202,10 +201,9 @@ describe("normalizeLegacyFontSize (via getSettings)", () => {
 
 describe("saveSettings", () => {
   it("writes synced fields to the synced bucket and records a change", () => {
-    saveSettings({ ...defaultSettings, theme: "dark", librarySortBy: "title" });
+    saveSettings({ ...defaultSettings, theme: "dark" });
     const synced = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
     expect(synced.theme).toBe("dark");
-    expect(synced.librarySortBy).toBe("title");
     expect(synced.updatedAt).toEqual(expect.any(Number));
     for (const k of LOCAL_UI_SETTINGS_KEYS) {
       expect(synced).not.toHaveProperty(k);
