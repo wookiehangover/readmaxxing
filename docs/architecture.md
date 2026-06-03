@@ -39,8 +39,9 @@ PDFs render via pdfjs (`app/lib/pdf/`, `app/components/workspace-pdf-reader.tsx`
 
 ## Sync
 
-Engine: `app/lib/sync/sync-engine.ts`. Synced entity types (`app/lib/sync/types.ts`): `book`, `highlight`, `bookmark`, `notebook`, `chat_session`, `chat_message`, `position`, `settings`. (Reading history is local-only.)
+Synced entity types (`app/lib/sync/types.ts`): `book`, `highlight`, `bookmark`, `notebook`, `chat_session`, `chat_message`, `position`, `settings`. (Reading history is local-only.)
 
+- **Engine**: `makeSyncEngine()` (`app/lib/sync/sync-engine.ts`) is a factory returning a `SyncEngine` (`pushChanges`/`pullChanges`/`startSync`/`stopSync`/`triggerPush`/`triggerPull`/`reloadBookFiles`). `startSync()` does an immediate pull, then runs periodic push (30s) and pull (60s) intervals; `runCycle` serializes/normalizes errors and surfaces `onSyncStart`/`onSyncEnd`/`onSyncError`/`onAuthExpired`. `app/lib/sync/use-sync.ts` is the React wiring: it owns the engine instance and triggers immediate push+pull on window `focus`, push on `online`, blocks pushes while `offline`, and listens for the `sync:push-needed` event.
 - **Change tracking**: service mutations call `recordChange()` (`app/lib/sync/change-log.ts`) which appends to a changelog IDB store. Changes are batched and pushed on an interval or immediately on `sync:push-needed`. Chat message **bodies are not recorded** — the server persists them while streaming `/api/chat`.
 - **Merge strategies** (`ENTITY_MERGE_STRATEGIES` in `types.ts`, mergers in `app/lib/sync/entity-mergers.ts`):
   - `lww` (Last-Write-Wins by `updatedAt`): `book`, `position`, `notebook`, `settings`, `chat_session` metadata.
