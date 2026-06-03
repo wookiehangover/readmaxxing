@@ -94,6 +94,11 @@ export class BookService extends Context.Tag("BookService")<
   {
     readonly saveBook: (meta: BookMeta, data: ArrayBuffer) => Effect.Effect<void, StorageError>;
     readonly updateBookMeta: (meta: BookMeta) => Effect.Effect<void, StorageError>;
+    readonly replaceBookFile: (
+      id: string,
+      data: ArrayBuffer,
+      meta: { coverImage: Blob | null; fileHash: string },
+    ) => Effect.Effect<void, BookNotFoundError | StorageError | DecodeError>;
     readonly getBooks: () => Effect.Effect<BookMeta[], StorageError | DecodeError>;
     readonly getBook: (
       id: string,
@@ -150,6 +155,46 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
           }).catch(console.error);
         },
         catch: (cause) => new StorageError({ operation: "updateBookMeta", cause }),
+      }),
+
+    replaceBookFile: (id, data, meta) =>
+      Effect.gen(function* () {
+        const raw = yield* Effect.tryPromise({
+          try: () => get<unknown>(id, bookStore),
+          catch: (cause) => new StorageError({ operation: "replaceBookFile.read", cause }),
+        });
+        if (!raw) {
+          return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
+        }
+
+        const existing = yield* Effect.try({
+          try: () => decodeBookMeta(raw),
+          catch: (cause) => new DecodeError({ operation: "replaceBookFile.decode", cause }),
+        });
+        const stamped = {
+          ...existing,
+          coverImage: meta.coverImage,
+          fileHash: meta.fileHash,
+          remoteCoverUrl: undefined,
+          remoteFileUrl: undefined,
+          hasLocalFile: true,
+          updatedAt: Date.now(),
+        };
+
+        yield* Effect.tryPromise({
+          try: async () => {
+            await set(id, data, bookDataStore);
+            await set(id, stamped, bookStore);
+            recordChange({
+              entity: "book",
+              entityId: id,
+              operation: "put",
+              data: stamped,
+              timestamp: stamped.updatedAt,
+            }).catch(console.error);
+          },
+          catch: (cause) => new StorageError({ operation: "replaceBookFile.write", cause }),
+        });
       }),
 
     getBooks: () =>
