@@ -232,13 +232,12 @@ export async function uploadPendingFiles(
       // private covers are served via the proxy fallback.
       const existingCoverUrl =
         typeof meta.remoteCoverUrl === "string" ? meta.remoteCoverUrl : undefined;
-      const needsCoverUpload =
-        isBlobLike(meta.coverImage) && (!existingCoverUrl || options?.verifyExistingRemoteUrls);
-      if (needsCoverUpload) {
+      const coverImage = meta.coverImage;
+      if (isBlobLike(coverImage) && (!existingCoverUrl || options?.verifyExistingRemoteUrls)) {
         try {
           const shouldUpload = !existingCoverUrl || !(await remoteDownloadExists(bookId, "cover"));
           if (shouldUpload) {
-            const stamped = await uploadLocalCopy(ctx, bookId, meta, meta.coverImage, "cover", {
+            const stamped = await uploadLocalCopy(ctx, bookId, meta, coverImage, "cover", {
               resetBackoff: !!existingCoverUrl,
             });
             if (stamped) meta = stamped;
@@ -329,9 +328,9 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
   // without a local blob).
   const existingCoverUrl =
     typeof meta.remoteCoverUrl === "string" ? meta.remoteCoverUrl : undefined;
-  const needsCoverUpload = isBlobLike(meta.coverImage) && !existingCoverUrl;
-  if (needsCoverUpload) {
-    const stamped = await uploadLocalCopy(ctx, bookId, meta, meta.coverImage, "cover");
+  const coverImage = meta.coverImage;
+  if (isBlobLike(coverImage) && !existingCoverUrl) {
+    const stamped = await uploadLocalCopy(ctx, bookId, meta, coverImage, "cover");
     if (stamped) {
       meta = stamped;
       metaChanged = true;
@@ -348,8 +347,9 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
         metaChanged = true;
       } else {
         console.error(`[sync] reload cover download failed: ${res.status} ${res.statusText}`);
-        if (isBlobLike(meta.coverImage)) {
-          const stamped = await uploadLocalCopy(ctx, bookId, meta, meta.coverImage, "cover", {
+        const localCoverImage = meta.coverImage;
+        if (isBlobLike(localCoverImage)) {
+          const stamped = await uploadLocalCopy(ctx, bookId, meta, localCoverImage, "cover", {
             resetBackoff: true,
           });
           if (stamped) {
