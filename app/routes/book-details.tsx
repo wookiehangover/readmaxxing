@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Link, useNavigate } from "react-router";
+import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
+import { Link, useNavigate, useRevalidator } from "react-router";
 import { Effect } from "effect";
 import { ArrowLeft, BookOpen, BookOpenText, CloudUpload, Download, RotateCcw } from "lucide-react";
 import type { Route } from "./+types/book-details";
@@ -8,6 +8,9 @@ import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { useSyncState } from "~/lib/sync/use-sync";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { parseEpubEffect } from "~/lib/epub/epub-service";
+import { computeFileHash } from "~/lib/book-hash";
+import { evictCachedCover } from "~/lib/sw-cache";
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
 import { useEffectQuery } from "~/hooks/use-effect-query";
@@ -95,8 +98,9 @@ function CoverPlaceholder() {
 export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const { book } = loaderData;
   const navigate = useNavigate();
+  const revalidator = useRevalidator();
 
-  const { triggerSync, isActive } = useSyncState();
+  const { triggerSync, isActive, reloadBookFiles } = useSyncState();
 
   const [title, setTitle] = useState(book.title);
   const [author, setAuthor] = useState(book.author);
@@ -106,6 +110,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const [restoring, setRestoring] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [pushStatus, setPushStatus] = useState<"idle" | "success" | "failed">("idle");
+  const [replacing, setReplacing] = useState(false);
 
   const isDeleted = deletedAt !== undefined;
 
@@ -121,6 +126,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const replaceInputRef = useRef<HTMLInputElement | null>(null);
   const handleNotebookUpdate = useCallback(
     (newContent: JSONContent) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -207,6 +213,91 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     }
   }, [triggerSync]);
 
+  const handleReplaceButtonClick = useCallback(() => {
+    replaceInputRef.current?.click();
+  }, []);
+
+  const handleReplaceFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const input = event.currentTarget;
+      const file = input.files?.[0];
+      if (!file) return;
+
+      if (!file.name.toLowerCase().endsWith(".epub")) {
+        console.error("Only .epub files can replace book files.");
+        input.value = "";
+        return;
+      }
+
+      setReplacing(true);
+      const program = Effect.gen(function* () {
+        const arrayBuffer = yield* Effect.tryPromise({
+          try: () => file.arrayBuffer(),
+          catch: (cause) => new Error("Failed to read replacement epub file", { cause }),
+        });
+        const fileHash = yield* Effect.tryPromise({
+          try: () => computeFileHash(arrayBuffer),
+          catch: (cause) => new Error("Failed to hash replacement epub file", { cause }),
+        });
+        const metadata = yield* parseEpubEffect(arrayBuffer);
+
+        yield* BookService.pipe(
+          Effect.andThen((s) =>
+            s.replaceBookFile(book.id, arrayBuffer, {
+              coverImage: metadata.coverImage,
+              fileHash,
+            }),
+          ),
+        );
+        yield* Effect.tryPromise({
+          try: () => evictCachedCover(book.id, book.remoteCoverUrl),
+          catch: (cause) => new Error("Failed to evict stale cover cache", { cause }),
+        });
+
+        if (isActive) {
+          yield* Effect.tryPromise({
+            try: () => reloadBookFiles(book.id),
+            catch: (cause) => new Error("Failed to reload replacement book files", { cause }),
+          }).pipe(
+            Effect.catchAll((error) =>
+              Effect.sync(() => console.error("Failed to reload replacement book files:", error)),
+            ),
+          );
+          const syncedBook = yield* BookService.pipe(
+            Effect.andThen((s) => s.getBookIncludingDeleted(book.id)),
+            Effect.catchAll((error) =>
+              Effect.sync(() => {
+                console.error("Failed to read synced replacement book:", error);
+                return null;
+              }),
+            ),
+          );
+          yield* Effect.tryPromise({
+            try: () => evictCachedCover(book.id, syncedBook?.remoteCoverUrl),
+            catch: (cause) => new Error("Failed to evict refreshed cover cache", { cause }),
+          });
+        }
+
+        yield* Effect.sync(() => revalidator.revalidate());
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => console.error("Failed to replace book file:", error)),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            setReplacing(false);
+            input.value = "";
+          }),
+        ),
+      );
+
+      await AppRuntime.runPromise(program).catch((error) =>
+        console.error("Failed to replace book file:", error),
+      );
+    },
+    [book.id, book.remoteCoverUrl, isActive, reloadBookFiles, revalidator],
+  );
+
   return (
     <div className="h-dvh overflow-y-auto p-4 md:p-6">
       <div className="mb-6">
@@ -260,6 +351,16 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
           </div>
 
           <div className="mt-2 flex gap-2">
+            <input
+              ref={replaceInputRef}
+              type="file"
+              accept=".epub"
+              className="hidden"
+              onChange={handleReplaceFile}
+            />
+            <Button variant="outline" onClick={handleReplaceButtonClick} disabled={replacing}>
+              {replacing ? "Replacing…" : "Replace book file"}
+            </Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : saved ? "Saved" : "Save"}
             </Button>
