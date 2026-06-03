@@ -17,6 +17,7 @@ import {
   type LocalChatSession,
 } from "./server-transforms";
 import {
+  getBookDataStore,
   getBookStore,
   getBookmarkStore,
   getChatSessionStore,
@@ -77,20 +78,31 @@ export async function mergeBookRecord(record: Record<string, unknown>): Promise<
     // hasLocalFile and coverImage are never sent to the server, so
     // serverBookToLocal always returns them as undefined/null.
     //
-    // remoteCoverUrl / remoteFileUrl: treat nullish server values as
-    // "no opinion" and keep the locally-known URL. The server row may
-    // have been stamped before this device's upload push landed, or a
-    // different device created the book row without uploading blobs
-    // yet. Overwriting with undefined would clear URLs we already have
-    // and force a redundant re-upload on the next push.
+    // remoteCoverUrl / remoteFileUrl: the server pull cannot distinguish
+    // "row exists with a null URL" from "URL simply not carried" —
+    // serverBookToLocal maps both to undefined (see server-transforms.ts).
+    // We therefore use a heuristic gated on having local source bytes:
+    //   - If the server URL is nullish AND we hold the source bytes to
+    //     re-upload from, CLEAR the stale local URL so the existing
+    //     uploadPendingFiles pass re-uploads and re-stamps it. This
+    //     recovers books whose server row genuinely lost its blob URL.
+    //   - Otherwise (nullish server URL but no local bytes) keep the
+    //     locally-known URL. This is the common "pending upload hasn't
+    //     landed" race; clearing here would just break the download link.
+    const hasLocalFileBytes = Boolean(await get<ArrayBuffer>(id, getBookDataStore()));
+    const hasLocalCoverBytes = local.coverImage instanceof Blob;
+
+    const remoteFileUrl = remoteRecord.remoteFileUrl as string | undefined;
+    const remoteCoverUrl = remoteRecord.remoteCoverUrl as string | undefined;
+
     await set(
       id,
       {
         ...remoteRecord,
         hasLocalFile: local.hasLocalFile,
         coverImage: local.coverImage ?? remoteRecord.coverImage,
-        remoteCoverUrl: remoteRecord.remoteCoverUrl ?? local.remoteCoverUrl,
-        remoteFileUrl: remoteRecord.remoteFileUrl ?? local.remoteFileUrl,
+        remoteCoverUrl: remoteCoverUrl ?? (hasLocalCoverBytes ? undefined : local.remoteCoverUrl),
+        remoteFileUrl: remoteFileUrl ?? (hasLocalFileBytes ? undefined : local.remoteFileUrl),
       },
       store,
     );

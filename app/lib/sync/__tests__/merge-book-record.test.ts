@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createStore, clear, get, set } from "idb-keyval";
+import { Blob as NodeBlob } from "node:buffer";
 
 vi.mock("../remap", () => ({
   remapBookId: vi.fn(async () => {}),
@@ -12,10 +13,13 @@ const remapSpy = remapBookId as unknown as ReturnType<typeof vi.fn>;
 
 // Must match the IDB db/store names used in sync-engine.ts.
 const bookStore = createStore("ebook-reader-db", "books");
+// Must match getBookDataStore() in stores.ts.
+const bookDataStore = createStore("ebook-reader-book-data", "book-data");
 
 beforeEach(async () => {
   remapSpy.mockClear();
   await clear(bookStore);
+  await clear(bookDataStore);
 });
 
 describe("mergeBookRecord pull-path dedup", () => {
@@ -249,5 +253,90 @@ describe("mergeBookRecord preserves local blob URLs on server-wins merge", () =>
     expect(after?.title).toBe("Local newer");
     expect(after?.remoteCoverUrl).toBe("https://blob.vercel/cover-local");
     expect(after?.remoteFileUrl).toBe("https://blob.vercel/file-local");
+  });
+
+  it("clears stale local URLs when the server URL is nullish and local source bytes exist", async () => {
+    const originalBlob = globalThis.Blob;
+    try {
+      globalThis.Blob = NodeBlob as typeof Blob;
+
+      await set("book-4", new ArrayBuffer(8), bookDataStore);
+      await set(
+        "book-4",
+        {
+          id: "book-4",
+          title: "Local",
+          author: "A",
+          coverImage: new NodeBlob(["cover-bytes"], { type: "image/jpeg" }),
+          format: "epub",
+          fileHash: "abc",
+          remoteCoverUrl: "https://blob.vercel/cover-stale",
+          remoteFileUrl: "https://blob.vercel/file-stale",
+          hasLocalFile: true,
+          updatedAt: 100,
+        },
+        bookStore,
+      );
+
+      const before = await get<Record<string, unknown>>("book-4", bookStore);
+      expect(before?.coverImage).toBeInstanceOf(Blob);
+
+      // Server record wins LWW with no blob URLs — its row genuinely lost
+      // them. We hold local bytes, so the stale local URLs must be cleared
+      // so uploadPendingFiles re-uploads.
+      await mergeBookRecord({
+        id: "book-4",
+        title: "Remote",
+        author: "A",
+        format: "epub",
+        fileHash: "abc",
+        coverBlobUrl: null,
+        fileBlobUrl: null,
+        updatedAt: 200,
+      });
+
+      const after = await get<Record<string, unknown>>("book-4", bookStore);
+      expect(after?.title).toBe("Remote");
+      expect(after?.remoteCoverUrl).toBeUndefined();
+      expect(after?.remoteFileUrl).toBeUndefined();
+    } finally {
+      globalThis.Blob = originalBlob;
+    }
+  });
+
+  it("preserves local URLs when the server URL is nullish but there are no local source bytes", async () => {
+    // No entry in bookDataStore for book-5 and no Blob coverImage.
+    await set(
+      "book-5",
+      {
+        id: "book-5",
+        title: "Local",
+        author: "A",
+        coverImage: null,
+        format: "epub",
+        fileHash: "abc",
+        remoteCoverUrl: "https://blob.vercel/cover-1",
+        remoteFileUrl: "https://blob.vercel/file-1",
+        hasLocalFile: true,
+        updatedAt: 100,
+      },
+      bookStore,
+    );
+
+    await mergeBookRecord({
+      id: "book-5",
+      title: "Remote",
+      author: "A",
+      format: "epub",
+      fileHash: "abc",
+      coverBlobUrl: null,
+      fileBlobUrl: null,
+      updatedAt: 200,
+    });
+
+    const after = await get<Record<string, unknown>>("book-5", bookStore);
+    expect(after?.title).toBe("Remote");
+    expect(after?.remoteCoverUrl).toBe("https://blob.vercel/cover-1");
+    expect(after?.remoteFileUrl).toBe("https://blob.vercel/file-1");
   });
 });
