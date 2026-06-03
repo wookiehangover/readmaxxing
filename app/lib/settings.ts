@@ -34,6 +34,9 @@ export const SyncedSettingsSchema = Schema.Struct({
     Schema.Literal("default", "dracula", "nord", "rose-pine", "tokyo-night", "solarized"),
     { default: () => "default" as const },
   ),
+  librarySortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), {
+    default: () => "author" as const,
+  }),
   /** Timestamp of last synced settings change. Used for LWW sync. */
   updatedAt: Schema.optional(Schema.Number),
 });
@@ -109,6 +112,7 @@ export type Settings = typeof SettingsSchema.Type;
 export const SYNCED_SETTINGS_KEYS = [
   "theme",
   "colorTheme",
+  "librarySortBy",
 ] as const satisfies readonly (keyof SyncedSettings)[];
 
 export const LOCAL_UI_SETTINGS_KEYS = [
@@ -142,6 +146,7 @@ const defaultSettings: Settings = {
   sidebarCollapsed: false,
   zenMode: false,
   workspaceSortBy: "recent",
+  librarySortBy: "author",
   libraryView: "grid",
   colorTheme: "default",
   layoutMode: "focused",
