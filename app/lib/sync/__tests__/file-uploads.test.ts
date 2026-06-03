@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clear, createStore, get, set } from "idb-keyval";
 import { upload } from "@vercel/blob/client";
+import { Blob as NodeBlob } from "node:buffer";
 import { recordChange } from "../change-log";
 import { reloadBookFiles, uploadPendingFiles } from "../file-uploads";
 import { uploadRetryKey, type UploadRetryEntry } from "../upload-retry";
@@ -18,6 +19,7 @@ const recordChangeMock = vi.mocked(recordChange);
 
 const bookStore = createStore("ebook-reader-db", "books");
 const bookDataStore = createStore("ebook-reader-book-data", "book-data");
+const originalBlob = globalThis.Blob;
 
 async function seedPendingBook(bookId: string): Promise<void> {
   await set(
@@ -35,11 +37,13 @@ async function seedPendingBook(bookId: string): Promise<void> {
 }
 
 beforeEach(async () => {
+  globalThis.Blob = NodeBlob as typeof Blob;
   vi.clearAllMocks();
   await Promise.all([clear(bookStore), clear(bookDataStore)]);
 });
 
 afterEach(() => {
+  globalThis.Blob = originalBlob;
   vi.unstubAllGlobals();
 });
 

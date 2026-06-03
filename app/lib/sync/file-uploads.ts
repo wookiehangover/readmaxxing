@@ -38,6 +38,15 @@ export function resetUploadBackoff(ctx: FileUploadContext): void {
   ctx.uploadRetryState.clear();
 }
 
+function isBlobLike(value: unknown): value is Blob {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    typeof (value as Blob).arrayBuffer === "function" &&
+    typeof (value as Blob).size === "number"
+  );
+}
+
 export async function uploadFile(
   ctx: FileUploadContext,
   bookId: string,
@@ -47,7 +56,7 @@ export async function uploadFile(
   const folder = type === "cover" ? "covers" : "books";
   const fileName = type === "cover" ? "cover.jpg" : "book.epub";
   const contentType = type === "cover" ? "image/jpeg" : "application/epub+zip";
-  const blob = data instanceof Blob ? data : new Blob([data], { type: contentType });
+  const blob = isBlobLike(data) ? data : new Blob([data], { type: contentType });
   const pathname = `${folder}/${ctx.userId}/${bookId}/${fileName}`;
 
   const result = await runUploadWithRetry(
@@ -103,7 +112,7 @@ export async function uploadFileWithBackoff(
     });
     return null;
   }
-  const size = data instanceof Blob ? data.size : data.byteLength;
+  const size = isBlobLike(data) ? data.size : data.byteLength;
   syncDebugLog("upload-attempt", { bookId, type, size });
   const url = await uploadFile(ctx, bookId, data, type);
   if (url) {
@@ -196,46 +205,50 @@ export async function uploadPendingFiles(
     let meta = entry[1];
     if (!meta || typeof meta !== "object" || meta.deletedAt) continue;
 
-    // Upload epub file if missing remoteFileUrl, or repair a stale remote URL
-    // when the startup recovery pass finds that the server download is gone.
-    const existingFileUrl = typeof meta.remoteFileUrl === "string" ? meta.remoteFileUrl : undefined;
-    if (!existingFileUrl || options?.verifyExistingRemoteUrls) {
-      try {
-        const fileData = await get<ArrayBuffer>(bookId, dataStore);
-        if (fileData) {
-          const shouldUpload = !existingFileUrl || !(await remoteDownloadExists(bookId, "file"));
+    try {
+      // Upload epub file if missing remoteFileUrl, or repair a stale remote URL
+      // when the startup recovery pass finds that the server download is gone.
+      const existingFileUrl =
+        typeof meta.remoteFileUrl === "string" ? meta.remoteFileUrl : undefined;
+      if (!existingFileUrl || options?.verifyExistingRemoteUrls) {
+        try {
+          const fileData = await get<ArrayBuffer>(bookId, dataStore);
+          if (fileData) {
+            const shouldUpload = !existingFileUrl || !(await remoteDownloadExists(bookId, "file"));
+            if (shouldUpload) {
+              const stamped = await uploadLocalCopy(ctx, bookId, meta, fileData, "file", {
+                resetBackoff: !!existingFileUrl,
+              });
+              if (stamped) meta = stamped;
+            }
+          }
+        } catch (err) {
+          console.error(`[sync] pending file upload failed for ${bookId}:`, err);
+        }
+      }
+
+      // Upload cover image if missing remoteCoverUrl. Once any remote URL
+      // is recorded, the cover is not re-uploaded on subsequent sync cycles;
+      // private covers are served via the proxy fallback.
+      const existingCoverUrl =
+        typeof meta.remoteCoverUrl === "string" ? meta.remoteCoverUrl : undefined;
+      const needsCoverUpload =
+        isBlobLike(meta.coverImage) && (!existingCoverUrl || options?.verifyExistingRemoteUrls);
+      if (needsCoverUpload) {
+        try {
+          const shouldUpload = !existingCoverUrl || !(await remoteDownloadExists(bookId, "cover"));
           if (shouldUpload) {
-            const stamped = await uploadLocalCopy(ctx, bookId, meta, fileData, "file", {
-              resetBackoff: !!existingFileUrl,
+            const stamped = await uploadLocalCopy(ctx, bookId, meta, meta.coverImage, "cover", {
+              resetBackoff: !!existingCoverUrl,
             });
             if (stamped) meta = stamped;
           }
+        } catch (err) {
+          console.error(`[sync] pending cover upload failed for ${bookId}:`, err);
         }
-      } catch (err) {
-        console.error(`[sync] pending file upload failed for ${bookId}:`, err);
       }
-    }
-
-    // Upload cover image if missing remoteCoverUrl. Once any remote URL
-    // is recorded, the cover is not re-uploaded on subsequent sync cycles;
-    // private covers are served via the proxy fallback.
-    const existingCoverUrl =
-      typeof meta.remoteCoverUrl === "string" ? meta.remoteCoverUrl : undefined;
-    const needsCoverUpload =
-      meta.coverImage instanceof Blob && (!existingCoverUrl || options?.verifyExistingRemoteUrls);
-    if (needsCoverUpload) {
-      try {
-        const shouldUpload =
-          !existingCoverUrl || !(await remoteDownloadExists(bookId, "cover"));
-        if (shouldUpload) {
-          const stamped = await uploadLocalCopy(ctx, bookId, meta, meta.coverImage as Blob, "cover", {
-            resetBackoff: !!existingCoverUrl,
-          });
-          if (stamped) meta = stamped;
-        }
-      } catch (err) {
-        console.error(`[sync] pending cover upload failed for ${bookId}:`, err);
-      }
+    } catch (err) {
+      console.error(`[sync] pending book upload failed for ${bookId}:`, err);
     }
   }
 
@@ -316,9 +329,9 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
   // without a local blob).
   const existingCoverUrl =
     typeof meta.remoteCoverUrl === "string" ? meta.remoteCoverUrl : undefined;
-  const needsCoverUpload = meta.coverImage instanceof Blob && !existingCoverUrl;
+  const needsCoverUpload = isBlobLike(meta.coverImage) && !existingCoverUrl;
   if (needsCoverUpload) {
-    const stamped = await uploadLocalCopy(ctx, bookId, meta, meta.coverImage as Blob, "cover");
+    const stamped = await uploadLocalCopy(ctx, bookId, meta, meta.coverImage, "cover");
     if (stamped) {
       meta = stamped;
       metaChanged = true;
@@ -335,7 +348,7 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
         metaChanged = true;
       } else {
         console.error(`[sync] reload cover download failed: ${res.status} ${res.statusText}`);
-        if (meta.coverImage instanceof Blob) {
+        if (isBlobLike(meta.coverImage)) {
           const stamped = await uploadLocalCopy(ctx, bookId, meta, meta.coverImage, "cover", {
             resetBackoff: true,
           });
