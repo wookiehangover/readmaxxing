@@ -79,8 +79,17 @@ vi.mock("../pool", () => ({
 
 import { upsertBook } from "../book/book";
 
-function extractValues(query: { _items: Array<{ type: string; value?: unknown }> }): unknown[] {
+type SqlQuery = { _items: Array<{ type: string; value?: unknown; text?: string }> };
+
+function extractValues(query: SqlQuery): unknown[] {
   return query._items.filter((i) => i.type === "VALUE").map((i) => i.value);
+}
+
+function extractSqlText(query: SqlQuery): string {
+  return query._items
+    .filter((i) => i.type === "RAW")
+    .map((i) => i.text)
+    .join("");
 }
 
 describe("upsertBook (clamped updated_at)", () => {
@@ -124,5 +133,60 @@ describe("upsertBook (clamped updated_at)", () => {
 
     const boundValues = extractValues(queryMock.mock.calls[0][0]);
     expect(boundValues[6]).toBe(reasonable.toISOString());
+  });
+
+  it("writes deleted_at as null for restored books and applies it on LWW update", async () => {
+    await upsertBook("user-1", {
+      id: "book-1",
+      updatedAt: new Date(FIXED_NOW),
+      deletedAt: null,
+    });
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    const boundValues = extractValues(query);
+    expect(boundValues[7]).toBeNull();
+    expect(boundValues[8]).toBe(true);
+    expect(extractSqlText(query)).toContain("THEN EXCLUDED.deleted_at");
+    expect(extractSqlText(query)).toContain("WHERE EXCLUDED.updated_at > readmax.book.updated_at");
+  });
+
+  it("writes deleted_at for soft-deleted books", async () => {
+    const deletedAt = new Date(FIXED_NOW - 30_000);
+    await upsertBook("user-1", {
+      id: "book-1",
+      updatedAt: new Date(FIXED_NOW),
+      deletedAt,
+    });
+
+    const boundValues = extractValues(queryMock.mock.calls[0][0] as SqlQuery);
+    expect(boundValues[7]).toBe(deletedAt.toISOString());
+    expect(boundValues[8]).toBe(true);
+  });
+
+  it("leaves deleted_at unchanged on conflict when deletedAt is omitted", async () => {
+    await upsertBook("user-1", {
+      id: "book-1",
+      updatedAt: new Date(FIXED_NOW),
+    });
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    const boundValues = extractValues(query);
+    expect(boundValues[7]).toBeNull();
+    expect(boundValues[8]).toBe(false);
+    expect(extractSqlText(query)).toContain("ELSE readmax.book.deleted_at");
+  });
+
+  it("allows same-timestamp live restores of existing tombstones", async () => {
+    await upsertBook("user-1", {
+      id: "book-1",
+      updatedAt: new Date(FIXED_NOW),
+      deletedAt: null,
+    });
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    const sqlText = extractSqlText(query);
+    expect(sqlText).toContain("EXCLUDED.updated_at = readmax.book.updated_at");
+    expect(sqlText).toContain("EXCLUDED.deleted_at IS NULL");
+    expect(sqlText).toContain("readmax.book.deleted_at IS NOT NULL");
   });
 });

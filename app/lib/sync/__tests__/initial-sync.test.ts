@@ -126,12 +126,12 @@ describe("runInitialSyncIfNeeded — settings backfill", () => {
     const data = settingsChanges[0].data as Record<string, unknown>;
     expect(data).toEqual({
       theme: "dark",
-      fontSize: 120,
-      fontFamily: "Merriweather",
-      lineHeight: 1.7,
       colorTheme: "nord",
       updatedAt: 4242,
     });
+    expect(data).not.toHaveProperty("fontSize");
+    expect(data).not.toHaveProperty("fontFamily");
+    expect(data).not.toHaveProperty("lineHeight");
     expect(data).not.toHaveProperty("layoutMode");
     expect(data).not.toHaveProperty("sidebarCollapsed");
     expect(data).not.toHaveProperty("libraryView");

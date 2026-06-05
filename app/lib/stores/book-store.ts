@@ -22,6 +22,10 @@ export const BookMetaSchema = Schema.Struct({
   remoteFileUrl: Schema.optional(Schema.String),
   /** SHA-256 hash of the file data, used for deduplication during sync. */
   fileHash: Schema.optional(Schema.String),
+  /** User ID of the person who shared this book, if imported via share link. */
+  sharedBy: Schema.optional(Schema.String),
+  /** Share link ID used to import this book, if imported via share link. */
+  shareId: Schema.optional(Schema.String),
   /** Timestamp of last mutation (creation or update). Used for LWW sync. */
   updatedAt: Schema.optional(Schema.Number),
   /** Soft-delete timestamp. When set, the book is considered deleted. */
@@ -90,8 +94,16 @@ export class BookService extends Context.Tag("BookService")<
   {
     readonly saveBook: (meta: BookMeta, data: ArrayBuffer) => Effect.Effect<void, StorageError>;
     readonly updateBookMeta: (meta: BookMeta) => Effect.Effect<void, StorageError>;
+    readonly replaceBookFile: (
+      id: string,
+      data: ArrayBuffer,
+      meta: { coverImage: Blob | null; fileHash: string },
+    ) => Effect.Effect<void, BookNotFoundError | StorageError | DecodeError>;
     readonly getBooks: () => Effect.Effect<BookMeta[], StorageError | DecodeError>;
     readonly getBook: (
+      id: string,
+    ) => Effect.Effect<BookMeta, BookNotFoundError | StorageError | DecodeError>;
+    readonly getBookIncludingDeleted: (
       id: string,
     ) => Effect.Effect<BookMeta, BookNotFoundError | StorageError | DecodeError>;
     readonly getBookData: (
@@ -145,6 +157,46 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
         catch: (cause) => new StorageError({ operation: "updateBookMeta", cause }),
       }),
 
+    replaceBookFile: (id, data, meta) =>
+      Effect.gen(function* () {
+        const raw = yield* Effect.tryPromise({
+          try: () => get<unknown>(id, bookStore),
+          catch: (cause) => new StorageError({ operation: "replaceBookFile.read", cause }),
+        });
+        if (!raw) {
+          return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
+        }
+
+        const existing = yield* Effect.try({
+          try: () => decodeBookMeta(raw),
+          catch: (cause) => new DecodeError({ operation: "replaceBookFile.decode", cause }),
+        });
+        const stamped = {
+          ...existing,
+          coverImage: meta.coverImage,
+          fileHash: meta.fileHash,
+          remoteCoverUrl: undefined,
+          remoteFileUrl: undefined,
+          hasLocalFile: true,
+          updatedAt: Date.now(),
+        };
+
+        yield* Effect.tryPromise({
+          try: async () => {
+            await set(id, data, bookDataStore);
+            await set(id, stamped, bookStore);
+            recordChange({
+              entity: "book",
+              entityId: id,
+              operation: "put",
+              data: stamped,
+              timestamp: stamped.updatedAt,
+            }).catch(console.error);
+          },
+          catch: (cause) => new StorageError({ operation: "replaceBookFile.write", cause }),
+        });
+      }),
+
     getBooks: () =>
       Effect.gen(function* () {
         yield* Effect.tryPromise({
@@ -190,6 +242,24 @@ export function makeBookService(stores: BookServiceStores): BookService["Type"] 
         return yield* Effect.try({
           try: () => decodeBookMeta(raw),
           catch: (cause) => new DecodeError({ operation: "getBook", cause }),
+        });
+      }),
+
+    // Same as getBook, but explicitly returns the record even when soft-deleted
+    // (deletedAt set). Used by the power-user details editor so a soft-deleted
+    // book can still be inspected and restored.
+    getBookIncludingDeleted: (id: string) =>
+      Effect.gen(function* () {
+        const raw = yield* Effect.tryPromise({
+          try: () => get<unknown>(id, bookStore),
+          catch: (cause) => new StorageError({ operation: "getBookIncludingDeleted", cause }),
+        });
+        if (!raw) {
+          return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
+        }
+        return yield* Effect.try({
+          try: () => decodeBookMeta(raw),
+          catch: (cause) => new DecodeError({ operation: "getBookIncludingDeleted", cause }),
         });
       }),
 

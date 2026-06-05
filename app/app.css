@@ -252,6 +252,15 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.zen-mode .dv-tabs-and-actions-container {
+  display: none !important;
+}
+
+.zen-mode .dv-left-actions-container,
+.zen-mode .dv-void-container {
+  border-bottom: none;
+}
+
 .dockview-theme-app .dv-tab.dv-active-tab {
   border-bottom-color: transparent;
 }
@@ -366,4 +375,21 @@ body {
   background: rgba(59, 130, 246, 0.6);
   color: transparent;
   border-radius: 1px;
+}
+
+/* suggested question indicator*/
+
+.next-suggestion {
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+    opacity 0.2s ease;
+}
+
+.next-suggestion-active {
+  opacity: 1;
 }

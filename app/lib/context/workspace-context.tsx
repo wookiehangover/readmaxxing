@@ -53,6 +53,15 @@ export interface WorkspaceContextValue {
   fileInputRef: React.MutableRefObject<HTMLInputElement | null>;
   /** Current books list */
   booksRef: React.MutableRefObject<BookMeta[]>;
+  /**
+   * IDs of books that currently have an open panel, in the authoritative shape
+   * the workspace tracks for the active layout mode. In freeform mode this is
+   * the set of mounted `book-*` panels; in focused mode it is the full
+   * focused-order set (inactive focused clusters are unmounted, so dockview /
+   * `clustersRef` alone would only reflect the active cluster). Synced from
+   * `workspace.tsx`; consumers re-read it on `subscribeClusterChanges`.
+   */
+  openBookIdsRef: React.MutableRefObject<Set<string>>;
   /** Callback to open a book panel */
   openBookRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
   /** Callback to open a notebook panel */
@@ -75,6 +84,8 @@ export interface WorkspaceContextValue {
   chatContextMap: React.MutableRefObject<
     Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
   >;
+  /** bookId -> pending highlighted text for chat input pill */
+  pendingHighlightPillMap: React.MutableRefObject<Map<string, { text: string; pageLabel: string }>>;
   /** Find TOC entries for a book by scanning dockview panels */
   findTocForBook: (bookId: string) => TocEntry[] | undefined;
   /** panelId -> temporary highlight callback */
@@ -147,6 +158,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const dockviewApi = useRef<DockviewApi | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const booksRef = useRef<BookMeta[]>([]);
+  const openBookIdsRef = useRef<Set<string>>(new Set());
   const openBookRef = useRef<((book: BookMeta) => void) | null>(null);
   const openNotebookRef = useRef<((book: BookMeta) => void) | null>(null);
   const openChatRef = useRef<((book: BookMeta) => void) | null>(null);
@@ -160,6 +172,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       { currentChapterIndex: number; currentSpineHref: string; visibleText: string }
     >(),
   );
+  const pendingHighlightPillMap = useRef(new Map<string, { text: string; pageLabel: string }>());
   const tempHighlightMap = useRef(new Map<string, (cfi: string) => void>());
   const highlightDeleteMap = useRef(new Map<string, (cfiRange: string) => void>());
   const notebookEditorCallbackMap = useRef(new Map<string, NotebookEditorCallbacks>());
@@ -327,6 +340,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       dockviewApi,
       fileInputRef,
       booksRef,
+      openBookIdsRef,
       openBookRef,
       openNotebookRef,
       openChatRef,
@@ -335,6 +349,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       onBookAddedRef,
       onBookDeletedRef,
       chatContextMap,
+      pendingHighlightPillMap,
       findNavForBook,
       waitForNavForBook,
       findTocForBook,

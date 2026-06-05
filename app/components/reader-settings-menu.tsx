@@ -1,5 +1,17 @@
-import { Fragment } from "react";
-import { MoreHorizontal, Minus, Plus } from "lucide-react";
+import { Fragment, useState } from "react";
+import {
+  Bookmark,
+  BookmarkCheck,
+  Download,
+  MoreHorizontal,
+  Minus,
+  Plus,
+  Share2,
+  Type,
+  ClipboardCopyIcon,
+} from "lucide-react";
+import { toast } from "sonner";
+import { ShareDialog } from "~/components/share-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,12 +26,23 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import type { ReaderLayout, PdfLayout, Settings } from "~/lib/settings";
+import { useAuth } from "~/lib/context/auth-context";
+import type { BookMeta } from "~/lib/stores/book-store";
+import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/settings";
+import { Button } from "./ui/button";
 
-interface ReaderSettingsMenuProps {
+interface ReaderFormattingMenuProps {
   settings: Settings;
   onUpdateSettings: (update: Partial<Settings>) => void;
   isPdf?: boolean;
+}
+
+interface ReaderActionsMenuProps {
+  book?: BookMeta;
+  onDownload: () => void | Promise<void>;
+  onBookmarkPage: () => void | Promise<void>;
+  onCopyPageAsMarkdown?: () => void;
+  isBookmarked?: boolean;
 }
 
 const layoutOptions: { value: ReaderLayout; label: string }[] = [
@@ -62,14 +85,28 @@ const fontSections = [
   },
 ] as const;
 
-export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: ReaderSettingsMenuProps) {
+const textAlignOptions: { value: string; label: string; actualValue: TextAlign }[] = [
+  { value: "default", label: "Default", actualValue: undefined },
+  { value: "left", label: "Left", actualValue: "left" },
+  { value: "center", label: "Center", actualValue: "center" },
+  { value: "right", label: "Right", actualValue: "right" },
+  { value: "justify", label: "Justify", actualValue: "justify" },
+];
+
+export function ReaderFormattingMenu({
+  settings,
+  onUpdateSettings,
+  isPdf,
+}: ReaderFormattingMenuProps) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium hover:bg-accent hover:text-accent-foreground">
-        <MoreHorizontal className="size-4" />
-        <span className="sr-only">Reader settings</span>
+      <DropdownMenuTrigger
+        render={<Button variant="ghost" size="icon" title="Reader formatting" />}
+      >
+        <Type className="size-4" />
+        <span className="sr-only">Reader formatting</span>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
+      <DropdownMenuContent align="end" className="w-52 text-xs">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Layout</DropdownMenuLabel>
           {isPdf ? (
@@ -190,7 +227,97 @@ export function ReaderSettingsMenu({ settings, onUpdateSettings, isPdf }: Reader
             </DropdownMenuItem>
           </DropdownMenuGroup>
         )}
+
+        {!isPdf && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              Align:{" "}
+              {textAlignOptions.find((opt) => opt.actualValue === settings.textAlign)?.label ||
+                "Default"}
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuRadioGroup
+                value={settings.textAlign ?? "default"}
+                onValueChange={(value) =>
+                  onUpdateSettings({
+                    textAlign: value === "default" ? undefined : (value as TextAlign),
+                  })
+                }
+              >
+                {textAlignOptions.map((option) => (
+                  <DropdownMenuRadioItem key={option.value} value={option.value}>
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+export function ReaderActionsMenu({
+  book,
+  onDownload,
+  onBookmarkPage,
+  onCopyPageAsMarkdown,
+  isBookmarked,
+}: ReaderActionsMenuProps) {
+  const { isAuthenticated } = useAuth();
+  const [shareOpen, setShareOpen] = useState(false);
+  const BookmarkIcon = isBookmarked ? BookmarkCheck : Bookmark;
+
+  function handleShare() {
+    if (!book?.remoteFileUrl) {
+      toast.warning("Sign in and sync this book before sharing it.");
+      return;
+    }
+    setShareOpen(true);
+  }
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" title="Reader actions" />}>
+          <MoreHorizontal className="size-4" />
+          <span className="sr-only">Reader actions</span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52 text-xs">
+          <DropdownMenuGroup>
+            {onCopyPageAsMarkdown && (
+              <DropdownMenuItem onClick={onCopyPageAsMarkdown}>
+                <ClipboardCopyIcon className="size-4" />
+                Copy chapter
+              </DropdownMenuItem>
+            )}
+            {isAuthenticated && book && (
+              <DropdownMenuItem onClick={handleShare}>
+                <Share2 className="size-4" />
+                Share
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              onClick={() => {
+                void Promise.resolve(onDownload()).catch(console.error);
+              }}
+            >
+              <Download className="size-4" />
+              Download
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                void Promise.resolve(onBookmarkPage()).catch(console.error);
+              }}
+            >
+              <BookmarkIcon className="size-4" />
+              {isBookmarked ? "Remove bookmark" : "Bookmark page"}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ShareDialog book={book ?? null} open={shareOpen} onOpenChange={setShareOpen} />
+    </>
   );
 }

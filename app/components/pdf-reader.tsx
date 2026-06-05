@@ -1,19 +1,24 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
 import { TocList } from "~/components/book-list";
-import type { BookMeta } from "~/lib/stores/book-store";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
-import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { AnnotationsPanel } from "~/components/annotations-panel";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { SearchBar } from "~/components/search-bar";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { usePdfSearch } from "~/hooks/use-pdf-search";
 import { usePdfHighlights } from "~/hooks/use-pdf-highlights";
+import { useEffectQuery } from "~/hooks/use-effect-query";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 import type { TiptapEditorHandle } from "~/components/tiptap-editor";
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
+import { AppRuntime } from "~/lib/effect-runtime";
+import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 
 interface PdfReaderProps {
   book: BookMeta;
@@ -24,6 +29,7 @@ export function PdfReader({ book }: PdfReaderProps) {
   const [settings, updateSettings] = useSettings();
   const [tocOpen, setTocOpen] = useState(false);
   const [annotationsPanelOpen, setAnnotationsPanelOpen] = useState(false);
+  const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const editorRef = useRef<TiptapEditorHandle>(null);
   const [pendingHighlight, setPendingHighlight] = useState<HighlightReferenceAttrs | null>(null);
 
@@ -50,6 +56,21 @@ export function PdfReader({ book }: PdfReaderProps) {
       fontSize: settings.fontSize,
       onAfterRender: reapplyAllHighlights,
     });
+
+  const bookmarkSyncVersion = useSyncListener(["bookmark"]);
+  const { data: bookmarks } = useEffectQuery(
+    () =>
+      BookmarkService.pipe(
+        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to load bookmarks:", error);
+            return [] as BookmarkRecord[];
+          }),
+        ),
+      ),
+    [book.id, bookmarkVersion, bookmarkSyncVersion],
+  );
 
   // Load highlights once after initial render
   const highlightsLoadedRef = useRef(false);
@@ -82,6 +103,35 @@ export function PdfReader({ book }: PdfReaderProps) {
     [updateSettings],
   );
 
+  const handleDownload = useCallback(() => {
+    AppRuntime.runPromise(
+      BookService.pipe(
+        Effect.andThen((s) => s.getBookData(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to download book:", error);
+            return null as ArrayBuffer | null;
+          }),
+        ),
+      ),
+    )
+      .then((data) => {
+        if (!data) return;
+        const format = book.format ?? "pdf";
+        const type = format === "pdf" ? "application/pdf" : "application/epub+zip";
+        const blob = new Blob([data], { type });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${book.title.replace(/[\\/:*?"<>|]/g, "-")}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      })
+      .catch(console.error);
+  }, [book.id, book.title, book.format]);
+
   const handleSaveHighlight = useCallback(async () => {
     const highlight = await saveHighlightFromPopover();
     if (highlight) {
@@ -100,6 +150,14 @@ export function PdfReader({ book }: PdfReaderProps) {
     }
   }, [saveHighlightFromPopover]);
 
+  const handleCopyAsMarkdown = useCallback(async () => {
+    if (!selectionPopover) return;
+
+    await navigator.clipboard.writeText(selectionPopover.text);
+    dismissPopovers();
+    window.getSelection()?.removeAllRanges();
+  }, [selectionPopover, dismissPopovers]);
+
   // Flush pending highlight once the editor is mounted
   useEffect(() => {
     if (pendingHighlight && editorRef.current) {
@@ -115,6 +173,36 @@ export function PdfReader({ book }: PdfReaderProps) {
     [removeHighlight],
   );
 
+  const currentBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+
+  const handleBookmarkPage = useCallback(async () => {
+    if (currentPage < 1) return;
+    const existingBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+    const now = Date.now();
+
+    await AppRuntime.runPromise(
+      BookmarkService.pipe(
+        Effect.andThen((s) =>
+          existingBookmark
+            ? s.deleteBookmark(existingBookmark.id)
+            : s.saveBookmark({
+                id: `bookmark:${book.id}:page:${currentPage}`,
+                bookId: book.id,
+                pageNumber: currentPage,
+                label: `Page ${currentPage}`,
+                createdAt: now,
+                updatedAt: now,
+              }),
+        ),
+      ),
+    );
+    setBookmarkVersion((version) => version + 1);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
+      );
+    });
+  }, [book.id, bookmarks, currentPage]);
   const handleNavigateToHighlight = useCallback(
     (cfi: string) => {
       // Parse synthetic PDF cfiRange to navigate to the page
@@ -269,13 +357,23 @@ export function PdfReader({ book }: PdfReaderProps) {
                 </PopoverContent>
               </Popover>
             )}
-            <ReaderSettingsMenu settings={settings} onUpdateSettings={handleUpdateSettings} isPdf />
+            <ReaderFormattingMenu
+              settings={settings}
+              onUpdateSettings={handleUpdateSettings}
+              isPdf
+            />
+            <ReaderActionsMenu
+              book={book}
+              onDownload={handleDownload}
+              onBookmarkPage={handleBookmarkPage}
+              isBookmarked={Boolean(currentBookmark)}
+            />
           </div>
         </div>
         {selectionPopover && (
           <HighlightPopover
             position={selectionPopover.position}
-            selectedText={selectionPopover.text}
+            onCopyAsMarkdown={handleCopyAsMarkdown}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
           />

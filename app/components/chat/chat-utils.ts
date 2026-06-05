@@ -21,6 +21,34 @@ export function getToolInfo(part: any): {
   return null;
 }
 
+/**
+ * Join assistant text parts back into a single display string.
+ *
+ * Assistant responses can be split into multiple `text` parts at step/tool
+ * boundaries. A naive `.join("")` drops any whitespace that originally
+ * separated two parts (e.g. the space/newline between sentences that the model
+ * emitted right at a boundary), producing run-together text like
+ * "...end of chunk.Next sentence". This re-inserts a single space ONLY when the
+ * previous part ends with a non-whitespace character AND the next part begins
+ * with a non-whitespace character, so genuine sentence/paragraph boundaries keep
+ * a separator while mid-word splits and markdown (code fences, lists) are not
+ * corrupted by spurious spaces.
+ */
+export function joinTextParts(parts: string[]): string {
+  let out = "";
+  for (const part of parts) {
+    if (out.length > 0 && part.length > 0) {
+      const prevChar = out[out.length - 1];
+      const nextChar = part[0];
+      if (!/\s/.test(prevChar) && !/\s/.test(nextChar)) {
+        out += " ";
+      }
+    }
+    out += part;
+  }
+  return out;
+}
+
 /** Convert our persisted ChatMessage[] to UIMessage[] for useChat */
 export function toUIMessages(messages: ChatMessage[]): UIMessage[] {
   return messages.map((m) => ({
@@ -38,30 +66,35 @@ export function toUIMessages(messages: ChatMessage[]): UIMessage[] {
  *  messages; this is only used when reconciling server history into IDB so a
  *  subsequent cold reload renders the right thing immediately. */
 export function uiMessagesToChatMessages(messages: UIMessage[]): ChatMessage[] {
-  return messages.map((m) => ({
-    id: m.id,
-    role: m.role as "user" | "assistant",
-    content:
-      m.parts
-        ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-        .map((p) => p.text)
-        .join("") ?? "",
-    createdAt: Date.now(),
-    parts: m.parts?.map((p: any) => {
-      if (p.type === "text") return { type: "text", text: p.text };
-      if (p.type === "step-start") return { type: "step-start" };
-      if (typeof p.type === "string" && p.type.startsWith("tool-")) {
-        return {
-          type: p.type,
-          toolCallId: p.toolCallId,
-          state: p.state,
-          input: p.input,
-          output: p.output,
-        };
-      }
-      return { type: p.type };
-    }),
-  }));
+  // Defensive: drop ephemeral, client-only book add/remove markers (`annot-`)
+  // so they are never written to the warm-start IDB cache. They live in a
+  // separate render-only list today, but this guards against accidental leaks.
+  return messages
+    .filter((m) => !m.id.startsWith("annot-"))
+    .map((m) => ({
+      id: m.id,
+      role: m.role as "user" | "assistant",
+      content: joinTextParts(
+        m.parts
+          ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
+          .map((p) => p.text) ?? [],
+      ),
+      createdAt: Date.now(),
+      parts: m.parts?.map((p: any) => {
+        if (p.type === "text") return { type: "text", text: p.text };
+        if (p.type === "step-start") return { type: "step-start" };
+        if (typeof p.type === "string" && p.type.startsWith("tool-")) {
+          return {
+            type: p.type,
+            toolCallId: p.toolCallId,
+            state: p.state,
+            input: p.input,
+            output: p.output,
+          };
+        }
+        return { type: p.type };
+      }),
+    }));
 }
 
 /** Parse suggested prompts from an HTML comment at the end of assistant text. */
@@ -83,8 +116,12 @@ export function stripSuggestedPrompts(text: string): string {
  * Creates a DefaultChatTransport wired to the server-authoritative chat API.
  *
  * - `sendMessages` POSTs only the latest user message plus routing context
- *   (`sessionId`, `bookId`, `visibleText`, `currentChapterIndex`). The server
- *   loads prior history from Postgres, so we don't ship the full message list.
+ *   (`sessionId`, `bookId`, `visibleText`, `currentChapterIndex`). When more
+ *   than the primary book is selected it also sends `bookIds` (primary first)
+ *   and a per-book `bookContexts` map. The server loads prior history from
+ *   Postgres, so we don't ship the full message list.
+ * - The selected-book set is read from `selectedBookIdsRef` at send time (not a
+ *   stale closure) so a selection change between renders is always reflected.
  * - `reconnectToStream` is redirected to the custom resume endpoint
  *   `/api/chat/resume/:sessionId`, which replays an in-flight Agent stream.
  * - The custom `fetch` wrapper retries once on a 404 from `/api/chat`, which
@@ -99,6 +136,13 @@ export function createChatTransport(opts: {
   bookId: string;
   visibleTextRef: React.MutableRefObject<string>;
   currentChapterRef: React.MutableRefObject<number | undefined>;
+  /** Latest selected book IDs (primary first), read at send time. */
+  selectedBookIdsRef: React.MutableRefObject<string[]>;
+  /** Per-book reader context accessor, keyed by bookId. */
+  getBookContext: (bookId: string) => {
+    visibleText?: string;
+    currentChapterIndex?: number;
+  };
 }) {
   const fetchWithSessionRetry: typeof fetch = async (input, init) => {
     const res = await fetch(input, init);
@@ -122,15 +166,30 @@ export function createChatTransport(opts: {
   return new DefaultChatTransport<UIMessage>({
     api: "/api/chat",
     fetch: fetchWithSessionRetry,
-    prepareSendMessagesRequest: ({ messages }) => ({
-      body: {
-        sessionId: opts.sessionId,
-        bookId: opts.bookId,
-        visibleText: opts.visibleTextRef.current,
-        currentChapterIndex: opts.currentChapterRef.current,
-        message: messages[messages.length - 1],
-      },
-    }),
+    prepareSendMessagesRequest: ({ messages }) => {
+      // Read the latest selection at send time. Always include the primary
+      // book first; dedupe defensively in case the same id appears twice.
+      const selected = opts.selectedBookIdsRef.current ?? [opts.bookId];
+      const bookIds = Array.from(new Set([opts.bookId, ...selected]));
+      const bookContexts: Record<string, { visibleText?: string; currentChapterIndex?: number }> =
+        {};
+      for (const id of bookIds) {
+        bookContexts[id] = opts.getBookContext(id);
+      }
+      return {
+        body: {
+          sessionId: opts.sessionId,
+          // Primary book + its context, kept for back-compat.
+          bookId: opts.bookId,
+          visibleText: opts.visibleTextRef.current,
+          currentChapterIndex: opts.currentChapterRef.current,
+          // Multi-book contract (additive): all selected books, primary first.
+          bookIds,
+          bookContexts,
+          message: messages[messages.length - 1],
+        },
+      };
+    },
     prepareReconnectToStreamRequest: () => ({
       api: `/api/chat/resume/${encodeURIComponent(opts.sessionId)}`,
     }),

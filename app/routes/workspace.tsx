@@ -13,12 +13,14 @@ import { useBookUpload } from "~/hooks/use-book-upload";
 import { DropZone } from "~/components/drop-zone";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
+import { clampFocusedSplitRatio, type ReaderLayout, useSettings } from "~/lib/settings";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { sortBooks } from "~/lib/workspace-utils";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { BookReaderPanel, NotebookPanel, ChatPanel } from "~/components/workspace/panel-components";
+import { BookmarksPanel } from "~/components/workspace/bookmarks-panel";
+import { ReadingHistoryPanel } from "~/components/workspace/reading-history-panel";
 import { NewTabPanel } from "~/components/workspace/new-tab-panel";
 import { StandardEbooksPanel } from "~/components/workspace/standard-ebooks-panel";
 import { WatermarkPanel } from "~/components/workspace/watermark-panel";
@@ -71,6 +73,16 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps<any
   "new-tab": NewTabPanel,
   "standard-ebooks": StandardEbooksPanel,
   chat: ChatPanel,
+  bookmarks: BookmarksPanel,
+  "reading-history": ReadingHistoryPanel,
+};
+
+const SIDEBAR_TRANSITION_MS = 270;
+
+type ZenPreState = {
+  readonly sidebarCollapsed: boolean;
+  readonly readerLayout: ReaderLayout;
+  readonly dockviewJson: ReturnType<DockviewApi["toJSON"]> | undefined;
 };
 
 export default function WorkspaceRoute({ loaderData }: Route.ComponentProps) {
@@ -86,8 +98,14 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
+  const zenMode = settings.zenMode;
   const collapsedRef = useRef(collapsed);
   collapsedRef.current = collapsed;
+  const readerLayout = settings.readerLayout;
+  const readerLayoutRef = useRef(readerLayout);
+  readerLayoutRef.current = readerLayout;
+  const prevZenModeRef = useRef(zenMode);
+  const zenPreStateRef = useRef<ZenPreState | null>(null);
   const sortBy = settings.workspaceSortBy;
   const layoutMode = settings.layoutMode;
   const layoutModeRef = useRef(layoutMode);
@@ -97,6 +115,24 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const [_tocVersion, setTocVersion] = useState(0);
   // Track which books currently have open panels in dockview
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(new Set());
+
+  // Identity-stable setter: bail when the new set has the same contents as the
+  // current one. Callers (`updateOpenBooks`, `syncFocusedOpenBooks`) always pass
+  // a fresh `new Set(...)`, so without this guard the `openBookIds` effect below
+  // re-fires `notifyClusterChanges()` on every cluster notification, which calls
+  // `syncFocusedOpenBooks` again -> new Set -> notify -> ... an infinite loop.
+  const setOpenBookIdsStable = useCallback<React.Dispatch<React.SetStateAction<Set<string>>>>(
+    (action) => {
+      setOpenBookIds((prev) => {
+        const next = typeof action === "function" ? action(prev) : action;
+        if (next.size === prev.size && [...next].every((id) => prev.has(id))) {
+          return prev;
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
   // Focused-mode book/right split ratio (book-group width / total width).
   // Held in a ref so the swap callback in `useFocusedMode` can read the
@@ -112,6 +148,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     focusedClustersRef,
     focusedOrderRef,
     swapInProgressRef,
+    activateFocusedLibrary,
     closeFocusedCluster,
     reorderFocusedClusters,
     getClusterEntries,
@@ -160,7 +197,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     getActiveClusterId,
     enforceSingleFocusedCluster,
     updateSettings,
-    setOpenBookIds,
+    setOpenBookIds: setOpenBookIdsStable,
   });
 
   // Sync books to context ref so NewTabPanel (and other consumers) can read them.
@@ -168,6 +205,14 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   useEffect(() => {
     ws.booksRef.current = books;
   }, [books, ws]);
+
+  // Expose the authoritative open-book set to context consumers (e.g. the chat
+  // book-selector). `openBookIds` already accounts for focused mode, where
+  // inactive clusters are unmounted. Consumers re-read it on cluster changes.
+  useEffect(() => {
+    ws.openBookIdsRef.current = openBookIds;
+    ws.notifyClusterChanges();
+  }, [openBookIds, ws]);
 
   // Register TOC change listener (safe to re-run when ws changes)
   useEffect(() => {
@@ -177,19 +222,75 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     };
   }, [ws]);
 
-  useWorkspaceShortcuts({ apiRef, collapsed, updateSettings });
+  useWorkspaceShortcuts({ apiRef, collapsed, zenMode, updateSettings });
 
-  const { openBook, openNotebook, openChat, openStandardEbooks, closeBookPanels } =
-    useWorkspacePanels({
-      apiRef,
-      ws,
-      isMobileRef,
-      collapsedRef,
-      layoutModeRef,
-      focusedClustersRef,
-      focusedOrderRef,
-      updateSettings,
+  useEffect(() => {
+    const prevZenMode = prevZenModeRef.current;
+    if (prevZenMode === zenMode) return;
+
+    prevZenModeRef.current = zenMode;
+
+    if (zenMode) {
+      const api = apiRef.current;
+      zenPreStateRef.current = {
+        sidebarCollapsed: collapsedRef.current,
+        readerLayout: readerLayoutRef.current,
+        dockviewJson: api?.toJSON(),
+      };
+
+      if (api) {
+        for (const panel of Array.from(api.panels)) {
+          if (!panel.id.startsWith("book-")) api.removePanel(panel);
+        }
+      }
+
+      updateSettings({ sidebarCollapsed: true, readerLayout: "spread" });
+      setTimeout(
+        () => queueMicrotask(() => window.dispatchEvent(new Event("resize"))),
+        SIDEBAR_TRANSITION_MS,
+      );
+      return;
+    }
+
+    const previous = zenPreStateRef.current;
+    if (!previous) return;
+
+    updateSettings({
+      sidebarCollapsed: previous.sidebarCollapsed,
+      readerLayout: previous.readerLayout,
+      zenMode: false,
     });
+
+    if (previous.dockviewJson) {
+      try {
+        apiRef.current?.fromJSON(previous.dockviewJson);
+      } catch (err) {
+        console.error("Failed to restore zen mode dockview layout:", err);
+      }
+    }
+
+    queueMicrotask(() => window.dispatchEvent(new Event("resize")));
+    zenPreStateRef.current = null;
+  }, [zenMode, updateSettings]);
+
+  const {
+    openBook,
+    openNotebook,
+    openChat,
+    openBookmarks,
+    openReadingHistory,
+    openStandardEbooks,
+    closeBookPanels,
+  } = useWorkspacePanels({
+    apiRef,
+    ws,
+    isMobileRef,
+    collapsedRef,
+    layoutModeRef,
+    focusedClustersRef,
+    focusedOrderRef,
+    updateSettings,
+  });
 
   // Wrap setBooks to also update booksRef and notify booksChangeListener.
   // Both the ref mutation and listener notification happen in a queueMicrotask
@@ -245,6 +346,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     ws.openBookRef.current = openBook;
     ws.openNotebookRef.current = openNotebook;
     ws.openChatRef.current = openChat;
+    ws.openBookmarksRef.current = openBookmarks;
     ws.openStandardEbooksRef.current = openStandardEbooks;
     ws.onBookAddedRef.current = handleBookAdded;
     ws.onBookDeletedRef.current = handleBookDeleted;
@@ -252,6 +354,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     handleBookAdded,
     handleBookDeleted,
     openBook,
+    openBookmarks,
     openChat,
     openNotebook,
     openStandardEbooks,
@@ -263,6 +366,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       ws.openBookRef.current = null;
       ws.openNotebookRef.current = null;
       ws.openChatRef.current = null;
+      ws.openBookmarksRef.current = null;
       ws.openStandardEbooksRef.current = null;
       ws.onBookAddedRef.current = null;
       ws.onBookDeletedRef.current = null;
@@ -290,6 +394,14 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
       openNotebook(book);
       setMobileOpen(false);
     },
+    onOpenBookmarks: (book: BookMeta) => {
+      openBookmarks(book);
+      setMobileOpen(false);
+    },
+    onOpenReadingHistory: (book: BookMeta) => {
+      openReadingHistory(book);
+      setMobileOpen(false);
+    },
     onFileInput: handleFileInput,
   };
 
@@ -299,13 +411,14 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         className={cn(
           "flex h-dvh",
           layoutReady ? "animate-in fade-in-0 duration-300" : "opacity-0",
+          { "zen-mode": zenMode },
         )}
       >
         {/* Desktop sidebar — hidden on mobile */}
-        {isMobile !== true && <WorkspaceSidebar {...sidebarProps} />}
+        {isMobile !== true && !zenMode && <WorkspaceSidebar {...sidebarProps} />}
 
         {/* Mobile floating pill + sheet sidebar */}
-        {isMobile === true && (
+        {isMobile === true && !zenMode && (
           <>
             <button
               type="button"
@@ -333,12 +446,13 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
         )}
 
         {/* Dockview container — full width when sidebar is collapsed or on mobile */}
-        <div className="flex flex-1 flex-col">
-          {layoutMode === "focused" && (
+        <div className="flex flex-1 flex-col min-w-0">
+          {layoutMode === "focused" && !zenMode && (
             <ClusterBar
               getEntries={getClusterEntries}
               getActiveId={getActiveClusterId}
               onActivate={(bookId) => ws.setActiveCluster(bookId)}
+              onActivateLibrary={activateFocusedLibrary}
               onClose={closeFocusedCluster}
               onReorder={reorderFocusedClusters}
             />

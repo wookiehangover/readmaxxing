@@ -27,7 +27,8 @@ describe("mergeSettingsRecord — synced-key filtering", () => {
     });
 
     const synced = JSON.parse(localStorage.getItem(SYNCED_KEY)!);
-    expect(synced).toEqual({ theme: "dark", fontSize: 120, updatedAt: 1000 });
+    expect(synced).toEqual({ theme: "dark", updatedAt: 1000 });
+    expect(synced).not.toHaveProperty("fontSize");
     expect(synced).not.toHaveProperty("layoutMode");
     expect(synced).not.toHaveProperty("sidebarCollapsed");
     expect(synced).not.toHaveProperty("libraryView");
@@ -63,33 +64,33 @@ describe("mergeSettingsRecord — synced-key filtering", () => {
   it("applies LWW: newer remote wins for synced fields", async () => {
     localStorage.setItem(
       SYNCED_KEY,
-      JSON.stringify({ theme: "light", fontSize: 100, updatedAt: 100 }),
+      JSON.stringify({ theme: "light", colorTheme: "default", updatedAt: 100 }),
     );
 
     await mergeSettingsRecord({
-      settings: { theme: "dark", fontSize: 140 },
+      settings: { theme: "dark", colorTheme: "nord" },
       updatedAt: 200,
     });
 
     const synced = JSON.parse(localStorage.getItem(SYNCED_KEY)!);
     expect(synced.theme).toBe("dark");
-    expect(synced.fontSize).toBe(140);
+    expect(synced.colorTheme).toBe("nord");
     expect(synced.updatedAt).toBe(200);
   });
 
   it("applies LWW: older remote is ignored", async () => {
     localStorage.setItem(
       SYNCED_KEY,
-      JSON.stringify({ theme: "dark", fontSize: 140, updatedAt: 500 }),
+      JSON.stringify({ theme: "dark", colorTheme: "nord", updatedAt: 500 }),
     );
 
     await mergeSettingsRecord({
-      settings: { theme: "light", fontSize: 100, layoutMode: "freeform" },
+      settings: { theme: "light", colorTheme: "default", fontSize: 100, layoutMode: "freeform" },
       updatedAt: 100,
     });
 
     const synced = JSON.parse(localStorage.getItem(SYNCED_KEY)!);
-    expect(synced).toEqual({ theme: "dark", fontSize: 140, updatedAt: 500 });
+    expect(synced).toEqual({ theme: "dark", colorTheme: "nord", updatedAt: 500 });
   });
 
   it("returns silently when remote payload has no settings field", async () => {

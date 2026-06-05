@@ -115,7 +115,7 @@ describe("integration: pull merge applies mergers for every entity group", () =>
         },
         {
           entity: "settings",
-          records: [{ settings: { theme: "dark", fontSize: 18 }, updatedAt: T }],
+          records: [{ settings: { theme: "dark", colorTheme: "nord" }, updatedAt: T }],
           cursor: T,
           hasMore: false,
         },
@@ -177,6 +177,6 @@ describe("integration: pull merge applies mergers for every entity group", () =>
     expect(rawSettings).not.toBeNull();
     const parsed = JSON.parse(rawSettings as string);
     expect(parsed.theme).toBe("dark");
-    expect(parsed.fontSize).toBe(18);
+    expect(parsed.colorTheme).toBe("nord");
   });
 });

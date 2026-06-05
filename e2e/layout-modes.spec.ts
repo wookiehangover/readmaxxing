@@ -120,6 +120,27 @@ test.describe("Layout modes", () => {
     ).toHaveCount(0);
   });
 
+  test("reloading the tab keeps all open books in focused mode", async ({ page }) => {
+    // Regression: a reload restored only the active cluster because the
+    // openBookIds effect fired a focused-state SAVE before the async restore
+    // resolved, clobbering the persisted multi-book state with an empty one.
+    // Two reloads surface the race: the first persists the (possibly clobbered)
+    // state, the second restores from it.
+    await uploadBook(page, TEST_EPUB_1, "Test Book for E2E");
+    await uploadBook(page, TEST_EPUB_2, "Second Test Book");
+    await expect(clusterPills(page)).toHaveCount(2);
+
+    await page.waitForTimeout(400);
+    await page.reload();
+    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await expect(clusterPills(page)).toHaveCount(2);
+
+    await page.waitForTimeout(400);
+    await page.reload();
+    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await expect(clusterPills(page)).toHaveCount(2);
+  });
+
   test("Cmd+1..9 activates the Nth cluster, and is ignored in editable elements", async ({
     page,
   }) => {

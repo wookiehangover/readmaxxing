@@ -33,6 +33,7 @@ export async function processEntry(
           remoteCoverUrl?: string | null;
           remoteFileUrl?: string | null;
           updatedAt?: number | null;
+          deletedAt?: number | null;
         };
 
         // Cross-device dedup: if another non-deleted book for this user
@@ -55,14 +56,16 @@ export async function processEntry(
           }
         }
 
-        await upsertBook(userId, {
+        const bookData = {
           id: entry.entityId,
           title: data.title,
           author: data.author,
           format: data.format,
           fileHash: data.fileHash,
           updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-        });
+          deletedAt: data.deletedAt != null ? new Date(data.deletedAt) : null,
+        };
+        await upsertBook(userId, bookData);
 
         // Persist blob URLs if the client carried them. Additive to the
         // onUploadCompleted webhook in api.sync.files.upload.ts (the webhook

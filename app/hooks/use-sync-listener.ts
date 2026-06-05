@@ -4,6 +4,7 @@ export type SyncEntity =
   | "book"
   | "position"
   | "highlight"
+  | "bookmark"
   | "notebook"
   | "chat_session"
   | "chat_message"

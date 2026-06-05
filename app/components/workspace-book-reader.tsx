@@ -16,8 +16,8 @@ import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings, resolveTheme } from "~/lib/settings";
-import type { PdfLayout, ReaderLayout, Settings } from "~/lib/settings";
-import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import type { PdfLayout, ReaderLayout, Settings, TextAlign } from "~/lib/settings";
+import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
 import { useEffectQuery } from "~/hooks/use-effect-query";
@@ -30,12 +30,20 @@ import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
+import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
+import {
+  getBookPreferences,
+  saveBookPreferences,
+  type BookPreferences,
+} from "~/lib/stores/book-preferences-store";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
   fontFamily?: string;
   fontSize?: number;
   lineHeight?: number;
+  textAlign?: "left" | "center" | "right" | "justify";
   readerLayout?: ReaderLayout;
   pdfLayout?: PdfLayout;
 }
@@ -201,14 +209,58 @@ function WorkspaceBookReaderInner({
   const [localLineHeight, setLocalLineHeight] = useState<number>(
     () => panelTypography?.lineHeight ?? settings.lineHeight,
   );
+  const [localTextAlign, setLocalTextAlign] = useState<TextAlign>(
+    () => panelTypography?.textAlign ?? settings.textAlign,
+  );
   const [localReaderLayout, setLocalReaderLayout] = useState<ReaderLayout>(
     () => panelTypography?.readerLayout ?? settings.readerLayout,
   );
 
   const [tocOpen, setTocOpen] = useState(false);
+  const [bookmarkVersion, setBookmarkVersion] = useState(0);
 
-  // Mobile toolbar auto-hide
-  const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
+  useEffect(() => {
+    let cancelled = false;
+
+    getBookPreferences(book.id)
+      .then((prefs) => {
+        if (cancelled) return;
+        setLocalFontFamily(prefs?.fontFamily ?? panelTypography?.fontFamily ?? settings.fontFamily);
+        setLocalFontSize(prefs?.fontSize ?? panelTypography?.fontSize ?? settings.fontSize);
+        setLocalLineHeight(prefs?.lineHeight ?? panelTypography?.lineHeight ?? settings.lineHeight);
+        setLocalTextAlign(
+          prefs && "textAlign" in prefs
+            ? prefs.textAlign
+            : (panelTypography?.textAlign ?? settings.textAlign),
+        );
+        setLocalReaderLayout(
+          prefs?.readerLayout ?? panelTypography?.readerLayout ?? settings.readerLayout,
+        );
+      })
+      .catch((error) => console.error("Failed to load book preferences:", error));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    book.id,
+    panelTypography?.fontFamily,
+    panelTypography?.fontSize,
+    panelTypography?.lineHeight,
+    panelTypography?.textAlign,
+    panelTypography?.readerLayout,
+    settings.fontFamily,
+    settings.fontSize,
+    settings.lineHeight,
+    settings.textAlign,
+    settings.readerLayout,
+  ]);
+
+  const zenMode = settings.zenMode ?? false;
+
+  // Mobile and zen mode toolbar auto-hide
+  const { toolbarVisible, showToolbar, showToolbarPersistent, toggleToolbar, resetToolbarTimer } =
+    useToolbarAutoHide(isMobile ?? false, zenMode);
 
   // Search state (shared hook)
   const {
@@ -265,6 +317,8 @@ function WorkspaceBookReaderInner({
     navigateToTocHref,
     flushPositionSave,
     latestCfiRef,
+    navigationInProgressRef,
+    markNavigationInProgress,
   } = useEpubLifecycle({
     bookId: book.id,
     containerRef,
@@ -272,6 +326,7 @@ function WorkspaceBookReaderInner({
     fontFamily: localFontFamily,
     fontSize: localFontSize,
     lineHeight: localLineHeight,
+    textAlign: localTextAlign,
     theme: settings.theme,
     loadAndApplyHighlights,
     registerSelectionHandler,
@@ -295,6 +350,21 @@ function WorkspaceBookReaderInner({
     bookRef,
     renditionRef,
   });
+
+  const bookmarkSyncVersion = useSyncListener(["bookmark"]);
+  const { data: bookmarks } = useEffectQuery(
+    () =>
+      BookmarkService.pipe(
+        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to load bookmarks:", error);
+            return [] as BookmarkRecord[];
+          }),
+        ),
+      ),
+    [book.id, bookmarkVersion, bookmarkSyncVersion],
+  );
 
   // Temporary highlight: briefly flash a CFI range in the reader
   const applyTempHighlight = useCallback((cfi: string) => {
@@ -355,7 +425,7 @@ function WorkspaceBookReaderInner({
   useEffect(() => {
     if (!panelApi) return;
 
-    const handleBecameVisible = () => {
+    const applyTheme = () => {
       const rendition = renditionRef.current;
       if (!rendition) return;
 
@@ -367,7 +437,9 @@ function WorkspaceBookReaderInner({
       injectThemeColors(rendition, effectiveTheme);
 
       rendition.themes.select(effectiveTheme);
+    };
 
+    const resizeAndRestore = () => {
       // Save the current reading position before resize — epubjs resize()
       // recalculates pagination and can jump to a different page.
       const cfiBeforeResize = latestCfiRef.current;
@@ -375,13 +447,15 @@ function WorkspaceBookReaderInner({
       // Resize in case container dimensions changed, then restore position
       requestAnimationFrame(() => {
         if (!renditionRef.current) return;
+        // If a navigation occurred since capture, the new position is authoritative.
+        if (latestCfiRef.current !== cfiBeforeResize) return;
         try {
           (renditionRef.current as any).resize();
         } catch {
           // rendition manager may not be initialized yet
           return;
         }
-        if (cfiBeforeResize) {
+        if (cfiBeforeResize && !navigationInProgressRef.current) {
           renditionRef.current.display(cfiBeforeResize).catch(() => {});
         }
       });
@@ -389,14 +463,18 @@ function WorkspaceBookReaderInner({
 
     const visDisposable = panelApi.onDidVisibilityChange((e) => {
       if (e.isVisible) {
-        handleBecameVisible();
+        applyTheme();
+        resizeAndRestore();
       } else {
         flushPositionSave();
       }
     });
 
+    // Active change only needs theme reapplication — no resize or position
+    // restore. Clicking inside the epub to turn a page also triggers an active
+    // change; resizing here would revert the navigation.
     const activeDisposable = panelApi.onDidActiveChange((e) => {
-      if (e.isActive) handleBecameVisible();
+      if (e.isActive) applyTheme();
     });
 
     // Resize the epub rendition when the panel dimensions change (e.g. a new
@@ -413,13 +491,15 @@ function WorkspaceBookReaderInner({
       resizeRafId = requestAnimationFrame(() => {
         resizeRafId = null;
         if (!renditionRef.current) return;
+        // If a navigation occurred since capture, the new position is authoritative.
+        if (latestCfiRef.current !== cfiBeforeResize) return;
         try {
           (renditionRef.current as any).resize();
         } catch {
           // rendition manager may not be initialized yet
           return;
         }
-        if (cfiBeforeResize) {
+        if (cfiBeforeResize && !navigationInProgressRef.current) {
           renditionRef.current.display(cfiBeforeResize).catch(() => {});
         }
       });
@@ -431,23 +511,69 @@ function WorkspaceBookReaderInner({
       dimensionsDisposable.dispose();
       if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
     };
-  }, [panelApi, settings.theme, flushPositionSave]);
+  }, [panelApi, settings.theme, flushPositionSave, navigationInProgressRef]);
 
-  const handlePrev = useCallback(() => renditionRef.current?.prev(), []);
-  const handleNext = useCallback(() => renditionRef.current?.next(), []);
+  const handlePrev = useCallback(() => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+    markNavigationInProgress();
+    rendition.prev().catch((err: unknown) => {
+      navigationInProgressRef.current = false;
+      console.error("Failed to navigate to previous page", err);
+    });
+  }, [markNavigationInProgress, navigationInProgressRef]);
+  const handleNext = useCallback(() => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+    markNavigationInProgress();
+    rendition.next().catch((err: unknown) => {
+      navigationInProgressRef.current = false;
+      console.error("Failed to navigate to next page", err);
+    });
+  }, [markNavigationInProgress, navigationInProgressRef]);
 
   const handleUpdateSettings = useCallback(
     (update: Partial<Settings>) => {
       // Update local state only — do NOT propagate to global settings.
       // Theme changes are ignored here (theme stays global).
+      const hasBookPreferenceUpdate =
+        update.fontFamily !== undefined ||
+        update.fontSize !== undefined ||
+        update.lineHeight !== undefined ||
+        "textAlign" in update ||
+        update.readerLayout !== undefined;
+
+      if (!hasBookPreferenceUpdate) return;
+
       if (update.fontFamily !== undefined) setLocalFontFamily(update.fontFamily);
       if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
       if (update.lineHeight !== undefined) setLocalLineHeight(update.lineHeight);
+      if ("textAlign" in update) setLocalTextAlign(update.textAlign);
       if (update.readerLayout !== undefined && update.readerLayout !== localReaderLayout) {
         const cfi = renditionRef.current?.location?.start?.cfi;
         setLocalReaderLayout(update.readerLayout);
-        if (cfi) queueMicrotask(() => renditionRef.current?.display(cfi));
+        if (cfi) {
+          markNavigationInProgress();
+          queueMicrotask(() => {
+            renditionRef.current?.display(cfi).catch((error: unknown) => {
+              console.error("Failed to restore reader position after layout update", error);
+              navigationInProgressRef.current = false;
+            });
+          });
+        }
       }
+
+      const updatedPrefs: BookPreferences = {
+        fontFamily: update.fontFamily ?? localFontFamily,
+        fontSize: update.fontSize ?? localFontSize,
+        lineHeight: update.lineHeight ?? localLineHeight,
+        textAlign: "textAlign" in update ? update.textAlign : localTextAlign,
+        readerLayout: update.readerLayout ?? localReaderLayout,
+      };
+
+      saveBookPreferences(book.id, updatedPrefs).catch((error) =>
+        console.error("Failed to save book preferences:", error),
+      );
 
       // Persist overrides in dockview panel params so they survive layout save/restore
       if (panelApi) {
@@ -455,13 +581,23 @@ function WorkspaceBookReaderInner({
         if (update.fontFamily !== undefined) paramUpdates.fontFamily = update.fontFamily;
         if (update.fontSize !== undefined) paramUpdates.fontSize = update.fontSize;
         if (update.lineHeight !== undefined) paramUpdates.lineHeight = update.lineHeight;
+        if (update.textAlign !== undefined) paramUpdates.textAlign = update.textAlign;
         if (update.readerLayout !== undefined) paramUpdates.readerLayout = update.readerLayout;
         if (Object.keys(paramUpdates).length > 0) {
           panelApi.updateParameters(paramUpdates);
         }
       }
     },
-    [localReaderLayout, panelApi],
+    [
+      book.id,
+      localFontFamily,
+      localFontSize,
+      localLineHeight,
+      localTextAlign,
+      localReaderLayout,
+      markNavigationInProgress,
+      panelApi,
+    ],
   );
 
   const handleSaveHighlight = useCallback(async () => {
@@ -493,6 +629,154 @@ function WorkspaceBookReaderInner({
       .catch((err) => console.error("Failed to append highlight to notebook:", err));
   }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
 
+  const handleAskQuestion = useCallback(async () => {
+    if (!selectionPopover) return;
+
+    try {
+      const highlight = await saveHighlightFromPopover();
+      if (!highlight) return;
+
+      const attrs = {
+        highlightId: highlight.id,
+        cfiRange: highlight.cfiRange,
+        text: highlight.text,
+      };
+      const editorCallbacks = ws.notebookEditorCallbackMap.current.get(book.id);
+      if (editorCallbacks) {
+        editorCallbacks.appendContent([
+          { type: "highlightReference", attrs },
+          { type: "paragraph" },
+        ]);
+      } else {
+        AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
+          .then(() => {
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new CustomEvent("sync:entity-updated", {
+                  detail: { entity: "notebook" },
+                }),
+              );
+            });
+          })
+          .catch((err) => console.error("Failed to append highlight to notebook:", err));
+      }
+
+      ws.pendingHighlightPillMap.current.set(book.id, {
+        text: selectionPopover.text,
+        pageLabel: currentPage ? `p${currentPage}` : "",
+      });
+      ws.openChatRef.current?.(book);
+    } catch (err) {
+      console.error("Failed to ask a question about highlight:", err);
+    } finally {
+      dismissPopovers();
+      const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
+      contents?.forEach((content: any) => {
+        content.document?.defaultView?.getSelection()?.removeAllRanges();
+      });
+    }
+  }, [selectionPopover, saveHighlightFromPopover, book, ws, dismissPopovers, currentPage]);
+
+  const handleCopyAsMarkdown = useCallback(async () => {
+    if (!selectionPopover) return;
+
+    await navigator.clipboard.writeText(selectionPopover.text);
+    dismissPopovers();
+
+    const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
+    contents?.forEach((content: any) => {
+      content.document?.defaultView?.getSelection()?.removeAllRanges();
+    });
+  }, [selectionPopover, dismissPopovers]);
+
+  const handleDownload = useCallback(() => {
+    AppRuntime.runPromise(
+      BookService.pipe(
+        Effect.andThen((s) => s.getBookData(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to download book:", error);
+            return null as ArrayBuffer | null;
+          }),
+        ),
+      ),
+    )
+      .then((data) => {
+        if (!data) return;
+        const format = book.format ?? "epub";
+        const type = format === "pdf" ? "application/pdf" : "application/epub+zip";
+        const blob = new Blob([data], { type });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${book.title.replace(/[\\/:*?"<>|]/g, "-")}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      })
+      .catch(console.error);
+  }, [book.id, book.title, book.format]);
+
+  const handleCopyPageAsMarkdown = useCallback(() => {
+    const text = renditionRef.current
+      ?.getContents()
+      .map((content: any) => content.document?.body?.innerText ?? "")
+      .join("\n\n")
+      .trim();
+    if (!text) return;
+    navigator.clipboard.writeText(text).catch(console.error);
+  }, []);
+
+  const getCurrentCfi = useCallback(() => {
+    const latestCfi = latestCfiRef.current;
+    if (latestCfi) return latestCfi;
+    const rendition = renditionRef.current as any;
+    let location = rendition?.location;
+    if (!location) {
+      try {
+        location = rendition?.currentLocation?.();
+      } catch {
+        // epubjs may call into an uninitialized internal manager.
+      }
+    }
+    return (location?.start?.cfi as string | undefined) ?? null;
+  }, [latestCfiRef]);
+
+  const currentCfi = getCurrentCfi();
+  const currentBookmark = bookmarks?.find((bookmark) => bookmark.cfi === currentCfi);
+
+  const handleBookmarkPage = useCallback(async () => {
+    const cfi = getCurrentCfi();
+    if (!cfi) return;
+    const existingBookmark = bookmarks?.find((bookmark) => bookmark.cfi === cfi);
+    const now = Date.now();
+
+    await AppRuntime.runPromise(
+      BookmarkService.pipe(
+        Effect.andThen((s) =>
+          existingBookmark
+            ? s.deleteBookmark(existingBookmark.id)
+            : s.saveBookmark({
+                id: `bookmark:${book.id}:cfi:${encodeURIComponent(cfi)}`,
+                bookId: book.id,
+                cfi,
+                label: currentChapterLabel ?? undefined,
+                displayPage: currentPage ?? undefined,
+                createdAt: now,
+                updatedAt: now,
+              }),
+        ),
+      ),
+    );
+    setBookmarkVersion((version) => version + 1);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
+      );
+    });
+  }, [book.id, bookmarks, currentChapterLabel, currentPage, getCurrentCfi]);
+
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
@@ -514,12 +798,13 @@ function WorkspaceBookReaderInner({
     fontFamily: localFontFamily,
     fontSize: localFontSize,
     lineHeight: localLineHeight,
+    textAlign: localTextAlign,
     readerLayout: localReaderLayout,
   };
 
   return (
     <div ref={panelRef} className="flex h-full outline-none" tabIndex={0}>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col">
         <div className="relative flex-1 overflow-hidden">
           {searchOpen && (
             <div className="absolute top-0 right-0 left-0 z-10">
@@ -569,105 +854,122 @@ function WorkspaceBookReaderInner({
           )}
         </div>
         <div
-          className={cn(
-            "relative flex items-center justify-center px-2 h-10 transition-all duration-300 ease-in-out",
-            {
-              "max-h-0 overflow-hidden border-t-0 opacity-0": isMobile && !toolbarVisible,
-              "max-h-20 opacity-100": !isMobile || toolbarVisible,
-            },
-          )}
+          className={cn({ "absolute right-0 bottom-0 left-0 z-20 pt-10": zenMode })}
+          onMouseEnter={zenMode ? showToolbarPersistent : undefined}
+          onMouseLeave={zenMode ? resetToolbarTimer : undefined}
         >
-          <div className="absolute left-2 flex max-w-[calc(100%-8rem)] items-center gap-1.5">
-            {totalPages !== null && currentPage !== null ? (
-              <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
-                {currentChapterLabel ? (
-                  <>
-                    <span className="max-w-28 truncate sm:max-w-48 md:max-w-64">
-                      {currentChapterLabel}
-                    </span>
-                    <span className="shrink-0">·</span>
-                  </>
-                ) : null}
-                <span className="shrink-0 tabular-nums">
-                  {currentPage} / {totalPages}
-                </span>
-              </div>
-            ) : null}
-          </div>
-          {!isScrollMode && (
-            <div className="hidden items-center gap-4 md:flex">
-              <Button variant="ghost" size="icon" onClick={handlePrev}>
-                <ChevronLeft className="size-4" />
-                <span className="sr-only">Previous page</span>
-              </Button>
-              <Button variant="ghost" size="icon" onClick={handleNext}>
-                <ChevronRight className="size-4" />
-                <span className="sr-only">Next page</span>
-              </Button>
+          <div
+            className={cn(
+              "relative flex h-10 items-center justify-center px-2 transition-all duration-300 ease-in-out",
+              {
+                "max-h-0 overflow-hidden border-t-0 opacity-0":
+                  (isMobile || zenMode) && !toolbarVisible,
+                "max-h-20 opacity-100": (!isMobile && !zenMode) || toolbarVisible,
+              },
+            )}
+          >
+            <div className="absolute left-2 flex max-w-[calc(100%-8rem)] items-center gap-1.5">
+              {totalPages !== null && currentPage !== null ? (
+                <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
+                  {currentChapterLabel ? (
+                    <>
+                      <span className="max-w-28 truncate sm:max-w-48 md:max-w-64">
+                        {currentChapterLabel}
+                      </span>
+                      <span className="shrink-0">·</span>
+                    </>
+                  ) : null}
+                  <span className="shrink-0 tabular-nums">
+                    {currentPage} / {totalPages}
+                  </span>
+                </div>
+              ) : null}
             </div>
-          )}
-          <div className="absolute right-2 flex items-center gap-1">
-            {isMobile && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleSearchOpen}
-                  title="Search in book (Cmd+F)"
-                >
-                  <Search className="size-4" />
-                  <span className="sr-only">Search in book</span>
+            {!isScrollMode && (
+              <div className="hidden items-center gap-4 md:flex">
+                <Button variant="ghost" size="icon" onClick={handlePrev}>
+                  <ChevronLeft className="size-4" />
+                  <span className="sr-only">Previous page</span>
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleOpenNotebook}
-                  title="Open Notebook"
-                >
-                  <Notebook className="size-4" />
-                  <span className="sr-only">Open Notebook</span>
+                <Button variant="ghost" size="icon" onClick={handleNext}>
+                  <ChevronRight className="size-4" />
+                  <span className="sr-only">Next page</span>
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleOpenChat}
-                  title="Chat about book"
-                >
-                  <MessageSquare className="size-4" />
-                  <span className="sr-only">Chat about book</span>
-                </Button>
-              </>
+              </div>
             )}
-            {toc.length > 0 && (
-              <Popover open={tocOpen} onOpenChange={setTocOpen}>
-                <PopoverTrigger
-                  render={<Button variant="ghost" size="icon" title="Table of Contents" />}
-                >
-                  <TableOfContents className="size-4" />
-                  <span className="sr-only">Table of Contents</span>
-                </PopoverTrigger>
-                <PopoverContent
-                  side="top"
-                  align="end"
-                  sideOffset={8}
-                  className="max-h-80 w-64 overflow-y-auto p-1.5"
-                >
-                  <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                    Table of Contents
-                  </p>
-                  <ul>
-                    <TocList
-                      entries={toc}
-                      onNavigate={(href) => {
-                        navigateToTocHref(href);
-                        setTocOpen(false);
-                      }}
-                    />
-                  </ul>
-                </PopoverContent>
-              </Popover>
-            )}
-            <ReaderSettingsMenu settings={localSettings} onUpdateSettings={handleUpdateSettings} />
+            <div className="absolute right-2 flex items-center gap-1">
+              {isMobile && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleSearchOpen}
+                    title="Search in book (Cmd+F)"
+                  >
+                    <Search className="size-4" />
+                    <span className="sr-only">Search in book</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleOpenNotebook}
+                    title="Open Notebook"
+                  >
+                    <Notebook className="size-4" />
+                    <span className="sr-only">Open Notebook</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleOpenChat}
+                    title="Chat about book"
+                  >
+                    <MessageSquare className="size-4" />
+                    <span className="sr-only">Chat about book</span>
+                  </Button>
+                </>
+              )}
+              {toc.length > 0 && (
+                <Popover open={tocOpen} onOpenChange={setTocOpen}>
+                  <PopoverTrigger
+                    render={<Button variant="ghost" size="icon" title="Table of Contents" />}
+                  >
+                    <TableOfContents className="size-4" />
+                    <span className="sr-only">Table of Contents</span>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="top"
+                    align="end"
+                    sideOffset={8}
+                    className="max-h-80 w-64 overflow-y-auto p-1.5"
+                  >
+                    <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                      Table of Contents
+                    </p>
+                    <ul>
+                      <TocList
+                        entries={toc}
+                        onNavigate={(href) => {
+                          navigateToTocHref(href);
+                          setTocOpen(false);
+                        }}
+                      />
+                    </ul>
+                  </PopoverContent>
+                </Popover>
+              )}
+              <ReaderFormattingMenu
+                settings={localSettings}
+                onUpdateSettings={handleUpdateSettings}
+              />
+              <ReaderActionsMenu
+                book={book}
+                onDownload={handleDownload}
+                onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+                onBookmarkPage={handleBookmarkPage}
+                isBookmarked={Boolean(currentBookmark)}
+              />
+            </div>
           </div>
         </div>
         {/* Portal popovers to document.body to escape dockview's CSS transforms,
@@ -676,7 +978,8 @@ function WorkspaceBookReaderInner({
           createPortal(
             <HighlightPopover
               position={selectionPopover.position}
-              selectedText={selectionPopover.text}
+              onCopyAsMarkdown={handleCopyAsMarkdown}
+              onAskQuestion={handleAskQuestion}
               onSave={handleSaveHighlight}
               onDismiss={dismissPopovers}
             />,

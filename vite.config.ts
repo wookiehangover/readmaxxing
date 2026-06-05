@@ -118,7 +118,7 @@ export default defineConfig(({ mode }) => ({
         cleanupOutdatedCaches: true,
         additionalManifestEntries: [{ url: "/index.html", revision: null }],
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/share\//],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/,

@@ -1,0 +1,7 @@
+{
+  "build": {
+    "env": {
+      "VERCEL_CLI_VERSION": "vercel@53.3.2"
+    }
+  }
+}

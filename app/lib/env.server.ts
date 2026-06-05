@@ -16,6 +16,7 @@ export interface Env {
   readonly AI_GATEWAY_BASE_URL?: string;
   readonly AI_GATEWAY_ACCOUNT_ID?: string;
   readonly AI_GATEWAY_NAME?: string;
+  readonly SHARE_DOWNLOAD_SECRET?: string;
   readonly NODE_ENV?: string;
 }
 

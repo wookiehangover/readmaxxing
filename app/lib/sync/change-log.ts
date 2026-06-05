@@ -9,6 +9,7 @@ import type { ChangeEntry } from "./types";
 // ---------------------------------------------------------------------------
 
 let _changeLogStore: ReturnType<typeof createStore> | null = null;
+let positionPushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getChangeLogStore(): UseStore {
   if (!_changeLogStore) _changeLogStore = createStore("ebook-reader-changelog", "changes");
@@ -51,13 +52,23 @@ export async function recordChange(
     synced: false,
   };
   await set(change.id, change, getChangeLogStore());
-  // Signal the sync engine to push immediately rather than waiting for the
-  // next interval (reduces cross-device latency from ~30s+ to near-instant).
-  // Deferred to a microtask to avoid triggering React state updates during render.
+  // Signal the sync engine to push rather than waiting for the next interval.
+  // Non-position events are deferred to a microtask to avoid triggering React
+  // state updates during render.
+  // Position changes should sync soon for cross-device use, but not instantly.
+  // Debouncing avoids push-triggered re-renders during active reader navigation.
   if (typeof window !== "undefined") {
-    queueMicrotask(() => {
-      window.dispatchEvent(new CustomEvent("sync:push-needed"));
-    });
+    if (entry.entity === "position") {
+      if (positionPushTimer) clearTimeout(positionPushTimer);
+      positionPushTimer = setTimeout(() => {
+        positionPushTimer = null;
+        window.dispatchEvent(new CustomEvent("sync:push-needed"));
+      }, 5000);
+    } else {
+      queueMicrotask(() => {
+        window.dispatchEvent(new CustomEvent("sync:push-needed"));
+      });
+    }
   }
   return change;
 }

@@ -6,9 +6,11 @@ import { Effect } from "effect";
 import { BookService } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { LocationCacheService } from "~/lib/stores/location-cache-store";
+import { ReadingHistoryService } from "~/lib/stores/reading-history-store";
 import { ReadingPositionService } from "~/lib/stores/position-store";
+import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-readers";
 import { resolveTheme } from "~/lib/settings";
-import type { ReaderLayout, Theme } from "~/lib/settings";
+import type { ReaderLayout, Theme, TextAlign } from "~/lib/settings";
 import { isEditableElement } from "~/lib/dom-utils";
 import {
   registerThemeColors,
@@ -35,6 +37,7 @@ export interface UseEpubLifecycleConfig {
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
+  textAlign: TextAlign;
   theme: Theme;
   loadAndApplyHighlights: (rendition: Rendition) => Promise<void>;
   registerSelectionHandler: (rendition: Rendition) => void;
@@ -65,6 +68,8 @@ export interface UseEpubLifecycleConfig {
 export interface UseEpubLifecycleReturn {
   bookRef: React.MutableRefObject<EpubBook | null>;
   renditionRef: React.MutableRefObject<Rendition | null>;
+  navigationInProgressRef: React.MutableRefObject<boolean>;
+  markNavigationInProgress: () => void;
   toc: TocEntry[];
   currentChapterLabel: string | null;
   bookProgress: number;
@@ -378,6 +383,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     fontFamily,
     fontSize,
     lineHeight,
+    textAlign,
     theme,
     loadAndApplyHighlights,
     registerSelectionHandler,
@@ -391,6 +397,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   const renditionRef = config.renditionRef ?? internalRenditionRef;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestCfiRef = useRef<string | null>(null);
+  const navigationInProgressRef = useRef(false);
+  const navigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warnedBrokenTocBookIdsRef = useRef<Set<string>>(new Set());
 
   const [toc, setToc] = useState<TocEntry[]>([]);
@@ -401,12 +409,29 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
 
   const layoutRef = useRef(readerLayout);
   layoutRef.current = readerLayout;
-  const typographyRef = useRef({ fontFamily, fontSize, lineHeight });
-  typographyRef.current = { fontFamily, fontSize, lineHeight };
+  const typographyRef = useRef({ fontFamily, fontSize, lineHeight, textAlign });
+  typographyRef.current = { fontFamily, fontSize, lineHeight, textAlign };
 
   // Use a ref for the full config so optional callbacks don't trigger re-init
   const configRef = useRef(config);
   configRef.current = config;
+
+  const clearNavigationInProgress = useCallback(() => {
+    navigationInProgressRef.current = false;
+    if (navigationTimeoutRef.current) {
+      clearTimeout(navigationTimeoutRef.current);
+      navigationTimeoutRef.current = null;
+    }
+  }, []);
+
+  const markNavigationInProgress = useCallback(() => {
+    navigationInProgressRef.current = true;
+    if (navigationTimeoutRef.current) clearTimeout(navigationTimeoutRef.current);
+    navigationTimeoutRef.current = setTimeout(() => {
+      navigationInProgressRef.current = false;
+      navigationTimeoutRef.current = null;
+    }, 3000);
+  }, []);
 
   const flushPositionSave = useCallback(() => {
     if (saveTimerRef.current) {
@@ -427,11 +452,18 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     }
   }, [bookId, panelId]);
 
-  const navigateToCfi = useCallback((cfi: string) => {
-    renditionRef.current?.display(cfi).catch((err: unknown) => {
-      console.warn("CFI navigation failed:", err);
-    });
-  }, []);
+  const navigateToCfi = useCallback(
+    (cfi: string) => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+      markNavigationInProgress();
+      rendition.display(cfi).catch((err: unknown) => {
+        clearNavigationInProgress();
+        console.warn("CFI navigation failed:", err);
+      });
+    },
+    [clearNavigationInProgress, markNavigationInProgress],
+  );
 
   const navigateToTocHref = useCallback(
     (href: string) => {
@@ -441,10 +473,15 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         return;
       }
 
-      const tryDisplay = (target: string | number) =>
-        (typeof target === "number" ? rendition.display(target) : rendition.display(target))
+      const tryDisplay = (target: string | number) => {
+        markNavigationInProgress();
+        return (typeof target === "number" ? rendition.display(target) : rendition.display(target))
           .then(() => true)
-          .catch(() => false);
+          .catch(() => {
+            clearNavigationInProgress();
+            return false;
+          });
+      };
 
       void (async () => {
         if (await tryDisplay(href)) {
@@ -472,7 +509,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         }
       })();
     },
-    [bookId, bookRef, renditionRef, toc],
+    [bookId, bookRef, clearNavigationInProgress, markNavigationInProgress, renditionRef, toc],
   );
 
   // Main epub lifecycle effect
@@ -480,6 +517,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     if (!enabled) return;
     const el = containerRef.current;
     if (!el) return;
+
+    registerActiveReader(bookId);
 
     let cancelled = false;
     let epubBook: EpubBook | null = null;
@@ -542,6 +581,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           typographyRef.current.fontFamily,
           typographyRef.current.fontSize,
           typographyRef.current.lineHeight,
+          typographyRef.current.textAlign,
         );
         doc.head.appendChild(style);
 
@@ -574,9 +614,38 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
             configRef.current.onSearchOpen?.();
             return;
           }
+          if ((e.metaKey || e.ctrlKey) && e.key === ".") {
+            e.preventDefault();
+            e.stopPropagation();
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key: e.key,
+                  metaKey: e.metaKey,
+                  ctrlKey: e.ctrlKey,
+                  altKey: e.altKey,
+                  shiftKey: e.shiftKey,
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+            });
+            return;
+          }
           if (layoutRef.current === "scroll") return;
-          if (e.key === "ArrowLeft") rendition!.prev();
-          else if (e.key === "ArrowRight") rendition!.next();
+          if (e.key === "ArrowLeft") {
+            markNavigationInProgress();
+            rendition!.prev().catch((err: unknown) => {
+              clearNavigationInProgress();
+              console.error("Failed to navigate to previous page", err);
+            });
+          } else if (e.key === "ArrowRight") {
+            markNavigationInProgress();
+            rendition!.next().catch((err: unknown) => {
+              clearNavigationInProgress();
+              console.error("Failed to navigate to next page", err);
+            });
+          }
         });
       });
 
@@ -703,24 +772,26 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           configRef.current.onRelocated?.();
           setBookProgress(location.start.percentage * 100);
           const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
+          let historyPageIndex: number | null = null;
           if (epubLocTotal && epubLocTotal > 0) {
             const locIndex = bookRef.current!.locations.locationFromCfi(location.start.cfi);
             if (typeof locIndex === "number" && locIndex >= 0) {
-              setCurrentPage(locIndex + 1);
+              historyPageIndex = locIndex + 1;
             } else {
-              setCurrentPage(Math.max(1, Math.round(location.start.percentage * epubLocTotal)));
+              historyPageIndex = Math.max(1, Math.round(location.start.percentage * epubLocTotal));
             }
+            setCurrentPage(historyPageIndex);
             setTotalPages(epubLocTotal);
           }
           latestCfiRef.current = location.start.cfi;
-          setCurrentChapterLabel(
-            resolveCurrentChapterLabel({
-              toc: tocData,
-              book: bookRef.current,
-              currentSpineHref: location.start.href,
-              currentSpineIndex: location.start.index,
-            }),
-          );
+          clearNavigationInProgress();
+          const resolvedChapterLabel = resolveCurrentChapterLabel({
+            toc: tocData,
+            book: bookRef.current,
+            currentSpineHref: location.start.href,
+            currentSpineIndex: location.start.index,
+          });
+          setCurrentChapterLabel(resolvedChapterLabel);
 
           // Update chat context
           if (configRef.current.chatContextMap && location.start.index != null) {
@@ -759,6 +830,21 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
                 ),
             }).catch((err) => console.error("Failed to save reading position:", err));
           }, POSITION_SAVE_DEBOUNCE_MS);
+
+          AppRuntime.runPromise(
+            ReadingHistoryService.pipe(
+              Effect.andThen((s) =>
+                s.recordVisit(bookId, {
+                  cfi: location.start.cfi,
+                  chapterHref: location.start.href ?? null,
+                  chapterLabel: resolvedChapterLabel,
+                  percentage: location.start.percentage * 100,
+                  pageIndex: historyPageIndex,
+                  totalPages: epubLocTotal && epubLocTotal > 0 ? epubLocTotal : null,
+                }),
+              ),
+            ),
+          ).catch(console.error);
         },
       );
     }; // end init()
@@ -766,13 +852,29 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     // Keyboard navigation on the parent document
     const handleKeyDown = (e: KeyboardEvent) => {
       if (layoutRef.current === "scroll") return;
+      if (configRef.current.panelRef) {
+        const panel = configRef.current.panelRef.current;
+        if (!panel?.contains(document.activeElement) && document.activeElement !== panel) return;
+      }
       if (isEditableElement()) return;
-      if (e.key === "ArrowLeft") rendition?.prev();
-      else if (e.key === "ArrowRight") rendition?.next();
+      if (e.key === "ArrowLeft" && rendition) {
+        markNavigationInProgress();
+        rendition.prev().catch((err: unknown) => {
+          clearNavigationInProgress();
+          console.error("Failed to navigate to previous page", err);
+        });
+      } else if (e.key === "ArrowRight" && rendition) {
+        markNavigationInProgress();
+        rendition.next().catch((err: unknown) => {
+          clearNavigationInProgress();
+          console.error("Failed to navigate to next page", err);
+        });
+      }
     };
     document.addEventListener("keydown", handleKeyDown);
 
     init().catch((err) => {
+      unregisterActiveReader(bookId);
       if (!cancelled) console.error("Failed to load book data:", err);
     });
 
@@ -780,6 +882,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       cancelled = true;
       document.removeEventListener("keydown", handleKeyDown);
       flushPositionSave();
+      clearNavigationInProgress();
+      unregisterActiveReader(bookId);
       setToc([]);
       setCurrentChapterLabel(null);
       configRef.current.onCleanupToc?.();
@@ -796,6 +900,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     registerSelectionHandler,
     flushPositionSave,
     navigateToCfi,
+    clearNavigationInProgress,
+    markNavigationInProgress,
     panelId,
   ]);
 
@@ -813,7 +919,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
-    const css = getTypographyCss(fontFamily, fontSize, lineHeight);
+    const css = getTypographyCss(fontFamily, fontSize, lineHeight, textAlign);
     const contents = (rendition as any).getContents() as any[];
     contents.forEach((content: any) => {
       const doc = content.document;
@@ -826,11 +932,13 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       }
       style.textContent = css;
     });
-  }, [fontFamily, fontSize, lineHeight]);
+  }, [fontFamily, fontSize, lineHeight, textAlign]);
 
   return {
     bookRef,
     renditionRef,
+    navigationInProgressRef,
+    markNavigationInProgress,
     toc,
     currentChapterLabel,
     bookProgress,

@@ -8,6 +8,7 @@ export type PdfLayout = "original" | "fit-height" | "fit-width" | "two-page" | "
 export type WorkspaceSortBy = "title" | "author" | "recent";
 export type LibraryView = "grid" | "table";
 export type LayoutMode = "focused" | "freeform";
+export type TextAlign = "left" | "center" | "right" | "justify" | undefined;
 
 // --- Schema ---
 
@@ -29,9 +30,6 @@ export const SyncedSettingsSchema = Schema.Struct({
   theme: Schema.optionalWith(Schema.Literal("light", "dark", "system"), {
     default: () => "system" as const,
   }),
-  fontFamily: Schema.optionalWith(Schema.String, { default: () => "Literata" }),
-  fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
-  lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
   colorTheme: Schema.optionalWith(
     Schema.Literal("default", "dracula", "nord", "rose-pine", "tokyo-night", "solarized"),
     { default: () => "default" as const },
@@ -65,6 +63,7 @@ export const LocalUISettingsSchema = Schema.Struct({
     { default: () => "fit-height" as const },
   ),
   sidebarCollapsed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  zenMode: Schema.optionalWith(Schema.Boolean, { default: () => false }),
   libraryView: Schema.optionalWith(Schema.Literal("grid", "table"), {
     default: () => "grid" as const,
   }),
@@ -83,6 +82,18 @@ export const LocalUISettingsSchema = Schema.Struct({
   focusedSplitRatio: Schema.optionalWith(Schema.Number, {
     default: () => FOCUSED_SPLIT_RATIO_DEFAULT,
   }),
+  fontFamily: Schema.optionalWith(Schema.String, { default: () => "Literata" }),
+  fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
+  lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
+  textAlign: Schema.optional(
+    Schema.Union(
+      Schema.Literal("left"),
+      Schema.Literal("center"),
+      Schema.Literal("right"),
+      Schema.Literal("justify"),
+      Schema.Undefined,
+    ),
+  ),
 });
 
 /** Backward-compatible merged shape exposed to call sites. */
@@ -97,9 +108,6 @@ export type Settings = typeof SettingsSchema.Type;
 
 export const SYNCED_SETTINGS_KEYS = [
   "theme",
-  "fontFamily",
-  "fontSize",
-  "lineHeight",
   "colorTheme",
 ] as const satisfies readonly (keyof SyncedSettings)[];
 
@@ -111,6 +119,10 @@ export const LOCAL_UI_SETTINGS_KEYS = [
   "workspaceSortBy",
   "layoutMode",
   "focusedSplitRatio",
+  "fontFamily",
+  "fontSize",
+  "lineHeight",
+  "textAlign",
 ] as const satisfies readonly (keyof LocalUISettings)[];
 
 const decodeSynced = Schema.decodeUnknownSync(SyncedSettingsSchema);
@@ -126,7 +138,9 @@ const defaultSettings: Settings = {
   fontFamily: "Literata",
   fontSize: 100,
   lineHeight: 1.6,
+  textAlign: undefined,
   sidebarCollapsed: false,
+  zenMode: false,
   workspaceSortBy: "recent",
   libraryView: "grid",
   colorTheme: "default",
@@ -149,6 +163,11 @@ function readRaw(key: string): Record<string, unknown> | null {
  * local-only bucket, leaving only synced fields behind. Idempotent: if the
  * local bucket already has a key, that value wins and the legacy copy is
  * pruned.
+ *
+ * IMPORTANT: Also removes the `updatedAt` timestamp from the synced bucket
+ * when local-only fields are migrated. This prevents a legacy timestamp
+ * (bumped by a font change under the old schema) from causing LWW merges to
+ * ignore newer remote theme/colorTheme updates.
  */
 function migrateLegacySettings(): void {
   const legacy = readRaw(STORAGE_KEY);
@@ -169,6 +188,11 @@ function migrateLegacySettings(): void {
   for (const [k, v] of Object.entries(legacy)) {
     if (!localKeySet.has(k)) pruned[k] = v;
   }
+
+  // Remove updatedAt to prevent legacy timestamps from blocking remote synced
+  // setting updates. The next remote pull will establish a fresh baseline.
+  delete pruned.updatedAt;
+
   localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned));
 }
 

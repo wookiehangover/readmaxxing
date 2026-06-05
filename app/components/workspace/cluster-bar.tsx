@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { BookOpen, X } from "lucide-react";
+import { BookPlus, Library, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { BookCover } from "~/components/book-list";
 import { cn } from "~/lib/utils";
@@ -18,6 +18,8 @@ interface ClusterBarProps {
   readonly getActiveId: () => string | null;
   /** Activate the Nth cluster (bookId), triggering a swap in focused mode. */
   readonly onActivate: (bookId: string) => void;
+  /** Activate the top-level Library destination. */
+  readonly onActivateLibrary: () => void;
   /** Close the cluster for `bookId` (remove pill; may swap active if needed). */
   readonly onClose: (bookId: string) => void;
   /** Persist a reordered list of cluster book IDs. */
@@ -60,6 +62,7 @@ export function ClusterBar({
   getEntries,
   getActiveId,
   onActivate,
+  onActivateLibrary,
   onClose,
   onReorder,
 }: ClusterBarProps) {
@@ -163,109 +166,127 @@ export function ClusterBar({
     );
   }
 
-  if (entries.length === 0) return null;
-
   const bookById = new Map<string, BookMeta>();
   for (const b of booksRef.current) bookById.set(b.id, b);
+  const isLibraryActive = activeId === null;
 
   return (
-    <div
-      role="tablist"
-      aria-label="Open books"
-      className="flex h-11 items-center gap-1.5 overflow-x-auto scrollbar-none border-b border-border/60 bg-background px-2 py-1.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-    >
-      {entries.map((entry, idx) => {
-        const isActive = entry.bookId === activeId;
-        const book = bookById.get(entry.bookId);
-        const shortcut = idx < 9 ? `⌘${idx + 1}` : undefined;
-        const indicatorPosition =
-          dropIndicator?.targetBookId === entry.bookId ? dropIndicator.position : null;
-        return (
-          <div
-            key={entry.bookId}
-            draggable
-            onDragStart={(event) => handleDragStart(entry.bookId, event)}
-            onDragOver={(event) => handleDragOver(entry.bookId, event)}
-            onDrop={(event) => handleDrop(entry.bookId, event)}
-            onDragEnd={clearDragState}
-            className={cn(
-              "group relative flex shrink-0 cursor-grab items-center gap-1 rounded-md border pl-1 pr-1 py-1 text-xs transition-colors",
-              {
-                "border-primary/40 bg-primary/10 text-foreground": isActive,
-                "border-border/50 bg-card/40 text-muted-foreground hover:bg-card/80 hover:text-foreground":
-                  !isActive,
-                "cursor-grabbing opacity-50": draggedBookId === entry.bookId,
-              },
-            )}
-          >
-            {indicatorPosition && draggedBookId && (
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "pointer-events-none absolute inset-y-0 w-0.5 rounded-full bg-primary",
-                  {
-                    "left-0": indicatorPosition === "before",
-                    "right-0": indicatorPosition === "after",
-                  },
+    <div className="flex h-11 items-center gap-1.5 overflow-x-auto scrollbar-none border-b border-border/60 bg-background px-2 py-1.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <button
+        type="button"
+        aria-pressed={isLibraryActive}
+        title="Library"
+        onClick={onActivateLibrary}
+        className={cn(
+          "flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-muted/50",
+          {
+            "bg-muted text-foreground dark:bg-muted/50": isLibraryActive,
+          },
+        )}
+      >
+        <Library className="size-3.5" aria-hidden="true" />
+        <span>Library</span>
+      </button>
+      <div role="tablist" aria-label="Open books" className="flex min-w-0 items-center gap-1.5">
+        {entries.map((entry, idx) => {
+          const isActive = entry.bookId === activeId;
+          const book = bookById.get(entry.bookId);
+          const shortcut = idx < 9 ? `⌘${idx + 1}` : undefined;
+          const indicatorPosition =
+            dropIndicator?.targetBookId === entry.bookId ? dropIndicator.position : null;
+          return (
+            <div
+              key={entry.bookId}
+              draggable
+              onDragStart={(event) => handleDragStart(entry.bookId, event)}
+              onDragOver={(event) => handleDragOver(entry.bookId, event)}
+              onDrop={(event) => handleDrop(entry.bookId, event)}
+              onDragEnd={clearDragState}
+              className={cn(
+                "group relative flex shrink-0 cursor-grab items-center gap-1 rounded-md border pl-1 pr-1 py-1 text-xs transition-colors",
+                {
+                  "border-primary/40 bg-primary/10 text-foreground": isActive,
+                  "border-border/50 bg-card/40 text-muted-foreground hover:bg-card/80 hover:text-foreground":
+                    !isActive,
+                  "cursor-grabbing opacity-50": draggedBookId === entry.bookId,
+                },
+              )}
+            >
+              {indicatorPosition && draggedBookId && (
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "pointer-events-none absolute inset-y-0 w-0.5 rounded-full bg-primary",
+                    {
+                      "left-0": indicatorPosition === "before",
+                      "right-0": indicatorPosition === "after",
+                    },
+                  )}
+                />
+              )}
+              <button
+                ref={(node) => {
+                  if (node) buttonRefs.current.set(entry.bookId, node);
+                  else buttonRefs.current.delete(entry.bookId);
+                }}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                title={entry.bookTitle + (shortcut ? ` (${shortcut})` : "")}
+                onClick={() => onActivate(entry.bookId)}
+                onKeyDown={(event) => handleKeyDown(entry, idx, event)}
+                className="flex min-w-0 items-center gap-1.5 rounded px-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {book?.coverImage || book?.remoteCoverUrl ? (
+                  <div className="h-6 w-4 shrink-0 overflow-hidden rounded-sm">
+                    <BookCover
+                      coverImage={book.coverImage}
+                      remoteCoverUrl={book.remoteCoverUrl}
+                      bookId={book.id}
+                      updatedAt={book.updatedAt}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex h-6 w-4 shrink-0 items-center justify-center rounded-sm bg-muted text-[10px]">
+                    📖
+                  </div>
                 )}
-              />
-            )}
-            <button
-              ref={(node) => {
-                if (node) buttonRefs.current.set(entry.bookId, node);
-                else buttonRefs.current.delete(entry.bookId);
-              }}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              title={entry.bookTitle + (shortcut ? ` (${shortcut})` : "")}
-              onClick={() => onActivate(entry.bookId)}
-              onKeyDown={(event) => handleKeyDown(entry, idx, event)}
-              className="flex min-w-0 items-center gap-1.5 rounded px-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {book?.coverImage || book?.remoteCoverUrl ? (
-                <div className="h-6 w-4 shrink-0 overflow-hidden rounded-sm">
-                  <BookCover
-                    coverImage={book.coverImage}
-                    remoteCoverUrl={book.remoteCoverUrl}
-                    bookId={book.id}
-                    updatedAt={book.updatedAt}
-                  />
-                </div>
-              ) : (
-                <div className="flex h-6 w-4 shrink-0 items-center justify-center rounded-sm bg-muted text-[10px]">
-                  📖
-                </div>
-              )}
-              <span className="max-w-[14ch] truncate font-medium">{entry.bookTitle}</span>
-              {shortcut && (
-                <span className="ml-1 hidden text-[10px] text-muted-foreground/70 tabular-nums md:inline">
-                  {shortcut}
-                </span>
-              )}
-            </button>
-            <Button
-              data-cluster-close
-              draggable={false}
-              variant="ghost"
-              size="icon"
-              className="size-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClose(entry.bookId);
-              }}
-              onDragStart={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              title="Close cluster"
-              aria-label={`Close ${entry.bookTitle}`}
-            >
-              <X className="size-3" />
-            </Button>
-          </div>
-        );
-      })}
+                <span className="max-w-[14ch] truncate font-medium">{entry.bookTitle}</span>
+              </button>
+              <div
+                className={cn("relative size-5 shrink-0", {
+                  "pointer-events-none invisible": isLibraryActive,
+                })}
+              >
+                {shortcut && (
+                  <span className="pointer-events-none absolute inset-0 hidden items-center justify-center text-[10px] text-muted-foreground/70 tabular-nums opacity-100 transition-opacity group-focus-within:opacity-0 group-hover:opacity-0 md:flex">
+                    {shortcut}
+                  </span>
+                )}
+                <Button
+                  data-cluster-close
+                  draggable={false}
+                  variant="ghost"
+                  size="icon"
+                  className="absolute inset-0 size-5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClose(entry.bookId);
+                  }}
+                  onDragStart={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  title="Close cluster"
+                  aria-label={`Close ${entry.bookTitle}`}
+                >
+                  <X className="size-3" />
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
       <Button
         type="button"
         variant="ghost"
@@ -275,7 +296,7 @@ export function ClusterBar({
         title="Open book"
         aria-label="Open book"
       >
-        <BookOpen aria-hidden="true" />
+        <BookPlus aria-hidden="true" />
       </Button>
     </div>
   );

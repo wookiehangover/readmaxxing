@@ -15,11 +15,12 @@ import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
-import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { SearchBar } from "~/components/search-bar";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { cn } from "~/lib/utils";
+import { AppRuntime } from "~/lib/effect-runtime";
 import type { DockviewPanelApi } from "dockview";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
@@ -29,6 +30,8 @@ import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { usePdfWorkspacePanels } from "~/hooks/use-pdf-workspace-panels";
 import type { PanelTypographyParams } from "~/components/workspace-book-reader";
+import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 interface WorkspacePdfReaderProps {
   bookId: string;
@@ -121,6 +124,7 @@ function WorkspacePdfReaderInner({
   );
 
   const [tocOpen, setTocOpen] = useState(false);
+  const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
 
   // Ref-based callback so usePdfHighlights always calls the latest handleOpenNotebook
@@ -174,6 +178,21 @@ function WorkspacePdfReaderInner({
     panelRef,
     onAfterRender: reapplyAllHighlights,
   });
+
+  const bookmarkSyncVersion = useSyncListener(["bookmark"]);
+  const { data: bookmarks } = useEffectQuery(
+    () =>
+      BookmarkService.pipe(
+        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to load bookmarks:", error);
+            return [] as BookmarkRecord[];
+          }),
+        ),
+      ),
+    [book.id, bookmarkVersion, bookmarkSyncVersion],
+  );
 
   // Load highlights once after initial render
   const highlightsLoadedRef = useRef(false);
@@ -241,18 +260,91 @@ function WorkspacePdfReaderInner({
     [panelApi],
   );
 
-  const { handleSaveHighlight, handleOpenNotebook, handleOpenChat, setGoToPage } =
-    usePdfWorkspacePanels({
-      book,
-      panelApi,
-      currentPage,
-      pdfDocRef,
-      saveHighlightFromPopover,
-      applyTempHighlight,
-      removeHighlight,
-      handleOpenNotebookRef,
-    });
+  const {
+    handleSaveHighlight,
+    handleAskQuestion,
+    handleOpenNotebook,
+    handleOpenChat,
+    setGoToPage,
+  } = usePdfWorkspacePanels({
+    book,
+    panelApi,
+    currentPage,
+    pdfDocRef,
+    saveHighlightFromPopover,
+    applyTempHighlight,
+    removeHighlight,
+    dismissPopovers,
+    handleOpenNotebookRef,
+  });
 
+  const handleCopyAsMarkdown = useCallback(async () => {
+    if (!selectionPopover) return;
+
+    await navigator.clipboard.writeText(selectionPopover.text);
+    dismissPopovers();
+    window.getSelection()?.removeAllRanges();
+  }, [selectionPopover, dismissPopovers]);
+
+  const handleDownload = useCallback(() => {
+    AppRuntime.runPromise(
+      BookService.pipe(
+        Effect.andThen((s) => s.getBookData(book.id)),
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.error("Failed to download book:", error);
+            return null as ArrayBuffer | null;
+          }),
+        ),
+      ),
+    )
+      .then((data) => {
+        if (!data) return;
+        const format = book.format ?? "pdf";
+        const type = format === "pdf" ? "application/pdf" : "application/epub+zip";
+        const blob = new Blob([data], { type });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${book.title.replace(/[\\/:*?"<>|]/g, "-")}.${format}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      })
+      .catch(console.error);
+  }, [book.id, book.title, book.format]);
+
+  const currentBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+
+  const handleBookmarkPage = useCallback(async () => {
+    if (currentPage < 1) return;
+    const existingBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+    const now = Date.now();
+
+    await AppRuntime.runPromise(
+      BookmarkService.pipe(
+        Effect.andThen((s) =>
+          existingBookmark
+            ? s.deleteBookmark(existingBookmark.id)
+            : s.saveBookmark({
+                id: `bookmark:${book.id}:page:${currentPage}`,
+                bookId: book.id,
+                pageNumber: currentPage,
+                label: `Page ${currentPage}`,
+                createdAt: now,
+                updatedAt: now,
+              }),
+        ),
+      ),
+    );
+    setBookmarkVersion((version) => version + 1);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
+      );
+    });
+  }, [book.id, bookmarks, currentPage]);
   // Keep goToPage in sync for navigation map
   useEffect(() => {
     setGoToPage(goToPage);
@@ -408,10 +500,16 @@ function WorkspacePdfReaderInner({
               </PopoverContent>
             </Popover>
           )}
-          <ReaderSettingsMenu
+          <ReaderFormattingMenu
             settings={localSettings}
             onUpdateSettings={handleUpdateSettings}
             isPdf
+          />
+          <ReaderActionsMenu
+            book={book}
+            onDownload={handleDownload}
+            onBookmarkPage={handleBookmarkPage}
+            isBookmarked={Boolean(currentBookmark)}
           />
         </div>
       </div>
@@ -420,7 +518,8 @@ function WorkspacePdfReaderInner({
         createPortal(
           <HighlightPopover
             position={selectionPopover.position}
-            selectedText={selectionPopover.text}
+            onCopyAsMarkdown={handleCopyAsMarkdown}
+            onAskQuestion={handleAskQuestion}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
           />,

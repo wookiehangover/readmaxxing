@@ -3,6 +3,7 @@ import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
 import { recordChange } from "./change-log";
 import {
   getBookStore,
+  getBookmarkStore,
   getChatSessionStore,
   getHighlightStore,
   getNotebookStore,
@@ -86,7 +87,26 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     });
   }
 
-  // 4. Notebooks (key = bookId, value = Notebook)
+  // 4. Bookmarks (key = bookmarkId, value = Bookmark)
+  const bookmarkStore = getBookmarkStore();
+  const bookmarks = await entries(bookmarkStore);
+  for (const entry of bookmarks) {
+    const tuple = safeEntry(entry);
+    if (!tuple) continue;
+    const [id, data] = tuple;
+    const rec = data as Record<string, unknown>;
+    // Skip soft-deleted bookmarks
+    if (rec?.deletedAt) continue;
+    await recordChange({
+      entity: "bookmark",
+      entityId: id as string,
+      operation: "put",
+      data,
+      timestamp: (rec?.updatedAt as number) ?? Date.now(),
+    });
+  }
+
+  // 5. Notebooks (key = bookId, value = Notebook)
   const nbStore = getNotebookStore();
   const notebooks = await entries(nbStore);
   for (const entry of notebooks) {
@@ -102,7 +122,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     });
   }
 
-  // 5. Chat sessions (key = bookId, value = ChatSession[])
+  // 6. Chat sessions (key = bookId, value = ChatSession[])
   const chatStore = getChatSessionStore();
   const sessions = await entries(chatStore);
   for (const entry of sessions) {

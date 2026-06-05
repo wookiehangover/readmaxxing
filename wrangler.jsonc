@@ -24,6 +24,8 @@
     // "ANTHROPIC_API_KEY": "",
     // TODO(optional secrets): set with `pnpm exec wrangler secret put ANTHROPIC_BASE_URL` if using a custom Anthropic endpoint.
     // "ANTHROPIC_BASE_URL": "",
+    // TODO(secrets): set with `pnpm exec wrangler secret put SHARE_DOWNLOAD_SECRET` to enable signed share download links.
+    // "SHARE_DOWNLOAD_SECRET": "",
   },
   "r2_buckets": [
     // Create these private buckets before deploy:

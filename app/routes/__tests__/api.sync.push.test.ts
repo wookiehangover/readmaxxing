@@ -19,6 +19,10 @@ vi.mock("~/lib/database/annotation/highlight", () => ({
   softDeleteHighlight: vi.fn(),
 }));
 vi.mock("~/lib/database/annotation/notebook", () => ({ upsertNotebook: vi.fn() }));
+vi.mock("~/lib/database/bookmark/bookmark", () => ({
+  upsertBookmark: vi.fn(),
+  softDeleteBookmark: vi.fn(),
+}));
 vi.mock("~/lib/database/book/reading-position", () => ({ upsertPosition: vi.fn() }));
 vi.mock("~/lib/database/chat/chat-session", () => ({
   upsertSession: vi.fn(),
@@ -37,12 +41,15 @@ import {
   updateBookBlobUrls,
 } from "~/lib/database/book/book";
 import { upsertMessage } from "~/lib/database/chat/chat-session";
+import { upsertBookmark, softDeleteBookmark } from "~/lib/database/bookmark/bookmark";
 
 const upsertBookMock = upsertBook as ReturnType<typeof vi.fn>;
 const findMock = findBookByUserAndHash as ReturnType<typeof vi.fn>;
 const insertTombstoneMock = insertTombstonedBook as ReturnType<typeof vi.fn>;
 const getByIdMock = getBookByIdForUser as ReturnType<typeof vi.fn>;
 const updateUrlsMock = updateBookBlobUrls as ReturnType<typeof vi.fn>;
+const upsertBookmarkMock = upsertBookmark as ReturnType<typeof vi.fn>;
+const softDeleteBookmarkMock = softDeleteBookmark as ReturnType<typeof vi.fn>;
 
 function makeBookEntry(overrides: Partial<ChangeEntry> = {}): ChangeEntry {
   return {
@@ -70,6 +77,8 @@ beforeEach(() => {
   insertTombstoneMock.mockReset();
   getByIdMock.mockReset();
   updateUrlsMock.mockClear();
+  upsertBookmarkMock.mockClear();
+  softDeleteBookmarkMock.mockClear();
 });
 
 describe("processEntry book dedup branch", () => {
@@ -132,6 +141,62 @@ describe("processEntry book dedup branch", () => {
     expect(result).toEqual({ accepted: true });
     expect(upsertBookMock).toHaveBeenCalled();
     expect(insertTombstoneMock).not.toHaveBeenCalled();
+  });
+
+  it("passes null deletedAt for restored book put entries", async () => {
+    findMock.mockResolvedValue(null);
+
+    await processEntry("u1", makeBookEntry({ data: { id: "book-new", deletedAt: null } }));
+
+    expect(upsertBookMock).toHaveBeenCalledWith("u1", expect.objectContaining({ deletedAt: null }));
+  });
+
+  it("passes deletedAt for soft-deleted book put entries", async () => {
+    findMock.mockResolvedValue(null);
+
+    await processEntry("u1", makeBookEntry({ data: { id: "book-new", deletedAt: 0 } }));
+
+    expect(upsertBookMock).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({ deletedAt: new Date(0) }),
+    );
+  });
+
+  it("passes null deletedAt for live book put entries with no deletedAt field", async () => {
+    findMock.mockResolvedValue(null);
+
+    await processEntry("u1", makeBookEntry({ data: { id: "book-new", updatedAt: 2000 } }));
+
+    expect(upsertBookMock).toHaveBeenCalledWith("u1", expect.objectContaining({ deletedAt: null }));
+  });
+
+  it("upserts a live new id when only same-hash rows are soft-deleted", async () => {
+    findMock.mockResolvedValue(null);
+    const entry = makeBookEntry({
+      entityId: "book-reupload",
+      data: {
+        id: "book-reupload",
+        title: "Re-upload",
+        fileHash: "hash-abc",
+        remoteFileUrl: "https://blob.vercel-storage.com/file.epub",
+        remoteCoverUrl: "https://blob.vercel-storage.com/cover.jpg",
+        updatedAt: 3000,
+      },
+      timestamp: 3000,
+    });
+
+    const result = await processEntry("u1", entry);
+
+    expect(result).toEqual({ accepted: true });
+    expect(upsertBookMock).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({ id: "book-reupload", fileHash: "hash-abc", deletedAt: null }),
+    );
+    expect(insertTombstoneMock).not.toHaveBeenCalled();
+    expect(updateUrlsMock).toHaveBeenCalledWith("book-reupload", {
+      fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
+      coverBlobUrl: "https://blob.vercel-storage.com/cover.jpg",
+    });
   });
 
   it("upserts normally when the matching canonical is the same id (idempotent re-push)", async () => {
@@ -227,6 +292,57 @@ describe("processEntry book blob URLs", () => {
 
     expect(result.canonicalId).toBe("book-canonical");
     expect(updateUrlsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("processEntry bookmark branch", () => {
+  it("upserts bookmark put entries", async () => {
+    const result = await processEntry("u1", {
+      id: "change-bookmark-1",
+      entity: "bookmark",
+      entityId: "bookmark-1",
+      operation: "put",
+      data: {
+        id: "bookmark-1",
+        bookId: "book-1",
+        cfi: "epubcfi(/6/2)",
+        label: "Chapter 1",
+        pageNumber: null,
+        displayPage: 12,
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+      timestamp: 2000,
+      synced: false,
+    });
+
+    expect(result).toEqual({ accepted: true });
+    expect(upsertBookmarkMock).toHaveBeenCalledWith("u1", {
+      id: "bookmark-1",
+      bookId: "book-1",
+      cfi: "epubcfi(/6/2)",
+      label: "Chapter 1",
+      pageNumber: null,
+      displayPage: 12,
+      createdAt: new Date(1000),
+      updatedAt: new Date(2000),
+      deletedAt: null,
+    });
+  });
+
+  it("soft-deletes bookmark delete entries", async () => {
+    const result = await processEntry("u1", {
+      id: "change-bookmark-2",
+      entity: "bookmark",
+      entityId: "bookmark-1",
+      operation: "delete",
+      data: null,
+      timestamp: 2000,
+      synced: false,
+    });
+
+    expect(result).toEqual({ accepted: true });
+    expect(softDeleteBookmarkMock).toHaveBeenCalledWith("u1", "bookmark-1");
   });
 });
 

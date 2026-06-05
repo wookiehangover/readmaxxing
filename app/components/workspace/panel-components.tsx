@@ -23,6 +23,10 @@ export function BookReaderPanel({
     fontFamily: typeof params.fontFamily === "string" ? params.fontFamily : undefined,
     fontSize: typeof params.fontSize === "number" ? params.fontSize : undefined,
     lineHeight: typeof params.lineHeight === "number" ? params.lineHeight : undefined,
+    textAlign:
+      typeof params.textAlign === "string"
+        ? (params.textAlign as PanelTypographyParams["textAlign"])
+        : undefined,
     readerLayout:
       typeof params.readerLayout === "string"
         ? (params.readerLayout as PanelTypographyParams["readerLayout"])

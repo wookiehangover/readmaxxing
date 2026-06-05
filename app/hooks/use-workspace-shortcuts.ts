@@ -8,12 +8,14 @@ const SIDEBAR_TRANSITION_MS = 270;
 export interface UseWorkspaceShortcutsParams {
   readonly apiRef: React.MutableRefObject<DockviewApi | null>;
   readonly collapsed: boolean;
+  readonly zenMode: boolean;
   readonly updateSettings: (patch: Partial<Settings>) => void;
 }
 
 export function useWorkspaceShortcuts({
   apiRef,
   collapsed,
+  zenMode,
   updateSettings,
 }: UseWorkspaceShortcutsParams) {
   useEffect(() => {
@@ -25,10 +27,14 @@ export function useWorkspaceShortcuts({
           window.dispatchEvent(new Event("resize"));
         }, SIDEBAR_TRANSITION_MS);
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === ".") {
+        e.preventDefault();
+        updateSettings({ zenMode: !zenMode });
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [collapsed, updateSettings]);
+  }, [collapsed, zenMode, updateSettings]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {

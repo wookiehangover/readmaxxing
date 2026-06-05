@@ -29,15 +29,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isStartBody(value: unknown): value is ChatAgentStartBody {
   if (!isRecord(value)) return false;
   const message = value.message;
+  // A conversation is anchored by either the legacy single `bookId` or a
+  // non-empty `bookIds` array (multi-book chat); `bookIds[0]` is the primary.
+  const hasBookId = typeof value.bookId === "string" && value.bookId.length > 0;
+  const hasBookIds =
+    Array.isArray(value.bookIds) &&
+    value.bookIds.length > 0 &&
+    value.bookIds.every((id) => typeof id === "string");
   return (
     typeof value.userId === "string" &&
     typeof value.sessionId === "string" &&
-    typeof value.bookId === "string" &&
+    (hasBookId || hasBookIds) &&
     isRecord(message) &&
     typeof message.id === "string" &&
     message.role === "user" &&
     (value.currentChapterIndex == null || typeof value.currentChapterIndex === "number") &&
-    (value.visibleText == null || typeof value.visibleText === "string")
+    (value.visibleText == null || typeof value.visibleText === "string") &&
+    (value.bookContexts == null || isRecord(value.bookContexts))
   );
 }
 

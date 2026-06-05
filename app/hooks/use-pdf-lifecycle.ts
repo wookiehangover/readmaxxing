@@ -6,6 +6,7 @@ import { ReadingPositionService } from "~/lib/stores/position-store";
 import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
 import type { PdfLayout, Theme } from "~/lib/settings";
 import { resolveTheme } from "~/lib/settings";
+import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-readers";
 import type { TocEntry } from "~/lib/context/reader-context";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
@@ -153,6 +154,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     if (!el) return;
 
     let cancelled = false;
+    registerActiveReader(bookId);
 
     const init = async () => {
       // Load book data
@@ -292,12 +294,14 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     };
 
     init().catch((err) => {
+      unregisterActiveReader(bookId);
       if (!cancelled) console.error("Failed to load PDF:", err);
     });
 
     return () => {
       cancelled = true;
       flushPositionSave();
+      unregisterActiveReader(bookId);
       setToc([]);
       configRef.current.onCleanupToc?.();
 

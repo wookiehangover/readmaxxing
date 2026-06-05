@@ -5,20 +5,24 @@ import { useStickToBottom } from "use-stick-to-bottom";
 import { Button } from "~/components/ui/button";
 import { Plus } from "lucide-react";
 import { ChatService } from "~/lib/stores/chat-store";
-import { BookService } from "~/lib/stores/book-store";
+import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
 import { uploadChaptersOnce } from "~/lib/chat/upload-chapters";
 import { cn } from "~/lib/utils";
 import { useSyncListener } from "~/hooks/use-sync-listener";
-import { useWorkspace } from "~/lib/context/workspace-context";
+import {
+  useOptionalWorkspace,
+  type NotebookEditorCallbacks,
+} from "~/lib/context/workspace-context";
 import { useAuth } from "~/lib/context/auth-context";
 import {
   toUIMessages,
   uiMessagesToChatMessages,
   parseSuggestedPrompts,
   createChatTransport,
+  joinTextParts,
 } from "./chat-utils";
 import { ChatMessage } from "./chat-message";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
@@ -26,10 +30,40 @@ import { useChatToolHandlers } from "./use-chat-tool-handlers";
 import { useStreamingAppend } from "./use-streaming-append";
 import { ChatInput } from "./chat-input";
 import { SessionMenuButton, ChatSessionList, EditableTitle } from "./chat-session-menu";
+import { ChatBookSelector } from "./chat-book-selector";
 
 interface ChatPanelProps {
   bookId: string;
   bookTitle: string;
+}
+
+/**
+ * A client-only, ephemeral marker rendered inline in the chat stream when the
+ * user adds/removes a book from the selection mid-session. These are never sent
+ * to the server and never persisted; they disappear on reload (acceptable).
+ */
+interface BookAnnotation {
+  id: string;
+  action: "added" | "removed";
+  title: string;
+  /** Id of the message this marker renders after; null = after current last. */
+  afterMessageId: string | null;
+}
+
+/**
+ * The book-selection state shared with the chat-header book-selector dropdown
+ * (built in a separate task). The chat's own book (`ownBookId`) is always part
+ * of `selectedBookIds`, is the primary book, and cannot be toggled off.
+ */
+export interface BookSelection {
+  /** Currently-open books the user may include in the chat. */
+  openBooks: BookMeta[];
+  /** Book IDs included in the chat (always contains `ownBookId`). */
+  selectedBookIds: string[];
+  /** The chat's own book; locked-checked and never removable. */
+  ownBookId: string;
+  /** Toggle a book in/out of the selection (no-op for `ownBookId`). */
+  onToggleBook: (id: string) => void;
 }
 
 // Signature for the last message's parts — enough to detect in-flight streaming
@@ -364,6 +398,31 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   );
 }
 
+/**
+ * Derives the list of currently-open books (those with an open panel) from the
+ * workspace context. Reads `openBookIdsRef` — the authoritative open-book set
+ * the workspace tracks for the active layout mode (freeform: mounted `book-*`
+ * panels; focused: the full focused-order set, since inactive focused clusters
+ * are unmounted and so would be missing from dockview / `clustersRef`). Resolves
+ * those IDs to `BookMeta` via `booksRef` and re-derives on cluster changes via
+ * `subscribeClusterChanges` (workspace.tsx also notifies when the set changes).
+ * Returns an empty list when there is no workspace (standalone reader), so the
+ * dropdown task can hide itself.
+ */
+function useOpenBooks(workspace: ReturnType<typeof useOptionalWorkspace>): BookMeta[] {
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    if (!workspace) return;
+    return workspace.subscribeClusterChanges(() => setVersion((v) => v + 1));
+  }, [workspace]);
+  return useMemo(() => {
+    if (!workspace) return [];
+    void version; // re-derive whenever the open-book set / clusters change
+    const openIds = workspace.openBookIdsRef.current;
+    return workspace.booksRef.current.filter((b) => openIds.has(b.id));
+  }, [workspace, version]);
+}
+
 function ChatPanelInner({
   bookId,
   bookTitle,
@@ -393,8 +452,39 @@ function ChatPanelInner({
   onSessionTitleChange: (title: string) => void;
   onRegisterSetMessages?: (fn: (msgs: UIMessage[]) => void) => void;
 }) {
-  const { chatContextMap, notebookEditorCallbackMap } = useWorkspace();
+  const workspace = useOptionalWorkspace();
+  const fallbackChatContextMap = useRef(
+    new Map<
+      string,
+      { currentChapterIndex: number; currentSpineHref: string; visibleText: string }
+    >(),
+  );
+  const fallbackNotebookEditorCallbackMap = useRef(new Map<string, NotebookEditorCallbacks>());
+  const chatContextMap = workspace?.chatContextMap ?? fallbackChatContextMap;
+  const notebookEditorCallbackMap =
+    workspace?.notebookEditorCallbackMap ?? fallbackNotebookEditorCallbackMap;
+  const pendingHighlightPillMap = workspace?.pendingHighlightPillMap;
   const [showSessionList, setShowSessionList] = useState(false);
+  const [highlightPill, setHighlightPill] = useState<{
+    text: string;
+    pageLabel: string;
+  } | null>(null);
+
+  const consumePendingHighlightPill = useCallback(() => {
+    if (!pendingHighlightPillMap) return;
+    const pendingPill = pendingHighlightPillMap.current.get(bookId);
+    if (!pendingPill) return;
+    setHighlightPill(pendingPill);
+    pendingHighlightPillMap.current.delete(bookId);
+    // Focus the textarea so the pill is immediately visible and the user can type
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+    });
+  }, [bookId, pendingHighlightPillMap, textareaRef]);
+
+  useEffect(() => {
+    consumePendingHighlightPill();
+  }, [consumePendingHighlightPill]);
 
   // Refs that stay up-to-date with the reader's current chapter index and visible text
   const currentChapterRef = useRef<number | undefined>(undefined);
@@ -418,6 +508,102 @@ function ChatPanelInner({
     return () => clearInterval(interval);
   }, [bookId, chatContextMap]);
 
+  // Books the user can choose to include in the chat (currently-open books).
+  const openBooks = useOpenBooks(workspace);
+  // `useOpenBooks` returns a NEW array reference on every cluster-change bump,
+  // even when the actual open-book set is unchanged. Effects must not key off
+  // that identity or they re-run (and potentially setState) on every bump,
+  // which loops with the workspace's `notifyClusterChanges()`. Derive a stable
+  // content key and read the latest array via a ref inside effects instead.
+  const openBooksRef = useRef(openBooks);
+  openBooksRef.current = openBooks;
+  const openBooksKey = useMemo(
+    () => openBooks.map((b) => `${b.id}:${b.title}`).join("\u0000"),
+    [openBooks],
+  );
+
+  // Set of book IDs included in the chat. The chat's own book is always present
+  // and is the primary (first) book. The dropdown task toggles additional books
+  // in/out via `toggleSelectedBook` (own book is a no-op).
+  const [selectedBookIds, setSelectedBookIds] = useState<string[]>([bookId]);
+  // Ref mirror so the transport reads the latest selection at send time rather
+  // than a stale closure captured when the transport was memoized.
+  const selectedBookIdsRef = useRef<string[]>(selectedBookIds);
+  selectedBookIdsRef.current = selectedBookIds;
+
+  const toggleSelectedBook = useCallback(
+    (id: string) => {
+      // The chat's own book can never be removed.
+      if (id === bookId) return;
+      setSelectedBookIds((prev) =>
+        prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id],
+      );
+    },
+    [bookId],
+  );
+
+  // Client-only, ephemeral markers shown inline when the user adds/removes a
+  // book mid-session. They are NEVER sent to the server (kept out of the
+  // useChat message list) and NEVER persisted to IDB. Each marker records the
+  // id of the message it should render after, so it stays in stream order.
+  // `null` means "after the current last message".
+  const [bookAnnotations, setBookAnnotations] = useState<BookAnnotation[]>([]);
+
+  // Selection bundle handed to the book-selector dropdown (separate task). The
+  // dropdown renders the open books with circular checkboxes, keeps the own
+  // book (`ownBookId`) locked-checked, and toggles the rest via `onToggleBook`.
+  const bookSelection: BookSelection = useMemo(
+    () => ({
+      openBooks,
+      selectedBookIds,
+      ownBookId: bookId,
+      onToggleBook: toggleSelectedBook,
+    }),
+    [openBooks, selectedBookIds, bookId, toggleSelectedBook],
+  );
+
+  // Titles of the selected books, primary (own book) first, for the empty state.
+  // Keyed on the stable `openBooksKey` (not the array identity) so it only
+  // recomputes when the open-book content actually changes.
+  const selectedBookTitles = useMemo(() => {
+    const titleById = new Map(openBooksRef.current.map((b) => [b.id, b.title]));
+    titleById.set(bookId, bookTitle);
+    return selectedBookIds.map((id) => titleById.get(id) ?? bookTitle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBookIds, openBooksKey, bookId, bookTitle]);
+
+  // Drop any selected books that are no longer open, but always keep the own
+  // book. Depends on `openBooksKey` (content) rather than the array identity so
+  // it does not re-run on every cluster-change bump.
+  useEffect(() => {
+    const openIds = new Set(openBooksRef.current.map((b) => b.id));
+    setSelectedBookIds((prev) => {
+      const next = prev.filter((id) => id === bookId || openIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openBooksKey, bookId]);
+
+  // Per-book reader context accessor for the transport. The primary book reads
+  // from the live refs (kept fresh by the poll above); other books read their
+  // last-known context from the shared chatContextMap.
+  const getBookContext = useCallback(
+    (id: string) => {
+      if (id === bookId) {
+        return {
+          visibleText: visibleTextRef.current,
+          currentChapterIndex: currentChapterRef.current,
+        };
+      }
+      const ctx = chatContextMap.current.get(id);
+      return {
+        visibleText: ctx?.visibleText,
+        currentChapterIndex: ctx?.currentChapterIndex,
+      };
+    },
+    [bookId, chatContextMap],
+  );
+
   const transport = useMemo(
     () =>
       createChatTransport({
@@ -425,8 +611,10 @@ function ChatPanelInner({
         bookId,
         visibleTextRef,
         currentChapterRef,
+        selectedBookIdsRef,
+        getBookContext,
       }),
-    [activeSessionId, bookId],
+    [activeSessionId, bookId, getBookContext],
   );
 
   // Track latest messages for onFinish callbacks (e.g. title generation)
@@ -521,6 +709,49 @@ function ChatPanelInner({
   // Keep messagesRef in sync
   messagesRef.current = messages;
 
+  // Detect mid-session book add/remove and emit an ephemeral inline marker.
+  // We diff `selectedBookIds` against the previous selection rather than doing
+  // this in `toggleSelectedBook` so the marker can be anchored to the current
+  // last message id (read from `messagesRef`) without reordering hooks.
+  //
+  // Gated on a non-empty message list: the initial/default selection and any
+  // toggles while the chat is still empty produce no markers (the empty-state
+  // reflects those separately).
+  const prevSelectedBookIdsRef = useRef<string[]>(selectedBookIds);
+  useEffect(() => {
+    const prev = prevSelectedBookIdsRef.current;
+    prevSelectedBookIdsRef.current = selectedBookIds;
+    if (messagesRef.current.length === 0) return;
+
+    const prevSet = new Set(prev);
+    const nextSet = new Set(selectedBookIds);
+    const added = selectedBookIds.filter((id) => !prevSet.has(id));
+    const removed = prev.filter((id) => !nextSet.has(id));
+    if (added.length === 0 && removed.length === 0) return;
+
+    const titleById = new Map(openBooksRef.current.map((b) => [b.id, b.title]));
+    titleById.set(bookId, bookTitle);
+    const afterMessageId = messagesRef.current[messagesRef.current.length - 1]?.id ?? null;
+    const newMarkers: BookAnnotation[] = [
+      ...added.map((id) => ({
+        id: `annot-${crypto.randomUUID()}`,
+        action: "added" as const,
+        title: titleById.get(id) ?? id,
+        afterMessageId,
+      })),
+      ...removed.map((id) => ({
+        id: `annot-${crypto.randomUUID()}`,
+        action: "removed" as const,
+        title: titleById.get(id) ?? id,
+        afterMessageId,
+      })),
+    ];
+    setBookAnnotations((prevMarkers) => [...prevMarkers, ...newMarkers]);
+    // Triggered by selection changes; `openBooksKey` keeps title lookups fresh
+    // without re-running on every cluster-change array-identity bump.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBookIds, openBooksKey, bookId, bookTitle]);
+
   // Expose setMessages to the parent so sync can update messages in-place
   useEffect(() => {
     onRegisterSetMessages?.(setMessages);
@@ -536,6 +767,11 @@ function ChatPanelInner({
   });
 
   const isLoading = status === "streaming" || status === "submitted";
+
+  // Ids of currently-rendered messages, used to place ephemeral markers in
+  // stream order (and to absorb orphans whose anchor is gone) without ever
+  // touching the useChat message list.
+  const messageIdSet = useMemo(() => new Set(messages.map((m) => m.id)), [messages]);
 
   const { scrollRef, contentRef } = useStickToBottom();
 
@@ -569,7 +805,7 @@ function ChatPanelInner({
   }, [onNewSession]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" onFocusCapture={consumePendingHighlightPill}>
       {/* Header */}
       <div className="flex items-center gap-1 border-b px-2 py-1.5">
         <SessionMenuButton
@@ -595,16 +831,19 @@ function ChatPanelInner({
           />
         ) : null}
         {!showSessionList && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onNewSession}
-            title="New chat"
-            className="size-7 ml-auto"
-          >
-            <Plus className="size-3.5" />
-            <span className="sr-only">New chat</span>
-          </Button>
+          <div className="ml-auto flex items-center gap-1">
+            <ChatBookSelector {...bookSelection} />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onNewSession}
+              title="New chat"
+              className="size-7"
+            >
+              <Plus className="size-3.5" />
+              <span className="sr-only">New chat</span>
+            </Button>
+          </div>
         )}
       </div>
 
@@ -627,12 +866,21 @@ function ChatPanelInner({
           >
             <div ref={contentRef} className="flex flex-col flex-1">
               {messages.length === 0 && (
-                <ChatEmptyState bookTitle={bookTitle} sendMessage={sendMessage} />
+                <ChatEmptyState bookTitles={selectedBookTitles} sendMessage={sendMessage} />
               )}
               <div className="space-y-3">
                 {messages.map((message, i) => {
                   const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
                   const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
+                  // Ephemeral add/remove markers anchored after this message.
+                  // The last rendered message also absorbs orphan markers whose
+                  // anchor is no longer present.
+                  const isLast = i === messages.length - 1;
+                  const inlineAnnotations = bookAnnotations.filter(
+                    (a) =>
+                      a.afterMessageId === message.id ||
+                      (isLast && !messageIdSet.has(a.afterMessageId ?? "")),
+                  );
 
                   return (
                     <div key={message.id}>
@@ -646,16 +894,20 @@ function ChatPanelInner({
                       {isLastAssistant && !isLoading && (
                         <SuggestedPrompts
                           prompts={parseSuggestedPrompts(
-                            message.parts
-                              ?.filter(
-                                (p): p is { type: "text"; text: string } => p.type === "text",
-                              )
-                              .map((p) => p.text)
-                              .join("") ?? "",
+                            joinTextParts(
+                              message.parts
+                                ?.filter(
+                                  (p): p is { type: "text"; text: string } => p.type === "text",
+                                )
+                                .map((p) => p.text) ?? [],
+                            ),
                           )}
                           sendMessage={sendMessage}
                         />
                       )}
+                      {inlineAnnotations.map((a) => (
+                        <BookAnnotationMarker key={a.id} action={a.action} title={a.title} />
+                      ))}
                     </div>
                   );
                 })}
@@ -665,14 +917,32 @@ function ChatPanelInner({
 
           {/* Input */}
           <ChatInput
+            bookTitle={bookTitle}
             textareaRef={textareaRef}
             inputRef={inputRef}
             isLoading={isLoading}
             onSubmit={handleSubmit}
             onStop={stop}
+            highlightPill={highlightPill ?? undefined}
+            onClearHighlightPill={() => setHighlightPill(null)}
           />
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * Ephemeral, client-only inline marker for a mid-session book add/remove.
+ * Rendered as a centered, muted divider — visually distinct from chat bubbles.
+ */
+function BookAnnotationMarker({ action, title }: { action: "added" | "removed"; title: string }) {
+  return (
+    <div className="flex items-center justify-center gap-1 py-1 text-xs text-muted-foreground">
+      <span aria-hidden>{action === "added" ? "+" : "−"}</span>
+      <span>
+        {action === "added" ? "Added" : "Removed"} <span className="italic">{title}</span>
+      </span>
     </div>
   );
 }

@@ -1,6 +1,11 @@
 import { mergeBookRecord, mergeChatMessageRecord, mergeChatSessionRecord } from "./entity-mergers";
 import { reuploadBookChapters } from "./book-chapter-uploads";
-import { reloadBookFiles as reloadBookFilesImpl, type FileUploadContext } from "./file-uploads";
+import {
+  reloadBookFiles as reloadBookFilesImpl,
+  resetUploadBackoff,
+  uploadPendingFiles,
+  type FileUploadContext,
+} from "./file-uploads";
 import { PUSH_BATCH_SIZE, pushChanges as pushChangesImpl } from "./push";
 import { pullChanges as pullChangesImpl } from "./pull";
 import type { UploadRetryEntry } from "./upload-retry";
@@ -23,6 +28,8 @@ export interface SyncEngine {
   stopSync(): void;
   /** Trigger an immediate push (e.g. after a local write). */
   triggerPush(): void;
+  /** Trigger an awaitable manual push, including file upload recovery. */
+  triggerManualPush(): Promise<void>;
   /** Trigger an immediate pull (e.g. on window focus). */
   triggerPull(): void;
   /**
@@ -112,14 +119,16 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
   const isStopped = () => stopped;
 
-  async function runCycle(fn: () => Promise<void>): Promise<void> {
+  async function runCycle(fn: () => Promise<void>, rethrow = false): Promise<void> {
     let success = false;
     try {
       config.onSyncStart?.();
       await fn();
       success = true;
     } catch (err) {
-      config.onSyncError?.(normalizeSyncError(err));
+      const error = normalizeSyncError(err);
+      config.onSyncError?.(error);
+      if (rethrow) throw error;
     } finally {
       config.onSyncEnd?.({ success });
     }
@@ -143,6 +152,15 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
       onAuthExpired: config.onAuthExpired,
     });
 
+  const doRecoverFiles = async () => {
+    resetUploadBackoff(fileUploadContext);
+    await uploadPendingFiles(fileUploadContext, {
+      isStopped,
+      verifyExistingRemoteUrls: true,
+    });
+    await doPush();
+  };
+
   return {
     pushChanges: () => runCycle(doPush),
     pullChanges: () => runCycle(doPull),
@@ -151,6 +169,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
       stopped = false;
       // Immediate pull on start
       runCycle(doPull);
+      runCycle(doRecoverFiles);
       pushTimer = setInterval(() => runCycle(doPush), PUSH_INTERVAL_MS);
       pullTimer = setInterval(() => runCycle(doPull), PULL_INTERVAL_MS);
     },
@@ -170,6 +189,8 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     triggerPush() {
       runCycle(doPush);
     },
+
+    triggerManualPush: () => runCycle(doRecoverFiles, true),
 
     triggerPull() {
       runCycle(doPull);
