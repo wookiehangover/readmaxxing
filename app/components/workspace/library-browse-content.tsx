@@ -11,6 +11,7 @@ import {
   Share2,
   Trash2,
   Upload,
+  Edit3Icon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CoverImage } from "~/components/book-grid/cover-image";
@@ -35,6 +36,7 @@ import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
 import { filterBooks, sortBooks } from "~/lib/workspace-utils";
 import { useAuth } from "~/lib/context/auth-context";
 import { useEffectQuery } from "~/hooks/use-effect-query";
+import { Link } from "react-router";
 
 interface LibraryBrowseContentProps {
   /** Dockview panel API — when provided, enables visibility-based refresh. */
@@ -365,6 +367,10 @@ function LibraryBook({
           <DropdownMenuItem onClick={() => handleOpenChat(book)}>
             <MessageSquare className="size-4" />
             Open chat
+          </DropdownMenuItem>
+          <DropdownMenuItem render={<Link to={`/books/${book.id}/details`} />}>
+            <Edit3Icon className="size-4" />
+            Edit
           </DropdownMenuItem>
           {isAuthenticated && (
             <DropdownMenuItem onClick={() => handleShareBook(book)}>
