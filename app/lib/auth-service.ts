@@ -37,7 +37,12 @@ export const AuthServiceLive = Layer.succeed(AuthService, {
         if (!optionsRes.ok) {
           throw new Error("Failed to get registration options");
         }
-        const { options, userId, challengeId } = await optionsRes.json();
+        type RegistrationOptionsJSON = Parameters<typeof startRegistration>[0]["optionsJSON"];
+        const { options, userId, challengeId } = (await optionsRes.json()) as {
+          options: RegistrationOptionsJSON;
+          userId: string;
+          challengeId: string;
+        };
 
         // 2. Start WebAuthn registration ceremony in the browser
         const registration = await startRegistration({ optionsJSON: options });
@@ -49,7 +54,7 @@ export const AuthServiceLive = Layer.succeed(AuthService, {
           body: JSON.stringify({ challengeId, userId, response: registration }),
         });
         if (!verifyRes.ok) {
-          const body = await verifyRes.json().catch(() => ({}));
+          const body = (await verifyRes.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error ?? "Registration verification failed");
         }
 
@@ -68,7 +73,11 @@ export const AuthServiceLive = Layer.succeed(AuthService, {
         if (!optionsRes.ok) {
           throw new Error("Failed to get login options");
         }
-        const { options, challengeId } = await optionsRes.json();
+        type AuthenticationOptionsJSON = Parameters<typeof startAuthentication>[0]["optionsJSON"];
+        const { options, challengeId } = (await optionsRes.json()) as {
+          options: AuthenticationOptionsJSON;
+          challengeId: string;
+        };
 
         // 2. Start WebAuthn authentication ceremony in the browser
         const authentication = await startAuthentication({ optionsJSON: options });
@@ -80,7 +89,7 @@ export const AuthServiceLive = Layer.succeed(AuthService, {
           body: JSON.stringify({ challengeId, response: authentication }),
         });
         if (!verifyRes.ok) {
-          const body = await verifyRes.json().catch(() => ({}));
+          const body = (await verifyRes.json().catch(() => ({}))) as { error?: string };
           throw new Error(body.error ?? "Login verification failed");
         }
 

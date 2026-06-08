@@ -4,10 +4,6 @@ import { recordChange, getUnsyncedChanges } from "../change-log";
 import { makeSyncEngine, PUSH_BATCH_SIZE } from "../sync-engine";
 import type { SyncPushRequest } from "../types";
 
-vi.mock("@vercel/blob/client", () => ({
-  upload: vi.fn(async () => ({ url: "blob://unused" })),
-}));
-
 const changeLogStore = createStore("ebook-reader-changelog", "changes");
 const bookStore = createStore("ebook-reader-db", "books");
 

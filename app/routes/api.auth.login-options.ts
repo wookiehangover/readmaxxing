@@ -1,9 +1,11 @@
 import { generateAuthenticationOptions } from "@simplewebauthn/server";
 import { getRpId, CHALLENGE_TTL_SECONDS } from "~/lib/auth-config";
 import { saveChallenge } from "~/lib/database/auth/challenge";
+import { getEnv } from "~/lib/env.server";
 
 export async function loader() {
-  if (!process.env.DATABASE_URL) {
+  const env = getEnv();
+  if (!env.DATABASE_URL) {
     return Response.json({ error: "Auth not configured" }, { status: 503 });
   }
 

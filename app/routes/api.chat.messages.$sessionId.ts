@@ -5,6 +5,7 @@ import {
   getSessionByIdForUser,
   type ChatMessageRow,
 } from "~/lib/database/chat/chat-session";
+import { getEnv } from "~/lib/env.server";
 
 /**
  * GET /api/chat/messages/:sessionId
@@ -40,7 +41,8 @@ export async function loader({
   request: Request;
   params: { sessionId: string };
 }) {
-  if (!process.env.DATABASE_URL) {
+  const env = getEnv();
+  if (!env.DATABASE_URL) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 

@@ -4,12 +4,6 @@ import { clearSyncedChanges, getUnsyncedChanges, recordChange } from "../../chan
 import { PUSH_BATCH_SIZE, makeSyncEngine } from "../../sync-engine";
 import type { SyncPushRequest } from "../../types";
 
-// Avoid accidentally calling the real Vercel Blob client during
-// uploadPendingFiles (fire-and-forget from push).
-vi.mock("@vercel/blob/client", () => ({
-  upload: vi.fn(async () => ({ url: "blob://unused" })),
-}));
-
 // Store names must mirror production getters in app/lib/sync/stores.ts and
 // app/lib/sync/change-log.ts so the test harness clears the same IDB rows.
 const changeLogStore = createStore("ebook-reader-changelog", "changes");

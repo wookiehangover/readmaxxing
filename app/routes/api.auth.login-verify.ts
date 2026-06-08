@@ -6,6 +6,7 @@ import { getPasskeyById, updatePasskeyCounter } from "~/lib/database/auth/passke
 import { createSession } from "~/lib/database/auth/session";
 import { getUser } from "~/lib/database/user/user";
 import { setSessionCookie } from "~/lib/database/auth-middleware";
+import { getEnv } from "~/lib/env.server";
 
 interface LoginVerifyBody {
   challengeId: string;
@@ -13,7 +14,8 @@ interface LoginVerifyBody {
 }
 
 export async function action({ request }: { request: Request }) {
-  if (!process.env.DATABASE_URL) {
+  const env = getEnv();
+  if (!env.DATABASE_URL) {
     return Response.json({ error: "Auth not configured" }, { status: 503 });
   }
 

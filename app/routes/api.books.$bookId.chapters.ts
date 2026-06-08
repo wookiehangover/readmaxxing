@@ -7,6 +7,7 @@ import {
   replaceBookChaptersWithLock,
   upsertBookChapters,
 } from "~/lib/database/book/book-chapters";
+import { getEnv } from "~/lib/env.server";
 
 const ENVELOPE_FIELDS = ["uploadId", "chunkIndex", "totalChunks", "totalChapters"] as const;
 
@@ -148,7 +149,8 @@ export async function action({
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  if (!process.env.DATABASE_URL) {
+  const env = getEnv();
+  if (!env.DATABASE_URL) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 

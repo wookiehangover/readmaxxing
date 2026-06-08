@@ -1,11 +1,13 @@
 import { generateRegistrationOptions } from "@simplewebauthn/server";
-import { RP_NAME, getRpId, CHALLENGE_TTL_SECONDS } from "~/lib/auth-config";
+import { getRpName, getRpId, CHALLENGE_TTL_SECONDS } from "~/lib/auth-config";
 import { upsertUser } from "~/lib/database/user/user";
 import { getPasskeysByUserId } from "~/lib/database/auth/passkey";
 import { saveChallenge } from "~/lib/database/auth/challenge";
+import { getEnv } from "~/lib/env.server";
 
 export async function loader() {
-  if (!process.env.DATABASE_URL) {
+  const env = getEnv();
+  if (!env.DATABASE_URL) {
     return Response.json({ error: "Auth not configured" }, { status: 503 });
   }
 
@@ -23,7 +25,7 @@ export async function loader() {
   }));
 
   const options = await generateRegistrationOptions({
-    rpName: RP_NAME,
+    rpName: getRpName(),
     rpID: getRpId(),
     userName: user.displayName ?? user.id,
     userDisplayName: user.displayName ?? "",

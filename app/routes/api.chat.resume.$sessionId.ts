@@ -1,14 +1,12 @@
-import { waitUntil } from "@vercel/functions";
-import { UI_MESSAGE_STREAM_HEADERS } from "ai";
-import { createResumableStreamContext } from "resumable-stream";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getSessionByIdForUser } from "~/lib/database/chat/chat-session";
+import { getEnv, isDatabaseRuntimeAvailable } from "~/lib/env.server";
 
 /**
  * GET /api/chat/resume/:sessionId
  *
  * Resumes an in-flight chat stream by session id. Used by the client after a
- * disconnect or reload to pick the server-side SSE back up where it left off.
+ * disconnect or reload to pick the Agent-owned SSE back up where it left off.
  *
  * - 401 if unauthenticated.
  * - 404 if the session does not exist or belongs to another user.
@@ -22,7 +20,7 @@ export async function loader({
   request: Request;
   params: { sessionId: string };
 }) {
-  if (!process.env.DATABASE_URL) {
+  if (!isDatabaseRuntimeAvailable()) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 
@@ -40,9 +38,14 @@ export async function loader({
     return new Response(null, { status: 204 });
   }
 
-  const streamContext = createResumableStreamContext({ waitUntil });
+  const agents = getEnv().AGENTS;
+  if (!agents) {
+    return Response.json({ error: "Chat Agent binding not configured" }, { status: 503 });
+  }
 
-  return new Response(await streamContext.resumeExistingStream(session.activeStreamId), {
-    headers: UI_MESSAGE_STREAM_HEADERS,
-  });
+  const agent = agents.get(agents.idFromName(params.sessionId));
+  const resumeUrl = new URL("/resume", request.url);
+  resumeUrl.searchParams.set("streamId", session.activeStreamId);
+
+  return agent.fetch(new Request(resumeUrl, { method: "GET" }));
 }

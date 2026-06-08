@@ -5,8 +5,8 @@ import {
   UPLOAD_INCALL_RETRY_DELAYS_MS,
 } from "../upload-retry";
 
-// Construct an Error that mimics the name surface exposed by @vercel/blob error
-// classes. The SDK defines them as `var X = class extends BlobError {}` so
+// Construct an Error that mimics the name surface exposed by upload error
+// classes. They may be anonymous classes with a patched constructor name, so
 // `err.constructor.name === "X"` while `err.name === "Error"`.
 function makeBlobError(className: string, message: string): Error {
   class Stub extends Error {}
@@ -18,15 +18,15 @@ const noSleep = () => Promise.resolve();
 
 describe("classifyBlobError", () => {
   it("classifies access / token errors as auth", () => {
-    expect(classifyBlobError(makeBlobError("BlobAccessError", "Vercel Blob: Access denied"))).toBe(
+    expect(classifyBlobError(makeBlobError("UploadAccessError", "Upload access denied"))).toBe(
+      "auth",
+    );
+    expect(classifyBlobError(makeBlobError("UploadAccessError", "Upload token expired"))).toBe(
       "auth",
     );
     expect(
-      classifyBlobError(makeBlobError("BlobClientTokenExpiredError", "Vercel Blob: expired")),
-    ).toBe("auth");
-    expect(
       classifyBlobError(
-        makeBlobError("BlobError", "Vercel Blob: Failed to retrieve the client token"),
+        makeBlobError("UploadPermanentError", "Failed to retrieve the client token"),
       ),
     ).toBe("auth");
   });
@@ -34,16 +34,13 @@ describe("classifyBlobError", () => {
   it("classifies service unavailable / rate-limited / unknown as transient", () => {
     expect(
       classifyBlobError(
-        makeBlobError(
-          "BlobServiceNotAvailable",
-          "Vercel Blob: The blob service is currently not available.",
-        ),
+        makeBlobError("UploadServerError", "The upload service is currently not available."),
       ),
     ).toBe("transient");
-    expect(
-      classifyBlobError(makeBlobError("BlobServiceRateLimited", "Vercel Blob: Too many requests")),
-    ).toBe("transient");
-    expect(classifyBlobError(makeBlobError("BlobUnknownError", "Vercel Blob: Unknown"))).toBe(
+    expect(classifyBlobError(makeBlobError("UploadServerError", "Too many requests"))).toBe(
+      "transient",
+    );
+    expect(classifyBlobError(makeBlobError("UploadServerError", "Unknown server error"))).toBe(
       "transient",
     );
   });
@@ -53,16 +50,13 @@ describe("classifyBlobError", () => {
   });
 
   it("classifies validation / abort / file-too-large as permanent", () => {
-    expect(classifyBlobError(makeBlobError("BlobFileTooLargeError", "too big"))).toBe("permanent");
-    expect(classifyBlobError(makeBlobError("BlobContentTypeNotAllowedError", "nope"))).toBe(
+    expect(classifyBlobError(makeBlobError("UploadFileTooLargeError", "too big"))).toBe(
       "permanent",
     );
-    expect(classifyBlobError(makeBlobError("BlobRequestAbortedError", "aborted"))).toBe(
+    expect(classifyBlobError(makeBlobError("UploadContentTypeNotAllowedError", "nope"))).toBe(
       "permanent",
     );
-    expect(classifyBlobError(makeBlobError("BlobPathnameMismatchError", "bad path"))).toBe(
-      "permanent",
-    );
+    expect(classifyBlobError(makeBlobError("UploadPermanentError", "aborted"))).toBe("permanent");
   });
 
   it("classifies non-Error values as permanent", () => {
@@ -84,8 +78,8 @@ describe("runUploadWithRetry", () => {
 
   it("retries on a 503-style transient error and succeeds on the next attempt", async () => {
     const transient = makeBlobError(
-      "BlobServiceNotAvailable",
-      "Vercel Blob: The blob service is currently not available.",
+      "UploadServerError",
+      "The upload service is currently not available.",
     );
     const performUpload = vi
       .fn<() => Promise<{ url: string }>>()
@@ -109,7 +103,7 @@ describe("runUploadWithRetry", () => {
   });
 
   it("gives up after exhausting all retries on repeated 503s", async () => {
-    const transient = makeBlobError("BlobServiceNotAvailable", "unavailable");
+    const transient = makeBlobError("UploadServerError", "unavailable");
     const performUpload = vi.fn<() => Promise<{ url: string }>>().mockRejectedValue(transient);
     const onGiveUp = vi.fn();
     const onTransientRetry = vi.fn();
@@ -130,7 +124,7 @@ describe("runUploadWithRetry", () => {
   });
 
   it("does not retry on a 403-style auth error and fires onAuthExpired", async () => {
-    const authErr = makeBlobError("BlobAccessError", "Vercel Blob: Access denied");
+    const authErr = makeBlobError("UploadAccessError", "Upload access denied");
     const performUpload = vi.fn<() => Promise<{ url: string }>>().mockRejectedValue(authErr);
     const onAuthExpired = vi.fn();
     const onTransientRetry = vi.fn();
@@ -149,7 +143,7 @@ describe("runUploadWithRetry", () => {
   });
 
   it("does not retry on a permanent 4xx-style error and fires onPermanentFailure", async () => {
-    const permErr = makeBlobError("BlobFileTooLargeError", "payload too large");
+    const permErr = makeBlobError("UploadFileTooLargeError", "payload too large");
     const performUpload = vi.fn<() => Promise<{ url: string }>>().mockRejectedValue(permErr);
     const onPermanentFailure = vi.fn();
     const onTransientRetry = vi.fn();

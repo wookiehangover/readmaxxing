@@ -1,4 +1,3 @@
-import { upload } from "@vercel/blob/client";
 import { get, set, entries } from "idb-keyval";
 import { recordChange } from "./change-log";
 import { getBookStore, getBookDataStore } from "./stores";
@@ -19,7 +18,7 @@ import {
  * and `reloadBookFiles` invocations.
  */
 export interface FileUploadContext {
-  /** Authenticated user ID. Used in the blob pathname. */
+  /** Authenticated user ID. Uploads are rejected until this is known. */
   readonly userId: string;
   /** Per-book exponential-backoff state, keyed by `${bookId}:${type}`. */
   readonly uploadRetryState: Map<string, UploadRetryEntry>;
@@ -27,6 +26,7 @@ export interface FileUploadContext {
   readonly onAuthExpired?: () => void;
 }
 
+type BookFileFormat = "epub" | "pdf";
 type FileUploadType = "file" | "cover";
 
 export interface UploadPendingFilesOptions {
@@ -47,26 +47,62 @@ function isBlobLike(value: unknown): value is Blob {
   );
 }
 
+function makeUploadError(status: number, message: string): Error {
+  const err = new Error(message);
+  if (status === 401 || status === 403) err.name = "UploadAccessError";
+  else if (status === 413) err.name = "UploadFileTooLargeError";
+  else if (status === 415) err.name = "UploadContentTypeNotAllowedError";
+  else if (status === 408 || status === 429 || status >= 500) err.name = "UploadServerError";
+  else err.name = "UploadPermanentError";
+  return err;
+}
+
+function contentTypeForUpload(
+  data: ArrayBuffer | Blob,
+  type: FileUploadType,
+  format: BookFileFormat,
+): string {
+  if (isBlobLike(data) && data.type) return data.type;
+  if (type === "cover") return "image/jpeg";
+  return format === "pdf" ? "application/pdf" : "application/epub+zip";
+}
+
 export async function uploadFile(
   ctx: FileUploadContext,
   bookId: string,
   data: ArrayBuffer | Blob,
   type: "file" | "cover",
+  format: BookFileFormat = "epub",
 ): Promise<string | null> {
-  const folder = type === "cover" ? "covers" : "books";
-  const fileName = type === "cover" ? "cover.jpg" : "book.epub";
-  const contentType = type === "cover" ? "image/jpeg" : "application/epub+zip";
+  const contentType = contentTypeForUpload(data, type, format);
   const blob = isBlobLike(data) ? data : new Blob([data], { type: contentType });
-  const pathname = `${folder}/${ctx.userId}/${bookId}/${fileName}`;
 
   const result = await runUploadWithRetry(
-    () =>
-      upload(pathname, blob, {
-        access: "private",
-        handleUploadUrl: "/api/sync/files/upload",
-        clientPayload: JSON.stringify({ bookId, type }),
-        contentType,
-      }),
+    async () => {
+      const res = await fetch(
+        `/api/sync/files/upload?bookId=${encodeURIComponent(bookId)}&type=${type}`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": contentType },
+          body: blob,
+        },
+      );
+
+      const payload = (await res.json().catch(() => null)) as {
+        url?: unknown;
+        error?: unknown;
+      } | null;
+      if (!res.ok) {
+        const message =
+          typeof payload?.error === "string" ? payload.error : `Upload failed: ${res.status}`;
+        throw makeUploadError(res.status, message);
+      }
+      if (typeof payload?.url !== "string") {
+        throw makeUploadError(502, "Upload response did not include a storage URL");
+      }
+      return { url: payload.url };
+    },
     {
       onAuthExpired: () => ctx.onAuthExpired?.(),
       onTransientRetry: (attempt, delayMs, err) => {
@@ -101,6 +137,7 @@ export async function uploadFileWithBackoff(
   bookId: string,
   data: ArrayBuffer | Blob,
   type: FileUploadType,
+  format: BookFileFormat = "epub",
 ): Promise<string | null> {
   const key = uploadRetryKey(bookId, type);
   const decision = shouldAttemptUpload(ctx.uploadRetryState, key, Date.now());
@@ -114,7 +151,7 @@ export async function uploadFileWithBackoff(
   }
   const size = isBlobLike(data) ? data.size : data.byteLength;
   syncDebugLog("upload-attempt", { bookId, type, size });
-  const url = await uploadFile(ctx, bookId, data, type);
+  const url = await uploadFile(ctx, bookId, data, type, format);
   if (url) {
     clearUploadRetry(ctx.uploadRetryState, key);
     syncDebugLog("upload-success", { bookId, type, size });
@@ -170,20 +207,20 @@ async function uploadLocalCopy(
   meta: Record<string, unknown>,
   data: ArrayBuffer | Blob,
   type: FileUploadType,
-  options?: { resetBackoff?: boolean },
+  options?: { resetBackoff?: boolean; format?: BookFileFormat },
 ): Promise<Record<string, unknown> | null> {
   if (options?.resetBackoff) {
     clearUploadRetry(ctx.uploadRetryState, uploadRetryKey(bookId, type));
   }
-  const url = await uploadFileWithBackoff(ctx, bookId, data, type);
+  const url = await uploadFileWithBackoff(ctx, bookId, data, type, options?.format ?? "epub");
   if (!url) return null;
   return stampUploadedUrl(bookId, meta, url, type);
 }
 
 /**
  * Scan all books in IDB and upload any that have local file data or cover
- * images but are missing their remote URLs. Runs asynchronously after
- * metadata push — failures are logged but don't block the sync cycle.
+ * images but are missing their remote storage references. Runs asynchronously
+ * after metadata push — failures are logged but don't block the sync cycle.
  */
 export async function uploadPendingFiles(
   ctx: FileUploadContext,
@@ -206,8 +243,8 @@ export async function uploadPendingFiles(
     if (!meta || typeof meta !== "object" || meta.deletedAt) continue;
 
     try {
-      // Upload epub file if missing remoteFileUrl, or repair a stale remote URL
-      // when the startup recovery pass finds that the server download is gone.
+      // Upload epub/pdf file if missing remoteFileUrl, or repair a stale remote
+      // URL when the startup recovery pass finds that the server download is gone.
       const existingFileUrl =
         typeof meta.remoteFileUrl === "string" ? meta.remoteFileUrl : undefined;
       if (!existingFileUrl || options?.verifyExistingRemoteUrls) {
@@ -216,8 +253,10 @@ export async function uploadPendingFiles(
           if (fileData) {
             const shouldUpload = !existingFileUrl || !(await remoteDownloadExists(bookId, "file"));
             if (shouldUpload) {
+              const format = meta.format === "pdf" ? "pdf" : "epub";
               const stamped = await uploadLocalCopy(ctx, bookId, meta, fileData, "file", {
                 resetBackoff: !!existingFileUrl,
+                format,
               });
               if (stamped) meta = stamped;
             }
@@ -262,7 +301,7 @@ export async function uploadPendingFiles(
 /**
  * Re-download file + cover for a single book from the server, overwriting
  * the locally cached copies. If the book is missing `remoteFileUrl` or
- * `remoteCoverUrl`, upload the local file / cover to blob storage so the
+ * `remoteCoverUrl`, upload the local file / cover to R2 storage so the
  * DB row gets populated (same logic as {@link uploadPendingFiles}, but
  * scoped to one book).
  */
@@ -298,8 +337,10 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
         console.error(`[sync] reload file download failed: ${res.status} ${res.statusText}`);
         const fileData = await get<ArrayBuffer>(bookId, dataStore);
         if (fileData) {
+          const format = meta.format === "pdf" ? "pdf" : "epub";
           const stamped = await uploadLocalCopy(ctx, bookId, meta, fileData, "file", {
             resetBackoff: true,
+            format,
           });
           if (stamped) {
             meta = stamped;
@@ -313,7 +354,8 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
   } else {
     const fileData = await get<ArrayBuffer>(bookId, dataStore);
     if (fileData) {
-      const stamped = await uploadLocalCopy(ctx, bookId, meta, fileData, "file");
+      const format = meta.format === "pdf" ? "pdf" : "epub";
+      const stamped = await uploadLocalCopy(ctx, bookId, meta, fileData, "file", { format });
       if (stamped) {
         meta = stamped;
         metaChanged = true;

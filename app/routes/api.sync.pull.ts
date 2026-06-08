@@ -6,6 +6,7 @@ import { getBooksByUserSince } from "~/lib/database/book/book";
 import { getPositionsByUserSince } from "~/lib/database/book/reading-position";
 import { getSessionsByUserSince, getMessagesByUserSince } from "~/lib/database/chat/chat-session";
 import { getSettingsSince } from "~/lib/database/settings/user-settings";
+import { getEnv } from "~/lib/env.server";
 import { parseCursorsParam } from "~/lib/sync/sync-cursors";
 import type { EntityType, SyncPullResponse } from "~/lib/sync/types";
 
@@ -21,7 +22,8 @@ const SUPPORTED_ENTITY_TYPES: EntityType[] = [
 ];
 
 export async function loader({ request }: { request: Request }) {
-  if (!process.env.DATABASE_URL) {
+  const env = getEnv();
+  if (!env.DATABASE_URL) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 

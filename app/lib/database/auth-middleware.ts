@@ -4,6 +4,7 @@
  */
 
 import { SESSION_MAX_AGE_SECONDS } from "~/lib/auth-config";
+import { getEnv } from "~/lib/env.server";
 import { getSession } from "./auth/session";
 
 const SESSION_COOKIE_NAME = "readmax_session";
@@ -16,7 +17,7 @@ const SESSION_COOKIE_NAME = "readmax_session";
  * Append a Set-Cookie header that persists the session ID.
  */
 export function setSessionCookie(headers: Headers, sessionId: string): void {
-  const isSecure = process.env.NODE_ENV === "production";
+  const isSecure = getEnv().NODE_ENV === "production";
   const parts = [
     `${SESSION_COOKIE_NAME}=${sessionId}`,
     "HttpOnly",
@@ -50,7 +51,8 @@ export function clearSessionCookie(headers: Headers): void {
  */
 export async function getSessionFromRequest(request: Request): Promise<{ userId: string } | null> {
   // No database configured — auth is unavailable
-  if (!process.env.DATABASE_URL) return null;
+  const env = getEnv();
+  if (!env.DATABASE_URL) return null;
 
   const cookieHeader = request.headers.get("Cookie");
   if (!cookieHeader) return null;

@@ -34,8 +34,8 @@ export interface SyncEngine {
   triggerPull(): void;
   /**
    * Re-download the book file and cover from the server, overwriting local
-   * copies. If the book is missing a remote URL, upload the local file /
-   * cover to blob storage instead so the DB row gets populated. Also
+   * copies. If the book is missing a remote storage reference, upload the
+   * local file / cover to R2 storage instead so the DB row gets populated. Also
    * re-extract and re-upload chapter text when local book data is available.
    */
   reloadBookFiles(bookId: string): Promise<void>;
@@ -46,7 +46,7 @@ export interface SyncEngine {
 // ---------------------------------------------------------------------------
 
 export interface SyncEngineConfig {
-  /** Authenticated user ID. Required for file uploads (used in the blob pathname). */
+  /** Authenticated user ID. Required for first-party file uploads. */
   userId: string;
   onSyncStart?: () => void;
   onSyncEnd?: (result: { success: boolean }) => void;
@@ -105,8 +105,8 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
   let stopped = false;
 
   // Per-book upload retry state. In-memory only: resets on reload / new engine
-  // instance. Prevents the sync loop from hammering the blob endpoint when a
-  // particular book's upload keeps failing (e.g. Vercel Blob returning 503).
+  // instance. Prevents the sync loop from hammering the upload endpoint when a
+  // particular book's upload keeps failing (e.g. R2 returning 503).
   const uploadRetryState = new Map<string, UploadRetryEntry>();
 
   // Shared context threaded into the file-uploads module so all helpers see

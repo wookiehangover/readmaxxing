@@ -8,12 +8,19 @@ import {
 
 /**
  * Skip the current test when the auth/DB stack is not configured. CI runs
- * without a Postgres service, in which case /api/auth/register-options
- * responds 503 and the WebAuthn registration flow cannot complete.
+ * without a reachable Postgres/Auth stack, in which case
+ * /api/auth/register-options returns a non-OK response or cannot be reached
+ * and the WebAuthn registration flow cannot complete.
  */
 export async function skipIfAuthNotConfigured(request: APIRequestContext) {
-  const probe = await request.get("/api/auth/register-options");
-  test.skip(probe.status() === 503, "Auth/DB not configured for chat e2e");
+  let authIsConfigured = false;
+  try {
+    const probe = await request.get("/api/auth/register-options");
+    authIsConfigured = probe.ok();
+  } catch {
+    authIsConfigured = false;
+  }
+  test.skip(!authIsConfigured, "Auth/DB not configured for chat e2e");
 }
 
 /**

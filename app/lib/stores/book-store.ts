@@ -16,9 +16,9 @@ export const BookMetaSchema = Schema.Struct({
   author: Schema.String,
   coverImage: Schema.NullOr(Schema.instanceOf(Blob)),
   format: Schema.optionalWith(BookFormatSchema, { default: () => "epub" as const }),
-  /** Vercel Blob URL for cover image (set during sync upload). */
+  /** Remote storage reference for cover image (set during sync upload). */
   remoteCoverUrl: Schema.optional(Schema.String),
-  /** Vercel Blob URL for epub/pdf file (set during sync upload). */
+  /** Remote storage reference for epub/pdf file (set during sync upload). */
   remoteFileUrl: Schema.optional(Schema.String),
   /** SHA-256 hash of the file data, used for deduplication during sync. */
   fileHash: Schema.optional(Schema.String),

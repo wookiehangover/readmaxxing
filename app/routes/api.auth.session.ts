@@ -1,8 +1,10 @@
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import { getUser } from "~/lib/database/user/user";
+import { getEnv } from "~/lib/env.server";
 
 export async function loader({ request }: { request: Request }) {
-  if (!process.env.DATABASE_URL) {
+  const env = getEnv();
+  if (!env.DATABASE_URL) {
     return Response.json({ user: null }, { status: 401 });
   }
 

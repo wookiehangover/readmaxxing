@@ -1,6 +1,18 @@
 import { generateText, type UIMessage } from "ai";
-import { gateway } from "@ai-sdk/gateway";
+import { createGateway } from "@ai-sdk/gateway";
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
+import { getEnv } from "~/lib/env.server";
+
+function getGatewayModel(modelId: string) {
+  const env = getEnv();
+  if (!env.AI_GATEWAY_API_KEY) {
+    throw new Error("Missing required environment variable: AI_GATEWAY_API_KEY");
+  }
+  return createGateway({
+    apiKey: env.AI_GATEWAY_API_KEY,
+    baseURL: env.AI_GATEWAY_BASE_URL,
+  })(modelId);
+}
 
 interface ChatTitleRequestBody {
   messages: UIMessage[];
@@ -39,7 +51,7 @@ export async function action({ request }: { request: Request }) {
     .join("\n\n");
 
   const { text } = await generateText({
-    model: gateway("google/gemini-2.5-flash"),
+    model: getGatewayModel("google/gemini-2.5-flash"),
     messages: [
       {
         role: "system",

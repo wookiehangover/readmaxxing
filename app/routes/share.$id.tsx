@@ -15,6 +15,7 @@ import { parsePdfEffect } from "~/lib/pdf/pdf-service";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { computeFileHash } from "~/lib/book-hash";
 import { signDownloadToken } from "~/lib/share-download-token";
+import { isDatabaseRuntimeAvailable } from "~/lib/env.server";
 import { BookService, type BookFormat, type BookMeta } from "~/lib/stores/book-store";
 import { cn } from "~/lib/utils";
 
@@ -165,7 +166,7 @@ function importSharedBook(loaderData: ShareLoaderData) {
 
 export async function loader({ request, params }: LoaderArgs): Promise<ShareLoaderData> {
   const id = params.id;
-  if (!process.env.DATABASE_URL) {
+  if (!isDatabaseRuntimeAvailable()) {
     return {
       status: "unavailable",
       id,

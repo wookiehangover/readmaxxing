@@ -123,7 +123,7 @@ export function stripSuggestedPrompts(text: string): string {
  * - The selected-book set is read from `selectedBookIdsRef` at send time (not a
  *   stale closure) so a selection change between renders is always reflected.
  * - `reconnectToStream` is redirected to the custom resume endpoint
- *   `/api/chat/resume/:sessionId`, which replays an in-flight Redis stream.
+ *   `/api/chat/resume/:sessionId`, which replays an in-flight Agent stream.
  * - The custom `fetch` wrapper retries once on a 404 from `/api/chat`, which
  *   handles the brand-new-session race: `ChatService.createSession` writes
  *   to IDB and enqueues a change for sync-push, but the first `POST /api/chat`

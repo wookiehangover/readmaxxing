@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { createShareLink } from "~/lib/database/share/share-link";
+import { isDatabaseRuntimeAvailable } from "~/lib/env.server";
 
 interface CreateShareRequestBody {
   bookId?: unknown;
@@ -38,7 +39,7 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  if (!process.env.DATABASE_URL) {
+  if (!isDatabaseRuntimeAvailable()) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 

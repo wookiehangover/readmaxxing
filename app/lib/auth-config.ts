@@ -4,19 +4,23 @@
  * RP_ID and RP_ORIGIN are required environment variables.
  */
 
+import { getEnv } from "~/lib/env.server";
+
 /** Relying Party display name shown during WebAuthn ceremonies. */
-export const RP_NAME = process.env.WEBAUTHN_RP_NAME ?? "Readmaxxing";
+export function getRpName(): string {
+  return getEnv().WEBAUTHN_RP_NAME ?? "Readmaxxing";
+}
 
 /** Relying Party ID — must match the domain the app is served from. */
 export function getRpId(): string {
-  const value = process.env.WEBAUTHN_RP_ID;
+  const value = getEnv().WEBAUTHN_RP_ID;
   if (!value) throw new Error("Missing required environment variable: WEBAUTHN_RP_ID");
   return value;
 }
 
 /** Relying Party origin — full origin URL. */
 export function getRpOrigin(): string {
-  const value = process.env.WEBAUTHN_RP_ORIGIN;
+  const value = getEnv().WEBAUTHN_RP_ORIGIN;
   if (!value) throw new Error("Missing required environment variable: WEBAUTHN_RP_ORIGIN");
   return value;
 }

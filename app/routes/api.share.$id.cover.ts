@@ -1,19 +1,16 @@
-import { get } from "@vercel/blob";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { getShareLink, type ShareLinkRow } from "~/lib/database/share/share-link";
+import { parseStoredBlobReference } from "~/lib/blob-url";
+import { getEnv } from "~/lib/env.server";
 
 function isExpired(shareLink: ShareLinkRow): boolean {
   return shareLink.expiresAt != null && shareLink.expiresAt.getTime() <= Date.now();
 }
 
 export async function loader({ params }: { params: { id: string } }) {
-  if (!process.env.DATABASE_URL) {
+  const env = getEnv();
+  if (!env.DATABASE_URL) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
-  }
-
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
-    return Response.json({ error: "Blob storage is not configured" }, { status: 500 });
   }
 
   const shareLink = await getShareLink(params.id);
@@ -32,16 +29,26 @@ export async function loader({ params }: { params: { id: string } }) {
     return Response.json({ error: "No cover uploaded for this book" }, { status: 404 });
   }
 
-  const result = await get(book.coverBlobUrl, { access: "private", token });
-  if (!result || result.statusCode !== 200 || !result.stream) {
-    return Response.json({ error: "Failed to retrieve cover from blob storage" }, { status: 502 });
+  const reference = parseStoredBlobReference(book.coverBlobUrl, "cover");
+  if (!reference) {
+    return Response.json({ error: "Unsupported storage reference" }, { status: 400 });
   }
 
-  return new Response(result.stream, {
-    headers: {
-      "Content-Type": result.blob.contentType ?? "application/octet-stream",
-      "Content-Disposition": result.blob.contentDisposition,
-      "Cache-Control": "public, max-age=3600",
-    },
-  });
+  const bucket = reference.bucket === "covers" ? env.R2_COVERS : env.R2_FILES;
+  if (!bucket) {
+    return Response.json({ error: "R2 storage is not configured" }, { status: 500 });
+  }
+
+  const object = await bucket.get(reference.key);
+  if (!object) {
+    return Response.json({ error: "Cover not found in storage" }, { status: 404 });
+  }
+
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("ETag", object.httpEtag);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/octet-stream");
+  headers.set("Cache-Control", "public, max-age=3600");
+  headers.set("Content-Length", String(object.size));
+  return new Response(object.body, { headers });
 }

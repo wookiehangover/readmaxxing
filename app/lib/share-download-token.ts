@@ -1,10 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { ShareLinkRow } from "~/lib/database/share/share-link";
+import { getEnv } from "~/lib/env.server";
 
 const DOWNLOAD_TOKEN_TTL_MS = 5 * 60 * 1000;
 
 function getDownloadSecret(): string | null {
-  return process.env.SHARE_DOWNLOAD_SECRET ?? process.env.BLOB_READ_WRITE_TOKEN ?? null;
+  return getEnv().SHARE_DOWNLOAD_SECRET ?? null;
 }
 
 export function signDownloadToken(shareId: string, useCount: number): string | null {

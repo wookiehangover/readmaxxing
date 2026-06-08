@@ -1,0 +1,59 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "readmaxxing",
+  "main": "./workers/app.ts",
+  "compatibility_date": "2026-04-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./build/client",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "vars": {
+    "WEBAUTHN_RP_NAME": "Readmaxxing",
+    // Non-secret canonical Worker origin used for absolute social preview URLs.
+    "PUBLIC_SITE_URL": "https://readmaxxing.0x01ai.workers.dev",
+    // TODO(secrets): set with `pnpm exec wrangler secret put WEBAUTHN_RP_ID`.
+    // "WEBAUTHN_RP_ID": "",
+    // TODO(secrets): set with `pnpm exec wrangler secret put WEBAUTHN_RP_ORIGIN`.
+    // "WEBAUTHN_RP_ORIGIN": "",
+    // TODO(secrets): set with `pnpm exec wrangler secret put AI_GATEWAY_API_KEY`.
+    // "AI_GATEWAY_API_KEY": "",
+    // TODO(secrets): set with `pnpm exec wrangler secret put ANTHROPIC_API_KEY`.
+    // "ANTHROPIC_API_KEY": "",
+    // TODO(optional secrets): set with `pnpm exec wrangler secret put ANTHROPIC_BASE_URL` if using a custom Anthropic endpoint.
+    // "ANTHROPIC_BASE_URL": "",
+    // TODO(secrets): set with `pnpm exec wrangler secret put SHARE_DOWNLOAD_SECRET` to enable signed share download links.
+    // "SHARE_DOWNLOAD_SECRET": "",
+  },
+  "r2_buckets": [
+    // Create these private buckets before deploy:
+    //   pnpm exec wrangler r2 bucket create readmax-files
+    //   pnpm exec wrangler r2 bucket create readmax-covers
+    // Do not configure public access/custom domains; all reads are auth-proxied.
+    {
+      "binding": "R2_FILES",
+      "bucket_name": "readmax-files",
+    },
+    {
+      "binding": "R2_COVERS",
+      "bucket_name": "readmax-covers",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "AGENTS",
+        "class_name": "ChatAgent",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      // Deploy steps: run `pnpm exec wrangler deploy --dry-run`, then deploy after secrets and placeholder resource IDs are configured.
+      "new_sqlite_classes": ["ChatAgent"],
+    },
+  ],
+}

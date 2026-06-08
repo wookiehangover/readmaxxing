@@ -1,47 +1,50 @@
 import { describe, expect, it } from "vitest";
 
-import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
+import { coverCacheKey, parseStoredBlobReference, r2StorageUrl } from "~/lib/blob-url";
 
-describe("isPublicBlobUrl", () => {
-  it("detects public Vercel Blob URLs", () => {
-    expect(isPublicBlobUrl("https://store.public.blob.vercel-storage.com/covers/book.jpg")).toBe(
-      true,
-    );
-    expect(isPublicBlobUrl("https://store.blob.vercel-storage.com/covers/book.jpg")).toBe(false);
+describe("storage references", () => {
+  it("builds and parses R2 storage URLs", () => {
+    const value = r2StorageUrl("cover", "covers/user/book/cover.jpg");
+    expect(value).toBe("r2://covers/covers/user/book/cover.jpg");
+    expect(parseStoredBlobReference(value, "cover")).toEqual({
+      kind: "r2",
+      bucket: "covers",
+      key: "covers/user/book/cover.jpg",
+    });
   });
 
-  it("returns false for a non-blob URL", () => {
-    expect(isPublicBlobUrl("https://example.com/foo.jpg")).toBe(false);
+  it("treats plain keys as R2 references when a type is provided", () => {
+    expect(parseStoredBlobReference("books/user/book/book.epub", "file")).toEqual({
+      kind: "r2",
+      bucket: "files",
+      key: "books/user/book/book.epub",
+    });
   });
 
-  it("returns false for an empty string", () => {
-    expect(isPublicBlobUrl("")).toBe(false);
-  });
-
-  it("returns false for a malformed URL without throwing", () => {
-    expect(() => isPublicBlobUrl("not a url")).not.toThrow();
-    expect(isPublicBlobUrl("not a url")).toBe(false);
+  it("returns null for unsupported or malformed references", () => {
+    expect(parseStoredBlobReference("https://example.com/foo.jpg", "cover")).toBeNull();
+    expect(parseStoredBlobReference("")).toBeNull();
+    expect(parseStoredBlobReference("/", "file")).toBeNull();
   });
 });
 
 describe("coverCacheKey", () => {
-  it("uses the last 32 hex characters from the cover blob URL", () => {
+  it("keys R2 covers on the object key plus updatedAt", () => {
     const key = coverCacheKey({
-      remoteCoverUrl:
-        "https://store.blob.vercel-storage.com/covers/book-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg",
+      remoteCoverUrl: "r2://covers/covers/user/book/cover.jpg",
       updatedAt: 1234,
     });
 
-    expect(key).toBe("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    expect(key).toBe("covers/covers/user/book/cover.jpg:1234");
   });
 
-  it("falls back to updatedAt when the cover URL has no blob hash", () => {
+  it("keys non-R2 cover URLs on the URL plus updatedAt", () => {
     expect(
       coverCacheKey({
-        remoteCoverUrl: "https://store.blob.vercel-storage.com/covers/book.jpg",
+        remoteCoverUrl: "https://example.com/covers/book.jpg",
         updatedAt: 1234.9,
       }),
-    ).toBe("1234");
+    ).toBe("https://example.com/covers/book.jpg:1234");
   });
 
   it("returns null when there is no cover URL", () => {
@@ -50,8 +53,7 @@ describe("coverCacheKey", () => {
 
   it("returns the same key for the same input", () => {
     const book = {
-      coverBlobUrl:
-        "https://store.blob.vercel-storage.com/covers/abcdefabcdefabcdefabcdefabcdefab.jpg",
+      coverBlobUrl: "https://example.com/covers/abcdefabcdefabcdefabcdefabcdefab.jpg",
       updatedAt: 5678,
     };
 

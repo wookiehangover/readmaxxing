@@ -1,5 +1,6 @@
 import { getNotebookMarkdownForUser } from "~/lib/database/annotation/notebook";
 import { getShareLink, type ShareLinkRow } from "~/lib/database/share/share-link";
+import { isDatabaseRuntimeAvailable } from "~/lib/env.server";
 
 interface ValidationResult {
   shareLink?: ShareLinkRow;
@@ -31,7 +32,7 @@ async function validateSharedChatsLink(id: string): Promise<ValidationResult> {
 }
 
 export async function loader({ params }: { params: { id: string } }) {
-  if (!process.env.DATABASE_URL) {
+  if (!isDatabaseRuntimeAvailable()) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 

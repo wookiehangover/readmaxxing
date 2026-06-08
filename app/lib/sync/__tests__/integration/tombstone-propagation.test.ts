@@ -4,12 +4,6 @@ import { recordChange } from "../../change-log";
 import { makeSyncEngine } from "../../sync-engine";
 import type { ChangeEntry, SyncPullResponse, SyncPushRequest } from "../../types";
 
-// Cross-device relay tests exercise both push and pull. Stub the blob client
-// so the fire-and-forget uploadPendingFiles pass cannot touch the network.
-vi.mock("@vercel/blob/client", () => ({
-  upload: vi.fn(async () => ({ url: "blob://unused" })),
-}));
-
 const bookStore = createStore("ebook-reader-db", "books");
 const cursorStore = createStore("ebook-reader-sync-cursors", "cursors");
 const changeLogStore = createStore("ebook-reader-changelog", "changes");

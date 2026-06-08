@@ -7,8 +7,8 @@ import type { EntityType, SyncPushRequest, SyncPushResponse } from "./types";
 /**
  * Maximum number of change log entries to send in a single `/api/sync/push`
  * request. The server processes entries serially with ~1-3 DB trips each,
- * so large batches can hit function timeouts on Vercel. Oversized backlogs
- * are drained across multiple requests scheduled back-to-back.
+ * so oversized backlogs are drained across multiple requests scheduled
+ * back-to-back.
  */
 export const PUSH_BATCH_SIZE = 50;
 
@@ -29,9 +29,8 @@ export async function pushChanges(ctx: PushContext): Promise<void> {
   const pending = await getUnsyncedChanges();
   if (pending.length === 0) return;
 
-  // Cap each request at PUSH_BATCH_SIZE so the server handler stays well
-  // under Vercel's function timeout. Remaining entries drain on follow-up
-  // pushes scheduled below.
+  // Cap each request at PUSH_BATCH_SIZE so the server handler stays bounded.
+  // Remaining entries drain on follow-up pushes scheduled below.
   const changes = pending.slice(0, PUSH_BATCH_SIZE);
   const hadFullBatch = changes.length >= PUSH_BATCH_SIZE;
 

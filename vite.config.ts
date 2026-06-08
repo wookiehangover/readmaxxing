@@ -1,9 +1,10 @@
+import { cloudflare } from "@cloudflare/vite-plugin";
 import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 const indexHtmlPath = resolve("build/client/index.html");
@@ -16,12 +17,11 @@ const indexHtmlPrecacheEntryPatterns = [
 let isIndexHtmlRevisionPatchScheduled = false;
 let isIndexHtmlRevisionPatched = false;
 
-function getSiteOrigin() {
-  const productionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  if (productionUrl) return `https://${productionUrl}`;
-  const vercelUrl = process.env.VERCEL_URL;
-  if (vercelUrl) return `https://${vercelUrl}`;
-  return "";
+function getSiteOrigin(env: Record<string, string | undefined>) {
+  const siteUrl = env.PUBLIC_SITE_URL?.trim();
+  if (!siteUrl) return "";
+
+  return siteUrl.replace(/\/$/, "");
 }
 
 function isMissingFile(cause: unknown) {
@@ -97,8 +97,9 @@ function patchIndexHtmlPrecacheRevision(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
+    cloudflare({ viteEnvironment: { name: "ssr" } }),
     tailwindcss(),
     reactRouter(),
     VitePWA({
@@ -136,20 +137,6 @@ export default defineConfig({
             handler: "CacheFirst",
             options: {
               cacheName: "covers-proxy",
-              expiration: {
-                maxEntries: 500,
-                maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-            },
-          },
-          {
-            urlPattern: /^https:\/\/[^/]+\.public\.blob\.vercel-storage\.com\/covers\/.*/,
-            handler: "CacheFirst",
-            options: {
-              cacheName: "covers-public",
               expiration: {
                 maxEntries: 500,
                 maxAgeSeconds: 60 * 60 * 24 * 365,
@@ -214,9 +201,14 @@ export default defineConfig({
     patchIndexHtmlPrecacheRevision(),
   ],
   define: {
-    __SITE_ORIGIN__: JSON.stringify(getSiteOrigin()),
+    __SITE_ORIGIN__: JSON.stringify(
+      getSiteOrigin({ ...loadEnv(mode, process.cwd(), ""), ...process.env }),
+    ),
+    "console.createTask": "undefined",
   },
   resolve: {
-    tsconfigPaths: true,
+    alias: {
+      "~": resolve("app"),
+    },
   },
-});
+}));

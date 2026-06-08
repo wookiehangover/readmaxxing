@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 /**
- * Backoff schedule applied to failing blob uploads, keyed by attempt count.
+ * Backoff schedule applied to failing remote storage uploads, keyed by attempt count.
  * Attempts beyond the last slot stay capped at the final value (30 min).
  */
 export const UPLOAD_BACKOFF_SCHEDULE_MS: readonly number[] = [
@@ -56,14 +56,11 @@ export function clearUploadRetry(state: Map<string, UploadRetryEntry>, key: stri
 }
 
 // ---------------------------------------------------------------------------
-// In-call retry: classify blob SDK errors and retry transient ones
+// In-call retry: classify upload errors and retry transient ones
 // ---------------------------------------------------------------------------
 
 /**
- * Classification of errors thrown by `@vercel/blob/client#upload`. The SDK
- * exposes typed error classes (`BlobAccessError`, `BlobServiceNotAvailable`,
- * `BlobServiceRateLimited`, etc.) but the `/client` subpath does not re-export
- * them, so we match on `constructor.name` / `name` / message fragments.
+ * Classification of errors thrown by the first-party upload helper.
  */
 export type BlobErrorClass = "auth" | "transient" | "permanent";
 
@@ -74,47 +71,24 @@ export function classifyBlobError(err: unknown): BlobErrorClass {
   const msg = err.message;
 
   // Auth: access denied (403) or failed client-token exchange (401/403).
-  if (
-    ctor === "BlobAccessError" ||
-    name === "BlobAccessError" ||
-    ctor === "BlobClientTokenExpiredError" ||
-    name === "BlobClientTokenExpiredError" ||
-    /client token/i.test(msg)
-  ) {
+  if (ctor === "UploadAccessError" || name === "UploadAccessError" || /client token/i.test(msg)) {
     return "auth";
   }
 
   // Permanent: validation / not-found / aborted — retrying won't help.
   if (
-    ctor === "BlobFileTooLargeError" ||
-    name === "BlobFileTooLargeError" ||
-    ctor === "BlobContentTypeNotAllowedError" ||
-    name === "BlobContentTypeNotAllowedError" ||
-    ctor === "BlobPathnameMismatchError" ||
-    name === "BlobPathnameMismatchError" ||
-    ctor === "BlobPreconditionFailedError" ||
-    name === "BlobPreconditionFailedError" ||
-    ctor === "BlobNotFoundError" ||
-    name === "BlobNotFoundError" ||
-    ctor === "BlobStoreNotFoundError" ||
-    name === "BlobStoreNotFoundError" ||
-    ctor === "BlobStoreSuspendedError" ||
-    name === "BlobStoreSuspendedError" ||
-    ctor === "BlobRequestAbortedError" ||
-    name === "BlobRequestAbortedError"
+    ctor === "UploadFileTooLargeError" ||
+    name === "UploadFileTooLargeError" ||
+    ctor === "UploadContentTypeNotAllowedError" ||
+    name === "UploadContentTypeNotAllowedError" ||
+    ctor === "UploadPermanentError" ||
+    name === "UploadPermanentError"
   ) {
     return "permanent";
   }
 
   // Transient: service outage, rate limiting, unknown server error.
-  if (
-    ctor === "BlobServiceNotAvailable" ||
-    name === "BlobServiceNotAvailable" ||
-    ctor === "BlobServiceRateLimited" ||
-    name === "BlobServiceRateLimited" ||
-    ctor === "BlobUnknownError" ||
-    name === "BlobUnknownError"
-  ) {
+  if (ctor === "UploadServerError" || name === "UploadServerError") {
     return "transient";
   }
 

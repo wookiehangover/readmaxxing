@@ -1,8 +1,10 @@
 import { getSessionFromRequest, clearSessionCookie } from "~/lib/database/auth-middleware";
 import { deleteSession } from "~/lib/database/auth/session";
+import { getEnv } from "~/lib/env.server";
 
 export async function action({ request }: { request: Request }) {
-  if (!process.env.DATABASE_URL) {
+  const env = getEnv();
+  if (!env.DATABASE_URL) {
     return Response.json({ error: "Auth not configured" }, { status: 503 });
   }
 
