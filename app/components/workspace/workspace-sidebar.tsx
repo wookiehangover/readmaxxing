@@ -290,7 +290,21 @@ export function WorkspaceSidebar({
             })()
           : !collapsed && (
               <div className="p-4 text-xs text-muted-foreground space-y-4">
-                <p>{isFocused ? "Open a book to show actions." : "Use Library to browse books."}</p>
+                {isFocused ? (
+                  <>
+                    <p>
+                      Readmaxxing is an AI-assisted reading app with chat, search, notes,
+                      bookmarks, and history built into your workspace.
+                    </p>
+                    <p>
+                      Use it for syntopical reading, comparative literature, and interrogating
+                      multiple books at once.
+                    </p>
+                    <p>Open a book to start reading, mark up ideas, and build context as you go.</p>
+                  </>
+                ) : (
+                  <p>Use Library to browse books.</p>
+                )}
               </div>
             )}
       </ScrollArea>
