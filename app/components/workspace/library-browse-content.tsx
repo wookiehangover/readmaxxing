@@ -145,7 +145,9 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
     [ws],
   );
 
-  const { handleDeleteBook } = useBookDeletion({ onBookDeleted: handleBookDeleted });
+  const { handleDeleteBook } = useBookDeletion({
+    onBookDeleted: handleBookDeleted,
+  });
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
   const { reloadBookFiles, isActive: syncActive, triggerSync } = useSyncState();
 
@@ -177,7 +179,9 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
 
       queueMicrotask(() => {
         window.dispatchEvent(
-          new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }),
+          new CustomEvent("sync:entity-updated", {
+            detail: { entity: "book" },
+          }),
         );
       });
     };
@@ -258,70 +262,19 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
             <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                 {sortedGridBooks.map((book) => {
-                  const needsDownload = bookNeedsDownload(book);
                   return (
-                    <div key={book.id} className="group relative">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenBook(book)}
-                        className="block w-full text-left"
-                      >
-                        <div className="relative overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
-                          {book.coverImage || book.remoteCoverUrl ? (
-                            <CoverImage
-                              coverImage={book.coverImage}
-                              alt={book.title}
-                              remoteCoverUrl={book.remoteCoverUrl}
-                              bookId={book.id}
-                              updatedAt={book.updatedAt}
-                              needsDownload={needsDownload}
-                            />
-                          ) : (
-                            <CoverPlaceholder title={book.title} author={book.author} />
-                          )}
-                        </div>
-                        <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
-                        <p className="truncate text-xs text-muted-foreground">{book.author}</p>
-                      </button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/70 focus-visible:opacity-100 group-hover:opacity-100"
-                          render={<button type="button" />}
-                          onClick={(e) => e.preventDefault()}
-                        >
-                          <Ellipsis className="size-4" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-auto">
-                          <DropdownMenuItem onClick={() => handleOpenNotebook(book)}>
-                            <NotebookPen className="size-4" />
-                            Open notebook
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleOpenChat(book)}>
-                            <MessageSquare className="size-4" />
-                            Open chat
-                          </DropdownMenuItem>
-                          {isAuthenticated && (
-                            <DropdownMenuItem onClick={() => handleShareBook(book)}>
-                              <Share2 className="size-4" />
-                              Share
-                            </DropdownMenuItem>
-                          )}
-                          {syncActive && (
-                            <DropdownMenuItem onClick={() => handleReloadBook(book.id)}>
-                              <RefreshCw className="size-4" />
-                              Sync
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={() => handleDeleteBook(book.id)}
-                          >
-                            <Trash2 className="size-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+                    <LibraryBook
+                      key={book.id}
+                      book={book}
+                      handleOpenBook={handleOpenBook}
+                      handleOpenNotebook={handleOpenNotebook}
+                      handleOpenChat={handleOpenChat}
+                      handleDeleteBook={handleDeleteBook}
+                      handleReloadBook={handleReloadBook}
+                      handleShareBook={handleShareBook}
+                      isAuthenticated={isAuthenticated}
+                      syncActive={syncActive}
+                    />
                   );
                 })}
                 <div>
@@ -349,6 +302,88 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
           if (!nextOpen) setShareBook(null);
         }}
       />
+    </div>
+  );
+}
+
+function LibraryBook({
+  book,
+  handleOpenBook,
+  handleOpenNotebook,
+  handleOpenChat,
+  handleDeleteBook,
+  handleReloadBook,
+  handleShareBook,
+  isAuthenticated,
+  syncActive,
+}: {
+  book: BookMeta;
+  handleOpenBook: (book: BookMeta) => void;
+  handleOpenNotebook: (book: BookMeta) => void;
+  handleOpenChat: (book: BookMeta) => void;
+  handleDeleteBook: (bookId: BookMeta["id"]) => void;
+  handleReloadBook: (bookId: BookMeta["id"]) => void;
+  handleShareBook: (book: BookMeta) => void;
+  isAuthenticated: boolean;
+  syncActive: boolean;
+}) {
+  const needsDownload = bookNeedsDownload(book);
+
+  return (
+    <div key={book.id} className="group relative">
+      <button type="button" onClick={() => handleOpenBook(book)} className="block w-full text-left">
+        <div className="relative shadow-lg transition-shadow duration-500 book-cover-container group-hover:shadow-2xl">
+          {book.coverImage || book.remoteCoverUrl ? (
+            <CoverImage
+              coverImage={book.coverImage}
+              alt={book.title}
+              remoteCoverUrl={book.remoteCoverUrl}
+              bookId={book.id}
+              updatedAt={book.updatedAt}
+              needsDownload={needsDownload}
+            />
+          ) : (
+            <CoverPlaceholder title={book.title} author={book.author} />
+          )}
+        </div>
+        {/*<p className="mt-2 truncate text-sm font-medium">{book.title}</p>*/}
+        {/*<p className="truncate text-xs text-muted-foreground">{book.author}</p>*/}
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className="ml-auto flex size-7 items-center justify-center rounded-md text-foreground/70 backdrop-blur-sm transition-opacity hover:bg-background focus-visible:opacity-100 mt-1"
+          render={<button type="button" />}
+          onClick={(e) => e.preventDefault()}
+        >
+          <Ellipsis className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto">
+          <DropdownMenuItem onClick={() => handleOpenNotebook(book)}>
+            <NotebookPen className="size-4" />
+            Open notebook
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleOpenChat(book)}>
+            <MessageSquare className="size-4" />
+            Open chat
+          </DropdownMenuItem>
+          {isAuthenticated && (
+            <DropdownMenuItem onClick={() => handleShareBook(book)}>
+              <Share2 className="size-4" />
+              Share
+            </DropdownMenuItem>
+          )}
+          {syncActive && (
+            <DropdownMenuItem onClick={() => handleReloadBook(book.id)}>
+              <RefreshCw className="size-4" />
+              Sync
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem variant="destructive" onClick={() => handleDeleteBook(book.id)}>
+            <Trash2 className="size-4" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

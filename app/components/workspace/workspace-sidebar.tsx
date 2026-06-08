@@ -293,8 +293,8 @@ export function WorkspaceSidebar({
                 {isFocused ? (
                   <>
                     <p>
-                      Readmaxxing is an AI-assisted reading app with chat, search, notes,
-                      bookmarks, and history built into your workspace.
+                      Readmaxxing is an AI-assisted reading app with chat, search, notes, bookmarks,
+                      and history built into your workspace.
                     </p>
                     <p>
                       Use it for syntopical reading, comparative literature, and interrogating

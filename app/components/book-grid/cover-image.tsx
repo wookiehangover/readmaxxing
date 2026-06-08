@@ -34,7 +34,7 @@ export function CoverImage({
     <img
       src={url}
       alt={alt}
-      className={cn("aspect-[2/3] w-full rounded-lg object-cover", {
+      className={cn("aspect-2/3 w-full object-cover book-cover-image", {
         "grayscale opacity-50": needsDownload,
       })}
     />
