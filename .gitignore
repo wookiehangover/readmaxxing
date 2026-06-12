@@ -12,3 +12,4 @@ test-results/
 .last-run.json
 .vercel
 .env*.local
+.pnpm-store

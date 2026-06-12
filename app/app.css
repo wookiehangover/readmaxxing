@@ -393,3 +393,24 @@ body {
 .next-suggestion-active {
   opacity: 1;
 }
+
+.book-cover-container::after {
+  --spine-start: 3%;
+  --spine-end: 5%;
+  --spine-color: rgba(0 0 0 / 25%);
+  --spine-highlight: rgba(255 255 255 / 5%);
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: linear-gradient(
+    to right,
+    var(--spine-highlight),
+    var(--spine-highlight) var(--spine-start),
+    var(--spine-color) var(--spine-start),
+    transparent var(--spine-end),
+    transparent
+  );
+}

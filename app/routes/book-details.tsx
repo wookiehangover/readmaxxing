@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
-import { Link, useNavigate, useRevalidator } from "react-router";
+import { useNavigate, useRevalidator } from "react-router";
 import { Effect } from "effect";
-import { ArrowLeft, BookOpen, BookOpenText, CloudUpload, Download, RotateCcw } from "lucide-react";
+import { ArrowLeft, BookOpen, CloudUpload, RotateCcw } from "lucide-react";
 import type { Route } from "./+types/book-details";
-import type { JSONContent } from "@tiptap/react";
 import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { useSyncState } from "~/lib/sync/use-sync";
@@ -14,10 +13,8 @@ import { evictCachedCover } from "~/lib/sw-cache";
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
 import { useEffectQuery } from "~/hooks/use-effect-query";
-import { TiptapEditor } from "~/components/tiptap-editor";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
-import { ScrollArea } from "~/components/ui/scroll-area";
 import { cn } from "~/lib/utils";
 
 export function meta({ data }: Route.MetaArgs) {
@@ -127,25 +124,6 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const pushFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const replaceInputRef = useRef<HTMLInputElement | null>(null);
-  const handleNotebookUpdate = useCallback(
-    (newContent: JSONContent) => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        const program = Effect.gen(function* () {
-          const svc = yield* AnnotationService;
-          yield* svc.saveNotebook({
-            bookId: book.id,
-            content: newContent,
-            updatedAt: Date.now(),
-          });
-        });
-        AppRuntime.runPromise(program).catch((err) =>
-          console.error("Failed to save notebook:", err),
-        );
-      }, 1000);
-    },
-    [book.id],
-  );
 
   useEffect(() => {
     return () => {
@@ -175,7 +153,12 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const handleRestore = useCallback(async () => {
     setRestoring(true);
     try {
-      const updatedBook: BookMeta = { ...book, title, author, deletedAt: undefined };
+      const updatedBook: BookMeta = {
+        ...book,
+        title,
+        author,
+        deletedAt: undefined,
+      };
       await AppRuntime.runPromise(
         BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))),
       );
@@ -361,9 +344,6 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
             <Button variant="outline" onClick={handleReplaceButtonClick} disabled={replacing}>
               {replacing ? "Replacing…" : "Replace book file"}
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : saved ? "Saved" : "Save"}
-            </Button>
             {isActive && (
               <Button variant="outline" onClick={handlePush} disabled={pushing}>
                 <CloudUpload className="size-4" />
@@ -376,28 +356,11 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
                       : "Push"}
               </Button>
             )}
-            {bookNeedsDownload(book) ? (
-              <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
-                <Download className="size-4" />
-                Download &amp; Read
-              </Button>
-            ) : (
-              <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
-                <BookOpenText className="size-4" />
-                Read
-              </Button>
-            )}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : saved ? "Saved" : "Save"}
+            </Button>
           </div>
         </div>
-
-        {hasNotebook && (
-          <div className="flex min-w-0 flex-1 flex-col border-t pt-8 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-8">
-            <h2 className="mb-2 text-sm font-semibold">Notes</h2>
-            <ScrollArea className="flex-1">
-              <TiptapEditor content={notebookContent} onUpdate={handleNotebookUpdate} />
-            </ScrollArea>
-          </div>
-        )}
       </div>
     </div>
   );

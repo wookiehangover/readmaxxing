@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { DockviewPanelApi } from "dockview";
+import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import {
   MessageSquare,
@@ -10,6 +11,7 @@ import {
   Share2,
   Trash2,
   Upload,
+  Edit3Icon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CoverImage } from "~/components/book-grid/cover-image";
@@ -25,13 +27,16 @@ import {
 import { LibraryToolbar } from "~/components/workspace/library-toolbar";
 import { LibraryTable } from "~/components/workspace/library-table";
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
+import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { useBookUpload } from "~/hooks/use-book-upload";
 import { useBookDeletion } from "~/hooks/use-book-deletion";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { useSyncState } from "~/lib/sync/use-sync";
-import { useSettings } from "~/lib/settings";
-import { filterBooks } from "~/lib/workspace-utils";
+import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
+import { filterBooks, sortBooks } from "~/lib/workspace-utils";
 import { useAuth } from "~/lib/context/auth-context";
+import { useEffectQuery } from "~/hooks/use-effect-query";
+import { Link } from "react-router";
 
 interface LibraryBrowseContentProps {
   /** Dockview panel API — when provided, enables visibility-based refresh. */
@@ -40,16 +45,48 @@ interface LibraryBrowseContentProps {
 
 /** Minimum interval between panel-activation-triggered refreshes (ms). */
 const PANEL_REFRESH_THROTTLE_MS = 5000;
+const LIBRARY_SORT_STORAGE_KEY = "library-sort-by";
+const DEFAULT_LIBRARY_SORT_BY: WorkspaceSortBy = "author";
+
+function isWorkspaceSortBy(value: string | null): value is WorkspaceSortBy {
+  return value === "author" || value === "title" || value === "recent";
+}
+
+function getStoredLibrarySortBy(): WorkspaceSortBy {
+  if (typeof window === "undefined") return DEFAULT_LIBRARY_SORT_BY;
+  try {
+    const value = localStorage.getItem(LIBRARY_SORT_STORAGE_KEY);
+    return isWorkspaceSortBy(value) ? value : DEFAULT_LIBRARY_SORT_BY;
+  } catch {
+    return DEFAULT_LIBRARY_SORT_BY;
+  }
+}
+
+function saveLibrarySortBy(sortBy: WorkspaceSortBy): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(LIBRARY_SORT_STORAGE_KEY, sortBy);
+  } catch {
+    // Ignore storage failures and keep the in-memory selection for this session.
+  }
+}
 
 export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {}) {
   const ws = useWorkspace();
   const { isAuthenticated } = useAuth();
   const [books, setBooks] = useState<BookMeta[]>(ws.booksRef.current);
   const [searchQuery, setSearchQuery] = useState("");
+  const [librarySortBy, setLibrarySortBy] = useState<WorkspaceSortBy>(() =>
+    getStoredLibrarySortBy(),
+  );
   const [shareBook, setShareBook] = useState<BookMeta | null>(null);
   const [settings] = useSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastRefreshedAtRef = useRef(0);
+  const { data: lastOpenedMap } = useEffectQuery(
+    () => WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())),
+    [],
+  );
 
   useEffect(() => {
     const prev = ws.booksChangeListener.current;
@@ -91,6 +128,11 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
     setShareBook(book);
   }, []);
 
+  const handleLibrarySortByChange = useCallback((sortBy: WorkspaceSortBy) => {
+    setLibrarySortBy(sortBy);
+    saveLibrarySortBy(sortBy);
+  }, []);
+
   const handleBookAdded = useCallback(
     (book: BookMeta) => {
       ws.onBookAddedRef.current?.(book);
@@ -105,7 +147,9 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
     [ws],
   );
 
-  const { handleDeleteBook } = useBookDeletion({ onBookDeleted: handleBookDeleted });
+  const { handleDeleteBook } = useBookDeletion({
+    onBookDeleted: handleBookDeleted,
+  });
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
   const { reloadBookFiles, isActive: syncActive, triggerSync } = useSyncState();
 
@@ -137,7 +181,9 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
 
       queueMicrotask(() => {
         window.dispatchEvent(
-          new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }),
+          new CustomEvent("sync:entity-updated", {
+            detail: { entity: "book" },
+          }),
         );
       });
     };
@@ -158,6 +204,10 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
   const filteredBooks = useMemo(
     () => (searchQuery ? filterBooks(books, searchQuery) : books),
     [books, searchQuery],
+  );
+  const sortedGridBooks = useMemo(
+    () => sortBooks(filteredBooks, librarySortBy, lastOpenedMap),
+    [filteredBooks, librarySortBy, lastOpenedMap],
   );
 
   const libraryView = settings.libraryView;
@@ -188,7 +238,12 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
         </div>
       ) : (
         <>
-          <LibraryToolbar query={searchQuery} onQueryChange={setSearchQuery} />
+          <LibraryToolbar
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            sortBy={librarySortBy}
+            onSortByChange={handleLibrarySortByChange}
+          />
           {!hasMatches ? (
             <div className="flex flex-1 items-center justify-center p-6">
               <p className="text-sm text-muted-foreground">No matching books</p>
@@ -208,71 +263,20 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
           ) : (
             <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-                {filteredBooks.map((book) => {
-                  const needsDownload = bookNeedsDownload(book);
+                {sortedGridBooks.map((book) => {
                   return (
-                    <div key={book.id} className="group relative">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenBook(book)}
-                        className="block w-full text-left"
-                      >
-                        <div className="relative overflow-hidden rounded-lg shadow-sm transition-shadow group-hover:shadow-md">
-                          {book.coverImage || book.remoteCoverUrl ? (
-                            <CoverImage
-                              coverImage={book.coverImage}
-                              alt={book.title}
-                              remoteCoverUrl={book.remoteCoverUrl}
-                              bookId={book.id}
-                              updatedAt={book.updatedAt}
-                              needsDownload={needsDownload}
-                            />
-                          ) : (
-                            <CoverPlaceholder title={book.title} author={book.author} />
-                          )}
-                        </div>
-                        <p className="mt-2 truncate text-sm font-medium">{book.title}</p>
-                        <p className="truncate text-xs text-muted-foreground">{book.author}</p>
-                      </button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-black/50 text-white opacity-0 backdrop-blur-sm transition-opacity hover:bg-black/70 focus-visible:opacity-100 group-hover:opacity-100"
-                          render={<button type="button" />}
-                          onClick={(e) => e.preventDefault()}
-                        >
-                          <Ellipsis className="size-4" />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-auto">
-                          <DropdownMenuItem onClick={() => handleOpenNotebook(book)}>
-                            <NotebookPen className="size-4" />
-                            Open notebook
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleOpenChat(book)}>
-                            <MessageSquare className="size-4" />
-                            Open chat
-                          </DropdownMenuItem>
-                          {isAuthenticated && (
-                            <DropdownMenuItem onClick={() => handleShareBook(book)}>
-                              <Share2 className="size-4" />
-                              Share
-                            </DropdownMenuItem>
-                          )}
-                          {syncActive && (
-                            <DropdownMenuItem onClick={() => handleReloadBook(book.id)}>
-                              <RefreshCw className="size-4" />
-                              Sync
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={() => handleDeleteBook(book.id)}
-                          >
-                            <Trash2 className="size-4" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+                    <LibraryBook
+                      key={book.id}
+                      book={book}
+                      handleOpenBook={handleOpenBook}
+                      handleOpenNotebook={handleOpenNotebook}
+                      handleOpenChat={handleOpenChat}
+                      handleDeleteBook={handleDeleteBook}
+                      handleReloadBook={handleReloadBook}
+                      handleShareBook={handleShareBook}
+                      isAuthenticated={isAuthenticated}
+                      syncActive={syncActive}
+                    />
                   );
                 })}
                 <div>
@@ -300,6 +304,92 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
           if (!nextOpen) setShareBook(null);
         }}
       />
+    </div>
+  );
+}
+
+function LibraryBook({
+  book,
+  handleOpenBook,
+  handleOpenNotebook,
+  handleOpenChat,
+  handleDeleteBook,
+  handleReloadBook,
+  handleShareBook,
+  isAuthenticated,
+  syncActive,
+}: {
+  book: BookMeta;
+  handleOpenBook: (book: BookMeta) => void;
+  handleOpenNotebook: (book: BookMeta) => void;
+  handleOpenChat: (book: BookMeta) => void;
+  handleDeleteBook: (bookId: BookMeta["id"]) => void;
+  handleReloadBook: (bookId: BookMeta["id"]) => void;
+  handleShareBook: (book: BookMeta) => void;
+  isAuthenticated: boolean;
+  syncActive: boolean;
+}) {
+  const needsDownload = bookNeedsDownload(book);
+
+  return (
+    <div key={book.id} className="group relative">
+      <button type="button" onClick={() => handleOpenBook(book)} className="block w-full text-left">
+        <div className="relative shadow-lg transition-shadow duration-500 book-cover-container group-hover:shadow-2xl">
+          {book.coverImage || book.remoteCoverUrl ? (
+            <CoverImage
+              coverImage={book.coverImage}
+              alt={book.title}
+              remoteCoverUrl={book.remoteCoverUrl}
+              bookId={book.id}
+              updatedAt={book.updatedAt}
+              needsDownload={needsDownload}
+            />
+          ) : (
+            <CoverPlaceholder title={book.title} author={book.author} />
+          )}
+        </div>
+        {/*<p className="mt-2 truncate text-sm font-medium">{book.title}</p>*/}
+        {/*<p className="truncate text-xs text-muted-foreground">{book.author}</p>*/}
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className="ml-auto flex size-7 items-center justify-center rounded-md text-foreground/70 backdrop-blur-sm transition-opacity hover:bg-background focus-visible:opacity-100 mt-1"
+          render={<button type="button" />}
+          onClick={(e) => e.preventDefault()}
+        >
+          <Ellipsis className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto">
+          <DropdownMenuItem onClick={() => handleOpenNotebook(book)}>
+            <NotebookPen className="size-4" />
+            Open notebook
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleOpenChat(book)}>
+            <MessageSquare className="size-4" />
+            Open chat
+          </DropdownMenuItem>
+          <DropdownMenuItem render={<Link to={`/books/${book.id}/details`} />}>
+            <Edit3Icon className="size-4" />
+            Edit
+          </DropdownMenuItem>
+          {isAuthenticated && (
+            <DropdownMenuItem onClick={() => handleShareBook(book)}>
+              <Share2 className="size-4" />
+              Share
+            </DropdownMenuItem>
+          )}
+          {syncActive && (
+            <DropdownMenuItem onClick={() => handleReloadBook(book.id)}>
+              <RefreshCw className="size-4" />
+              Sync
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem variant="destructive" onClick={() => handleDeleteBook(book.id)}>
+            <Trash2 className="size-4" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
