@@ -54,6 +54,10 @@ export async function loader({
   // nullish value straight into `new Response(...)`, leaving the client
   // hanging on an empty 200 SSE and the session permanently pointing at a
   // dead stream. Self-heal by clearing the id and returning 204.
+  //
+  // A *thrown* error is different: it is likely a transient Redis/network
+  // failure, not proof the stream is gone. Surface it as a 503 so the client
+  // can retry, and keep `active_stream_id` intact.
   let resumed: ReadableStream<string> | null | undefined;
   try {
     resumed = await streamContext.resumeExistingStream(session.activeStreamId);
@@ -62,7 +66,7 @@ export async function loader({
       `Failed to resume stream ${session.activeStreamId} for session ${params.sessionId}:`,
       err,
     );
-    resumed = undefined;
+    return Response.json({ error: "Failed to resume stream" }, { status: 503 });
   }
 
   if (resumed == null) {

@@ -254,13 +254,16 @@ async function withRetries<T>(
   operation: () => Promise<T>,
   { attempts = 3, baseDelayMs = 250 }: { attempts?: number; baseDelayMs?: number } = {},
 ): Promise<T> {
+  // Guard against attempts <= 0, which would skip the loop entirely and
+  // `throw lastError` while it is still `undefined`.
+  const totalAttempts = Math.max(1, attempts);
   let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt++) {
+  for (let attempt = 1; attempt <= totalAttempts; attempt++) {
     try {
       return await operation();
     } catch (err) {
       lastError = err;
-      if (attempt < attempts) {
+      if (attempt < totalAttempts) {
         await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
       }
     }
