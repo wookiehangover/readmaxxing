@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import { ChevronRight } from "lucide-react";
 import { Streamdown } from "streamdown";
@@ -9,7 +9,7 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { getToolInfo, joinTextParts, stripSuggestedPrompts } from "./chat-utils";
 import { SEBookCardsInChat } from "./se-book-cards";
 
-export function ChatMessage({
+function ChatMessageImpl({
   message,
   bookId,
   bookFormat,
@@ -219,6 +219,15 @@ export function ChatMessage({
     </div>
   );
 }
+
+/**
+ * Memoized: the chat panel re-renders on every streamed token, and without
+ * memoization every historical message re-runs its text joins and re-renders
+ * its Streamdown markdown tree per token. `useChat` keeps stable references
+ * for messages that haven't changed (only the streaming message is replaced
+ * each update), so a shallow prop compare skips all settled messages.
+ */
+export const ChatMessage = memo(ChatMessageImpl);
 
 interface SearchHit {
   chapterIndex?: number;

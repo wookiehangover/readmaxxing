@@ -1,5 +1,5 @@
 import { sql } from "pg-sql";
-import { clampUpdatedAt } from "../clamp-timestamp";
+import { clampNullableTimestamp, clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface BookRow {
@@ -44,9 +44,10 @@ export async function upsertBook(userId: string, book: UpsertBookData): Promise<
   const pool = getPool();
   const ts = clampUpdatedAt(book.updatedAt);
   const shouldUpdateDeletedAt = book.deletedAt !== undefined;
+  const deletedAtIso = clampNullableTimestamp(book.deletedAt);
   const result = await pool.query<BookRow>(sql`
     INSERT INTO readmax.book (id, user_id, title, author, format, file_hash, updated_at, deleted_at)
-    VALUES (${book.id}, ${userId}, ${book.title ?? null}, ${book.author ?? null}, ${book.format ?? null}, ${book.fileHash ?? null}, ${ts}, ${book.deletedAt?.toISOString() ?? null})
+    VALUES (${book.id}, ${userId}, ${book.title ?? null}, ${book.author ?? null}, ${book.format ?? null}, ${book.fileHash ?? null}, ${ts}, ${deletedAtIso})
     ON CONFLICT (id) DO UPDATE
       SET title = COALESCE(EXCLUDED.title, readmax.book.title),
           author = COALESCE(EXCLUDED.author, readmax.book.author),
@@ -166,7 +167,7 @@ export async function insertTombstonedBook(
 ): Promise<BookRow | null> {
   const pool = getPool();
   const nowIso = new Date().toISOString();
-  const createdIso = (data.createdAt ?? new Date()).toISOString();
+  const createdIso = clampUpdatedAt(data.createdAt);
   const result = await pool.query<BookRow>(sql`
     INSERT INTO readmax.book (id, user_id, file_hash, created_at, updated_at, deleted_at)
     VALUES (${data.id}, ${userId}, ${data.fileHash ?? null}, ${createdIso}, ${nowIso}, ${nowIso})

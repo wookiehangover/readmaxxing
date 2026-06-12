@@ -1,5 +1,9 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { clampUpdatedAt, DEFAULT_UPDATED_AT_SKEW_MS } from "../clamp-timestamp";
+import {
+  clampNullableTimestamp,
+  clampUpdatedAt,
+  DEFAULT_UPDATED_AT_SKEW_MS,
+} from "../clamp-timestamp";
 
 // ---------------------------------------------------------------------------
 // clampUpdatedAt — pure function
@@ -63,6 +67,46 @@ describe("clampUpdatedAt", () => {
     const ts = new Date(FIXED_NOW + 10_000);
     const result = clampUpdatedAt(ts, oneSecondSkew);
     expect(result).toBe(new Date(FIXED_NOW + oneSecondSkew).toISOString());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// clampNullableTimestamp — pure function
+// ---------------------------------------------------------------------------
+
+describe("clampNullableTimestamp", () => {
+  const FIXED_NOW = new Date("2026-01-15T12:00:00.000Z").getTime();
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("preserves null (e.g. a live row's deleted_at)", () => {
+    expect(clampNullableTimestamp(null)).toBeNull();
+  });
+
+  it("preserves undefined", () => {
+    expect(clampNullableTimestamp(undefined)).toBeNull();
+  });
+
+  it("returns a past timestamp unchanged", () => {
+    const ts = new Date(FIXED_NOW - 60_000);
+    expect(clampNullableTimestamp(ts)).toBe(ts.toISOString());
+  });
+
+  it("clamps a far-future tombstone to NOW + skew", () => {
+    const year9999 = new Date("9999-12-31T23:59:59.000Z");
+    const expected = new Date(FIXED_NOW + DEFAULT_UPDATED_AT_SKEW_MS).toISOString();
+    expect(clampNullableTimestamp(year9999)).toBe(expected);
+  });
+
+  it("falls back to NOW for an invalid Date (delete intent is clear)", () => {
+    expect(clampNullableTimestamp(new Date("not a date"))).toBe(new Date(FIXED_NOW).toISOString());
   });
 });
 
