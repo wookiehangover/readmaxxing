@@ -244,6 +244,30 @@ function extractTextContent(message: UIMessage): string {
   );
 }
 
+/**
+ * Retry an async operation with linear backoff. Used for post-stream
+ * persistence: Postgres is the source of truth for chat history, so a
+ * transient failure here would permanently diverge stored history from what
+ * the user just watched stream in.
+ */
+async function withRetries<T>(
+  operation: () => Promise<T>,
+  { attempts = 3, baseDelayMs = 250 }: { attempts?: number; baseDelayMs?: number } = {},
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await operation();
+    } catch (err) {
+      lastError = err;
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
 export async function action({ request }: Route.ActionArgs) {
   if (!process.env.DATABASE_URL) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
@@ -748,22 +772,30 @@ export async function action({ request }: Route.ActionArgs) {
         result.toUIMessageStream<UIMessage>({
           generateMessageId: generateId,
           onFinish: async ({ responseMessage }) => {
+            // Retry: this is the only write of the assistant message, and the
+            // client has already rendered the streamed text. A dropped write
+            // here means the message silently vanishes on next reload.
             try {
-              await upsertMessage({
-                id: responseMessage.id,
-                sessionId,
-                role: responseMessage.role,
-                content: extractTextContent(responseMessage),
-                parts: responseMessage.parts ?? null,
-                createdAt: new Date(),
-              });
+              await withRetries(() =>
+                upsertMessage({
+                  id: responseMessage.id,
+                  sessionId,
+                  role: responseMessage.role,
+                  content: extractTextContent(responseMessage),
+                  parts: responseMessage.parts ?? null,
+                  createdAt: new Date(),
+                }),
+              );
             } catch (err) {
-              console.error("Failed to persist assistant message:", err);
+              console.error(
+                `Failed to persist assistant message ${responseMessage.id} for session ${sessionId} after retries:`,
+                err,
+              );
             }
             try {
-              await updateActiveStreamId(userId, sessionId, null);
+              await withRetries(() => updateActiveStreamId(userId, sessionId, null));
             } catch (err) {
-              console.error("Failed to clear active_stream_id:", err);
+              console.error(`Failed to clear active_stream_id for session ${sessionId}:`, err);
             }
           },
         }),
@@ -779,9 +811,19 @@ export async function action({ request }: Route.ActionArgs) {
       const streamId = generateId();
       try {
         await streamContext.createNewResumableStream(streamId, () => stream);
-        await updateActiveStreamId(userId, sessionId, streamId);
       } catch (err) {
-        console.error("Failed to create resumable stream:", err);
+        // Without a resumable stream there is nothing to record; the direct
+        // response stream still works, it just can't be resumed.
+        console.error(`Failed to create resumable stream for session ${sessionId}:`, err);
+        return;
+      }
+      try {
+        // Recorded after creation so a resume never races a not-yet-created
+        // Redis stream. Retried because a missed write here makes the stream
+        // silently unresumable even though it exists.
+        await withRetries(() => updateActiveStreamId(userId, sessionId, streamId));
+      } catch (err) {
+        console.error(`Failed to record active_stream_id for session ${sessionId}:`, err);
       }
     },
   });
