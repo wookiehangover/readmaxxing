@@ -4,13 +4,16 @@ import {
   Bookmark,
   ChartLine,
   MessageSquare,
+  Minus,
   Plus,
   Settings,
   PanelLeft,
   PanelLeftClose,
   Search,
   Notebook,
+  Library,
 } from "lucide-react";
+import { LibrarySortControl } from "~/components/library-sort-control";
 import { SyncStatus } from "~/components/sync-status";
 import { LayoutModeSwitcher } from "~/components/workspace/layout-mode-switcher";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -74,6 +77,7 @@ export interface WorkspaceSidebarProps {
   collapsed: boolean;
   sortBy: WorkspaceSortBy;
   layoutMode: LayoutMode;
+  books: BookMeta[];
   openBooks: BookMeta[];
   otherBooks: BookMeta[];
   /**
@@ -89,6 +93,7 @@ export interface WorkspaceSidebarProps {
     workspaceSortBy?: WorkspaceSortBy;
     layoutMode?: LayoutMode;
   }) => void;
+  onOpenLibrary: () => void;
   onOpenBook: (book: BookMeta) => void;
   onOpenChat: (book: BookMeta) => void;
   onOpenNotebook: (book: BookMeta) => void;
@@ -99,12 +104,16 @@ export interface WorkspaceSidebarProps {
 
 export function WorkspaceSidebar({
   collapsed,
+  sortBy,
   layoutMode,
+  books,
   openBooks,
   otherBooks,
   getClusterEntries,
   getActiveClusterId,
   onUpdateSettings,
+  onOpenLibrary,
+  onOpenBook,
   onOpenChat,
   onOpenNotebook,
   onOpenBookmarks,
@@ -112,6 +121,7 @@ export function WorkspaceSidebar({
   onFileInput,
 }: WorkspaceSidebarProps) {
   const ws = useWorkspace();
+  const [libraryExpanded, setLibraryExpanded] = useState(true);
   // Bump on cluster add/remove/activate so the collapsed focused-mode rail
   // re-derives its entries from `getClusterEntries()`. Subscribed only in
   // focused mode to avoid unnecessary work in freeform.
@@ -164,6 +174,8 @@ export function WorkspaceSidebar({
       window.dispatchEvent(new CustomEvent("book-search:open", { detail: { bookId: book.id } }));
     });
   }
+
+  const showLibraryBooks = !collapsed && libraryExpanded && books.length > 0;
 
   return (
     <aside
@@ -227,8 +239,75 @@ export function WorkspaceSidebar({
         />
       </div>
       <ScrollArea className="min-h-0 flex-1 scroll-fog-container" hideScrollbar>
-        {activeClusterBook
-          ? (() => {
+        <TooltipProvider delay={400}>
+          <div
+            className={cn("flex flex-col gap-1 p-1", {
+              "items-center": collapsed,
+            })}
+          >
+            {collapsed ? (
+              <WorkspaceSidebarActionButton
+                collapsed={collapsed}
+                label="Library"
+                srLabel="Open library"
+                icon={Library}
+                onClick={onOpenLibrary}
+              />
+            ) : (
+              <div className="w-full">
+                <div className="flex h-10 items-center gap-1 rounded-md text-muted-foreground">
+                  <button
+                    type="button"
+                    onClick={onOpenLibrary}
+                    className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted hover:text-foreground"
+                  >
+                    <Library className="size-4 shrink-0" />
+                    <span className="truncate">Library</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLibraryExpanded((prev) => !prev)}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-muted hover:text-foreground"
+                    aria-label={libraryExpanded ? "Collapse library books" : "Expand library books"}
+                    aria-expanded={libraryExpanded}
+                  >
+                    {libraryExpanded ? <Minus className="size-4" /> : <Plus className="size-4" />}
+                  </button>
+                </div>
+                {showLibraryBooks && (
+                  <div className="mt-1 space-y-1 pl-7 pr-1 pb-2">
+                    <div className="flex justify-end">
+                      <LibrarySortControl
+                        sortBy={sortBy}
+                        onSortByChange={(workspaceSortBy) => onUpdateSettings({ workspaceSortBy })}
+                      />
+                    </div>
+                    <div className="space-y-0.5">
+                      {books.map((book) => (
+                        <button
+                          key={book.id}
+                          type="button"
+                          onClick={() => onOpenBook(book)}
+                          className="flex w-full min-w-0 flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                        >
+                          <span className="truncate text-xs font-medium text-foreground">
+                            {book.title}
+                          </span>
+                          {book.author && (
+                            <span className="truncate text-[11px] text-muted-foreground">
+                              {book.author}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          {activeClusterBook &&
+            (() => {
               const activeBookId = activeClusterBook.id;
               const api = ws.dockviewApi.current;
               const hasNotebook =
@@ -239,74 +318,54 @@ export function WorkspaceSidebar({
               const hasHistory =
                 api?.panels.some((p) => p.id === `history-${activeBookId}`) ?? false;
               return (
-                <TooltipProvider delay={400}>
-                  <div
-                    className={cn("flex flex-col gap-1 p-1", {
-                      "items-center": collapsed,
-                    })}
-                  >
-                    <WorkspaceSidebarActionButton
-                      collapsed={collapsed}
-                      label="Search"
-                      srLabel="Open search"
-                      icon={Search}
-                      onClick={() => handleOpenSearch(activeClusterBook)}
-                    />
-                    <WorkspaceSidebarActionButton
-                      collapsed={collapsed}
-                      label="Notebook"
-                      srLabel="Open notebook"
-                      icon={Notebook}
-                      active={hasNotebook}
-                      onClick={() => onOpenNotebook(activeClusterBook)}
-                    />
-                    <WorkspaceSidebarActionButton
-                      collapsed={collapsed}
-                      label="Chat"
-                      srLabel="Open chat"
-                      icon={MessageSquare}
-                      active={hasChat}
-                      onClick={() => onOpenChat(activeClusterBook)}
-                    />
-                    <WorkspaceSidebarActionButton
-                      collapsed={collapsed}
-                      label="Bookmarks"
-                      srLabel="Open bookmarks"
-                      icon={Bookmark}
-                      active={hasBookmarks}
-                      onClick={() => onOpenBookmarks(activeClusterBook)}
-                    />
-                    <WorkspaceSidebarActionButton
-                      collapsed={collapsed}
-                      label="History"
-                      srLabel="Open reading history"
-                      icon={ChartLine}
-                      active={hasHistory}
-                      onClick={() => onOpenReadingHistory(activeClusterBook)}
-                    />
-                  </div>
-                </TooltipProvider>
+                <div
+                  className={cn("flex flex-col gap-1 p-1", {
+                    "items-center": collapsed,
+                  })}
+                >
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="Search"
+                    srLabel="Open search"
+                    icon={Search}
+                    onClick={() => handleOpenSearch(activeClusterBook)}
+                  />
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="Notebook"
+                    srLabel="Open notebook"
+                    icon={Notebook}
+                    active={hasNotebook}
+                    onClick={() => onOpenNotebook(activeClusterBook)}
+                  />
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="Chat"
+                    srLabel="Open chat"
+                    icon={MessageSquare}
+                    active={hasChat}
+                    onClick={() => onOpenChat(activeClusterBook)}
+                  />
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="Bookmarks"
+                    srLabel="Open bookmarks"
+                    icon={Bookmark}
+                    active={hasBookmarks}
+                    onClick={() => onOpenBookmarks(activeClusterBook)}
+                  />
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="History"
+                    srLabel="Open reading history"
+                    icon={ChartLine}
+                    active={hasHistory}
+                    onClick={() => onOpenReadingHistory(activeClusterBook)}
+                  />
+                </div>
               );
-            })()
-          : !collapsed && (
-              <div className="p-4 text-xs text-muted-foreground space-y-4">
-                {isFocused ? (
-                  <>
-                    <p>
-                      Readmaxxing is an AI-assisted reading app with chat, search, notes, bookmarks,
-                      and history built into your workspace.
-                    </p>
-                    <p>
-                      Use it for syntopical reading, comparative literature, and interrogating
-                      multiple books at once.
-                    </p>
-                    <p>Open a book to start reading, mark up ideas, and build context as you go.</p>
-                  </>
-                ) : (
-                  <p>Use Library to browse books.</p>
-                )}
-              </div>
-            )}
+            })()}
+        </TooltipProvider>
       </ScrollArea>
       <div
         className={cn("flex  @container items-center ", {
