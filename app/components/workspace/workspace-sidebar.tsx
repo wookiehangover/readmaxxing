@@ -3,8 +3,8 @@ import { Link } from "react-router";
 import {
   Bookmark,
   ChartLine,
-  ChevronDown,
   MessageSquare,
+  Minus,
   Plus,
   Settings,
   PanelLeft,
@@ -268,24 +268,20 @@ export function WorkspaceSidebar({
                     type="button"
                     onClick={() => setLibraryExpanded((prev) => !prev)}
                     className="flex size-8 shrink-0 items-center justify-center rounded-md hover:bg-muted hover:text-foreground"
-                    aria-label={
-                      libraryExpanded ? "Collapse library books" : "Expand library books"
-                    }
+                    aria-label={libraryExpanded ? "Collapse library books" : "Expand library books"}
                     aria-expanded={libraryExpanded}
                   >
-                    <ChevronDown
-                      className={cn("size-4 transition-transform", {
-                        "-rotate-90": !libraryExpanded,
-                      })}
-                    />
+                    {libraryExpanded ? <Minus className="size-4" /> : <Plus className="size-4" />}
                   </button>
                 </div>
                 {showLibraryBooks && (
                   <div className="mt-1 space-y-1 pl-7 pr-1 pb-2">
-                    <LibrarySortControl
-                      sortBy={sortBy}
-                      onSortByChange={(workspaceSortBy) => onUpdateSettings({ workspaceSortBy })}
-                    />
+                    <div className="flex justify-end">
+                      <LibrarySortControl
+                        sortBy={sortBy}
+                        onSortByChange={(workspaceSortBy) => onUpdateSettings({ workspaceSortBy })}
+                      />
+                    </div>
                     <div className="space-y-0.5">
                       {books.map((book) => (
                         <button
