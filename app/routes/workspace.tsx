@@ -274,6 +274,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   }, [zenMode, updateSettings]);
 
   const {
+    openLibrary,
     openBook,
     openNotebook,
     openChat,
@@ -341,6 +342,20 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
 
+  const sidebarBooks = useMemo(
+    () => sortBooks(books, sortBy, lastOpenedMap),
+    [books, sortBy, lastOpenedMap],
+  );
+
+  const handleOpenLibrary = useCallback(() => {
+    if (layoutModeRef.current === "focused") {
+      activateFocusedLibrary();
+    } else {
+      openLibrary();
+    }
+    setMobileOpen(false);
+  }, [activateFocusedLibrary, openLibrary]);
+
   // Sync context refs so child panels can open books/notebooks/chats and trigger uploads.
   useEffect(() => {
     ws.openBookRef.current = openBook;
@@ -377,11 +392,13 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     collapsed,
     sortBy,
     layoutMode,
+    books: sidebarBooks,
     openBooks,
     otherBooks,
     getClusterEntries,
     getActiveClusterId,
     onUpdateSettings: updateSettings,
+    onOpenLibrary: handleOpenLibrary,
     onOpenBook: (book: BookMeta) => {
       openBook(book);
       setMobileOpen(false);
@@ -452,7 +469,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
               getEntries={getClusterEntries}
               getActiveId={getActiveClusterId}
               onActivate={(bookId) => ws.setActiveCluster(bookId)}
-              onActivateLibrary={activateFocusedLibrary}
               onClose={closeFocusedCluster}
               onReorder={reorderFocusedClusters}
             />

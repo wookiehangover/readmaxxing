@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-import { BookPlus, Library, X } from "lucide-react";
+import { BookPlus, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { BookCover } from "~/components/book-list";
 import { cn } from "~/lib/utils";
@@ -18,8 +18,6 @@ interface ClusterBarProps {
   readonly getActiveId: () => string | null;
   /** Activate the Nth cluster (bookId), triggering a swap in focused mode. */
   readonly onActivate: (bookId: string) => void;
-  /** Activate the top-level Library destination. */
-  readonly onActivateLibrary: () => void;
   /** Close the cluster for `bookId` (remove pill; may swap active if needed). */
   readonly onClose: (bookId: string) => void;
   /** Persist a reordered list of cluster book IDs. */
@@ -62,7 +60,6 @@ export function ClusterBar({
   getEntries,
   getActiveId,
   onActivate,
-  onActivateLibrary,
   onClose,
   onReorder,
 }: ClusterBarProps) {
@@ -168,25 +165,9 @@ export function ClusterBar({
 
   const bookById = new Map<string, BookMeta>();
   for (const b of booksRef.current) bookById.set(b.id, b);
-  const isLibraryActive = activeId === null;
 
   return (
     <div className="flex h-11 items-center gap-1.5 overflow-x-auto scrollbar-none border-b border-border/60 bg-background px-2 py-1.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-      <button
-        type="button"
-        aria-pressed={isLibraryActive}
-        title="Library"
-        onClick={onActivateLibrary}
-        className={cn(
-          "flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-muted/50",
-          {
-            "bg-muted text-foreground dark:bg-muted/50": isLibraryActive,
-          },
-        )}
-      >
-        <Library className="size-3.5" aria-hidden="true" />
-        <span>Library</span>
-      </button>
       <div role="tablist" aria-label="Open books" className="flex min-w-0 items-center gap-1.5">
         {entries.map((entry, idx) => {
           const isActive = entry.bookId === activeId;
@@ -253,11 +234,7 @@ export function ClusterBar({
                 )}
                 <span className="max-w-[14ch] truncate font-medium">{entry.bookTitle}</span>
               </button>
-              <div
-                className={cn("relative size-5 shrink-0", {
-                  "pointer-events-none invisible": isLibraryActive,
-                })}
-              >
+              <div className="relative size-5 shrink-0">
                 {shortcut && (
                   <span className="pointer-events-none absolute inset-0 hidden items-center justify-center text-[10px] text-muted-foreground/70 tabular-nums opacity-100 transition-opacity group-focus-within:opacity-0 group-hover:opacity-0 md:flex">
                     {shortcut}

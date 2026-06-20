@@ -225,7 +225,18 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
         onChange={handleFileInput}
       />
       {isEmpty ? (
-        <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
+        <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+          <div className="max-w-md space-y-3 text-sm text-muted-foreground">
+            <p>
+              Readmaxxing is an AI-assisted reading app with chat, search, notes, bookmarks, and
+              history built into your workspace.
+            </p>
+            <p>
+              Use it for syntopical reading, comparative literature, and interrogating multiple
+              books at once.
+            </p>
+            <p>Open a book to start reading, mark up ideas, and build context as you go.</p>
+          </div>
           <Button onClick={() => fileInputRef.current?.click()}>
             <Upload className="size-4" />
             Upload an epub or PDF
