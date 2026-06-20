@@ -180,14 +180,13 @@ export function WorkspaceSidebar({
   return (
     <aside
       className={cn(
-        "flex h-full shrink-0 flex-col border-r bg-card transition-[width] duration-200 ease-in-out",
-        { "w-14": collapsed, "w-75": !collapsed },
+        "flex h-full shrink-0 flex-col bg-card transition-[width] duration-200 ease-in-out",
+        { "w-14": collapsed, "w-64": !collapsed },
       )}
     >
       <div
-        className={cn("flex h-11 items-center border-b px-2", {
+        className={cn("flex h-11 border-b items-center p-2", {
           "justify-center": collapsed,
-          "justify-end": !collapsed,
         })}
       >
         {collapsed ? (
@@ -205,7 +204,8 @@ export function WorkspaceSidebar({
             <PanelLeft className="size-4" />
           </button>
         ) : (
-          <div className="flex items-center gap-0.5">
+          <div className="flex grow items-center gap-0.5">
+            <p className="font-stretch-50% font-light grow text-xs select-none">readmaxxing</p>
             <button
               type="button"
               onClick={() => ws.fileInputRef.current?.click()}
@@ -275,8 +275,9 @@ export function WorkspaceSidebar({
                   </button>
                 </div>
                 {showLibraryBooks && (
-                  <div className="mt-1 space-y-1 pl-7 pr-1 pb-2">
-                    <div className="flex justify-end">
+                  <div className="mt-1 space-y-1 pl-1 pr-1 pb-2">
+                    <div className="flex justify-between items-center pl-2">
+                      <p className="text-xs text-muted-foreground">{`${books.length === 1 ? "1 book" : `${books.length} books`}`}</p>
                       <LibrarySortControl
                         sortBy={sortBy}
                         onSortByChange={(workspaceSortBy) => onUpdateSettings({ workspaceSortBy })}
