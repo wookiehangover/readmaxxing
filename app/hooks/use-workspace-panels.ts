@@ -25,6 +25,7 @@ export interface UseWorkspacePanelsParams {
 }
 
 export interface UseWorkspacePanelsResult {
+  readonly openLibrary: () => void;
   readonly openBook: (book: BookMeta) => void;
   readonly openNotebook: (book: BookMeta) => void;
   readonly openChat: (book: BookMeta) => void;
@@ -65,6 +66,24 @@ export function useWorkspacePanels({
   focusedOrderRef,
   updateSettings,
 }: UseWorkspacePanelsParams): UseWorkspacePanelsResult {
+  const openLibrary = useCallback(() => {
+    const api = apiRef.current;
+    if (!api) return;
+
+    const existing = api.panels.find((p) => p.id === "new-tab" || p.id.startsWith("new-tab-"));
+    if (existing) {
+      existing.focus();
+      return;
+    }
+
+    api.addPanel({
+      id: `new-tab-${crypto.randomUUID().slice(0, 8)}`,
+      component: "new-tab",
+      title: "Library",
+      params: {},
+    });
+  }, [apiRef]);
+
   const addBookPanel = useCallback(
     (book: BookMeta) => {
       const api = apiRef.current;
@@ -390,6 +409,7 @@ export function useWorkspacePanels({
   );
 
   return {
+    openLibrary,
     openBook,
     openNotebook,
     openChat,
