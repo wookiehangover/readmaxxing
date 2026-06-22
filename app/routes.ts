@@ -18,6 +18,7 @@ export default [
   route("api/chat/messages/:sessionId", "routes/api.chat.messages.$sessionId.ts"),
   route("api/chat-title", "routes/api.chat-title.ts"),
   route("api/bug-report", "routes/api.bug-report.ts"),
+  route("api/admin/bug-reports", "routes/api.admin.bug-reports.ts"),
   route("api/books/:bookId/chapters", "routes/api.books.$bookId.chapters.ts"),
   route("api/share", "routes/api.share.ts"),
   route("api/share/:id", "routes/api.share.$id.ts"),
