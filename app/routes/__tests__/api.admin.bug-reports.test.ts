@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/database/bug-report/bug-report", () => ({
-  BUG_REPORT_STATUSES: ["pending", "scheduled", "in_progress", "shipped", "cancelled"],
+  BUG_REPORT_STATUSES: ["new", "triaged", "in_progress", "resolved", "closed", "wont_fix"],
   listBugReports: vi.fn(async () => ({ rows: [], count: 0 })),
   updateBugReport: vi.fn(async () => null),
 }));
@@ -19,7 +19,7 @@ const report = {
   message: "Reader crashed",
   context: { route: "/book" },
   notes: "Needs triage",
-  status: "pending",
+  status: "new",
   groupId: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
@@ -112,20 +112,20 @@ describe("admin bug reports API", () => {
   });
 
   it("patches status and notes", async () => {
-    const updatedReport = { ...report, status: "shipped", notes: "Fixed in latest release" };
+    const updatedReport = { ...report, status: "resolved", notes: "Fixed in latest release" };
     updateBugReportMock.mockResolvedValue(updatedReport);
 
     const response = await action({
       request: makeRequest("http://localhost/api/admin/bug-reports", {
         method: "PATCH",
-        body: JSON.stringify({ id: "report-1", status: "shipped", notes: "Fixed in latest release" }),
+        body: JSON.stringify({ id: "report-1", status: "resolved", notes: "Fixed in latest release" }),
       }),
     });
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual(updatedReport);
     expect(updateBugReportMock).toHaveBeenCalledWith("report-1", {
-      status: "shipped",
+      status: "resolved",
       notes: "Fixed in latest release",
     });
   });

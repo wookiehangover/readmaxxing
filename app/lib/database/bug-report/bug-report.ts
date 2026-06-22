@@ -2,11 +2,12 @@ import { sql } from "pg-sql";
 import { getPool } from "../pool";
 
 export const BUG_REPORT_STATUSES = [
-  "pending",
-  "scheduled",
+  "new",
+  "triaged",
   "in_progress",
-  "shipped",
-  "cancelled",
+  "resolved",
+  "closed",
+  "wont_fix",
 ] as const;
 
 export type BugReportStatus = (typeof BUG_REPORT_STATUSES)[number];
@@ -192,7 +193,7 @@ export async function listBugReports({
 export async function createBugReportGroup(
   data: CreateBugReportGroupData = {},
 ): Promise<BugReportGroupRow | null> {
-  const status = data.status == null ? "pending" : assertBugReportStatus(data.status);
+  const status = data.status == null ? "new" : assertBugReportStatus(data.status);
   const pool = getPool();
   const result = await pool.query<BugReportGroupRow>(sql`
     INSERT INTO readmax.bug_report_group (title, status)
