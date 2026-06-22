@@ -19,6 +19,7 @@ import { useSettings } from "~/lib/settings";
 
 type BugReportDialogProps = {
   readonly triggerClassName?: string;
+  readonly triggerSize?: "icon" | "icon-sm";
 };
 
 type PanelSnapshot = {
@@ -56,7 +57,10 @@ function panelSnapshot(panel: unknown): PanelSnapshot | null {
   };
 }
 
-export function BugReportDialog({ triggerClassName }: BugReportDialogProps = {}) {
+export function BugReportDialog({
+  triggerClassName,
+  triggerSize = "icon",
+}: BugReportDialogProps = {}) {
   const ws = useWorkspace();
   const [settings] = useSettings();
   const auth = useAuth();
@@ -134,7 +138,7 @@ export function BugReportDialog({ triggerClassName }: BugReportDialogProps = {})
               <Button
                 type="button"
                 variant="ghost"
-                size="icon"
+                size={triggerSize}
                 className={triggerClassName}
                 onClick={() => setOpen(true)}
               />
