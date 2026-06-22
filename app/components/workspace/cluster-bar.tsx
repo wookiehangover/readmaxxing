@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 
 import { BookPlus, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { BookCover } from "~/components/book-list";
+import { BugReportDialog } from "~/components/bug-report-dialog";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import type { BookMeta } from "~/lib/stores/book-store";
@@ -264,17 +265,23 @@ export function ClusterBar({
           );
         })}
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        className="sticky right-0 ml-auto shrink-0 bg-background text-muted-foreground hover:text-foreground"
-        onClick={handleOpenBookClick}
-        title="Open book"
-        aria-label="Open book"
-      >
-        <BookPlus aria-hidden="true" />
-      </Button>
+      <div className="sticky right-0 ml-auto flex shrink-0 items-center gap-1 bg-background">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0 bg-background text-muted-foreground hover:text-foreground"
+          onClick={handleOpenBookClick}
+          title="Open book"
+          aria-label="Open book"
+        >
+          <BookPlus aria-hidden="true" />
+        </Button>
+        <BugReportDialog
+          triggerSize="icon-sm"
+          triggerClassName="shrink-0 bg-background text-muted-foreground hover:text-foreground"
+        />
+      </div>
     </div>
   );
 }
