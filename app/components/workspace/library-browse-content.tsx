@@ -226,7 +226,17 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
       />
       {isEmpty ? (
         <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-          <div className="max-w-md space-y-3 text-sm text-muted-foreground">
+          <Button onClick={() => fileInputRef.current?.click()}>
+            <Upload className="size-4" />
+            Upload an epub or PDF
+          </Button>
+          <span className="text-sm text-muted-foreground">or</span>
+          <Button variant="outline" onClick={() => ws.openStandardEbooksRef.current?.()}>
+            <Globe className="size-4" />
+            Browse Standard Ebooks
+          </Button>
+          <div className="max-w-md space-y-3 text-sm text-muted-foreground text-left">
+            <p className="text-center py-5">* * *</p>
             <p>
               Readmaxxing is an AI-assisted reading app with chat, search, notes, bookmarks, and
               history built into your workspace.
@@ -237,15 +247,6 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
             </p>
             <p>Open a book to start reading, mark up ideas, and build context as you go.</p>
           </div>
-          <Button onClick={() => fileInputRef.current?.click()}>
-            <Upload className="size-4" />
-            Upload an epub or PDF
-          </Button>
-          <span className="text-sm text-muted-foreground">or</span>
-          <Button variant="outline" onClick={() => ws.openStandardEbooksRef.current?.()}>
-            <Globe className="size-4" />
-            Browse Standard Ebooks
-          </Button>
         </div>
       ) : (
         <>
