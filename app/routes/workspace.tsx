@@ -25,7 +25,6 @@ import { NewTabPanel } from "~/components/workspace/new-tab-panel";
 import { StandardEbooksPanel } from "~/components/workspace/standard-ebooks-panel";
 import { WatermarkPanel } from "~/components/workspace/watermark-panel";
 import { LeftHeaderActions } from "~/components/workspace/left-header-actions";
-import { RightHeaderActions } from "~/components/workspace/right-header-actions";
 import { WorkspaceSidebar } from "~/components/workspace/workspace-sidebar";
 import { ClusterBar } from "~/components/workspace/cluster-bar";
 import { useIsMobile } from "~/hooks/use-mobile";
@@ -480,7 +479,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
               components={components}
               watermarkComponent={WatermarkPanel}
               leftHeaderActionsComponent={LeftHeaderActions}
-              rightHeaderActionsComponent={RightHeaderActions}
               onReady={onReady}
               disableDnd={layoutMode === "focused"}
               disableFloatingGroups={layoutMode === "focused"}
