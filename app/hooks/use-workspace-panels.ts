@@ -152,9 +152,7 @@ export function useWorkspacePanels({
         }
 
         // Check if book has notes and auto-open notebook if it does
-        AppRuntime.runPromise(
-          AnnotationService.pipe(Effect.andThen((s) => s.getNotebook(book.id))),
-        )
+        AppRuntime.runPromise(AnnotationService.pipe(Effect.andThen((s) => s.getNotebook(book.id))))
           .then((notebook) => {
             if (!notebook) return;
             // Check if notebook has content (not just an empty doc)
