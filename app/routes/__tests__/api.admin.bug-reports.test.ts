@@ -118,7 +118,11 @@ describe("admin bug reports API", () => {
     const response = await action({
       request: makeRequest("http://localhost/api/admin/bug-reports", {
         method: "PATCH",
-        body: JSON.stringify({ id: "report-1", status: "resolved", notes: "Fixed in latest release" }),
+        body: JSON.stringify({
+          id: "report-1",
+          status: "resolved",
+          notes: "Fixed in latest release",
+        }),
       }),
     });
 

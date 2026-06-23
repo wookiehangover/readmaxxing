@@ -225,8 +225,8 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
         onChange={handleFileInput}
       />
       {isEmpty ? (
-        <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-          <Button onClick={() => fileInputRef.current?.click()}>
+        <div className="flex h-full flex-col items-center gap-4 p-6 text-center">
+          <Button className="mt-auto" onClick={() => fileInputRef.current?.click()}>
             <Upload className="size-4" />
             Upload an epub or PDF
           </Button>
@@ -247,6 +247,16 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
             </p>
             <p>Open a book to start reading, mark up ideas, and build context as you go.</p>
           </div>
+          {!isAuthenticated && (
+            <div className="mt-auto flex items-center gap-2">
+              <Button variant="ghost" size="sm" render={<Link to="/login" />}>
+                Login
+              </Button>
+              <Button variant="ghost" size="sm" render={<Link to="/login" />}>
+                Create account
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <>
