@@ -377,7 +377,12 @@ function WorkspacePdfReaderInner({
   );
 
   return (
-    <div ref={panelRef} className="flex h-full flex-col outline-none" tabIndex={0} onKeyDown={handleKeyDown}>
+    <div
+      ref={panelRef}
+      className="flex h-full flex-col outline-none"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+    >
       <div className="relative flex-1 overflow-hidden">
         {searchOpen && (
           <div className="absolute top-0 right-0 left-0 z-10">

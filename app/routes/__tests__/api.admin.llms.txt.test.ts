@@ -19,7 +19,9 @@ describe("admin llms.txt API documentation", () => {
     expect(body).toContain("limit");
     expect(body).toContain("offset");
     expect(body).toContain("{ reports, count, limit, offset }");
-    expect(body).toContain("id, userId, message, context, notes, status, groupId, createdAt, updatedAt");
+    expect(body).toContain(
+      "id, userId, message, context, notes, status, groupId, createdAt, updatedAt",
+    );
     expect(body).toContain("PATCH /api/admin/bug-reports");
     expect(body).toContain("{ id, status?, notes? }");
     expect(body).toContain("new, triaged, in_progress, resolved, closed, wont_fix");
