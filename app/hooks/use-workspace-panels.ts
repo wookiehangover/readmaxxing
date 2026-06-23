@@ -8,6 +8,7 @@ import type { BookMeta } from "~/lib/stores/book-store";
 import type { LayoutMode, Settings } from "~/lib/settings";
 import { truncateTitle } from "~/lib/workspace-utils";
 import type { useWorkspace } from "~/lib/context/workspace-context";
+import { AnnotationService } from "~/lib/stores/annotations-store";
 
 const SIDEBAR_TRANSITION_MS = 270;
 
@@ -149,6 +150,26 @@ export function useWorkspacePanels({
             });
           }
         }
+
+        // Check if book has notes and auto-open notebook if it does
+        AppRuntime.runPromise(
+          AnnotationService.pipe(Effect.andThen((s) => s.getNotebook(book.id))),
+        )
+          .then((notebook) => {
+            if (!notebook) return;
+            // Check if notebook has content (not just an empty doc)
+            const content = notebook.content as { content?: unknown[] };
+            const hasContent =
+              content?.content && Array.isArray(content.content) && content.content.length > 0;
+            if (hasContent) {
+              // Auto-open notebook panel
+              ws.openNotebookRef.current?.(book);
+            }
+          })
+          .catch((err) => {
+            // Silently fail - don't block book opening if notes check fails
+            console.debug("Failed to check for book notes:", err);
+          });
       };
 
       if (shouldAutoCollapse) {
