@@ -358,8 +358,26 @@ function WorkspacePdfReaderInner({
     pdfLayout: localPdfLayout,
   };
 
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      // Only handle arrow keys when not in an input or textarea
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        event.preventDefault();
+        goPrev();
+      } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        event.preventDefault();
+        goNext();
+      }
+    },
+    [goNext, goPrev],
+  );
+
   return (
-    <div ref={panelRef} className="flex h-full flex-col outline-none" tabIndex={0}>
+    <div ref={panelRef} className="flex h-full flex-col outline-none" tabIndex={0} onKeyDown={handleKeyDown}>
       <div className="relative flex-1 overflow-hidden">
         {searchOpen && (
           <div className="absolute top-0 right-0 left-0 z-10">

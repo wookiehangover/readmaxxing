@@ -216,8 +216,26 @@ export function PdfReader({ book }: PdfReaderProps) {
 
   const isScrollMode = settings.pdfLayout === "continuous";
 
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      // Only handle arrow keys when not in an input or textarea
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        event.preventDefault();
+        goPrev();
+      } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        event.preventDefault();
+        goNext();
+      }
+    },
+    [goNext, goPrev],
+  );
+
   return (
-    <div className="flex h-full">
+    <div className="flex h-full" onKeyDown={handleKeyDown} tabIndex={0}>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="relative flex-1 overflow-hidden">
           {searchOpen && (
