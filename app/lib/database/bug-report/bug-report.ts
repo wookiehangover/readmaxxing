@@ -17,6 +17,7 @@ export interface BugReportRow {
   userId: string;
   message: string;
   context: Record<string, unknown> | null;
+  notes: string | null;
   status: BugReportStatus;
   groupId: string | null;
   createdAt: Date;
@@ -39,9 +40,21 @@ interface InsertBugReportData {
 
 interface ListBugReportsOptions {
   status?: BugReportStatus;
+  statuses?: BugReportStatus[];
+  q?: string;
   groupId?: string;
   limit?: number;
   offset?: number;
+}
+
+interface ListBugReportsResult {
+  rows: BugReportRow[];
+  count: number;
+}
+
+interface UpdateBugReportData {
+  status?: BugReportStatus;
+  notes?: string | null;
 }
 
 interface CreateBugReportGroupData {
@@ -54,6 +67,7 @@ const BUG_REPORT_COLUMNS = sql`
   user_id AS "userId",
   message,
   context,
+  notes,
   status,
   group_id AS "groupId",
   created_at AS "createdAt",
@@ -87,11 +101,33 @@ export async function updateBugReportStatus(
   id: string,
   status: BugReportStatus,
 ): Promise<BugReportRow | null> {
-  const validStatus = assertBugReportStatus(status);
+  return updateBugReport(id, { status });
+}
+
+export async function updateBugReport(
+  id: string,
+  data: UpdateBugReportData,
+): Promise<BugReportRow | null> {
+  const shouldUpdateStatus = data.status !== undefined;
+  const shouldUpdateNotes = data.notes !== undefined;
+  const validStatus = shouldUpdateStatus
+    ? assertBugReportStatus(data.status as BugReportStatus)
+    : null;
   const pool = getPool();
+
+  if (!shouldUpdateStatus && !shouldUpdateNotes) {
+    const result = await pool.query<BugReportRow>(sql`
+      SELECT ${BUG_REPORT_COLUMNS}
+      FROM readmax.bug_report
+      WHERE id = ${id}
+    `);
+    return result.rows[0] ?? null;
+  }
+
   const result = await pool.query<BugReportRow>(sql`
     UPDATE readmax.bug_report
-    SET status = ${validStatus},
+    SET status = CASE WHEN ${shouldUpdateStatus} THEN ${validStatus} ELSE status END,
+        notes = CASE WHEN ${shouldUpdateNotes} THEN ${data.notes ?? null} ELSE notes END,
         updated_at = NOW()
     WHERE id = ${id}
     RETURNING ${BUG_REPORT_COLUMNS}
@@ -105,60 +141,53 @@ export async function updateBugReportStatus(
 
 export async function listBugReports({
   status,
+  statuses,
+  q,
   groupId,
   limit,
   offset,
-}: ListBugReportsOptions = {}): Promise<BugReportRow[]> {
-  const validStatus = status == null ? null : assertBugReportStatus(status);
+}: ListBugReportsOptions = {}): Promise<ListBugReportsResult> {
+  const validStatuses = normalizeStatuses(status, statuses);
   const pageLimit = normalizeLimit(limit);
   const pageOffset = normalizeOffset(offset);
+  const searchPattern = normalizeSearchPattern(q);
+  const hasStatusFilter = validStatuses.length > 0;
+  const hasGroupIdFilter = groupId != null;
+  const hasSearchFilter = searchPattern != null;
   const pool = getPool();
 
-  if (validStatus && groupId) {
-    const result = await pool.query<BugReportRow>(sql`
+  const [result, countResult] = await Promise.all([
+    pool.query<BugReportRow>(sql`
       SELECT ${BUG_REPORT_COLUMNS}
       FROM readmax.bug_report
-      WHERE status = ${validStatus}
-        AND group_id = ${groupId}
+      WHERE (${hasStatusFilter} = FALSE OR status = ANY(${validStatuses}::text[]))
+        AND (${hasGroupIdFilter} = FALSE OR group_id = ${groupId ?? null})
+        AND (
+          ${hasSearchFilter} = FALSE
+          OR message ILIKE ${searchPattern}
+          OR notes ILIKE ${searchPattern}
+        )
       ORDER BY created_at DESC
       LIMIT ${pageLimit}
       OFFSET ${pageOffset}
-    `);
-    return result.rows;
-  }
-
-  if (validStatus) {
-    const result = await pool.query<BugReportRow>(sql`
-      SELECT ${BUG_REPORT_COLUMNS}
+    `),
+    pool.query<{ count: string }>(sql`
+      SELECT COUNT(*) AS count
       FROM readmax.bug_report
-      WHERE status = ${validStatus}
-      ORDER BY created_at DESC
-      LIMIT ${pageLimit}
-      OFFSET ${pageOffset}
-    `);
-    return result.rows;
-  }
+      WHERE (${hasStatusFilter} = FALSE OR status = ANY(${validStatuses}::text[]))
+        AND (${hasGroupIdFilter} = FALSE OR group_id = ${groupId ?? null})
+        AND (
+          ${hasSearchFilter} = FALSE
+          OR message ILIKE ${searchPattern}
+          OR notes ILIKE ${searchPattern}
+        )
+    `),
+  ]);
 
-  if (groupId) {
-    const result = await pool.query<BugReportRow>(sql`
-      SELECT ${BUG_REPORT_COLUMNS}
-      FROM readmax.bug_report
-      WHERE group_id = ${groupId}
-      ORDER BY created_at DESC
-      LIMIT ${pageLimit}
-      OFFSET ${pageOffset}
-    `);
-    return result.rows;
-  }
-
-  const result = await pool.query<BugReportRow>(sql`
-    SELECT ${BUG_REPORT_COLUMNS}
-    FROM readmax.bug_report
-    ORDER BY created_at DESC
-    LIMIT ${pageLimit}
-    OFFSET ${pageOffset}
-  `);
-  return result.rows;
+  return {
+    rows: result.rows,
+    count: Number(countResult.rows[0]?.count ?? 0),
+  };
 }
 
 export async function createBugReportGroup(
@@ -222,6 +251,23 @@ function assertBugReportStatus(status: string): BugReportStatus {
     return status as BugReportStatus;
   }
   throw new Error(`Invalid bug report status: ${status}`);
+}
+
+function normalizeStatuses(
+  status: BugReportStatus | undefined,
+  statuses: BugReportStatus[] | undefined,
+): BugReportStatus[] {
+  if (statuses != null) {
+    return [...new Set(statuses.map(assertBugReportStatus))];
+  }
+  if (status == null) return [];
+  return [assertBugReportStatus(status)];
+}
+
+function normalizeSearchPattern(q: string | undefined): string | null {
+  const trimmed = q?.trim();
+  if (!trimmed) return null;
+  return `%${trimmed}%`;
 }
 
 function normalizeLimit(limit: number | undefined): number {
