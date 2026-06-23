@@ -378,7 +378,9 @@ export function WorkspaceSidebar({
           "flex-col py-1.5 gap-1": collapsed,
         })}
       >
-        <div className={cn("flex items-center", { "flex-col gap-1": collapsed, "gap-2": !collapsed })}>
+        <div
+          className={cn("flex items-center", { "flex-col gap-1": collapsed, "gap-2": !collapsed })}
+        >
           <Link
             to="/settings"
             className={cn(
