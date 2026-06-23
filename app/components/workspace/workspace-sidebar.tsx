@@ -12,8 +12,6 @@ import {
   Search,
   Notebook,
   Library,
-  LogIn,
-  LogOut,
 } from "lucide-react";
 import { LibrarySortControl } from "~/components/library-sort-control";
 import { SyncStatus } from "~/components/sync-status";
@@ -25,8 +23,6 @@ import type { WorkspaceSortBy, LayoutMode } from "~/lib/settings";
 import type { ClusterBarEntry } from "~/hooks/use-focused-mode";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { useAuth } from "~/lib/context/auth-context";
-import { Button } from "~/components/ui/button";
 
 /** Delay after sidebar CSS transition before dispatching resize (ms) */
 const SIDEBAR_TRANSITION_MS = 270;
@@ -378,22 +374,17 @@ export function WorkspaceSidebar({
           "flex-col py-1.5 gap-1": collapsed,
         })}
       >
-        <div
-          className={cn("flex items-center", { "flex-col gap-1": collapsed, "gap-2": !collapsed })}
+        <Link
+          to="/settings"
+          className={cn(
+            "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground",
+            { "mx-auto": collapsed },
+          )}
+          title="Settings"
         >
-          <Link
-            to="/settings"
-            className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground",
-              { "mx-auto": collapsed },
-            )}
-            title="Settings"
-          >
-            <Settings className="size-4" />
-            {!collapsed && <span>Settings</span>}
-          </Link>
-          <AuthButton collapsed={collapsed} />
-        </div>
+          <Settings className="size-4" />
+          {!collapsed && <span>Settings</span>}
+        </Link>
 
         <LayoutModeSwitcher
           layoutMode={layoutMode}
@@ -408,41 +399,5 @@ export function WorkspaceSidebar({
         </div>
       </div>
     </aside>
-  );
-}
-
-function AuthButton({ collapsed }: { collapsed: boolean }) {
-  const { isAuthenticated, logout } = useAuth();
-
-  if (isAuthenticated) {
-    return (
-      <Button
-        variant="ghost"
-        size="sm"
-        className={cn(
-          "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground",
-          { "mx-auto size-8 p-0": collapsed },
-        )}
-        onClick={() => void logout()}
-        title="Logout"
-      >
-        <LogOut className="size-4" />
-        {!collapsed && <span>Logout</span>}
-      </Button>
-    );
-  }
-
-  return (
-    <Link
-      to="/login"
-      className={cn(
-        "flex items-center gap-2 rounded-md bg-primary px-2 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90",
-        { "mx-auto size-8 justify-center p-0": collapsed },
-      )}
-      title="Login"
-    >
-      <LogIn className="size-4" />
-      {!collapsed && <span>Login</span>}
-    </Link>
   );
 }
