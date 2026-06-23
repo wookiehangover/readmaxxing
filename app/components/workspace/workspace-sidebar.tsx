@@ -393,7 +393,12 @@ export function WorkspaceSidebar({
           onChange={(mode) => onUpdateSettings({ layoutMode: mode })}
         />
 
-        <div className={cn("flex items-center", { "order-first flex-col gap-1": collapsed, "gap-1": !collapsed })}>
+        <div
+          className={cn("flex items-center", {
+            "order-first flex-col gap-1": collapsed,
+            "gap-1": !collapsed,
+          })}
+        >
           <TooltipProvider delay={300}>
             <SyncStatus collapsed={collapsed} />
           </TooltipProvider>

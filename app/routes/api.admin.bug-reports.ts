@@ -120,5 +120,8 @@ function parseIntegerParam(
 }
 
 function methodNotAllowed(): Response {
-  return Response.json({ error: "method_not_allowed" }, { status: 405, headers: { Allow: "GET, PATCH" } });
+  return Response.json(
+    { error: "method_not_allowed" },
+    { status: 405, headers: { Allow: "GET, PATCH" } },
+  );
 }
