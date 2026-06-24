@@ -23,6 +23,7 @@ import type { WorkspaceSortBy, LayoutMode } from "~/lib/settings";
 import type { ClusterBarEntry } from "~/hooks/use-focused-mode";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
+import { BugReportDialog } from "~/components/bug-report-dialog";
 
 /** Delay after sidebar CSS transition before dispatching resize (ms) */
 const SIDEBAR_TRANSITION_MS = 270;
@@ -392,10 +393,19 @@ export function WorkspaceSidebar({
           onChange={(mode) => onUpdateSettings({ layoutMode: mode })}
         />
 
-        <div className={cn({ "order-first": collapsed })}>
+        <div
+          className={cn("flex items-center", {
+            "order-first flex-col gap-1": collapsed,
+            "gap-1": !collapsed,
+          })}
+        >
           <TooltipProvider delay={300}>
             <SyncStatus collapsed={collapsed} />
           </TooltipProvider>
+          <BugReportDialog
+            triggerSize="icon-sm"
+            triggerClassName="text-muted-foreground hover:text-foreground hover:bg-accent"
+          />
         </div>
       </div>
     </aside>

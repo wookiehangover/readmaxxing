@@ -1,4 +1,4 @@
-import { requireAuth } from "~/lib/database/auth-middleware";
+import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import { insertBugReport } from "~/lib/database/bug-report/bug-report";
 
 const MAX_MESSAGE_LENGTH = 5000;
@@ -17,7 +17,9 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "not_configured" }, { status: 503 });
   }
 
-  const { userId } = await requireAuth(request);
+  // Allow both authenticated and anonymous bug reports
+  const session = await getSessionFromRequest(request);
+  const userId = session?.userId ?? "anonymous";
 
   let body: BugReportRequestBody;
   try {
