@@ -109,13 +109,14 @@ export async function upsertHighlight(
   return result.rows[0];
 }
 
-export async function getHighlightsByUser(userId: string): Promise<HighlightRow[]> {
+export async function getHighlightsByUser(userId: string, limit?: number): Promise<HighlightRow[]> {
   const pool = getPool();
   const result = await pool.query<HighlightRow>(sql`
     SELECT ${HIGHLIGHT_COLUMNS}
     FROM readmax.highlight
     WHERE user_id = ${userId}
     ORDER BY created_at DESC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }
@@ -123,14 +124,20 @@ export async function getHighlightsByUser(userId: string): Promise<HighlightRow[
 export async function getHighlightsByUserSince(
   userId: string,
   cursor: Date,
+  limit?: number,
+  cursorId?: string | null,
 ): Promise<HighlightRow[]> {
   const pool = getPool();
   const result = await pool.query<HighlightRow>(sql`
     SELECT ${HIGHLIGHT_COLUMNS}
     FROM readmax.highlight
     WHERE user_id = ${userId}
-      AND (updated_at > ${cursor.toISOString()} OR deleted_at > ${cursor.toISOString()})
-    ORDER BY updated_at ASC
+      AND (
+        updated_at > ${cursor.toISOString()}
+        OR (${cursorId ?? null} IS NOT NULL AND updated_at = ${cursor.toISOString()} AND id > ${cursorId ?? null})
+      )
+    ORDER BY updated_at ASC, id ASC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }
@@ -139,7 +146,8 @@ export async function softDeleteHighlight(userId: string, highlightId: string): 
   const pool = getPool();
   const result = await pool.query(sql`
     UPDATE readmax.highlight
-    SET deleted_at = NOW()
+    SET deleted_at = NOW(),
+        updated_at = NOW()
     WHERE id = ${highlightId}
       AND user_id = ${userId}
       AND deleted_at IS NULL
