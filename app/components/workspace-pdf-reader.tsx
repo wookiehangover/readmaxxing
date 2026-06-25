@@ -155,6 +155,7 @@ function WorkspacePdfReaderInner({
     goPrev,
     flushPositionSave,
     pdfDocRef,
+    viewerRef,
     eventBusRef,
   } = usePdfLifecycle({
     bookId: book.id,
@@ -242,6 +243,36 @@ function WorkspacePdfReaderInner({
       visDisposable.dispose();
     };
   }, [panelApi, flushPositionSave]);
+
+  // Handle panel dimension changes — recalculate PDF layout when the panel resizes
+  useEffect(() => {
+    if (!panelApi) return;
+
+    let rafId: number | null = null;
+    const dimensionsDisposable = panelApi.onDidDimensionsChange(() => {
+      // The PDF viewer needs to recalculate scale/layout when container dimensions change
+      // Use requestAnimationFrame to coalesce rapid resize events during drag-resize
+      if (rafId !== null) cancelAnimationFrame(rafId);
+
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const viewer = viewerRef.current;
+        if (viewer && typeof viewer.update === "function") {
+          const scaleValue = viewer.currentScaleValue;
+          if (typeof scaleValue === "string" && Number.isNaN(Number(scaleValue))) {
+            viewer.currentScaleValue = scaleValue;
+          } else {
+            viewer.update();
+          }
+        }
+      });
+    });
+
+    return () => {
+      dimensionsDisposable.dispose();
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [panelApi, viewerRef]);
 
   const handleUpdateSettings = useCallback(
     (update: Partial<Settings>) => {
