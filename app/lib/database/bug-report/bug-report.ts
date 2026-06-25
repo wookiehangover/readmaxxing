@@ -39,6 +39,7 @@ interface InsertBugReportData {
 }
 
 interface ListBugReportsOptions {
+  userId?: string;
   status?: BugReportStatus;
   statuses?: BugReportStatus[];
   q?: string;
@@ -140,6 +141,7 @@ export async function updateBugReport(
 }
 
 export async function listBugReports({
+  userId,
   status,
   statuses,
   q,
@@ -151,6 +153,7 @@ export async function listBugReports({
   const pageLimit = normalizeLimit(limit);
   const pageOffset = normalizeOffset(offset);
   const searchPattern = normalizeSearchPattern(q);
+  const hasUserIdFilter = userId != null;
   const hasStatusFilter = validStatuses.length > 0;
   const hasGroupIdFilter = groupId != null;
   const hasSearchFilter = searchPattern != null;
@@ -160,7 +163,8 @@ export async function listBugReports({
     pool.query<BugReportRow>(sql`
       SELECT ${BUG_REPORT_COLUMNS}
       FROM readmax.bug_report
-      WHERE (${hasStatusFilter} = FALSE OR status = ANY(${validStatuses}::text[]))
+      WHERE (${hasUserIdFilter} = FALSE OR user_id = ${userId ?? null})
+        AND (${hasStatusFilter} = FALSE OR status = ANY(${validStatuses}::text[]))
         AND (${hasGroupIdFilter} = FALSE OR group_id = ${groupId ?? null})
         AND (
           ${hasSearchFilter} = FALSE
@@ -174,7 +178,8 @@ export async function listBugReports({
     pool.query<{ count: string }>(sql`
       SELECT COUNT(*) AS count
       FROM readmax.bug_report
-      WHERE (${hasStatusFilter} = FALSE OR status = ANY(${validStatuses}::text[]))
+      WHERE (${hasUserIdFilter} = FALSE OR user_id = ${userId ?? null})
+        AND (${hasStatusFilter} = FALSE OR status = ANY(${validStatuses}::text[]))
         AND (${hasGroupIdFilter} = FALSE OR group_id = ${groupId ?? null})
         AND (
           ${hasSearchFilter} = FALSE
