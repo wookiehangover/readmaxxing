@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { ArrowLeft, Minus, Plus } from "lucide-react";
-import { toast } from "sonner";
-import { useSettings, type Theme, type ReaderLayout, type PdfLayout } from "~/lib/settings";
-import { COLOR_THEMES, COLOR_THEME_IDS } from "~/lib/color-themes";
-import { Button } from "~/components/ui/button";
+import { ArrowLeft } from "lucide-react";
+import { AppearanceSection } from "~/components/settings/appearance-section";
+import { PdfDefaultsSection } from "~/components/settings/pdf-defaults-section";
+import { ReaderDefaultsSection } from "~/components/settings/reader-defaults-section";
+import { SettingsFooter } from "~/components/settings/settings-footer";
+import { UpdatesSection } from "~/components/settings/updates-section";
 import { cn } from "~/lib/utils";
-import { useAuth } from "~/lib/context/auth-context";
-import { triggerUpdateCheck } from "~/lib/sw-registry";
 
 export async function clientLoader() {
   return {};
@@ -23,354 +22,98 @@ export function HydrateFallback() {
   );
 }
 
-const themeOptions: { value: Theme; label: string }[] = [
-  { value: "system", label: "System" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-];
+type SettingsSectionId = "appearance" | "reader" | "pdf" | "updates";
 
-const layoutOptions: { value: ReaderLayout; label: string }[] = [
-  { value: "single", label: "Single Page" },
-  { value: "spread", label: "Two Page Spread" },
-  { value: "scroll", label: "Continuous Scroll" },
-];
-
-const pdfLayoutOptions: { value: PdfLayout; label: string }[] = [
-  { value: "original", label: "Original Size" },
-  { value: "fit-height", label: "Fit to Height" },
-  { value: "fit-width", label: "Fit to Width" },
-  { value: "two-page", label: "Two Page" },
-  { value: "continuous", label: "Continuous" },
-];
-
-const fontSections = [
-  {
-    label: "Serif",
-    options: [
-      { value: "Literata", label: "Literata" },
-      { value: "Merriweather", label: "Merriweather" },
-      { value: "Lora", label: "Lora" },
-      { value: "Source Serif 4", label: "Source Serif 4" },
-    ],
-  },
-  {
-    label: "Sans-serif",
-    options: [
-      { value: "Geist", label: "Geist" },
-      { value: "Inter", label: "Inter" },
-    ],
-  },
-  {
-    label: "Monospace",
-    options: [
-      { value: "Geist Mono", label: "Geist Mono" },
-      { value: "Berkeley Mono", label: "Berkeley Mono" },
-    ],
-  },
-] as const;
-
-function OptionButton({
-  selected,
-  onClick,
-  children,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
-        selected
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border bg-card hover:bg-accent"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function StepperControl({
-  label,
-  value: _value,
-  displayValue,
-  onDecrement,
-  onIncrement,
-}: {
+const sectionGroups: {
   label: string;
-  value: number;
-  displayValue: string;
-  onDecrement: () => void;
-  onIncrement: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-1.5">
-        <Button
-          variant="outline"
-          size="icon"
-          className="size-7"
-          onClick={onDecrement}
-          aria-label={`Decrease ${label.toLowerCase()}`}
-        >
-          <Minus className="size-3" />
-        </Button>
-        <span className="w-12 text-center text-sm tabular-nums">{displayValue}</span>
-        <Button
-          variant="outline"
-          size="icon"
-          className="size-7"
-          onClick={onIncrement}
-          aria-label={`Increase ${label.toLowerCase()}`}
-        >
-          <Plus className="size-3" />
-        </Button>
-      </div>
-    </div>
-  );
+  items: { id: SettingsSectionId; label: string; description: string }[];
+}[] = [
+  {
+    label: "Preferences",
+    items: [
+      { id: "appearance", label: "Appearance", description: "Theme and colors" },
+      { id: "reader", label: "Reader Defaults", description: "Books and typography" },
+      { id: "pdf", label: "PDF Defaults", description: "PDF layout" },
+    ],
+  },
+  {
+    label: "App",
+    items: [{ id: "updates", label: "Updates", description: "Version checks" }],
+  },
+];
+
+function renderSection(section: SettingsSectionId) {
+  switch (section) {
+    case "appearance":
+      return <AppearanceSection />;
+    case "reader":
+      return <ReaderDefaultsSection />;
+    case "pdf":
+      return <PdfDefaultsSection />;
+    case "updates":
+      return <UpdatesSection />;
+  }
 }
 
 export default function SettingsPage() {
-  const [settings, updateSettings] = useSettings();
-  const { isAuthenticated, logout } = useAuth();
-  const [lastUpdateCheck, setLastUpdateCheck] = useState<Date | null>(null);
-  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
-
-  async function handleCheckForUpdates() {
-    setIsCheckingUpdates(true);
-    try {
-      const result = await triggerUpdateCheck();
-      setLastUpdateCheck(new Date());
-
-      if (!result.checked) {
-        toast("Service worker not active");
-      } else if (result.updateFound) {
-        toast.success("Update available — refresh to apply");
-      } else {
-        toast("You're on the latest version");
-      }
-    } catch (cause) {
-      console.error(cause);
-      toast("Could not check for updates");
-    } finally {
-      setIsCheckingUpdates(false);
-    }
-  }
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>("appearance");
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
-      <header className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="mx-auto flex h-12 max-w-2xl items-center gap-3 px-4">
+    <div className="min-h-dvh bg-background">
+      <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col md:flex-row">
+        <aside className="flex shrink-0 flex-col border-b bg-background/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:sticky md:top-0 md:h-dvh md:w-64 md:border-r md:border-b-0 md:px-5">
           <Link
             to="/"
-            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="inline-flex w-fit items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <ArrowLeft className="size-4" />
+            Back to app
           </Link>
-          <h1 className="font-semibold">Settings</h1>
-        </div>
-      </header>
 
-      <main className="mx-auto w-full max-w-2xl space-y-8 px-4 py-8">
-        {/* Appearance */}
-        <section>
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            Appearance
-          </h2>
-          <div className="rounded-lg border bg-card p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Theme</span>
-              <div className="flex gap-1.5">
-                {themeOptions.map((opt) => (
-                  <OptionButton
-                    key={opt.value}
-                    selected={settings.theme === opt.value}
-                    onClick={() => updateSettings({ theme: opt.value })}
-                  >
-                    {opt.label}
-                  </OptionButton>
-                ))}
-              </div>
-            </div>
+          <div className="mt-6">
+            <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Customize your reading workspace.</p>
+          </div>
 
-            <div className="border-t my-4" />
-
-            {/* Color Theme */}
-            <div>
-              <span className="mb-3 block text-sm font-medium">Color Theme</span>
-              <div className="flex flex-wrap gap-3">
-                {COLOR_THEME_IDS.map((id) => {
-                  const theme = COLOR_THEMES[id];
-                  const isSelected = settings.colorTheme === id;
-                  return (
+          <nav className="mt-6 flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0">
+            {sectionGroups.map((group) => (
+              <div key={group.label} className="contents md:block">
+                <p className="hidden px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground md:block">
+                  {group.label}
+                </p>
+                <div className="contents md:flex md:flex-col md:gap-1 md:pb-5">
+                  {group.items.map((item) => (
                     <button
-                      key={id}
+                      key={item.id}
                       type="button"
-                      onClick={() => updateSettings({ colorTheme: id })}
+                      onClick={() => setActiveSection(item.id)}
                       className={cn(
-                        "flex flex-col items-center gap-1.5 rounded-lg p-2 transition-colors",
+                        "shrink-0 rounded-lg px-3 py-2 text-left text-sm transition-colors md:w-full",
                         {
-                          "ring-2 ring-primary ring-offset-2 ring-offset-background": isSelected,
-                          "hover:bg-accent/50": !isSelected,
+                          "bg-accent text-foreground shadow-sm": activeSection === item.id,
+                          "text-muted-foreground hover:bg-accent/60 hover:text-foreground":
+                            activeSection !== item.id,
                         },
                       )}
                     >
-                      <div className="flex overflow-hidden border">
-                        {theme.swatchColors.map((color, i) => (
-                          <div key={i} className="size-4" style={{ backgroundColor: color }} />
-                        ))}
-                      </div>
-                      <span className="text-xs text-muted-foreground">{theme.name}</span>
+                      <span className="block font-medium">{item.label}</span>
+                      <span className="hidden text-xs text-muted-foreground md:block">
+                        {item.description}
+                      </span>
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
-            </div>
-          </div>
-        </section>
-        {/* Reader Defaults */}
-        <section>
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            Reader Defaults
-          </h2>
-          <div className="space-y-4 rounded-lg border bg-card p-4">
-            {/* Layout */}
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Layout</span>
-              <div className="flex gap-1.5">
-                {layoutOptions.map((opt) => (
-                  <OptionButton
-                    key={opt.value}
-                    selected={settings.readerLayout === opt.value}
-                    onClick={() => updateSettings({ readerLayout: opt.value })}
-                  >
-                    {opt.label}
-                  </OptionButton>
-                ))}
-              </div>
-            </div>
+            ))}
+          </nav>
 
-            <div className="border-t" />
+          <SettingsFooter />
+        </aside>
 
-            {/* Font */}
-            <div>
-              <span className="mb-2 block text-sm font-medium">Font</span>
-              <div className="space-y-3">
-                {fontSections.map((section) => (
-                  <div key={section.label}>
-                    <span className="mb-1 block text-xs text-muted-foreground">
-                      {section.label}
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {section.options.map((opt) => (
-                        <OptionButton
-                          key={opt.value}
-                          selected={settings.fontFamily === opt.value}
-                          onClick={() => updateSettings({ fontFamily: opt.value })}
-                        >
-                          {opt.label}
-                        </OptionButton>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="border-t" />
-
-            {/* Font Size */}
-            <StepperControl
-              label="Font Size"
-              value={settings.fontSize}
-              displayValue={`${settings.fontSize}%`}
-              onDecrement={() => updateSettings({ fontSize: Math.max(75, settings.fontSize - 5) })}
-              onIncrement={() => updateSettings({ fontSize: Math.min(200, settings.fontSize + 5) })}
-            />
-
-            {/* Line Height */}
-            <StepperControl
-              label="Line Height"
-              value={settings.lineHeight}
-              displayValue={settings.lineHeight.toFixed(1)}
-              onDecrement={() =>
-                updateSettings({
-                  lineHeight: Math.max(1.0, Math.round((settings.lineHeight - 0.1) * 10) / 10),
-                })
-              }
-              onIncrement={() =>
-                updateSettings({
-                  lineHeight: Math.min(2.5, Math.round((settings.lineHeight + 0.1) * 10) / 10),
-                })
-              }
-            />
-          </div>
-        </section>
-        {/* PDF Defaults */}
-        <section>
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            PDF Defaults
-          </h2>
-          <div className="rounded-lg border bg-card p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Layout</span>
-              <div className="flex gap-1.5">
-                {pdfLayoutOptions.map((opt) => (
-                  <OptionButton
-                    key={opt.value}
-                    selected={settings.pdfLayout === opt.value}
-                    onClick={() => updateSettings({ pdfLayout: opt.value })}
-                  >
-                    {opt.label}
-                  </OptionButton>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-        <section>
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            App
-          </h2>
-          <div className="rounded-lg border bg-card p-4">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <span className="block text-sm font-medium">Updates</span>
-                <span className="text-xs text-muted-foreground">
-                  Last checked:{" "}
-                  {lastUpdateCheck
-                    ? lastUpdateCheck.toLocaleTimeString([], {
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })
-                    : "Never"}
-                </span>
-              </div>
-              <Button
-                variant="outline"
-                onClick={() => void handleCheckForUpdates()}
-                disabled={isCheckingUpdates}
-              >
-                {isCheckingUpdates ? "Checking…" : "Check for updates"}
-              </Button>
-            </div>
-          </div>
-        </section>
-        <footer className="mt-20 border-t text-xs pt-4 flex items-center justify-between">
-          {isAuthenticated ? (
-            <Button variant="link" onClick={() => logout()}>
-              Logout
-            </Button>
-          ) : (
-            <Link to="/login">Login</Link>
-          )}
-          <Link to="/about">About</Link>
-        </footer>
-      </main>
+        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 md:h-dvh md:px-8 md:py-10">
+          <div className="mx-auto max-w-3xl">{renderSection(activeSection)}</div>
+        </main>
+      </div>
     </div>
   );
 }
