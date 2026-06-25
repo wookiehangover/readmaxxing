@@ -258,7 +258,12 @@ function WorkspacePdfReaderInner({
         rafId = null;
         const viewer = viewerRef.current;
         if (viewer && typeof viewer.update === "function") {
-          viewer.update();
+          const scaleValue = viewer.currentScaleValue;
+          if (typeof scaleValue === "string" && Number.isNaN(Number(scaleValue))) {
+            viewer.currentScaleValue = scaleValue;
+          } else {
+            viewer.update();
+          }
         }
       });
     });
