@@ -12,6 +12,7 @@ import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-
 import { resolveTheme } from "~/lib/settings";
 import type { ReaderLayout, Theme, TextAlign } from "~/lib/settings";
 import { isEditableElement } from "~/lib/dom-utils";
+import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 import {
   registerThemeColors,
   getThemeColorCss,
@@ -415,6 +416,9 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   // Use a ref for the full config so optional callbacks don't trigger re-init
   const configRef = useRef(config);
   configRef.current = config;
+
+  // Access workspace context to check if this book panel is active in focused mode
+  const ws = useOptionalWorkspace();
 
   const clearNavigationInProgress = useCallback(() => {
     navigationInProgressRef.current = false;
@@ -850,13 +854,19 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     }; // end init()
 
     // Keyboard navigation on the parent document
+    // Arrow keys work globally (no focus check) so users don't need to click
+    // the EPUB viewer or navigation buttons first. In workspace/focused mode, we
+    // only respond when this book is the active cluster; otherwise we respond
+    // to all arrow keys. We always skip when typing in an editable element.
     const handleKeyDown = (e: KeyboardEvent) => {
       if (layoutRef.current === "scroll") return;
-      if (configRef.current.panelRef) {
-        const panel = configRef.current.panelRef.current;
-        if (!panel?.contains(document.activeElement) && document.activeElement !== panel) return;
-      }
       if (isEditableElement()) return;
+
+      // In workspace focused mode, only respond if this book is the active cluster
+      if (ws && ws.activeClusterBookIdRef.current !== null) {
+        if (ws.activeClusterBookIdRef.current !== bookId) return;
+      }
+
       if (e.key === "ArrowLeft" && rendition) {
         markNavigationInProgress();
         rendition.prev().catch((err: unknown) => {
