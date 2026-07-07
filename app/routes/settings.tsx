@@ -3,8 +3,7 @@ import { Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { AppearanceSection } from "~/components/settings/appearance-section";
 import { BugReportsSection } from "~/components/settings/bug-reports-section";
-import { PdfDefaultsSection } from "~/components/settings/pdf-defaults-section";
-import { ReaderDefaultsSection } from "~/components/settings/reader-defaults-section";
+import { ReadingSection } from "~/components/settings/reading-section";
 import { SettingsFooter } from "~/components/settings/settings-footer";
 import { UpdatesSection } from "~/components/settings/updates-section";
 import { cn } from "~/lib/utils";
@@ -23,37 +22,21 @@ export function HydrateFallback() {
   );
 }
 
-type SettingsSectionId = "appearance" | "reader" | "pdf" | "bug-reports" | "updates";
+type SettingsSectionId = "appearance" | "reading" | "bug-reports" | "updates";
 
-const sectionGroups: {
-  label: string;
-  items: { id: SettingsSectionId; label: string }[];
-}[] = [
-  {
-    label: "Preferences",
-    items: [
-      { id: "appearance", label: "Appearance" },
-      { id: "reader", label: "Reader Defaults" },
-      { id: "pdf", label: "PDF Defaults" },
-    ],
-  },
-  {
-    label: "App",
-    items: [
-      { id: "bug-reports", label: "Bug reports" },
-      { id: "updates", label: "Updates" },
-    ],
-  },
+const sections: { id: SettingsSectionId; label: string }[] = [
+  { id: "appearance", label: "Appearance" },
+  { id: "reading", label: "Reading" },
+  { id: "bug-reports", label: "Bug reports" },
+  { id: "updates", label: "Updates" },
 ];
 
 function renderSection(section: SettingsSectionId) {
   switch (section) {
     case "appearance":
       return <AppearanceSection />;
-    case "reader":
-      return <ReaderDefaultsSection />;
-    case "pdf":
-      return <PdfDefaultsSection />;
+    case "reading":
+      return <ReadingSection />;
     case "bug-reports":
       return <BugReportsSection />;
     case "updates":
@@ -81,31 +64,22 @@ export default function SettingsPage() {
           </div>
 
           <nav className="mt-6 flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0">
-            {sectionGroups.map((group) => (
-              <div key={group.label} className="contents md:block">
-                <p className="hidden px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground md:block">
-                  {group.label}
-                </p>
-                <div className="contents md:flex md:flex-col md:gap-1 md:pb-5">
-                  {group.items.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setActiveSection(item.id)}
-                      className={cn(
-                        "shrink-0 rounded-lg px-3 py-2 text-left text-sm transition-colors md:w-full",
-                        {
-                          "bg-accent text-foreground shadow-sm": activeSection === item.id,
-                          "text-muted-foreground hover:bg-accent/60 hover:text-foreground":
-                            activeSection !== item.id,
-                        },
-                      )}
-                    >
-                      <span className="block font-medium">{item.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {sections.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveSection(item.id)}
+                className={cn(
+                  "shrink-0 rounded-lg px-3 py-2 text-left text-sm transition-colors md:w-full",
+                  {
+                    "bg-accent text-foreground shadow-sm": activeSection === item.id,
+                    "text-muted-foreground hover:bg-accent/60 hover:text-foreground":
+                      activeSection !== item.id,
+                  },
+                )}
+              >
+                <span className="block font-medium">{item.label}</span>
+              </button>
             ))}
           </nav>
 
