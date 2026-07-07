@@ -70,7 +70,7 @@ export default function SettingsPage() {
                 className={cn(
                   "shrink-0 rounded-lg px-3 py-2 text-left text-sm transition-colors md:w-full",
                   {
-                    "bg-accent text-foreground shadow-sm": activeSection === item.id,
+                    "bg-sidebar-foreground/10 text-sidebar-foreground": activeSection === item.id,
                     "text-muted-foreground hover:bg-accent/60 hover:text-foreground":
                       activeSection !== item.id,
                   },
