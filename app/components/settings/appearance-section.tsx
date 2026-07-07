@@ -1,8 +1,14 @@
 import { COLOR_THEME_IDS, COLOR_THEMES } from "~/lib/color-themes";
 import { useSettings, type Theme } from "~/lib/settings";
 import { cn } from "~/lib/utils";
-import { OptionButton } from "~/components/settings/controls";
-import { Separator } from "~/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 
 const themeOptions: { value: Theme; label: string }[] = [
   { value: "system", label: "System" },
@@ -14,26 +20,32 @@ export function AppearanceSection() {
   const [settings, updateSettings] = useSettings();
 
   return (
-    <section className="space-y-4">
+    <section className="flex flex-col gap-6">
       <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
-        <span className="text-sm font-medium">Theme</span>
-        <div className="flex flex-wrap gap-1.5">
-          {themeOptions.map((opt) => (
-            <OptionButton
-              key={opt.value}
-              selected={settings.theme === opt.value}
-              onClick={() => updateSettings({ theme: opt.value })}
-            >
-              {opt.label}
-            </OptionButton>
-          ))}
-        </div>
+        <span className="text-sm text-muted-foreground">Theme</span>
+        <Select
+          value={settings.theme}
+          onValueChange={(value) => {
+            if (value !== null) updateSettings({ theme: value as Theme });
+          }}
+        >
+          <SelectTrigger aria-label="Theme" className="w-56 max-sm:w-full">
+            <SelectValue placeholder="Select theme" />
+          </SelectTrigger>
+          <SelectContent align="end" alignItemWithTrigger={false}>
+            <SelectGroup>
+              {themeOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </div>
 
-      <Separator />
-
       <div>
-        <span className="mb-3 block text-sm font-medium">Color Theme</span>
+        <span className="mb-4 block text-sm font-medium">Color Theme</span>
         <div className="flex flex-wrap gap-3">
           {COLOR_THEME_IDS.map((id) => {
             const theme = COLOR_THEMES[id];

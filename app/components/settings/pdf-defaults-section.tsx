@@ -1,4 +1,11 @@
-import { OptionButton } from "~/components/settings/controls";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { useSettings, type PdfLayout } from "~/lib/settings";
 
 const pdfLayoutOptions: { value: PdfLayout; label: string }[] = [
@@ -15,18 +22,26 @@ export function PdfDefaultsControls() {
   return (
     <div>
       <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
-        <span className="text-sm font-medium">Layout</span>
-        <div className="flex flex-wrap gap-1.5">
-          {pdfLayoutOptions.map((opt) => (
-            <OptionButton
-              key={opt.value}
-              selected={settings.pdfLayout === opt.value}
-              onClick={() => updateSettings({ pdfLayout: opt.value })}
-            >
-              {opt.label}
-            </OptionButton>
-          ))}
-        </div>
+        <span className="text-sm text-muted-foreground">Layout</span>
+        <Select
+          value={settings.pdfLayout}
+          onValueChange={(value) => {
+            if (value !== null) updateSettings({ pdfLayout: value as PdfLayout });
+          }}
+        >
+          <SelectTrigger aria-label="PDF layout" className="w-56 max-sm:w-full">
+            <SelectValue placeholder="Select layout" />
+          </SelectTrigger>
+          <SelectContent align="end" alignItemWithTrigger={false}>
+            <SelectGroup>
+              {pdfLayoutOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );

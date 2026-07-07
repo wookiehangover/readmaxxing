@@ -1,30 +1,5 @@
-import type { ReactNode } from "react";
 import { Minus, Plus } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { cn } from "~/lib/utils";
-
-export function OptionButton({
-  selected,
-  onClick,
-  children,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn("rounded-md border px-3 py-1.5 text-sm transition-colors", {
-        "border-primary bg-primary text-primary-foreground": selected,
-        "border-border bg-card hover:bg-accent": !selected,
-      })}
-    >
-      {children}
-    </button>
-  );
-}
 
 export function StepperControl({
   label,
