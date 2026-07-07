@@ -38,13 +38,13 @@ export function SuggestedPrompts({
 }) {
   if (prompts.length === 0) return null;
   return (
-    <div className="mt-4 flex flex-wrap gap-2 px-5 pb-2">
+    <div className="mt-6 flex flex-col flex-wrap gap-2.5 px-5 pb-2">
       {prompts.map((prompt) => (
         <button
           key={prompt}
           type="button"
           className={cn(
-            "text-xs text-muted-foreground text-left",
+            "text-sm text-muted-foreground text-left",
             "hover:text-foreground transition-colors",
             "cursor-pointer",
           )}
