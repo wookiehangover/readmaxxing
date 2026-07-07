@@ -9,6 +9,7 @@ import { resolveTheme } from "~/lib/settings";
 import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-readers";
 import type { TocEntry } from "~/lib/context/reader-context";
 import { isEditableElement } from "~/lib/dom-utils";
+import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
@@ -83,6 +84,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
 
   const configRef = useRef(config);
   configRef.current = config;
+
+  // Access workspace context to check if this book panel is active in focused mode
+  const ws = useOptionalWorkspace();
 
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -300,13 +304,19 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     });
 
     // Keyboard navigation on the parent document
+    // Arrow keys work globally (no focus check) so users don't need to click
+    // the PDF viewer or navigation buttons first. In workspace/focused mode, we
+    // only respond when this book is the active cluster; otherwise we respond
+    // to all arrow keys. We always skip when typing in an editable element.
     const handleKeyDown = (e: KeyboardEvent) => {
       if (layoutToScrollMode(configRef.current.pdfLayout) === 0) return;
-      if (configRef.current.panelRef) {
-        const panel = configRef.current.panelRef.current;
-        if (!panel?.contains(document.activeElement) && document.activeElement !== panel) return;
-      }
       if (isEditableElement()) return;
+
+      // In workspace focused mode, only respond if this book is the active cluster
+      if (ws && ws.activeClusterBookIdRef.current !== null) {
+        if (ws.activeClusterBookIdRef.current !== bookId) return;
+      }
+
       if (e.key === "ArrowLeft") {
         viewerRef.current?.previousPage();
       } else if (e.key === "ArrowRight") {
