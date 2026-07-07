@@ -24,6 +24,7 @@ export function AppearanceSection() {
       <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
         <span className="text-sm font-medium text-foreground">Theme</span>
         <Select
+          items={themeOptions}
           value={settings.theme}
           onValueChange={(value) => {
             if (value !== null) updateSettings({ theme: value as Theme });

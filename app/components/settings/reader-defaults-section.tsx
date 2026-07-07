@@ -16,7 +16,9 @@ const layoutOptions: { value: ReaderLayout; label: string }[] = [
   { value: "scroll", label: "Continuous Scroll" },
 ];
 
-const fontSections = [
+type FontOption = { value: string; label: string };
+
+const fontSections: { label: string; options: FontOption[] }[] = [
   {
     label: "Serif",
     options: [
@@ -40,7 +42,9 @@ const fontSections = [
       { value: "Berkeley Mono", label: "Berkeley Mono" },
     ],
   },
-] as const;
+];
+
+const fontOptions = fontSections.flatMap((section) => section.options);
 
 export function ReaderDefaultsControls() {
   const [settings, updateSettings] = useSettings();
@@ -50,6 +54,7 @@ export function ReaderDefaultsControls() {
       <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
         <span className="text-sm font-medium text-foreground">Layout</span>
         <Select
+          items={layoutOptions}
           value={settings.readerLayout}
           onValueChange={(value) => {
             if (value !== null) updateSettings({ readerLayout: value as ReaderLayout });
@@ -74,6 +79,7 @@ export function ReaderDefaultsControls() {
         <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
           <span className="text-sm font-medium text-foreground">Font</span>
           <Select
+            items={fontOptions}
             value={settings.fontFamily}
             onValueChange={(value) => {
               if (value !== null) updateSettings({ fontFamily: value });
