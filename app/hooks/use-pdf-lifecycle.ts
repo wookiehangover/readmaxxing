@@ -8,6 +8,7 @@ import type { PdfLayout, Theme } from "~/lib/settings";
 import { resolveTheme } from "~/lib/settings";
 import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-readers";
 import type { TocEntry } from "~/lib/context/reader-context";
+import { isEditableElement } from "~/lib/dom-utils";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
@@ -298,8 +299,25 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       if (!cancelled) console.error("Failed to load PDF:", err);
     });
 
+    // Keyboard navigation on the parent document
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (layoutToScrollMode(configRef.current.pdfLayout) === 0) return;
+      if (configRef.current.panelRef) {
+        const panel = configRef.current.panelRef.current;
+        if (!panel?.contains(document.activeElement) && document.activeElement !== panel) return;
+      }
+      if (isEditableElement()) return;
+      if (e.key === "ArrowLeft") {
+        viewerRef.current?.previousPage();
+      } else if (e.key === "ArrowRight") {
+        viewerRef.current?.nextPage();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+
     return () => {
       cancelled = true;
+      document.removeEventListener("keydown", handleKeyDown);
       flushPositionSave();
       unregisterActiveReader(bookId);
       setToc([]);

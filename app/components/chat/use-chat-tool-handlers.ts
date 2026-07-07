@@ -279,7 +279,8 @@ export function useChatToolHandlers({
                       yield* svc.saveHighlight(highlight);
                     }),
                   );
-                  await navigateInCluster(targetBookId, cfiRange);
+                  // Don't navigate when AI creates highlights - preserves reading position
+                  // User can navigate to highlights via the notebook panel
 
                   // Append highlight to notebook (same as epub path)
                   const attrs = {
@@ -347,10 +348,8 @@ export function useChatToolHandlers({
                   }),
                 );
 
-                if (cfiRange !== "") {
-                  await navigateInCluster(targetBookId, cfiRange);
-                  applyTempHighlightForBook(targetBookId, cfiRange);
-                }
+                // Don't navigate when AI creates highlights - preserves reading position
+                // User can navigate to highlights via the notebook panel
 
                 const attrs = {
                   highlightId: highlight.id,

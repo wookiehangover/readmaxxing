@@ -358,8 +358,21 @@ function WorkspacePdfReaderInner({
     pdfLayout: localPdfLayout,
   };
 
+  const handlePanelPointerDown = useCallback(() => {
+    const panel = panelRef.current;
+
+    if (!panel?.contains(document.activeElement)) {
+      panel?.focus({ preventScroll: true });
+    }
+  }, []);
+
   return (
-    <div ref={panelRef} className="flex h-full flex-col outline-none" tabIndex={0}>
+    <div
+      ref={panelRef}
+      className="flex h-full flex-col outline-none"
+      tabIndex={0}
+      onPointerDown={handlePanelPointerDown}
+    >
       <div className="relative flex-1 overflow-hidden">
         {searchOpen && (
           <div className="absolute top-0 right-0 left-0 z-10">
