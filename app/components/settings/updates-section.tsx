@@ -29,20 +29,17 @@ export function UpdatesSection() {
   }
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-8">
       <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
-        <div>
-          <span className="block text-sm font-medium text-foreground">App updates</span>
-          <span className="mt-1 block text-sm text-muted-foreground">
-            Last checked:{" "}
-            {lastUpdateCheck
-              ? lastUpdateCheck.toLocaleTimeString([], {
-                  hour: "numeric",
-                  minute: "2-digit",
-                })
-              : "Never"}
-          </span>
-        </div>
+        <span className="text-sm text-muted-foreground">
+          Last checked:{" "}
+          {lastUpdateCheck
+            ? lastUpdateCheck.toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+              })
+            : "Never"}
+        </span>
         <Button
           variant="outline"
           onClick={() => void handleCheckForUpdates()}

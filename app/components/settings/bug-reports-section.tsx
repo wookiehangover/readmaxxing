@@ -20,7 +20,7 @@ export function BugReportsSection() {
   });
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-8">
       {isAuthLoading ? (
         <StateMessage>Checking sign-in status…</StateMessage>
       ) : !isAuthenticated ? (
@@ -45,12 +45,9 @@ export function BugReportsSection() {
       ) : reports.length === 0 ? (
         <StateMessage>You haven't submitted any reports yet.</StateMessage>
       ) : (
-        <ul className="flex flex-col gap-4">
+        <ul className="divide-y">
           {reports.map((report) => (
-            <li
-              key={report.id}
-              className="flex items-start justify-between gap-4 rounded-lg border bg-background p-3"
-            >
+            <li key={report.id} className="flex items-start justify-between gap-4 py-3">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-foreground" title={report.message}>
                   {report.message}
