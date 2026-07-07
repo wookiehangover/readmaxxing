@@ -50,7 +50,7 @@ export default function SettingsPage() {
   return (
     <div className="min-h-dvh bg-background">
       <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col md:flex-row">
-        <aside className="flex shrink-0 flex-col border-b bg-background/95 px-4 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:sticky md:top-0 md:h-dvh md:w-64 md:border-r md:border-b-0 md:px-5">
+        <aside className="flex shrink-0 flex-col border-b bg-sidebar px-4 py-4 md:sticky md:top-0 md:h-dvh md:w-64 md:border-r md:border-b-0 md:px-5">
           <Link
             to="/"
             className="inline-flex w-fit items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
