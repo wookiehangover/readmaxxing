@@ -14,7 +14,7 @@ export function StepperControl({
 }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium text-foreground">{label}</span>
       <div className="flex items-center gap-1.5">
         <Button
           variant="outline"
