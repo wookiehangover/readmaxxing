@@ -870,7 +870,6 @@ function ChatPanelInner({
               )}
               <div className="space-y-3">
                 {messages.map((message, i) => {
-                  const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
                   const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
                   // Ephemeral add/remove markers anchored after this message.
                   // The last rendered message also absorbs orphan markers whose
@@ -891,7 +890,7 @@ function ChatPanelInner({
                         bookDataRef={bookDataRef}
                         isStreaming={isCurrentlyStreaming}
                       />
-                      {isLastAssistant && !isLoading && (
+                      {message.role === "assistant" && !isCurrentlyStreaming && (
                         <SuggestedPrompts
                           prompts={parseSuggestedPrompts(
                             joinTextParts(
