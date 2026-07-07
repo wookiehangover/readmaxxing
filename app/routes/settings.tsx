@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { AppearanceSection } from "~/components/settings/appearance-section";
+import { BugReportsSection } from "~/components/settings/bug-reports-section";
 import { PdfDefaultsSection } from "~/components/settings/pdf-defaults-section";
 import { ReaderDefaultsSection } from "~/components/settings/reader-defaults-section";
 import { SettingsFooter } from "~/components/settings/settings-footer";
@@ -22,23 +23,26 @@ export function HydrateFallback() {
   );
 }
 
-type SettingsSectionId = "appearance" | "reader" | "pdf" | "updates";
+type SettingsSectionId = "appearance" | "reader" | "pdf" | "bug-reports" | "updates";
 
 const sectionGroups: {
   label: string;
-  items: { id: SettingsSectionId; label: string; description: string }[];
+  items: { id: SettingsSectionId; label: string }[];
 }[] = [
   {
     label: "Preferences",
     items: [
-      { id: "appearance", label: "Appearance", description: "Theme and colors" },
-      { id: "reader", label: "Reader Defaults", description: "Books and typography" },
-      { id: "pdf", label: "PDF Defaults", description: "PDF layout" },
+      { id: "appearance", label: "Appearance" },
+      { id: "reader", label: "Reader Defaults" },
+      { id: "pdf", label: "PDF Defaults" },
     ],
   },
   {
     label: "App",
-    items: [{ id: "updates", label: "Updates", description: "Version checks" }],
+    items: [
+      { id: "bug-reports", label: "Bug reports" },
+      { id: "updates", label: "Updates" },
+    ],
   },
 ];
 
@@ -50,6 +54,8 @@ function renderSection(section: SettingsSectionId) {
       return <ReaderDefaultsSection />;
     case "pdf":
       return <PdfDefaultsSection />;
+    case "bug-reports":
+      return <BugReportsSection />;
     case "updates":
       return <UpdatesSection />;
   }
@@ -67,12 +73,11 @@ export default function SettingsPage() {
             className="inline-flex w-fit items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <ArrowLeft className="size-4" />
-            Back to app
+            Home
           </Link>
 
           <div className="mt-6">
             <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Customize your reading workspace.</p>
           </div>
 
           <nav className="mt-6 flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0">
@@ -97,9 +102,6 @@ export default function SettingsPage() {
                       )}
                     >
                       <span className="block font-medium">{item.label}</span>
-                      <span className="hidden text-xs text-muted-foreground md:block">
-                        {item.description}
-                      </span>
                     </button>
                   ))}
                 </div>
