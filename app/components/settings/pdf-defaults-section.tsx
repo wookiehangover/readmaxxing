@@ -9,30 +9,25 @@ const pdfLayoutOptions: { value: PdfLayout; label: string }[] = [
   { value: "continuous", label: "Continuous" },
 ];
 
-export function PdfDefaultsSection() {
+export function PdfDefaultsControls() {
   const [settings, updateSettings] = useSettings();
 
   return (
-    <section>
-      <h2 className="mb-4 text-sm font-medium uppercase tracking-wide text-muted-foreground">
-        PDF Defaults
-      </h2>
-      <div className="rounded-lg border bg-card p-4">
-        <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
-          <span className="text-sm font-medium">Layout</span>
-          <div className="flex flex-wrap gap-1.5">
-            {pdfLayoutOptions.map((opt) => (
-              <OptionButton
-                key={opt.value}
-                selected={settings.pdfLayout === opt.value}
-                onClick={() => updateSettings({ pdfLayout: opt.value })}
-              >
-                {opt.label}
-              </OptionButton>
-            ))}
-          </div>
+    <div>
+      <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
+        <span className="text-sm font-medium">Layout</span>
+        <div className="flex flex-wrap gap-1.5">
+          {pdfLayoutOptions.map((opt) => (
+            <OptionButton
+              key={opt.value}
+              selected={settings.pdfLayout === opt.value}
+              onClick={() => updateSettings({ pdfLayout: opt.value })}
+            >
+              {opt.label}
+            </OptionButton>
+          ))}
         </div>
       </div>
-    </section>
+    </div>
   );
 }
