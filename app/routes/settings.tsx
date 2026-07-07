@@ -86,7 +86,7 @@ export default function SettingsPage() {
 
         <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 md:h-dvh md:px-8 md:py-10">
           <div className="mx-auto flex max-w-3xl flex-col gap-8">
-            <h1 className="text-3xl font-semibold tracking-tight">{activeSectionLabel}</h1>
+            <h1 className="text-xl font-semibold tracking-tight">{activeSectionLabel}</h1>
             {renderSection(activeSection)}
           </div>
         </main>
