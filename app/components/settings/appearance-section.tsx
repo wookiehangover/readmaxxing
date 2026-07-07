@@ -20,9 +20,9 @@ export function AppearanceSection() {
   const [settings, updateSettings] = useSettings();
 
   return (
-    <section className="flex flex-col gap-6">
+    <section className="flex flex-col gap-8">
       <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
-        <span className="text-sm text-muted-foreground">Theme</span>
+        <span className="text-sm font-medium text-foreground">Theme</span>
         <Select
           value={settings.theme}
           onValueChange={(value) => {
@@ -45,7 +45,7 @@ export function AppearanceSection() {
       </div>
 
       <div>
-        <span className="mb-4 block text-sm font-medium">Color Theme</span>
+        <span className="mb-4 block text-sm font-medium text-foreground">Color Theme</span>
         <div className="flex flex-wrap gap-3">
           {COLOR_THEME_IDS.map((id) => {
             const theme = COLOR_THEMES[id];
