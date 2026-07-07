@@ -239,7 +239,7 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
             <p className="text-center py-5">* * *</p>
             <p>
               Readmaxxing is an AI-assisted reading app with chat, search, notes, bookmarks, and
-              history built into your workspace.
+              reading history.
             </p>
             <p>
               Use it for syntopical reading, comparative literature, and interrogating multiple
