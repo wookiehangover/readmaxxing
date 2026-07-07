@@ -24,6 +24,7 @@ export function PdfDefaultsControls() {
       <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
         <span className="text-sm font-medium text-foreground">Layout</span>
         <Select
+          items={pdfLayoutOptions}
           value={settings.pdfLayout}
           onValueChange={(value) => {
             if (value !== null) updateSettings({ pdfLayout: value as PdfLayout });
