@@ -46,6 +46,8 @@ function renderSection(section: SettingsSectionId) {
 
 export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("appearance");
+  const activeSectionLabel =
+    sections.find((item) => item.id === activeSection)?.label ?? "Settings";
 
   return (
     <div className="min-h-dvh bg-background">
@@ -58,10 +60,6 @@ export default function SettingsPage() {
             <ArrowLeft className="size-4" />
             Home
           </Link>
-
-          <div className="mt-6">
-            <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
-          </div>
 
           <nav className="mt-6 flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0">
             {sections.map((item) => (
@@ -87,7 +85,10 @@ export default function SettingsPage() {
         </aside>
 
         <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 md:h-dvh md:px-8 md:py-10">
-          <div className="mx-auto max-w-3xl">{renderSection(activeSection)}</div>
+          <div className="mx-auto flex max-w-3xl flex-col gap-8">
+            <h1 className="text-3xl font-semibold tracking-tight">{activeSectionLabel}</h1>
+            {renderSection(activeSection)}
+          </div>
         </main>
       </div>
     </div>

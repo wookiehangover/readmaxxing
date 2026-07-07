@@ -1,5 +1,13 @@
-import { OptionButton, StepperControl } from "~/components/settings/controls";
-import { Separator } from "~/components/ui/separator";
+import { StepperControl } from "~/components/settings/controls";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { useSettings, type ReaderLayout } from "~/lib/settings";
 
 const layoutOptions: { value: ReaderLayout; label: string }[] = [
@@ -38,47 +46,55 @@ export function ReaderDefaultsControls() {
   const [settings, updateSettings] = useSettings();
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
-        <span className="text-sm font-medium">Layout</span>
-        <div className="flex flex-wrap gap-1.5">
-          {layoutOptions.map((opt) => (
-            <OptionButton
-              key={opt.value}
-              selected={settings.readerLayout === opt.value}
-              onClick={() => updateSettings({ readerLayout: opt.value })}
-            >
-              {opt.label}
-            </OptionButton>
-          ))}
-        </div>
+        <span className="text-sm text-muted-foreground">Layout</span>
+        <Select
+          value={settings.readerLayout}
+          onValueChange={(value) => {
+            if (value !== null) updateSettings({ readerLayout: value as ReaderLayout });
+          }}
+        >
+          <SelectTrigger aria-label="Reader layout" className="w-56 max-sm:w-full">
+            <SelectValue placeholder="Select layout" />
+          </SelectTrigger>
+          <SelectContent align="end" alignItemWithTrigger={false}>
+            <SelectGroup>
+              {layoutOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </div>
 
-      <Separator />
-
-      <div>
-        <span className="mb-2 block text-sm font-medium">Font</span>
-        <div className="flex flex-col gap-3">
-          {fontSections.map((section) => (
-            <div key={section.label}>
-              <span className="mb-1 block text-xs text-muted-foreground">{section.label}</span>
-              <div className="flex flex-wrap gap-1.5">
+      <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
+        <span className="text-sm text-muted-foreground">Font</span>
+        <Select
+          value={settings.fontFamily}
+          onValueChange={(value) => {
+            if (value !== null) updateSettings({ fontFamily: value });
+          }}
+        >
+          <SelectTrigger aria-label="Reader font" className="w-56 max-sm:w-full">
+            <SelectValue placeholder="Select font" />
+          </SelectTrigger>
+          <SelectContent align="end" alignItemWithTrigger={false}>
+            {fontSections.map((section) => (
+              <SelectGroup key={section.label}>
+                <SelectLabel>{section.label}</SelectLabel>
                 {section.options.map((opt) => (
-                  <OptionButton
-                    key={opt.value}
-                    selected={settings.fontFamily === opt.value}
-                    onClick={() => updateSettings({ fontFamily: opt.value })}
-                  >
+                  <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
-                  </OptionButton>
+                  </SelectItem>
                 ))}
-              </div>
-            </div>
-          ))}
-        </div>
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
-
-      <Separator />
 
       <StepperControl
         label="Font Size"
