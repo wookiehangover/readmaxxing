@@ -6,7 +6,7 @@ export function ReadingSection() {
     <section className="flex flex-col gap-10">
       <div>
         <h3 className="mb-6 text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          Reader
+          EPUB
         </h3>
         <ReaderDefaultsControls />
       </div>
