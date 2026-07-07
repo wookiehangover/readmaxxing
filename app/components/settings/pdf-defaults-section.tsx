@@ -22,7 +22,7 @@ export function PdfDefaultsControls() {
   return (
     <div>
       <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
-        <span className="text-sm text-muted-foreground">Layout</span>
+        <span className="text-sm font-medium text-foreground">Layout</span>
         <Select
           value={settings.pdfLayout}
           onValueChange={(value) => {

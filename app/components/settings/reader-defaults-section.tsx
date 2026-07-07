@@ -46,9 +46,9 @@ export function ReaderDefaultsControls() {
   const [settings, updateSettings] = useSettings();
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
-        <span className="text-sm text-muted-foreground">Layout</span>
+        <span className="text-sm font-medium text-foreground">Layout</span>
         <Select
           value={settings.readerLayout}
           onValueChange={(value) => {
@@ -70,53 +70,55 @@ export function ReaderDefaultsControls() {
         </Select>
       </div>
 
-      <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
-        <span className="text-sm text-muted-foreground">Font</span>
-        <Select
-          value={settings.fontFamily}
-          onValueChange={(value) => {
-            if (value !== null) updateSettings({ fontFamily: value });
-          }}
-        >
-          <SelectTrigger aria-label="Reader font" className="w-56 max-sm:w-full">
-            <SelectValue placeholder="Select font" />
-          </SelectTrigger>
-          <SelectContent align="end" alignItemWithTrigger={false}>
-            {fontSections.map((section) => (
-              <SelectGroup key={section.label}>
-                <SelectLabel>{section.label}</SelectLabel>
-                {section.options.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
+          <span className="text-sm font-medium text-foreground">Font</span>
+          <Select
+            value={settings.fontFamily}
+            onValueChange={(value) => {
+              if (value !== null) updateSettings({ fontFamily: value });
+            }}
+          >
+            <SelectTrigger aria-label="Reader font" className="w-56 max-sm:w-full">
+              <SelectValue placeholder="Select font" />
+            </SelectTrigger>
+            <SelectContent align="end" alignItemWithTrigger={false}>
+              {fontSections.map((section) => (
+                <SelectGroup key={section.label}>
+                  <SelectLabel>{section.label}</SelectLabel>
+                  {section.options.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <StepperControl
+          label="Font Size"
+          displayValue={`${settings.fontSize}%`}
+          onDecrement={() => updateSettings({ fontSize: Math.max(75, settings.fontSize - 5) })}
+          onIncrement={() => updateSettings({ fontSize: Math.min(200, settings.fontSize + 5) })}
+        />
+
+        <StepperControl
+          label="Line Height"
+          displayValue={settings.lineHeight.toFixed(1)}
+          onDecrement={() =>
+            updateSettings({
+              lineHeight: Math.max(1.0, Math.round((settings.lineHeight - 0.1) * 10) / 10),
+            })
+          }
+          onIncrement={() =>
+            updateSettings({
+              lineHeight: Math.min(2.5, Math.round((settings.lineHeight + 0.1) * 10) / 10),
+            })
+          }
+        />
       </div>
-
-      <StepperControl
-        label="Font Size"
-        displayValue={`${settings.fontSize}%`}
-        onDecrement={() => updateSettings({ fontSize: Math.max(75, settings.fontSize - 5) })}
-        onIncrement={() => updateSettings({ fontSize: Math.min(200, settings.fontSize + 5) })}
-      />
-
-      <StepperControl
-        label="Line Height"
-        displayValue={settings.lineHeight.toFixed(1)}
-        onDecrement={() =>
-          updateSettings({
-            lineHeight: Math.max(1.0, Math.round((settings.lineHeight - 0.1) * 10) / 10),
-          })
-        }
-        onIncrement={() =>
-          updateSettings({
-            lineHeight: Math.min(2.5, Math.round((settings.lineHeight + 0.1) * 10) / 10),
-          })
-        }
-      />
     </div>
   );
 }

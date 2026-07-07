@@ -29,11 +29,11 @@ export function UpdatesSection() {
   }
 
   return (
-    <section>
+    <section className="flex flex-col gap-6">
       <div className="flex items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
         <div>
-          <span className="block text-sm font-medium">Updates</span>
-          <span className="text-xs text-muted-foreground">
+          <span className="block text-sm font-medium text-foreground">App updates</span>
+          <span className="mt-1 block text-sm text-muted-foreground">
             Last checked:{" "}
             {lastUpdateCheck
               ? lastUpdateCheck.toLocaleTimeString([], {
