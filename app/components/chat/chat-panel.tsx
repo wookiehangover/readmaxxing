@@ -133,7 +133,10 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       try {
         // Check if book exists first to avoid trying to load chat for deleted books
         const book = await AppRuntime.runPromise(
-          BookService.pipe(Effect.andThen((s) => s.getBook(bookId))),
+          BookService.pipe(
+            Effect.andThen((s) => s.getBook(bookId)),
+            Effect.catchTag("BookNotFoundError", () => Effect.succeed(null)),
+          ),
         );
 
         if (cancelled) return;

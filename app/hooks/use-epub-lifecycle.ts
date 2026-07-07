@@ -872,6 +872,10 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       }
     };
     document.addEventListener("keydown", handleKeyDown);
+    // Flush the debounced position save on refresh/close — without this a
+    // page turn within the debounce window is lost, and the server's older
+    // position wins LWW on the next pull.
+    window.addEventListener("pagehide", flushPositionSave);
 
     init().catch((err) => {
       unregisterActiveReader(bookId);
@@ -881,6 +885,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     return () => {
       cancelled = true;
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("pagehide", flushPositionSave);
       flushPositionSave();
       clearNavigationInProgress();
       unregisterActiveReader(bookId);

@@ -314,10 +314,15 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       }
     };
     document.addEventListener("keydown", handleKeyDown);
+    // Flush the debounced position save on refresh/close — without this a
+    // page turn within the debounce window is lost, and the server's older
+    // position wins LWW on the next pull.
+    window.addEventListener("pagehide", flushPositionSave);
 
     return () => {
       cancelled = true;
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("pagehide", flushPositionSave);
       flushPositionSave();
       unregisterActiveReader(bookId);
       setToc([]);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Effect } from "effect";
-import type { DockviewApi, DockviewReadyEvent, SerializedDockview } from "dockview";
+import type { DockviewApi, DockviewReadyEvent } from "dockview";
 import type { FocusedCluster } from "~/hooks/use-focused-mode";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { clampFocusedSplitRatio, type LayoutMode, type Settings } from "~/lib/settings";
@@ -17,32 +17,19 @@ const FOCUSED_BOOK_GROUP_CLASS = "dv-focused-book-group";
 type WorkspaceContext = ReturnType<typeof useWorkspace>;
 
 /**
- * Sanitize a dockview layout by removing panels for books that no longer exist.
- * This prevents empty/broken panels from being restored when a layout references
- * deleted books.
+ * Remove restored panels whose bookId no longer exists. Runs after a
+ * successful `fromJSON` restore — mutating the serialized layout up front
+ * would leave dangling panel ids in the grid/views tree and make dockview
+ * revert the entire restore.
  */
-function sanitizeLayout(
-  layout: SerializedDockview,
-  existingBookIds: Set<string>,
-): SerializedDockview {
-  const { panels, ...rest } = layout;
-  const sanitized = { ...panels };
-
-  for (const [key, value] of Object.entries(panels)) {
-    const panelData = value as any;
-    const params = panelData?.params as Record<string, unknown> | undefined;
-    const bookId = params?.bookId;
-
-    // Remove panels that:
-    // 1. Have a bookId parameter
-    // 2. That bookId no longer exists in the books list
-    if (bookId && !existingBookIds.has(String(bookId))) {
-      delete sanitized[key];
-      console.log(`[workspace] Removed orphaned panel ${key} for deleted book ${bookId}`);
+function removeOrphanedPanels(api: DockviewApi, existingBookIds: Set<string>): void {
+  for (const panel of api.panels) {
+    const bookId = (panel.params as Record<string, unknown> | undefined)?.bookId;
+    if (typeof bookId === "string" && !existingBookIds.has(bookId)) {
+      console.log(`[workspace] Removed orphaned panel ${panel.id} for deleted book ${bookId}`);
+      api.removePanel(panel);
     }
   }
-
-  return { ...rest, panels: sanitized };
 }
 
 export interface UseWorkspaceLayoutParams {
@@ -274,10 +261,8 @@ export function useWorkspaceLayout({
           const hasFocusedRestore = mode === "focused" && focusedOrderRef.current.length > 0;
           if (layout && !hasFocusedRestore) {
             try {
-              // Sanitize layout to remove panels for deleted books
-              const existingBookIds = new Set(books.map((b) => b.id));
-              const sanitized = sanitizeLayout(layout, existingBookIds);
-              event.api.fromJSON(sanitized);
+              event.api.fromJSON(layout);
+              removeOrphanedPanels(event.api, new Set(books.map((b) => b.id)));
             } catch (err) {
               console.error("Failed to restore dockview layout:", err);
             }
@@ -514,10 +499,8 @@ export function useWorkspaceLayout({
           if (token !== modeSwitchTokenRef.current) return;
           if (saved) {
             try {
-              // Sanitize layout to remove panels for deleted books
-              const existingBookIds = new Set(books.map((b) => b.id));
-              const sanitized = sanitizeLayout(saved, existingBookIds);
-              api.fromJSON(sanitized);
+              api.fromJSON(saved);
+              removeOrphanedPanels(api, new Set(books.map((b) => b.id)));
             } catch (err) {
               console.error("Failed to restore dockview layout for mode:", layoutMode, err);
             }

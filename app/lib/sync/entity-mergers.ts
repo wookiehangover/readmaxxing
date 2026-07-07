@@ -128,18 +128,7 @@ export async function mergePositionRecord(record: Record<string, unknown>): Prom
 
   const merged = lwwMerge(local as { updatedAt: number }, localRecord as { updatedAt: number });
   if (merged === localRecord) {
-    // Additional safety check: only write remote position if it's significantly
-    // different (>5 seconds) from local to avoid overwriting a position that was
-    // just saved during page refresh or right before sync pull.
-    const localTime = (local as { updatedAt: number }).updatedAt;
-    const remoteTime = (localRecord as { updatedAt: number }).updatedAt;
-    const timeDiff = Math.abs(remoteTime - localTime);
-
-    // If timestamps are within 5 seconds, keep local position to avoid race conditions
-    // during app startup or right after navigation
-    if (timeDiff >= 5000) {
-      await set(id, localRecord, store);
-    }
+    await set(id, localRecord, store);
   }
 }
 
