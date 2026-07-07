@@ -180,7 +180,7 @@ export function WorkspaceSidebar({
   return (
     <aside
       className={cn(
-        "flex h-full shrink-0 flex-col bg-card transition-[width] duration-200 ease-in-out",
+        "flex h-full shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-in-out",
         { "w-14": collapsed, "w-64": !collapsed },
       )}
     >
