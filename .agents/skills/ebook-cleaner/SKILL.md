@@ -18,12 +18,12 @@ Use this skill to improve a user-provided EPUB while preserving the work's text 
 3. Run `scripts/inspect_epub.py "<source.epub>"` to identify package path, EPUB version, metadata, spine, nav/NCX state, assets, and likely converter artifacts.
 4. Decide the cleanup path:
 
-| Source shape | Use this path |
-|---|---|
-| One large Google Docs/Word XHTML export | split front matter and chapters; replace inline/remote CSS; rebuild nav and OPF |
-| Existing section/chapter files with EPUB 2 OPF/NCX | preserve section files; add EPUB 3 nav; rebuild OPF metadata/manifest/spine; keep NCX for compatibility |
-| Already valid EPUB 3 with minor issues | make targeted edits only; avoid full restructure |
-| Image-only or DRM/encrypted EPUB | stop and report limits; do not OCR or bypass access unless explicitly requested and lawful tools are available |
+| Source shape                                       | Use this path                                                                                                  |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| One large Google Docs/Word XHTML export            | split front matter and chapters; replace inline/remote CSS; rebuild nav and OPF                                |
+| Existing section/chapter files with EPUB 2 OPF/NCX | preserve section files; add EPUB 3 nav; rebuild OPF metadata/manifest/spine; keep NCX for compatibility        |
+| Already valid EPUB 3 with minor issues             | make targeted edits only; avoid full restructure                                                               |
+| Image-only or DRM/encrypted EPUB                   | stop and report limits; do not OCR or bypass access unless explicitly requested and lawful tools are available |
 
 ## Cleanup Rules
 
@@ -50,10 +50,10 @@ Use this skill to improve a user-provided EPUB while preserving the work's text 
 
 ## Script Contracts
 
-| Script | Arguments | Output | Use |
-|---|---|---|---|
-| `scripts/inspect_epub.py` | `<source.epub>` | JSON summary | First inspection and cleanup path selection |
-| `scripts/validate_epub.py` | `<finished.epub>` | `OK` or error list; exit nonzero on failure | Required validation before delivery |
+| Script                     | Arguments         | Output                                      | Use                                         |
+| -------------------------- | ----------------- | ------------------------------------------- | ------------------------------------------- |
+| `scripts/inspect_epub.py`  | `<source.epub>`   | JSON summary                                | First inspection and cleanup path selection |
+| `scripts/validate_epub.py` | `<finished.epub>` | `OK` or error list; exit nonzero on failure | Required validation before delivery         |
 
 If a script fails because the input is malformed, inspect manually with `unzip`, `sed`, and Python XML parsing. If validation finds broken references, missing manifest files, compressed `mimetype`, or XML parse errors, fix and rebuild before claiming completion.
 
