@@ -5,11 +5,11 @@ export function ReadingSection() {
   return (
     <section className="flex flex-col gap-10">
       <div>
-        <h3 className="mb-4 text-base font-semibold tracking-tight text-foreground">EPUB</h3>
+        <h3 className="mb-4 text-sm font-medium text-muted-foreground">EPUB</h3>
         <ReaderDefaultsControls />
       </div>
       <div>
-        <h3 className="mb-4 text-base font-semibold tracking-tight text-foreground">PDF</h3>
+        <h3 className="mb-4 text-sm font-medium text-muted-foreground">PDF</h3>
         <PdfDefaultsControls />
       </div>
     </section>
