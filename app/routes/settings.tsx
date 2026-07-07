@@ -49,7 +49,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-dvh bg-background">
-      <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col md:flex-row">
+      <div className="flex min-h-dvh w-full flex-col md:flex-row">
         <aside className="flex shrink-0 flex-col border-b bg-sidebar px-4 py-4 md:sticky md:top-0 md:h-dvh md:w-64 md:border-r md:border-b-0 md:px-5">
           <Link
             to="/"
