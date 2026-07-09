@@ -174,4 +174,26 @@ describe("savePositionDualKey", () => {
     expect(saved).toHaveLength(2);
     expect(saved.every((s) => s.cfi === cfi)).toBe(true);
   });
+
+  it("can make both book and panel saves local-only", async () => {
+    const savePosition = vi
+      .fn<(key: string, cfi: string, options?: { recordChange?: boolean }) => Promise<void>>()
+      .mockResolvedValue(undefined);
+
+    await savePositionDualKey({
+      panelId: "panel-3",
+      bookId: "book-3",
+      cfi: "epubcfi(/6/90)",
+      recordChange: false,
+      savePosition,
+    });
+
+    expect(savePosition).toHaveBeenCalledTimes(2);
+    expect(savePosition).toHaveBeenNthCalledWith(1, "book-3", "epubcfi(/6/90)", {
+      recordChange: false,
+    });
+    expect(savePosition).toHaveBeenNthCalledWith(2, "panel-3", "epubcfi(/6/90)", {
+      recordChange: false,
+    });
+  });
 });

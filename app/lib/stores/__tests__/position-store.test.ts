@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createStore, set as idbSet } from "idb-keyval";
 import { Effect } from "effect";
 
@@ -85,10 +85,6 @@ describe("savePosition", () => {
     vi.mocked(recordChange).mockClear();
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   it("saves and retrieves a position with updatedAt timestamp", async () => {
     const { service } = createTestStore();
 
@@ -169,16 +165,10 @@ describe("savePosition", () => {
   });
 
   it("keeps rapid local-only relocations in IDB and records one debounced changelog", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     const { service } = createTestStore();
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let pendingSync: Promise<void> | null = null;
+    let debouncedCfi = "";
     const scheduleChangelog = (cfi: string) => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        pendingSync = Effect.runPromise(service.savePosition("book-11", cfi));
-      }, 1000);
+      debouncedCfi = cfi;
     };
 
     await Effect.runPromise(
@@ -187,7 +177,6 @@ describe("savePosition", () => {
     scheduleChangelog("epubcfi(/6/11)");
     expect(await Effect.runPromise(service.getPosition("book-11"))).toBe("epubcfi(/6/11)");
 
-    vi.setSystemTime(new Date("2026-01-01T00:00:00.100Z"));
     await Effect.runPromise(
       service.savePosition("book-11", "epubcfi(/6/12)", { recordChange: false }),
     );
@@ -195,8 +184,7 @@ describe("savePosition", () => {
     expect(await Effect.runPromise(service.getPosition("book-11"))).toBe("epubcfi(/6/12)");
     expect(recordChange).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(1000);
-    await pendingSync;
+    await Effect.runPromise(service.savePosition("book-11", debouncedCfi));
 
     expect(recordChange).toHaveBeenCalledTimes(1);
     expect(recordChange).toHaveBeenCalledWith(
