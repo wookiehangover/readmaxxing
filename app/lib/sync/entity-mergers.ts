@@ -121,10 +121,7 @@ export async function mergePositionRecord(record: Record<string, unknown>): Prom
     return;
   }
 
-  const merged = lwwMerge(
-    existingRemote as { cfi: string; updatedAt: number },
-    remotePosition,
-  );
+  const merged = lwwMerge(existingRemote as { cfi: string; updatedAt: number }, remotePosition);
   if (merged === remotePosition) {
     await set(id, remotePosition, store);
     notifyPositionUpdated();

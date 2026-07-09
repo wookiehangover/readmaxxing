@@ -129,9 +129,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
         recordChange: false,
         savePosition: (key, val, options) =>
           AppRuntime.runPromise(
-            ReadingPositionService.pipe(
-              Effect.andThen((s) => s.savePosition(key, val, options)),
-            ),
+            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val, options))),
           ),
       }).catch((err) => console.error("Failed to save local PDF position:", err));
 
