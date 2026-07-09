@@ -163,4 +163,39 @@ describe("savePosition", () => {
     const cfi = await Effect.runPromise(service.getPosition("book-10"));
     expect(cfi).toBe("epubcfi(/6/11)");
   });
+
+  it("keeps rapid local-only relocations in IDB and records one debounced changelog", async () => {
+    const { service } = createTestStore();
+    let debouncedCfi = "";
+    const scheduleChangelog = (cfi: string) => {
+      debouncedCfi = cfi;
+    };
+
+    await Effect.runPromise(
+      service.savePosition("book-11", "epubcfi(/6/11)", { recordChange: false }),
+    );
+    scheduleChangelog("epubcfi(/6/11)");
+    expect(await Effect.runPromise(service.getPosition("book-11"))).toBe("epubcfi(/6/11)");
+
+    await Effect.runPromise(
+      service.savePosition("book-11", "epubcfi(/6/12)", { recordChange: false }),
+    );
+    scheduleChangelog("epubcfi(/6/12)");
+    expect(await Effect.runPromise(service.getPosition("book-11"))).toBe("epubcfi(/6/12)");
+    expect(recordChange).not.toHaveBeenCalled();
+
+    await Effect.runPromise(service.savePosition("book-11", debouncedCfi));
+
+    expect(recordChange).toHaveBeenCalledTimes(1);
+    expect(recordChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity: "position",
+        entityId: "book-11",
+        data: expect.objectContaining({ cfi: "epubcfi(/6/12)" }),
+      }),
+    );
+
+    await Effect.runPromise(service.savePosition("book-11", "epubcfi(/6/12)"));
+    expect(recordChange).toHaveBeenCalledTimes(1);
+  });
 });

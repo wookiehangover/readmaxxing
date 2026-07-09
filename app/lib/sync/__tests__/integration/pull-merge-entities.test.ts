@@ -7,6 +7,7 @@ import type { SyncPullResponse } from "../../types";
 // names ever change in production, this harness must be updated to match.
 const bookStore = createStore("ebook-reader-db", "books");
 const positionStore = createStore("ebook-reader-positions", "positions");
+const remotePositionStore = createStore("ebook-reader-remote-positions", "positions");
 const highlightStore = createStore("ebook-reader-highlights", "highlights");
 const notebookStore = createStore("ebook-reader-notebooks", "notebooks");
 const chatSessionStore = createStore("ebook-reader-chat-sessions", "sessions");
@@ -18,6 +19,7 @@ beforeEach(async () => {
   await Promise.all([
     clear(bookStore),
     clear(positionStore),
+    clear(remotePositionStore),
     clear(highlightStore),
     clear(notebookStore),
     clear(chatSessionStore),
@@ -147,9 +149,11 @@ describe("integration: pull merge applies mergers for every entity group", () =>
       remoteCoverUrl: "https://example.test/cover.jpg",
     });
 
-    // position merger (LWW)
+    // position merger writes pulled positions to the remote store only.
     const pos = await get<Record<string, unknown>>("book-1", positionStore);
-    expect(pos).toMatchObject({ id: "book-1", cfi: "epubcfi(/6/2)" });
+    expect(pos).toBeUndefined();
+    const remotePos = await get<Record<string, unknown>>("book-1", remotePositionStore);
+    expect(remotePos).toMatchObject({ cfi: "epubcfi(/6/2)" });
 
     // highlight merger (set-union)
     const hl = await get<Record<string, unknown>>("hl-1", highlightStore);
