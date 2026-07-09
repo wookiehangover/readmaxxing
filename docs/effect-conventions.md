@@ -68,7 +68,7 @@ Run effects through `AppRuntime.runPromise(...)` at call sites (route loaders, e
 
 Handle errors in the Effect pipeline, not after `runPromise`.
 
-- Use `Effect.catchAll` / `Effect.catchTag` _before_ `runPromise`, not `try/catch` after:
+- Use `Effect.catchAll` / `Effect.catchTag` *before* `runPromise`, not `try/catch` after:
   ```ts
   Effect.catchTag("BookNotFoundError", () =>
     Effect.die(new Response("Book not found", { status: 404 })),

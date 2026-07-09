@@ -7,13 +7,11 @@ Provide a repeatable workflow for cleaning user-provided EPUB files using Standa
 ## Scope
 
 In scope:
-
 - EPUB inspection, extraction, repair, rebuilding, validation, and delivery.
 - Google Docs/Word, Calibre, Fb2epub, EPUB 2, and lightly malformed EPUB cleanup.
 - Project-local output creation and approved moves/replacements outside the workspace.
 
 Out of scope:
-
 - DRM removal or access bypass.
 - Fetching replacement ebook copies.
 - AI-generated descriptions, summaries, subjects, reviews, or invented publication metadata.
@@ -35,19 +33,16 @@ Out of scope:
 ## Source And Evidence Model
 
 Authoritative sources:
-
 - Standard Ebooks production guidance.
 - EPUB container/package/nav rules as enforced by XML parsing and link/manifest checks.
 - Local examples from the ebook-cleaning thread that produced the first two working transformations.
 
 Useful improvement sources:
-
 - positive examples: successfully cleaned Google Docs-export EPUB and EPUB 2/Fb2epub-style memoir.
 - negative examples: broken `href="#"` nav, single-entry NCX, remote font imports, converter metadata, missing/unused manifest items.
 - validation results: built-in script output plus optional `epubcheck` or Standard Ebooks CLI output.
 
 Data that must not be stored:
-
 - private ebook contents beyond minimal diagnostic snippets.
 - user-specific iCloud/download paths in runtime guidance.
 - credentials, library account data, or DRM-related details.

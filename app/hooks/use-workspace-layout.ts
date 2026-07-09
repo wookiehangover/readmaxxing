@@ -23,7 +23,9 @@ type WorkspaceContext = ReturnType<typeof useWorkspace>;
  * revert the entire restore.
  */
 function removeOrphanedPanels(api: DockviewApi, existingBookIds: Set<string>): void {
-  for (const panel of api.panels) {
+  // Snapshot before removing — api.panels is recomputed per access.
+  const panels = Array.from(api.panels);
+  for (const panel of panels) {
     const bookId = (panel.params as Record<string, unknown> | undefined)?.bookId;
     if (typeof bookId === "string" && !existingBookIds.has(bookId)) {
       console.log(`[workspace] Removed orphaned panel ${panel.id} for deleted book ${bookId}`);
@@ -87,6 +89,10 @@ export function useWorkspaceLayout({
   // restore resolves, `focusedOrderRef` is empty/partial; saving in that window
   // would clobber the persisted multi-book focused state with an empty one.
   const layoutReadyRef = useRef(false);
+  // `onReady` and the mode-switch effect intentionally omit `books` from their
+  // deps; read the current book ids through a ref to avoid stale closures.
+  const existingBookIdsRef = useRef(new Set<string>());
+  existingBookIdsRef.current = new Set(books.map((b) => b.id));
 
   const serializeFocusedState = useCallback((): FocusedWorkspaceState => {
     const order = focusedOrderRef.current.filter((bookId) =>
@@ -262,7 +268,7 @@ export function useWorkspaceLayout({
           if (layout && !hasFocusedRestore) {
             try {
               event.api.fromJSON(layout);
-              removeOrphanedPanels(event.api, new Set(books.map((b) => b.id)));
+              removeOrphanedPanels(event.api, existingBookIdsRef.current);
             } catch (err) {
               console.error("Failed to restore dockview layout:", err);
             }
@@ -500,7 +506,7 @@ export function useWorkspaceLayout({
           if (saved) {
             try {
               api.fromJSON(saved);
-              removeOrphanedPanels(api, new Set(books.map((b) => b.id)));
+              removeOrphanedPanels(api, existingBookIdsRef.current);
             } catch (err) {
               console.error("Failed to restore dockview layout for mode:", layoutMode, err);
             }
