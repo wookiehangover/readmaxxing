@@ -10,6 +10,7 @@ import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-
 import type { TocEntry } from "~/lib/context/reader-context";
 import { isEditableElement } from "~/lib/dom-utils";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
+import { usePositionNudge } from "~/hooks/use-position-nudge";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
@@ -91,6 +92,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
+  const [hasRestoredPosition, setHasRestoredPosition] = useState(false);
 
   const pdfDocRef = useRef<any>(null);
   const viewerRef = useRef<any>(null);
@@ -165,11 +167,28 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     if (viewer) viewer.previousPage();
   }, []);
 
+  const navigateToPosition = useCallback(
+    (cfi: string) => {
+      const match = /^page:([0-9]+)$/.exec(cfi);
+      if (!match) return;
+      goToPage(Number(match[1]));
+    },
+    [goToPage],
+  );
+
+  usePositionNudge({
+    bookId,
+    enabled: enabled && hasRestoredPosition,
+    navigateToPosition,
+  });
+
   // Main lifecycle effect — create PDFViewer and load document
   useEffect(() => {
     if (!enabled) return;
     const el = containerRef.current;
     if (!el) return;
+
+    setHasRestoredPosition(false);
 
     let cancelled = false;
     registerActiveReader(bookId);
@@ -286,6 +305,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
             }
             latestPageRef.current = startPage;
             setCurrentPage(startPage);
+            setHasRestoredPosition(true);
           })
           .catch((err) => console.error("Failed to restore PDF position:", err));
       });
@@ -349,6 +369,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       flushPositionSave();
       unregisterActiveReader(bookId);
       setToc([]);
+      setHasRestoredPosition(false);
       configRef.current.onCleanupToc?.();
 
       // Cleanup viewer

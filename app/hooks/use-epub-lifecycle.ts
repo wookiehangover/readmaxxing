@@ -13,6 +13,7 @@ import { resolveTheme } from "~/lib/settings";
 import type { ReaderLayout, Theme, TextAlign } from "~/lib/settings";
 import { isEditableElement } from "~/lib/dom-utils";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
+import { usePositionNudge } from "~/hooks/use-position-nudge";
 import {
   registerThemeColors,
   getThemeColorCss,
@@ -407,6 +408,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   const [bookProgress, setBookProgress] = useState(0);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
+  const [hasRestoredPosition, setHasRestoredPosition] = useState(false);
 
   const layoutRef = useRef(readerLayout);
   layoutRef.current = readerLayout;
@@ -516,11 +518,19 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     [bookId, bookRef, clearNavigationInProgress, markNavigationInProgress, renditionRef, toc],
   );
 
+  usePositionNudge({
+    bookId,
+    enabled: enabled && hasRestoredPosition,
+    navigateToPosition: navigateToCfi,
+  });
+
   // Main epub lifecycle effect
   useEffect(() => {
     if (!enabled) return;
     const el = containerRef.current;
     if (!el) return;
+
+    setHasRestoredPosition(false);
 
     registerActiveReader(bookId);
 
@@ -684,6 +694,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           ),
       });
       await rendition.display(startCfi || undefined);
+      if (!cancelled) setHasRestoredPosition(true);
 
       // Populate chatContextMap eagerly
       if (configRef.current.chatContextMap) {
@@ -913,6 +924,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       clearNavigationInProgress();
       unregisterActiveReader(bookId);
       setToc([]);
+      setHasRestoredPosition(false);
       setCurrentChapterLabel(null);
       configRef.current.onCleanupToc?.();
       if (rendition) rendition.destroy();
