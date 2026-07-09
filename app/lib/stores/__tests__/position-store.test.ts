@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStore, set as idbSet } from "idb-keyval";
 import { Effect } from "effect";
 
@@ -85,6 +85,10 @@ describe("savePosition", () => {
     vi.mocked(recordChange).mockClear();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("saves and retrieves a position with updatedAt timestamp", async () => {
     const { service } = createTestStore();
 
@@ -162,5 +166,48 @@ describe("savePosition", () => {
     expect(recordChange).toHaveBeenCalledTimes(2);
     const cfi = await Effect.runPromise(service.getPosition("book-10"));
     expect(cfi).toBe("epubcfi(/6/11)");
+  });
+
+  it("keeps rapid local-only relocations in IDB and records one debounced changelog", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const { service } = createTestStore();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let pendingSync: Promise<void> | null = null;
+    const scheduleChangelog = (cfi: string) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        pendingSync = Effect.runPromise(service.savePosition("book-11", cfi));
+      }, 1000);
+    };
+
+    await Effect.runPromise(
+      service.savePosition("book-11", "epubcfi(/6/11)", { recordChange: false }),
+    );
+    scheduleChangelog("epubcfi(/6/11)");
+    expect(await Effect.runPromise(service.getPosition("book-11"))).toBe("epubcfi(/6/11)");
+
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.100Z"));
+    await Effect.runPromise(
+      service.savePosition("book-11", "epubcfi(/6/12)", { recordChange: false }),
+    );
+    scheduleChangelog("epubcfi(/6/12)");
+    expect(await Effect.runPromise(service.getPosition("book-11"))).toBe("epubcfi(/6/12)");
+    expect(recordChange).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await pendingSync;
+
+    expect(recordChange).toHaveBeenCalledTimes(1);
+    expect(recordChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entity: "position",
+        entityId: "book-11",
+        data: expect.objectContaining({ cfi: "epubcfi(/6/12)" }),
+      }),
+    );
+
+    await Effect.runPromise(service.savePosition("book-11", "epubcfi(/6/12)"));
+    expect(recordChange).toHaveBeenCalledTimes(1);
   });
 });

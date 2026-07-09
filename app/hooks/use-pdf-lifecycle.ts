@@ -106,7 +106,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     const page = latestPageRef.current;
     if (page > 0) {
       savePositionDualKey({
-        panelId,
+        panelId: undefined,
         bookId,
         cfi: `page:${page}`,
         savePosition: (key, val, options) =>
@@ -115,15 +115,28 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
           ),
       }).catch((err) => console.error("Failed to flush PDF position:", err));
     }
-  }, [bookId, panelId]);
+  }, [bookId]);
 
   const savePositionDebounced = useCallback(
     (page: number) => {
       latestPageRef.current = page;
+      savePositionDualKey({
+        panelId: configRef.current.panelId,
+        bookId,
+        cfi: `page:${page}`,
+        recordChange: false,
+        savePosition: (key, val, options) =>
+          AppRuntime.runPromise(
+            ReadingPositionService.pipe(
+              Effect.andThen((s) => s.savePosition(key, val, options)),
+            ),
+          ),
+      }).catch((err) => console.error("Failed to save local PDF position:", err));
+
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
         savePositionDualKey({
-          panelId: configRef.current.panelId,
+          panelId: undefined,
           bookId,
           cfi: `page:${page}`,
           savePosition: (key, val, options) =>

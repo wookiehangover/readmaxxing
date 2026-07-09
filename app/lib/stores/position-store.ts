@@ -68,28 +68,46 @@ export interface PositionServiceStores {
 
 export function makePositionService(stores: PositionServiceStores): ReadingPositionService["Type"] {
   const { positionStore } = stores;
+  const pendingLocalOnlyChanges = new Map<string, PositionRecord>();
+
+  const enqueuePositionChange = (bookId: string, record: PositionRecord) => {
+    recordChange({
+      entity: "position",
+      entityId: bookId,
+      operation: "put",
+      data: record,
+      timestamp: record.updatedAt,
+    }).catch(console.error);
+  };
+
   return {
     savePosition: (bookId: string, cfi: string, options?: SavePositionOptions) =>
       Effect.tryPromise({
         try: async () => {
+          const shouldRecordChange = options?.recordChange !== false;
           // Short-circuit no-op writes: if the stored CFI matches exactly,
-          // skip both the IDB write and the sync changelog entry. Without
-          // this, a stuck `relocated` event source (e.g. a visibility /
-          // dimensions cycle) can enqueue one identical position change per
-          // debounce interval and drive /api/sync/push in a loop.
+          // skip the IDB write, and only record a sync changelog when this
+          // matches a pending local-only save. Without this, a stuck
+          // `relocated` event source (e.g. a visibility / dimensions cycle)
+          // can enqueue one identical position change per debounce interval
+          // and drive /api/sync/push in a loop.
           const existing = migratePosition(await get<unknown>(bookId, positionStore));
-          if (existing && existing.cfi === cfi) return;
+          if (existing && existing.cfi === cfi) {
+            const pending = pendingLocalOnlyChanges.get(bookId);
+            if (shouldRecordChange && pending?.cfi === cfi) {
+              pendingLocalOnlyChanges.delete(bookId);
+              enqueuePositionChange(bookId, pending);
+            }
+            return;
+          }
 
           const record: PositionRecord = { cfi, updatedAt: Date.now() };
           await set(bookId, record, positionStore);
-          if (options?.recordChange !== false) {
-            recordChange({
-              entity: "position",
-              entityId: bookId,
-              operation: "put",
-              data: record,
-              timestamp: record.updatedAt,
-            }).catch(console.error);
+          if (shouldRecordChange) {
+            pendingLocalOnlyChanges.delete(bookId);
+            enqueuePositionChange(bookId, record);
+          } else {
+            pendingLocalOnlyChanges.set(bookId, record);
           }
         },
         catch: (cause) => new PositionError({ operation: "savePosition", bookId, cause }),

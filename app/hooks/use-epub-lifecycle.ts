@@ -445,7 +445,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     const cfi = latestCfiRef.current;
     if (cfi) {
       savePositionDualKey({
-        panelId,
+        panelId: undefined,
         bookId,
         cfi,
         savePosition: (key, val, options) =>
@@ -454,7 +454,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           ),
       }).catch((err) => console.error("Failed to flush reading position:", err));
     }
-  }, [bookId, panelId]);
+  }, [bookId]);
 
   const navigateToCfi = useCallback(
     (cfi: string) => {
@@ -820,10 +820,23 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
             });
           }
 
+          savePositionDualKey({
+            panelId: configRef.current.panelId,
+            bookId,
+            cfi: location.start.cfi,
+            recordChange: false,
+            savePosition: (key, val, options) =>
+              AppRuntime.runPromise(
+                ReadingPositionService.pipe(
+                  Effect.andThen((s) => s.savePosition(key, val, options)),
+                ),
+              ),
+          }).catch((err) => console.error("Failed to save local reading position:", err));
+
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
             savePositionDualKey({
-              panelId: configRef.current.panelId,
+              panelId: undefined,
               bookId,
               cfi: location.start.cfi,
               savePosition: (key, val, options) =>
