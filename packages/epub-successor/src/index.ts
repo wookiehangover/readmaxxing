@@ -10,3 +10,5 @@ export type {
   OpenPublicationOptions,
   OpenPublicationResult,
 } from "./epub-parser/publication";
+export { openZipResourceProvider, ZipResourceProvider } from "./resource-loader/resource-loader";
+export type { ResourceProvider } from "./resource-loader/resource-loader";
