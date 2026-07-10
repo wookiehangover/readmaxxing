@@ -125,6 +125,23 @@ function firstTextNode(root: Node): Text | null {
   return walker.nextNode() as Text | null;
 }
 
+function rangeAtTextOffset(document: Document, root: Node, offset: number): Range | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let remaining = offset;
+  let node = walker.nextNode() as Text | null;
+  while (node) {
+    if (remaining <= node.length) {
+      const range = document.createRange();
+      range.setStart(node, remaining);
+      range.collapse(true);
+      return range;
+    }
+    remaining -= node.length;
+    node = walker.nextNode() as Text | null;
+  }
+  return null;
+}
+
 function visibleRange(document: Document): Range {
   const extended = document as Document & {
     caretRangeFromPoint?: (x: number, y: number) => Range | null;
@@ -442,15 +459,12 @@ export function createSuccessorBookAdapter(
       async find(query) {
         if (!document) await this.load();
         if (!document) return [];
-        const text = document.body?.textContent ?? document.documentElement.textContent ?? "";
+        const root = document.body ?? document.documentElement;
+        const text = root.textContent ?? "";
         const offset = text.toLocaleLowerCase().indexOf(query.toLocaleLowerCase());
         if (offset < 0) return [];
-        const node = firstTextNode(document.body ?? document.documentElement);
-        if (!node) return [];
-        const localOffset = Math.min(offset, node.length);
-        const range = document.createRange();
-        range.setStart(node, localOffset);
-        range.collapse(true);
+        const range = rangeAtTextOffset(document, root, offset);
+        if (!range) return [];
         return [
           {
             cfi: generateCfi(range, sectionMetadata(publication, index)),
@@ -477,3 +491,5 @@ export function createSuccessorBookAdapter(
     destroy: () => undefined,
   };
 }
+
+export type SuccessorBookAdapter = ReturnType<typeof createSuccessorBookAdapter>;

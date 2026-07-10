@@ -117,7 +117,6 @@ function readerPreferences(config: UseEpubLifecycleConfig): NavigatorPreferences
       section[class*="colophon"] h2, section[class*="imprint"] h2 {
         position: static !important; left: auto !important;
       }
-      .epubjs-hl { background-color: rgba(255,213,79,.4) !important; cursor: pointer; }
       .search-hl { background-color: rgba(59,130,246,.25) !important; }
       .search-hl-current { background-color: rgba(59,130,246,.6) !important; }
     `,

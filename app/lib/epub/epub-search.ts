@@ -123,7 +123,7 @@ export async function fuzzySearchEpubForCfi(
   try {
     const opened = await openPublication(provider, { signal: options?.signal });
     if (!opened.publication) return [];
-    return fuzzySearchBookForCfi(
+    return await fuzzySearchBookForCfi(
       createSuccessorBookAdapter(opened.publication, provider),
       query,
       options,

@@ -6,21 +6,29 @@ import {
   openZipResourceProvider,
 } from "@readmaxxing/epub-successor";
 import { resolveTocNavigationTarget } from "~/hooks/use-epub-lifecycle";
-import type EpubBook from "epubjs/types/book";
 import type { TocEntry } from "~/lib/context/reader-context";
+import { fuzzySearchEpubForCfi } from "~/lib/epub/epub-search";
+import { extractBookChapters } from "~/lib/epub/epub-text-extract";
 import {
+  createSuccessorBookAdapter,
   parseSuccessorPositionCache,
   serializeSuccessorPositionCache,
   spineIndexFromCfi,
   extractCompatibleToc,
 } from "~/lib/epub/successor-reader-adapter";
+import type { ReaderBookLike } from "~/lib/epub/successor-toc";
 
 interface MockSection {
   href: string;
   index: number;
 }
 
-function createMockBook(hrefs: string[]): EpubBook {
+async function fixtureArrayBuffer(): Promise<ArrayBuffer> {
+  const bytes = await readFile("e2e/fixtures/test-book.epub");
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+function createMockBook(hrefs: string[]): ReaderBookLike {
   const sections = hrefs.map((href, index) => ({ href, index }));
   const byHref = new Map(sections.map((section) => [section.href, section]));
 
@@ -39,7 +47,7 @@ function createMockBook(hrefs: string[]): EpubBook {
         sections.forEach(callback);
       },
     },
-  } as unknown as EpubBook;
+  };
 }
 
 const book = createMockBook([
@@ -103,12 +111,12 @@ describe("resolveTocNavigationTarget", () => {
 });
 
 describe("successor position compatibility", () => {
-  it("extracts the spine index from epubjs-format CFIs", () => {
+  it("extracts the spine index from stored standard CFIs", () => {
     expect(spineIndexFromCfi("epubcfi(/6/2[chapter]!/4/2/2:0)")).toBe(0);
     expect(spineIndexFromCfi("epubcfi(/6/8!/4/2)")).toBe(3);
   });
 
-  it("rejects old epubjs location arrays so they are regenerated", () => {
+  it("rejects legacy location arrays so they are regenerated", () => {
     expect(parseSuccessorPositionCache(JSON.stringify(["epubcfi(/6/2!/4)"]))).toBeNull();
   });
 
@@ -130,10 +138,7 @@ describe("successor position compatibility", () => {
   });
 
   it("extracts the E2E fixture table of contents", async () => {
-    const bytes = await readFile("e2e/fixtures/test-book.epub");
-    const provider = await openZipResourceProvider(
-      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-    );
+    const provider = await openZipResourceProvider(await fixtureArrayBuffer());
     try {
       const opened = await openPublication(provider);
       const toc = opened.publication
@@ -146,5 +151,32 @@ describe("successor position compatibility", () => {
     } finally {
       provider.close();
     }
+  });
+
+  it("searches fixture text and returns a standard CFI", async () => {
+    const data = await fixtureArrayBuffer();
+    const provider = await openZipResourceProvider(data);
+    try {
+      const opened = await openPublication(provider);
+      expect(opened.publication).not.toBeNull();
+      const book = createSuccessorBookAdapter(opened.publication!, provider);
+      const directResults = await book.spine.get(1)!.find("elephant");
+      expect(directResults[0]?.excerpt).toContain("elephant");
+    } finally {
+      provider.close();
+    }
+
+    const results = await fuzzySearchEpubForCfi(data, "elephant");
+    expect(results[0]?.cfi).toMatch(/^epubcfi\(/);
+    expect(spineIndexFromCfi(results[0]!.cfi)).toBe(1);
+  });
+
+  it("extracts logical chapters with the successor parser", async () => {
+    const chapters = await extractBookChapters(await fixtureArrayBuffer());
+    expect(chapters.map(({ title }) => title)).toEqual([
+      "Chapter 1: The Beginning",
+      "Chapter 2: The End",
+    ]);
+    expect(chapters[1]?.text).toContain("elephant appears exactly once");
   });
 });
