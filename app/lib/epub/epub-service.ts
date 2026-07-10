@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Schema } from "effect";
-import ePub from "epubjs";
+import { openPublication, openZipResourceProvider } from "@readmaxxing/epub-successor";
 import { EpubParseError } from "~/lib/errors";
 
 // --- Schema ---
@@ -29,46 +29,51 @@ export const parseEpubEffect = (data: ArrayBuffer) =>
 export const EpubServiceLive = Layer.succeed(EpubService, {
   parseEpub: (data: ArrayBuffer) =>
     Effect.acquireUseRelease(
-      // Acquire: create the book and wait for it to be ready
       Effect.tryPromise({
-        try: async () => {
-          const book = ePub(data);
-          await book.ready;
-          return book;
-        },
+        try: () => openZipResourceProvider(data),
         catch: (cause) => new EpubParseError({ operation: "parseEpub:acquire", cause }),
       }),
-      // Use: extract metadata from the book
-      (book) =>
+      (provider) =>
         Effect.tryPromise({
           try: async () => {
-            const metadata = await book.loaded.metadata;
-            let coverImage: Blob | null = null;
+            const result = await openPublication(provider);
+            if (!result.publication) {
+              throw new Error(
+                result.diagnostics.map(({ message }) => message).join("; ") ||
+                  "EPUB publication could not be parsed",
+              );
+            }
 
-            // Inner try/catch is intentional: cover extraction is a non-fatal fallback.
-            // Not all epubs include cover images, and failures here should not prevent
-            // metadata extraction from succeeding.
+            const { metadata, resources } = result.publication;
+            let coverImage: Blob | null = null;
+            const cover = resources.find(
+              ({ rel, properties }) => rel.includes("cover") || properties.includes("cover-image"),
+            );
             try {
-              const coverHref = await book.loaded.cover;
-              if (coverHref) {
-                const blob = await book.archive.getBlob(coverHref);
-                if (blob && blob.size > 0) {
-                  coverImage = blob;
+              if (cover) {
+                const bytes = await provider.read(cover.href);
+                if (bytes.byteLength > 0) {
+                  coverImage = new Blob([Uint8Array.from(bytes)], {
+                    type: cover.mediaType,
+                  });
                 }
               }
             } catch {
-              // cover may not exist in all epubs — fall through with null
+              // Cover extraction is optional and must not prevent importing the book.
             }
 
             return {
               title: metadata.title || "Untitled",
-              author: metadata.creator || "Unknown Author",
+              author:
+                metadata.authors
+                  .map(({ name }) => name)
+                  .filter(Boolean)
+                  .join(", ") || "Unknown Author",
               coverImage,
             } satisfies EpubMetadata;
           },
           catch: (cause) => new EpubParseError({ operation: "parseEpub:use", cause }),
         }),
-      // Release: always destroy the book, even on error
-      (book) => Effect.sync(() => book.destroy()),
+      (provider) => Effect.sync(() => provider.close()),
     ),
 });

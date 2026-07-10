@@ -35,6 +35,9 @@ importers:
       '@react-router/serve':
         specifier: 7.14.2
         version: 7.14.2(react-router@7.14.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@6.0.3)
+      '@readmaxxing/epub-successor':
+        specifier: workspace:*
+        version: link:packages/epub-successor
       '@simplewebauthn/browser':
         specifier: ^13.3.0
         version: 13.3.0
