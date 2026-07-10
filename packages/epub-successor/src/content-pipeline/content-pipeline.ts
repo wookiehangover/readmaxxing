@@ -20,7 +20,7 @@ const URL_ATTRIBUTES = new Set([
 export const CONTENT_IFRAME_SANDBOX = "allow-same-origin" as const;
 export const CONTENT_SECURITY_POLICY =
   "default-src 'none'; img-src blob:; font-src blob:; media-src blob:; " +
-  "style-src 'unsafe-inline' blob:; connect-src 'none'; " +
+  "style-src 'unsafe-inline' blob:; script-src 'none'; connect-src 'none'; " +
   "object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'";
 
 export const READER_BASE_STYLE_ID = "epub-successor-reader-base-style";
