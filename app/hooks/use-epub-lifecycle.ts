@@ -63,8 +63,8 @@ export interface UseEpubLifecycleConfig {
   lineHeight: number;
   textAlign: TextAlign;
   theme: Theme;
-  loadAndApplyHighlights: (rendition: any) => Promise<void>;
-  registerSelectionHandler: (rendition: any) => void;
+  loadAndApplyHighlights: (rendition: SuccessorRenditionAdapter) => Promise<void>;
+  registerSelectionHandler: (rendition: SuccessorRenditionAdapter) => void;
   enabled?: boolean;
   panelId?: string;
   chatContextMap?: React.MutableRefObject<Map<string, ChatContextEntry>>;

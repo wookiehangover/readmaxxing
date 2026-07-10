@@ -37,6 +37,7 @@ import {
   type BookPreferences,
 } from "~/lib/stores/book-preferences-store";
 import { useSyncListener } from "~/hooks/use-sync-listener";
+import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -194,7 +195,7 @@ function WorkspaceBookReaderInner({
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<import("epubjs/types/book").default | null>(null);
-  const renditionRef = useRef<import("epubjs/types/rendition").default | null>(null);
+  const renditionRef = useRef<SuccessorRenditionAdapter | null>(null);
 
   const [settings] = useSettings();
 
@@ -301,7 +302,8 @@ function WorkspaceBookReaderInner({
     dismissPopovers,
     loadAndApplyHighlights,
     registerSelectionHandler,
-    highlightsRef,
+    removeHighlightDecoration,
+    applyTemporaryHighlight,
   } = useHighlights({
     bookId: book.id,
     renditionRef,
@@ -366,48 +368,21 @@ function WorkspaceBookReaderInner({
     [book.id, bookmarkVersion, bookmarkSyncVersion],
   );
 
-  // Temporary highlight: briefly flash a CFI range in the reader
-  const applyTempHighlight = useCallback((cfi: string) => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-    try {
-      rendition.annotations.highlight(
-        cfi,
-        {},
-        undefined as any,
-        undefined as any,
-        { fill: "rgba(255, 213, 79, 0.4)", "fill-opacity": "0.4" } as any,
-      );
-      setTimeout(() => {
-        try {
-          rendition.annotations.remove(cfi, "highlight");
-        } catch {
-          // annotation may already be gone
-        }
-      }, 3000);
-    } catch {
-      // annotation may already be gone
-    }
-  }, []);
-
   // Register temp highlight callback
   useEffect(() => {
     const id = panelApi?.id ?? book.id;
-    tempHighlightMap.current.set(id, applyTempHighlight);
+    tempHighlightMap.current.set(id, applyTemporaryHighlight);
     return () => {
       tempHighlightMap.current.delete(id);
     };
-  }, [book.id, panelApi, applyTempHighlight, tempHighlightMap]);
+  }, [book.id, panelApi, applyTemporaryHighlight, tempHighlightMap]);
 
-  // Register highlight delete callback so notebooks can remove annotations from rendition
+  // Register highlight delete callback so notebooks can remove reader decorations
   const removeHighlightAnnotation = useCallback(
     (cfiRange: string) => {
-      const rendition = renditionRef.current;
-      if (!rendition) return;
-      rendition.annotations.remove(cfiRange, "highlight");
-      highlightsRef.current.delete(cfiRange);
+      removeHighlightDecoration(cfiRange);
     },
-    [highlightsRef],
+    [removeHighlightDecoration],
   );
 
   useEffect(() => {

@@ -96,6 +96,23 @@ describe("persistent locators", () => {
     expect(resolved?.startContainer.parentElement).toBe(shifted.querySelectorAll("p")[1]);
   });
 
+  it("uses locator text as a quote fallback for legacy CFIs without positions", () => {
+    const original = parseDocument("<p>Alpha target omega</p>");
+    const originalNode = textNode(original, "p");
+    const range = original.createRange();
+    range.setEnd(originalNode, 12);
+    range.setStart(originalNode, 6);
+    const generated = locatorFromRange(range, section());
+    const legacyLocator = {
+      href: generated.href,
+      locations: generated.locations,
+      text: { highlight: "target" },
+    };
+
+    const shifted = parseDocument("<p>Inserted text</p><p>Alpha target omega</p>");
+    expect(resolveLocator(legacyLocator, shifted, section())?.toString()).toBe("target");
+  });
+
   it("uses text positions when neither CFI nor quote resolves", () => {
     const document = parseDocument("<p>Alpha target omega</p>");
     const node = textNode(document, "p");
