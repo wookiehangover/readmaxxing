@@ -392,8 +392,8 @@ export async function rewriteXhtml(
       element.getAttribute("rel")?.toLowerCase().split(/\s+/).includes("stylesheet")
     )
       rewrite("href", true);
-    if (name === "source") {
-      rewrite("src");
+    if (name === "source") rewrite("src");
+    if (name === "img" || name === "source") {
       const srcset = element.getAttribute("srcset");
       if (srcset !== null)
         rewrites.push(
