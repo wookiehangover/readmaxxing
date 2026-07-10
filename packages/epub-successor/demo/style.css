@@ -86,7 +86,10 @@ button {
   background: white;
 }
 #relocation {
-  min-height: 28px;
+  height: 28px;
+  min-width: 0;
+  overflow: auto hidden;
+  white-space: nowrap;
   padding-top: 8px;
   font-family: ui-monospace, monospace;
 }

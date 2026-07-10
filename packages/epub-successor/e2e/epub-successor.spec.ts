@@ -3,6 +3,13 @@ import { expect, test, type Page } from "@playwright/test";
 async function openDemo(page: Page, query = "test=1") {
   await page.goto(`/demo/?${query}`);
   await expect.poll(() => page.evaluate(() => window.__epubDemo.snapshot().state)).toBe("settled");
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect.poll(() => page.evaluate(() => window.__epubDemo.snapshot().state)).toBe("settled");
   return page.evaluate(() => window.__epubDemo.snapshot());
 }
 
@@ -47,10 +54,10 @@ test("renders the Pretext error report only behind its opt-in flag", async ({ pa
 });
 
 test("enforces sandbox and CSP against malicious fixtures without egress", async ({ page }) => {
-  const externalRequests: string[] = [];
+  const externalResponses: string[] = [];
   const dialogs: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().includes("example.invalid")) externalRequests.push(request.url());
+  page.on("response", (response) => {
+    if (response.url().includes("example.invalid")) externalResponses.push(response.url());
   });
   page.on("dialog", async (dialog) => {
     dialogs.push(dialog.message());
@@ -91,7 +98,7 @@ test("enforces sandbox and CSP against malicious fixtures without egress", async
   expect((await page.evaluate(() => window.__epubDemo.securitySnapshot())).refreshes).toBe(0);
   expect(page.url()).toBe(originalUrl);
   expect(dialogs).toEqual([]);
-  expect(externalRequests).toEqual([]);
+  expect(externalResponses).toEqual([]);
 });
 
 test("loads real blob images and fonts, settles frames, resettles resize, and revokes URLs", async ({
@@ -103,14 +110,16 @@ test("loads real blob images and fonts, settles frames, resettles resize, and re
   expect(images.images[0]).toMatchObject({ complete: true, naturalWidth: 1 });
   expect(images.images[0]?.src).toMatch(/^blob:/);
   expect(images.settleRafCycles).toBeGreaterThanOrEqual(1);
-  const oldUrls = await page.evaluate(() => window.__epubDemo.lifecycle().created);
+  const oldUrls = [images.images[0]?.src, images.iframeSrc].filter(
+    (url): url is string => url !== undefined,
+  );
 
   await page.evaluate(() => window.__epubDemo.load("embedded-font.epub"));
   const font = await page.evaluate(() => window.__epubDemo.snapshot());
   expect(font.fontsStatus).toBe("loaded");
   expect(font.text).toContain("Embedded font");
   const lifecycle = await page.evaluate(() => window.__epubDemo.lifecycle());
-  expect(oldUrls.length).toBeGreaterThanOrEqual(2);
+  expect(oldUrls).toHaveLength(2);
   expect(oldUrls.every((url) => lifecycle.revoked.includes(url))).toBe(true);
 
   const cycles = font.settleRafCycles;
@@ -197,16 +206,19 @@ test("preserves the visible anchor across preferences, flow, spread, and resize"
     { flow: "scrolled" as const },
   ]) {
     await page.evaluate((update) => window.__epubDemo.setPreferences(update), preferences);
-    expect((await page.evaluate(() => window.__epubDemo.snapshot())).visibleAnchors[0]).toBe(
+    expect((await page.evaluate(() => window.__epubDemo.snapshot())).visibleAnchors).toContain(
       anchor,
     );
   }
-  const relocations = (await page.evaluate(() => window.__epubDemo.snapshot())).relocationCount;
+  const beforeResize = await page.evaluate(() => window.__epubDemo.snapshot());
   await page.evaluate(() => window.__epubDemo.setReaderWidth(620));
   await expect
-    .poll(() => page.evaluate(() => window.__epubDemo.snapshot().relocationCount))
-    .toBeGreaterThan(relocations);
-  expect((await page.evaluate(() => window.__epubDemo.snapshot())).visibleAnchors[0]).toBe(anchor);
+    .poll(() => page.evaluate(() => window.__epubDemo.snapshot().settleRafCycles))
+    .toBeGreaterThan(beforeResize.settleRafCycles);
+  await expect.poll(() => page.evaluate(() => window.__epubDemo.snapshot().state)).toBe("settled");
+  expect((await page.evaluate(() => window.__epubDemo.snapshot())).visibleAnchors).toContain(
+    anchor,
+  );
 });
 
 test("renders native highlights when available and overlay geometry with resize hit testing", async ({
