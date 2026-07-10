@@ -28,6 +28,7 @@ export type PageProgressionDirection = "default" | "ltr" | "rtl";
 export interface Contributor {
   readonly name: string;
   readonly identifier?: string;
+  readonly roles?: readonly string[];
   readonly sortAs?: string;
 }
 
@@ -51,6 +52,7 @@ export interface Metadata {
 
 export interface Link {
   readonly href: PublicationPath;
+  readonly linear?: boolean;
   readonly mediaType?: MediaType;
   readonly rel: readonly string[];
   readonly properties: readonly string[];
