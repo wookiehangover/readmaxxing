@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import type EpubBook from "epubjs/types/book";
 import { searchBookForCfi, type SearchResult } from "~/lib/epub/epub-search";
+import type { SuccessorBookAdapter } from "~/lib/epub/successor-reader-adapter";
 
 export type { SearchResult } from "~/lib/epub/epub-search";
 
@@ -18,14 +18,16 @@ const DEBOUNCE_MS = 300;
 
 /**
  * Hook that encapsulates epub full-text search across all spine items.
- * Accepts a ref to an epubjs Book instance.
+ * Accepts a ref to the successor-backed book adapter.
  *
  * Usage:
  * ```ts
  * const { search, results, currentIndex, next, prev, clear } = useBookSearch(bookRef);
  * ```
  */
-export function useBookSearch(bookRef: React.RefObject<EpubBook | null>): UseBookSearchReturn {
+export function useBookSearch(
+  bookRef: React.RefObject<SuccessorBookAdapter | null>,
+): UseBookSearchReturn {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isSearching, setIsSearching] = useState(false);

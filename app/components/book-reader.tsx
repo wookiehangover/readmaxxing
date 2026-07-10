@@ -28,7 +28,10 @@ import {
 } from "~/lib/stores/book-preferences-store";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { useSyncListener } from "~/hooks/use-sync-listener";
-import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
+import type {
+  SuccessorBookAdapter,
+  SuccessorRenditionAdapter,
+} from "~/lib/epub/successor-reader-adapter";
 
 interface BookReaderProps {
   book: BookMeta;
@@ -36,7 +39,7 @@ interface BookReaderProps {
 
 export function BookReader({ book }: BookReaderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const bookRef = useRef<import("epubjs/types/book").default | null>(null);
+  const bookRef = useRef<SuccessorBookAdapter | null>(null);
   const renditionRef = useRef<SuccessorRenditionAdapter | null>(null);
 
   const [settings, updateSettings] = useSettings();
