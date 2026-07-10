@@ -19,7 +19,7 @@ const URL_ATTRIBUTES = new Set([
  */
 export const CONTENT_IFRAME_SANDBOX = "allow-same-origin" as const;
 export const CONTENT_SECURITY_POLICY =
-  "default-src 'none'; img-src blob:; font-src blob:; media-src blob:; " +
+  "default-src 'none'; img-src blob:; font-src blob: 'self'; media-src blob:; " +
   "style-src 'unsafe-inline' blob:; script-src 'none'; connect-src 'none'; " +
   "object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'";
 
