@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { readFile } from "node:fs/promises";
+import {
+  normalizePublicationPath,
+  openPublication,
+  openZipResourceProvider,
+} from "@readmaxxing/epub-successor";
 import { resolveTocNavigationTarget } from "~/hooks/use-epub-lifecycle";
 import type EpubBook from "epubjs/types/book";
 import type { TocEntry } from "~/lib/context/reader-context";
+import {
+  parseSuccessorPositionCache,
+  serializeSuccessorPositionCache,
+  spineIndexFromCfi,
+  extractCompatibleToc,
+} from "~/lib/epub/successor-reader-adapter";
 
 interface MockSection {
   href: string;
@@ -87,5 +99,52 @@ describe("resolveTocNavigationTarget", () => {
       kind: "href",
       href: "OPS/text/chapter-2.xhtml",
     });
+  });
+});
+
+describe("successor position compatibility", () => {
+  it("extracts the spine index from epubjs-format CFIs", () => {
+    expect(spineIndexFromCfi("epubcfi(/6/2[chapter]!/4/2/2:0)")).toBe(0);
+    expect(spineIndexFromCfi("epubcfi(/6/8!/4/2)")).toBe(3);
+  });
+
+  it("rejects old epubjs location arrays so they are regenerated", () => {
+    expect(parseSuccessorPositionCache(JSON.stringify(["epubcfi(/6/2!/4)"]))).toBeNull();
+  });
+
+  it("round-trips successor position caches", () => {
+    const positions = [
+      {
+        href: normalizePublicationPath("OPS/chapter.xhtml"),
+        locations: { progression: 0, totalProgression: 0, position: 1 },
+        text: {},
+        selectors: {
+          textQuote: { exact: "" },
+          textPosition: { start: 0, end: 0 },
+        },
+      },
+    ];
+    expect(
+      parseSuccessorPositionCache(serializeSuccessorPositionCache(positions))?.positions,
+    ).toEqual(positions);
+  });
+
+  it("extracts the E2E fixture table of contents", async () => {
+    const bytes = await readFile("e2e/fixtures/test-book.epub");
+    const provider = await openZipResourceProvider(
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    );
+    try {
+      const opened = await openPublication(provider);
+      const toc = opened.publication
+        ? await extractCompatibleToc(opened.publication, provider)
+        : [];
+      expect(
+        toc.map((entry) => entry.title),
+        JSON.stringify(opened.diagnostics),
+      ).toEqual(["Chapter 1: The Beginning", "Chapter 2: The End"]);
+    } finally {
+      provider.close();
+    }
   });
 });
