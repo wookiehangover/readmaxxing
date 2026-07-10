@@ -67,7 +67,7 @@ button {
 }
 .workspace {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-width: 0;
   padding: 12px;
 }
@@ -89,6 +89,29 @@ button {
   min-height: 28px;
   padding-top: 8px;
   font-family: ui-monospace, monospace;
+}
+#pretext-report {
+  max-height: 180px;
+  overflow: auto;
+  padding-top: 8px;
+}
+#pretext-report p {
+  margin: 0 0 4px;
+}
+#pretext-report table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+#pretext-report th,
+#pretext-report td {
+  padding: 3px 6px;
+  border: 1px solid #d6d3d1;
+  text-align: right;
+}
+#pretext-report th:first-child,
+#pretext-report td:first-child {
+  text-align: left;
 }
 #toc {
   padding-left: 20px;
