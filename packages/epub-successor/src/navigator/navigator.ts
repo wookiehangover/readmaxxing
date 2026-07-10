@@ -78,6 +78,9 @@ interface SectionMount {
   removeScrollListener?: () => void;
   scrollFrame?: number;
   pagination?: PaginatedLayoutState;
+  visibleAnchor?: Element;
+  settledWidth?: number;
+  settledHeight?: number;
 }
 
 interface PreparedSection {
@@ -258,7 +261,7 @@ export class Navigator extends EventTarget {
     if (!mount || !signal || signal.aborted || !document || this.#state !== "settled") {
       return this.#relocation;
     }
-    const anchor = captureFirstVisibleElement(document);
+    const anchor = mount.visibleAnchor ?? captureFirstVisibleElement(document);
     this.#setState("settling");
     try {
       await this.#settle(mount, undefined, signal, anchor);
@@ -268,7 +271,7 @@ export class Navigator extends EventTarget {
     }
     if (this.#active !== mount || signal.aborted || this.#destroyed) return this.#relocation;
     this.#setState("settled");
-    return this.#emitRelocation(mount);
+    return this.#emitRelocation(mount, anchor);
   }
 
   destroy(): void {
@@ -387,13 +390,16 @@ export class Navigator extends EventTarget {
       signal,
       timeoutMs: this.#settleTimeoutMs,
     });
+    mount.settledWidth = mount.frame.clientWidth;
+    mount.settledHeight = mount.frame.clientHeight;
     this.#installScrollListener(mount, view);
   }
 
   #installScrollListener(mount: SectionMount, view: Window): void {
     mount.removeScrollListener?.();
     const scroll = () => {
-      if (mount.scrollFrame !== undefined) return;
+      if (this.#active !== mount || this.#state !== "settled" || mount.scrollFrame !== undefined)
+        return;
       mount.scrollFrame = view.requestAnimationFrame(() => {
         mount.scrollFrame = undefined;
         if (this.#active === mount && this.#state === "settled") this.#emitRelocation(mount);
@@ -403,7 +409,7 @@ export class Navigator extends EventTarget {
     mount.removeScrollListener = () => view.removeEventListener("scroll", scroll, true);
   }
 
-  #emitRelocation(mount: SectionMount): Relocation {
+  #emitRelocation(mount: SectionMount, visibleAnchor?: Element): Relocation {
     const document = mount.frame.contentDocument;
     if (!document) throw new Error("Publication section document is inaccessible");
     const scrolling = document.scrollingElement ?? document.documentElement;
@@ -419,6 +425,13 @@ export class Navigator extends EventTarget {
       totalProgression: count === 0 ? 0 : bounded((mount.spineIndex + localProgression) / count),
     };
     this.#relocation = relocation;
+    if (
+      visibleAnchor ||
+      (mount.frame.clientWidth === mount.settledWidth &&
+        mount.frame.clientHeight === mount.settledHeight)
+    ) {
+      mount.visibleAnchor = visibleAnchor ?? captureFirstVisibleElement(document);
+    }
     this.dispatchEvent(new CustomEvent<Relocation>("relocation", { detail: relocation }));
     return relocation;
   }
@@ -431,15 +444,17 @@ export class Navigator extends EventTarget {
       const mount = this.#active;
       const signal = this.#operation?.signal;
       if (!mount || !signal || signal.aborted || this.#destroyed) return;
-      const anchor = mount.frame.contentDocument
-        ? captureFirstVisibleElement(mount.frame.contentDocument)
-        : undefined;
+      const anchor =
+        mount.visibleAnchor ??
+        (mount.frame.contentDocument
+          ? captureFirstVisibleElement(mount.frame.contentDocument)
+          : undefined);
       this.#setState("settling");
       void this.#settle(mount, undefined, signal, anchor)
         .then(() => {
           if (this.#active !== mount || signal.aborted || this.#destroyed) return;
           this.#setState("settled");
-          this.#emitRelocation(mount);
+          this.#emitRelocation(mount, anchor);
         })
         .catch(() => {
           if (this.#active === mount && !signal.aborted && !this.#destroyed)
