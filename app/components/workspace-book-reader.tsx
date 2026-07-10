@@ -37,7 +37,10 @@ import {
   type BookPreferences,
 } from "~/lib/stores/book-preferences-store";
 import { useSyncListener } from "~/hooks/use-sync-listener";
-import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
+import type {
+  SuccessorBookAdapter,
+  SuccessorRenditionAdapter,
+} from "~/lib/epub/successor-reader-adapter";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -194,7 +197,7 @@ function WorkspaceBookReaderInner({
   const isMobile = useIsMobile();
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const bookRef = useRef<import("epubjs/types/book").default | null>(null);
+  const bookRef = useRef<SuccessorBookAdapter | null>(null);
   const renditionRef = useRef<SuccessorRenditionAdapter | null>(null);
 
   const [settings] = useSettings();
@@ -415,8 +418,8 @@ function WorkspaceBookReaderInner({
     };
 
     const resizeAndRestore = () => {
-      // Save the current reading position before resize — epubjs resize()
-      // recalculates pagination and can jump to a different page.
+      // Save the current reading position before resize because relayout can
+      // recalculate pagination and jump to a different page.
       const cfiBeforeResize = latestCfiRef.current;
 
       // Resize in case container dimensions changed, then restore position
@@ -712,7 +715,7 @@ function WorkspaceBookReaderInner({
       try {
         location = rendition?.currentLocation?.();
       } catch {
-        // epubjs may call into an uninitialized internal manager.
+        // The reader may be torn down while a navigation is still settling.
       }
     }
     return (location?.start?.cfi as string | undefined) ?? null;

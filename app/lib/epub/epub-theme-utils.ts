@@ -69,8 +69,7 @@ const IMG_CONTAINMENT_CSS = `img {
 /**
  * Generate a CSS string for the given theme mode that sets body colors and
  * forces color inheritance on common text elements.  This is meant to be
- * injected directly into the epub iframe as a `<style>` element, bypassing
- * epubjs `themes.register()` which can leave its style elements empty.
+ * injected directly into the epub iframe as a `<style>` element.
  */
 export function getThemeColorCss(mode: "light" | "dark"): string {
   const { background, foreground } = resolveThemeColors(mode);
@@ -90,13 +89,14 @@ ${IMG_CONTAINMENT_CSS}
 /**
  * Inject (or update) a `<style id="reader-theme-colors">` element directly
  * into every currently-loaded epub iframe document.  This is the primary
- * mechanism for applying theme colors — it does not rely on epubjs
- * `themes.register()` which can produce empty style elements.
+ * mechanism for applying theme colors.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- epubjs Rendition types are imprecise
-export function injectThemeColors(rendition: any, mode: "light" | "dark") {
+export function injectThemeColors(
+  rendition: { getContents?: () => readonly { document?: Document }[] },
+  mode: "light" | "dark",
+) {
   const css = getThemeColorCss(mode);
-  const contents = (rendition as any).getContents?.() as any[] | undefined;
+  const contents = rendition.getContents?.();
   if (!contents) return;
   for (const content of contents) {
     const doc: Document | undefined = content?.document;
@@ -113,8 +113,7 @@ export function injectThemeColors(rendition: any, mode: "light" | "dark") {
 
 /**
  * Resolve theme colors for both light and dark modes and register them on an
- * epubjs rendition. This consolidates the repeated resolve-and-register pattern
- * used across reader components.
+ * reader rendition. This consolidates the repeated resolve-and-register pattern.
  *
  * NOTE: `themes.register()` is kept as a belt-and-suspenders fallback.  The
  * primary mechanism is `injectThemeColors()` which writes CSS directly into

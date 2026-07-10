@@ -1,9 +1,12 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useBookSearch } from "~/hooks/use-book-search";
-import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
+import type {
+  SuccessorBookAdapter,
+  SuccessorRenditionAdapter,
+} from "~/lib/epub/successor-reader-adapter";
 
 interface UseReaderSearchOptions {
-  bookRef: React.RefObject<import("epubjs/types/book").default | null>;
+  bookRef: React.RefObject<SuccessorBookAdapter | null>;
   renditionRef: React.RefObject<SuccessorRenditionAdapter | null>;
   bookId: string;
   /** When provided, Cmd/Ctrl+F is only intercepted if this element (or a descendant) has focus. */

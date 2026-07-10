@@ -329,7 +329,7 @@ export function BookReader({ book }: BookReaderProps) {
       try {
         location = rendition?.currentLocation?.();
       } catch {
-        // epubjs may call into an uninitialized internal manager.
+        // The reader may be torn down while a navigation is still settling.
       }
     }
     return (location?.start?.cfi as string | undefined) ?? null;

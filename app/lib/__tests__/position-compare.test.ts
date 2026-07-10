@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isFurtherAlong } from "~/lib/position-compare";
 
 describe("isFurtherAlong", () => {
-  it("orders epub CFIs with epubjs", () => {
+  it("orders EPUB CFIs by package and content paths", () => {
     expect(isFurtherAlong("epubcfi(/6/4!/4/4/2)", "epubcfi(/6/4!/4/2/2)")).toBe(true);
     expect(isFurtherAlong("epubcfi(/6/4!/4/2/2)", "epubcfi(/6/4!/4/4/2)")).toBe(false);
     expect(isFurtherAlong("epubcfi(/6/4!/4/2/2)", "epubcfi(/6/4!/4/2/2)")).toBe(false);
