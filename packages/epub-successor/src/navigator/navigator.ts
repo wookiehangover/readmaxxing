@@ -12,18 +12,34 @@ import {
   type ResourceUrlScope,
   rewriteXhtml,
 } from "../resource-loader/urls";
+import {
+  captureFirstVisibleElement,
+  currentSpreadIndex,
+  lastSpreadPageIndex,
+  paginatedProgression,
+  scrollToPage,
+  type PaginatedLayoutState,
+} from "./paginated";
+import {
+  buildPreferenceCss,
+  mergePreferences,
+  type NavigatorFlow,
+  type NavigatorPreferences,
+} from "./preferences";
+import { nextAnimationFrame, settleSection } from "./section-layout";
+
+export type {
+  NavigatorFlow,
+  NavigatorPreferences,
+  NavigatorSpread,
+  NavigatorTheme,
+} from "./preferences";
 
 const DEFAULT_READER_CSS =
   "html,body{box-sizing:border-box;margin:0;min-height:100%;}body{overflow-wrap:anywhere;}";
 const DEFAULT_SETTLE_TIMEOUT_MS = 3_000;
 
 export type NavigatorState = "idle" | "loading" | "settling" | "settled";
-export type NavigatorFlow = "scrolled";
-
-export interface NavigatorPreferences {
-  readonly readerBaseCss?: string;
-  readonly preferenceCss?: string;
-}
 
 export interface NavigatorSecurityOptions {
   readonly resourceProvider: ResourceProvider;
@@ -61,6 +77,7 @@ interface SectionMount {
   readonly documentLease: ResourceUrlLease;
   removeScrollListener?: () => void;
   scrollFrame?: number;
+  pagination?: PaginatedLayoutState;
 }
 
 interface PreparedSection {
@@ -92,34 +109,10 @@ function hrefFragment(href: string): string | undefined {
   return index < 0 ? undefined : href.slice(index + 1);
 }
 
-function waitWithAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(abortError());
-  return new Promise<T>((resolve, reject) => {
-    const abort = () => reject(abortError());
-    signal.addEventListener("abort", abort, { once: true });
-    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
-  });
-}
-
-function nextAnimationFrame(view: Window, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    throwIfAborted(signal);
-    const frame = view.requestAnimationFrame(() => {
-      signal.removeEventListener("abort", abort);
-      resolve();
-    });
-    const abort = () => {
-      view.cancelAnimationFrame(frame);
-      reject(abortError());
-    };
-    signal.addEventListener("abort", abort, { once: true });
-  });
-}
-
 export class Navigator extends EventTarget {
   readonly publication: Publication;
   readonly #container: HTMLElement;
-  readonly #preferences: NavigatorPreferences;
+  #preferences: NavigatorPreferences;
   readonly #security: NavigatorSecurityOptions;
   readonly #urlManager: ResourceUrlManager;
   readonly #ownsUrlManager: boolean;
@@ -137,7 +130,11 @@ export class Navigator extends EventTarget {
     super();
     this.publication = publication;
     this.#container = options.container;
-    this.#preferences = options.preferences ?? {};
+    this.#preferences = {
+      ...options.preferences,
+      flow: options.flow ?? options.preferences?.flow ?? "scrolled",
+      spread: options.preferences?.spread ?? "single",
+    };
     this.#security = options.security;
     this.#settleTimeoutMs = Math.max(0, options.settleTimeoutMs ?? DEFAULT_SETTLE_TIMEOUT_MS);
     this.#ownsUrlManager = options.security.resourceUrlManager === undefined;
@@ -208,7 +205,17 @@ export class Navigator extends EventTarget {
 
   async next(): Promise<boolean> {
     this.#assertLive();
-    const index = this.#active?.spineIndex;
+    const mount = this.#active;
+    const index = mount?.spineIndex;
+    if (mount?.pagination) {
+      const spread = currentSpreadIndex(mount.pagination);
+      const targetSpread = spread + 1;
+      if (targetSpread * mount.pagination.pagesPerSpread < mount.pagination.pageCount) {
+        scrollToPage(mount.pagination, targetSpread * mount.pagination.pagesPerSpread);
+        await this.#finishPageMove(mount);
+        return true;
+      }
+    }
     if (index === undefined || index + 1 >= this.publication.readingOrder.length) return false;
     await this.display({ spineIndex: index + 1 });
     return true;
@@ -216,10 +223,52 @@ export class Navigator extends EventTarget {
 
   async previous(): Promise<boolean> {
     this.#assertLive();
-    const index = this.#active?.spineIndex;
+    const mount = this.#active;
+    const index = mount?.spineIndex;
+    if (mount?.pagination) {
+      const spread = currentSpreadIndex(mount.pagination);
+      if (spread > 0) {
+        scrollToPage(mount.pagination, (spread - 1) * mount.pagination.pagesPerSpread);
+        await this.#finishPageMove(mount);
+        return true;
+      }
+    }
     if (index === undefined || index === 0) return false;
     await this.display({ spineIndex: index - 1 });
+    const previousMount = this.#active;
+    if (previousMount?.pagination) {
+      scrollToPage(
+        previousMount.pagination,
+        lastSpreadPageIndex(
+          previousMount.pagination.pageCount,
+          previousMount.pagination.pagesPerSpread,
+        ),
+      );
+      await this.#finishPageMove(previousMount);
+    }
     return true;
+  }
+
+  async setPreferences(update: NavigatorPreferences): Promise<Relocation | undefined> {
+    this.#assertLive();
+    this.#preferences = mergePreferences(this.#preferences, update);
+    const mount = this.#active;
+    const signal = this.#operation?.signal;
+    const document = mount?.frame.contentDocument;
+    if (!mount || !signal || signal.aborted || !document || this.#state !== "settled") {
+      return this.#relocation;
+    }
+    const anchor = captureFirstVisibleElement(document);
+    this.#setState("settling");
+    try {
+      await this.#settle(mount, undefined, signal, anchor);
+    } catch (cause) {
+      if (this.#active === mount && !signal.aborted && !this.#destroyed) this.#setState("settled");
+      throw cause;
+    }
+    if (this.#active !== mount || signal.aborted || this.#destroyed) return this.#relocation;
+    this.#setState("settled");
+    return this.#emitRelocation(mount);
   }
 
   destroy(): void {
@@ -255,7 +304,7 @@ export class Navigator extends EventTarget {
         context: { sectionHref: href, spineIndex },
         transforms: this.#security.transforms,
         readerBaseCss: this.#preferences.readerBaseCss ?? DEFAULT_READER_CSS,
-        preferenceCss: this.#preferences.preferenceCss,
+        preferenceCss: buildPreferenceCss(this.#preferences),
       });
       documentLease = await this.#urlManager.acquireGenerated(
         `section:${operationId}:${href}`,
@@ -319,65 +368,26 @@ export class Navigator extends EventTarget {
     mount: SectionMount,
     fragment: string | undefined,
     signal: AbortSignal,
+    anchor?: Element,
   ): Promise<void> {
-    const document = mount.frame.contentDocument;
     const view = mount.frame.contentWindow;
-    if (!document || !view) throw new Error("Publication section document is inaccessible");
-    this.#scrollToFragment(document, fragment);
-    const fonts = document.fonts?.ready;
-    if (fonts) await this.#boundedSettle(waitWithAbort(fonts, signal), signal);
-    await this.#boundedSettle(this.#decodeVisibleImages(document, signal), signal);
-    await nextAnimationFrame(view, signal);
-    await nextAnimationFrame(view, signal);
-    this.#installScrollListener(mount, view);
-  }
-
-  async #boundedSettle(work: Promise<unknown>, signal: AbortSignal): Promise<void> {
-    if (this.#settleTimeoutMs === 0) {
-      await work;
-      return;
-    }
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      work,
-      new Promise<void>((resolve) => {
-        timeout = setTimeout(resolve, this.#settleTimeoutMs);
-      }),
-    ]);
-    if (timeout) clearTimeout(timeout);
-    throwIfAborted(signal);
-  }
-
-  async #decodeVisibleImages(document: Document, signal: AbortSignal): Promise<void> {
-    const root = document.documentElement;
-    const width = root.clientWidth;
-    const height = root.clientHeight;
-    const images = Array.from(document.querySelectorAll("img")).filter((image) => {
-      const rect = image.getBoundingClientRect();
-      return rect.bottom >= 0 && rect.right >= 0 && rect.top <= height && rect.left <= width;
+    if (!view) throw new Error("Publication section document is inaccessible");
+    mount.pagination = await settleSection({
+      frame: mount.frame,
+      container: this.#container,
+      preferences: this.#preferences,
+      direction:
+        this.publication.metadata.pageProgressionDirection === "rtl" ||
+        (this.publication.metadata.pageProgressionDirection !== "ltr" &&
+          this.publication.metadata.direction === "rtl")
+          ? "rtl"
+          : "ltr",
+      fragment,
+      anchor,
+      signal,
+      timeoutMs: this.#settleTimeoutMs,
     });
-    await Promise.all(
-      images.map((image) =>
-        typeof image.decode === "function"
-          ? waitWithAbort(
-              image.decode().catch(() => undefined),
-              signal,
-            )
-          : Promise.resolve(),
-      ),
-    );
-  }
-
-  #scrollToFragment(document: Document, fragment: string | undefined): void {
-    if (!fragment) return;
-    let decoded = fragment.replace(/^#/, "");
-    try {
-      decoded = decodeURIComponent(decoded);
-    } catch {
-      // Invalid author encoding is treated as a literal fragment.
-    }
-    const target = document.getElementById(decoded) ?? document.getElementsByName(decoded)[0];
-    target?.scrollIntoView();
+    this.#installScrollListener(mount, view);
   }
 
   #installScrollListener(mount: SectionMount, view: Window): void {
@@ -398,7 +408,9 @@ export class Navigator extends EventTarget {
     if (!document) throw new Error("Publication section document is inaccessible");
     const scrolling = document.scrollingElement ?? document.documentElement;
     const extent = Math.max(0, scrolling.scrollHeight - scrolling.clientHeight);
-    const localProgression = bounded(extent === 0 ? 0 : scrolling.scrollTop / extent);
+    const localProgression = mount.pagination
+      ? paginatedProgression(mount.pagination)
+      : bounded(extent === 0 ? 0 : scrolling.scrollTop / extent);
     const count = this.publication.readingOrder.length;
     const relocation: Relocation = {
       href: mount.href,
@@ -419,8 +431,11 @@ export class Navigator extends EventTarget {
       const mount = this.#active;
       const signal = this.#operation?.signal;
       if (!mount || !signal || signal.aborted || this.#destroyed) return;
+      const anchor = mount.frame.contentDocument
+        ? captureFirstVisibleElement(mount.frame.contentDocument)
+        : undefined;
       this.#setState("settling");
-      void this.#settle(mount, undefined, signal)
+      void this.#settle(mount, undefined, signal, anchor)
         .then(() => {
           if (this.#active !== mount || signal.aborted || this.#destroyed) return;
           this.#setState("settled");
@@ -472,6 +487,14 @@ export class Navigator extends EventTarget {
       mount.documentLease.dispose();
       mount.scope.dispose();
     });
+  }
+
+  async #finishPageMove(mount: SectionMount): Promise<void> {
+    const view = mount.frame.contentWindow;
+    const signal = this.#operation?.signal;
+    if (!view || !signal) return;
+    await nextAnimationFrame(view, signal);
+    if (this.#active === mount && !signal.aborted && !this.#destroyed) this.#emitRelocation(mount);
   }
 
   #assertCurrent(operationId: number, signal: AbortSignal): void {

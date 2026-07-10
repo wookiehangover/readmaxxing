@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Publication } from "../publication-model/publication-model";
 import { normalizePublicationPath, type PublicationPath } from "../publication-model/paths";
 import type { ResourceProvider } from "../resource-loader/resource-loader";
+import { PREFERENCE_STYLE_ID } from "../content-pipeline/content-pipeline";
 import { createNavigator, type Navigator, type NavigatorState, type Relocation } from "./navigator";
 
 const SECTION = (id: string) =>
@@ -103,6 +104,26 @@ async function finishDisplay<T>(container: HTMLElement, display: Promise<T>): Pr
   return display;
 }
 
+async function finishPaginatedDisplay<T>(container: HTMLElement, display: Promise<T>): Promise<T> {
+  await vi.waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
+  const frame = container.querySelector("iframe")!;
+  Object.defineProperties(frame, {
+    clientWidth: { configurable: true, value: 800 },
+    clientHeight: { configurable: true, value: 600 },
+  });
+  const content = frame.contentDocument!;
+  for (const scrolling of [content.documentElement, content.body]) {
+    Object.defineProperties(scrolling, {
+      scrollWidth: { configurable: true, value: 2_048 },
+      clientWidth: { configurable: true, value: 800 },
+      scrollHeight: { configurable: true, value: 600 },
+      clientHeight: { configurable: true, value: 600 },
+    });
+  }
+  frame.dispatchEvent(new Event("load"));
+  return display;
+}
+
 async function displayAt(navigator: Navigator, container: HTMLElement, spineIndex: number) {
   return finishDisplay(container, navigator.display({ spineIndex }));
 }
@@ -191,5 +212,52 @@ describe("scrolling Navigator", () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledOnce();
     expect(provider.closeCalls).toBe(0);
     await expect(navigator.display({ spineIndex: 0 })).rejects.toThrow("Navigator is destroyed");
+  });
+});
+
+describe("paginated Navigator", () => {
+  it("applies spread layout and preferences without replacing the section", async () => {
+    const provider = new MemoryProvider({
+      "OPS/one.xhtml": SECTION("one"),
+      "OPS/two.xhtml": SECTION("two"),
+    });
+    const container = document.createElement("div");
+    Object.defineProperties(container, {
+      clientWidth: { configurable: true, value: 800 },
+      clientHeight: { configurable: true, value: 600 },
+    });
+    document.body.append(container);
+    const navigator = createNavigator(publication(), {
+      container,
+      flow: "paginated",
+      preferences: { spread: "double" },
+      security: { resourceProvider: provider },
+      settleTimeoutMs: 100,
+    });
+
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }));
+    const frame = container.querySelector("iframe")!;
+    expect(
+      frame.contentDocument!.getElementById("epub-successor-pagination-style")?.textContent,
+    ).toContain("column-width:384px");
+
+    await navigator.setPreferences({
+      fontFamily: "Literata",
+      fontSize: 110,
+      lineHeight: 1.7,
+      margins: 24,
+      theme: "sepia",
+      spread: "single",
+    });
+
+    expect(container.querySelector("iframe")).toBe(frame);
+    const preferenceCss = frame.contentDocument!.getElementById(PREFERENCE_STYLE_ID)?.textContent;
+    expect(preferenceCss).toContain('font-family:"Literata"');
+    expect(preferenceCss).toContain("font-size:110%");
+    expect(preferenceCss).toContain("background:#f4ecd8");
+    expect(
+      frame.contentDocument!.getElementById("epub-successor-pagination-style")?.textContent,
+    ).toContain("column-width:800px");
+    navigator.destroy();
   });
 });
