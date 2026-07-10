@@ -111,6 +111,7 @@ describe("assembleSectionDocument", () => {
     expect(CONTENT_SECURITY_POLICY).toContain("script-src 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("default-src 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("connect-src 'none'");
+    expect(CONTENT_SECURITY_POLICY).toContain("font-src blob: 'self'");
     expect(CONTENT_IFRAME_SANDBOX).toBe("allow-same-origin");
   });
 

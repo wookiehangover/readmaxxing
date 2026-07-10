@@ -74,7 +74,7 @@ Controls:
 - Remove scripts, event handlers, forms, `<base>`, meta refresh, `object`, `embed`, iframe/frame, portals, and active SVG constructs.
 - Drop `srcdoc`, `ping`, `autofocus`, `contenteditable`, and navigation-related attributes not required for reading.
 - Do not grant `allow-scripts` in the iframe sandbox.
-- Inject CSP that sets `default-src 'none'`, `script-src 'none'`, `connect-src 'none'`, `object-src 'none'`, `frame-src 'none'`, `base-uri 'none'`, and `form-action 'none'`.
+- Inject CSP that sets `default-src 'none'`, `font-src blob: 'self'`, `script-src 'none'`, `connect-src 'none'`, `object-src 'none'`, `frame-src 'none'`, `base-uri 'none'`, and `form-action 'none'`.
 - Treat scripted EPUB content as unsupported, never partially enabled.
 
 ### CSS and external-resource attacks
@@ -89,7 +89,7 @@ Controls:
 - Reject `javascript:`, unapproved `data:`, and unknown schemes in every URL-bearing CSS property.
 - Strip behaviors and binding mechanisms; cap stylesheet/rule/selector complexity where the parser exposes it.
 - Inject host override styles after author styles for viewport containment, visibility, selection, and accessibility.
-- Keep `connect-src 'none'` and resource directives restricted to `blob:` plus narrowly approved inline data types.
+- Keep `connect-src 'none'` and resource directives restricted to `blob:`; `font-src` additionally allows `'self'` only for host-provided reader fonts.
 
 The pipeline must use a CSS parser/AST, not regular expressions, for URL rewriting and import discovery.
 

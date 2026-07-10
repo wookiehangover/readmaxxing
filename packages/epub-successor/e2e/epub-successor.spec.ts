@@ -83,6 +83,7 @@ test("enforces sandbox and CSP against malicious fixtures without egress", async
   });
   expect(before.csp).toContain("script-src 'none'");
   expect(before.csp).toContain("connect-src 'none'");
+  expect(before.csp).toContain("font-src blob: 'self'");
   expect(before.csp).toContain("form-action 'none'");
 
   await page.evaluate(() => window.__epubDemo.exerciseSecurity());
