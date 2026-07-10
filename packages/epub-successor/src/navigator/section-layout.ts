@@ -1,10 +1,10 @@
 import {
   applyPaginatedLayout,
   clearPaginatedLayout,
-  currentPageIndex,
+  effectivePagesPerSpread,
   measurePaginatedLayout,
   restoreElementAnchor,
-  scrollToPage,
+  snapToSpread,
   type PaginatedLayoutState,
 } from "./paginated";
 import { applyPreferences, type NavigatorPreferences } from "./preferences";
@@ -106,6 +106,24 @@ function fragmentTarget(document: Document, fragment: string | undefined): Eleme
   return document.getElementById(decoded) ?? document.getElementsByName(decoded)[0];
 }
 
+function frameViewport(frame: HTMLIFrameElement, container: HTMLElement) {
+  const frameRect = frame.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  return {
+    width:
+      frameRect.width || frame.clientWidth || containerRect.width || container.clientWidth || 1,
+    height:
+      frameRect.height || frame.clientHeight || containerRect.height || container.clientHeight || 1,
+  };
+}
+
+function fitPaginatedFrame(frame: HTMLIFrameElement, container: HTMLElement) {
+  frame.style.width = "100%";
+  const viewport = frameViewport(frame, container);
+  frame.style.width = `${Math.max(1, Math.floor(viewport.width))}px`;
+  return frameViewport(frame, container);
+}
+
 export async function settleSection(
   options: SettleSectionOptions,
 ): Promise<PaginatedLayoutState | undefined> {
@@ -113,42 +131,64 @@ export async function settleSection(
   const view = options.frame.contentWindow;
   if (!document || !view) throw new Error("Publication section document is inaccessible");
   applyPreferences(document, options.preferences);
-  const geometry =
-    options.preferences.flow === "paginated"
-      ? applyPaginatedLayout(
-          document,
-          {
-            width: options.frame.clientWidth || options.container.clientWidth || 1,
-            height: options.frame.clientHeight || options.container.clientHeight || 1,
-          },
-          options.preferences.spread === "double" ? 2 : 1,
-          options.direction,
-        )
-      : undefined;
-  if (!geometry) clearPaginatedLayout(document);
   const target = options.anchor ?? fragmentTarget(document, options.fragment);
-  restoreElementAnchor(target);
-  const fonts = document.fonts?.ready;
-  if (fonts)
-    await boundedSettle(waitWithAbort(fonts, options.signal), options.signal, options.timeoutMs);
-  await boundedSettle(
-    decodeVisibleImages(document, options.signal),
-    options.signal,
-    options.timeoutMs,
-  );
-  await nextAnimationFrame(view, options.signal);
-  await nextAnimationFrame(view, options.signal);
-  if (options.anchor) {
-    restoreElementAnchor(options.anchor);
+  if (options.preferences.flow !== "paginated") {
+    options.frame.style.width = "100%";
+    clearPaginatedLayout(document);
+    restoreElementAnchor(target);
+    const fonts = document.fonts?.ready;
+    if (fonts)
+      await boundedSettle(waitWithAbort(fonts, options.signal), options.signal, options.timeoutMs);
+    await boundedSettle(
+      decodeVisibleImages(document, options.signal),
+      options.signal,
+      options.timeoutMs,
+    );
     await nextAnimationFrame(view, options.signal);
+    await nextAnimationFrame(view, options.signal);
+    if (options.anchor) {
+      restoreElementAnchor(options.anchor);
+      await nextAnimationFrame(view, options.signal);
+    }
+    return undefined;
   }
-  if (!geometry) return undefined;
-  const pagination = measurePaginatedLayout(document, geometry, options.direction);
-  const current = target ? currentPageIndex(pagination) : 0;
-  scrollToPage(
-    pagination,
-    Math.floor(current / pagination.pagesPerSpread) * pagination.pagesPerSpread,
-  );
-  await nextAnimationFrame(view, options.signal);
-  return pagination;
+
+  while (true) {
+    const viewport = fitPaginatedFrame(options.frame, options.container);
+    const pagesPerSpread = effectivePagesPerSpread(
+      viewport.width,
+      options.preferences.spread,
+      options.preferences.minSpreadWidth,
+    );
+    const geometry = applyPaginatedLayout(document, viewport, pagesPerSpread, options.direction);
+    restoreElementAnchor(target);
+    const fonts = document.fonts?.ready;
+    if (fonts)
+      await boundedSettle(waitWithAbort(fonts, options.signal), options.signal, options.timeoutMs);
+    await boundedSettle(
+      decodeVisibleImages(document, options.signal),
+      options.signal,
+      options.timeoutMs,
+    );
+    await nextAnimationFrame(view, options.signal);
+    await nextAnimationFrame(view, options.signal);
+    if (options.anchor) {
+      restoreElementAnchor(options.anchor);
+      await nextAnimationFrame(view, options.signal);
+    }
+    const pagination = measurePaginatedLayout(document, geometry, options.direction);
+    snapToSpread(pagination);
+    await nextAnimationFrame(view, options.signal);
+    const liveViewport = fitPaginatedFrame(options.frame, options.container);
+    const livePagesPerSpread = effectivePagesPerSpread(
+      liveViewport.width,
+      options.preferences.spread,
+      options.preferences.minSpreadWidth,
+    );
+    if (
+      Math.floor(liveViewport.width) === geometry.viewportWidth &&
+      livePagesPerSpread === pagesPerSpread
+    )
+      return pagination;
+  }
 }

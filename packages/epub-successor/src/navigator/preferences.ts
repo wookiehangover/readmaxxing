@@ -16,6 +16,7 @@ export interface NavigatorPreferences {
   readonly theme?: NavigatorTheme;
   readonly flow?: NavigatorFlow;
   readonly spread?: NavigatorSpread;
+  readonly minSpreadWidth?: number;
 }
 
 const THEME_COLORS: Readonly<Record<NavigatorTheme, readonly [string, string]>> = {

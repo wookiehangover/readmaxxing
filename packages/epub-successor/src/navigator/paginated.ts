@@ -18,21 +18,40 @@ export interface PaginatedLayoutState extends ColumnGeometry {
 
 const PAGINATION_STYLE_ID = "epub-successor-pagination-style";
 const XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+export const DEFAULT_MIN_SPREAD_WIDTH = 800;
 
 function snapped(value: number, minimum = 0): number {
   return Math.max(minimum, Math.round(Number.isFinite(value) ? value : minimum));
+}
+
+function contained(value: number, minimum = 0): number {
+  return Math.max(minimum, Math.floor(Number.isFinite(value) ? value : minimum));
+}
+
+export function effectivePagesPerSpread(
+  viewportWidth: number,
+  spread: "single" | "double" | undefined,
+  minSpreadWidth = DEFAULT_MIN_SPREAD_WIDTH,
+): 1 | 2 {
+  const threshold =
+    Number.isFinite(minSpreadWidth) && minSpreadWidth >= 0
+      ? minSpreadWidth
+      : DEFAULT_MIN_SPREAD_WIDTH;
+  return spread === "double" && viewportWidth >= threshold ? 2 : 1;
 }
 
 export function calculateColumnGeometry(
   viewportWidth: number,
   columnGap: number,
   pagesPerSpread: 1 | 2,
+  inlineInset = 0,
 ): ColumnGeometry {
-  const width = snapped(viewportWidth, 1);
-  const gap = Math.min(snapped(columnGap), Math.max(0, width - pagesPerSpread));
+  const width = contained(viewportWidth, 1);
+  const availableWidth = Math.max(pagesPerSpread, width - contained(inlineInset));
+  const gap = Math.min(snapped(columnGap), Math.max(0, availableWidth - pagesPerSpread));
   const columnWidth = Math.max(
     1,
-    Math.floor((width - gap * (pagesPerSpread - 1)) / pagesPerSpread),
+    Math.floor((availableWidth - gap * (pagesPerSpread - 1)) / pagesPerSpread),
   );
   return {
     viewportWidth: width,
@@ -44,8 +63,12 @@ export function calculateColumnGeometry(
 }
 
 export function calculatePageCount(scrollWidth: number, geometry: ColumnGeometry): number {
-  const extent = Math.max(geometry.columnWidth, snapped(scrollWidth, geometry.columnWidth));
-  return Math.max(1, Math.ceil((extent + geometry.columnGap) / geometry.columnStride));
+  const extent = Math.max(geometry.viewportWidth, snapped(scrollWidth, geometry.viewportWidth));
+  const overflow = Math.max(0, extent - geometry.viewportWidth);
+  return Math.max(
+    geometry.pagesPerSpread,
+    Math.ceil(overflow / geometry.columnStride) + geometry.pagesPerSpread,
+  );
 }
 
 export function logicalOffsetFromScrollLeft(
@@ -124,6 +147,24 @@ function layoutStyle(document: Document): HTMLStyleElement {
   return style;
 }
 
+function bodyInlineInsets(
+  document: Document,
+  direction: "ltr" | "rtl",
+): { readonly total: number; readonly end: number } {
+  const body = document.body;
+  const view = document.defaultView;
+  if (!body || !view) return { total: 0, end: 0 };
+  const style = view.getComputedStyle(body);
+  const left = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.borderLeftWidth);
+  const right = Number.parseFloat(style.paddingRight) + Number.parseFloat(style.borderRightWidth);
+  const safeLeft = Number.isFinite(left) ? left : 0;
+  const safeRight = Number.isFinite(right) ? right : 0;
+  return {
+    total: safeLeft + safeRight,
+    end: direction === "rtl" ? safeLeft : safeRight,
+  };
+}
+
 export function applyPaginatedLayout(
   document: Document,
   viewport: Readonly<{ width: number; height: number }>,
@@ -131,14 +172,18 @@ export function applyPaginatedLayout(
   direction: "ltr" | "rtl",
   columnGap = 32,
 ): ColumnGeometry {
-  const geometry = calculateColumnGeometry(viewport.width, columnGap, pagesPerSpread);
-  const height = snapped(viewport.height, 1);
+  const insets = bodyInlineInsets(document, direction);
+  const geometry = calculateColumnGeometry(viewport.width, columnGap, pagesPerSpread, insets.total);
+  const height = contained(viewport.height, 1);
   layoutStyle(document).textContent =
     `html{height:${height}px !important;width:${geometry.viewportWidth}px !important;` +
     `overflow:hidden !important;direction:${direction} !important;}` +
     `body{box-sizing:border-box !important;height:${height}px !important;min-height:0 !important;` +
     `margin:0 !important;column-fill:auto !important;column-gap:${geometry.columnGap}px !important;` +
-    `column-width:${geometry.columnWidth}px !important;overflow:visible !important;}`;
+    `column-width:${geometry.columnWidth}px !important;overflow:visible !important;}` +
+    `body::after{content:"" !important;display:block !important;` +
+    `width:calc(100% + ${insets.end}px) !important;height:1px !important;` +
+    `margin-block-start:-1px !important;}`;
   return geometry;
 }
 
@@ -200,6 +245,11 @@ export function scrollToPage(state: PaginatedLayoutState, pageIndex: number): vo
     state.direction,
     state.rtlScrollType,
   );
+}
+
+export function snapToSpread(state: PaginatedLayoutState): void {
+  const page = currentPageIndex(state);
+  scrollToPage(state, Math.floor(page / state.pagesPerSpread) * state.pagesPerSpread);
 }
 
 export function captureFirstVisibleElement(document: Document): Element | undefined {
