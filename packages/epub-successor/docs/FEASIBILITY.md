@@ -221,3 +221,9 @@ Full conformance is a separate go/no-go decision after M5, with a normative requ
 - [MDN: CSS multi-column layout](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_multicol_layout)
 - [MDN: iframe sandbox](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe#sandbox)
 - [MDN: CSS Custom Highlight API](https://developer.mozilla.org/en-US/docs/Web/API/CSS_Custom_Highlight_API)
+
+## Pretext measurement experiment findings
+
+The experiment uses an isolated canvas `measureText` predictor with greedy line breaking. Preparation caches text widths by content and typography, while width changes use arithmetic-only prediction. It measures only eligible plain paragraphs and reports absolute and percentage error against authoritative DOM heights behind an off-by-default feature flag and runtime kill switch. No navigator, content-pipeline, location, or decoration behavior depends on a prediction.
+
+Upstream [`@chenglou/pretext`](https://www.npmjs.com/package/@chenglou/pretext) 0.0.8 is now available with `prepare` and `layout` APIs that match this experiment's split. It was not added because dependency approval was not granted. The predictor interface is engine-agnostic, so a later evaluation can replace the canvas engine with upstream Pretext through one contained adapter and one approved `pnpm add`; browser measurements remain authoritative either way.
