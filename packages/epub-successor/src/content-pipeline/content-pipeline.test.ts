@@ -108,7 +108,7 @@ describe("assembleSectionDocument", () => {
       PREFERENCE_STYLE_ID,
     ]);
     expect(assembled.html).toContain(`id="${PREFERENCE_STYLE_ID}"`);
-    expect(CONTENT_SECURITY_POLICY).not.toContain("script-src");
+    expect(CONTENT_SECURITY_POLICY).toContain("script-src 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("default-src 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("connect-src 'none'");
     expect(CONTENT_IFRAME_SANDBOX).toBe("allow-same-origin");
