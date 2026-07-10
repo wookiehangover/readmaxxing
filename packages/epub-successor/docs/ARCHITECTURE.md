@@ -220,8 +220,8 @@ Every I/O or layout operation accepts cancellation. Cancellation is not reported
 - [EPUB 3.3](https://www.w3.org/TR/epub-33/)
 - [EPUB 3.3 Reading Systems](https://www.w3.org/TR/epub-rs-33/)
 - [EPUB 3 Overview](https://www.w3.org/TR/epub-overview-33/)
-- [MDN: `<iframe>` sandbox](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe#sandbox)
-- [MDN: `URL.revokeObjectURL()`](https://developer.mozilla.org/en-US/docs/Web/API/URL/revokeObjectURL_static)
+- [MDN: ](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe#sandbox)`<iframe>`[ sandbox](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe#sandbox)
+- [MDN: ](https://developer.mozilla.org/en-US/docs/Web/API/URL/revokeObjectURL_static)`URL.revokeObjectURL()`
 - [Readium Architecture](https://readium.org/architecture/)
 - [Readium Web README](https://github.com/readium/web)
 - [Foliate JS README](https://github.com/johnfactotum/foliate-js)
