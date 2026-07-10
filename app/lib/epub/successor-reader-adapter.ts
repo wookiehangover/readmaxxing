@@ -1,4 +1,6 @@
 import {
+  createCfi,
+  createDecorationLayer,
   generateCfi,
   generateEphemeralPositions,
   normalizePublicationPath,
@@ -7,12 +9,17 @@ import {
   parseCfi,
   resolveCfi,
   type Navigator,
+  type Decoration,
+  type DecorationClickDetail,
+  type DecorationLayer,
+  type Locator,
   type PersistentLocator,
   type Publication,
   type PublicationPath,
   type Relocation,
   type ResourceProvider,
   type SectionMetadata,
+  type SelectionChangedDetail,
   type TocEntry,
 } from "@readmaxxing/epub-successor";
 
@@ -173,10 +180,6 @@ interface CompatibilityLocation {
 }
 
 export class SuccessorRenditionAdapter {
-  readonly annotations = {
-    highlight: (..._arguments: unknown[]) => undefined,
-    remove: (..._arguments: unknown[]) => undefined,
-  };
   readonly themes = {
     register: (..._arguments: unknown[]) => undefined,
     select: (theme: string) => {
@@ -199,8 +202,11 @@ export class SuccessorRenditionAdapter {
     },
   };
   readonly #contentHooks = new Set<(content: CompatibilityContent) => void>();
+  readonly #decorations = new Map<string, Decoration>();
   readonly #eventHandlers = new Map<string, Set<(...arguments_: any[]) => void>>();
-  readonly #observedDocuments = new WeakSet<Document>();
+  #decorationDocument: Document | null = null;
+  #decorationLayer: DecorationLayer | null = null;
+  #decorationSpineIndex: number | null = null;
   #location: CompatibilityLocation | undefined;
 
   constructor(
@@ -210,10 +216,10 @@ export class SuccessorRenditionAdapter {
     navigator.addEventListener("relocation", (event) => {
       const relocation = (event as CustomEvent<Relocation>).detail;
       this.#location = this.#compatibilityLocation(relocation);
+      const mountedNewDocument = this.#mountDecorationLayer(relocation);
       const content = this.#content();
-      if (content) {
+      if (content && mountedNewDocument) {
         for (const callback of this.#contentHooks) callback(content);
-        this.#observeSelection(content);
       }
       this.#emit("relocated", this.#location);
     });
@@ -260,7 +266,52 @@ export class SuccessorRenditionAdapter {
   }
 
   destroy() {
+    this.#decorationLayer?.destroy();
+    this.#decorationDocument = null;
+    this.#decorationLayer = null;
+    this.#decorationSpineIndex = null;
+    this.#decorations.clear();
     this.navigator.destroy();
+  }
+
+  locatorFromCfi(cfi: string, text?: string): Locator | null {
+    const spineIndex = spineIndexFromCfi(cfi);
+    if (spineIndex === null) return null;
+    const link = this.publication.readingOrder[spineIndex];
+    if (!link) return null;
+    try {
+      return {
+        href: link.href,
+        ...(link.mediaType ? { mediaType: link.mediaType } : {}),
+        ...(link.title ? { title: link.title } : {}),
+        locations: {
+          progression: 0,
+          totalProgression: spineIndex / this.publication.readingOrder.length,
+          cfi: createCfi(cfi),
+        },
+        text: text ? { highlight: text } : {},
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  upsertDecoration(decoration: Decoration): void {
+    const existed = this.#decorations.has(decoration.id);
+    this.#decorations.set(decoration.id, decoration);
+    const relocation = this.navigator.currentRelocation;
+    if (!relocation || decoration.locator.href !== relocation.href || !this.#decorationLayer)
+      return;
+    const resolved = existed
+      ? this.#decorationLayer.update(decoration)
+      : this.#decorationLayer.add(decoration);
+    if (!resolved) this.#warnUnresolvable(decoration);
+  }
+
+  removeDecoration(id: string): boolean {
+    const removed = this.#decorations.delete(id);
+    this.#decorationLayer?.remove(id);
+    return removed;
   }
 
   getContents(): CompatibilityContent[] {
@@ -315,17 +366,48 @@ export class SuccessorRenditionAdapter {
     };
   }
 
-  #observeSelection(content: CompatibilityContent): void {
-    if (this.#observedDocuments.has(content.document)) return;
-    this.#observedDocuments.add(content.document);
-    content.document.addEventListener("mouseup", () => {
-      const selection = content.document.defaultView?.getSelection();
-      if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
-      const range = selection.getRangeAt(0);
-      const relocation = this.navigator.currentRelocation;
-      if (!relocation) return;
-      const cfi = generateCfi(range, sectionMetadata(this.publication, relocation.spineIndex));
-      this.#emit("selected", cfi, content);
+  #mountDecorationLayer(relocation: Relocation): boolean {
+    const document = this.navigator.contentDocument;
+    if (!document) {
+      this.#decorationLayer?.destroy();
+      this.#decorationDocument = null;
+      this.#decorationLayer = null;
+      this.#decorationSpineIndex = null;
+      return false;
+    }
+    if (
+      this.#decorationLayer &&
+      this.#decorationDocument === document &&
+      this.#decorationSpineIndex === relocation.spineIndex
+    ) {
+      this.#decorationLayer.refresh();
+      return false;
+    }
+    this.#decorationLayer?.destroy();
+    const layer = createDecorationLayer({
+      document,
+      section: sectionMetadata(this.publication, relocation.spineIndex),
+    });
+    layer.on("selection-changed", (detail: SelectionChangedDetail) =>
+      this.#emit("selection-changed", detail),
+    );
+    layer.on("decoration-click", (detail: DecorationClickDetail) =>
+      this.#emit("decoration-click", detail),
+    );
+    this.#decorationDocument = document;
+    this.#decorationLayer = layer;
+    this.#decorationSpineIndex = relocation.spineIndex;
+    for (const decoration of this.#decorations.values()) {
+      if (decoration.locator.href !== relocation.href) continue;
+      if (!layer.add(decoration)) this.#warnUnresolvable(decoration);
+    }
+    return true;
+  }
+
+  #warnUnresolvable(decoration: Decoration): void {
+    console.warn("Skipping unresolvable EPUB decoration; stored highlight was preserved", {
+      decorationId: decoration.id,
+      cfi: decoration.locator.locations.cfi,
     });
   }
 

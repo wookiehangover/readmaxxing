@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { Effect } from "effect";
-import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
@@ -29,6 +28,7 @@ import {
 } from "~/lib/stores/book-preferences-store";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { useSyncListener } from "~/hooks/use-sync-listener";
+import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
 
 interface BookReaderProps {
   book: BookMeta;
@@ -37,7 +37,7 @@ interface BookReaderProps {
 export function BookReader({ book }: BookReaderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<import("epubjs/types/book").default | null>(null);
-  const renditionRef = useRef<Rendition | null>(null);
+  const renditionRef = useRef<SuccessorRenditionAdapter | null>(null);
 
   const [settings, updateSettings] = useSettings();
   const [localFontFamily, setLocalFontFamily] = useState<string>(() => settings.fontFamily);
@@ -75,7 +75,7 @@ export function BookReader({ book }: BookReaderProps) {
     dismissPopovers,
     loadAndApplyHighlights,
     registerSelectionHandler,
-    highlightsRef,
+    removeHighlightDecoration,
   } = useHighlights({
     bookId: book.id,
     renditionRef,
@@ -90,10 +90,9 @@ export function BookReader({ book }: BookReaderProps) {
         yield* svc.deleteHighlight(highlightId);
       });
       AppRuntime.runPromise(deleteProgram).catch(console.error);
-      renditionRef.current?.annotations.remove(cfiRange, "highlight");
-      highlightsRef.current.delete(cfiRange);
+      removeHighlightDecoration(cfiRange);
     },
-    [highlightsRef],
+    [removeHighlightDecoration],
   );
 
   const {

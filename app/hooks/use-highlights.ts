@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { DecorationClickDetail, SelectionChangedDetail } from "@readmaxxing/epub-successor";
 import { Effect } from "effect";
-import type Rendition from "epubjs/types/rendition";
 import { AnnotationService, type Highlight } from "~/lib/stores/annotations-store";
 import { AppRuntime } from "~/lib/effect-runtime";
+import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
 import { type Theme, resolveTheme } from "~/lib/settings";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 
@@ -21,7 +22,7 @@ export interface SelectionPopover {
 
 interface UseHighlightsOptions {
   bookId: string;
-  renditionRef: React.RefObject<Rendition | null>;
+  renditionRef: React.RefObject<SuccessorRenditionAdapter | null>;
   /** Called when a user clicks an existing highlight in the epub */
   onHighlightClick?: (highlight: Highlight) => void;
   /** Current theme setting — used to pick highlight color for dark/light mode */
@@ -40,36 +41,37 @@ export function useHighlights({
   const onHighlightClickRef = useRef(onHighlightClick);
   onHighlightClickRef.current = onHighlightClick;
 
-  const makeClickCallback = useCallback(
-    (cfiRange: string) => (e: MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const stored = highlightsRef.current.get(cfiRange);
-      if (!stored) return;
-      setSelectionPopover(null);
-      onHighlightClickRef.current?.(stored);
-    },
-    [],
-  );
+  const handleDecorationClick = useCallback((detail: DecorationClickDetail) => {
+    const stored = Array.from(highlightsRef.current.values()).find(
+      ({ id }) => id === detail.decoration.id,
+    );
+    if (!stored) return;
+    setSelectionPopover(null);
+    onHighlightClickRef.current?.(stored);
+  }, []);
 
-  /** Apply a single highlight to the rendition with a click callback. */
+  /** Apply a single stored highlight through the successor decoration layer. */
   const applyHighlightToRendition = useCallback(
-    (rendition: Rendition, hl: Highlight) => {
-      const fillColor = getHighlightColor(theme);
-      rendition.annotations.highlight(
-        hl.cfiRange,
-        {},
-        makeClickCallback(hl.cfiRange),
-        "epubjs-hl",
-        { fill: fillColor },
-      );
+    (rendition: SuccessorRenditionAdapter, hl: Highlight) => {
+      const locator = rendition.locatorFromCfi(hl.cfiRange, hl.text);
+      if (!locator) {
+        console.warn("Skipping invalid EPUB highlight CFI; stored highlight was preserved", {
+          highlightId: hl.id,
+        });
+        return;
+      }
+      rendition.upsertDecoration({
+        id: hl.id,
+        locator,
+        style: { variant: "highlight", color: getHighlightColor(theme) },
+      });
     },
-    [makeClickCallback, theme],
+    [theme],
   );
 
   /** Load all highlights for the book from IndexedDB and apply them to the rendition. */
   const loadAndApplyHighlights = useCallback(
-    async (rendition: Rendition) => {
+    async (rendition: SuccessorRenditionAdapter) => {
       const program = Effect.gen(function* () {
         const svc = yield* AnnotationService;
         return yield* svc.getHighlightsByBook(bookId);
@@ -92,55 +94,57 @@ export function useHighlights({
     [bookId, applyHighlightToRendition],
   );
 
-  /** Register the selection handler on a rendition. */
-  const registerSelectionHandler = useCallback((rendition: Rendition) => {
-    rendition.on("selected", (cfiRange: string, contents: any) => {
-      const range = contents.range(cfiRange);
-      const text = range?.toString() || "";
-      if (!text.trim()) return;
-
-      const iframe = contents.document?.defaultView?.frameElement;
-      if (!iframe) return;
-      const iframeRect = iframe.getBoundingClientRect();
-      const rangeRect = range.getBoundingClientRect();
-
-      const x = iframeRect.left + rangeRect.left + rangeRect.width / 2;
-      const y = iframeRect.top + rangeRect.bottom;
-
-      setSelectionPopover({ position: { x, y }, cfiRange, text });
-    });
-
-    // Dismiss popover when user clicks inside the epub iframe without making a selection.
-    // We need to attach to both already-loaded and future content documents because
-    // this function is called after the initial content has loaded.
-    const attachDismissListener = (doc: Document) => {
-      doc.addEventListener("mousedown", () => {
-        setTimeout(() => {
-          const sel = doc.defaultView?.getSelection();
-          if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-            setSelectionPopover(null);
-          }
-        }, 50);
-      });
-    };
-
-    // Attach to already-loaded iframe documents
-    try {
-      const contents = (rendition as any).getContents?.() as any[] | undefined;
-      if (contents) {
-        for (const c of contents) {
-          if (c.document) attachDismissListener(c.document);
+  /** Register successor selection and decoration-click handlers. */
+  const registerSelectionHandler = useCallback(
+    (rendition: SuccessorRenditionAdapter) => {
+      rendition.on("decoration-click", handleDecorationClick);
+      rendition.on("selection-changed", (detail: SelectionChangedDetail) => {
+        const { locator, text } = detail;
+        const cfiRange = locator?.locations.cfi;
+        if (!locator || !cfiRange || !text.trim()) {
+          setSelectionPopover(null);
+          return;
         }
-      }
-    } catch {
-      // ignore if getContents isn't available
-    }
+        const contents = rendition.contentDocument;
+        const selection = contents?.getSelection();
+        const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+        const iframe = contents?.defaultView?.frameElement;
+        if (!range || !(iframe instanceof HTMLElement)) return;
+        const iframeRect = iframe.getBoundingClientRect();
+        const rangeRect = range.getBoundingClientRect();
 
-    // Attach to future content (page turns load new iframe documents)
-    rendition.hooks.content.register((contents: any) => {
-      if (contents.document) attachDismissListener(contents.document);
-    });
-  }, []);
+        const x = iframeRect.left + rangeRect.left + rangeRect.width / 2;
+        const y = iframeRect.top + rangeRect.bottom;
+
+        setSelectionPopover({ position: { x, y }, cfiRange, text });
+      });
+
+      // Dismiss popover when user clicks inside the epub iframe without making a selection.
+      // We need to attach to both already-loaded and future content documents because
+      // this function is called after the initial content has loaded.
+      const attachDismissListener = (doc: Document) => {
+        doc.addEventListener("mousedown", () => {
+          setTimeout(() => {
+            const sel = doc.defaultView?.getSelection();
+            if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+              setSelectionPopover(null);
+            }
+          }, 50);
+        });
+      };
+
+      // Attach to already-loaded iframe documents
+      try {
+        for (const content of rendition.getContents()) attachDismissListener(content.document);
+      } catch {
+        // ignore if getContents isn't available
+      }
+
+      // Attach to future content (page turns load new iframe documents)
+      rendition.hooks.content.register((contents) => attachDismissListener(contents.document));
+    },
+    [handleDecorationClick],
+  );
 
   /** Create and persist a new highlight, apply it to the rendition. Returns the created highlight. */
   const saveHighlight = useCallback(async (): Promise<Highlight | null> => {
@@ -170,8 +174,7 @@ export function useHighlights({
     setSelectionPopover(null);
 
     // Clear the selection in the iframe
-    const contents = (rendition as any).getContents() as any[];
-    contents.forEach((content: any) => {
+    rendition.getContents().forEach((content) => {
       const win = content.document?.defaultView;
       if (win) win.getSelection()?.removeAllRanges();
     });
@@ -225,11 +228,8 @@ export function useHighlights({
         const freshCfiRanges = new Set(freshHighlights.map((h) => h.cfiRange));
         for (const [cfiRange] of highlightsRef.current) {
           if (!freshCfiRanges.has(cfiRange)) {
-            try {
-              rendition.annotations.remove(cfiRange, "highlight");
-            } catch {
-              // ignore removal errors
-            }
+            const existing = highlightsRef.current.get(cfiRange);
+            if (existing) rendition.removeDecoration(existing.id);
             highlightsRef.current.delete(cfiRange);
           }
         }
@@ -243,12 +243,42 @@ export function useHighlights({
     setSelectionPopover(null);
   }, []);
 
+  const removeHighlightDecoration = useCallback(
+    (cfiRange: string) => {
+      const highlight = highlightsRef.current.get(cfiRange);
+      if (highlight) renditionRef.current?.removeDecoration(highlight.id);
+      highlightsRef.current.delete(cfiRange);
+    },
+    [renditionRef],
+  );
+
+  const applyTemporaryHighlight = useCallback(
+    (cfiRange: string) => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+      const locator = rendition.locatorFromCfi(cfiRange);
+      if (!locator) {
+        console.warn("Skipping invalid temporary EPUB highlight CFI");
+        return;
+      }
+      const id = `temporary-highlight-${crypto.randomUUID()}`;
+      rendition.upsertDecoration({
+        id,
+        locator,
+        style: { variant: "highlight", color: "rgba(255, 213, 79, 0.4)" },
+      });
+      setTimeout(() => rendition.removeDecoration(id), 3000);
+    },
+    [renditionRef],
+  );
+
   return {
     selectionPopover,
     saveHighlight,
     dismissPopovers,
     loadAndApplyHighlights,
     registerSelectionHandler,
-    highlightsRef,
+    removeHighlightDecoration,
+    applyTemporaryHighlight,
   };
 }

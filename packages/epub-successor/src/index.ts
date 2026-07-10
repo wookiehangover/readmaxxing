@@ -1,5 +1,15 @@
 export const EPUB_SUCCESSOR_PACKAGE_NAME = "@readmaxxing/epub-successor";
 
+export { createDecorationLayer, DecorationLayer } from "./decorations/decorations";
+export type {
+  Decoration,
+  DecorationClickDetail,
+  DecorationLayerEventMap,
+  DecorationLayerOptions,
+  DecorationRenderingMode,
+  HighlightDecorationStyle,
+  SelectionChangedDetail,
+} from "./decorations/decorations";
 export { parseNavigationDocument } from "./epub-parser/nav";
 export type { NavigationDocumentParseResult } from "./epub-parser/nav";
 export { parseNcx } from "./epub-parser/ncx";
@@ -27,6 +37,13 @@ export { generateCfi, parseCfi, resolveCfi } from "./locations/cfi";
 export type { ParsedCfi } from "./locations/cfi";
 export { normalizePublicationPath } from "./publication-model/paths";
 export type { PublicationPath } from "./publication-model/paths";
-export type { Link, Publication, TocEntry } from "./publication-model/publication-model";
+export { createCfi } from "./publication-model/publication-model";
+export type {
+  Cfi,
+  Link,
+  Locator,
+  Publication,
+  TocEntry,
+} from "./publication-model/publication-model";
 export { openZipResourceProvider, ZipResourceProvider } from "./resource-loader/resource-loader";
 export type { ResourceProvider } from "./resource-loader/resource-loader";

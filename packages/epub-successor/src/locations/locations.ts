@@ -162,6 +162,17 @@ function selectorsFrom(locator: Locator | PersistentLocator): LocatorSelectors |
   };
 }
 
+function quoteFrom(locator: Locator | PersistentLocator): TextQuoteSelector | undefined {
+  if ("selectors" in locator) return locator.selectors.textQuote;
+  const exact = locator.text.highlight;
+  if (!exact) return undefined;
+  return {
+    exact,
+    ...(locator.text.before === undefined ? {} : { prefix: locator.text.before }),
+    ...(locator.text.after === undefined ? {} : { suffix: locator.text.after }),
+  };
+}
+
 export function calculateProgression(
   spineIndex: number,
   spineLength: number,
@@ -223,20 +234,21 @@ export function resolveLocator(
   section: SectionMetadata,
 ): Range | null {
   const selectors = selectorsFrom(locator);
+  const quote = quoteFrom(locator);
   if (locator.locations.cfi !== undefined) {
     const cfiRange = resolveCfi(locator.locations.cfi, document, section);
     if (
       cfiRange !== null &&
-      (selectors?.textQuote.exact === "" ||
-        selectors?.textQuote.exact === undefined ||
-        cfiRange.toString() === selectors.textQuote.exact)
+      (quote?.exact === "" || quote?.exact === undefined || cfiRange.toString() === quote.exact)
     ) {
       return cfiRange;
     }
   }
-  if (selectors !== undefined) {
-    const quoteRange = resolveQuote(document, selectors.textQuote);
+  if (quote !== undefined) {
+    const quoteRange = resolveQuote(document, quote);
     if (quoteRange !== null) return quoteRange;
+  }
+  if (selectors !== undefined) {
     return rangeAt(document, selectors.textPosition.start, selectors.textPosition.end);
   }
   return null;
