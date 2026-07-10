@@ -211,7 +211,7 @@ describe("XHTML rewriting", () => {
     const scope = manager.createScope();
     const xhtml = `<html xmlns="http://www.w3.org/1999/xhtml" xmlns:xlink="http://www.w3.org/1999/xlink">
       <head><link rel="alternate stylesheet" href="../styles/main.css" /></head><body>
-      <img src="../images/a.png" /><source src="../images/a.png" srcset="../images/a.png 1x, ../images/b.png 2x, data:image/png;base64,AAAA 3x" />
+      <img src="../images/a.png" srcset="../images/a.png 1x, ../images/b.png 2x" /><source src="../images/a.png" srcset="../images/a.png 1x, ../images/b.png 2x, data:image/png;base64,AAAA 3x" />
       <audio src="../media/track.mp3" /><video src="../media/movie.mp4" />
       <object data="../files/sample.bin" /><svg xmlns="http://www.w3.org/2000/svg"><image xlink:href="../images/vector.svg#icon" /></svg>
       <a id="inside" href="next.xhtml#part">Next</a><a id="outside" href="https://example.com">Outside</a>
@@ -221,6 +221,9 @@ describe("XHTML rewriting", () => {
     const document = new DOMParser().parseFromString(rewritten, "application/xhtml+xml");
 
     expect(document.querySelector("img")?.getAttribute("src")).toMatch(/^blob:test\//);
+    expect(document.querySelector("img")?.getAttribute("srcset")).toMatch(
+      /^blob:test\/[0-9]+ 1x, blob:test\/[0-9]+ 2x$/,
+    );
     expect(document.querySelector("source")?.getAttribute("srcset")).toMatch(
       /^blob:test\/[0-9]+ 1x, blob:test\/[0-9]+ 2x, data:image\/png;base64,AAAA 3x$/,
     );
