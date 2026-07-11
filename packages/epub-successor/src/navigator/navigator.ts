@@ -184,6 +184,10 @@ export class Navigator extends EventTarget {
   }
 
   async display(target: DisplayTarget): Promise<Relocation> {
+    return this.#display(target, false);
+  }
+
+  async #display(target: DisplayTarget, positionAtEnd: boolean): Promise<Relocation> {
     this.#assertLive();
     this.#cancelPageMove(true);
     const resolved = this.#resolveTarget(target);
@@ -218,14 +222,20 @@ export class Navigator extends EventTarget {
         controller.signal,
       );
       this.#assertCurrent(operationId, controller.signal);
-      mount = this.#mount(prepared, operationId, outgoing !== undefined);
+      mount = this.#mount(prepared, operationId, outgoing);
       prepared = undefined;
       await this.#waitForLoad(mount.frame, controller.signal);
       this.#assertCurrent(operationId, controller.signal);
       this.#setState("settling");
       await this.#settle(mount, resolved.fragment, controller.signal);
       this.#assertCurrent(operationId, controller.signal);
-      await this.#revealMount(mount, outgoing, controller.signal);
+      if (positionAtEnd && mount.pagination) {
+        scrollToPage(
+          mount.pagination,
+          lastSpreadPageIndex(mount.pagination.pageCount, mount.pagination.pagesPerSpread),
+        );
+      }
+      this.#revealMount(mount);
       this.#assertCurrent(operationId, controller.signal);
       this.#active = mount;
       if (outgoing) this.#unmount(outgoing);
@@ -274,18 +284,7 @@ export class Navigator extends EventTarget {
       }
     }
     if (index === undefined || index === 0) return false;
-    await this.display({ spineIndex: index - 1 });
-    const previousMount = this.#active;
-    if (previousMount?.pagination) {
-      scrollToPage(
-        previousMount.pagination,
-        lastSpreadPageIndex(
-          previousMount.pagination.pageCount,
-          previousMount.pagination.pagesPerSpread,
-        ),
-      );
-      await this.#finishPageMove(previousMount);
-    }
+    await this.#display({ spineIndex: index - 1 }, true);
     return true;
   }
 
@@ -434,7 +433,12 @@ export class Navigator extends EventTarget {
     }
   }
 
-  #mount(prepared: PreparedSection, operationId: number, overlay: boolean): SectionMount {
+  #mount(
+    prepared: PreparedSection,
+    operationId: number,
+    outgoing: SectionMount | undefined,
+  ): SectionMount {
+    const overlay = outgoing !== undefined;
     const frame = this.#container.ownerDocument.createElement("iframe");
     frame.setAttribute("sandbox", CONTENT_IFRAME_SANDBOX);
     frame.setAttribute("title", `Publication section ${prepared.spineIndex + 1}`);
@@ -442,11 +446,22 @@ export class Navigator extends EventTarget {
     frame.style.display = "block";
     frame.style.height = "100%";
     frame.style.width = "100%";
-    if (overlay) {
+    if (outgoing) {
+      const outgoingRect = outgoing.frame.getBoundingClientRect();
+      const width = outgoingRect.width || outgoing.frame.clientWidth;
+      const height = outgoingRect.height || outgoing.frame.clientHeight;
       frame.style.inset = "0";
       frame.style.position = "absolute";
       frame.style.visibility = "hidden";
       frame.style.zIndex = "1";
+      if (width > 0) {
+        frame.style.maxWidth = `${width}px`;
+        frame.style.minWidth = `${width}px`;
+      }
+      if (height > 0) {
+        frame.style.maxHeight = `${height}px`;
+        frame.style.minHeight = `${height}px`;
+      }
     }
     frame.src = prepared.documentLease.url;
     const mount: SectionMount = { ...prepared, operationId, frame, overlaid: overlay };
@@ -466,58 +481,10 @@ export class Navigator extends EventTarget {
     }
   }
 
-  async #revealMount(
-    mount: SectionMount,
-    outgoing: SectionMount | undefined,
-    signal: AbortSignal,
-  ): Promise<void> {
-    try {
-      mount.frame.style.visibility = "visible";
-      if (!outgoing || !this.#shouldAnimatePageTurn()) return;
-      const advancing = mount.spineIndex > outgoing.spineIndex;
-      const metadata = this.publication.metadata;
-      const rtl =
-        metadata.pageProgressionDirection === "rtl" ||
-        (metadata.pageProgressionDirection !== "ltr" && metadata.direction === "rtl");
-      const offset = (advancing ? 100 : -100) * (rtl ? -1 : 1);
-      const duration = this.#pageTurnDurationMs();
-      const frame = mount.frame;
-      const view = frame.ownerDocument.defaultView ?? frame.contentWindow;
-      if (!view) return;
-      frame.style.opacity = "0";
-      frame.style.transform = `translateX(${offset}%)`;
-      frame.style.transition = `transform ${duration}ms ease-out, opacity ${duration}ms ease-out`;
-      frame.style.willChange = "transform, opacity";
-      await nextAnimationFrame(view, signal);
-      await new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-          clearTimeout(timeout);
-          frame.removeEventListener("transitionend", transitioned);
-          signal.removeEventListener("abort", aborted);
-        };
-        const completed = () => {
-          cleanup();
-          resolve();
-        };
-        const transitioned = (event: Event) => {
-          if (event.target === frame) completed();
-        };
-        const aborted = () => {
-          cleanup();
-          reject(abortError());
-        };
-        const timeout = setTimeout(completed, duration + 50);
-        frame.addEventListener("transitionend", transitioned);
-        signal.addEventListener("abort", aborted, { once: true });
-        if (signal.aborted) aborted();
-        else {
-          frame.style.opacity = "1";
-          frame.style.transform = "translateX(0)";
-        }
-      });
-    } finally {
-      this.#releaseOverlay(mount);
-    }
+  #revealMount(mount: SectionMount): void {
+    if (!mount.overlaid) return;
+    mount.frame.style.visibility = "visible";
+    this.#releaseOverlay(mount);
   }
 
   #waitForLoad(frame: HTMLIFrameElement, signal: AbortSignal): Promise<void> {
@@ -725,6 +692,10 @@ export class Navigator extends EventTarget {
     if (!mount.overlaid) return;
     mount.overlaid = false;
     mount.frame.style.inset = "";
+    mount.frame.style.maxHeight = "";
+    mount.frame.style.maxWidth = "";
+    mount.frame.style.minHeight = "";
+    mount.frame.style.minWidth = "";
     mount.frame.style.opacity = "";
     mount.frame.style.position = "";
     mount.frame.style.transform = "";

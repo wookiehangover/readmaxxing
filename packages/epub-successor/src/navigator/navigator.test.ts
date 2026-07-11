@@ -232,35 +232,6 @@ function suppressAutomaticFrameLoads(): (frame: HTMLIFrameElement) => void {
   };
 }
 
-async function settleToAnimatedHandoff<T>(
-  container: HTMLElement,
-  display: Promise<T>,
-  load: (frame: HTMLIFrameElement) => void,
-) {
-  await waitForFrameCount(container, 2);
-  const frames = container.querySelectorAll("iframe");
-  const incoming = frames[1]!;
-  const animationFrames = mockFrameAnimationFrames(incoming);
-  load(incoming);
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    await animationFrames.waitForPending();
-    if (incoming.style.transform) {
-      return { animationFrames, display, incoming, outgoing: frames[0]! };
-    }
-    animationFrames.runNext(attempt * 16);
-  }
-  throw new Error("Animated handoff did not start");
-}
-
-async function finishAnimatedHandoff<T>(
-  handoff: Awaited<ReturnType<typeof settleToAnimatedHandoff<T>>>,
-): Promise<T> {
-  handoff.animationFrames.runNext(32);
-  await Promise.resolve();
-  handoff.incoming.dispatchEvent(new Event("transitionend"));
-  return handoff.display;
-}
-
 async function startPartialTurn(
   navigator: Navigator,
   frames: ReturnType<typeof mockFrameAnimationFrames>,
@@ -344,40 +315,34 @@ describe("scrolling Navigator", () => {
     navigator.destroy();
   });
 
-  it.each([
-    ["ltr", "next", 0, "translateX(100%)"],
-    ["ltr", "previous", 1, "translateX(-100%)"],
-    ["rtl", "next", 0, "translateX(-100%)"],
-    ["rtl", "previous", 1, "translateX(100%)"],
-  ] as const)(
-    "keeps the outgoing frame through the %s %s handoff",
-    async (direction, move, initialSpineIndex, expectedTransform) => {
-      const { container, navigator } = setup(
-        undefined,
-        { pageTurnAnimation: "slide", pageTurnDurationMs: 250 },
-        direction,
-      );
-      await displayAt(navigator, container, initialSpineIndex);
-      const oldDocument = navigator.contentDocument;
-      const load = suppressAutomaticFrameLoads();
+  it("retains the outgoing frame and its viewport width until the incoming section settles", async () => {
+    const { container, navigator } = setup(undefined, { pageTurnAnimation: "slide" });
+    await displayAt(navigator, container, 0);
+    const outgoing = container.querySelector("iframe")!;
+    Object.defineProperties(outgoing, {
+      clientWidth: { configurable: true, value: 483 },
+      clientHeight: { configurable: true, value: 493 },
+    });
+    const oldDocument = navigator.contentDocument;
+    const load = suppressAutomaticFrameLoads();
+    const turn = navigator.next();
+    await waitForFrameCount(container, 2);
+    const incoming = container.querySelectorAll("iframe")[1]!;
+    await vi.waitFor(() => expect(incoming.contentDocument?.querySelector("h1")).not.toBeNull());
 
-      const handoff = await settleToAnimatedHandoff(
-        container,
-        move === "next" ? navigator.next() : navigator.previous(),
-        load,
-      );
-
-      expect(handoff.outgoing.contentDocument).toBe(oldDocument);
-      expect(navigator.contentDocument).toBe(oldDocument);
-      expect(handoff.incoming.style.transform).toBe(expectedTransform);
-      expect(container.querySelectorAll("iframe")).toHaveLength(2);
-      await expect(finishAnimatedHandoff(handoff)).resolves.toBe(true);
-      expect(container.querySelectorAll("iframe")).toHaveLength(1);
-      expect(container.querySelector("iframe")).toBe(handoff.incoming);
-      expect(handoff.incoming.getAttribute("style")).not.toContain("transform");
-      navigator.destroy();
-    },
-  );
+    expect(navigator.contentDocument).toBe(oldDocument);
+    expect(incoming.style.minWidth).toBe("483px");
+    expect(incoming.style.maxWidth).toBe("483px");
+    load(incoming);
+    await expect(turn).resolves.toBe(true);
+    expect(container.querySelectorAll("iframe")).toHaveLength(1);
+    expect(container.querySelector("iframe")).toBe(incoming);
+    expect(incoming.style.transform).toBe("");
+    expect(incoming.style.transition).toBe("");
+    expect(incoming.style.minWidth).toBe("");
+    expect(incoming.style.maxWidth).toBe("");
+    navigator.destroy();
+  });
 
   it("keeps the settled frame and disposes the incoming frame after load failure", async () => {
     const { container, navigator } = setup();
@@ -491,6 +456,41 @@ describe("paginated Navigator", () => {
       frame.contentDocument!.getElementById("epub-successor-pagination-style")?.textContent ?? "";
     expect(singleCss).toContain("column-width:800px");
     expect(singleCss).toContain("padding:24px 0");
+    navigator.destroy();
+  });
+
+  it("positions a previous section at its last spread before revealing it", async () => {
+    const { container, navigator } = setupPaginated({
+      pageTurnAnimation: "slide",
+      pageTurnDurationMs: 250,
+    });
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 1 }), navigator);
+    const load = suppressAutomaticFrameLoads();
+    const previous = navigator.previous();
+    await waitForFrameCount(container, 2);
+    const incoming = container.querySelectorAll("iframe")[1]!;
+    await vi.waitFor(() => expect(incoming.contentDocument?.querySelector("h1")).not.toBeNull());
+    load(incoming);
+    Object.defineProperties(incoming, {
+      clientWidth: { configurable: true, value: 800 },
+      clientHeight: { configurable: true, value: 600 },
+    });
+    for (const element of [
+      incoming.contentDocument!.documentElement,
+      incoming.contentDocument!.body,
+    ]) {
+      Object.defineProperties(element, {
+        scrollWidth: { configurable: true, value: 2_048 },
+        clientWidth: { configurable: true, value: 800 },
+        scrollHeight: { configurable: true, value: 600 },
+        clientHeight: { configurable: true, value: 600 },
+      });
+    }
+    await expect(previous).resolves.toBe(true);
+    const scrolling =
+      incoming.contentDocument!.scrollingElement ?? incoming.contentDocument!.documentElement;
+
+    expect(scrolling.scrollLeft).toBe(1_248);
     navigator.destroy();
   });
 
