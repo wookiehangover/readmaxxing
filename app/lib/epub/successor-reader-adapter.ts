@@ -107,9 +107,36 @@ export async function extractCompatibleToc(
   return parseNcx(withoutDocumentType(await provider.readText(ncx.href)), ncx.href).toc;
 }
 
+function spineQualifiedPrefix(cfi: string): string | null {
+  const source = cfi.trim();
+  if (!source.startsWith("epubcfi(") || !source.endsWith(")")) return null;
+  let assertionDepth = 0;
+  let escaped = false;
+  for (let index = 8; index < source.length - 1; index += 1) {
+    const character = source[index];
+    if (escaped) escaped = false;
+    else if (character === "^") escaped = true;
+    else if (character === "[") assertionDepth += 1;
+    else if (character === "]") {
+      if (assertionDepth === 0) return null;
+      assertionDepth -= 1;
+    } else if (character === "!" && assertionDepth === 0) {
+      return `${source.slice(0, index + 1)}/4)`;
+    }
+  }
+  return null;
+}
+
 export function spineIndexFromCfi(cfi: string): number | null {
   try {
-    const parsed = parseCfi(cfi);
+    let parsed;
+    try {
+      parsed = parseCfi(cfi);
+    } catch {
+      const prefix = spineQualifiedPrefix(cfi);
+      if (!prefix) return null;
+      parsed = parseCfi(prefix);
+    }
     const step = parsed.packagePath?.steps.at(-1);
     if (!step || step.number % 2 !== 0) return null;
     const index = step.number / 2 - 1;
