@@ -19,6 +19,14 @@ export interface PaginatedLayoutState extends ColumnGeometry {
 const PAGINATION_STYLE_ID = "epub-successor-pagination-style";
 const XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 export const DEFAULT_MIN_SPREAD_WIDTH = 800;
+/** Gap between columns in a multi-page spread (middle gutter only). */
+export const DEFAULT_COLUMN_GAP = 64;
+/**
+ * Vertical padding inside the section body. Horizontal chrome lives on the host
+ * container — body side padding only paints at scrollLeft=0 and makes later
+ * pages look offset relative to the first.
+ */
+export const DEFAULT_BLOCK_PADDING = 24;
 
 function snapped(value: number, minimum = 0): number {
   return Math.max(minimum, Math.round(Number.isFinite(value) ? value : minimum));
@@ -147,21 +155,37 @@ function layoutStyle(document: Document): HTMLStyleElement {
   return style;
 }
 
-function bodyInlineInsets(
-  document: Document,
-  direction: "ltr" | "rtl",
-): { readonly total: number; readonly end: number } {
-  const body = document.body;
-  const view = document.defaultView;
-  if (!body || !view) return { total: 0, end: 0 };
-  const style = view.getComputedStyle(body);
-  const left = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.borderLeftWidth);
-  const right = Number.parseFloat(style.paddingRight) + Number.parseFloat(style.borderRightWidth);
-  const safeLeft = Number.isFinite(left) ? left : 0;
-  const safeRight = Number.isFinite(right) ? right : 0;
+/**
+ * Page geometry for multi-column layout.
+ *
+ * Inline (horizontal) body padding is intentionally 0. Side padding on a
+ * multicol body only appears at scrollLeft=0, so page 1 looks offset from
+ * later pages / when navigating back. Horizontal chrome belongs on the host
+ * container around the iframe. Body only keeps neutral vertical padding.
+ *
+ * Columns pack the full viewport width so every page turn shares the same
+ * origin (no first-page-only inset).
+ */
+export function pageChromeInsets(
+  viewportWidth: number,
+  columnGap: number,
+  pagesPerSpread: 1 | 2,
+): {
+  readonly padBlock: number;
+  readonly padInlineStart: number;
+  readonly padInlineEnd: number;
+  readonly geometry: ColumnGeometry;
+} {
+  const width = contained(viewportWidth, 1);
+  const gap = Math.min(snapped(columnGap), Math.max(0, width - pagesPerSpread));
+  // Full-width pack: n*columnWidth + (n-1)*gap <= width, no leftover as side pad.
+  const geometry = calculateColumnGeometry(width, gap, pagesPerSpread, 0);
+
   return {
-    total: safeLeft + safeRight,
-    end: direction === "rtl" ? safeLeft : safeRight,
+    padBlock: DEFAULT_BLOCK_PADDING,
+    padInlineStart: 0,
+    padInlineEnd: 0,
+    geometry,
   };
 }
 
@@ -170,25 +194,31 @@ export function applyPaginatedLayout(
   viewport: Readonly<{ width: number; height: number }>,
   pagesPerSpread: 1 | 2,
   direction: "ltr" | "rtl",
-  columnGap = 32,
+  columnGap = DEFAULT_COLUMN_GAP,
 ): ColumnGeometry {
-  const insets = bodyInlineInsets(document, direction);
-  const geometry = calculateColumnGeometry(viewport.width, columnGap, pagesPerSpread, insets.total);
+  const chrome = pageChromeInsets(viewport.width, columnGap, pagesPerSpread);
   const height = contained(viewport.height, 1);
+  // Do not set background here — theme/preference CSS owns html+body paint.
+  // Horizontal padding stays 0 so every column page aligns the same.
   layoutStyle(document).textContent =
-    `html{height:${height}px !important;width:${geometry.viewportWidth}px !important;` +
+    `html{height:${height}px !important;width:${chrome.geometry.viewportWidth}px !important;` +
     `overflow:hidden !important;direction:${direction} !important;}` +
     `body{box-sizing:border-box !important;height:${height}px !important;min-height:0 !important;` +
-    `margin:0 !important;column-fill:auto !important;column-gap:${geometry.columnGap}px !important;` +
-    `column-width:${geometry.columnWidth}px !important;overflow:visible !important;}` +
+    `margin:0 !important;` +
+    `padding:${chrome.padBlock}px 0 !important;` +
+    `column-fill:auto !important;column-gap:${chrome.geometry.columnGap}px !important;` +
+    `column-width:${chrome.geometry.columnWidth}px !important;overflow:visible !important;}` +
     `body::after{content:"" !important;display:block !important;` +
-    `width:calc(100% + ${insets.end}px) !important;height:1px !important;` +
+    `width:100% !important;height:1px !important;` +
     `margin-block-start:-1px !important;}`;
-  return geometry;
+  return chrome.geometry;
 }
 
 export function clearPaginatedLayout(document: Document): void {
-  layoutStyle(document).textContent = "";
+  // Scroll mode: neutral vertical padding only (host supplies horizontal chrome).
+  layoutStyle(document).textContent =
+    `body{box-sizing:border-box !important;margin:0 !important;` +
+    `padding:${DEFAULT_BLOCK_PADDING}px 0 !important;}`;
   const scrolling = document.scrollingElement ?? document.documentElement;
   scrolling.scrollLeft = 0;
 }

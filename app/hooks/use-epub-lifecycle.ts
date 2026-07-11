@@ -122,6 +122,9 @@ function readerPreferences(config: UseEpubLifecycleConfig): NavigatorPreferences
     fontSize: config.fontSize,
     lineHeight: config.lineHeight,
     theme,
+    // Page chrome (epubjs-style body insets) is applied by the navigator
+    // paginated layout, not preference margins — body padding must participate
+    // in column geometry or two-page spreads show a next-column sliver.
     preferenceCss: `${getTypographyCss(
       config.fontFamily,
       config.fontSize,

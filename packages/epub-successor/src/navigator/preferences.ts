@@ -52,8 +52,11 @@ export function buildPreferenceCss(preferences: NavigatorPreferences): string {
   if (margins !== undefined) declarations.push(`padding:${margins}px !important`);
 
   const theme = preferences.theme ? THEME_COLORS[preferences.theme] : undefined;
+  // Prefer preferenceCss (app-resolved colors) over hard-coded THEME_COLORS so
+  // html/body stay in lockstep with the host UI. Keep THEME_COLORS as a base
+  // for the package demo when preferenceCss is omitted.
   const themeCss = theme
-    ? `html,body{color:${theme[0]} !important;background:${theme[1]} !important;}`
+    ? `html,body{color:${theme[0]} !important;background:${theme[1]} !important;background-color:${theme[1]} !important;}`
     : "";
   const bodyCss = declarations.length > 0 ? `body{${declarations.join(";")};}` : "";
   return [themeCss, bodyCss, preferences.preferenceCss].filter(Boolean).join("\n");

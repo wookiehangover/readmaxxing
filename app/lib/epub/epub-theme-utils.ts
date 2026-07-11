@@ -67,16 +67,22 @@ const IMG_CONTAINMENT_CSS = `img {
 }`;
 
 /**
- * Generate a CSS string for the given theme mode that sets body colors and
- * forces color inheritance on common text elements.  This is meant to be
+ * Generate a CSS string for the given theme mode that sets root + body colors
+ * and forces color inheritance on common text elements.  This is meant to be
  * injected directly into the epub iframe as a `<style>` element.
+ *
+ * Both `html` and `body` must share the same background: the navigator also
+ * paints hard-coded theme colors on `html`, and multi-column pagination can
+ * reveal the root behind/beside columns — a mismatch looks like subsequent
+ * pages having a slightly different dark background.
  */
 export function getThemeColorCss(mode: "light" | "dark"): string {
   const { background, foreground } = resolveThemeColors(mode);
   return `
-body {
+html, body {
   color: ${foreground} !important;
   background: ${background} !important;
+  background-color: ${background} !important;
 }
 a { color: inherit !important; }
 ${COLOR_INHERIT_SELECTORS} {
@@ -135,20 +141,27 @@ export function registerThemeColors(rendition: {
 
   const colorInherit = { color: "inherit !important" };
 
+  const lightRoot = {
+    color: `${lightColors.foreground} !important`,
+    background: `${lightColors.background} !important`,
+    "background-color": `${lightColors.background} !important`,
+  };
+  const darkRoot = {
+    color: `${darkColors.foreground} !important`,
+    background: `${darkColors.background} !important`,
+    "background-color": `${darkColors.background} !important`,
+  };
+
   rendition.themes.register("light", {
-    body: {
-      color: `${lightColors.foreground} !important`,
-      background: `${lightColors.background} !important`,
-    },
+    html: lightRoot,
+    body: lightRoot,
     a: colorInherit,
     img: imgContainment,
     [COLOR_INHERIT_SELECTORS]: colorInherit,
   });
   rendition.themes.register("dark", {
-    body: {
-      color: `${darkColors.foreground} !important`,
-      background: `${darkColors.background} !important`,
-    },
+    html: darkRoot,
+    body: darkRoot,
     a: colorInherit,
     img: imgContainment,
     [COLOR_INHERIT_SELECTORS]: colorInherit,

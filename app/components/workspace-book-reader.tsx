@@ -800,7 +800,9 @@ function WorkspaceBookReaderInner({
           <div
             ref={containerRef}
             className={cn("h-full overflow-hidden", {
-              "px-4 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": localReaderLayout,
+              // Symmetric host chrome (64px sides). Horizontal padding stays on
+              // the host, not the multicol body, so every page shares the same origin.
+              "px-16 pt-6 pb-2 md:pt-10 md:pb-4": localReaderLayout,
             })}
           />
           {!isScrollMode && (

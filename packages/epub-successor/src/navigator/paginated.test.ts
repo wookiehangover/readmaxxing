@@ -7,6 +7,7 @@ import {
   effectivePagesPerSpread,
   lastSpreadPageIndex,
   logicalOffsetFromScrollLeft,
+  pageChromeInsets,
   pageIndexFromOffset,
   pageProgression,
   paginatedProgression,
@@ -38,6 +39,34 @@ describe("paginated page math", () => {
       columnWidth: 752,
       columnStride: 784,
     });
+  });
+
+  it("packs columns to the full viewport with no inline body padding", () => {
+    // Horizontal padding is 0 so page 1 and later pages share the same origin.
+    const even = pageChromeInsets(800, 64, 2);
+    expect(even.padInlineStart).toBe(0);
+    expect(even.padInlineEnd).toBe(0);
+    expect(even.geometry).toMatchObject({
+      viewportWidth: 800,
+      columnWidth: 368,
+      columnGap: 64,
+      columnStride: 432,
+      pagesPerSpread: 2,
+    });
+    expect(even.geometry.columnWidth * 2 + even.geometry.columnGap).toBe(800);
+    expect(even.padBlock).toBe(24);
+
+    const odd = pageChromeInsets(801.4, 64, 2);
+    expect(odd.padInlineStart).toBe(0);
+    expect(odd.padInlineEnd).toBe(0);
+    expect(odd.geometry.columnWidth * 2 + odd.geometry.columnGap).toBeLessThanOrEqual(801);
+  });
+
+  it("uses full width for single-page columns", () => {
+    const single = pageChromeInsets(800, 64, 1);
+    expect(single.padInlineStart).toBe(0);
+    expect(single.padInlineEnd).toBe(0);
+    expect(single.geometry.columnWidth).toBe(800);
   });
 
   it("snaps a restored element offset to the nearest spread boundary", () => {
