@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFile } from "node:fs/promises";
 import {
+  createCfi,
   normalizePublicationPath,
   openPublication,
   openZipResourceProvider,
+  type PersistentLocator,
 } from "@readmaxxing/epub-successor";
 import {
   displayStoredCfiWithFallback,
@@ -14,6 +16,7 @@ import { fuzzySearchEpubForCfi } from "~/lib/epub/epub-search";
 import { extractBookChapters } from "~/lib/epub/epub-text-extract";
 import {
   createSuccessorBookAdapter,
+  pageIndexFromPositions,
   parseSuccessorPositionCache,
   serializeSuccessorPositionCache,
   spineIndexFromCfi,
@@ -146,6 +149,108 @@ describe("successor position compatibility", () => {
     expect(
       parseSuccessorPositionCache(serializeSuccessorPositionCache(positions))?.positions,
     ).toEqual(positions);
+  });
+
+  it("maps locations to character-sampled page indexes, not spine-equal progression", () => {
+    const positions: PersistentLocator[] = [
+      {
+        href: normalizePublicationPath("OPS/front.xhtml"),
+        locations: {
+          progression: 0,
+          totalProgression: 0,
+          position: 1,
+          cfi: createCfi("epubcfi(/6/2!/4)"),
+        },
+        text: {},
+        selectors: { textQuote: { exact: "" }, textPosition: { start: 0, end: 0 } },
+      },
+      {
+        href: normalizePublicationPath("OPS/chapter-1.xhtml"),
+        locations: {
+          progression: 0,
+          totalProgression: 0.2,
+          position: 2,
+          cfi: createCfi("epubcfi(/6/4!/4)"),
+        },
+        text: {},
+        selectors: { textQuote: { exact: "" }, textPosition: { start: 0, end: 0 } },
+      },
+      {
+        href: normalizePublicationPath("OPS/chapter-1.xhtml"),
+        locations: {
+          progression: 0.5,
+          totalProgression: 0.4,
+          position: 3,
+          cfi: createCfi("epubcfi(/6/4!/4)"),
+        },
+        text: {},
+        selectors: { textQuote: { exact: "" }, textPosition: { start: 1500, end: 1500 } },
+      },
+      {
+        href: normalizePublicationPath("OPS/chapter-2.xhtml"),
+        locations: {
+          progression: 0,
+          totalProgression: 0.6,
+          position: 4,
+          cfi: createCfi("epubcfi(/6/6!/4)"),
+        },
+        text: {},
+        selectors: { textQuote: { exact: "" }, textPosition: { start: 0, end: 0 } },
+      },
+    ];
+
+    // First chapter start is page 2 (after short front matter), not ~40% of total.
+    expect(
+      pageIndexFromPositions(positions, {
+        href: "OPS/chapter-1.xhtml",
+        cfi: "epubcfi(/6/4!/4/2/1:0)",
+        localProgression: 0,
+      }),
+    ).toBe(2);
+
+    // Mid-section progression advances the page within the section's samples.
+    expect(
+      pageIndexFromPositions(positions, {
+        href: "OPS/chapter-1.xhtml",
+        localProgression: 1,
+      }),
+    ).toBe(3);
+
+    // Page-turns within a section must move the displayed page.
+    expect(
+      pageIndexFromPositions(positions, {
+        href: "OPS/chapter-1.xhtml",
+        localProgression: 0.5,
+      }),
+    ).toBe(3);
+
+    expect(
+      pageIndexFromPositions(positions, {
+        href: "OPS/chapter-1.xhtml",
+        textOffset: 1600,
+      }),
+    ).toBe(3);
+  });
+
+  it("advances page for single-sample sections toward the next sample", () => {
+    const positions: PersistentLocator[] = [
+      {
+        href: normalizePublicationPath("OPS/a.xhtml"),
+        locations: { progression: 0, totalProgression: 0, position: 1 },
+        text: {},
+        selectors: { textQuote: { exact: "" }, textPosition: { start: 0, end: 0 } },
+      },
+      {
+        href: normalizePublicationPath("OPS/b.xhtml"),
+        locations: { progression: 0, totalProgression: 0.5, position: 2 },
+        text: {},
+        selectors: { textQuote: { exact: "" }, textPosition: { start: 0, end: 0 } },
+      },
+    ];
+
+    expect(pageIndexFromPositions(positions, { href: "OPS/a.xhtml", localProgression: 0 })).toBe(1);
+    expect(pageIndexFromPositions(positions, { href: "OPS/a.xhtml", localProgression: 1 })).toBe(2);
+    expect(pageIndexFromPositions(positions, { href: "OPS/b.xhtml", localProgression: 0 })).toBe(2);
   });
 
   it("extracts the E2E fixture table of contents", async () => {

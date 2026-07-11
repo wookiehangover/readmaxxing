@@ -19,9 +19,15 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { getTypographyCss } from "~/lib/epub/epub-rendering-utils";
 import { getThemeColorCss } from "~/lib/epub/epub-theme-utils";
 import {
+  buildPublisherPageMap,
+  resolvePublisherPage,
+  type PublisherPageMap,
+} from "~/lib/epub/publisher-pages";
+import {
   createSuccessorBookAdapter,
   extractCompatibleToc,
   generateSuccessorPositions,
+  pageIndexFromPositions,
   parseSuccessorPositionCache,
   serializeSuccessorPositionCache,
   spineIndexFromCfi,
@@ -152,11 +158,6 @@ function mapToc(
     href: entry.href,
     ...(entry.children.length ? { subitems: mapToc(entry.children) } : {}),
   }));
-}
-
-function pageForProgression(totalProgression: number, total: number): number | null {
-  if (total <= 0) return null;
-  return Math.min(total, Math.max(1, Math.floor(totalProgression * total) + 1));
 }
 
 export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecycleReturn {
@@ -291,6 +292,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     let bookAdapter: ReaderBookLike | null = null;
     let tocData: TocEntry[] = [];
     let positions: readonly PersistentLocator[] = [];
+    let publisherPages: PublisherPageMap | null = null;
     registerActiveReader(bookId);
     setHasRestoredPosition(false);
 
@@ -315,18 +317,42 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       if (!rendition || !bookAdapter || cancelled) return;
       configRef.current.onRelocated?.();
       clearNavigationInProgress();
+      // Prefer the adapter location (set on the same relocation event). Fall back to a
+      // spine-only CFI so page UI still updates if the adapter has not stamped location yet.
       const location = rendition.location?.start;
-      if (!location) return;
-      const page = pageForProgression(relocation.totalProgression, positions.length);
+      const cfi = location?.cfi ?? `epubcfi(/6/${(relocation.spineIndex + 1) * 2}!/4)`;
+      // Prefer publisher Real Page Numbers (nav/NCX page-list) when present; otherwise
+      // fall back to character-sampled locations (epub.js-style heuristic).
+      const publisher = publisherPages
+        ? resolvePublisherPage(publisherPages, {
+            href: relocation.href,
+            spineIndex: relocation.spineIndex,
+            localProgression: relocation.localProgression,
+            document: rendition.contentDocument,
+          })
+        : null;
+      const page =
+        publisher?.currentPage ??
+        pageIndexFromPositions(positions, {
+          href: relocation.href,
+          cfi,
+          spineIndex: relocation.spineIndex,
+          localProgression: relocation.localProgression,
+        });
+      const total = publisher?.totalPages ?? (positions.length || null);
       const chapterLabel = resolveCurrentChapterLabel(
         tocData,
         bookAdapter,
         relocation.href,
         relocation.spineIndex,
       );
-      setBookProgress(relocation.totalProgression * 100);
+      const progress =
+        page !== null && total !== null && total > 0
+          ? ((page - 1) / total) * 100
+          : relocation.totalProgression * 100;
+      setBookProgress(progress);
       setCurrentPage(page);
-      setTotalPages(positions.length || null);
+      setTotalPages(total);
       setCurrentChapterLabel(chapterLabel);
       if (configRef.current.chatContextMap) {
         const visibleText = rendition.contentDocument?.body?.textContent?.trim() ?? "";
@@ -337,18 +363,18 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         });
       }
       if (suppressPositionSaveRef.current) return;
-      latestCfiRef.current = location.cfi;
-      saveRelocation(location.cfi);
+      latestCfiRef.current = cfi;
+      saveRelocation(cfi);
       AppRuntime.runPromise(
         ReadingHistoryService.pipe(
           Effect.andThen((service) =>
             service.recordVisit(bookId, {
-              cfi: location.cfi,
+              cfi,
               chapterHref: relocation.href,
               chapterLabel,
-              percentage: relocation.totalProgression * 100,
+              percentage: progress,
               pageIndex: page,
-              totalPages: positions.length || null,
+              totalPages: total,
             }),
           ),
         ),
@@ -365,6 +391,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       if (!opened.publication) throw new Error("EPUB publication could not be parsed");
       const publication = opened.publication;
       tocData = mapToc(await extractCompatibleToc(publication, provider));
+      publisherPages = buildPublisherPageMap(opened.pageList, publication.readingOrder);
       const compatibilityBook = createSuccessorBookAdapter(publication, provider);
       bookAdapter = compatibilityBook as unknown as ReaderBookLike;
       bookRef.current = compatibilityBook;
@@ -382,22 +409,25 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       setToc(tocData);
       configRef.current.onTocExtracted?.(tocData);
 
-      const cached = await AppRuntime.runPromise(
-        LocationCacheService.pipe(Effect.andThen((service) => service.getLocations(bookId))).pipe(
-          Effect.catchAll(() => Effect.succeed(null)),
-        ),
-      );
-      const successorCache = parseSuccessorPositionCache(cached);
-      positions =
-        successorCache?.positions ?? (await generateSuccessorPositions(publication, provider));
-      if (!successorCache) {
-        void AppRuntime.runPromise(
-          LocationCacheService.pipe(
-            Effect.andThen((service) =>
-              service.saveLocations(bookId, serializeSuccessorPositionCache(positions)),
-            ),
+      // Heuristic locations are only needed when there is no publisher page-list.
+      if (!publisherPages) {
+        const cached = await AppRuntime.runPromise(
+          LocationCacheService.pipe(Effect.andThen((service) => service.getLocations(bookId))).pipe(
+            Effect.catchAll(() => Effect.succeed(null)),
           ),
-        ).catch(console.error);
+        );
+        const successorCache = parseSuccessorPositionCache(cached);
+        positions =
+          successorCache?.positions ?? (await generateSuccessorPositions(publication, provider));
+        if (!successorCache) {
+          void AppRuntime.runPromise(
+            LocationCacheService.pipe(
+              Effect.andThen((service) =>
+                service.saveLocations(bookId, serializeSuccessorPositionCache(positions)),
+              ),
+            ),
+          ).catch(console.error);
+        }
       }
 
       const observedDocuments = new WeakSet<Document>();

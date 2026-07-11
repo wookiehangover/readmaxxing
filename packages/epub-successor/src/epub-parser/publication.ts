@@ -73,44 +73,55 @@ async function loadNavigation(
   source: NavigationSource;
 }> {
   const links = [...opf.manifest.values()];
+  let toc: readonly TocEntry[] = [];
+  let landmarks: readonly TocEntry[] = [];
+  let pageList: readonly TocEntry[] = [];
+  let source: NavigationSource = "none";
+
   const navigationLink = links.find((link) => link.properties.includes("nav"));
   if (navigationLink) {
-    const source = await readText(provider, navigationLink.href, diagnostics, signal);
-    if (source !== undefined) {
-      const parsed = parseNavigationDocument(source, navigationLink.href);
+    const navSource = await readText(provider, navigationLink.href, diagnostics, signal);
+    if (navSource !== undefined) {
+      const parsed = parseNavigationDocument(navSource, navigationLink.href);
       diagnostics.push(...parsed.diagnostics);
       if (parsed.toc.length > 0) {
-        return {
-          toc: parsed.toc,
-          landmarks: parsed.landmarks,
-          pageList: parsed.pageList,
-          source: "nav",
-        };
+        toc = parsed.toc;
+        landmarks = parsed.landmarks;
+        source = "nav";
       }
+      // Keep page-list even when TOC is empty or later filled from NCX.
+      if (parsed.pageList.length > 0) pageList = parsed.pageList;
     }
   }
 
   const ncxLink = links.find(
     (link) => link.mediaType === "application/x-dtbncx+xml" || link.href.endsWith(".ncx"),
   );
-  if (ncxLink) {
-    const source = await readText(provider, ncxLink.href, diagnostics, signal);
-    if (source !== undefined) {
-      const parsed = parseNcx(source, ncxLink.href);
+  if (ncxLink && (toc.length === 0 || pageList.length === 0)) {
+    const ncxSource = await readText(provider, ncxLink.href, diagnostics, signal);
+    if (ncxSource !== undefined) {
+      const parsed = parseNcx(ncxSource, ncxLink.href);
       diagnostics.push(...parsed.diagnostics);
-      if (parsed.toc.length > 0) {
-        return { toc: parsed.toc, landmarks: [], pageList: [], source: "ncx" };
+      if (toc.length === 0 && parsed.toc.length > 0) {
+        toc = parsed.toc;
+        source = "ncx";
+      }
+      if (pageList.length === 0 && parsed.pageList.length > 0) {
+        pageList = parsed.pageList;
       }
     }
   }
 
-  diagnostics.push({
-    severity: "warning",
-    code: "PUBLICATION_NAVIGATION_UNAVAILABLE",
-    message: "Publication has no usable EPUB navigation document or NCX",
-    sourcePath: navigationLink?.href ?? ncxLink?.href ?? CONTAINER_PATH,
-  });
-  return { toc: [], landmarks: [], pageList: [], source: "none" };
+  if (toc.length === 0 && pageList.length === 0) {
+    diagnostics.push({
+      severity: "warning",
+      code: "PUBLICATION_NAVIGATION_UNAVAILABLE",
+      message: "Publication has no usable EPUB navigation document or NCX",
+      sourcePath: navigationLink?.href ?? ncxLink?.href ?? CONTAINER_PATH,
+    });
+  }
+
+  return { toc, landmarks, pageList, source };
 }
 
 export async function openPublication(

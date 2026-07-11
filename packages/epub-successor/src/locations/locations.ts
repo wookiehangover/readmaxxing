@@ -262,10 +262,13 @@ export interface MountedSection {
 /**
  * Generates a cacheable list of character-sampled positions. Its one-based `position` values are
  * ephemeral page-number analogues: they may change with content and are not persistent locators.
+ *
+ * Empty (zero-text) sections are skipped so image-only front/back matter does not inflate the
+ * count. Numbering therefore begins at the first section that contains text.
  */
 export function generateEphemeralPositions(
   sections: readonly MountedSection[],
-  charactersPerPosition = 1_500,
+  charactersPerPosition = 2_500,
 ): readonly PersistentLocator[] {
   if (!Number.isInteger(charactersPerPosition) || charactersPerPosition <= 0) {
     throw new RangeError("charactersPerPosition must be a positive integer");
@@ -274,7 +277,8 @@ export function generateEphemeralPositions(
   for (const section of sections) {
     const records = textRecords(section.document);
     const total = records.at(-1)?.end ?? 0;
-    for (let offset = 0; offset < Math.max(1, total); offset += charactersPerPosition) {
+    if (total === 0) continue;
+    for (let offset = 0; offset < total; offset += charactersPerPosition) {
       const boundary = boundaryAt(records, contentRoot(section.document), offset);
       const range = section.document.createRange();
       range.setStart(boundary[0], boundary[1]);

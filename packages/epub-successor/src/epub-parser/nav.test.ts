@@ -79,6 +79,36 @@ describe("parseNcx", () => {
         children: [{ title: "Part", href: "OPS/text/chapter.xhtml#part", children: [] }],
       },
     ]);
+    expect(result.pageList).toEqual([]);
     expect(result.diagnostics).toMatchObject([{ code: "NCX_INVALID_PLAY_ORDER" }]);
+  });
+
+  it("parses NCX pageList pageTargets", () => {
+    const result = parseNcx(
+      `<ncx xmlns="${XML_NAMESPACES.ncx}">
+        <navMap>
+          <navPoint>
+            <navLabel><text>Chapter</text></navLabel>
+            <content src="text/chapter.xhtml"/>
+          </navPoint>
+        </navMap>
+        <pageList>
+          <pageTarget type="normal" value="1">
+            <navLabel><text>1</text></navLabel>
+            <content src="text/chapter.xhtml#p1"/>
+          </pageTarget>
+          <pageTarget type="normal" value="2">
+            <navLabel><text>2</text></navLabel>
+            <content src="text/chapter.xhtml#p2"/>
+          </pageTarget>
+        </pageList>
+      </ncx>`,
+      NCX_PATH,
+    );
+
+    expect(result.pageList).toEqual([
+      { title: "1", href: "OPS/text/chapter.xhtml#p1", children: [] },
+      { title: "2", href: "OPS/text/chapter.xhtml#p2", children: [] },
+    ]);
   });
 });

@@ -158,4 +158,21 @@ describe("progression and sampled positions", () => {
     expect(positions.map(({ locations }) => locations.position)).toEqual([1, 2, 3, 4, 5]);
     expect(positions.map(({ selectors }) => selectors.textPosition.start)).toEqual([0, 4, 8, 0, 4]);
   });
+
+  it("skips empty sections so page 1 is the first text-bearing spine item", () => {
+    const empty = parseDocument("<div></div>");
+    const chapter = parseDocument(`<p>${"c".repeat(4)}</p>`);
+    const positions = generateEphemeralPositions(
+      [
+        { document: empty, metadata: section(0, 3) },
+        { document: chapter, metadata: section(1, 3) },
+        { document: empty, metadata: section(2, 3) },
+      ],
+      4,
+    );
+
+    expect(positions).toHaveLength(1);
+    expect(positions[0]?.locations.position).toBe(1);
+    expect(positions[0]?.href).toBe(section(1, 3).href);
+  });
 });

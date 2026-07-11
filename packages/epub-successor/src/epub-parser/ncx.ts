@@ -15,6 +15,7 @@ import {
 
 export interface NcxParseResult {
   readonly toc: readonly TocEntry[];
+  readonly pageList: readonly TocEntry[];
   readonly diagnostics: readonly ParseDiagnostic[];
 }
 
@@ -75,13 +76,54 @@ function parseNavPoint(
   }
 }
 
+function parsePageTarget(
+  pageTarget: Element,
+  sourcePath: PublicationPath,
+  diagnostics: ParseDiagnostic[],
+): TocEntry | null {
+  const label = getChildElementsNS(pageTarget, XML_NAMESPACES.ncx, "navLabel")[0];
+  const text = label
+    ? getTextContent(getChildElementsNS(label, XML_NAMESPACES.ncx, "text")[0])
+    : undefined;
+  const value = getAttributeNS(pageTarget, null, "value")?.trim();
+  const title = text?.trim() || value || undefined;
+  const content = getChildElementsNS(pageTarget, XML_NAMESPACES.ncx, "content")[0];
+  const source = content ? getAttributeNS(content, null, "src")?.trim() : undefined;
+  if (!source || !title) {
+    diagnostics.push(
+      diagnostic(
+        sourcePath,
+        "warning",
+        "NCX_INVALID_PAGE_TARGET",
+        "NCX pageTarget needs content src and a label or value",
+      ),
+    );
+    return null;
+  }
+  try {
+    return { title, href: resolvePublicationPath(sourcePath, source), children: [] };
+  } catch (cause) {
+    const detail = cause instanceof PublicationPathError ? `: ${cause.message}` : "";
+    diagnostics.push(
+      diagnostic(
+        sourcePath,
+        "warning",
+        "NCX_INVALID_PAGE_HREF",
+        `Invalid NCX pageTarget src${detail}`,
+      ),
+    );
+    return null;
+  }
+}
+
 export function parseNcx(source: string, sourcePath: PublicationPath): NcxParseResult {
   const parsed = parseXml(source, sourcePath);
-  if (!parsed.document) return { toc: [], diagnostics: parsed.diagnostics };
+  if (!parsed.document) return { toc: [], pageList: [], diagnostics: parsed.diagnostics };
   const root = parsed.document.documentElement;
   if (root.localName !== "ncx" || root.namespaceURI !== XML_NAMESPACES.ncx) {
     return {
       toc: [],
+      pageList: [],
       diagnostics: [
         diagnostic(sourcePath, "error", "NCX_INVALID_ROOT", "NCX root or namespace is invalid"),
       ],
@@ -91,6 +133,7 @@ export function parseNcx(source: string, sourcePath: PublicationPath): NcxParseR
   if (!navMap) {
     return {
       toc: [],
+      pageList: [],
       diagnostics: [diagnostic(sourcePath, "error", "NCX_MISSING_NAV_MAP", "NCX has no navMap")],
     };
   }
@@ -98,5 +141,12 @@ export function parseNcx(source: string, sourcePath: PublicationPath): NcxParseR
   const toc = getChildElementsNS(navMap, XML_NAMESPACES.ncx, "navPoint").flatMap((navPoint) =>
     parseNavPoint(navPoint, sourcePath, diagnostics),
   );
-  return { toc, diagnostics };
+  const pageListElement = getChildElementsNS(root, XML_NAMESPACES.ncx, "pageList")[0];
+  const pageList = pageListElement
+    ? getChildElementsNS(pageListElement, XML_NAMESPACES.ncx, "pageTarget").flatMap((target) => {
+        const entry = parsePageTarget(target, sourcePath, diagnostics);
+        return entry ? [entry] : [];
+      })
+    : [];
+  return { toc, pageList, diagnostics };
 }

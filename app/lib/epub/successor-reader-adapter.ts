@@ -24,7 +24,10 @@ import {
 } from "@readmaxxing/epub-successor";
 
 const POSITION_CACHE_KIND = "epub-successor-positions";
-const POSITION_CACHE_VERSION = 1;
+/** Bumped when position sampling semantics change (empty-section skip, chars/page). */
+const POSITION_CACHE_VERSION = 3;
+/** Character samples used as page analogues when no publisher page-list exists. */
+const HEURISTIC_CHARS_PER_PAGE = 2_500;
 
 export interface SuccessorPositionCache {
   readonly kind: typeof POSITION_CACHE_KIND;
@@ -58,6 +61,96 @@ export function serializeSuccessorPositionCache(positions: readonly PersistentLo
   return JSON.stringify({ kind: POSITION_CACHE_KIND, version: POSITION_CACHE_VERSION, positions });
 }
 
+function bareHref(value: string): string {
+  return value.split("#")[0]?.replace(/^\/+/, "") ?? "";
+}
+
+function positionHrefsMatch(left: string, right: string): boolean {
+  const normalizedLeft = bareHref(left);
+  const normalizedRight = bareHref(right);
+  return (
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.endsWith(`/${normalizedRight}`) ||
+    normalizedRight.endsWith(`/${normalizedLeft}`)
+  );
+}
+
+function positionSpineIndex(position: PersistentLocator): number | null {
+  const cfi = position.locations.cfi;
+  return cfi !== undefined ? spineIndexFromCfi(cfi) : null;
+}
+
+/**
+ * Maps a reading location onto character-sampled positions (1-based page index).
+ *
+ * Totals come from character-sampled positions (stable across layout). The current page
+ * advances with `localProgression` inside the active spine section so page-turns update
+ * the displayed number.
+ */
+export function pageIndexFromPositions(
+  positions: readonly PersistentLocator[],
+  options: {
+    readonly href: string;
+    readonly cfi?: string;
+    readonly spineIndex?: number;
+    readonly textOffset?: number | null;
+    readonly localProgression?: number;
+  },
+): number | null {
+  if (positions.length === 0) return null;
+
+  const sectionIndexes: number[] = [];
+  for (let index = 0; index < positions.length; index += 1) {
+    if (positionHrefsMatch(positions[index]!.href, options.href)) {
+      sectionIndexes.push(index);
+    }
+  }
+
+  // Fall back to spine index when href matching fails (path normalization drift).
+  if (sectionIndexes.length === 0) {
+    const spineIndex = options.spineIndex ?? (options.cfi ? spineIndexFromCfi(options.cfi) : null);
+    if (spineIndex !== null) {
+      for (let index = 0; index < positions.length; index += 1) {
+        if (positionSpineIndex(positions[index]!) === spineIndex) sectionIndexes.push(index);
+      }
+    }
+    if (sectionIndexes.length === 0) {
+      if (spineIndex === null) return 1;
+      let best = 0;
+      for (let index = 0; index < positions.length; index += 1) {
+        const positionSpine = positionSpineIndex(positions[index]!);
+        if (positionSpine !== null && positionSpine <= spineIndex) best = index;
+        if (positionSpine !== null && positionSpine > spineIndex) break;
+      }
+      return best + 1;
+    }
+  }
+
+  const first = sectionIndexes[0]!;
+  const last = sectionIndexes[sectionIndexes.length - 1]!;
+  // Single-sample sections still need room to advance toward the next sample while paging.
+  const high = last > first ? last : Math.min(positions.length - 1, first + 1);
+
+  if (options.localProgression !== undefined) {
+    const local = Math.max(0, Math.min(1, options.localProgression));
+    // At section start keep the first sample; only move once progression advances.
+    if (local <= 0) return first + 1;
+    return Math.min(positions.length, Math.round(first + local * (high - first)) + 1);
+  }
+
+  if (options.textOffset !== null && options.textOffset !== undefined) {
+    const offset = Math.max(0, options.textOffset);
+    let best = first;
+    for (const index of sectionIndexes) {
+      if (positions[index]!.selectors.textPosition.start <= offset) best = index;
+      else break;
+    }
+    return best + 1;
+  }
+
+  return first + 1;
+}
+
 function sectionMetadata(publication: Publication, spineIndex: number): SectionMetadata {
   const link = publication.readingOrder[spineIndex]!;
   return {
@@ -82,7 +175,7 @@ export async function generateSuccessorPositions(
       sections.push({ document, metadata });
     }
   }
-  return generateEphemeralPositions(sections);
+  return generateEphemeralPositions(sections, HEURISTIC_CHARS_PER_PAGE);
 }
 
 function withoutDocumentType(source: string): string {
