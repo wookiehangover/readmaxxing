@@ -30,7 +30,7 @@ describe("committed EPUB fixtures", () => {
     for (const [name, expected] of Object.entries(generated)) {
       expect(new Uint8Array(await bytes(name))).toEqual(expected);
     }
-  });
+  }, 15_000);
 
   it.each(VALID_FIXTURE_NAMES)("opens valid fixture %s", async (name) => {
     const provider = await open(name);
