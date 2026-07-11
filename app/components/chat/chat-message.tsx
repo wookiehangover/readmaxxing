@@ -124,20 +124,14 @@ function ChatMessageImpl({
 
               console.debug("Ref navigation (PDF): no results for query:", queryStr);
             } else {
-              const ePub = (await import("epubjs")).default;
-              const { fuzzySearchBookForCfi } = await import("~/lib/epub/epub-search");
-              const book = ePub(data.slice(0));
-              try {
-                const results = await fuzzySearchBookForCfi(book, queryStr);
+              const { fuzzySearchEpubForCfi } = await import("~/lib/epub/epub-search");
+              const results = await fuzzySearchEpubForCfi(data.slice(0), queryStr);
 
-                if (results.length > 0) {
-                  const cfi = results[0].cfi;
-                  await navigateInCluster(bookId, cfi);
-                  applyTempHighlightForBook(bookId, cfi);
-                  return;
-                }
-              } finally {
-                book.destroy();
+              if (results.length > 0) {
+                const cfi = results[0].cfi;
+                await navigateInCluster(bookId, cfi);
+                applyTempHighlightForBook(bookId, cfi);
+                return;
               }
 
               // Fallback: navigate to chapter start via TOC

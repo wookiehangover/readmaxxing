@@ -11,13 +11,21 @@ import { getPositionStore } from "~/lib/sync/stores";
 export interface PositionRecord {
   cfi: string;
   updatedAt: number;
+  /**
+   * Section-local progression [0, 1] from the navigator at save time.
+   * Used to restore the exact paginated column after refresh (CFI geometry alone
+   * is too easy to land one page early/late).
+   */
+  localProgression?: number;
+  /** Spine index at save time; paired with localProgression for restore. */
+  spineIndex?: number;
 }
 
 // --- idb-keyval store imported from ~/lib/sync/stores ---
 
 /**
  * Migrate a raw IDB value to PositionRecord.
- * Old format: plain string CFI. New format: { cfi, updatedAt }.
+ * Old format: plain string CFI. New format: { cfi, updatedAt, ... }.
  */
 function migratePosition(raw: unknown): PositionRecord | null {
   if (raw == null) return null;
@@ -27,7 +35,14 @@ function migratePosition(raw: unknown): PositionRecord | null {
   }
   if (typeof raw === "object" && "cfi" in raw) {
     const rec = raw as PositionRecord;
-    return { cfi: rec.cfi, updatedAt: rec.updatedAt ?? 0 };
+    return {
+      cfi: rec.cfi,
+      updatedAt: rec.updatedAt ?? 0,
+      ...(typeof rec.localProgression === "number"
+        ? { localProgression: rec.localProgression }
+        : {}),
+      ...(typeof rec.spineIndex === "number" ? { spineIndex: rec.spineIndex } : {}),
+    };
   }
   return null;
 }
@@ -45,6 +60,8 @@ function migratePosition(raw: unknown): PositionRecord | null {
  */
 export interface SavePositionOptions {
   readonly recordChange?: boolean;
+  readonly localProgression?: number;
+  readonly spineIndex?: number;
 }
 
 export class ReadingPositionService extends Context.Tag("ReadingPositionService")<
@@ -85,14 +102,27 @@ export function makePositionService(stores: PositionServiceStores): ReadingPosit
       Effect.tryPromise({
         try: async () => {
           const shouldRecordChange = options?.recordChange !== false;
-          // Short-circuit no-op writes: if the stored CFI matches exactly,
-          // skip the IDB write, and only record a sync changelog when this
-          // matches a pending local-only save. Without this, a stuck
-          // `relocated` event source (e.g. a visibility / dimensions cycle)
-          // can enqueue one identical position change per debounce interval
-          // and drive /api/sync/push in a loop.
+          const localProgression =
+            typeof options?.localProgression === "number" &&
+            Number.isFinite(options.localProgression)
+              ? Math.min(1, Math.max(0, options.localProgression))
+              : undefined;
+          const spineIndex =
+            typeof options?.spineIndex === "number" &&
+            Number.isInteger(options.spineIndex) &&
+            options.spineIndex >= 0
+              ? options.spineIndex
+              : undefined;
+          // Short-circuit no-op writes: if the stored CFI (and layout fields)
+          // match exactly, skip the IDB write, and only record a sync changelog
+          // when this matches a pending local-only save.
           const existing = migratePosition(await get<unknown>(bookId, positionStore));
-          if (existing && existing.cfi === cfi) {
+          if (
+            existing &&
+            existing.cfi === cfi &&
+            existing.localProgression === localProgression &&
+            existing.spineIndex === spineIndex
+          ) {
             const pending = pendingLocalOnlyChanges.get(bookId);
             if (shouldRecordChange && pending?.cfi === cfi) {
               pendingLocalOnlyChanges.delete(bookId);
@@ -101,7 +131,12 @@ export function makePositionService(stores: PositionServiceStores): ReadingPosit
             return;
           }
 
-          const record: PositionRecord = { cfi, updatedAt: Date.now() };
+          const record: PositionRecord = {
+            cfi,
+            updatedAt: Date.now(),
+            ...(localProgression !== undefined ? { localProgression } : {}),
+            ...(spineIndex !== undefined ? { spineIndex } : {}),
+          };
           await set(bookId, record, positionStore);
           if (shouldRecordChange) {
             pendingLocalOnlyChanges.delete(bookId);

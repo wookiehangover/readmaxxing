@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import type EpubBook from "epubjs/types/book";
+import {
+  createNavigator,
+  openPublication,
+  openZipResourceProvider,
+  type ZipResourceProvider,
+} from "@readmaxxing/epub-successor";
 import { Effect } from "effect";
 import { AlertCircle, BookOpen, Check, Loader2 } from "lucide-react";
 import { Streamdown } from "streamdown";
@@ -11,6 +16,7 @@ import { getPositionsByUser } from "~/lib/database/book/reading-position";
 import { getShareLink, type ShareLinkRow } from "~/lib/database/share/share-link";
 import { getUser } from "~/lib/database/user/user";
 import { parseEpubEffect } from "~/lib/epub/epub-service";
+import { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
 import { parsePdfEffect } from "~/lib/pdf/pdf-service";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { computeFileHash } from "~/lib/book-hash";
@@ -299,7 +305,6 @@ async function fetchSharedJson<T>(url: string): Promise<T> {
 
 function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: string | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const bookRef = useRef<EpubBook | null>(null);
   const [loading, setLoading] = useState(book.format === "epub");
   const [error, setError] = useState<string | null>(null);
 
@@ -317,8 +322,8 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
     const previewFileUrl = fileUrl;
     const abortController = new AbortController();
     let cancelled = false;
-    let epubBook: EpubBook | null = null;
-    let rendition: ReturnType<EpubBook["renderTo"]> | null = null;
+    let provider: ZipResourceProvider | null = null;
+    let rendition: SuccessorRenditionAdapter | null = null;
 
     async function initPreview() {
       try {
@@ -326,47 +331,35 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
         setError(null);
         previewContainer.replaceChildren();
 
-        const [response, epubModule] = await Promise.all([
-          fetch(previewFileUrl, { signal: abortController.signal }),
-          import("epubjs"),
-        ]);
+        const response = await fetch(previewFileUrl, { signal: abortController.signal });
         if (!response.ok) throw new Error(await readApiError(response));
         const arrayBuffer = await response.arrayBuffer();
         if (cancelled) return;
 
-        epubBook = epubModule.default(arrayBuffer);
-        bookRef.current = epubBook;
-        rendition = epubBook.renderTo(previewContainer, {
-          width: "100%",
-          height: "100%",
-          spread: "none",
+        provider = await openZipResourceProvider(arrayBuffer, {
+          signal: abortController.signal,
         });
-
-        rendition.hooks.content.register((contents: { document?: Document }) => {
-          const doc = contents.document;
-          if (!doc) return;
-          const style = doc.createElement("style");
-          style.textContent = `
-            body {
-              color: #171717 !important;
-              background: #ffffff !important;
-              font-family: Georgia, "Times New Roman", serif !important;
-              font-size: 18px !important;
-              line-height: 1.7 !important;
-            }
-            p, li { line-height: 1.7 !important; }
-            a { color: #2563eb !important; }
-          `;
-          doc.head.appendChild(style);
-        });
-
-        rendition.themes.register("share-preview", {
-          body: {
-            color: "#171717",
-            background: "#ffffff",
+        const opened = await openPublication(provider, { signal: abortController.signal });
+        if (!opened.publication) {
+          throw new Error(
+            opened.diagnostics.map(({ message }) => message).join("; ") ||
+              "EPUB publication could not be parsed",
+          );
+        }
+        const navigator = createNavigator(opened.publication, {
+          container: previewContainer,
+          flow: "scrolled",
+          preferences: {
+            theme: "light",
+            spread: "single",
+            fontFamily: 'Georgia, "Times New Roman", serif',
+            fontSize: 112.5,
+            lineHeight: 1.7,
+            preferenceCss: "p,li{line-height:1.7 !important;}a{color:#2563eb !important;}",
           },
+          security: { resourceProvider: provider },
         });
-        rendition.themes.select("share-preview");
+        rendition = new SuccessorRenditionAdapter(opened.publication, navigator);
 
         try {
           await rendition.display(book.currentCfi ?? undefined);
@@ -386,8 +379,7 @@ function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: s
       cancelled = true;
       abortController.abort();
       rendition?.destroy();
-      epubBook?.destroy();
-      bookRef.current = null;
+      provider?.close();
       previewContainer.replaceChildren();
     };
   }, [book.currentCfi, book.format, fileUrl]);

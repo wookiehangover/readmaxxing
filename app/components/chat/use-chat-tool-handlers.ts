@@ -307,65 +307,54 @@ export function useChatToolHandlers({
               }
             } else {
               // Epub path
-              const ePub = (await import("epubjs")).default;
-              const { fuzzySearchBookForCfi } = await import("~/lib/epub/epub-search");
-              const tempBook = ePub(data.slice(0));
-              try {
-                // Prefer the server's text-anchor snippet when present — the
-                // server already located the best chapter, so searching for the
-                // snippet first improves the odds of a clean match.
-                const snippet = serverHighlight?.textAnchor.snippet ?? highlightText;
-                let results = await fuzzySearchBookForCfi(tempBook, snippet);
-                if (results.length === 0 && snippet !== highlightText) {
-                  results = await fuzzySearchBookForCfi(tempBook, highlightText);
-                }
+              const { fuzzySearchEpubForCfi } = await import("~/lib/epub/epub-search");
+              // Prefer the server's text-anchor snippet when present — the
+              // server already located the best chapter, so searching for the
+              // snippet first improves the odds of a clean match.
+              const snippet = serverHighlight?.textAnchor.snippet ?? highlightText;
+              let results = await fuzzySearchEpubForCfi(data.slice(0), snippet);
+              if (results.length === 0 && snippet !== highlightText) {
+                results = await fuzzySearchEpubForCfi(data.slice(0), highlightText);
+              }
 
-                const cfiRange = results[0]?.cfi ?? "";
-                const highlight = {
-                  id: serverHighlight?.id ?? crypto.randomUUID(),
-                  bookId: targetBookId,
-                  cfiRange,
-                  text: highlightText,
-                  color: serverHighlight?.color ?? "rgba(255, 213, 79, 0.4)",
-                  createdAt: serverHighlight?.createdAt ?? Date.now(),
-                  ...(serverHighlight?.textAnchor
-                    ? { textAnchor: serverHighlight.textAnchor }
-                    : {}),
-                  ...(serverHighlight?.note ? { note: serverHighlight.note } : {}),
-                };
+              const cfiRange = results[0]?.cfi ?? "";
+              const highlight = {
+                id: serverHighlight?.id ?? crypto.randomUUID(),
+                bookId: targetBookId,
+                cfiRange,
+                text: highlightText,
+                color: serverHighlight?.color ?? "rgba(255, 213, 79, 0.4)",
+                createdAt: serverHighlight?.createdAt ?? Date.now(),
+                ...(serverHighlight?.textAnchor ? { textAnchor: serverHighlight.textAnchor } : {}),
+                ...(serverHighlight?.note ? { note: serverHighlight.note } : {}),
+              };
 
-                if (cfiRange === "") {
-                  console.warn(
-                    "create_highlight: no CFI resolved for:",
-                    highlightText.slice(0, 60),
-                  );
-                }
+              if (cfiRange === "") {
+                console.warn("create_highlight: no CFI resolved for:", highlightText.slice(0, 60));
+              }
 
-                await AppRuntime.runPromise(
-                  Effect.gen(function* () {
-                    const svc = yield* AnnotationService;
-                    yield* svc.saveHighlight(highlight);
-                  }),
-                );
+              await AppRuntime.runPromise(
+                Effect.gen(function* () {
+                  const svc = yield* AnnotationService;
+                  yield* svc.saveHighlight(highlight);
+                }),
+              );
 
-                // Don't navigate when AI creates highlights - preserves reading position
-                // User can navigate to highlights via the notebook panel
+              // Don't navigate when AI creates highlights - preserves reading position
+              // User can navigate to highlights via the notebook panel
 
-                const attrs = {
-                  highlightId: highlight.id,
-                  cfiRange: highlight.cfiRange,
-                  text: highlight.text,
-                };
-                const appendFn = notebookCallbackMap.current.get(targetBookId);
-                if (appendFn) {
-                  appendFn(attrs);
-                } else {
-                  AppRuntime.runPromise(
-                    appendHighlightReferenceToNotebook(targetBookId, attrs),
-                  ).catch(console.error);
-                }
-              } finally {
-                tempBook.destroy();
+              const attrs = {
+                highlightId: highlight.id,
+                cfiRange: highlight.cfiRange,
+                text: highlight.text,
+              };
+              const appendFn = notebookCallbackMap.current.get(targetBookId);
+              if (appendFn) {
+                appendFn(attrs);
+              } else {
+                AppRuntime.runPromise(
+                  appendHighlightReferenceToNotebook(targetBookId, attrs),
+                ).catch(console.error);
               }
             }
           } catch (err) {

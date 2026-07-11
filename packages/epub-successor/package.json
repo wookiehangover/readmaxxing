@@ -1,0 +1,16 @@
+{
+  "name": "@readmaxxing/epub-successor",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "demo": "vite . --open /demo/",
+    "e2e": "playwright test -c playwright.config.ts",
+    "fixtures:build": "node fixtures/build.ts"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3"
+  }
+}

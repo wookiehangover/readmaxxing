@@ -1,30 +1,84 @@
-import { useEffect, useRef, useCallback, useState } from "react";
-import ePub from "epubjs";
-import type EpubBook from "epubjs/types/book";
-import type Rendition from "epubjs/types/rendition";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createNavigator,
+  openPublication,
+  openZipResourceProvider,
+  type Navigator,
+  type NavigatorPreferences,
+  type PersistentLocator,
+  type Relocation,
+  type ZipResourceProvider,
+} from "@readmaxxing/epub-successor";
 import { Effect } from "effect";
-import { BookService } from "~/lib/stores/book-store";
+import { toast } from "sonner";
+import { usePositionNudge } from "~/hooks/use-position-nudge";
+import { useOptionalWorkspace } from "~/lib/context/workspace-context";
+import type { TocEntry } from "~/lib/context/reader-context";
+import { isEditableElement } from "~/lib/dom-utils";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { getTypographyCss } from "~/lib/epub/epub-rendering-utils";
+import { getThemeColorCss } from "~/lib/epub/epub-theme-utils";
+import {
+  buildPublisherPageMap,
+  resolvePublisherPage,
+  type PublisherPageMap,
+} from "~/lib/epub/publisher-pages";
+import {
+  createSuccessorBookAdapter,
+  extractCompatibleToc,
+  generateSuccessorPositions,
+  pageIndexFromPositions,
+  parseSuccessorPositionCache,
+  serializeSuccessorPositionCache,
+  spineIndexFromCfi,
+  SuccessorRenditionAdapter,
+} from "~/lib/epub/successor-reader-adapter";
+import {
+  logicalChapterIndex,
+  normalizeEpubHref,
+  resolveCurrentChapterLabel,
+  resolveTocNavigationTarget,
+  type ReaderBookLike,
+  type TocNavigationTarget,
+} from "~/lib/epub/successor-toc";
+import {
+  resolveStartPosition,
+  savePositionDualKey,
+  type StoredReadingPosition,
+} from "~/lib/position-utils";
+import { resolveTheme } from "~/lib/settings";
+import type { ReaderLayout, TextAlign, Theme } from "~/lib/settings";
+import { BookService } from "~/lib/stores/book-store";
 import { LocationCacheService } from "~/lib/stores/location-cache-store";
 import { ReadingHistoryService } from "~/lib/stores/reading-history-store";
 import { ReadingPositionService } from "~/lib/stores/position-store";
 import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-readers";
-import { resolveTheme } from "~/lib/settings";
-import type { ReaderLayout, Theme, TextAlign } from "~/lib/settings";
-import { isEditableElement } from "~/lib/dom-utils";
-import { useOptionalWorkspace } from "~/lib/context/workspace-context";
-import { usePositionNudge } from "~/hooks/use-position-nudge";
-import {
-  registerThemeColors,
-  getThemeColorCss,
-  injectThemeColors,
-} from "~/lib/epub/epub-theme-utils";
-import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
-import { getTypographyCss, getRenditionOptions } from "~/lib/epub/epub-rendering-utils";
-import type { TocEntry } from "~/lib/context/reader-context";
-import { toast } from "sonner";
+
+export { resolveTocNavigationTarget } from "~/lib/epub/successor-toc";
+export type { TocNavigationTarget } from "~/lib/epub/successor-toc";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
+
+interface CfiDisplayTarget {
+  display(
+    target?: string | number,
+    options?: { readonly localProgression?: number },
+  ): Promise<unknown>;
+}
+
+export async function displayStoredCfiWithFallback(
+  rendition: CfiDisplayTarget,
+  cfi: string,
+  onFallback: (error: unknown) => void,
+  options?: { readonly localProgression?: number },
+): Promise<void> {
+  try {
+    await rendition.display(cfi, options);
+  } catch (error) {
+    onFallback(error);
+    await rendition.display(spineIndexFromCfi(cfi) ?? 0);
+  }
+}
 
 export interface ChatContextEntry {
   currentChapterIndex: number;
@@ -41,35 +95,24 @@ export interface UseEpubLifecycleConfig {
   lineHeight: number;
   textAlign: TextAlign;
   theme: Theme;
-  loadAndApplyHighlights: (rendition: Rendition) => Promise<void>;
-  registerSelectionHandler: (rendition: Rendition) => void;
-  /** Whether the epub should initialize. Default true. */
+  loadAndApplyHighlights: (rendition: SuccessorRenditionAdapter) => Promise<void>;
+  registerSelectionHandler: (rendition: SuccessorRenditionAdapter) => void;
   enabled?: boolean;
-  /** Panel ID for dual-key position save/restore (workspace only). */
   panelId?: string;
-  /** Chat context map for tracking visible text per book (workspace only). */
   chatContextMap?: React.MutableRefObject<Map<string, ChatContextEntry>>;
-  /** Called once rendition is ready (workspace only, for pending CFI drain). */
   onRenditionReady?: (navigateToCfi: (cfi: string) => void) => void;
-  /** Called when TOC is extracted from the epub. */
   onTocExtracted?: (toc: TocEntry[]) => void;
-  /** Called on cleanup to unregister TOC. */
   onCleanupToc?: () => void;
-  /** Called when Cmd/Ctrl+F is pressed inside the epub iframe. */
   onSearchOpen?: () => void;
-  /** Called on each relocated event (e.g. to flash toolbar on mobile). */
   onRelocated?: () => void;
-  /** Panel element for reader search shortcut scoping. */
   panelRef?: React.RefObject<HTMLDivElement | null>;
-  /** Optional external bookRef — if provided, the hook uses it instead of creating its own. */
-  bookRef?: React.MutableRefObject<EpubBook | null>;
-  /** Optional external renditionRef — if provided, the hook uses it instead of creating its own. */
-  renditionRef?: React.MutableRefObject<Rendition | null>;
+  bookRef?: React.MutableRefObject<any | null>;
+  renditionRef?: React.MutableRefObject<any | null>;
 }
 
 export interface UseEpubLifecycleReturn {
-  bookRef: React.MutableRefObject<EpubBook | null>;
-  renditionRef: React.MutableRefObject<Rendition | null>;
+  bookRef: React.MutableRefObject<any | null>;
+  renditionRef: React.MutableRefObject<any | null>;
   navigationInProgressRef: React.MutableRefObject<boolean>;
   markNavigationInProgress: () => void;
   toc: TocEntry[];
@@ -83,431 +126,166 @@ export interface UseEpubLifecycleReturn {
   latestCfiRef: React.MutableRefObject<string | null>;
 }
 
-export type TocNavigationTarget =
-  | { kind: "href"; href: string }
-  | { kind: "spineIndex"; index: number; label?: string }
-  | { kind: "fallback"; href: string; label: string }
-  | { kind: "unresolved" };
-
-function flattenToc(entries: TocEntry[]): TocEntry[] {
-  return entries.flatMap((entry) => [entry, ...(entry.subitems ? flattenToc(entry.subitems) : [])]);
-}
-
-function flattenTocToUsefulEntries(entries: TocEntry[]): TocEntry[] {
-  return entries.flatMap((entry) => {
-    if (entry.subitems && entry.subitems.length > 0) {
-      return flattenTocToUsefulEntries(entry.subitems);
-    }
-    return [entry];
-  });
-}
-
-function normalizePathSegments(href: string): string {
-  const segments: string[] = [];
-
-  for (const segment of href.split("/")) {
-    if (!segment || segment === ".") {
-      continue;
-    }
-    if (segment === "..") {
-      segments.pop();
-      continue;
-    }
-    segments.push(segment);
-  }
-
-  return segments.join("/");
-}
-
-function normalizeEpubHref(href: string): string {
-  const withoutFragment = href.split("#")[0]?.split("?")[0] ?? "";
-  const withoutLeadingSlash = withoutFragment.replace(/^\/+/, "");
-
-  try {
-    return normalizePathSegments(decodeURIComponent(withoutLeadingSlash));
-  } catch {
-    return normalizePathSegments(withoutLeadingSlash);
-  }
-}
-
-function getDirectSpineSectionForHref(book: EpubBook, href: string): any | null {
-  const spine = book.spine as any;
-  const normalizedHref = normalizeEpubHref(href);
-  return spine.get?.(href) ?? (normalizedHref ? spine.get?.(normalizedHref) : null) ?? null;
-}
-
-function hrefsMatch(left: string, right: string): boolean {
-  const normalizedLeft = normalizeEpubHref(left);
-  const normalizedRight = normalizeEpubHref(right);
-
-  if (!normalizedLeft || !normalizedRight) {
-    return false;
-  }
-
-  return (
-    normalizedLeft === normalizedRight ||
-    normalizedLeft.endsWith(`/${normalizedRight}`) ||
-    normalizedRight.endsWith(`/${normalizedLeft}`)
-  );
-}
-
-function getSpineIndexForHref(book: EpubBook, href: string): number | null {
-  const normalizedHref = normalizeEpubHref(href);
-  const spine = book.spine as any;
-  const section = getDirectSpineSectionForHref(book, href);
-
-  if (typeof section?.index === "number") {
-    return section.index;
-  }
-
-  if (typeof spine.each !== "function") {
-    return null;
-  }
-
-  let matchedIndex: number | null = null;
-  let fallbackIndex = 0;
-  spine.each((item: any) => {
-    if (matchedIndex !== null) {
-      fallbackIndex += 1;
-      return;
-    }
-    if (typeof item?.href === "string" && hrefsMatch(item.href, normalizedHref)) {
-      matchedIndex = typeof item.index === "number" ? item.index : fallbackIndex;
-    }
-    fallbackIndex += 1;
-  });
-
-  return matchedIndex;
-}
-
-function getSpineHrefForIndex(book: EpubBook, index: number): string | null {
-  const spine = book.spine as any;
-  const section = spine.get?.(index);
-  return typeof section?.href === "string" ? section.href : null;
-}
-
-function resolveDirectTocNavigationTarget(
-  book: EpubBook,
-  rawHref: string,
-  label?: string,
-): TocNavigationTarget {
-  const spine = book.spine as any;
-  const rawSection = spine.get?.(rawHref);
-
-  if (typeof rawSection?.index === "number") {
-    return { kind: "href", href: rawHref };
-  }
-
-  const normalizedHref = normalizeEpubHref(rawHref);
-  if (normalizedHref && normalizedHref !== rawHref) {
-    const normalizedSection = spine.get?.(normalizedHref);
-    if (typeof normalizedSection?.index === "number") {
-      return { kind: "href", href: normalizedHref };
-    }
-  }
-
-  const index = getSpineIndexForHref(book, rawHref);
-  if (index !== null) {
-    return { kind: "spineIndex", index, ...(label ? { label } : {}) };
-  }
-
-  return { kind: "unresolved" };
-}
-
-function hrefForResolvedTarget(book: EpubBook, target: TocNavigationTarget): string | null {
-  switch (target.kind) {
-    case "href":
-      return target.href;
-    case "spineIndex":
-      return getSpineHrefForIndex(book, target.index);
-    default:
-      return null;
-  }
-}
-
-export function resolveTocNavigationTarget(
-  book: EpubBook,
-  toc: TocEntry[],
-  rawHref: string,
-): TocNavigationTarget {
-  const directTarget = resolveDirectTocNavigationTarget(book, rawHref);
-  if (directTarget.kind !== "unresolved") {
-    return directTarget;
-  }
-
-  const flattenedToc = flattenToc(toc).filter((entry) => entry.href.trim().length > 0);
-  const currentIndex = flattenedToc.findIndex(
-    (entry) => entry.href === rawHref || hrefsMatch(entry.href, rawHref),
-  );
-
-  if (currentIndex === -1) {
-    return { kind: "unresolved" };
-  }
-
-  const findSibling = (start: number, end: number, step: number): TocNavigationTarget => {
-    for (let index = start; step > 0 ? index < end : index > end; index += step) {
-      const entry = flattenedToc[index]!;
-      const target = resolveDirectTocNavigationTarget(book, entry.href, entry.label);
-      const href = hrefForResolvedTarget(book, target);
-
-      if (href) {
-        return { kind: "fallback", href, label: entry.label };
+function readerPreferences(config: UseEpubLifecycleConfig): NavigatorPreferences {
+  const layout = config.readerLayout;
+  const theme = resolveTheme(config.theme);
+  return {
+    flow: layout === "scroll" ? "scrolled" : "paginated",
+    spread: layout === "spread" ? "double" : "single",
+    fontFamily: config.fontFamily,
+    fontSize: config.fontSize,
+    lineHeight: config.lineHeight,
+    theme,
+    // Page chrome (epubjs-style body insets) is applied by the navigator
+    // paginated layout, not preference margins — body padding must participate
+    // in column geometry or two-page spreads show a next-column sliver.
+    preferenceCss: `${getTypographyCss(
+      config.fontFamily,
+      config.fontSize,
+      config.lineHeight,
+      config.textAlign,
+    )}\n${getThemeColorCss(theme)}`,
+    readerBaseCss: `
+      html, body { box-sizing: border-box; margin: 0; min-height: 100%; }
+      body { overflow-wrap: anywhere; }
+      section[class*="titlepage"] h1, section[class*="titlepage"] p,
+      section[class*="colophon"] h2, section[class*="imprint"] h2 {
+        position: static !important; left: auto !important;
       }
-    }
-
-    return { kind: "unresolved" };
+      .search-hl { background-color: rgba(59,130,246,.25) !important; }
+      .search-hl-current { background-color: rgba(59,130,246,.6) !important; }
+    `,
   };
-
-  const nextSibling = findSibling(currentIndex + 1, flattenedToc.length, 1);
-  if (nextSibling.kind !== "unresolved") {
-    return nextSibling;
-  }
-
-  return findSibling(currentIndex - 1, -1, -1);
 }
 
-function findLastTocEntry(
-  entries: TocEntry[],
-  predicate: (entry: TocEntry) => boolean,
-): TocEntry | null {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    if (predicate(entries[index]!)) {
-      return entries[index]!;
-    }
-  }
-
-  return null;
-}
-
-interface LogicalChapterRange {
-  index: number;
-  spineStart: number;
-  spineEnd: number;
-}
-
-function buildLogicalChapterRanges(toc: TocEntry[], book: EpubBook | null): LogicalChapterRange[] {
-  if (!book || toc.length === 0) {
-    return [];
-  }
-
-  const starts = flattenTocToUsefulEntries(toc)
-    .map((entry) => {
-      const spineStart = getSpineIndexForHref(book, entry.href);
-      return spineStart === null ? null : { spineStart };
-    })
-    .filter((entry): entry is { spineStart: number } => entry !== null)
-    .sort((left, right) => left.spineStart - right.spineStart);
-
-  const deduped: { spineStart: number }[] = [];
-  for (const start of starts) {
-    if (deduped[deduped.length - 1]?.spineStart === start.spineStart) {
-      continue;
-    }
-    deduped.push(start);
-  }
-
-  const spine = book.spine as any;
-  let spineLength = 0;
-  if (typeof spine.each === "function") {
-    spine.each(() => {
-      spineLength += 1;
-    });
-  }
-
-  return deduped.map((start, index) => ({
-    index,
-    spineStart: start.spineStart,
-    spineEnd: deduped[index + 1]?.spineStart ?? spineLength,
+function mapToc(
+  entries: readonly { title: string; href: string; children: readonly any[] }[],
+): TocEntry[] {
+  return entries.map((entry) => ({
+    label: entry.title.trim(),
+    href: entry.href,
+    ...(entry.children.length ? { subitems: mapToc(entry.children) } : {}),
   }));
 }
 
-function resolveLogicalChapterIndex(
-  ranges: LogicalChapterRange[],
-  currentSpineIndex: number | undefined,
-): number | null {
-  if (currentSpineIndex == null) {
-    return null;
-  }
-
-  return (
-    ranges.find(
-      (range) => currentSpineIndex >= range.spineStart && currentSpineIndex < range.spineEnd,
-    )?.index ?? null
-  );
-}
-
-function resolveCurrentChapterLabel({
-  toc,
-  book,
-  currentSpineHref,
-  currentSpineIndex,
-}: {
-  toc: TocEntry[];
-  book: EpubBook | null;
-  currentSpineHref?: string;
-  currentSpineIndex?: number;
-}): string | null {
-  if (!book || toc.length === 0) {
-    return null;
-  }
-
-  const flattenedToc = flattenToc(toc).filter((entry) => entry.label.trim().length > 0);
-  if (flattenedToc.length === 0) {
-    return null;
-  }
-
-  if (currentSpineHref) {
-    const hrefMatch = findLastTocEntry(flattenedToc, (entry) =>
-      hrefsMatch(entry.href, currentSpineHref),
-    );
-    if (hrefMatch) {
-      return hrefMatch.label;
-    }
-  }
-
-  if (currentSpineIndex == null) {
-    return null;
-  }
-
-  const spineMatch = findLastTocEntry(flattenedToc, (entry) => {
-    const spineIndex = getSpineIndexForHref(book, entry.href);
-    return spineIndex !== null && spineIndex <= currentSpineIndex;
-  });
-
-  return spineMatch?.label ?? null;
-}
-
 export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecycleReturn {
-  const {
-    bookId,
-    containerRef,
-    readerLayout,
-    fontFamily,
-    fontSize,
-    lineHeight,
-    textAlign,
-    theme,
-    loadAndApplyHighlights,
-    registerSelectionHandler,
-    enabled = true,
-    panelId,
-  } = config;
-
-  const internalBookRef = useRef<EpubBook | null>(null);
-  const internalRenditionRef = useRef<Rendition | null>(null);
+  const { bookId, containerRef, enabled = true } = config;
+  const internalBookRef = useRef<any | null>(null);
+  const internalRenditionRef = useRef<any | null>(null);
   const bookRef = config.bookRef ?? internalBookRef;
   const renditionRef = config.renditionRef ?? internalRenditionRef;
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigatorRef = useRef<Navigator | null>(null);
+  const configRef = useRef(config);
+  configRef.current = config;
   const latestCfiRef = useRef<string | null>(null);
+  const latestLayoutRef = useRef<{ localProgression?: number; spineIndex?: number }>({});
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigationInProgressRef = useRef(false);
   const navigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const warnedBrokenTocBookIdsRef = useRef<Set<string>>(new Set());
-
+  const suppressPositionSaveRef = useRef(false);
+  const warnedBrokenTocBookIdsRef = useRef(new Set<string>());
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [currentChapterLabel, setCurrentChapterLabel] = useState<string | null>(null);
   const [bookProgress, setBookProgress] = useState(0);
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [hasRestoredPosition, setHasRestoredPosition] = useState(false);
-
-  const layoutRef = useRef(readerLayout);
-  layoutRef.current = readerLayout;
-  const typographyRef = useRef({ fontFamily, fontSize, lineHeight, textAlign });
-  typographyRef.current = { fontFamily, fontSize, lineHeight, textAlign };
-
-  // Use a ref for the full config so optional callbacks don't trigger re-init
-  const configRef = useRef(config);
-  configRef.current = config;
-
-  // Access workspace context to check if this book panel is active in focused mode
   const ws = useOptionalWorkspace();
 
   const clearNavigationInProgress = useCallback(() => {
     navigationInProgressRef.current = false;
-    if (navigationTimeoutRef.current) {
-      clearTimeout(navigationTimeoutRef.current);
-      navigationTimeoutRef.current = null;
-    }
+    if (navigationTimeoutRef.current) clearTimeout(navigationTimeoutRef.current);
+    navigationTimeoutRef.current = null;
   }, []);
 
   const markNavigationInProgress = useCallback(() => {
     navigationInProgressRef.current = true;
     if (navigationTimeoutRef.current) clearTimeout(navigationTimeoutRef.current);
-    navigationTimeoutRef.current = setTimeout(() => {
-      navigationInProgressRef.current = false;
-      navigationTimeoutRef.current = null;
-    }, 3000);
-  }, []);
+    navigationTimeoutRef.current = setTimeout(clearNavigationInProgress, 3000);
+  }, [clearNavigationInProgress]);
 
   const flushPositionSave = useCallback(() => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
     const cfi = latestCfiRef.current;
-    if (cfi) {
-      savePositionDualKey({
-        panelId: undefined,
-        bookId,
-        cfi,
-        savePosition: (key, val, options) =>
-          AppRuntime.runPromise(
-            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val, options))),
+    if (!cfi) return;
+    savePositionDualKey({
+      panelId: undefined,
+      bookId,
+      cfi,
+      localProgression: latestLayoutRef.current.localProgression,
+      spineIndex: latestLayoutRef.current.spineIndex,
+      savePosition: (key, value, options) =>
+        AppRuntime.runPromise(
+          ReadingPositionService.pipe(
+            Effect.andThen((service) => service.savePosition(key, value, options)),
           ),
-      }).catch((err) => console.error("Failed to flush reading position:", err));
-    }
+        ),
+    }).catch((error) => console.error("Failed to flush reading position:", error));
   }, [bookId]);
+
+  const displayCfiWithFallback = useCallback(
+    async (
+      rendition: SuccessorRenditionAdapter,
+      cfi: string,
+      options?: { readonly localProgression?: number },
+    ) => {
+      suppressPositionSaveRef.current = true;
+      try {
+        await displayStoredCfiWithFallback(
+          rendition,
+          cfi,
+          (error) => {
+            console.warn("Stored EPUB CFI could not be resolved; falling back to spine start", {
+              bookId,
+              cfi,
+              error,
+            });
+          },
+          options,
+        );
+      } finally {
+        suppressPositionSaveRef.current = false;
+      }
+    },
+    [bookId],
+  );
 
   const navigateToCfi = useCallback(
     (cfi: string) => {
-      const rendition = renditionRef.current;
+      const rendition = renditionRef.current as SuccessorRenditionAdapter | null;
       if (!rendition) return;
       markNavigationInProgress();
-      rendition.display(cfi).catch((err: unknown) => {
+      void displayCfiWithFallback(rendition, cfi).catch((error) => {
         clearNavigationInProgress();
-        console.warn("CFI navigation failed:", err);
+        console.warn("CFI navigation failed:", error);
       });
     },
-    [clearNavigationInProgress, markNavigationInProgress],
+    [clearNavigationInProgress, displayCfiWithFallback, markNavigationInProgress, renditionRef],
   );
 
   const navigateToTocHref = useCallback(
     (href: string) => {
-      const book = bookRef.current;
-      const rendition = renditionRef.current;
-      if (!book || !rendition) {
-        return;
-      }
-
-      const tryDisplay = (target: string | number) => {
+      const book = bookRef.current as ReaderBookLike | null;
+      const rendition = renditionRef.current as SuccessorRenditionAdapter | null;
+      if (!book || !rendition) return;
+      const tryDisplay = async (target: string | number) => {
         markNavigationInProgress();
-        return (typeof target === "number" ? rendition.display(target) : rendition.display(target))
-          .then(() => true)
-          .catch(() => {
-            clearNavigationInProgress();
-            return false;
-          });
+        try {
+          await rendition.display(target);
+          return true;
+        } catch {
+          clearNavigationInProgress();
+          return false;
+        }
       };
-
       void (async () => {
-        if (await tryDisplay(href)) {
-          return;
-        }
-
-        const normalizedHref = normalizeEpubHref(href);
-        if (normalizedHref && normalizedHref !== href && (await tryDisplay(normalizedHref))) {
-          return;
-        }
-
-        const target = resolveTocNavigationTarget(book, toc, href);
-        if (target.kind === "spineIndex" && (await tryDisplay(target.index))) {
-          return;
-        }
-
-        if (target.kind === "fallback" && (await tryDisplay(target.href))) {
-          return;
-        }
-
+        if (await tryDisplay(href)) return;
+        const normalized = normalizeEpubHref(href);
+        if (normalized !== href && (await tryDisplay(normalized))) return;
+        const target: TocNavigationTarget = resolveTocNavigationTarget(book, toc, href);
+        if (target.kind === "spineIndex" && (await tryDisplay(target.index))) return;
+        if (target.kind === "fallback" && (await tryDisplay(target.href))) return;
         if (!warnedBrokenTocBookIdsRef.current.has(bookId)) {
           warnedBrokenTocBookIdsRef.current.add(bookId);
           console.warn("TOC navigation failed:", { bookId, href });
@@ -524,400 +302,252 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     navigateToPosition: navigateToCfi,
   });
 
-  // Main epub lifecycle effect
   useEffect(() => {
-    if (!enabled) return;
-    const el = containerRef.current;
-    if (!el) return;
-
+    if (!enabled || !containerRef.current) return;
+    const container = containerRef.current;
+    const controller = new AbortController();
+    let cancelled = false;
+    let provider: ZipResourceProvider | null = null;
+    let rendition: SuccessorRenditionAdapter | null = null;
+    let bookAdapter: ReaderBookLike | null = null;
+    let tocData: TocEntry[] = [];
+    let positions: readonly PersistentLocator[] = [];
+    let publisherPages: PublisherPageMap | null = null;
+    registerActiveReader(bookId);
     setHasRestoredPosition(false);
 
-    registerActiveReader(bookId);
+    const saveRelocation = (cfi: string, relocation: Relocation) => {
+      latestLayoutRef.current = {
+        localProgression: relocation.localProgression,
+        spineIndex: relocation.spineIndex,
+      };
+      savePositionDualKey({
+        panelId: configRef.current.panelId,
+        bookId,
+        cfi,
+        localProgression: relocation.localProgression,
+        spineIndex: relocation.spineIndex,
+        recordChange: false,
+        savePosition: (key, value, options) =>
+          AppRuntime.runPromise(
+            ReadingPositionService.pipe(
+              Effect.andThen((service) => service.savePosition(key, value, options)),
+            ),
+          ),
+      }).catch((error) => console.error("Failed to save local reading position:", error));
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(flushPositionSave, POSITION_SAVE_DEBOUNCE_MS);
+    };
 
-    let cancelled = false;
-    let epubBook: EpubBook | null = null;
-    let rendition: Rendition | null = null;
-    let tocData: TocEntry[] = [];
-    let logicalChapterRanges: LogicalChapterRange[] = [];
+    const handleRelocation = (relocation: Relocation) => {
+      if (!rendition || !bookAdapter || cancelled) return;
+      configRef.current.onRelocated?.();
+      clearNavigationInProgress();
+      // Prefer the adapter location (set on the same relocation event). Fall back to a
+      // spine-only CFI so page UI still updates if the adapter has not stamped location yet.
+      const location = rendition.location?.start;
+      const cfi = location?.cfi ?? `epubcfi(/6/${(relocation.spineIndex + 1) * 2}!/4)`;
+      // Prefer publisher Real Page Numbers (nav/NCX page-list) when present; otherwise
+      // fall back to character-sampled locations (epub.js-style heuristic).
+      const publisher = publisherPages
+        ? resolvePublisherPage(publisherPages, {
+            href: relocation.href,
+            spineIndex: relocation.spineIndex,
+            localProgression: relocation.localProgression,
+            document: rendition.contentDocument,
+          })
+        : null;
+      const page =
+        publisher?.currentPage ??
+        pageIndexFromPositions(positions, {
+          href: relocation.href,
+          cfi,
+          spineIndex: relocation.spineIndex,
+          localProgression: relocation.localProgression,
+        });
+      const total = publisher?.totalPages ?? (positions.length || null);
+      const chapterLabel = resolveCurrentChapterLabel(
+        tocData,
+        bookAdapter,
+        relocation.href,
+        relocation.spineIndex,
+      );
+      const progress =
+        page !== null && total !== null && total > 0
+          ? ((page - 1) / total) * 100
+          : relocation.totalProgression * 100;
+      setBookProgress(progress);
+      setCurrentPage(page);
+      setTotalPages(total);
+      setCurrentChapterLabel(chapterLabel);
+      if (configRef.current.chatContextMap) {
+        const visibleText = rendition.contentDocument?.body?.textContent?.trim() ?? "";
+        configRef.current.chatContextMap.current.set(bookId, {
+          currentChapterIndex: logicalChapterIndex(tocData, bookAdapter, relocation.spineIndex),
+          currentSpineHref: relocation.href,
+          visibleText,
+        });
+      }
+      // During restore, skip both the in-memory and IDB updates. Mounting the
+      // spine emits a section-start CFI first; writing that would clobber the
+      // real position and reopen at chapter start on the next refresh.
+      if (suppressPositionSaveRef.current) return;
+      latestCfiRef.current = cfi;
+      saveRelocation(cfi, relocation);
+      AppRuntime.runPromise(
+        ReadingHistoryService.pipe(
+          Effect.andThen((service) =>
+            service.recordVisit(bookId, {
+              cfi,
+              chapterHref: relocation.href,
+              chapterLabel,
+              percentage: progress,
+              pageIndex: page,
+              totalPages: total,
+            }),
+          ),
+        ),
+      ).catch(console.error);
+    };
 
     const init = async () => {
-      const bookData = await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.getBookData(bookId))),
+      const data = await AppRuntime.runPromise(
+        BookService.pipe(Effect.andThen((service) => service.getBookData(bookId))),
       );
       if (cancelled) return;
-
-      const opts = getRenditionOptions(readerLayout);
-      epubBook = ePub(bookData);
-      bookRef.current = epubBook;
-
-      // Inject layout fix CSS via spine hooks
-      epubBook.spine.hooks.content.register((doc: Document, _section: any) => {
-        const style = doc.createElement("style");
-        style.textContent = `
-        section[class*="titlepage"] h1,
-        section[class*="titlepage"] p,
-        section[class*="colophon"] h2,
-        section[class*="imprint"] h2 {
-          position: static !important;
-          left: auto !important;
-        }
-        img {
-          max-height: 95vh !important;
-          max-width: 100% !important;
-          object-fit: contain !important;
-        }
-      `;
-        doc.head.appendChild(style);
+      provider = await openZipResourceProvider(data, { signal: controller.signal });
+      const opened = await openPublication(provider, { signal: controller.signal });
+      if (!opened.publication) throw new Error("EPUB publication could not be parsed");
+      const publication = opened.publication;
+      tocData = mapToc(await extractCompatibleToc(publication, provider));
+      publisherPages = buildPublisherPageMap(opened.pageList, publication.readingOrder);
+      const compatibilityBook = createSuccessorBookAdapter(publication, provider);
+      bookAdapter = compatibilityBook as unknown as ReaderBookLike;
+      bookRef.current = compatibilityBook;
+      const navigator = createNavigator(publication, {
+        container,
+        preferences: readerPreferences(configRef.current),
+        security: { resourceProvider: provider },
       });
-
-      rendition = epubBook.renderTo(el, {
-        width: "100%",
-        height: "100%",
-        spread: opts.spread,
-        flow: opts.flow,
-        allowScriptedContent: true,
-        ...("gap" in opts && { gap: opts.gap }),
-      });
+      navigatorRef.current = navigator;
+      rendition = new SuccessorRenditionAdapter(publication, navigator);
       renditionRef.current = rendition;
+      navigator.addEventListener("relocation", (event) =>
+        handleRelocation((event as CustomEvent<Relocation>).detail),
+      );
+      setToc(tocData);
+      configRef.current.onTocExtracted?.(tocData);
 
-      // Inject Google Fonts, typography CSS, and styles into epub iframe
-      rendition.hooks.content.register((contents: any) => {
-        const doc = contents.document;
-        const link = doc.createElement("link");
-        link.rel = "stylesheet";
-        link.href =
-          "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Source+Serif+4:wght@400;500;600;700&display=swap";
-        doc.head.appendChild(link);
-
-        const style = doc.createElement("style");
-        style.id = "reader-typography";
-        style.textContent = getTypographyCss(
-          typographyRef.current.fontFamily,
-          typographyRef.current.fontSize,
-          typographyRef.current.lineHeight,
-          typographyRef.current.textAlign,
-        );
-        doc.head.appendChild(style);
-
-        const highlightStyle = doc.createElement("style");
-        highlightStyle.id = "reader-highlights";
-        highlightStyle.textContent = `
-        .epubjs-hl {
-          background-color: rgba(255, 213, 79, 0.4) !important;
-          cursor: pointer;
-        }
-        .search-hl {
-          background-color: rgba(59, 130, 246, 0.25) !important;
-        }
-        .search-hl-current {
-          background-color: rgba(59, 130, 246, 0.6) !important;
-        }
-      `;
-        doc.head.appendChild(highlightStyle);
-
-        const themeStyle = doc.createElement("style");
-        themeStyle.id = "reader-theme-colors";
-        themeStyle.textContent = getThemeColorCss(resolveTheme(configRef.current.theme));
-        doc.head.appendChild(themeStyle);
-
-        // Forward keyboard events from the epub iframe
-        doc.addEventListener("keydown", (e: KeyboardEvent) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "f") {
-            e.preventDefault();
-            e.stopPropagation();
-            configRef.current.onSearchOpen?.();
-            return;
-          }
-          if ((e.metaKey || e.ctrlKey) && e.key === ".") {
-            e.preventDefault();
-            e.stopPropagation();
-            queueMicrotask(() => {
-              window.dispatchEvent(
-                new KeyboardEvent("keydown", {
-                  key: e.key,
-                  metaKey: e.metaKey,
-                  ctrlKey: e.ctrlKey,
-                  altKey: e.altKey,
-                  shiftKey: e.shiftKey,
-                  bubbles: true,
-                  cancelable: true,
-                }),
-              );
-            });
-            return;
-          }
-          if (layoutRef.current === "scroll") return;
-          if (e.key === "ArrowLeft") {
-            markNavigationInProgress();
-            rendition!.prev().catch((err: unknown) => {
-              clearNavigationInProgress();
-              console.error("Failed to navigate to previous page", err);
-            });
-          } else if (e.key === "ArrowRight") {
-            markNavigationInProgress();
-            rendition!.next().catch((err: unknown) => {
-              clearNavigationInProgress();
-              console.error("Failed to navigate to next page", err);
-            });
-          }
-        });
-      });
-
-      registerThemeColors(rendition);
-
-      // Post-ready initialization (async continuation)
-      await epubBook.ready;
-
-      // Extract TOC
-      const nav = epubBook.navigation;
-      if (nav && nav.toc) {
-        const mapToc = (items: any[]): TocEntry[] =>
-          items.map((item) => ({
-            label: item.label?.trim() ?? "",
-            href: item.href ?? "",
-            ...(item.subitems?.length ? { subitems: mapToc(item.subitems) } : {}),
-          }));
-        tocData = mapToc(nav.toc);
-        logicalChapterRanges = buildLogicalChapterRanges(tocData, epubBook);
-        setToc(tocData);
-        configRef.current.onTocExtracted?.(tocData);
-      }
-
-      // Restore reading position
-      const startCfi = await resolveStartCfi({
-        latestCfi: latestCfiRef.current,
-        panelId,
-        bookId,
-        getPosition: (key) =>
-          AppRuntime.runPromise(
-            ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(key))),
-          ),
-      });
-      await rendition.display(startCfi || undefined);
-      if (!cancelled) setHasRestoredPosition(true);
-
-      // Populate chatContextMap eagerly
-      if (configRef.current.chatContextMap) {
-        let visibleText = "";
-        try {
-          const contents = (rendition as any).getContents?.() as any[];
-          if (contents?.length > 0) {
-            visibleText = contents
-              .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
-              .filter(Boolean)
-              .join("\n\n");
-          }
-        } catch {
-          // fallback
-        }
-        const loc = rendition.currentLocation() as any;
-        if (loc?.start) {
-          const currentSpineIndex = loc.start.index ?? 0;
-          configRef.current.chatContextMap.current.set(bookId, {
-            currentChapterIndex:
-              resolveLogicalChapterIndex(logicalChapterRanges, currentSpineIndex) ??
-              currentSpineIndex,
-            currentSpineHref: loc.start.href ?? "",
-            visibleText,
-          });
-        }
-      }
-
-      const effectiveTheme = resolveTheme(configRef.current.theme);
-      rendition.themes.select(effectiveTheme);
-      await loadAndApplyHighlights(rendition);
-      registerSelectionHandler(rendition);
-      configRef.current.onRenditionReady?.(navigateToCfi);
-
-      // Location cache
-      try {
-        const cachedLocations = await AppRuntime.runPromise(
-          LocationCacheService.pipe(Effect.andThen((s) => s.getLocations(bookId))).pipe(
+      // Heuristic locations are only needed when there is no publisher page-list.
+      if (!publisherPages) {
+        const cached = await AppRuntime.runPromise(
+          LocationCacheService.pipe(Effect.andThen((service) => service.getLocations(bookId))).pipe(
             Effect.catchAll(() => Effect.succeed(null)),
           ),
         );
-        if (cachedLocations) {
-          epubBook.locations.load(cachedLocations);
-        } else {
-          await epubBook.locations.generate(1500);
-          const json = (epubBook.locations as any).save() as string;
-          AppRuntime.runPromise(
-            LocationCacheService.pipe(Effect.andThen((s) => s.saveLocations(bookId, json))),
-          ).catch(console.error);
-        }
-        const locTotal = (epubBook.locations as any).total as number;
-        setTotalPages(locTotal);
-        // Seed currentPage from the current location so the UI shows
-        // "Page X of Y" immediately instead of "0%" until first navigation.
-        const loc = rendition.currentLocation() as any;
-        const startCfiForPage = loc?.start?.cfi ?? latestCfiRef.current;
-        setCurrentChapterLabel(
-          resolveCurrentChapterLabel({
-            toc: tocData,
-            book: epubBook,
-            currentSpineHref: loc?.start?.href,
-            currentSpineIndex: loc?.start?.index,
-          }),
-        );
-        if (locTotal > 0 && startCfiForPage) {
-          const locIndex = epubBook.locations.locationFromCfi(startCfiForPage);
-          if (typeof locIndex === "number" && locIndex >= 0) {
-            setCurrentPage(locIndex + 1);
-          } else if (typeof loc?.start?.percentage === "number") {
-            setCurrentPage(Math.max(1, Math.round(loc.start.percentage * locTotal)));
-          }
-        }
-      } catch {
-        // locations generation can fail silently
-      }
-
-      // Relocated event handler
-      rendition.on(
-        "relocated",
-        (location: {
-          start: {
-            cfi: string;
-            percentage: number;
-            displayed: { page: number; total: number };
-            index?: number;
-            href?: string;
-          };
-        }) => {
-          if (!renditionRef.current) return;
-          configRef.current.onRelocated?.();
-          setBookProgress(location.start.percentage * 100);
-          const epubLocTotal = (bookRef.current?.locations as any)?.total as number | undefined;
-          let historyPageIndex: number | null = null;
-          if (epubLocTotal && epubLocTotal > 0) {
-            const locIndex = bookRef.current!.locations.locationFromCfi(location.start.cfi);
-            if (typeof locIndex === "number" && locIndex >= 0) {
-              historyPageIndex = locIndex + 1;
-            } else {
-              historyPageIndex = Math.max(1, Math.round(location.start.percentage * epubLocTotal));
-            }
-            setCurrentPage(historyPageIndex);
-            setTotalPages(epubLocTotal);
-          }
-          latestCfiRef.current = location.start.cfi;
-          clearNavigationInProgress();
-          const resolvedChapterLabel = resolveCurrentChapterLabel({
-            toc: tocData,
-            book: bookRef.current,
-            currentSpineHref: location.start.href,
-            currentSpineIndex: location.start.index,
-          });
-          setCurrentChapterLabel(resolvedChapterLabel);
-
-          // Update chat context
-          if (configRef.current.chatContextMap && location.start.index != null) {
-            let visibleText = "";
-            try {
-              const contents = (renditionRef.current as any)?.getContents?.() as any[];
-              if (contents?.length > 0) {
-                visibleText = contents
-                  .map((c: any) => c.document?.body?.textContent?.trim() ?? "")
-                  .filter(Boolean)
-                  .join("\n\n");
-              }
-            } catch {
-              // fallback
-            }
-            configRef.current.chatContextMap.current.set(bookId, {
-              currentChapterIndex:
-                resolveLogicalChapterIndex(logicalChapterRanges, location.start.index) ??
-                location.start.index,
-              currentSpineHref: location.start.href ?? "",
-              visibleText,
-            });
-          }
-
-          savePositionDualKey({
-            panelId: configRef.current.panelId,
-            bookId,
-            cfi: location.start.cfi,
-            recordChange: false,
-            savePosition: (key, val, options) =>
-              AppRuntime.runPromise(
-                ReadingPositionService.pipe(
-                  Effect.andThen((s) => s.savePosition(key, val, options)),
-                ),
-              ),
-          }).catch((err) => console.error("Failed to save local reading position:", err));
-
-          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = setTimeout(() => {
-            savePositionDualKey({
-              panelId: undefined,
-              bookId,
-              cfi: location.start.cfi,
-              savePosition: (key, val, options) =>
-                AppRuntime.runPromise(
-                  ReadingPositionService.pipe(
-                    Effect.andThen((s) => s.savePosition(key, val, options)),
-                  ),
-                ),
-            }).catch((err) => console.error("Failed to save reading position:", err));
-          }, POSITION_SAVE_DEBOUNCE_MS);
-
-          AppRuntime.runPromise(
-            ReadingHistoryService.pipe(
-              Effect.andThen((s) =>
-                s.recordVisit(bookId, {
-                  cfi: location.start.cfi,
-                  chapterHref: location.start.href ?? null,
-                  chapterLabel: resolvedChapterLabel,
-                  percentage: location.start.percentage * 100,
-                  pageIndex: historyPageIndex,
-                  totalPages: epubLocTotal && epubLocTotal > 0 ? epubLocTotal : null,
-                }),
+        const successorCache = parseSuccessorPositionCache(cached);
+        positions =
+          successorCache?.positions ?? (await generateSuccessorPositions(publication, provider));
+        if (!successorCache) {
+          void AppRuntime.runPromise(
+            LocationCacheService.pipe(
+              Effect.andThen((service) =>
+                service.saveLocations(bookId, serializeSuccessorPositionCache(positions)),
               ),
             ),
           ).catch(console.error);
+        }
+      }
+
+      const observedDocuments = new WeakSet<Document>();
+      rendition.hooks.content.register(({ document }: { document: Document }) => {
+        if (observedDocuments.has(document)) return;
+        observedDocuments.add(document);
+        document.addEventListener("keydown", (event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "f") {
+            event.preventDefault();
+            configRef.current.onSearchOpen?.();
+          } else if (configRef.current.readerLayout !== "scroll" && event.key === "ArrowLeft") {
+            markNavigationInProgress();
+            void rendition?.prev().catch(clearNavigationInProgress);
+          } else if (configRef.current.readerLayout !== "scroll" && event.key === "ArrowRight") {
+            markNavigationInProgress();
+            void rendition?.next().catch(clearNavigationInProgress);
+          }
+        });
+      });
+
+      const startPosition = await resolveStartPosition({
+        latest: latestCfiRef.current
+          ? {
+              cfi: latestCfiRef.current,
+              localProgression: latestLayoutRef.current.localProgression,
+              spineIndex: latestLayoutRef.current.spineIndex,
+            }
+          : null,
+        panelId: configRef.current.panelId,
+        bookId,
+        getPositionRecord: async (key) => {
+          const record = await AppRuntime.runPromise(
+            ReadingPositionService.pipe(
+              Effect.andThen((service) => service.getPositionRecord(key)),
+            ),
+          );
+          if (!record?.cfi) return null;
+          return {
+            cfi: record.cfi,
+            localProgression: record.localProgression,
+            spineIndex: record.spineIndex,
+          } satisfies StoredReadingPosition;
         },
-      );
-    }; // end init()
-
-    // Keyboard navigation on the parent document
-    // Arrow keys work globally (no focus check) so users don't need to click
-    // the EPUB viewer or navigation buttons first. In workspace/focused mode, we
-    // only respond when this book is the active cluster; otherwise we respond
-    // to all arrow keys. We always skip when typing in an editable element.
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (layoutRef.current === "scroll") return;
-      if (isEditableElement()) return;
-
-      // In workspace focused mode, only respond if this book is the active cluster
-      if (ws && ws.activeClusterBookIdRef.current !== null) {
-        if (ws.activeClusterBookIdRef.current !== bookId) return;
+      });
+      suppressPositionSaveRef.current = true;
+      try {
+        if (startPosition) {
+          await displayCfiWithFallback(rendition, startPosition.cfi, {
+            localProgression: startPosition.localProgression,
+          });
+          // Keep the known-good stored position; do not replace it with
+          // transient section-start CFIs emitted while mounting the spine.
+          latestCfiRef.current = startPosition.cfi;
+          latestLayoutRef.current = {
+            localProgression: startPosition.localProgression,
+            spineIndex: startPosition.spineIndex,
+          };
+        } else {
+          await rendition.display();
+        }
+      } finally {
+        suppressPositionSaveRef.current = false;
       }
+      if (cancelled) return;
+      setHasRestoredPosition(true);
+      await configRef.current.loadAndApplyHighlights(rendition);
+      configRef.current.registerSelectionHandler(rendition);
+      configRef.current.onRenditionReady?.(navigateToCfi);
+    };
 
-      if (e.key === "ArrowLeft" && rendition) {
-        markNavigationInProgress();
-        rendition.prev().catch((err: unknown) => {
-          clearNavigationInProgress();
-          console.error("Failed to navigate to previous page", err);
-        });
-      } else if (e.key === "ArrowRight" && rendition) {
-        markNavigationInProgress();
-        rendition.next().catch((err: unknown) => {
-          clearNavigationInProgress();
-          console.error("Failed to navigate to next page", err);
-        });
-      }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (configRef.current.readerLayout === "scroll" || isEditableElement()) return;
+      if (ws?.activeClusterBookIdRef.current && ws.activeClusterBookIdRef.current !== bookId)
+        return;
+      if (!rendition || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+      markNavigationInProgress();
+      void (event.key === "ArrowLeft" ? rendition.prev() : rendition.next()).catch((error) => {
+        clearNavigationInProgress();
+        console.error("Failed to navigate publication", error);
+      });
     };
     document.addEventListener("keydown", handleKeyDown);
-    // Flush the debounced position save on refresh/close — without this a
-    // page turn within the debounce window is lost, and the server's older
-    // position wins LWW on the next pull.
     window.addEventListener("pagehide", flushPositionSave);
-
-    init().catch((err) => {
+    void init().catch((error) => {
       unregisterActiveReader(bookId);
-      if (!cancelled) console.error("Failed to load book data:", err);
+      if (!cancelled) console.error("Failed to load book data:", error);
     });
 
     return () => {
       cancelled = true;
+      controller.abort();
       document.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("pagehide", flushPositionSave);
       flushPositionSave();
@@ -927,52 +557,40 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       setHasRestoredPosition(false);
       setCurrentChapterLabel(null);
       configRef.current.onCleanupToc?.();
-      if (rendition) rendition.destroy();
-      if (epubBook) epubBook.destroy();
+      rendition?.destroy();
+      provider?.close();
+      navigatorRef.current = null;
       bookRef.current = null;
       renditionRef.current = null;
     };
   }, [
-    enabled,
     bookId,
-    readerLayout,
-    loadAndApplyHighlights,
-    registerSelectionHandler,
-    flushPositionSave,
-    navigateToCfi,
+    bookRef,
     clearNavigationInProgress,
+    containerRef,
+    displayCfiWithFallback,
+    enabled,
+    flushPositionSave,
     markNavigationInProgress,
-    panelId,
+    navigateToCfi,
+    renditionRef,
+    ws,
   ]);
 
-  // Theme sync effect
   useEffect(() => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-    registerThemeColors(rendition);
-    const effectiveTheme = resolveTheme(theme);
-    injectThemeColors(rendition, effectiveTheme);
-    rendition.themes.select(effectiveTheme);
-  }, [theme]);
-
-  // Typography sync effect
-  useEffect(() => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-    const css = getTypographyCss(fontFamily, fontSize, lineHeight, textAlign);
-    const contents = (rendition as any).getContents() as any[];
-    contents.forEach((content: any) => {
-      const doc = content.document;
-      if (!doc) return;
-      let style = doc.getElementById("reader-typography");
-      if (!style) {
-        style = doc.createElement("style");
-        style.id = "reader-typography";
-        doc.head.appendChild(style);
-      }
-      style.textContent = css;
-    });
-  }, [fontFamily, fontSize, lineHeight, textAlign]);
+    const navigator = navigatorRef.current;
+    if (!navigator) return;
+    void navigator
+      .setPreferences(readerPreferences(config))
+      .catch((error) => console.error("Failed to update reader preferences", error));
+  }, [
+    config.fontFamily,
+    config.fontSize,
+    config.lineHeight,
+    config.readerLayout,
+    config.textAlign,
+    config.theme,
+  ]);
 
   return {
     bookRef,

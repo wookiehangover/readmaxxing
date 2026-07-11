@@ -1,9 +1,13 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useBookSearch } from "~/hooks/use-book-search";
+import type {
+  SuccessorBookAdapter,
+  SuccessorRenditionAdapter,
+} from "~/lib/epub/successor-reader-adapter";
 
 interface UseReaderSearchOptions {
-  bookRef: React.RefObject<import("epubjs/types/book").default | null>;
-  renditionRef: React.RefObject<import("epubjs/types/rendition").default | null>;
+  bookRef: React.RefObject<SuccessorBookAdapter | null>;
+  renditionRef: React.RefObject<SuccessorRenditionAdapter | null>;
   bookId: string;
   /** When provided, Cmd/Ctrl+F is only intercepted if this element (or a descendant) has focus. */
   panelRef?: React.RefObject<HTMLElement | null>;
@@ -44,8 +48,8 @@ export function useReaderSearch({
     clear: clearSearch,
   } = useBookSearch(bookRef);
 
-  // Track previous search annotations so we can remove them
-  const prevSearchCfisRef = useRef<string[]>([]);
+  // Track previous search decorations so we can remove them
+  const prevSearchDecorationIdsRef = useRef<string[]>([]);
 
   // Navigate to current search result when index changes
   useEffect(() => {
@@ -56,43 +60,37 @@ export function useReaderSearch({
     }
   }, [searchIndex, searchResults, renditionRef]);
 
-  // Apply/remove search highlight annotations in the epub
+  // Apply/remove search highlight decorations in the epub
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
 
-    // Remove previous annotations
-    for (const cfi of prevSearchCfisRef.current) {
-      try {
-        rendition.annotations.remove(cfi, "highlight");
-      } catch {
-        // annotation may not exist
-      }
-    }
+    for (const id of prevSearchDecorationIdsRef.current) rendition.removeDecoration(id);
 
     if (searchResults.length === 0) {
-      prevSearchCfisRef.current = [];
+      prevSearchDecorationIdsRef.current = [];
       return;
     }
 
-    // Add highlight annotations for all results
-    const cfis: string[] = [];
+    // Add highlight decorations for all results
+    const decorationIds: string[] = [];
     for (let i = 0; i < searchResults.length; i++) {
       const cfi = searchResults[i].cfi;
-      cfis.push(cfi);
       const isCurrent = i === searchIndex;
-      const className = isCurrent ? "search-hl-current" : "search-hl";
-      try {
-        rendition.annotations.highlight(cfi, {}, undefined, className, {
-          fill: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)",
-          "fill-opacity": "1",
-          "mix-blend-mode": "multiply",
-        });
-      } catch {
-        // annotation may fail for invalid CFIs
-      }
+      const locator = rendition.locatorFromCfi(cfi);
+      if (!locator) continue;
+      const id = `search-highlight-${i}`;
+      decorationIds.push(id);
+      rendition.upsertDecoration({
+        id,
+        locator,
+        style: {
+          variant: "highlight",
+          color: isCurrent ? "rgba(59, 130, 246, 0.6)" : "rgba(59, 130, 246, 0.25)",
+        },
+      });
     }
-    prevSearchCfisRef.current = cfis;
+    prevSearchDecorationIdsRef.current = decorationIds;
   }, [searchResults, searchIndex, renditionRef]);
 
   // Clear search when book changes

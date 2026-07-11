@@ -1,4 +1,4 @@
-import { EpubCFI } from "epubjs";
+import { parseCfi, type ParsedCfi } from "@readmaxxing/epub-successor";
 
 const PAGE_CFI_PATTERN = /^page:([0-9]+)$/;
 
@@ -10,6 +10,35 @@ function parsePageCfi(cfi: string): number | null {
   return Number.isSafeInteger(page) && page > 0 ? page : null;
 }
 
+function comparePath(
+  left: { readonly steps: readonly { readonly number: number }[]; readonly offset?: number },
+  right: { readonly steps: readonly { readonly number: number }[]; readonly offset?: number },
+): number {
+  const length = Math.min(left.steps.length, right.steps.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = left.steps[index]!.number - right.steps[index]!.number;
+    if (difference !== 0) return difference;
+  }
+  if (left.steps.length !== right.steps.length) return left.steps.length - right.steps.length;
+  return (left.offset ?? 0) - (right.offset ?? 0);
+}
+
+function startPath(cfi: ParsedCfi) {
+  return cfi.kind === "point"
+    ? cfi.path
+    : { ...cfi.start, steps: [...cfi.base.steps, ...cfi.start.steps] };
+}
+
+function compareCfis(left: ParsedCfi, right: ParsedCfi): number {
+  const packageDifference = comparePath(
+    left.packagePath ?? { steps: [] },
+    right.packagePath ?? { steps: [] },
+  );
+  return packageDifference === 0
+    ? comparePath(startPath(left), startPath(right))
+    : packageDifference;
+}
+
 export function isFurtherAlong(remoteCfi: string, localCfi: string): boolean {
   const remotePage = parsePageCfi(remoteCfi);
   const localPage = parsePageCfi(localCfi);
@@ -19,11 +48,7 @@ export function isFurtherAlong(remoteCfi: string, localCfi: string): boolean {
   }
 
   try {
-    const comparator = new EpubCFI();
-    if (!comparator.isCfiString(remoteCfi) || !comparator.isCfiString(localCfi)) {
-      return false;
-    }
-    return comparator.compare(remoteCfi, localCfi) > 0;
+    return compareCfis(parseCfi(remoteCfi), parseCfi(localCfi)) > 0;
   } catch {
     return false;
   }

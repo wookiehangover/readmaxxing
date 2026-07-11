@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { Effect } from "effect";
-import type Rendition from "epubjs/types/rendition";
 import { Button } from "~/components/ui/button";
 import { ChevronLeft, ChevronRight, Notebook, Search, TableOfContents } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
@@ -29,6 +28,10 @@ import {
 } from "~/lib/stores/book-preferences-store";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { useSyncListener } from "~/hooks/use-sync-listener";
+import type {
+  SuccessorBookAdapter,
+  SuccessorRenditionAdapter,
+} from "~/lib/epub/successor-reader-adapter";
 
 interface BookReaderProps {
   book: BookMeta;
@@ -36,8 +39,8 @@ interface BookReaderProps {
 
 export function BookReader({ book }: BookReaderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const bookRef = useRef<import("epubjs/types/book").default | null>(null);
-  const renditionRef = useRef<Rendition | null>(null);
+  const bookRef = useRef<SuccessorBookAdapter | null>(null);
+  const renditionRef = useRef<SuccessorRenditionAdapter | null>(null);
 
   const [settings, updateSettings] = useSettings();
   const [localFontFamily, setLocalFontFamily] = useState<string>(() => settings.fontFamily);
@@ -75,7 +78,7 @@ export function BookReader({ book }: BookReaderProps) {
     dismissPopovers,
     loadAndApplyHighlights,
     registerSelectionHandler,
-    highlightsRef,
+    removeHighlightDecoration,
   } = useHighlights({
     bookId: book.id,
     renditionRef,
@@ -90,10 +93,9 @@ export function BookReader({ book }: BookReaderProps) {
         yield* svc.deleteHighlight(highlightId);
       });
       AppRuntime.runPromise(deleteProgram).catch(console.error);
-      renditionRef.current?.annotations.remove(cfiRange, "highlight");
-      highlightsRef.current.delete(cfiRange);
+      removeHighlightDecoration(cfiRange);
     },
-    [highlightsRef],
+    [removeHighlightDecoration],
   );
 
   const {
@@ -327,7 +329,7 @@ export function BookReader({ book }: BookReaderProps) {
       try {
         location = rendition?.currentLocation?.();
       } catch {
-        // epubjs may call into an uninitialized internal manager.
+        // The reader may be torn down while a navigation is still settling.
       }
     }
     return (location?.start?.cfi as string | undefined) ?? null;
@@ -398,7 +400,8 @@ export function BookReader({ book }: BookReaderProps) {
           <div
             ref={containerRef}
             className={cn("h-full overflow-hidden", {
-              "px-4 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": localReaderLayout,
+              // Symmetric host chrome (64px sides); horizontal body pad avoided for pagination.
+              "px-16 pt-6 pb-2 md:pt-10 md:pb-4": localReaderLayout,
             })}
           />
           {!isScrollMode && (

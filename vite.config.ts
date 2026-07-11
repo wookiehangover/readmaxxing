@@ -120,16 +120,6 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//, /^\/share\//],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/,
-            handler: "StaleWhileRevalidate",
-            options: {
-              cacheName: "google-fonts-cache",
-              expiration: {
-                maxAgeSeconds: 60 * 60 * 24 * 365,
-              },
-            },
-          },
-          {
             urlPattern: ({ url }) =>
               url.pathname === "/api/sync/files/download" &&
               url.searchParams.get("type") === "cover",

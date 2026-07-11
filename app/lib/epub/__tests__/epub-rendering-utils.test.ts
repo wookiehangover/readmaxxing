@@ -18,10 +18,15 @@ describe("getFontFallback", () => {
     expect(getFontFallback("Berkeley Mono")).toBe("monospace");
   });
 
-  it("returns serif for any other font", () => {
+  it("returns sans-serif for Inter", () => {
+    expect(getFontFallback("Inter")).toBe("sans-serif");
+  });
+
+  it("returns serif for serif fonts", () => {
     expect(getFontFallback("Literata")).toBe("serif");
-    expect(getFontFallback("Inter")).toBe("serif");
+    expect(getFontFallback("Lora")).toBe("serif");
     expect(getFontFallback("Merriweather")).toBe("serif");
+    expect(getFontFallback("Source Serif 4")).toBe("serif");
   });
 });
 
@@ -51,12 +56,25 @@ describe("getTypographyCss", () => {
     expect(css).not.toContain("text-align:");
   });
 
-  it("includes @font-face declarations for Geist, Geist Mono, and Berkeley Mono", () => {
+  it("includes absolute-origin @font-face declarations for every reader font", () => {
     const css = getTypographyCss("Literata", 100, 1.6, undefined);
-    expect(css).toContain("@font-face");
-    expect(css).toContain('"Geist"');
-    expect(css).toContain('"Geist Mono"');
-    expect(css).toContain('"Berkeley Mono"');
+    const fontFiles = [
+      "Geist[wght].woff2",
+      "GeistMono[wght].woff2",
+      "BerkeleyMonoVariable.woff2",
+      "Inter[opsz,wght].woff2",
+      "Literata[opsz,wght].woff2",
+      "Lora[wght].woff2",
+      "Merriweather[opsz,wdth,wght].woff2",
+      "SourceSerif4[opsz,wght].woff2",
+    ];
+
+    expect(css.match(/@font-face/g)).toHaveLength(fontFiles.length);
+    for (const file of fontFiles) {
+      expect(css).toContain(`url("${window.location.origin}/fonts/${file}")`);
+    }
+    expect(css).not.toContain("fonts.googleapis.com");
+    expect(css).not.toContain("fonts.gstatic.com");
   });
 
   it("uses correct fallback for monospace fonts", () => {

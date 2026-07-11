@@ -37,6 +37,10 @@ import {
   type BookPreferences,
 } from "~/lib/stores/book-preferences-store";
 import { useSyncListener } from "~/hooks/use-sync-listener";
+import type {
+  SuccessorBookAdapter,
+  SuccessorRenditionAdapter,
+} from "~/lib/epub/successor-reader-adapter";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -193,8 +197,8 @@ function WorkspaceBookReaderInner({
   const isMobile = useIsMobile();
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const bookRef = useRef<import("epubjs/types/book").default | null>(null);
-  const renditionRef = useRef<import("epubjs/types/rendition").default | null>(null);
+  const bookRef = useRef<SuccessorBookAdapter | null>(null);
+  const renditionRef = useRef<SuccessorRenditionAdapter | null>(null);
 
   const [settings] = useSettings();
 
@@ -301,7 +305,8 @@ function WorkspaceBookReaderInner({
     dismissPopovers,
     loadAndApplyHighlights,
     registerSelectionHandler,
-    highlightsRef,
+    removeHighlightDecoration,
+    applyTemporaryHighlight,
   } = useHighlights({
     bookId: book.id,
     renditionRef,
@@ -366,48 +371,21 @@ function WorkspaceBookReaderInner({
     [book.id, bookmarkVersion, bookmarkSyncVersion],
   );
 
-  // Temporary highlight: briefly flash a CFI range in the reader
-  const applyTempHighlight = useCallback((cfi: string) => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-    try {
-      rendition.annotations.highlight(
-        cfi,
-        {},
-        undefined as any,
-        undefined as any,
-        { fill: "rgba(255, 213, 79, 0.4)", "fill-opacity": "0.4" } as any,
-      );
-      setTimeout(() => {
-        try {
-          rendition.annotations.remove(cfi, "highlight");
-        } catch {
-          // annotation may already be gone
-        }
-      }, 3000);
-    } catch {
-      // annotation may already be gone
-    }
-  }, []);
-
   // Register temp highlight callback
   useEffect(() => {
     const id = panelApi?.id ?? book.id;
-    tempHighlightMap.current.set(id, applyTempHighlight);
+    tempHighlightMap.current.set(id, applyTemporaryHighlight);
     return () => {
       tempHighlightMap.current.delete(id);
     };
-  }, [book.id, panelApi, applyTempHighlight, tempHighlightMap]);
+  }, [book.id, panelApi, applyTemporaryHighlight, tempHighlightMap]);
 
-  // Register highlight delete callback so notebooks can remove annotations from rendition
+  // Register highlight delete callback so notebooks can remove reader decorations
   const removeHighlightAnnotation = useCallback(
     (cfiRange: string) => {
-      const rendition = renditionRef.current;
-      if (!rendition) return;
-      rendition.annotations.remove(cfiRange, "highlight");
-      highlightsRef.current.delete(cfiRange);
+      removeHighlightDecoration(cfiRange);
     },
-    [highlightsRef],
+    [removeHighlightDecoration],
   );
 
   useEffect(() => {
@@ -422,6 +400,10 @@ function WorkspaceBookReaderInner({
   // (instead of removing it). The epub iframe stays intact, so we only need to
   // reapply theme (in case it changed while hidden) and resize (in case the
   // container dimensions changed).
+  //
+  // Do NOT call display(cfi) after resize: that remounts the section iframe and
+  // flashes text. The navigator settles with a visible anchor on resize, and
+  // same-spine display short-circuits if a caller still requests redisplay.
   useEffect(() => {
     if (!panelApi) return;
 
@@ -439,32 +421,43 @@ function WorkspaceBookReaderInner({
       rendition.themes.select(effectiveTheme);
     };
 
-    const resizeAndRestore = () => {
-      // Save the current reading position before resize — epubjs resize()
-      // recalculates pagination and can jump to a different page.
-      const cfiBeforeResize = latestCfiRef.current;
+    const readContainerSize = (): { width: number; height: number } | null => {
+      const el = containerRef.current;
+      if (!el) return null;
+      const width = Math.round(el.clientWidth);
+      const height = Math.round(el.clientHeight);
+      if (width <= 0 || height <= 0) return null;
+      return { width, height };
+    };
 
-      // Resize in case container dimensions changed, then restore position
-      requestAnimationFrame(() => {
-        if (!renditionRef.current) return;
-        // If a navigation occurred since capture, the new position is authoritative.
-        if (latestCfiRef.current !== cfiBeforeResize) return;
-        try {
-          (renditionRef.current as any).resize();
-        } catch {
-          // rendition manager may not be initialized yet
-          return;
-        }
-        if (cfiBeforeResize && !navigationInProgressRef.current) {
-          renditionRef.current.display(cfiBeforeResize).catch(() => {});
-        }
-      });
+    let lastSize = readContainerSize();
+
+    const resizeIfNeeded = (force: boolean) => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+      const next = readContainerSize();
+      if (!next) return;
+      if (
+        !force &&
+        lastSize &&
+        Math.abs(next.width - lastSize.width) < 1 &&
+        Math.abs(next.height - lastSize.height) < 1
+      ) {
+        return;
+      }
+      lastSize = next;
+      try {
+        (rendition as { resize?: () => void }).resize?.();
+      } catch {
+        // rendition manager may not be initialized yet
+      }
     };
 
     const visDisposable = panelApi.onDidVisibilityChange((e) => {
       if (e.isVisible) {
         applyTheme();
-        resizeAndRestore();
+        // Panel may have resized while hidden; force one settle without remount.
+        requestAnimationFrame(() => resizeIfNeeded(true));
       } else {
         flushPositionSave();
       }
@@ -477,31 +470,16 @@ function WorkspaceBookReaderInner({
       if (e.isActive) applyTheme();
     });
 
-    // Resize the epub rendition when the panel dimensions change (e.g. a new
-    // pane is opened or the divider is dragged). We use requestAnimationFrame
-    // to coalesce rapid resize events during drag-resize.
+    // Resize only when the panel size actually changes (divider drag, new pane).
+    // Dockview can fire dimension events on theme/class churn with a 0px delta;
+    // ignore those so sync UI updates do not re-paginate the reader.
     let resizeRafId: number | null = null;
     const dimensionsDisposable = panelApi.onDidDimensionsChange(() => {
-      const rendition = renditionRef.current;
-      if (!rendition) return;
-
+      if (!renditionRef.current) return;
       if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
-
-      const cfiBeforeResize = latestCfiRef.current;
       resizeRafId = requestAnimationFrame(() => {
         resizeRafId = null;
-        if (!renditionRef.current) return;
-        // If a navigation occurred since capture, the new position is authoritative.
-        if (latestCfiRef.current !== cfiBeforeResize) return;
-        try {
-          (renditionRef.current as any).resize();
-        } catch {
-          // rendition manager may not be initialized yet
-          return;
-        }
-        if (cfiBeforeResize && !navigationInProgressRef.current) {
-          renditionRef.current.display(cfiBeforeResize).catch(() => {});
-        }
+        resizeIfNeeded(false);
       });
     });
 
@@ -511,7 +489,7 @@ function WorkspaceBookReaderInner({
       dimensionsDisposable.dispose();
       if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
     };
-  }, [panelApi, settings.theme, flushPositionSave, navigationInProgressRef]);
+  }, [panelApi, settings.theme, flushPositionSave]);
 
   const handlePrev = useCallback(() => {
     const rendition = renditionRef.current;
@@ -737,7 +715,7 @@ function WorkspaceBookReaderInner({
       try {
         location = rendition?.currentLocation?.();
       } catch {
-        // epubjs may call into an uninitialized internal manager.
+        // The reader may be torn down while a navigation is still settling.
       }
     }
     return (location?.start?.cfi as string | undefined) ?? null;
@@ -822,7 +800,9 @@ function WorkspaceBookReaderInner({
           <div
             ref={containerRef}
             className={cn("h-full overflow-hidden", {
-              "px-4 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": localReaderLayout,
+              // Symmetric host chrome (64px sides). Horizontal padding stays on
+              // the host, not the multicol body, so every page shares the same origin.
+              "px-16 pt-6 pb-2 md:pt-10 md:pb-4": localReaderLayout,
             })}
           />
           {!isScrollMode && (

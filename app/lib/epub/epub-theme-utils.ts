@@ -67,17 +67,22 @@ const IMG_CONTAINMENT_CSS = `img {
 }`;
 
 /**
- * Generate a CSS string for the given theme mode that sets body colors and
- * forces color inheritance on common text elements.  This is meant to be
- * injected directly into the epub iframe as a `<style>` element, bypassing
- * epubjs `themes.register()` which can leave its style elements empty.
+ * Generate a CSS string for the given theme mode that sets root + body colors
+ * and forces color inheritance on common text elements.  This is meant to be
+ * injected directly into the epub iframe as a `<style>` element.
+ *
+ * Both `html` and `body` must share the same background: the navigator also
+ * paints hard-coded theme colors on `html`, and multi-column pagination can
+ * reveal the root behind/beside columns — a mismatch looks like subsequent
+ * pages having a slightly different dark background.
  */
 export function getThemeColorCss(mode: "light" | "dark"): string {
   const { background, foreground } = resolveThemeColors(mode);
   return `
-body {
+html, body {
   color: ${foreground} !important;
   background: ${background} !important;
+  background-color: ${background} !important;
 }
 a { color: inherit !important; }
 ${COLOR_INHERIT_SELECTORS} {
@@ -90,13 +95,14 @@ ${IMG_CONTAINMENT_CSS}
 /**
  * Inject (or update) a `<style id="reader-theme-colors">` element directly
  * into every currently-loaded epub iframe document.  This is the primary
- * mechanism for applying theme colors — it does not rely on epubjs
- * `themes.register()` which can produce empty style elements.
+ * mechanism for applying theme colors.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- epubjs Rendition types are imprecise
-export function injectThemeColors(rendition: any, mode: "light" | "dark") {
+export function injectThemeColors(
+  rendition: { getContents?: () => readonly { document?: Document }[] },
+  mode: "light" | "dark",
+) {
   const css = getThemeColorCss(mode);
-  const contents = (rendition as any).getContents?.() as any[] | undefined;
+  const contents = rendition.getContents?.();
   if (!contents) return;
   for (const content of contents) {
     const doc: Document | undefined = content?.document;
@@ -113,8 +119,7 @@ export function injectThemeColors(rendition: any, mode: "light" | "dark") {
 
 /**
  * Resolve theme colors for both light and dark modes and register them on an
- * epubjs rendition. This consolidates the repeated resolve-and-register pattern
- * used across reader components.
+ * reader rendition. This consolidates the repeated resolve-and-register pattern.
  *
  * NOTE: `themes.register()` is kept as a belt-and-suspenders fallback.  The
  * primary mechanism is `injectThemeColors()` which writes CSS directly into
@@ -136,20 +141,27 @@ export function registerThemeColors(rendition: {
 
   const colorInherit = { color: "inherit !important" };
 
+  const lightRoot = {
+    color: `${lightColors.foreground} !important`,
+    background: `${lightColors.background} !important`,
+    "background-color": `${lightColors.background} !important`,
+  };
+  const darkRoot = {
+    color: `${darkColors.foreground} !important`,
+    background: `${darkColors.background} !important`,
+    "background-color": `${darkColors.background} !important`,
+  };
+
   rendition.themes.register("light", {
-    body: {
-      color: `${lightColors.foreground} !important`,
-      background: `${lightColors.background} !important`,
-    },
+    html: lightRoot,
+    body: lightRoot,
     a: colorInherit,
     img: imgContainment,
     [COLOR_INHERIT_SELECTORS]: colorInherit,
   });
   rendition.themes.register("dark", {
-    body: {
-      color: `${darkColors.foreground} !important`,
-      background: `${darkColors.background} !important`,
-    },
+    html: darkRoot,
+    body: darkRoot,
     a: colorInherit,
     img: imgContainment,
     [COLOR_INHERIT_SELECTORS]: colorInherit,

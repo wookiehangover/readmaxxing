@@ -5,6 +5,12 @@
  * and dual-key save can be unit-tested without IndexedDB or React.
  */
 
+export interface StoredReadingPosition {
+  readonly cfi: string;
+  readonly localProgression?: number;
+  readonly spineIndex?: number;
+}
+
 export interface ResolveStartCfiOpts {
   /** In-memory CFI from the current session (highest priority). */
   latestCfi: string | null;
@@ -14,6 +20,14 @@ export interface ResolveStartCfiOpts {
   bookId: string;
   /** Callback to look up a persisted position by key. */
   getPosition: (key: string) => Promise<string | null>;
+}
+
+export interface ResolveStartPositionOpts {
+  /** In-memory position from the current session (highest priority). */
+  latest: StoredReadingPosition | null;
+  panelId: string | undefined;
+  bookId: string;
+  getPositionRecord: (key: string) => Promise<StoredReadingPosition | null>;
 }
 
 /**
@@ -42,6 +56,28 @@ export async function resolveStartCfi(opts: ResolveStartCfiOpts): Promise<string
   return null;
 }
 
+/**
+ * Like resolveStartCfi, but also returns localProgression/spineIndex when stored
+ * so paginated restore can jump to the exact column.
+ */
+export async function resolveStartPosition(
+  opts: ResolveStartPositionOpts,
+): Promise<StoredReadingPosition | null> {
+  const { latest, panelId, bookId, getPositionRecord } = opts;
+
+  if (latest?.cfi) return latest;
+
+  if (panelId !== undefined) {
+    const panel = await getPositionRecord(panelId);
+    if (panel?.cfi) return panel;
+  }
+
+  const book = await getPositionRecord(bookId);
+  if (book?.cfi) return book;
+
+  return null;
+}
+
 export interface SavePositionDualKeyOpts {
   /** Panel-specific key (may be undefined when there is no dockview panel). */
   panelId: string | undefined;
@@ -49,6 +85,10 @@ export interface SavePositionDualKeyOpts {
   bookId: string;
   /** The CFI string to persist. */
   cfi: string;
+  /** Section-local progression [0,1] for exact paginated restore. */
+  localProgression?: number;
+  /** Spine index paired with localProgression. */
+  spineIndex?: number;
   /** Whether the book-level save should emit a sync changelog entry. Defaults to true. */
   recordChange?: boolean;
   /**
@@ -56,7 +96,15 @@ export interface SavePositionDualKeyOpts {
    * forwarded to the underlying service — when `recordChange: false` the
    * write is local-only (no sync changelog entry).
    */
-  savePosition: (key: string, cfi: string, options?: { recordChange?: boolean }) => Promise<void>;
+  savePosition: (
+    key: string,
+    cfi: string,
+    options?: {
+      recordChange?: boolean;
+      localProgression?: number;
+      spineIndex?: number;
+    },
+  ) => Promise<void>;
 }
 
 /**
@@ -71,15 +119,26 @@ export interface SavePositionDualKeyOpts {
  * page-turn push without adding useful state for other devices.
  */
 export async function savePositionDualKey(opts: SavePositionDualKeyOpts): Promise<void> {
-  const { panelId, bookId, cfi, recordChange, savePosition } = opts;
+  const { panelId, bookId, cfi, localProgression, spineIndex, recordChange, savePosition } = opts;
 
+  const layout = {
+    ...(localProgression !== undefined ? { localProgression } : {}),
+    ...(spineIndex !== undefined ? { spineIndex } : {}),
+  };
+  const hasLayout = localProgression !== undefined || spineIndex !== undefined;
+  const bookOptions =
+    recordChange === undefined ? (hasLayout ? layout : undefined) : { recordChange, ...layout };
   const bookSave =
-    recordChange === undefined
-      ? savePosition(bookId, cfi)
-      : savePosition(bookId, cfi, { recordChange });
+    bookOptions === undefined ? savePosition(bookId, cfi) : savePosition(bookId, cfi, bookOptions);
   const saves: Promise<void>[] = [bookSave];
   if (panelId !== undefined) {
-    saves.push(savePosition(panelId, cfi, { recordChange: false }));
+    saves.push(
+      savePosition(
+        panelId,
+        cfi,
+        hasLayout ? { recordChange: false, ...layout } : { recordChange: false },
+      ),
+    );
   }
   await Promise.all(saves);
 }

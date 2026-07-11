@@ -13,7 +13,7 @@ The main route (`app/routes/workspace.tsx`) is a [dockview](https://dockview.dev
 
 ## Client-side only
 
-All epub/pdf parsing, IndexedDB access, and rendering must happen client-side. Routes use `clientLoader` (with `clientLoader.hydrate = true`), never `loader`. epubjs, pdfjs, and IndexedDB are unavailable during SSR.
+All epub/pdf parsing, IndexedDB access, and rendering must happen client-side. Routes use `clientLoader` (with `clientLoader.hydrate = true`), never `loader`. `@readmaxxing/epub-successor`, pdfjs, and IndexedDB are unavailable during SSR.
 
 ## Storage
 
@@ -21,16 +21,20 @@ All epub/pdf parsing, IndexedDB access, and rendering must happen client-side. R
 - All store accessors live in `app/lib/sync/stores.ts` and are **lazy getter functions** (`getBookStore()`, `getPositionStore()`, …), not module-scope `createStore()` calls — module-scope creation fails during SSR (`indexedDB` undefined in Node). Add new stores there.
 - Book metadata and book binary data (epub/pdf `ArrayBuffer`) live in separate databases.
 
-## Epub iframe isolation
+## EPUB rendering
 
-epubjs renders content inside an iframe — a separate document that does NOT inherit parent-page CSS (including Tailwind dark mode) or font imports. Style it by injecting into the iframe via `rendition.hooks.content.register()` / `spine.hooks.content.register()` (see `app/hooks/use-epub-lifecycle.ts`, `app/lib/epub/epub-rendering-utils.ts`):
+EPUB parsing and rendering live in the workspace package [`packages/epub-successor`](../packages/epub-successor/) (`@readmaxxing/epub-successor`). The app opens a ZIP resource provider, parses a `Publication`, and drives a `Navigator` that mounts one sanitized spine section at a time in a scriptless sandboxed iframe. App wiring:
 
-- Inject `<link>` tags for Google Fonts and `<style>` `@font-face` for self-hosted fonts.
-- Inject `<style>` with typography CSS (`font-family`, `font-size`, `line-height`) using `!important`.
-- Use `rendition.themes.register()` / `themes.select()` for dark/light color theming.
-- Do NOT use `themes.override()` for typography — unreliable and reset by `themes.select()`.
+- Lifecycle / positions: `app/hooks/use-epub-lifecycle.ts`
+- Adapter (TOC, CFI display, positions cache): `app/lib/epub/successor-reader-adapter.ts`
+- Import-time metadata: `app/lib/epub/epub-service.ts`
+- Highlights: `app/hooks/use-highlights.ts` + package decorations layer
 
-PDFs render via pdfjs (`app/lib/pdf/`, `app/components/workspace-pdf-reader.tsx`) and do not have this constraint.
+The iframe does not inherit parent-page CSS (including Tailwind dark mode) or font imports. Typography and theme are applied through navigator preferences / injected preference CSS (`setPreferences`, `preferenceCss`, `readerBaseCss`) and host styles in `app/lib/epub/epub-rendering-utils.ts` / `epub-theme-utils.ts`. Prefer self-hosted fonts under `public/fonts/`; package CSP allows `font-src blob: 'self'`.
+
+Persist package-relative `href` + CFI/text locators, never blob URLs or viewport page numbers. Full package docs: [packages/epub-successor/README.md](../packages/epub-successor/README.md).
+
+PDFs render via pdfjs (`app/lib/pdf/`, `app/components/workspace-pdf-reader.tsx`) and do not use this package.
 
 ## Settings & reading positions
 
