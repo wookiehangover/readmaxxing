@@ -157,8 +157,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function SyncProvider({ children }: { children: React.ReactNode }) {
-  const syncState = useSync();
-  return <SyncContext.Provider value={syncState}>{children}</SyncContext.Provider>;
+  // Actions only — isSyncing/pending live on an external store so status flips
+  // do not re-render the workspace tree under this provider.
+  const syncActions = useSync();
+  return <SyncContext.Provider value={syncActions}>{children}</SyncContext.Provider>;
 }
 
 function SettingsShortcut() {

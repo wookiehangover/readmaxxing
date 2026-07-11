@@ -213,6 +213,23 @@ describe("scrolling Navigator", () => {
     expect(provider.closeCalls).toBe(0);
     await expect(navigator.display({ spineIndex: 0 })).rejects.toThrow("Navigator is destroyed");
   });
+
+  it("redisplays the same spine in place without remounting the iframe", async () => {
+    const { container, navigator, provider } = setup();
+    await displayAt(navigator, container, 0);
+    const frame = container.querySelector("iframe");
+    const readsBefore = provider.reads.length;
+
+    const relocation = await navigator.display({ spineIndex: 0 });
+
+    expect(relocation.spineIndex).toBe(0);
+    expect(container.querySelector("iframe")).toBe(frame);
+    expect(container.querySelectorAll("iframe")).toHaveLength(1);
+    // No new section resource read / blob for an in-place redisplay.
+    expect(provider.reads.length).toBe(readsBefore);
+    expect(blobs).toHaveLength(1);
+    navigator.destroy();
+  });
 });
 
 describe("paginated Navigator", () => {

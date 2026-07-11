@@ -69,7 +69,8 @@ export interface Relocation {
 }
 
 interface SectionMount {
-  readonly operationId: number;
+  /** Bumped when an in-place redisplay reuses this mount without remounting. */
+  operationId: number;
   readonly href: PublicationPath;
   readonly spineIndex: number;
   readonly frame: HTMLIFrameElement;
@@ -170,6 +171,20 @@ export class Navigator extends EventTarget {
   async display(target: DisplayTarget): Promise<Relocation> {
     this.#assertLive();
     const resolved = this.#resolveTarget(target);
+
+    // Same-section short-circuit: re-settle in the existing iframe instead of
+    // unmounting/remounting (which flashes text and rebuilds layout).
+    const existing = this.#active;
+    if (
+      existing &&
+      existing.spineIndex === resolved.spineIndex &&
+      existing.href === resolved.href &&
+      existing.frame.contentDocument &&
+      (this.#state === "settled" || this.#state === "settling")
+    ) {
+      return this.#redisplayMounted(existing, resolved.fragment);
+    }
+
     const operationId = ++this.#operationId;
     this.#operation?.abort();
     const controller = new AbortController();
@@ -434,6 +449,35 @@ export class Navigator extends EventTarget {
     }
     this.dispatchEvent(new CustomEvent<Relocation>("relocation", { detail: relocation }));
     return relocation;
+  }
+
+  async #redisplayMounted(mount: SectionMount, fragment: string | undefined): Promise<Relocation> {
+    const operationId = ++this.#operationId;
+    this.#operation?.abort();
+    const controller = new AbortController();
+    this.#operation = controller;
+    // Keep the same mount object but bind it to this operation for abort checks.
+    mount.operationId = operationId;
+    this.#setState("settling");
+    try {
+      const document = mount.frame.contentDocument;
+      if (!document) throw new Error("Publication section document is inaccessible");
+      // Preserve position when redisplaying the same section without a fragment
+      // (e.g. CFI restore after layout). Fragments still scroll via settleSection.
+      const anchor = fragment
+        ? undefined
+        : (mount.visibleAnchor ?? captureFirstVisibleElement(document));
+      await this.#settle(mount, fragment, controller.signal, anchor);
+      this.#assertCurrent(operationId, controller.signal);
+      this.#setState("settled");
+      return this.#emitRelocation(mount, anchor);
+    } catch (cause) {
+      if (this.#operationId === operationId && !this.#destroyed && this.#active === mount) {
+        this.#setState("settled");
+      }
+      if (controller.signal.aborted) throw abortError();
+      throw cause;
+    }
   }
 
   #scheduleResizeSettle(): void {

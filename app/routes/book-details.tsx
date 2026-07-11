@@ -5,7 +5,7 @@ import { ArrowLeft, BookOpen, CloudUpload, RotateCcw } from "lucide-react";
 import type { Route } from "./+types/book-details";
 import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { AnnotationService } from "~/lib/stores/annotations-store";
-import { useSyncState } from "~/lib/sync/use-sync";
+import { useSyncActions } from "~/lib/sync/use-sync";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { parseEpubEffect } from "~/lib/epub/epub-service";
 import { computeFileHash } from "~/lib/book-hash";
@@ -97,7 +97,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const navigate = useNavigate();
   const revalidator = useRevalidator();
 
-  const { triggerSync, isActive, reloadBookFiles } = useSyncState();
+  const { triggerSync, isActive, reloadBookFiles } = useSyncActions();
 
   const [title, setTitle] = useState(book.title);
   const [author, setAuthor] = useState(book.author);

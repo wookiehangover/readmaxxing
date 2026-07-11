@@ -31,7 +31,7 @@ import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { useBookUpload } from "~/hooks/use-book-upload";
 import { useBookDeletion } from "~/hooks/use-book-deletion";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { useSyncState } from "~/lib/sync/use-sync";
+import { useSyncActions } from "~/lib/sync/use-sync";
 import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
 import { filterBooks, sortBooks } from "~/lib/workspace-utils";
 import { useAuth } from "~/lib/context/auth-context";
@@ -151,7 +151,7 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
     onBookDeleted: handleBookDeleted,
   });
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
-  const { reloadBookFiles, isActive: syncActive, triggerSync } = useSyncState();
+  const { reloadBookFiles, isActive: syncActive, triggerSync } = useSyncActions();
 
   const handleReloadBook = useCallback(
     async (bookId: string) => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CloudOff, CloudCheck, CloudUpload, Loader2, AlertTriangle } from "lucide-react";
-import { useSyncState } from "~/lib/sync/use-sync";
+import { useSyncStatus } from "~/lib/sync/use-sync";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 
@@ -61,7 +61,7 @@ function useStickyError(syncError: Error | null, minMs = 3000): Error | null {
  */
 export function SyncStatus({ collapsed }: { collapsed: boolean }) {
   const { isSyncing, hasPendingChanges, lastSyncedAt, syncError, isOnline, isActive } =
-    useSyncState();
+    useSyncStatus();
   const stickyError = useStickyError(syncError);
 
   // Keep relative timestamp ("2m ago") updating live

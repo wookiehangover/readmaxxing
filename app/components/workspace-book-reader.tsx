@@ -400,6 +400,10 @@ function WorkspaceBookReaderInner({
   // (instead of removing it). The epub iframe stays intact, so we only need to
   // reapply theme (in case it changed while hidden) and resize (in case the
   // container dimensions changed).
+  //
+  // Do NOT call display(cfi) after resize: that remounts the section iframe and
+  // flashes text. The navigator settles with a visible anchor on resize, and
+  // same-spine display short-circuits if a caller still requests redisplay.
   useEffect(() => {
     if (!panelApi) return;
 
@@ -417,32 +421,43 @@ function WorkspaceBookReaderInner({
       rendition.themes.select(effectiveTheme);
     };
 
-    const resizeAndRestore = () => {
-      // Save the current reading position before resize because relayout can
-      // recalculate pagination and jump to a different page.
-      const cfiBeforeResize = latestCfiRef.current;
+    const readContainerSize = (): { width: number; height: number } | null => {
+      const el = containerRef.current;
+      if (!el) return null;
+      const width = Math.round(el.clientWidth);
+      const height = Math.round(el.clientHeight);
+      if (width <= 0 || height <= 0) return null;
+      return { width, height };
+    };
 
-      // Resize in case container dimensions changed, then restore position
-      requestAnimationFrame(() => {
-        if (!renditionRef.current) return;
-        // If a navigation occurred since capture, the new position is authoritative.
-        if (latestCfiRef.current !== cfiBeforeResize) return;
-        try {
-          (renditionRef.current as any).resize();
-        } catch {
-          // rendition manager may not be initialized yet
-          return;
-        }
-        if (cfiBeforeResize && !navigationInProgressRef.current) {
-          renditionRef.current.display(cfiBeforeResize).catch(() => {});
-        }
-      });
+    let lastSize = readContainerSize();
+
+    const resizeIfNeeded = (force: boolean) => {
+      const rendition = renditionRef.current;
+      if (!rendition) return;
+      const next = readContainerSize();
+      if (!next) return;
+      if (
+        !force &&
+        lastSize &&
+        Math.abs(next.width - lastSize.width) < 1 &&
+        Math.abs(next.height - lastSize.height) < 1
+      ) {
+        return;
+      }
+      lastSize = next;
+      try {
+        (rendition as { resize?: () => void }).resize?.();
+      } catch {
+        // rendition manager may not be initialized yet
+      }
     };
 
     const visDisposable = panelApi.onDidVisibilityChange((e) => {
       if (e.isVisible) {
         applyTheme();
-        resizeAndRestore();
+        // Panel may have resized while hidden; force one settle without remount.
+        requestAnimationFrame(() => resizeIfNeeded(true));
       } else {
         flushPositionSave();
       }
@@ -455,31 +470,16 @@ function WorkspaceBookReaderInner({
       if (e.isActive) applyTheme();
     });
 
-    // Resize the epub rendition when the panel dimensions change (e.g. a new
-    // pane is opened or the divider is dragged). We use requestAnimationFrame
-    // to coalesce rapid resize events during drag-resize.
+    // Resize only when the panel size actually changes (divider drag, new pane).
+    // Dockview can fire dimension events on theme/class churn with a 0px delta;
+    // ignore those so sync UI updates do not re-paginate the reader.
     let resizeRafId: number | null = null;
     const dimensionsDisposable = panelApi.onDidDimensionsChange(() => {
-      const rendition = renditionRef.current;
-      if (!rendition) return;
-
+      if (!renditionRef.current) return;
       if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
-
-      const cfiBeforeResize = latestCfiRef.current;
       resizeRafId = requestAnimationFrame(() => {
         resizeRafId = null;
-        if (!renditionRef.current) return;
-        // If a navigation occurred since capture, the new position is authoritative.
-        if (latestCfiRef.current !== cfiBeforeResize) return;
-        try {
-          (renditionRef.current as any).resize();
-        } catch {
-          // rendition manager may not be initialized yet
-          return;
-        }
-        if (cfiBeforeResize && !navigationInProgressRef.current) {
-          renditionRef.current.display(cfiBeforeResize).catch(() => {});
-        }
+        resizeIfNeeded(false);
       });
     });
 
@@ -489,7 +489,7 @@ function WorkspaceBookReaderInner({
       dimensionsDisposable.dispose();
       if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
     };
-  }, [panelApi, settings.theme, flushPositionSave, navigationInProgressRef]);
+  }, [panelApi, settings.theme, flushPositionSave]);
 
   const handlePrev = useCallback(() => {
     const rendition = renditionRef.current;
