@@ -24,6 +24,7 @@ import {
   generateSuccessorPositions,
   parseSuccessorPositionCache,
   serializeSuccessorPositionCache,
+  spineIndexFromCfi,
   SuccessorRenditionAdapter,
 } from "~/lib/epub/successor-reader-adapter";
 import {
@@ -47,6 +48,23 @@ export { resolveTocNavigationTarget } from "~/lib/epub/successor-toc";
 export type { TocNavigationTarget } from "~/lib/epub/successor-toc";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
+
+interface CfiDisplayTarget {
+  display(target?: string | number): Promise<unknown>;
+}
+
+export async function displayStoredCfiWithFallback(
+  rendition: CfiDisplayTarget,
+  cfi: string,
+  onFallback: (error: unknown) => void,
+): Promise<void> {
+  try {
+    await rendition.display(cfi);
+  } catch (error) {
+    onFallback(error);
+    await rendition.display(spineIndexFromCfi(cfi) ?? 0);
+  }
+}
 
 export interface ChatContextEntry {
   currentChapterIndex: number;
@@ -195,14 +213,13 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     async (rendition: SuccessorRenditionAdapter, cfi: string) => {
       suppressPositionSaveRef.current = true;
       try {
-        await rendition.display(cfi);
-      } catch (error) {
-        console.warn("Stored EPUB CFI could not be resolved; falling back to spine start", {
-          bookId,
-          cfi,
-          error,
+        await displayStoredCfiWithFallback(rendition, cfi, (error) => {
+          console.warn("Stored EPUB CFI could not be resolved; falling back to spine start", {
+            bookId,
+            cfi,
+            error,
+          });
         });
-        await rendition.display(0);
       } finally {
         suppressPositionSaveRef.current = false;
       }

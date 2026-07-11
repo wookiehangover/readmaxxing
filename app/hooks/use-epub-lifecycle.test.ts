@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFile } from "node:fs/promises";
 import {
   normalizePublicationPath,
   openPublication,
   openZipResourceProvider,
 } from "@readmaxxing/epub-successor";
-import { resolveTocNavigationTarget } from "~/hooks/use-epub-lifecycle";
+import {
+  displayStoredCfiWithFallback,
+  resolveTocNavigationTarget,
+} from "~/hooks/use-epub-lifecycle";
 import type { TocEntry } from "~/lib/context/reader-context";
 import { fuzzySearchEpubForCfi } from "~/lib/epub/epub-search";
 import { extractBookChapters } from "~/lib/epub/epub-text-extract";
@@ -116,6 +119,14 @@ describe("successor position compatibility", () => {
     expect(spineIndexFromCfi("epubcfi(/6/8!/4/2)")).toBe(3);
   });
 
+  it("extracts the spine index when only the CFI package path remains valid", () => {
+    expect(spineIndexFromCfi("epubcfi(/6/8[chapter]!/4/not-a-step)")).toBe(3);
+  });
+
+  it("returns no spine index for total garbage", () => {
+    expect(spineIndexFromCfi("not-a-cfi")).toBeNull();
+  });
+
   it("rejects legacy location arrays so they are regenerated", () => {
     expect(parseSuccessorPositionCache(JSON.stringify(["epubcfi(/6/2!/4)"]))).toBeNull();
   });
@@ -178,5 +189,45 @@ describe("successor position compatibility", () => {
       "Chapter 2: The End",
     ]);
     expect(chapters[1]?.text).toContain("elephant appears exactly once");
+  });
+});
+
+describe.each(["stored positions", "bookmarks"])("legacy CFI fallback for %s", () => {
+  const fullCfi = "epubcfi(/6/8[chapter]!/4/2/2:0)";
+  const partialCfi = "epubcfi(/6/8[chapter]!/4/not-a-step)";
+
+  it("keeps a fully resolvable CFI", async () => {
+    const display = vi.fn(async () => undefined);
+    const onFallback = vi.fn();
+
+    await displayStoredCfiWithFallback({ display }, fullCfi, onFallback);
+
+    expect(display).toHaveBeenCalledOnce();
+    expect(display).toHaveBeenCalledWith(fullCfi);
+    expect(onFallback).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the CFI-identified spine when only its package path parses", async () => {
+    const display = vi.fn(async (target?: string | number) => {
+      if (typeof target === "string") throw new RangeError("unresolvable local path");
+    });
+    const onFallback = vi.fn();
+
+    await displayStoredCfiWithFallback({ display }, partialCfi, onFallback);
+
+    expect(display.mock.calls).toEqual([[partialCfi], [3]]);
+    expect(onFallback).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to spine zero only when no spine reference can be extracted", async () => {
+    const display = vi.fn(async (target?: string | number) => {
+      if (typeof target === "string") throw new TypeError("invalid CFI");
+    });
+    const onFallback = vi.fn();
+
+    await displayStoredCfiWithFallback({ display }, "not-a-cfi", onFallback);
+
+    expect(display.mock.calls).toEqual([["not-a-cfi"], [0]]);
+    expect(onFallback).toHaveBeenCalledOnce();
   });
 });
