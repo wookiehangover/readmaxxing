@@ -13,6 +13,7 @@ import {
   rewriteXhtml,
 } from "../resource-loader/urls";
 import {
+  alignPaginationToRange,
   captureFirstVisibleElement,
   currentSpreadIndex,
   lastSpreadPageIndex,
@@ -287,6 +288,76 @@ export class Navigator extends EventTarget {
     if (this.#active !== mount || signal.aborted || this.#destroyed) return this.#relocation;
     this.#setState("settled");
     return this.#emitRelocation(mount, anchor);
+  }
+
+  /**
+   * Restore a DOM Range within the already-mounted section.
+   * Paginated mode maps the range's layout box to a column index with floor()
+   * (no scrollIntoView, no temporary markers) so restore is not off-by-one.
+   */
+  async restoreRange(range: Range): Promise<Relocation> {
+    this.#assertLive();
+    const mount = this.#active;
+    const document = mount?.frame.contentDocument;
+    if (!mount || !document || this.#state !== "settled") {
+      throw new Error("No settled publication section is mounted");
+    }
+    if (range.startContainer.ownerDocument !== document) {
+      throw new TypeError("Range must belong to the mounted section document");
+    }
+
+    const anchor =
+      range.startContainer.nodeType === Node.ELEMENT_NODE
+        ? (range.startContainer as Element)
+        : (range.startContainer.parentElement ?? undefined);
+
+    if (mount.pagination) {
+      // Measure the range in the current layout (typically scroll=0 after display)
+      // and jump to that column. floor(x/stride) is the column that contains x.
+      alignPaginationToRange(mount.pagination, range);
+      return this.#emitRelocation(mount, anchor);
+    }
+
+    // Scrolled mode: bring the range's container into view.
+    anchor?.scrollIntoView({ block: "start", inline: "nearest" });
+    return this.#emitRelocation(mount, anchor);
+  }
+
+  /**
+   * Jump to the paginated column that matches a stored section-local progression.
+   * Inverse of paginatedProgression: pageIndex = round(local * (pageCount - 1)).
+   * Prefer this over CFI geometry when both were saved together.
+   */
+  restoreProgression(localProgression: number): Relocation {
+    this.#assertLive();
+    const mount = this.#active;
+    if (!mount || this.#state !== "settled") {
+      throw new Error("No settled publication section is mounted");
+    }
+    if (!mount.pagination) {
+      return this.#emitRelocation(mount, captureFirstVisibleElement(mount.frame.contentDocument!));
+    }
+    const state = mount.pagination;
+    const local = Math.min(
+      1,
+      Math.max(0, Number.isFinite(localProgression) ? localProgression : 0),
+    );
+    const page = state.pageCount <= 1 ? 0 : Math.round(local * (state.pageCount - 1));
+    scrollToPage(state, Math.floor(page / state.pagesPerSpread) * state.pagesPerSpread);
+    return this.#emitRelocation(mount, captureFirstVisibleElement(mount.frame.contentDocument!));
+  }
+
+  /**
+   * Emit a relocation for the current scroll position without changing it.
+   */
+  reportRelocation(): Relocation {
+    this.#assertLive();
+    const mount = this.#active;
+    const document = mount?.frame.contentDocument;
+    if (!mount || !document || this.#state !== "settled") {
+      throw new Error("No settled publication section is mounted");
+    }
+    return this.#emitRelocation(mount, captureFirstVisibleElement(document));
   }
 
   destroy(): void {

@@ -1,4 +1,5 @@
 import {
+  alignPaginationToElement,
   applyPaginatedLayout,
   clearPaginatedLayout,
   effectivePagesPerSpread,
@@ -177,7 +178,10 @@ export async function settleSection(
       await nextAnimationFrame(view, options.signal);
     }
     const pagination = measurePaginatedLayout(document, geometry, options.direction);
-    snapToSpread(pagination);
+    // Fragment/element anchors: column-align to the element. Otherwise snap the
+    // current scroll to a spread boundary (live paging / resize).
+    if (options.anchor) alignPaginationToElement(pagination, options.anchor);
+    else snapToSpread(pagination);
     await nextAnimationFrame(view, options.signal);
     const liveViewport = fitPaginatedFrame(options.frame, options.container);
     const livePagesPerSpread = effectivePagesPerSpread(

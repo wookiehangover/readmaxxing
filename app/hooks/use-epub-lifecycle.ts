@@ -41,7 +41,11 @@ import {
   type ReaderBookLike,
   type TocNavigationTarget,
 } from "~/lib/epub/successor-toc";
-import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
+import {
+  resolveStartPosition,
+  savePositionDualKey,
+  type StoredReadingPosition,
+} from "~/lib/position-utils";
 import { resolveTheme } from "~/lib/settings";
 import type { ReaderLayout, TextAlign, Theme } from "~/lib/settings";
 import { BookService } from "~/lib/stores/book-store";
@@ -56,16 +60,20 @@ export type { TocNavigationTarget } from "~/lib/epub/successor-toc";
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
 
 interface CfiDisplayTarget {
-  display(target?: string | number): Promise<unknown>;
+  display(
+    target?: string | number,
+    options?: { readonly localProgression?: number },
+  ): Promise<unknown>;
 }
 
 export async function displayStoredCfiWithFallback(
   rendition: CfiDisplayTarget,
   cfi: string,
   onFallback: (error: unknown) => void,
+  options?: { readonly localProgression?: number },
 ): Promise<void> {
   try {
-    await rendition.display(cfi);
+    await rendition.display(cfi, options);
   } catch (error) {
     onFallback(error);
     await rendition.display(spineIndexFromCfi(cfi) ?? 0);
@@ -170,6 +178,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   const configRef = useRef(config);
   configRef.current = config;
   const latestCfiRef = useRef<string | null>(null);
+  const latestLayoutRef = useRef<{ localProgression?: number; spineIndex?: number }>({});
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigationInProgressRef = useRef(false);
   const navigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -204,6 +213,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       panelId: undefined,
       bookId,
       cfi,
+      localProgression: latestLayoutRef.current.localProgression,
+      spineIndex: latestLayoutRef.current.spineIndex,
       savePosition: (key, value, options) =>
         AppRuntime.runPromise(
           ReadingPositionService.pipe(
@@ -214,16 +225,25 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   }, [bookId]);
 
   const displayCfiWithFallback = useCallback(
-    async (rendition: SuccessorRenditionAdapter, cfi: string) => {
+    async (
+      rendition: SuccessorRenditionAdapter,
+      cfi: string,
+      options?: { readonly localProgression?: number },
+    ) => {
       suppressPositionSaveRef.current = true;
       try {
-        await displayStoredCfiWithFallback(rendition, cfi, (error) => {
-          console.warn("Stored EPUB CFI could not be resolved; falling back to spine start", {
-            bookId,
-            cfi,
-            error,
-          });
-        });
+        await displayStoredCfiWithFallback(
+          rendition,
+          cfi,
+          (error) => {
+            console.warn("Stored EPUB CFI could not be resolved; falling back to spine start", {
+              bookId,
+              cfi,
+              error,
+            });
+          },
+          options,
+        );
       } finally {
         suppressPositionSaveRef.current = false;
       }
@@ -296,11 +316,17 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     registerActiveReader(bookId);
     setHasRestoredPosition(false);
 
-    const saveRelocation = (cfi: string) => {
+    const saveRelocation = (cfi: string, relocation: Relocation) => {
+      latestLayoutRef.current = {
+        localProgression: relocation.localProgression,
+        spineIndex: relocation.spineIndex,
+      };
       savePositionDualKey({
         panelId: configRef.current.panelId,
         bookId,
         cfi,
+        localProgression: relocation.localProgression,
+        spineIndex: relocation.spineIndex,
         recordChange: false,
         savePosition: (key, value, options) =>
           AppRuntime.runPromise(
@@ -362,9 +388,12 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           visibleText,
         });
       }
+      // During restore, skip both the in-memory and IDB updates. Mounting the
+      // spine emits a section-start CFI first; writing that would clobber the
+      // real position and reopen at chapter start on the next refresh.
       if (suppressPositionSaveRef.current) return;
       latestCfiRef.current = cfi;
-      saveRelocation(cfi);
+      saveRelocation(cfi, relocation);
       AppRuntime.runPromise(
         ReadingHistoryService.pipe(
           Effect.andThen((service) =>
@@ -448,19 +477,46 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         });
       });
 
-      const startCfi = await resolveStartCfi({
-        latestCfi: latestCfiRef.current,
+      const startPosition = await resolveStartPosition({
+        latest: latestCfiRef.current
+          ? {
+              cfi: latestCfiRef.current,
+              localProgression: latestLayoutRef.current.localProgression,
+              spineIndex: latestLayoutRef.current.spineIndex,
+            }
+          : null,
         panelId: configRef.current.panelId,
         bookId,
-        getPosition: (key) =>
-          AppRuntime.runPromise(
-            ReadingPositionService.pipe(Effect.andThen((service) => service.getPosition(key))),
-          ),
+        getPositionRecord: async (key) => {
+          const record = await AppRuntime.runPromise(
+            ReadingPositionService.pipe(
+              Effect.andThen((service) => service.getPositionRecord(key)),
+            ),
+          );
+          if (!record?.cfi) return null;
+          return {
+            cfi: record.cfi,
+            localProgression: record.localProgression,
+            spineIndex: record.spineIndex,
+          } satisfies StoredReadingPosition;
+        },
       });
       suppressPositionSaveRef.current = true;
       try {
-        if (startCfi) await displayCfiWithFallback(rendition, startCfi);
-        else await rendition.display();
+        if (startPosition) {
+          await displayCfiWithFallback(rendition, startPosition.cfi, {
+            localProgression: startPosition.localProgression,
+          });
+          // Keep the known-good stored position; do not replace it with
+          // transient section-start CFIs emitted while mounting the spine.
+          latestCfiRef.current = startPosition.cfi;
+          latestLayoutRef.current = {
+            localProgression: startPosition.localProgression,
+            spineIndex: startPosition.spineIndex,
+          };
+        } else {
+          await rendition.display();
+        }
       } finally {
         suppressPositionSaveRef.current = false;
       }

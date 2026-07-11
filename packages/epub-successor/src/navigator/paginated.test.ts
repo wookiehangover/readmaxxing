@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  alignPaginationToElement,
   calculateColumnGeometry,
   calculatePageCount,
   currentSpreadIndex,
@@ -86,6 +87,76 @@ describe("paginated page math", () => {
 
     expect(scrolling.scrollLeft).toBe(geometry.columnStride * 2);
     expect(scrolling.scrollLeft % geometry.columnStride).toBe(0);
+  });
+
+  it("aligns pagination to the floor column containing an element", () => {
+    const geometry = calculateColumnGeometry(800, 32, 1);
+    const scrolling = document.createElement("div");
+    // At section start (scroll 0), element lives in column 3.
+    scrolling.scrollLeft = 0;
+    Object.defineProperty(scrolling, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 }),
+    });
+    const state = {
+      ...geometry,
+      direction: "ltr" as const,
+      pageCount: 8,
+      maxOffset: geometry.columnStride * 7,
+      rtlScrollType: "reverse" as const,
+      scrolling,
+    };
+    const element = document.createElement("span");
+    element.getBoundingClientRect = () =>
+      ({
+        left: geometry.columnStride * 3 + 40,
+        top: 20,
+        right: geometry.columnStride * 3 + 44,
+        bottom: 40,
+        width: 4,
+        height: 20,
+        x: geometry.columnStride * 3 + 40,
+        y: 20,
+        toJSON: () => ({}),
+      }) as DOMRect;
+
+    alignPaginationToElement(state, element);
+
+    expect(scrolling.scrollLeft).toBe(geometry.columnStride * 3);
+  });
+
+  it("does not advance a page when the caret is past mid-column", () => {
+    const geometry = calculateColumnGeometry(800, 32, 1);
+    const scrolling = document.createElement("div");
+    scrolling.scrollLeft = 0;
+    Object.defineProperty(scrolling, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 }),
+    });
+    const state = {
+      ...geometry,
+      direction: "ltr" as const,
+      pageCount: 8,
+      maxOffset: geometry.columnStride * 7,
+      rtlScrollType: "reverse" as const,
+      scrolling,
+    };
+    const element = document.createElement("span");
+    // 90% into column 2 — round() would jump to column 3; floor stays on 2.
+    element.getBoundingClientRect = () =>
+      ({
+        left: geometry.columnStride * 2 + geometry.columnStride * 0.9,
+        top: 20,
+        right: geometry.columnStride * 2 + geometry.columnStride * 0.9 + 4,
+        bottom: 40,
+        width: 4,
+        height: 20,
+        x: geometry.columnStride * 2 + geometry.columnStride * 0.9,
+        y: 20,
+        toJSON: () => ({}),
+      }) as DOMRect;
+
+    alignPaginationToElement(state, element);
+
+    expect(scrolling.scrollLeft).toBe(geometry.columnStride * 2);
   });
 
   it("uses the configured minimum width as the double-spread threshold", () => {

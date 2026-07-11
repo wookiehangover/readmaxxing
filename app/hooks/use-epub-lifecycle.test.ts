@@ -308,7 +308,7 @@ describe.each(["stored positions", "bookmarks"])("legacy CFI fallback for %s", (
     await displayStoredCfiWithFallback({ display }, fullCfi, onFallback);
 
     expect(display).toHaveBeenCalledOnce();
-    expect(display).toHaveBeenCalledWith(fullCfi);
+    expect(display).toHaveBeenCalledWith(fullCfi, undefined);
     expect(onFallback).not.toHaveBeenCalled();
   });
 
@@ -320,7 +320,7 @@ describe.each(["stored positions", "bookmarks"])("legacy CFI fallback for %s", (
 
     await displayStoredCfiWithFallback({ display }, partialCfi, onFallback);
 
-    expect(display.mock.calls).toEqual([[partialCfi], [3]]);
+    expect(display.mock.calls).toEqual([[partialCfi, undefined], [3]]);
     expect(onFallback).toHaveBeenCalledOnce();
   });
 
@@ -332,7 +332,7 @@ describe.each(["stored positions", "bookmarks"])("legacy CFI fallback for %s", (
 
     await displayStoredCfiWithFallback({ display }, "not-a-cfi", onFallback);
 
-    expect(display.mock.calls).toEqual([["not-a-cfi"], [0]]);
+    expect(display.mock.calls).toEqual([["not-a-cfi", undefined], [0]]);
     expect(onFallback).toHaveBeenCalledOnce();
   });
 });

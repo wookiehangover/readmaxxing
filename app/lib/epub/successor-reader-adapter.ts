@@ -262,16 +262,84 @@ function rangeAtTextOffset(document: Document, root: Node, offset: number): Rang
   return null;
 }
 
-function visibleRange(document: Document): Range {
+function rangeAtCaret(document: Document, x: number, y: number): Range | null {
   const extended = document as Document & {
     caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
   };
-  const caret = extended.caretRangeFromPoint?.(1, 1);
-  if (caret) return caret;
-  const root = document.body ?? document.documentElement;
-  const text = firstTextNode(root);
+  const caret = extended.caretRangeFromPoint?.(x, y);
+  if (caret?.startContainer && document.contains(caret.startContainer)) return caret;
+  const position = extended.caretPositionFromPoint?.(x, y);
+  if (!position?.offsetNode || !document.contains(position.offsetNode)) return null;
+  try {
+    const range = document.createRange();
+    range.setStart(position.offsetNode, position.offset);
+    range.collapse(true);
+    return range;
+  } catch {
+    return null;
+  }
+}
+
+function firstVisibleElement(document: Document): Element | undefined {
+  const width = document.documentElement.clientWidth;
+  const height = document.documentElement.clientHeight;
+  return Array.from(document.body?.querySelectorAll("*") ?? []).find((element) => {
+    const rect = element.getBoundingClientRect();
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      rect.right > 0 &&
+      rect.bottom > 0 &&
+      rect.left < width &&
+      rect.top < height
+    );
+  });
+}
+
+/**
+ * Range at the start of the currently visible page/viewport. Samples several
+ * content-area points (not just 1,1 which often hits page chrome/padding) and
+ * falls back to the first visible element — never the first text of the whole
+ * section, which would pin every save to chapter start.
+ */
+function visibleRange(document: Document): Range {
+  const root = document.documentElement;
+  const width = Math.max(1, root.clientWidth);
+  const height = Math.max(1, root.clientHeight);
+  // Prefer near top-left of the visible page, but past typical body chrome so
+  // caretRangeFromPoint does not miss into empty padding and fall back wrongly.
+  const points: ReadonlyArray<readonly [number, number]> = [
+    [Math.min(20, width * 0.06), Math.min(28, height * 0.08)],
+    [Math.min(36, width * 0.1), Math.min(40, height * 0.1)],
+    [Math.min(48, width * 0.12), Math.min(48, height * 0.12)],
+  ];
+  for (const [x, y] of points) {
+    const range = rangeAtCaret(document, x, y);
+    if (!range) continue;
+    // Reject carets that land outside the viewport (some engines snap to
+    // document-start text when the probe hits chrome/padding).
+    try {
+      const rect = range.getBoundingClientRect();
+      if (rect.bottom >= 0 && rect.right >= 0 && rect.top <= height && rect.left <= width) {
+        return range;
+      }
+    } catch {
+      return range;
+    }
+  }
+
+  const visible = firstVisibleElement(document);
+  const text = visible ? firstTextNode(visible) : null;
+  const fallbackRoot = document.body ?? document.documentElement;
   const range = document.createRange();
-  range.setStart(text ?? root, 0);
+  if (text) {
+    range.setStart(text, 0);
+  } else if (visible) {
+    range.setStart(visible, 0);
+  } else {
+    range.setStart(firstTextNode(fallbackRoot) ?? fallbackRoot, 0);
+  }
   range.collapse(true);
   return range;
 }
@@ -374,10 +442,13 @@ export class SuccessorRenditionAdapter {
     return this.#location;
   }
 
-  async display(target?: string | number): Promise<Relocation> {
+  async display(
+    target?: string | number,
+    options?: { readonly localProgression?: number },
+  ): Promise<Relocation> {
     if (target === undefined) return this.navigator.display({ spineIndex: 0 });
     if (typeof target === "number") return this.navigator.display({ spineIndex: target });
-    if (target.trim().startsWith("epubcfi(")) return this.#displayCfi(target);
+    if (target.trim().startsWith("epubcfi(")) return this.#displayCfi(target, options);
     const link = this.publication.readingOrder.find((candidate) =>
       hrefsMatch(candidate.href, target),
     );
@@ -462,22 +533,27 @@ export class SuccessorRenditionAdapter {
     this.#eventHandlers.set(event, handlers);
   }
 
-  async #displayCfi(cfi: string): Promise<Relocation> {
+  async #displayCfi(
+    cfi: string,
+    options?: { readonly localProgression?: number },
+  ): Promise<Relocation> {
     const spineIndex = spineIndexFromCfi(cfi);
     if (spineIndex === null || !this.publication.readingOrder[spineIndex]) {
       throw new RangeError("CFI does not identify a publication spine item");
     }
-    const relocation = await this.navigator.display({ spineIndex });
+    // Mount the spine item (settles at section start).
+    await this.navigator.display({ spineIndex });
+    // Prefer stored section-local progression when available — it round-trips
+    // exactly with paginated page turns and avoids CFI geometry off-by-ones.
+    if (options?.localProgression !== undefined && Number.isFinite(options.localProgression)) {
+      return this.navigator.restoreProgression(options.localProgression);
+    }
+    // Fallback: map the resolved CFI range onto a column with floor-based math.
     const document = this.navigator.contentDocument;
     if (!document) throw new Error("Publication section is not mounted");
     const range = resolveCfi(cfi, document, sectionMetadata(this.publication, spineIndex));
     if (!range) throw new RangeError("CFI could not be resolved in its publication section");
-    const element =
-      range.startContainer.nodeType === Node.ELEMENT_NODE
-        ? (range.startContainer as Element)
-        : range.startContainer.parentElement;
-    element?.scrollIntoView({ block: "start", inline: "start" });
-    return relocation;
+    return this.navigator.restoreRange(range);
   }
 
   #compatibilityLocation(relocation: Relocation): CompatibilityLocation {

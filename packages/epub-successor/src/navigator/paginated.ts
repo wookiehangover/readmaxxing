@@ -282,6 +282,51 @@ export function snapToSpread(state: PaginatedLayoutState): void {
   scrollToPage(state, Math.floor(page / state.pagesPerSpread) * state.pagesPerSpread);
 }
 
+/**
+ * Column index containing a layout box's left edge.
+ * Uses floor (not round): column index is floor(x / stride). Rounding pushes
+ * restore one page forward when the caret sits past mid-column.
+ */
+export function pageIndexForLogicalOffset(logical: number, state: PaginatedLayoutState): number {
+  if (state.columnStride <= 0 || state.pageCount <= 0) return 0;
+  return Math.max(0, Math.min(state.pageCount - 1, Math.floor(logical / state.columnStride)));
+}
+
+/**
+ * Document-space X of a client rect along the paginated column axis.
+ */
+export function logicalOffsetForClientRect(
+  state: PaginatedLayoutState,
+  rect: DOMRectReadOnly,
+): number {
+  const scrollRect = state.scrolling.getBoundingClientRect();
+  return currentLogicalOffset(state) + (rect.left - scrollRect.left);
+}
+
+/**
+ * Scroll so the spread containing `range` is shown, using the range's live box
+ * (not a parent block). Floor-based column math avoids off-by-one on restore.
+ */
+export function alignPaginationToRange(state: PaginatedLayoutState, range: Range): void {
+  if (state.columnStride <= 0 || state.pageCount <= 0) return;
+  const rects = range.getClientRects();
+  const rect = rects.length > 0 ? rects[0]! : range.getBoundingClientRect();
+  const page = pageIndexForLogicalOffset(logicalOffsetForClientRect(state, rect), state);
+  scrollToPage(state, Math.floor(page / state.pagesPerSpread) * state.pagesPerSpread);
+}
+
+/**
+ * Scroll so the spread containing `element` is shown.
+ */
+export function alignPaginationToElement(state: PaginatedLayoutState, element: Element): void {
+  if (state.columnStride <= 0 || state.pageCount <= 0) return;
+  const page = pageIndexForLogicalOffset(
+    logicalOffsetForClientRect(state, element.getBoundingClientRect()),
+    state,
+  );
+  scrollToPage(state, Math.floor(page / state.pagesPerSpread) * state.pagesPerSpread);
+}
+
 export function captureFirstVisibleElement(document: Document): Element | undefined {
   const width = document.documentElement.clientWidth;
   const height = document.documentElement.clientHeight;
