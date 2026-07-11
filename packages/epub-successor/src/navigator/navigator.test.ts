@@ -111,7 +111,11 @@ async function finishDisplay<T>(container: HTMLElement, display: Promise<T>): Pr
   return display;
 }
 
-async function finishPaginatedDisplay<T>(container: HTMLElement, display: Promise<T>): Promise<T> {
+async function finishPaginatedDisplay<T>(
+  container: HTMLElement,
+  display: Promise<T>,
+  navigator?: Navigator,
+): Promise<T> {
   await vi.waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
   const frame = container.querySelector("iframe")!;
   Object.defineProperties(frame, {
@@ -128,7 +132,9 @@ async function finishPaginatedDisplay<T>(container: HTMLElement, display: Promis
     });
   }
   frame.dispatchEvent(new Event("load"));
-  return display;
+  const result = await display;
+  if (navigator) await navigator.setPreferences({});
+  return result;
 }
 
 async function displayAt(navigator: Navigator, container: HTMLElement, spineIndex: number) {
@@ -157,16 +163,29 @@ function setupPaginated(preferences: NavigatorPreferences = {}) {
 }
 
 function mockFrameAnimationFrames(frame: HTMLIFrameElement) {
-  const view = frame.contentWindow!;
+  const scrolling =
+    frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
+  const views = new Set([
+    frame.contentWindow!,
+    scrolling.ownerDocument.defaultView!,
+    frame.ownerDocument.defaultView!,
+  ]);
   const callbacks = new Map<number, FrameRequestCallback>();
   let nextId = 1;
-  vi.spyOn(view, "requestAnimationFrame").mockImplementation((callback) => {
-    const id = nextId++;
-    callbacks.set(id, callback);
-    return id;
-  });
-  vi.spyOn(view, "cancelAnimationFrame").mockImplementation((id) => void callbacks.delete(id));
+  const cancel = vi.fn((id: number) => void callbacks.delete(id));
+  for (const view of views) {
+    vi.spyOn(view, "requestAnimationFrame").mockImplementation((callback) => {
+      const id = nextId++;
+      callbacks.set(id, callback);
+      return id;
+    });
+    vi.spyOn(view, "cancelAnimationFrame").mockImplementation(cancel);
+  }
   return {
+    cancel,
+    async waitForPending() {
+      await vi.waitFor(() => expect(callbacks.size).toBeGreaterThan(0));
+    },
     runNext(timestamp: number) {
       const entry = callbacks.entries().next();
       if (entry.done) throw new Error("No animation frame is pending");
@@ -175,6 +194,17 @@ function mockFrameAnimationFrames(frame: HTMLIFrameElement) {
       callback(timestamp);
     },
   };
+}
+
+async function startPartialTurn(
+  navigator: Navigator,
+  frames: ReturnType<typeof mockFrameAnimationFrames>,
+) {
+  const turn = navigator.next();
+  await frames.waitForPending();
+  frames.runNext(0);
+  frames.runNext(100);
+  return { turn };
 }
 
 describe("scrolling Navigator", () => {
@@ -301,7 +331,7 @@ describe("paginated Navigator", () => {
       settleTimeoutMs: 100,
     });
 
-    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }));
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
     const frame = container.querySelector("iframe")!;
     const doubleCss =
       frame.contentDocument!.getElementById("epub-successor-pagination-style")?.textContent ?? "";
@@ -337,7 +367,7 @@ describe("paginated Navigator", () => {
       pageTurnAnimation: "slide",
       pageTurnDurationMs: 250,
     });
-    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }));
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
     const frame = container.querySelector("iframe")!;
     const frames = mockFrameAnimationFrames(frame);
     const relocations: Relocation[] = [];
@@ -346,12 +376,13 @@ describe("paginated Navigator", () => {
     });
 
     const turn = navigator.next();
+    await frames.waitForPending();
     frames.runNext(0);
     frame.contentWindow!.dispatchEvent(new Event("scroll"));
     frames.runNext(125);
     frame.contentWindow!.dispatchEvent(new Event("scroll"));
     frames.runNext(250);
-    await Promise.resolve();
+    await frames.waitForPending();
     frames.runNext(266);
 
     await expect(turn).resolves.toBe(true);
@@ -365,23 +396,25 @@ describe("paginated Navigator", () => {
       pageTurnAnimation: "slide",
       pageTurnDurationMs: 250,
     });
-    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }));
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
     const frame = container.querySelector("iframe")!;
     const scrolling =
       frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
     const frames = mockFrameAnimationFrames(frame);
 
     const first = navigator.next();
+    await frames.waitForPending();
     frames.runNext(0);
     frames.runNext(100);
     expect(scrolling.scrollLeft).toBeGreaterThan(0);
     expect(scrolling.scrollLeft).toBeLessThan(864);
 
     const second = navigator.next();
+    await frames.waitForPending();
     expect(scrolling.scrollLeft).toBe(864);
     frames.runNext(100);
     frames.runNext(350);
-    await Promise.resolve();
+    await frames.waitForPending();
     frames.runNext(366);
 
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
@@ -389,13 +422,21 @@ describe("paginated Navigator", () => {
     navigator.destroy();
   });
 
-  it("falls back to an instant turn when reduced motion is requested", async () => {
-    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
-    const { container, navigator } = setupPaginated({
-      pageTurnAnimation: "slide",
-      pageTurnDurationMs: 250,
-    });
-    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }));
+  it.each([
+    { name: "the animation preference is unset", preferences: {}, reducedMotion: false },
+    {
+      name: "reduced motion is requested",
+      preferences: { pageTurnAnimation: "slide" as const, pageTurnDurationMs: 250 },
+      reducedMotion: true,
+    },
+  ])("turns instantly when $name", async ({ preferences, reducedMotion }) => {
+    const { container, navigator } = setupPaginated(preferences);
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    if (reducedMotion) {
+      vi.spyOn(container.ownerDocument.defaultView!, "matchMedia").mockReturnValue({
+        matches: true,
+      } as MediaQueryList);
+    }
     const frame = container.querySelector("iframe")!;
     const scrolling =
       frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
@@ -403,9 +444,73 @@ describe("paginated Navigator", () => {
 
     const turn = navigator.next();
 
+    await frames.waitForPending();
     expect(scrolling.scrollLeft).toBe(864);
     frames.runNext(0);
     await expect(turn).resolves.toBe(true);
     navigator.destroy();
+  });
+
+  it.each([
+    ["display", (navigator: Navigator) => navigator.display({ spineIndex: 1 })],
+    ["setPreferences", (navigator: Navigator) => navigator.setPreferences({ fontSize: 110 })],
+  ] as const)("snaps an active turn before %s", async (_name, interrupt) => {
+    const { container, navigator } = setupPaginated({ pageTurnAnimation: "slide" });
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    const frame = container.querySelector("iframe")!;
+    const scrolling =
+      frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
+    const frames = mockFrameAnimationFrames(frame);
+    const { turn } = await startPartialTurn(navigator, frames);
+
+    const interrupted = interrupt(navigator).catch((cause: unknown) => cause);
+    await vi.waitFor(() => expect(scrolling.scrollLeft).toBe(864));
+    navigator.destroy();
+
+    await expect(turn).resolves.toBe(true);
+    await interrupted;
+  });
+
+  it("snaps an active turn before resize settle", async () => {
+    let resizeCallback!: ResizeObserverCallback;
+    function MockResizeObserver(callback: ResizeObserverCallback): ResizeObserver {
+      resizeCallback = callback;
+      return {
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+      };
+    }
+    vi.spyOn(document.defaultView!, "ResizeObserver").mockImplementation(MockResizeObserver);
+    const { container, navigator } = setupPaginated({ pageTurnAnimation: "slide" });
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    const frame = container.querySelector("iframe")!;
+    const scrolling =
+      frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
+    const frames = mockFrameAnimationFrames(frame);
+    const { turn } = await startPartialTurn(navigator, frames);
+
+    resizeCallback([], {} as ResizeObserver);
+    expect(scrolling.scrollLeft).toBe(864);
+    navigator.destroy();
+
+    await expect(turn).resolves.toBe(true);
+  });
+
+  it("cancels an active turn without snapping when destroyed", async () => {
+    const { container, navigator } = setupPaginated({ pageTurnAnimation: "slide" });
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    const frame = container.querySelector("iframe")!;
+    const scrolling =
+      frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
+    const frames = mockFrameAnimationFrames(frame);
+    const { turn } = await startPartialTurn(navigator, frames);
+    const partialOffset = scrolling.scrollLeft;
+
+    navigator.destroy();
+
+    await expect(turn).resolves.toBe(true);
+    expect(scrolling.scrollLeft).toBe(partialOffset);
+    expect(frames.cancel).toHaveBeenCalledOnce();
   });
 });

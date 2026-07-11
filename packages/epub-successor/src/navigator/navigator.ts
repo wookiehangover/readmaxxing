@@ -14,11 +14,13 @@ import {
 } from "../resource-loader/urls";
 import {
   alignPaginationToRange,
+  animateScrollToPage,
   captureFirstVisibleElement,
   currentSpreadIndex,
   lastSpreadPageIndex,
   paginatedProgression,
   scrollToPage,
+  type PageScrollAnimation,
   type PaginatedLayoutState,
 } from "./paginated";
 import {
@@ -39,6 +41,7 @@ export type {
 const DEFAULT_READER_CSS =
   "html,body{box-sizing:border-box;margin:0;min-height:100%;}body{overflow-wrap:anywhere;}";
 const DEFAULT_SETTLE_TIMEOUT_MS = 3_000;
+const DEFAULT_PAGE_TURN_DURATION_MS = 250;
 
 export type NavigatorState = "idle" | "loading" | "settling" | "settled";
 
@@ -92,6 +95,11 @@ interface PreparedSection {
   readonly documentLease: ResourceUrlLease;
 }
 
+interface ActivePageMove {
+  readonly mount: SectionMount;
+  animation?: PageScrollAnimation;
+}
+
 function abortError(): DOMException {
   return new DOMException("Navigation was aborted", "AbortError");
 }
@@ -130,6 +138,7 @@ export class Navigator extends EventTarget {
   #relocation?: Relocation;
   #destroyed = false;
   #resizeQueued = false;
+  #pageMove?: ActivePageMove;
 
   constructor(publication: Publication, options: CreateNavigatorOptions) {
     super();
@@ -139,6 +148,8 @@ export class Navigator extends EventTarget {
       ...options.preferences,
       flow: options.flow ?? options.preferences?.flow ?? "scrolled",
       spread: options.preferences?.spread ?? "single",
+      pageTurnAnimation: options.preferences?.pageTurnAnimation ?? "none",
+      pageTurnDurationMs: options.preferences?.pageTurnDurationMs ?? DEFAULT_PAGE_TURN_DURATION_MS,
     };
     this.#security = options.security;
     this.#settleTimeoutMs = Math.max(0, options.settleTimeoutMs ?? DEFAULT_SETTLE_TIMEOUT_MS);
@@ -171,6 +182,7 @@ export class Navigator extends EventTarget {
 
   async display(target: DisplayTarget): Promise<Relocation> {
     this.#assertLive();
+    this.#cancelPageMove(true);
     const resolved = this.#resolveTarget(target);
 
     // Same-section short-circuit: re-settle in the existing iframe instead of
@@ -224,14 +236,14 @@ export class Navigator extends EventTarget {
 
   async next(): Promise<boolean> {
     this.#assertLive();
+    this.#cancelPageMove(true);
     const mount = this.#active;
     const index = mount?.spineIndex;
     if (mount?.pagination) {
       const spread = currentSpreadIndex(mount.pagination);
       const targetSpread = spread + 1;
       if (targetSpread * mount.pagination.pagesPerSpread < mount.pagination.pageCount) {
-        scrollToPage(mount.pagination, targetSpread * mount.pagination.pagesPerSpread);
-        await this.#finishPageMove(mount);
+        await this.#moveToPage(mount, targetSpread * mount.pagination.pagesPerSpread);
         return true;
       }
     }
@@ -242,13 +254,13 @@ export class Navigator extends EventTarget {
 
   async previous(): Promise<boolean> {
     this.#assertLive();
+    this.#cancelPageMove(true);
     const mount = this.#active;
     const index = mount?.spineIndex;
     if (mount?.pagination) {
       const spread = currentSpreadIndex(mount.pagination);
       if (spread > 0) {
-        scrollToPage(mount.pagination, (spread - 1) * mount.pagination.pagesPerSpread);
-        await this.#finishPageMove(mount);
+        await this.#moveToPage(mount, (spread - 1) * mount.pagination.pagesPerSpread);
         return true;
       }
     }
@@ -270,6 +282,7 @@ export class Navigator extends EventTarget {
 
   async setPreferences(update: NavigatorPreferences): Promise<Relocation | undefined> {
     this.#assertLive();
+    this.#cancelPageMove(true);
     this.#preferences = mergePreferences(this.#preferences, update);
     const mount = this.#active;
     const signal = this.#operation?.signal;
@@ -362,6 +375,7 @@ export class Navigator extends EventTarget {
 
   destroy(): void {
     if (this.#destroyed) return;
+    this.#cancelPageMove(false);
     this.#destroyed = true;
     this.#operationId += 1;
     this.#operation?.abort();
@@ -484,11 +498,17 @@ export class Navigator extends EventTarget {
   #installScrollListener(mount: SectionMount, view: Window): void {
     mount.removeScrollListener?.();
     const scroll = () => {
-      if (this.#active !== mount || this.#state !== "settled" || mount.scrollFrame !== undefined)
+      if (
+        this.#active !== mount ||
+        this.#state !== "settled" ||
+        this.#pageMove?.mount === mount ||
+        mount.scrollFrame !== undefined
+      )
         return;
       mount.scrollFrame = view.requestAnimationFrame(() => {
         mount.scrollFrame = undefined;
-        if (this.#active === mount && this.#state === "settled") this.#emitRelocation(mount);
+        if (this.#active === mount && this.#state === "settled" && this.#pageMove?.mount !== mount)
+          this.#emitRelocation(mount);
       });
     };
     view.addEventListener("scroll", scroll, true);
@@ -552,6 +572,7 @@ export class Navigator extends EventTarget {
   }
 
   #scheduleResizeSettle(): void {
+    this.#cancelPageMove(true);
     if (this.#resizeQueued || this.#destroyed || !this.#active || this.#state !== "settled") return;
     this.#resizeQueued = true;
     queueMicrotask(() => {
@@ -619,12 +640,64 @@ export class Navigator extends EventTarget {
     });
   }
 
-  async #finishPageMove(mount: SectionMount): Promise<void> {
+  async #moveToPage(mount: SectionMount, pageIndex: number): Promise<void> {
+    const view = mount.frame.contentWindow;
+    if (mount.scrollFrame !== undefined) {
+      view?.cancelAnimationFrame(mount.scrollFrame);
+      mount.scrollFrame = undefined;
+    }
+    const move: ActivePageMove = { mount };
+    this.#pageMove = move;
+    if (this.#shouldAnimatePageTurn()) {
+      move.animation = animateScrollToPage(
+        mount.pagination!,
+        pageIndex,
+        this.#pageTurnDurationMs(),
+      );
+      await move.animation.finished;
+    } else scrollToPage(mount.pagination!, pageIndex);
+    if (this.#pageMove !== move) return;
+    try {
+      await this.#finishPageMove(mount, move);
+    } catch (cause) {
+      if (this.#pageMove === move) throw cause;
+    } finally {
+      if (this.#pageMove === move) this.#pageMove = undefined;
+    }
+  }
+
+  #cancelPageMove(snapToTarget: boolean): void {
+    const move = this.#pageMove;
+    if (!move) return;
+    this.#pageMove = undefined;
+    move.animation?.cancel(snapToTarget);
+  }
+
+  #shouldAnimatePageTurn(): boolean {
+    if (this.#preferences.pageTurnAnimation !== "slide" || this.#pageTurnDurationMs() === 0)
+      return false;
+    return !this.#container.ownerDocument.defaultView?.matchMedia?.(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+  }
+
+  #pageTurnDurationMs(): number {
+    const duration = this.#preferences.pageTurnDurationMs ?? DEFAULT_PAGE_TURN_DURATION_MS;
+    return Number.isFinite(duration) ? Math.max(0, duration) : DEFAULT_PAGE_TURN_DURATION_MS;
+  }
+
+  async #finishPageMove(mount: SectionMount, move?: ActivePageMove): Promise<void> {
     const view = mount.frame.contentWindow;
     const signal = this.#operation?.signal;
     if (!view || !signal) return;
     await nextAnimationFrame(view, signal);
-    if (this.#active === mount && !signal.aborted && !this.#destroyed) this.#emitRelocation(mount);
+    if (
+      this.#active === mount &&
+      !signal.aborted &&
+      !this.#destroyed &&
+      (!move || this.#pageMove === move)
+    )
+      this.#emitRelocation(mount);
   }
 
   #assertCurrent(operationId: number, signal: AbortSignal): void {
