@@ -92,21 +92,41 @@ function setup(
     "OPS/one.xhtml": SECTION("one"),
     "OPS/two.xhtml": SECTION("two"),
   }),
+  preferences: NavigatorPreferences = {},
+  direction?: "ltr" | "rtl",
 ) {
   const container = document.createElement("div");
   document.body.append(container);
-  const navigator = createNavigator(publication(), {
-    container,
-    flow: "scrolled",
-    security: { resourceProvider: provider },
-    settleTimeoutMs: 100,
-  });
+  const fixture = publication();
+  const navigator = createNavigator(
+    {
+      ...fixture,
+      metadata: { ...fixture.metadata, pageProgressionDirection: direction },
+    },
+    {
+      container,
+      flow: "scrolled",
+      preferences,
+      security: { resourceProvider: provider },
+      settleTimeoutMs: 100,
+    },
+  );
   return { container, navigator, provider };
 }
 
+async function waitForFrameCount(container: HTMLElement, count: number): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (container.querySelectorAll("iframe").length === count) return;
+    await Promise.resolve();
+  }
+  expect(container.querySelectorAll("iframe")).toHaveLength(count);
+}
+
 async function finishDisplay<T>(container: HTMLElement, display: Promise<T>): Promise<T> {
-  await vi.waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
-  const frame = container.querySelector("iframe")!;
+  const existing = container.querySelector("iframe");
+  if (existing) await waitForFrameCount(container, 2);
+  else await vi.waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
+  const frame = Array.from(container.querySelectorAll("iframe")).at(-1)!;
   frame.dispatchEvent(new Event("load"));
   return display;
 }
@@ -196,6 +216,51 @@ function mockFrameAnimationFrames(frame: HTMLIFrameElement) {
   };
 }
 
+function suppressAutomaticFrameLoads(): (frame: HTMLIFrameElement) => void {
+  const dispatchEvent = HTMLIFrameElement.prototype.dispatchEvent;
+  let manual = false;
+  vi.spyOn(HTMLIFrameElement.prototype, "dispatchEvent").mockImplementation(
+    function (this: HTMLIFrameElement, event) {
+      if (event.type === "load" && !manual) return true;
+      return dispatchEvent.call(this, event);
+    },
+  );
+  return (frame) => {
+    manual = true;
+    frame.dispatchEvent(new Event("load"));
+    manual = false;
+  };
+}
+
+async function settleToAnimatedHandoff<T>(
+  container: HTMLElement,
+  display: Promise<T>,
+  load: (frame: HTMLIFrameElement) => void,
+) {
+  await waitForFrameCount(container, 2);
+  const frames = container.querySelectorAll("iframe");
+  const incoming = frames[1]!;
+  const animationFrames = mockFrameAnimationFrames(incoming);
+  load(incoming);
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await animationFrames.waitForPending();
+    if (incoming.style.transform) {
+      return { animationFrames, display, incoming, outgoing: frames[0]! };
+    }
+    animationFrames.runNext(attempt * 16);
+  }
+  throw new Error("Animated handoff did not start");
+}
+
+async function finishAnimatedHandoff<T>(
+  handoff: Awaited<ReturnType<typeof settleToAnimatedHandoff<T>>>,
+): Promise<T> {
+  handoff.animationFrames.runNext(32);
+  await Promise.resolve();
+  handoff.incoming.dispatchEvent(new Event("transitionend"));
+  return handoff.display;
+}
+
 async function startPartialTurn(
   navigator: Navigator,
   frames: ReturnType<typeof mockFrameAnimationFrames>,
@@ -277,6 +342,73 @@ describe("scrolling Navigator", () => {
     expect(await finishDisplay(container, previous)).toBe(true);
     expect(await navigator.previous()).toBe(false);
     navigator.destroy();
+  });
+
+  it.each([
+    ["ltr", "next", 0, "translateX(100%)"],
+    ["ltr", "previous", 1, "translateX(-100%)"],
+    ["rtl", "next", 0, "translateX(-100%)"],
+    ["rtl", "previous", 1, "translateX(100%)"],
+  ] as const)(
+    "keeps the outgoing frame through the %s %s handoff",
+    async (direction, move, initialSpineIndex, expectedTransform) => {
+      const { container, navigator } = setup(
+        undefined,
+        { pageTurnAnimation: "slide", pageTurnDurationMs: 250 },
+        direction,
+      );
+      await displayAt(navigator, container, initialSpineIndex);
+      const oldDocument = navigator.contentDocument;
+      const load = suppressAutomaticFrameLoads();
+
+      const handoff = await settleToAnimatedHandoff(
+        container,
+        move === "next" ? navigator.next() : navigator.previous(),
+        load,
+      );
+
+      expect(handoff.outgoing.contentDocument).toBe(oldDocument);
+      expect(navigator.contentDocument).toBe(oldDocument);
+      expect(handoff.incoming.style.transform).toBe(expectedTransform);
+      expect(container.querySelectorAll("iframe")).toHaveLength(2);
+      await expect(finishAnimatedHandoff(handoff)).resolves.toBe(true);
+      expect(container.querySelectorAll("iframe")).toHaveLength(1);
+      expect(container.querySelector("iframe")).toBe(handoff.incoming);
+      expect(handoff.incoming.getAttribute("style")).not.toContain("transform");
+      navigator.destroy();
+    },
+  );
+
+  it("keeps the settled frame and disposes the incoming frame after load failure", async () => {
+    const { container, navigator } = setup();
+    await displayAt(navigator, container, 0);
+    const outgoing = container.querySelector("iframe")!;
+    const oldDocument = navigator.contentDocument;
+    const display = navigator.display({ spineIndex: 1 });
+    await waitForFrameCount(container, 2);
+    container.querySelectorAll("iframe")[1]!.dispatchEvent(new Event("error"));
+
+    await expect(display).rejects.toThrow("iframe failed to load");
+    await Promise.resolve();
+    expect(container.querySelectorAll("iframe")).toHaveLength(1);
+    expect(container.querySelector("iframe")).toBe(outgoing);
+    expect(navigator.contentDocument).toBe(oldDocument);
+    expect(URL.revokeObjectURL).toHaveBeenCalledOnce();
+    navigator.destroy();
+  });
+
+  it("disposes both frames and leases when an incoming display is aborted by destroy", async () => {
+    const { container, navigator } = setup();
+    await displayAt(navigator, container, 0);
+    const display = navigator.display({ spineIndex: 1 });
+    await waitForFrameCount(container, 2);
+
+    navigator.destroy();
+
+    await expect(display).rejects.toMatchObject({ name: "AbortError" });
+    await Promise.resolve();
+    expect(container.querySelectorAll("iframe")).toHaveLength(0);
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2);
   });
 
   it("destroys frames and URL ownership idempotently without closing the provider", async () => {

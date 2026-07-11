@@ -86,6 +86,7 @@ interface SectionMount {
   visibleAnchor?: Element;
   settledWidth?: number;
   settledHeight?: number;
+  overlaid?: boolean;
 }
 
 interface PreparedSection {
@@ -139,6 +140,8 @@ export class Navigator extends EventTarget {
   #destroyed = false;
   #resizeQueued = false;
   #pageMove?: ActivePageMove;
+  #overlayCount = 0;
+  #containerPosition?: string;
 
   constructor(publication: Publication, options: CreateNavigatorOptions) {
     super();
@@ -204,7 +207,9 @@ export class Navigator extends EventTarget {
     this.#operation = controller;
     this.#setState("loading");
 
+    const outgoing = this.#active;
     let prepared: PreparedSection | undefined;
+    let mount: SectionMount | undefined;
     try {
       prepared = await this.#prepareSection(
         resolved.href,
@@ -213,19 +218,23 @@ export class Navigator extends EventTarget {
         controller.signal,
       );
       this.#assertCurrent(operationId, controller.signal);
-      const mount = this.#mount(prepared, operationId);
+      mount = this.#mount(prepared, operationId, outgoing !== undefined);
       prepared = undefined;
       await this.#waitForLoad(mount.frame, controller.signal);
       this.#assertCurrent(operationId, controller.signal);
       this.#setState("settling");
       await this.#settle(mount, resolved.fragment, controller.signal);
       this.#assertCurrent(operationId, controller.signal);
+      await this.#revealMount(mount, outgoing, controller.signal);
+      this.#assertCurrent(operationId, controller.signal);
+      this.#active = mount;
+      if (outgoing) this.#unmount(outgoing);
       this.#setState("settled");
       return this.#emitRelocation(mount);
     } catch (cause) {
       prepared?.documentLease.dispose();
       prepared?.scope.dispose();
-      if (this.#active?.operationId === operationId) this.#unmount(this.#active);
+      if (mount) this.#unmount(mount);
       if (this.#operationId === operationId && !this.#destroyed) {
         this.#setState(this.#active ? "settled" : "idle");
       }
@@ -425,8 +434,7 @@ export class Navigator extends EventTarget {
     }
   }
 
-  #mount(prepared: PreparedSection, operationId: number): SectionMount {
-    if (this.#active) this.#unmount(this.#active);
+  #mount(prepared: PreparedSection, operationId: number, overlay: boolean): SectionMount {
     const frame = this.#container.ownerDocument.createElement("iframe");
     frame.setAttribute("sandbox", CONTENT_IFRAME_SANDBOX);
     frame.setAttribute("title", `Publication section ${prepared.spineIndex + 1}`);
@@ -434,10 +442,82 @@ export class Navigator extends EventTarget {
     frame.style.display = "block";
     frame.style.height = "100%";
     frame.style.width = "100%";
+    if (overlay) {
+      frame.style.inset = "0";
+      frame.style.position = "absolute";
+      frame.style.visibility = "hidden";
+      frame.style.zIndex = "1";
+    }
     frame.src = prepared.documentLease.url;
-    const mount: SectionMount = { ...prepared, operationId, frame };
-    this.#active = mount;
+    const mount: SectionMount = { ...prepared, operationId, frame, overlaid: overlay };
+    if (overlay) this.#beginOverlay();
     return mount;
+  }
+
+  #beginOverlay(): void {
+    this.#overlayCount += 1;
+    if (
+      this.#overlayCount === 1 &&
+      this.#container.ownerDocument.defaultView?.getComputedStyle(this.#container).position ===
+        "static"
+    ) {
+      this.#containerPosition = this.#container.style.position;
+      this.#container.style.position = "relative";
+    }
+  }
+
+  async #revealMount(
+    mount: SectionMount,
+    outgoing: SectionMount | undefined,
+    signal: AbortSignal,
+  ): Promise<void> {
+    try {
+      mount.frame.style.visibility = "visible";
+      if (!outgoing || !this.#shouldAnimatePageTurn()) return;
+      const advancing = mount.spineIndex > outgoing.spineIndex;
+      const metadata = this.publication.metadata;
+      const rtl =
+        metadata.pageProgressionDirection === "rtl" ||
+        (metadata.pageProgressionDirection !== "ltr" && metadata.direction === "rtl");
+      const offset = (advancing ? 100 : -100) * (rtl ? -1 : 1);
+      const duration = this.#pageTurnDurationMs();
+      const frame = mount.frame;
+      const view = frame.ownerDocument.defaultView ?? frame.contentWindow;
+      if (!view) return;
+      frame.style.opacity = "0";
+      frame.style.transform = `translateX(${offset}%)`;
+      frame.style.transition = `transform ${duration}ms ease-out, opacity ${duration}ms ease-out`;
+      frame.style.willChange = "transform, opacity";
+      await nextAnimationFrame(view, signal);
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          clearTimeout(timeout);
+          frame.removeEventListener("transitionend", transitioned);
+          signal.removeEventListener("abort", aborted);
+        };
+        const completed = () => {
+          cleanup();
+          resolve();
+        };
+        const transitioned = (event: Event) => {
+          if (event.target === frame) completed();
+        };
+        const aborted = () => {
+          cleanup();
+          reject(abortError());
+        };
+        const timeout = setTimeout(completed, duration + 50);
+        frame.addEventListener("transitionend", transitioned);
+        signal.addEventListener("abort", aborted, { once: true });
+        if (signal.aborted) aborted();
+        else {
+          frame.style.opacity = "1";
+          frame.style.transform = "translateX(0)";
+        }
+      });
+    } finally {
+      this.#releaseOverlay(mount);
+    }
   }
 
   #waitForLoad(frame: HTMLIFrameElement, signal: AbortSignal): Promise<void> {
@@ -632,12 +712,31 @@ export class Navigator extends EventTarget {
     mount.removeScrollListener?.();
     if (mount.scrollFrame !== undefined)
       mount.frame.contentWindow?.cancelAnimationFrame(mount.scrollFrame);
+    this.#releaseOverlay(mount);
     mount.frame.remove();
     if (this.#active === mount) this.#active = undefined;
     queueMicrotask(() => {
       mount.documentLease.dispose();
       mount.scope.dispose();
     });
+  }
+
+  #releaseOverlay(mount: SectionMount): void {
+    if (!mount.overlaid) return;
+    mount.overlaid = false;
+    mount.frame.style.inset = "";
+    mount.frame.style.opacity = "";
+    mount.frame.style.position = "";
+    mount.frame.style.transform = "";
+    mount.frame.style.transition = "";
+    mount.frame.style.visibility = "";
+    mount.frame.style.willChange = "";
+    mount.frame.style.zIndex = "";
+    this.#overlayCount -= 1;
+    if (this.#overlayCount === 0 && this.#containerPosition !== undefined) {
+      this.#container.style.position = this.#containerPosition;
+      this.#containerPosition = undefined;
+    }
   }
 
   async #moveToPage(mount: SectionMount, pageIndex: number): Promise<void> {
