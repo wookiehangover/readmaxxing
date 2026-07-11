@@ -132,6 +132,7 @@ function readerPreferences(config: UseEpubLifecycleConfig): NavigatorPreferences
   return {
     flow: layout === "scroll" ? "scrolled" : "paginated",
     spread: layout === "spread" ? "double" : "single",
+    pageTurnAnimation: layout === "scroll" ? "none" : "slide",
     fontFamily: config.fontFamily,
     fontSize: config.fontSize,
     lineHeight: config.lineHeight,

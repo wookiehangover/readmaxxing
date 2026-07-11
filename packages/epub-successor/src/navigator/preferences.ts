@@ -17,6 +17,8 @@ export interface NavigatorPreferences {
   readonly flow?: NavigatorFlow;
   readonly spread?: NavigatorSpread;
   readonly minSpreadWidth?: number;
+  readonly pageTurnAnimation?: "none" | "slide";
+  readonly pageTurnDurationMs?: number;
 }
 
 const THEME_COLORS: Readonly<Record<NavigatorTheme, readonly [string, string]>> = {

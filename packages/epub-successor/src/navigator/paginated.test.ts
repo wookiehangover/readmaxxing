@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   alignPaginationToElement,
+  animateScrollToPage,
   calculateColumnGeometry,
   calculatePageCount,
   currentSpreadIndex,
@@ -17,6 +18,31 @@ import {
   spreadPageCount,
   type RtlScrollType,
 } from "./paginated";
+
+function mockAnimationFrames(view: Window) {
+  const callbacks = new Map<number, FrameRequestCallback>();
+  let nextId = 1;
+  vi.spyOn(view, "requestAnimationFrame").mockImplementation((callback) => {
+    const id = nextId++;
+    callbacks.set(id, callback);
+    return id;
+  });
+  const cancel = vi
+    .spyOn(view, "cancelAnimationFrame")
+    .mockImplementation((id) => void callbacks.delete(id));
+  return {
+    cancel,
+    runNext(timestamp: number) {
+      const entry = callbacks.entries().next();
+      if (entry.done) throw new Error("No animation frame is pending");
+      const [id, callback] = entry.value;
+      callbacks.delete(id);
+      callback(timestamp);
+    },
+  };
+}
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("paginated page math", () => {
   it("floors column geometry so fractional viewports never exceed the live frame", () => {
@@ -210,5 +236,72 @@ describe("paginated page math", () => {
     expect(logicalOffsetFromScrollLeft(600, 600, "rtl", "default")).toBe(0);
     expect(logicalOffsetFromScrollLeft(-600, 600, "rtl", "negative")).toBe(600);
     expect(logicalOffsetFromScrollLeft(600, 600, "rtl", "reverse")).toBe(600);
+  });
+
+  it("tweens to an RTL-correct page offset with cubic ease-out", async () => {
+    const scrolling = document.createElement("div");
+    scrolling.scrollLeft = 600;
+    const state = {
+      ...calculateColumnGeometry(200, 0, 1),
+      direction: "rtl" as const,
+      pageCount: 4,
+      maxOffset: 600,
+      rtlScrollType: "default" as const,
+      scrolling,
+    };
+    const frames = mockAnimationFrames(window);
+
+    const animation = animateScrollToPage(state, 1, 100);
+    frames.runNext(10);
+    frames.runNext(60);
+
+    expect(scrolling.scrollLeft).toBeCloseTo(425);
+    frames.runNext(110);
+    await animation.finished;
+    expect(scrolling.scrollLeft).toBe(400);
+  });
+
+  it("cancels a tween in place without snapping by default", async () => {
+    const scrolling = document.createElement("div");
+    const state = {
+      ...calculateColumnGeometry(200, 0, 1),
+      direction: "ltr" as const,
+      pageCount: 4,
+      maxOffset: 600,
+      rtlScrollType: "reverse" as const,
+      scrolling,
+    };
+    const frames = mockAnimationFrames(window);
+    const animation = animateScrollToPage(state, 2, 100);
+    frames.runNext(0);
+    frames.runNext(50);
+    const partialOffset = scrolling.scrollLeft;
+
+    animation.cancel();
+    await animation.finished;
+
+    expect(partialOffset).toBeCloseTo(350);
+    expect(scrolling.scrollLeft).toBe(partialOffset);
+    expect(frames.cancel).toHaveBeenCalledOnce();
+  });
+
+  it("snaps to the logical target when cancellation requests it", async () => {
+    const scrolling = document.createElement("div");
+    const state = {
+      ...calculateColumnGeometry(200, 0, 1),
+      direction: "rtl" as const,
+      pageCount: 4,
+      maxOffset: 600,
+      rtlScrollType: "negative" as const,
+      scrolling,
+    };
+    const frames = mockAnimationFrames(window);
+    const animation = animateScrollToPage(state, 2, 100);
+
+    animation.cancel(true);
+    await animation.finished;
+
+    expect(scrolling.scrollLeft).toBe(-400);
+    expect(frames.cancel).toHaveBeenCalledOnce();
   });
 });

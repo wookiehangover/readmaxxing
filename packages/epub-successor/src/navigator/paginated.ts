@@ -16,6 +16,11 @@ export interface PaginatedLayoutState extends ColumnGeometry {
   readonly scrolling: Element;
 }
 
+export interface PageScrollAnimation {
+  readonly finished: Promise<void>;
+  cancel(snapToTarget?: boolean): void;
+}
+
 const PAGINATION_STYLE_ID = "epub-successor-pagination-style";
 const XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 export const DEFAULT_MIN_SPREAD_WIDTH = 800;
@@ -275,6 +280,63 @@ export function scrollToPage(state: PaginatedLayoutState, pageIndex: number): vo
     state.direction,
     state.rtlScrollType,
   );
+}
+
+export function animateScrollToPage(
+  state: PaginatedLayoutState,
+  pageIndex: number,
+  durationMs: number,
+): PageScrollAnimation {
+  const page = Math.min(state.pageCount - 1, Math.max(0, Math.round(pageIndex)));
+  const target = scrollLeftFromLogicalOffset(
+    page * state.columnStride,
+    state.maxOffset,
+    state.direction,
+    state.rtlScrollType,
+  );
+  const start = state.scrolling.scrollLeft;
+  const duration = Math.max(0, Number.isFinite(durationMs) ? durationMs : 0);
+  const view = state.scrolling.ownerDocument.defaultView;
+  if (!view || duration === 0 || start === target) {
+    state.scrolling.scrollLeft = target;
+    return { finished: Promise.resolve(), cancel: () => {} };
+  }
+
+  let frame: number | undefined;
+  let startTime: number | undefined;
+  let settled = false;
+  let resolveFinished!: () => void;
+  const finished = new Promise<void>((resolve) => {
+    resolveFinished = resolve;
+  });
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    frame = undefined;
+    resolveFinished();
+  };
+  const step = (timestamp: number) => {
+    startTime ??= timestamp;
+    const progress = Math.min(1, Math.max(0, (timestamp - startTime) / duration));
+    const eased = 1 - Math.pow(1 - progress, 3);
+    state.scrolling.scrollLeft = start + (target - start) * eased;
+    if (progress < 1) frame = view.requestAnimationFrame(step);
+    else {
+      state.scrolling.scrollLeft = target;
+      finish();
+    }
+  };
+  frame = view.requestAnimationFrame(step);
+
+  return {
+    finished,
+    cancel(snapToTarget = false) {
+      if (settled) return;
+      if (frame !== undefined) view.cancelAnimationFrame(frame);
+      if (snapToTarget) state.scrolling.scrollLeft = target;
+      finish();
+    },
+  };
 }
 
 export function snapToSpread(state: PaginatedLayoutState): void {
