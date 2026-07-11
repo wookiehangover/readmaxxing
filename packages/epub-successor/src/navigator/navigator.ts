@@ -748,7 +748,7 @@ export class Navigator extends EventTarget {
       return false;
     return !this.#container.ownerDocument.defaultView?.matchMedia?.(
       "(prefers-reduced-motion: reduce)",
-    ).matches;
+    )?.matches;
   }
 
   #pageTurnDurationMs(): number {
