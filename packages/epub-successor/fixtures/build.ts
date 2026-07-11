@@ -4,7 +4,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { strToU8, zipSync, type Zippable } from "fflate";
 
-const FIXED_MTIME = new Date("2000-01-01T00:00:00.000Z");
+// ZIP DOS timestamps are timezone-free, and fflate serializes Date's local fields.
+const FIXED_MTIME = new Date(2000, 0, 1, 0, 0, 0);
 const XHTML = "http://www.w3.org/1999/xhtml";
 const OPF = "http://www.idpf.org/2007/opf";
 const DC = "http://purl.org/dc/elements/1.1/";
