@@ -22,7 +22,7 @@ A browser-based ebook reader. Drag and drop `.epub` or `.pdf` files to load them
 - [TypeScript](https://www.typescriptlang.org/)
 - [Tailwind CSS v4](https://tailwindcss.com/)
 - [shadcn/ui](https://ui.shadcn.com/)
-- [epubjs](https://github.com/futurepress/epub.js) — epub parsing and rendering
+- [`@readmaxxing/epub-successor`](./packages/epub-successor/) — vendored EPUB 2/3 parsing and rendering
 - [idb-keyval](https://github.com/nickersk/idb-keyval) — IndexedDB storage
 - [Effect.ts](https://effect.website/) — typed error handling and service architecture
 - [pg](https://github.com/brianc/node-postgres) + [pg-sql](https://github.com/calebmer/pg-sql) — Postgres database access
