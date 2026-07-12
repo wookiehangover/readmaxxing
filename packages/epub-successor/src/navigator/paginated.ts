@@ -185,11 +185,17 @@ export function pageChromeInsets(
   const gap = Math.min(snapped(columnGap), Math.max(0, width - pagesPerSpread));
   // Full-width pack: n*columnWidth + (n-1)*gap <= width, no leftover as side pad.
   const geometry = calculateColumnGeometry(width, gap, pagesPerSpread, 0);
+  // Browsers divide the multicol content box exactly, so a fractional quotient
+  // makes the used column stride drift from the engine's integral stride —
+  // after a few page turns the right column clips ~a character at the edge.
+  // Trim the division remainder with end padding so the quotient is integral.
+  const packedWidth =
+    geometry.columnWidth * pagesPerSpread + geometry.columnGap * (pagesPerSpread - 1);
 
   return {
     padBlock: DEFAULT_BLOCK_PADDING,
     padInlineStart: 0,
-    padInlineEnd: 0,
+    padInlineEnd: Math.max(0, geometry.viewportWidth - packedWidth),
     geometry,
   };
 }
@@ -210,9 +216,15 @@ export function applyPaginatedLayout(
     `overflow:hidden !important;direction:${direction} !important;}` +
     `body{box-sizing:border-box !important;height:${height}px !important;min-height:0 !important;` +
     `margin:0 !important;` +
-    `padding:${chrome.padBlock}px 0 !important;` +
+    `padding:${chrome.padBlock}px !important;` +
+    `padding-inline-start:${chrome.padInlineStart}px !important;` +
+    `padding-inline-end:${chrome.padInlineEnd}px !important;` +
     `column-fill:auto !important;column-gap:${chrome.geometry.columnGap}px !important;` +
     `column-width:${chrome.geometry.columnWidth}px !important;overflow:visible !important;}` +
+    `img,svg,video,canvas{max-width:${chrome.geometry.columnWidth}px !important;` +
+    `max-height:${Math.max(1, height - 2 * chrome.padBlock)}px !important;` +
+    `box-sizing:border-box !important;object-fit:contain !important;` +
+    `break-inside:avoid !important;}` +
     `body::after{content:"" !important;display:block !important;` +
     `width:100% !important;height:1px !important;` +
     `margin-block-start:-1px !important;}`;

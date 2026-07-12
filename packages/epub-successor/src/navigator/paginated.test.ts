@@ -69,7 +69,7 @@ describe("paginated page math", () => {
   });
 
   it("packs columns to the full viewport with no inline body padding", () => {
-    // Horizontal padding is 0 so page 1 and later pages share the same origin.
+    // Horizontal start padding is 0 so page 1 and later pages share the same origin.
     const even = pageChromeInsets(800, 64, 2);
     expect(even.padInlineStart).toBe(0);
     expect(even.padInlineEnd).toBe(0);
@@ -82,11 +82,16 @@ describe("paginated page math", () => {
     });
     expect(even.geometry.columnWidth * 2 + even.geometry.columnGap).toBe(800);
     expect(even.padBlock).toBe(24);
+  });
 
+  it("trims the multicol division remainder with end padding", () => {
+    // (801 - 64) / 2 = 368.5 — the browser's used column stride would exceed
+    // the engine's integral stride and clip the right column edge. End padding
+    // must absorb the remainder so the quotient stays integral.
     const odd = pageChromeInsets(801.4, 64, 2);
     expect(odd.padInlineStart).toBe(0);
-    expect(odd.padInlineEnd).toBe(0);
-    expect(odd.geometry.columnWidth * 2 + odd.geometry.columnGap).toBeLessThanOrEqual(801);
+    expect(odd.padInlineEnd).toBe(1);
+    expect(odd.geometry.columnWidth * 2 + odd.geometry.columnGap + odd.padInlineEnd).toBe(801);
   });
 
   it("uses full width for single-page columns", () => {

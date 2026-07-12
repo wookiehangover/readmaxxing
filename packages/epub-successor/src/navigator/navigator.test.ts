@@ -435,7 +435,12 @@ describe("paginated Navigator", () => {
     // Full-width columns, 64px spread gap, vertical body padding only.
     expect(doubleCss).toContain("column-width:368px");
     expect(doubleCss).toContain("column-gap:64px");
-    expect(doubleCss).toContain("padding:24px 0");
+    expect(doubleCss).toContain("padding:24px !important");
+    expect(doubleCss).toContain("padding-inline-start:0px");
+    expect(doubleCss).toContain("padding-inline-end:0px");
+    // Replaced elements are contained to their column so figures can't push
+    // the sibling column's text past the page edge.
+    expect(doubleCss).toContain("img,svg,video,canvas{max-width:368px");
 
     await navigator.setPreferences({
       fontFamily: "Literata",
@@ -455,7 +460,8 @@ describe("paginated Navigator", () => {
     const singleCss =
       frame.contentDocument!.getElementById("epub-successor-pagination-style")?.textContent ?? "";
     expect(singleCss).toContain("column-width:800px");
-    expect(singleCss).toContain("padding:24px 0");
+    expect(singleCss).toContain("padding-inline-start:0px");
+    expect(singleCss).toContain("padding-inline-end:0px");
     navigator.destroy();
   });
 
