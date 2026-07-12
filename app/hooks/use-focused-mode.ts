@@ -3,7 +3,7 @@ import type { DockviewApi, AddPanelPositionOptions } from "dockview-react";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { isEditableElement } from "~/lib/dom-utils";
 import { truncateTitle } from "~/lib/workspace-utils";
-import { clampFocusedSplitRatio, type LayoutMode } from "~/lib/settings";
+import { clampFocusedSplitRatio } from "~/lib/settings";
 
 /**
  * State for a single focused-mode cluster. The workspace layout hook persists
@@ -27,8 +27,6 @@ export interface ClusterBarEntry {
 export interface UseFocusedModeParams {
   /** Current dockview API ref owned by workspace.tsx. */
   apiRef: React.MutableRefObject<DockviewApi | null>;
-  /** Active layout mode; the swap and Cmd+1..9 effects are inert in freeform. */
-  layoutMode: LayoutMode;
   /** Mobile viewport ref, read during cluster swap for tab/split decisions. */
   isMobileRef: React.MutableRefObject<boolean | undefined>;
   /**
@@ -50,11 +48,9 @@ export interface UseFocusedModeResult {
   readonly getActiveClusterId: () => string | null;
   /**
    * Reconcile `focusedClustersRef` from the current dockview panel list and
-   * swap down to a single active cluster. Called after a mode switch and on
-   * initial `onReady` when layoutMode is "focused", so panels that weren't
-   * opened through `openBook` (restored from saved JSON, carried over from
-   * freeform) become tracked clusters and the one-cluster-visible invariant
-   * is restored.
+   * swap down to a single active cluster. Called on initial `onReady`, so
+   * panels that weren't opened through `openBook` (restored from saved JSON)
+   * become tracked clusters and the one-cluster-visible invariant is restored.
    */
   readonly enforceSingleFocusedCluster: () => void;
 }
@@ -68,7 +64,6 @@ export interface UseFocusedModeResult {
  */
 export function useFocusedMode({
   apiRef,
-  layoutMode,
   isMobileRef,
   focusedSplitRatioRef,
 }: UseFocusedModeParams): UseFocusedModeResult {
@@ -92,12 +87,12 @@ export function useFocusedMode({
       if (!api) return;
 
       // If we have a target but no tracked-cluster entry for it yet, leave
-      // dockview untouched. This happens briefly during a freeform→focused
-      // mode switch: the subscriber may fire before
-      // `enforceSingleFocusedCluster` has reconciled the cluster map, and
-      // running the remove-loop here would strip panels we're about to
-      // absorb into tracked clusters. The reconcile path will invoke us
-      // again (with lastSwappedRef primed) once the map is populated.
+      // dockview untouched. This can happen briefly during initial restore:
+      // the subscriber may fire before `enforceSingleFocusedCluster` has
+      // reconciled the cluster map, and running the remove-loop here would
+      // strip panels we're about to absorb into tracked clusters. The
+      // reconcile path will invoke us again (with lastSwappedRef primed)
+      // once the map is populated.
       if (targetBookId !== null && !focusedClustersRef.current.has(targetBookId)) {
         return;
       }
@@ -106,9 +101,8 @@ export function useFocusedMode({
       try {
         // Remove every cluster-prefix panel whose bookId isn't the target.
         // Enumerating by id prefix (not by tracked-cluster map) catches
-        // panels that dockview restored from saved JSON or that were
-        // carried over from freeform mode but haven't been added to
-        // `focusedClustersRef` yet.
+        // panels that dockview restored from saved JSON but haven't been
+        // added to `focusedClustersRef` yet.
         const toRemove = api.panels.filter((p) => {
           if (p.id === "new-tab") return targetBookId !== null;
           const isClusterPanel =
@@ -133,9 +127,9 @@ export function useFocusedMode({
         const { bookId, bookTitle, bookFormat, hasChat, hasNotebook, activeTab } = cluster;
 
         // Add the book panel if not already mounted — when swapping to a
-        // cluster whose panels were already in dockview (freeform →
-        // focused), the remove-step above leaves them in place and we
-        // skip re-adding.
+        // cluster whose panels were already in dockview (restored from saved
+        // JSON), the remove-step above leaves them in place and we skip
+        // re-adding.
         const bookPanelId = `book-${bookId}`;
         let bookPanel = api.panels.find((p) => p.id === bookPanelId);
         if (!bookPanel) {
@@ -233,7 +227,6 @@ export function useFocusedMode({
   // re-notifications for the same active id (which also occurs while the
   // swap itself is adding panels).
   useEffect(() => {
-    if (layoutMode !== "focused") return;
     const run = () => {
       // Dockview fires onDidRemovePanel synchronously during the swap's
       // remove loop, which triggers rebuildClusters → notifyClusterChanges
@@ -249,7 +242,7 @@ export function useFocusedMode({
     // was (re-)established (e.g. after a mode toggle).
     run();
     return ws.subscribeClusterChanges(run);
-  }, [layoutMode, swapFocusedCluster, ws]);
+  }, [swapFocusedCluster, ws]);
 
   const activateFocusedLibrary = useCallback(() => {
     if (ws.activeClusterBookIdRef.current === null) {
@@ -263,7 +256,6 @@ export function useFocusedMode({
   // Cmd+1..9 to activate the Nth open focused cluster. Skips editable
   // elements so typing "1" in an input doesn't swap clusters.
   useEffect(() => {
-    if (layoutMode !== "focused") return;
     function handler(e: KeyboardEvent) {
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.shiftKey || e.altKey) return;
@@ -278,7 +270,7 @@ export function useFocusedMode({
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [layoutMode, ws]);
+  }, [ws]);
 
   // Close a focused-mode cluster: remove from the session map and either
   // activate the next cluster in order or clear panels entirely. When the
@@ -347,9 +339,8 @@ export function useFocusedMode({
   );
 
   // Reconcile the tracked-cluster map from dockview's panel list, then swap
-  // down to a single active cluster. Used after a mode toggle (freeform →
-  // focused) and on initial `onReady` when layoutMode is "focused" to absorb
-  // any panels that weren't routed through openBook/openNotebook/openChat.
+  // down to a single active cluster. Used on initial `onReady` to absorb any
+  // panels that weren't routed through openBook/openNotebook/openChat.
   const enforceSingleFocusedCluster = useCallback(() => {
     const api = apiRef.current;
     if (!api) return;

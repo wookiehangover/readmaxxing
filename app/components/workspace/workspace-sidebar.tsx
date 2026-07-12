@@ -15,11 +15,10 @@ import {
 } from "lucide-react";
 import { LibrarySortControl } from "~/components/library-sort-control";
 import { SyncStatus } from "~/components/sync-status";
-import { LayoutModeSwitcher } from "~/components/workspace/layout-mode-switcher";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
 import type { BookMeta } from "~/lib/stores/book-store";
-import type { WorkspaceSortBy, LayoutMode } from "~/lib/settings";
+import type { WorkspaceSortBy } from "~/lib/settings";
 import type { ClusterBarEntry } from "~/hooks/use-focused-mode";
 import { cn } from "~/lib/utils";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -76,22 +75,19 @@ function WorkspaceSidebarActionButton({
 export interface WorkspaceSidebarProps {
   collapsed: boolean;
   sortBy: WorkspaceSortBy;
-  layoutMode: LayoutMode;
   books: BookMeta[];
   openBooks: BookMeta[];
   otherBooks: BookMeta[];
   /**
-   * Snapshot getter for the current focused-mode clusters, in
-   * `focusedOrderRef` order. Read whenever `layoutMode === "focused"`; the
+   * Snapshot getter for the current clusters, in `focusedOrderRef` order. The
    * sidebar re-renders on cluster changes via `subscribeClusterChanges`.
    */
   getClusterEntries: () => ClusterBarEntry[];
-  /** Snapshot getter for the active focused-mode cluster's bookId. */
+  /** Snapshot getter for the active cluster's bookId. */
   getActiveClusterId: () => string | null;
   onUpdateSettings: (patch: {
     sidebarCollapsed?: boolean;
     workspaceSortBy?: WorkspaceSortBy;
-    layoutMode?: LayoutMode;
   }) => void;
   onOpenLibrary: () => void;
   onOpenBook: (book: BookMeta) => void;
@@ -105,7 +101,6 @@ export interface WorkspaceSidebarProps {
 export function WorkspaceSidebar({
   collapsed,
   sortBy,
-  layoutMode,
   books,
   openBooks,
   otherBooks,
@@ -122,14 +117,12 @@ export function WorkspaceSidebar({
 }: WorkspaceSidebarProps) {
   const ws = useWorkspace();
   const [libraryExpanded, setLibraryExpanded] = useState(true);
-  // Bump on cluster add/remove/activate so the collapsed focused-mode rail
-  // re-derives its entries from `getClusterEntries()`. Subscribed only in
-  // focused mode to avoid unnecessary work in freeform.
+  // Bump on cluster add/remove/activate so the collapsed rail re-derives its
+  // entries from `getClusterEntries()`.
   const [clusterVersion, setClusterVersion] = useState(0);
   useEffect(() => {
-    if (layoutMode !== "focused") return;
     return ws.subscribeClusterChanges(() => setClusterVersion((v) => v + 1));
-  }, [layoutMode, ws]);
+  }, [ws]);
 
   const [, setPanelVersion] = useState(0);
   useEffect(() => {
@@ -144,13 +137,12 @@ export function WorkspaceSidebar({
     };
   }, [ws.dockviewApi, clusterVersion]);
 
-  // In focused mode, actions operate on the active
-  // cluster's book. Resolve it from the lists the parent already passes; fall
-  // back to a stub if the book hasn't loaded yet so buttons remain clickable.
-  const isFocused = layoutMode === "focused";
-  const activeClusterId = isFocused ? getActiveClusterId() : null;
+  // Actions operate on the active cluster's book. Resolve it from the lists the
+  // parent already passes; fall back to a stub if the book hasn't loaded yet so
+  // buttons remain clickable.
+  const activeClusterId = getActiveClusterId();
   const activeClusterBook = useMemo(() => {
-    if (!isFocused || !activeClusterId) return null;
+    if (!activeClusterId) return null;
 
     const byId = new Map<string, BookMeta>();
     for (const b of openBooks) byId.set(b.id, b);
@@ -167,7 +159,7 @@ export function WorkspaceSidebar({
       title: entry.bookTitle,
       author: "",
     } as BookMeta;
-  }, [isFocused, activeClusterId, openBooks, otherBooks, getClusterEntries]);
+  }, [activeClusterId, openBooks, otherBooks, getClusterEntries]);
 
   function handleOpenSearch(book: BookMeta) {
     queueMicrotask(() => {
@@ -385,12 +377,6 @@ export function WorkspaceSidebar({
           <Settings className="size-4" />
           {!collapsed && <span>Settings</span>}
         </Link>
-
-        <LayoutModeSwitcher
-          layoutMode={layoutMode}
-          collapsed={collapsed}
-          onChange={(mode) => onUpdateSettings({ layoutMode: mode })}
-        />
 
         <div className={cn({ "order-first": collapsed })}>
           <TooltipProvider delay={300}>

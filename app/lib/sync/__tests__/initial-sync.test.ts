@@ -107,7 +107,7 @@ describe("runInitialSyncIfNeeded — settings backfill", () => {
         colorTheme: "nord",
         // UI fields that pre-split clients might still have in the legacy
         // blob — must NOT reach the change log.
-        layoutMode: "freeform",
+        zenMode: true,
         sidebarCollapsed: true,
         libraryView: "table",
         readerLayout: "spread",
@@ -132,7 +132,7 @@ describe("runInitialSyncIfNeeded — settings backfill", () => {
     expect(data).not.toHaveProperty("fontSize");
     expect(data).not.toHaveProperty("fontFamily");
     expect(data).not.toHaveProperty("lineHeight");
-    expect(data).not.toHaveProperty("layoutMode");
+    expect(data).not.toHaveProperty("zenMode");
     expect(data).not.toHaveProperty("sidebarCollapsed");
     expect(data).not.toHaveProperty("libraryView");
     expect(data).not.toHaveProperty("readerLayout");
@@ -145,7 +145,7 @@ describe("runInitialSyncIfNeeded — settings backfill", () => {
     localStorage.setItem(
       "app-settings",
       JSON.stringify({
-        layoutMode: "freeform",
+        zenMode: true,
         sidebarCollapsed: true,
         libraryView: "table",
         updatedAt: 100,
