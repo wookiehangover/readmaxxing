@@ -102,6 +102,7 @@ export default defineConfig({
     tailwindcss(),
     reactRouter(),
     VitePWA({
+      outDir: "build/client",
       registerType: "prompt",
       strategies: "generateSW",
       workbox: {
