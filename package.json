@@ -22,6 +22,7 @@
     "@react-router/node": "7.14.2",
     "@react-router/serve": "7.14.2",
     "@readmaxxing/epub-successor": "workspace:*",
+    "@shadcn/react": "^0.2.1",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.1",
     "@tailwindcss/typography": "^0.5.19",
