@@ -11,6 +11,7 @@ import {
   displayStoredCfiWithFallback,
   resolveTocNavigationTarget,
 } from "~/hooks/use-epub-lifecycle";
+import { logicalChapterIndex } from "~/lib/epub/successor-toc";
 import type { TocEntry } from "~/lib/context/reader-context";
 import { fuzzySearchEpubForCfi } from "~/lib/epub/epub-search";
 import { extractBookChapters } from "~/lib/epub/epub-text-extract";
@@ -113,6 +114,79 @@ describe("resolveTocNavigationTarget", () => {
       kind: "href",
       href: "OPS/text/chapter-2.xhtml",
     });
+  });
+});
+
+describe("logicalChapterIndex", () => {
+  const partsBook = createMockBook([
+    "OPS/cover.xhtml",
+    "OPS/part-1.xhtml",
+    "OPS/chapter-1.xhtml",
+    "OPS/chapter-2.xhtml",
+    "OPS/part-2.xhtml",
+    "OPS/chapter-3.xhtml",
+  ]);
+  const partsToc: TocEntry[] = [
+    {
+      label: "Part I",
+      href: "OPS/part-1.xhtml",
+      subitems: [
+        { label: "Chapter 1", href: "OPS/chapter-1.xhtml" },
+        { label: "Chapter 2", href: "OPS/chapter-2.xhtml" },
+      ],
+    },
+    {
+      label: "Part II",
+      href: "OPS/part-2.xhtml",
+      subitems: [{ label: "Chapter 3", href: "OPS/chapter-3.xhtml" }],
+    },
+  ];
+
+  it("counts only leaf chapters, matching extractBookChapters indexes", () => {
+    // "Part" containers must not consume chapter indexes: the chapter uploads
+    // use leaf entries, so counting parts here reports chapters ahead.
+    expect(logicalChapterIndex(partsToc, partsBook, 2)).toBe(0);
+    expect(logicalChapterIndex(partsToc, partsBook, 3)).toBe(1);
+    expect(logicalChapterIndex(partsToc, partsBook, 5)).toBe(2);
+  });
+
+  it("clamps positions before the first chapter start to chapter 0", () => {
+    expect(logicalChapterIndex(partsToc, partsBook, 0)).toBe(0);
+    expect(logicalChapterIndex(partsToc, partsBook, 1)).toBe(0);
+  });
+
+  it("ignores untitled TOC entries, matching the extraction title filter", () => {
+    const toc: TocEntry[] = [
+      { label: "  ", href: "OPS/cover.xhtml" },
+      { label: "Chapter 1", href: "OPS/chapter-1.xhtml" },
+    ];
+    expect(logicalChapterIndex(toc, partsBook, 2)).toBe(0);
+  });
+
+  it("falls back to the spine index when the TOC resolves nothing", () => {
+    expect(logicalChapterIndex([], partsBook, 4)).toBe(4);
+  });
+
+  it("agrees with extractBookChapters on the E2E fixture", async () => {
+    const data = await fixtureArrayBuffer();
+    const chapters = await extractBookChapters(data);
+    const provider = await openZipResourceProvider(data);
+    try {
+      const opened = await openPublication(provider);
+      const publication = opened.publication!;
+      const fixtureBook = createMockBook(publication.readingOrder.map((item) => item.href));
+      const fixtureToc = (await extractCompatibleToc(publication, provider)).map((entry) => ({
+        label: entry.title,
+        href: entry.href,
+      }));
+      for (const chapter of chapters) {
+        expect(logicalChapterIndex(fixtureToc, fixtureBook, chapter.spineStart)).toBe(
+          chapter.index,
+        );
+      }
+    } finally {
+      provider.close();
+    }
   });
 });
 

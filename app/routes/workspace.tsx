@@ -33,6 +33,7 @@ import { useFocusedMode } from "~/hooks/use-focused-mode";
 import { useWorkspaceLayout } from "~/hooks/use-workspace-layout";
 import { useWorkspacePanels } from "~/hooks/use-workspace-panels";
 import { useWorkspaceShortcuts } from "~/hooks/use-workspace-shortcuts";
+import { useOpenBookChapterUploads } from "~/hooks/use-open-book-chapter-uploads";
 import {
   Sheet,
   SheetContent,
@@ -199,6 +200,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     updateSettings,
     setOpenBookIds: setOpenBookIdsStable,
   });
+  useOpenBookChapterUploads(openBookIds);
 
   // Sync books to context ref so NewTabPanel (and other consumers) can read them.
   // Done in an effect so it happens after commit, not during render.

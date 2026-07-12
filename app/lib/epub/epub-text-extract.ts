@@ -164,6 +164,10 @@ export async function extractBookChapters(data: ArrayBuffer): Promise<BookChapte
       return buildFallbackChapters(spineTexts);
     }
 
+    // Keep the tocStarts position as the chapter index even when empty-text
+    // chapters are dropped: logicalChapterIndex (successor-toc.ts) derives the
+    // reader's current chapter from the same TOC start list, so compacting
+    // indexes here would report chapters ahead of the reader's position.
     const chapters = tocStarts
       .map((start, index): BookChapter | null => {
         const spineEnd = tocStarts[index + 1]?.spineStart ?? spineItems.length;
@@ -186,8 +190,7 @@ export async function extractBookChapters(data: ArrayBuffer): Promise<BookChapte
           spineEnd,
         };
       })
-      .filter((chapter): chapter is BookChapter => chapter !== null)
-      .map((chapter, index) => ({ ...chapter, index }));
+      .filter((chapter): chapter is BookChapter => chapter !== null);
 
     return chapters.length > 0 ? chapters : buildFallbackChapters(spineTexts);
   } finally {
