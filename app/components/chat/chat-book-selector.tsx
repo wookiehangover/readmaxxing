@@ -9,7 +9,14 @@ import {
   DropdownMenuLabel,
 } from "~/components/ui/dropdown-menu";
 import { cn } from "~/lib/utils";
-import type { BookSelection } from "./chat-panel";
+import type { BookMeta } from "~/lib/stores/book-store";
+
+export interface BookSelection {
+  openBooks: BookMeta[];
+  selectedBookIds: string[];
+  ownBookId: string;
+  onToggleBook: (id: string) => void;
+}
 
 /**
  * A dropdown checkbox row with a CIRCULAR indicator. We use the raw Base UI

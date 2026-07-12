@@ -3,7 +3,7 @@ import {
   convertToModelMessages,
   type UIMessage,
   tool,
-  stepCountIs,
+  isStepCount,
   createUIMessageStream,
   createUIMessageStreamResponse,
   generateId,
@@ -461,7 +461,7 @@ export async function action({ request }: Route.ActionArgs) {
     execute: async ({ writer }) => {
       const result = streamText({
         model: gateway("anthropic/claude-sonnet-4.6"),
-        system: buildSystemPrompt(systemPromptContext),
+        instructions: buildSystemPrompt(systemPromptContext),
         messages: await convertToModelMessages(originalMessages),
         tools: {
           web_search: anthropic.tools.webSearch_20250305(),
@@ -768,13 +768,13 @@ export async function action({ request }: Route.ActionArgs) {
         // of spending the last slot on another tool call.
         prepareStep: ({ stepNumber }) =>
           stepNumber >= MAX_CHAT_STEPS - 1 ? { activeTools: [] } : undefined,
-        stopWhen: stepCountIs(MAX_CHAT_STEPS),
+        stopWhen: isStepCount(MAX_CHAT_STEPS),
       });
 
       writer.merge(
         result.toUIMessageStream<UIMessage>({
           generateMessageId: generateId,
-          onFinish: async ({ responseMessage }) => {
+          onEnd: async ({ responseMessage }) => {
             // Retry: this is the only write of the assistant message, and the
             // client has already rendered the streamed text. A dropped write
             // here means the message silently vanishes on next reload.

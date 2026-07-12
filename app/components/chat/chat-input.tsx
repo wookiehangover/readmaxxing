@@ -1,5 +1,12 @@
 import { useCallback } from "react";
 import { Button } from "~/components/ui/button";
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentTitle,
+} from "~/components/ui/attachment";
 import { Loader2, X, ForwardIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 
@@ -68,20 +75,24 @@ export function ChatInput({
     <form onSubmit={handleSubmit} className="px-4 py-3">
       {highlightPreview ? (
         <div className="mb-2 flex">
-          <div className="flex max-w-[200px] items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
-            <span className="truncate">{highlightPreview}</span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-5 shrink-0 rounded-full"
-              onClick={onClearHighlightPill}
-              title="Remove highlighted text"
-            >
-              <X className="size-3" />
-              <span className="sr-only">Remove highlighted text</span>
-            </Button>
-          </div>
+          <Attachment size="xs" className="max-w-[200px] rounded-full border-0 bg-muted">
+            <AttachmentContent>
+              <AttachmentTitle className="font-normal text-muted-foreground">
+                {highlightPreview}
+              </AttachmentTitle>
+            </AttachmentContent>
+            <AttachmentActions>
+              <AttachmentAction
+                type="button"
+                className="rounded-full"
+                onClick={onClearHighlightPill}
+                title="Remove highlighted text"
+              >
+                <X />
+                <span className="sr-only">Remove highlighted text</span>
+              </AttachmentAction>
+            </AttachmentActions>
+          </Attachment>
         </div>
       ) : null}
       <div className="flex items-end gap-2">
