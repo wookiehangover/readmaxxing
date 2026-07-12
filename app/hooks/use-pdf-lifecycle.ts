@@ -266,7 +266,6 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       loadingTaskRef.current = loadingTask;
       const doc = await loadingTask.promise;
       if (cancelled) {
-        await loadingTask.destroy();
         return;
       }
       pdfDocRef.current = doc;

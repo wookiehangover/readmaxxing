@@ -304,7 +304,7 @@ export function useChatToolHandlers({
                   );
                 }
               } finally {
-                await loadingTask.destroy();
+                await loadingTask.destroy().catch(() => {});
               }
             } else {
               // Epub path

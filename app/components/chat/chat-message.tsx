@@ -113,7 +113,7 @@ function ChatMessageImpl({
                   return;
                 }
               } finally {
-                await loadingTask.destroy();
+                await loadingTask.destroy().catch(() => {});
               }
 
               // Fallback: navigate to chapter/page index

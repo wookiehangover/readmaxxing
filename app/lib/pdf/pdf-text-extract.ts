@@ -128,7 +128,7 @@ export async function extractPdfPageText(data: ArrayBuffer, pageNum: number): Pr
   } catch {
     return "";
   } finally {
-    await loadingTask.destroy();
+    await loadingTask.destroy().catch(() => {});
   }
 }
 
