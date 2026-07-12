@@ -15,7 +15,7 @@ export const DEMO_BOOK_METADATA = {
 } satisfies BookMeta;
 
 /** Chapter 3, as Nick sits with Jordan shortly before Gatsby introduces himself. */
-export const DEMO_READING_POSITION_CFI: PositionRecord["cfi"] =
+export const DEMO_POSITION_CFI: PositionRecord["cfi"] =
   "epubcfi(/6/16!/4/4/2[chapter-3]/122/1:31[ Baker. ,We were ])";
 
 export const DEMO_NOTEBOOK_CONTENT = {
