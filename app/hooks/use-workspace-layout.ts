@@ -241,16 +241,6 @@ export function useWorkspaceLayout({
           if (!mountedRef.current || restoreToken !== restoreTokenRef.current) {
             return;
           }
-          console.debug(
-            "[DBG onReady.resolve] layout=",
-            !!layout,
-            "focusedState=",
-            !!focusedState,
-            "panels=",
-            event.api.panels.map((p) => p.id),
-            "active=",
-            ws.activeClusterBookIdRef.current,
-          );
           restoreFocusedState(focusedState);
           const hasFocusedRestore = focusedOrderRef.current.length > 0;
           if (layout && !hasFocusedRestore) {

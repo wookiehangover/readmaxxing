@@ -94,18 +94,9 @@ export function useFocusedMode({
       // reconcile path will invoke us again (with lastSwappedRef primed)
       // once the map is populated.
       if (targetBookId !== null && !focusedClustersRef.current.has(targetBookId)) {
-        console.debug("[DBG swap] skip no-cluster", targetBookId);
         return;
       }
 
-      console.debug(
-        "[DBG swap] start target=",
-        targetBookId,
-        "panels=",
-        api.panels.map((p) => p.id),
-        "groups=",
-        api.groups.length,
-      );
       swapInProgressRef.current = true;
       try {
         // Remove every cluster-prefix panel whose bookId isn't the target.
@@ -121,10 +112,6 @@ export function useFocusedMode({
           if (typeof bId !== "string") return false;
           return bId !== targetBookId;
         });
-        console.debug(
-          "[DBG swap] removing=",
-          toRemove.map((p) => p.id),
-        );
         for (const p of toRemove) api.removePanel(p);
 
         if (!targetBookId) {
@@ -230,13 +217,6 @@ export function useFocusedMode({
         }
       } finally {
         swapInProgressRef.current = false;
-        const api2 = apiRef.current;
-        console.debug(
-          "[DBG swap] end panels=",
-          api2?.panels.map((p) => p.id),
-          "groups=",
-          api2?.groups.length,
-        );
       }
     },
     [apiRef, isMobileRef, focusedSplitRatioRef],
@@ -364,14 +344,6 @@ export function useFocusedMode({
   const enforceSingleFocusedCluster = useCallback(() => {
     const api = apiRef.current;
     if (!api) return;
-    console.debug(
-      "[DBG enforce] panels=",
-      api.panels.map((p) => p.id),
-      "active=",
-      ws.activeClusterBookIdRef.current,
-      "order=",
-      [...focusedOrderRef.current],
-    );
 
     // Group mounted panels by bookId.
     type PanelInfo = {

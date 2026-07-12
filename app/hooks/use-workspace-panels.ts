@@ -75,16 +75,6 @@ export function useWorkspacePanels({
 
       const isFirstCluster = focusedClustersRef.current.size === 0;
       const shouldAutoCollapse = isFirstCluster && !isMobileRef.current && !collapsedRef.current;
-      console.debug(
-        "[DBG openBook]",
-        book.id,
-        "isFirstCluster=",
-        isFirstCluster,
-        "shouldAutoCollapse=",
-        shouldAutoCollapse,
-        "collapsed=",
-        collapsedRef.current,
-      );
 
       const openPanels = () => {
         if (!focusedClustersRef.current.has(book.id)) {
