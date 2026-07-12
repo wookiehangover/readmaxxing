@@ -16,7 +16,7 @@ describe("mergeSettingsRecord — synced-key filtering", () => {
         fontSize: 120,
         // UI/layout fields that older clients may have written into the
         // server blob — these must never reach localStorage.
-        layoutMode: "freeform",
+        zenMode: true,
         sidebarCollapsed: true,
         libraryView: "table",
         readerLayout: "spread",
@@ -29,7 +29,7 @@ describe("mergeSettingsRecord — synced-key filtering", () => {
     const synced = JSON.parse(localStorage.getItem(SYNCED_KEY)!);
     expect(synced).toEqual({ theme: "dark", updatedAt: 1000 });
     expect(synced).not.toHaveProperty("fontSize");
-    expect(synced).not.toHaveProperty("layoutMode");
+    expect(synced).not.toHaveProperty("zenMode");
     expect(synced).not.toHaveProperty("sidebarCollapsed");
     expect(synced).not.toHaveProperty("libraryView");
     expect(synced).not.toHaveProperty("readerLayout");
@@ -40,14 +40,14 @@ describe("mergeSettingsRecord — synced-key filtering", () => {
   it("never reads or writes the local UI bucket", async () => {
     localStorage.setItem(
       LOCAL_UI_KEY,
-      JSON.stringify({ layoutMode: "freeform", sidebarCollapsed: true, libraryView: "table" }),
+      JSON.stringify({ zenMode: true, sidebarCollapsed: true, libraryView: "table" }),
     );
 
     await mergeSettingsRecord({
       settings: {
         theme: "dark",
         // Server blob also carries stale UI fields — must be ignored.
-        layoutMode: "focused",
+        zenMode: false,
         sidebarCollapsed: false,
       },
       updatedAt: 5000,
@@ -55,7 +55,7 @@ describe("mergeSettingsRecord — synced-key filtering", () => {
 
     const localUI = JSON.parse(localStorage.getItem(LOCAL_UI_KEY)!);
     expect(localUI).toEqual({
-      layoutMode: "freeform",
+      zenMode: true,
       sidebarCollapsed: true,
       libraryView: "table",
     });
@@ -85,7 +85,7 @@ describe("mergeSettingsRecord — synced-key filtering", () => {
     );
 
     await mergeSettingsRecord({
-      settings: { theme: "light", colorTheme: "default", fontSize: 100, layoutMode: "freeform" },
+      settings: { theme: "light", colorTheme: "default", fontSize: 100, zenMode: true },
       updatedAt: 100,
     });
 
@@ -101,7 +101,7 @@ describe("mergeSettingsRecord — synced-key filtering", () => {
 
   it("writes nothing observable from UI keys when remote carries only UI fields", async () => {
     await mergeSettingsRecord({
-      settings: { layoutMode: "freeform", sidebarCollapsed: true },
+      settings: { zenMode: true, sidebarCollapsed: true },
       updatedAt: 1000,
     });
 

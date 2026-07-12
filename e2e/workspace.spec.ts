@@ -11,9 +11,9 @@ const TEST_EPUB = resolve(__dirname, "fixtures/test-book.epub");
  * Returns once the book is visible in the current layout.
  *
  * Note: the upload flow auto-opens the first book and auto-collapses the
- * sidebar, so asserting on the sidebar entry is unreliable. Focused mode
- * hides the book-reader Dockview tab, so the ClusterBar pill is the visible
- * completion signal there; freeform keeps the tab.
+ * sidebar, so asserting on the sidebar entry is unreliable. The book-reader
+ * Dockview tab is hidden, so the ClusterBar pill is the visible completion
+ * signal.
  */
 async function uploadTestBook(page: Page) {
   // The sidebar has a hidden file input for epub uploads — use .first() since
@@ -24,17 +24,7 @@ async function uploadTestBook(page: Page) {
   const focusedPill = page
     .getByRole("tablist", { name: "Open books" })
     .getByRole("tab", { name: /Test Book for E2E/ });
-  const freeformTab = page.locator(".dv-default-tab", { hasText: "Test Book for E2E" }).first();
-  await expect
-    .poll(
-      async () =>
-        (await focusedPill
-          .first()
-          .isVisible()
-          .catch(() => false)) || (await freeformTab.isVisible().catch(() => false)),
-      { timeout: 15_000 },
-    )
-    .toBe(true);
+  await expect(focusedPill.first()).toBeVisible({ timeout: 15_000 });
 }
 
 /**

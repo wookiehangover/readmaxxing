@@ -33,7 +33,6 @@ const defaultSettings: Settings = {
   libraryView: "grid",
   pdfLayout: "fit-height",
   colorTheme: "default",
-  layoutMode: "focused",
   zenMode: false,
   focusedSplitRatio: FOCUSED_SPLIT_RATIO_DEFAULT,
 };
@@ -52,14 +51,14 @@ describe("getSettings", () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "dark" }));
     localStorage.setItem(
       LOCAL_UI_STORAGE_KEY,
-      JSON.stringify({ fontSize: 120, sidebarCollapsed: true, layoutMode: "freeform" }),
+      JSON.stringify({ fontSize: 120, sidebarCollapsed: true, libraryView: "table" }),
     );
     expect(getSettings()).toEqual({
       ...defaultSettings,
       theme: "dark",
       fontSize: 120,
       sidebarCollapsed: true,
-      layoutMode: "freeform",
+      libraryView: "table",
     });
   });
 
@@ -83,7 +82,7 @@ describe("legacy migration", () => {
         theme: "dark",
         fontSize: 120,
         sidebarCollapsed: true,
-        layoutMode: "freeform",
+        pdfLayout: "two-page",
         libraryView: "table",
         updatedAt: 1000,
       }),
@@ -92,7 +91,7 @@ describe("legacy migration", () => {
     expect(result.theme).toBe("dark");
     expect(result.fontSize).toBe(120);
     expect(result.sidebarCollapsed).toBe(true);
-    expect(result.layoutMode).toBe("freeform");
+    expect(result.pdfLayout).toBe("two-page");
     expect(result.libraryView).toBe("table");
 
     const syncedRaw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
@@ -106,7 +105,7 @@ describe("legacy migration", () => {
     const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(localRaw.fontSize).toBe(120);
     expect(localRaw.sidebarCollapsed).toBe(true);
-    expect(localRaw.layoutMode).toBe("freeform");
+    expect(localRaw.pdfLayout).toBe("two-page");
     expect(localRaw.libraryView).toBe("table");
   });
 
@@ -154,16 +153,16 @@ describe("legacy migration", () => {
   it("prefers existing local bucket values over legacy UI fields", () => {
     localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ theme: "dark", sidebarCollapsed: true, layoutMode: "freeform" }),
+      JSON.stringify({ theme: "dark", sidebarCollapsed: true, libraryView: "table" }),
     );
     localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ sidebarCollapsed: false }));
     getSettings();
     const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(localRaw.sidebarCollapsed).toBe(false);
-    expect(localRaw.layoutMode).toBe("freeform");
+    expect(localRaw.libraryView).toBe("table");
     const syncedRaw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
     expect(syncedRaw).not.toHaveProperty("sidebarCollapsed");
-    expect(syncedRaw).not.toHaveProperty("layoutMode");
+    expect(syncedRaw).not.toHaveProperty("libraryView");
   });
 });
 
@@ -215,10 +214,10 @@ describe("saveSettings", () => {
   });
 
   it("writes local UI fields to the local bucket without recording a change", () => {
-    saveSettings({ ...defaultSettings, sidebarCollapsed: true, layoutMode: "freeform" });
+    saveSettings({ ...defaultSettings, sidebarCollapsed: true, libraryView: "table" });
     const local = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(local.sidebarCollapsed).toBe(true);
-    expect(local.layoutMode).toBe("freeform");
+    expect(local.libraryView).toBe("table");
     for (const k of SYNCED_SETTINGS_KEYS) {
       expect(local).not.toHaveProperty(k);
     }
@@ -273,14 +272,14 @@ describe("saveSettings", () => {
       fontFamily: "Merriweather",
       fontSize: 110,
       sidebarCollapsed: true,
-      layoutMode: "freeform",
+      libraryView: "table",
     });
     const result = getSettings();
     expect(result.theme).toBe("light");
     expect(result.fontFamily).toBe("Merriweather");
     expect(result.fontSize).toBe(110);
     expect(result.sidebarCollapsed).toBe(true);
-    expect(result.layoutMode).toBe("freeform");
+    expect(result.libraryView).toBe("table");
 
     // Verify formatting preferences are stored locally, not synced
     const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);

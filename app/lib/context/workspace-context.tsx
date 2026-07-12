@@ -3,7 +3,6 @@ import type { DockviewApi } from "dockview";
 import type { TocEntry } from "~/lib/context/reader-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { JSONContent } from "@tiptap/react";
-import { getSettings } from "~/lib/settings";
 
 export interface NotebookEditorCallbacks {
   appendContent: (nodes: JSONContent[]) => void;
@@ -24,9 +23,8 @@ export interface NotebookEditorCallbacks {
 /**
  * A BookCluster is the canonical grouping of panels that belong to a single
  * book: the book reader on the left and the chat/notebook tabs on the right.
- * In focused mode exactly one cluster is visible; in freeform mode clusters
- * still exist as a logical grouping so link navigation can resolve "which
- * chat belongs to which book".
+ * Exactly one cluster is visible at a time; link navigation resolves "which
+ * chat belongs to which book" through this grouping.
  */
 export interface BookCluster {
   readonly bookPanelId: string;
@@ -54,10 +52,8 @@ export interface WorkspaceContextValue {
   /** Current books list */
   booksRef: React.MutableRefObject<BookMeta[]>;
   /**
-   * IDs of books that currently have an open panel, in the authoritative shape
-   * the workspace tracks for the active layout mode. In freeform mode this is
-   * the set of mounted `book-*` panels; in focused mode it is the full
-   * focused-order set (inactive focused clusters are unmounted, so dockview /
+   * IDs of books that currently have an open panel. This is the full
+   * focused-order set (inactive clusters are unmounted, so dockview /
    * `clustersRef` alone would only reflect the active cluster). Synced from
    * `workspace.tsx`; consumers re-read it on `subscribeClusterChanges`.
    */
@@ -120,12 +116,8 @@ export interface WorkspaceContextValue {
   setActiveCluster: (bookId: string | null) => void;
   /**
    * Route a cross-panel navigation through the cluster that owns `bookId`.
-   *
-   * - In focused mode: if `bookId` is not the active cluster, swap to it first
-   *   so the book-reader panel for this book becomes the mounted/visible one.
-   * - In freeform mode: focus the book-reader panel bound to the cluster so
-   *   the navigate call lands on the reader tied to the originating chat/notes,
-   *   not whichever reader happens to match by bookId scan first.
+   * If `bookId` is not the active cluster, swap to it first so the book-reader
+   * panel for this book becomes the mounted/visible one.
    *
    * After the panel is (re)activated, the book's registered navigate callback
    * is invoked with `target` (a CFI string for epub, `page:N` for PDF).
@@ -288,25 +280,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const navigateInCluster = useCallback(
     async (bookId: string, target: string): Promise<void> => {
-      const mode = getSettings().layoutMode;
-      if (mode === "focused") {
-        // Ensure the target book's cluster is the active one before navigating.
-        // The focused-mode layout owner reacts to this ref change by swapping
-        // the visible panels; `waitForNavForBook` then polls until the book
-        // reader has remounted and registered its navigate callback.
-        if (activeClusterBookIdRef.current !== bookId) {
-          setActiveCluster(bookId);
-        }
-      } else {
-        // Freeform: focus the book-reader panel bound to this book's cluster
-        // so the navigate call lands on the reader tied to the originating
-        // chat/notes panel, not whichever reader matches a global scan first.
-        const cluster = clustersRef.current.get(bookId);
-        const api = dockviewApi.current;
-        if (cluster && api) {
-          const panel = api.panels.find((p) => p.id === cluster.bookPanelId);
-          if (panel) panel.focus();
-        }
+      // Ensure the target book's cluster is the active one before navigating.
+      // The layout owner reacts to this ref change by swapping the visible
+      // panels; `waitForNavForBook` then polls until the book reader has
+      // remounted and registered its navigate callback.
+      if (activeClusterBookIdRef.current !== bookId) {
+        setActiveCluster(bookId);
       }
 
       const nav = await waitForNavForBook(bookId);

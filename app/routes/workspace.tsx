@@ -108,9 +108,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const prevZenModeRef = useRef(zenMode);
   const zenPreStateRef = useRef<ZenPreState | null>(null);
   const sortBy = settings.workspaceSortBy;
-  const layoutMode = settings.layoutMode;
-  const layoutModeRef = useRef(layoutMode);
-  layoutModeRef.current = layoutMode;
   const apiRef = useRef<DockviewApi | null>(null);
   // Track which books have TOC data via a version counter (triggers re-render)
   const [_tocVersion, setTocVersion] = useState(0);
@@ -155,7 +152,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     getClusterEntries,
     getActiveClusterId,
     enforceSingleFocusedCluster,
-  } = useFocusedMode({ apiRef, layoutMode, isMobileRef, focusedSplitRatioRef });
+  } = useFocusedMode({ apiRef, isMobileRef, focusedSplitRatioRef });
 
   // Load last-opened timestamps for sorting
   const { data: lastOpenedMap } = useEffectQuery(
@@ -187,8 +184,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     apiRef,
     ws,
     books,
-    layoutMode,
-    layoutModeRef,
     isMobile,
     isMobileRef,
     focusedSplitRatioRef,
@@ -276,7 +271,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   }, [zenMode, updateSettings]);
 
   const {
-    openLibrary,
     openBook,
     openNotebook,
     openChat,
@@ -289,7 +283,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     ws,
     isMobileRef,
     collapsedRef,
-    layoutModeRef,
     focusedClustersRef,
     focusedOrderRef,
     updateSettings,
@@ -350,13 +343,9 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   );
 
   const handleOpenLibrary = useCallback(() => {
-    if (layoutModeRef.current === "focused") {
-      activateFocusedLibrary();
-    } else {
-      openLibrary();
-    }
+    activateFocusedLibrary();
     setMobileOpen(false);
-  }, [activateFocusedLibrary, openLibrary]);
+  }, [activateFocusedLibrary]);
 
   // Sync context refs so child panels can open books/notebooks/chats and trigger uploads.
   useEffect(() => {
@@ -393,7 +382,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   const sidebarProps = {
     collapsed,
     sortBy,
-    layoutMode,
     books: sidebarBooks,
     openBooks,
     otherBooks,
@@ -466,7 +454,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
 
         {/* Dockview container — full width when sidebar is collapsed or on mobile */}
         <div className="flex flex-1 flex-col min-w-0">
-          {layoutMode === "focused" && !zenMode && (
+          {!zenMode && (
             <ClusterBar
               getEntries={getClusterEntries}
               getActiveId={getActiveClusterId}
@@ -482,8 +470,8 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
               watermarkComponent={WatermarkPanel}
               leftHeaderActionsComponent={LeftHeaderActions}
               onReady={onReady}
-              disableDnd={layoutMode === "focused"}
-              disableFloatingGroups={layoutMode === "focused"}
+              disableDnd
+              disableFloatingGroups
             />
           </div>
         </div>

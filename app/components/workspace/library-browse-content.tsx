@@ -99,11 +99,9 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
   const handleOpenBook = useCallback(
     (book: BookMeta) => {
       ws.openBookRef.current?.(book);
-      if (settings.layoutMode === "focused") {
-        panelApi?.close();
-      }
+      panelApi?.close();
     },
-    [panelApi, settings.layoutMode, ws],
+    [panelApi, ws],
   );
 
   const handleOpenNotebook = useCallback(

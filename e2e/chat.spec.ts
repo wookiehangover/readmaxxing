@@ -20,17 +20,7 @@ async function uploadTestBook(page: Page) {
   const focusedPill = page
     .getByRole("tablist", { name: "Open books" })
     .getByRole("tab", { name: new RegExp(BOOK_TITLE) });
-  const freeformTab = page.locator(".dv-default-tab", { hasText: BOOK_TITLE }).first();
-  await expect
-    .poll(
-      async () =>
-        (await focusedPill
-          .first()
-          .isVisible()
-          .catch(() => false)) || (await freeformTab.isVisible().catch(() => false)),
-      { timeout: 15_000 },
-    )
-    .toBe(true);
+  await expect(focusedPill.first()).toBeVisible({ timeout: 15_000 });
 }
 
 // Chapter text matches e2e/fixtures/create-test-epub.mjs. Used to seed the

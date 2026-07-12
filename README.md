@@ -38,9 +38,9 @@ A browser-based ebook and PDF reader. Drag and drop `.epub` or `.pdf` files (or 
 
 This repository is a pnpm workspace (`pnpm-workspace.yaml`).
 
-| Path | Package | Role |
-| ---- | ------- | ---- |
-| app root | `repo` | React Router web app |
+| Path                                                    | Package                       | Role                        |
+| ------------------------------------------------------- | ----------------------------- | --------------------------- |
+| app root                                                | `repo`                        | React Router web app        |
 | [`packages/epub-successor`](./packages/epub-successor/) | `@readmaxxing/epub-successor` | EPUB engine used by the app |
 
 The EPUB package is private (`workspace:*`). See its [README](./packages/epub-successor/README.md) for API usage, security model, and package-level scripts (`demo`, `e2e`, fixtures).
@@ -85,16 +85,16 @@ Migrations are in `database/migrations/` — apply them sequentially.
 
 ## Scripts
 
-| Command              | Description                                      |
-| -------------------- | ------------------------------------------------ |
-| `pnpm run dev`       | Start development server                         |
-| `pnpm run build`     | Production build                                 |
-| `pnpm run start`     | Serve production build                           |
-| `pnpm run typecheck` | React Router typegen + TypeScript check          |
-| `pnpm run lint`      | Lint with oxlint                                 |
-| `pnpm run format`    | Format with oxfmt (`app/`)                       |
-| `pnpm run test`      | Unit tests (Vitest)                              |
-| `pnpm run e2e`       | Playwright end-to-end tests                      |
+| Command              | Description                             |
+| -------------------- | --------------------------------------- |
+| `pnpm run dev`       | Start development server                |
+| `pnpm run build`     | Production build                        |
+| `pnpm run start`     | Serve production build                  |
+| `pnpm run typecheck` | React Router typegen + TypeScript check |
+| `pnpm run lint`      | Lint with oxlint                        |
+| `pnpm run format`    | Format with oxfmt (`app/`)              |
+| `pnpm run test`      | Unit tests (Vitest)                     |
+| `pnpm run e2e`       | Playwright end-to-end tests             |
 
 Package-scoped commands (from repo root):
 
@@ -106,12 +106,12 @@ pnpm vitest run packages/epub-successor
 
 ## Documentation
 
-| Doc | Contents |
-| --- | -------- |
-| [docs/architecture.md](./docs/architecture.md) | Workspace, storage, sync, chat, sharing |
-| [docs/effect-conventions.md](./docs/effect-conventions.md) | Effect.ts services and errors |
-| [packages/epub-successor/README.md](./packages/epub-successor/README.md) | EPUB engine API, security, scripts |
-| [AGENTS.md](./AGENTS.md) | Agent/developer conventions |
+| Doc                                                                      | Contents                                |
+| ------------------------------------------------------------------------ | --------------------------------------- |
+| [docs/architecture.md](./docs/architecture.md)                           | Workspace, storage, sync, chat, sharing |
+| [docs/effect-conventions.md](./docs/effect-conventions.md)               | Effect.ts services and errors           |
+| [packages/epub-successor/README.md](./packages/epub-successor/README.md) | EPUB engine API, security, scripts      |
+| [AGENTS.md](./AGENTS.md)                                                 | Agent/developer conventions             |
 
 ## Troubleshooting sync
 
