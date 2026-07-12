@@ -151,11 +151,8 @@ test.describe("Layout modes", () => {
     await expect(pills).toHaveCount(2);
     await expect(pills.nth(1)).toHaveAttribute("aria-selected", "true");
 
-    // Click outside any input to ensure activeElement is not editable.
-    await page
-      .locator(".dv-dockview")
-      .first()
-      .click({ position: { x: 10, y: 10 } });
+    // Focus a stable non-editable element before exercising the global shortcut.
+    await pills.nth(1).focus();
     await page.keyboard.press("Meta+1");
     await expect(pills.nth(0)).toHaveAttribute("aria-selected", "true", { timeout: 5_000 });
 
