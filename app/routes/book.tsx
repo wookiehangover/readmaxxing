@@ -8,8 +8,8 @@ import { PdfReader } from "~/components/pdf-reader";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 
-export function meta({ data }: Route.MetaArgs) {
-  const title = data?.book?.title ?? "Readmaxxing";
+export function meta({ loaderData }: Route.MetaArgs) {
+  const title = loaderData?.book?.title ?? "Readmaxxing";
   return [{ title: `${title} — Readmaxxing` }];
 }
 
