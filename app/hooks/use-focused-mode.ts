@@ -121,7 +121,10 @@ export function useFocusedMode({
           if (typeof bId !== "string") return false;
           return bId !== targetBookId;
         });
-        console.debug("[DBG swap] removing=", toRemove.map((p) => p.id));
+        console.debug(
+          "[DBG swap] removing=",
+          toRemove.map((p) => p.id),
+        );
         for (const p of toRemove) api.removePanel(p);
 
         if (!targetBookId) {
