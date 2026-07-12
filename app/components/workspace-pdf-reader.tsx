@@ -21,7 +21,7 @@ import { SearchBar } from "~/components/search-bar";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { cn } from "~/lib/utils";
 import { AppRuntime } from "~/lib/effect-runtime";
-import type { DockviewPanelApi } from "dockview";
+import type { DockviewPanelApi } from "dockview-react";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { usePdfSearch } from "~/hooks/use-pdf-search";

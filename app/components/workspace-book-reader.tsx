@@ -23,7 +23,7 @@ import { useHighlights } from "~/hooks/use-highlights";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { cn } from "~/lib/utils";
 import { registerThemeColors, injectThemeColors } from "~/lib/epub/epub-theme-utils";
-import type { DockviewPanelApi } from "dockview";
+import type { DockviewPanelApi } from "dockview-react";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";

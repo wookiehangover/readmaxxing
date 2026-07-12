@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Effect } from "effect";
-import type { DockviewApi, DockviewReadyEvent } from "dockview";
+import type { DockviewApi, DockviewReadyEvent } from "dockview-react";
 import type { FocusedCluster } from "~/hooks/use-focused-mode";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { clampFocusedSplitRatio, type Settings } from "~/lib/settings";
@@ -354,7 +354,7 @@ export function useWorkspaceLayout({
         event.api.onDidRemovePanel(updateOpenBooks),
         event.api.onDidAddPanel(rebuildClusters),
         event.api.onDidRemovePanel(rebuildClusters),
-        event.api.onDidActivePanelChange(updateActiveCluster),
+        event.api.onDidActivePanelChange(({ panel }) => updateActiveCluster(panel)),
         event.api.onDidAddPanel(saveLayout),
         event.api.onDidRemovePanel(saveLayout),
         event.api.onDidMovePanel(saveLayout),

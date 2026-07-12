@@ -1,7 +1,7 @@
 import { createStore, get, set, del, keys } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { Context, Effect, Layer, Schema } from "effect";
-import type { SerializedDockview } from "dockview";
+import type { SerializedDockview } from "dockview-react";
 import { WorkspaceError, DecodeError } from "~/lib/errors";
 
 // --- Schema ---

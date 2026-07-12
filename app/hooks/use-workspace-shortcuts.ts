@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { DockviewApi } from "dockview";
+import type { DockviewApi } from "dockview-react";
 import { isEditableElement } from "~/lib/dom-utils";
 import type { Settings } from "~/lib/settings";
 

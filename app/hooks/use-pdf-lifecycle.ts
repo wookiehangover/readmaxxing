@@ -95,6 +95,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   const [hasRestoredPosition, setHasRestoredPosition] = useState(false);
 
   const pdfDocRef = useRef<any>(null);
+  const loadingTaskRef = useRef<any>(null);
   const viewerRef = useRef<any>(null);
   const eventBusRef = useRef<any>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -262,9 +263,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       // Load PDF document
       const dataCopy = new Uint8Array(bookData).slice();
       const loadingTask = pdfjs.getDocument({ data: dataCopy });
+      loadingTaskRef.current = loadingTask;
       const doc = await loadingTask.promise;
       if (cancelled) {
-        await doc.destroy();
         return;
       }
       pdfDocRef.current = doc;
@@ -377,10 +378,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       }
       eventBusRef.current = null;
 
-      if (pdfDocRef.current) {
-        pdfDocRef.current.destroy().catch(() => {});
-        pdfDocRef.current = null;
-      }
+      loadingTaskRef.current?.destroy().catch(() => {});
+      loadingTaskRef.current = null;
+      pdfDocRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, bookId, flushPositionSave, panelId]);

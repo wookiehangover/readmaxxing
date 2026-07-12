@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { IDockviewPanelProps } from "dockview";
+import type { IDockviewPanelProps } from "dockview-react";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { StandardEbooksBrowser } from "~/components/standard-ebooks-browser";

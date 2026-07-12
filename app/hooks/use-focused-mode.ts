@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import type { DockviewApi, AddPanelPositionOptions } from "dockview";
+import type { DockviewApi, AddPanelPositionOptions } from "dockview-react";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { isEditableElement } from "~/lib/dom-utils";
 import { truncateTitle } from "~/lib/workspace-utils";
