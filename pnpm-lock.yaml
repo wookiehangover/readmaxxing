@@ -92,6 +92,9 @@ importers:
       effect:
         specifier: ^3.21.4
         version: 3.21.4
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       idb-keyval:
         specifier: ^6.3.0
         version: 6.3.0
