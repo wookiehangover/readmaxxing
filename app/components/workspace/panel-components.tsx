@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { Effect } from "effect";
-import type { IDockviewPanelProps } from "dockview";
+import type { IDockviewPanelProps } from "dockview-react";
 import {
   WorkspaceBookReader,
   type PanelTypographyParams,

@@ -1,4 +1,4 @@
-import type { IDockviewPanelProps } from "dockview";
+import type { IDockviewPanelProps } from "dockview-react";
 import { LibraryBrowseContent } from "~/components/workspace/library-browse-content";
 
 export function NewTabPanel({ api }: IDockviewPanelProps<Record<string, never>>) {

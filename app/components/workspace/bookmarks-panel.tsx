@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Effect } from "effect";
-import type { IDockviewPanelProps } from "dockview";
+import type { IDockviewPanelProps } from "dockview-react";
 import { Bookmark as BookmarkIcon, MoreHorizontal, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {

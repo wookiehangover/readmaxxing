@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { IDockviewHeaderActionsProps } from "dockview";
+import type { IDockviewHeaderActionsProps } from "dockview-react";
 import { Plus } from "lucide-react";
 import { useSettings } from "~/lib/settings";
 import { useWorkspace } from "~/lib/context/workspace-context";

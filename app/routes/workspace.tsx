@@ -5,7 +5,7 @@ import {
   type IDockviewPanelProps,
   type DockviewApi,
   type DockviewTheme,
-} from "dockview";
+} from "dockview-react";
 import { PanelLeft, X } from "lucide-react";
 import type { Route } from "./+types/workspace";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";

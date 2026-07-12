@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import type { DockviewPanelApi } from "dockview";
+import type { DockviewPanelApi } from "dockview-react";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import {

@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { Effect } from "effect";
-import type { AddPanelPositionOptions, DockviewApi } from "dockview";
+import type { AddPanelPositionOptions, DockviewApi } from "dockview-react";
 import type { FocusedCluster } from "~/hooks/use-focused-mode";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";

@@ -1,5 +1,5 @@
 import { createContext, useContext, useRef, useCallback, useMemo, type ReactNode } from "react";
-import type { DockviewApi } from "dockview";
+import type { DockviewApi } from "dockview-react";
 import type { TocEntry } from "~/lib/context/reader-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { JSONContent } from "@tiptap/react";
