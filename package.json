@@ -42,7 +42,7 @@
     "idb-keyval": "^6.3.0",
     "isbot": "^5.2.0",
     "linkedom": "^0.18.13",
-    "lucide-react": "^0.577.0",
+    "lucide-react": "^1.24.0",
     "markdown-it": "^14.3.0",
     "nanoid": "^5.1.16",
     "pdfjs-dist": "^5.7.284",
