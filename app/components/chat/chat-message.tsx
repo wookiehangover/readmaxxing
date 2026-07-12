@@ -104,7 +104,8 @@ function ChatMessageImpl({
               const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
               pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href;
               const dataCopy = new Uint8Array(data).slice();
-              const doc = await pdfjs.getDocument({ data: dataCopy }).promise;
+              const loadingTask = pdfjs.getDocument({ data: dataCopy });
+              const doc = await loadingTask.promise;
               try {
                 const results = await searchPdf(doc, queryStr);
                 if (results.length > 0) {
@@ -112,7 +113,7 @@ function ChatMessageImpl({
                   return;
                 }
               } finally {
-                await doc.destroy();
+                await loadingTask.destroy();
               }
 
               // Fallback: navigate to chapter/page index

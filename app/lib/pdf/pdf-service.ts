@@ -108,7 +108,7 @@ export const PdfServiceLive = Layer.succeed(PdfService, {
             coverImage,
           } satisfies PdfMetadata;
         } finally {
-          await doc.destroy();
+          await loadingTask.destroy();
         }
       },
       catch: (cause) => new PdfParseError({ operation: "parsePdf", cause }),

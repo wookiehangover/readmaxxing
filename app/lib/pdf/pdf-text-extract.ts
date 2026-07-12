@@ -1,4 +1,8 @@
-import type { PDFDocumentProxy, TextItem } from "pdfjs-dist/types/src/display/api";
+import type {
+  PDFDocumentLoadingTask,
+  PDFDocumentProxy,
+  TextItem,
+} from "pdfjs-dist/types/src/display/api";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
 
 /**
@@ -25,6 +29,7 @@ async function ensurePdfWorker() {
 export async function extractPdfChapters(data: ArrayBuffer): Promise<BookChapter[]> {
   const chapters: BookChapter[] = [];
   let doc: PDFDocumentProxy | null = null;
+  let loadingTask: PDFDocumentLoadingTask | null = null;
   let failedPages = 0;
   let firstFailure: unknown = null;
   let totalPages = 0;
@@ -35,7 +40,7 @@ export async function extractPdfChapters(data: ArrayBuffer): Promise<BookChapter
 
     // Clone data so pdfjs doesn't detach the caller's ArrayBuffer
     const dataCopy = new Uint8Array(data).slice();
-    const loadingTask = pdfjs.getDocument({ data: dataCopy });
+    loadingTask = pdfjs.getDocument({ data: dataCopy });
     doc = await loadingTask.promise;
     totalPages = doc.numPages;
 
@@ -71,11 +76,11 @@ export async function extractPdfChapters(data: ArrayBuffer): Promise<BookChapter
     // Worker init / getDocument / unexpected crash — return whatever we have
     console.warn("PDF chapter extraction aborted early:", err);
   } finally {
-    if (doc) {
+    if (loadingTask) {
       try {
-        await doc.destroy();
+        await loadingTask.destroy();
       } catch (err) {
-        console.warn("Failed to destroy pdfjs document:", err);
+        console.warn("Failed to destroy pdfjs loading task:", err);
       }
     }
   }
@@ -123,7 +128,7 @@ export async function extractPdfPageText(data: ArrayBuffer, pageNum: number): Pr
   } catch {
     return "";
   } finally {
-    await doc.destroy();
+    await loadingTask.destroy();
   }
 }
 
