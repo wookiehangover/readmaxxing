@@ -178,10 +178,10 @@ pretext-layout → isolated; never authoritative for layout or locators
 
 Run from the package directory or via `pnpm --filter @readmaxxing/epub-successor`:
 
-| Command | Description |
-| --- | --- |
-| pnpm demo | Vite demo at /demo/ with fixture selector |
-| pnpm e2e | Playwright tests for this package |
+| Command             | Description                                |
+| ------------------- | ------------------------------------------ |
+| pnpm demo           | Vite demo at /demo/ with fixture selector  |
+| pnpm e2e            | Playwright tests for this package          |
 | pnpm fixtures:build | Rebuild fixture .epub files from fixtures/ |
 
 From the monorepo root:
@@ -208,12 +208,12 @@ Full threat model: [docs/SECURITY.md](./docs/SECURITY.md).
 
 ## Documentation
 
-| Document | Purpose |
-| --- | --- |
-| docs/ARCHITECTURE.md | Module boundaries, state machine, resource lifecycle |
-| docs/SECURITY.md | Trust boundaries, threats, content policy |
-| docs/SUPPORT_MATRIX.md | Feature × browser support matrix |
-| docs/ADR/ | Accepted architecture decisions |
+| Document               | Purpose                                              |
+| ---------------------- | ---------------------------------------------------- |
+| docs/ARCHITECTURE.md   | Module boundaries, state machine, resource lifecycle |
+| docs/SECURITY.md       | Trust boundaries, threats, content policy            |
+| docs/SUPPORT_MATRIX.md | Feature × browser support matrix                     |
+| docs/ADR/              | Accepted architecture decisions                      |
 
 ## App integration
 

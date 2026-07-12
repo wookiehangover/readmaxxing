@@ -8,7 +8,7 @@ The main route (`app/routes/workspace.tsx`) is a [dockview](https://dockview.dev
 
 - **Panel types** (`app/components/workspace/`): book reader, chat, notebook, bookmarks, reading history, new-tab, Standard Ebooks browser, watermark (empty state).
 - **Book clusters**: a reader panel plus its chat/notebook tabs form a logical "cluster" (`BookCluster` in `app/lib/context/workspace-context.tsx`) so link navigation can resolve which chat/notebook belongs to which book.
-- **Layout modes** (`layoutMode` in settings): `focused` (one cluster visible, book/right-group split by `focusedSplitRatio`) and `freeform` (all panels mounted). Switching modes mounts/unmounts panels.
+- **Layout**: a single focused layout — one cluster visible at a time, with the book/right-group split controlled by `focusedSplitRatio`. Inactive clusters are unmounted and remounted on activation.
 - Workspace state lives in `app/lib/stores/workspace-store.ts`; layout/panel logic in `app/hooks/use-workspace-*.ts`.
 
 ## Client-side only

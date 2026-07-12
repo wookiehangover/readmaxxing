@@ -7,7 +7,6 @@ export type ReaderLayout = "single" | "spread" | "scroll";
 export type PdfLayout = "original" | "fit-height" | "fit-width" | "two-page" | "continuous";
 export type WorkspaceSortBy = "title" | "author" | "recent";
 export type LibraryView = "grid" | "table";
-export type LayoutMode = "focused" | "freeform";
 export type TextAlign = "left" | "center" | "right" | "justify" | undefined;
 
 // --- Schema ---
@@ -70,9 +69,6 @@ export const LocalUISettingsSchema = Schema.Struct({
   workspaceSortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), {
     default: () => "recent" as const,
   }),
-  layoutMode: Schema.optionalWith(Schema.Literal("focused", "freeform"), {
-    default: () => "focused" as const,
-  }),
   /**
    * Fraction of the focused-mode workspace allocated to the book-reader group
    * (the right-side chat/notebook group gets `1 - focusedSplitRatio`). Single
@@ -117,7 +113,6 @@ export const LOCAL_UI_SETTINGS_KEYS = [
   "sidebarCollapsed",
   "libraryView",
   "workspaceSortBy",
-  "layoutMode",
   "focusedSplitRatio",
   "fontFamily",
   "fontSize",
@@ -144,7 +139,6 @@ const defaultSettings: Settings = {
   workspaceSortBy: "recent",
   libraryView: "grid",
   colorTheme: "default",
-  layoutMode: "focused",
   focusedSplitRatio: FOCUSED_SPLIT_RATIO_DEFAULT,
 };
 

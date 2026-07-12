@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type { DockviewApi, DockviewReadyEvent } from "dockview";
 import type { FocusedCluster } from "~/hooks/use-focused-mode";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { clampFocusedSplitRatio, type LayoutMode, type Settings } from "~/lib/settings";
+import { clampFocusedSplitRatio, type Settings } from "~/lib/settings";
 import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { useWorkspace } from "~/lib/context/workspace-context";
@@ -38,8 +38,6 @@ export interface UseWorkspaceLayoutParams {
   readonly apiRef: React.MutableRefObject<DockviewApi | null>;
   readonly ws: WorkspaceContext;
   readonly books: BookMeta[];
-  readonly layoutMode: LayoutMode;
-  readonly layoutModeRef: React.MutableRefObject<LayoutMode>;
   readonly isMobile: boolean | undefined;
   readonly isMobileRef: React.MutableRefObject<boolean | undefined>;
   readonly focusedSplitRatioRef: React.MutableRefObject<number>;
@@ -61,8 +59,6 @@ export function useWorkspaceLayout({
   apiRef,
   ws,
   books,
-  layoutMode,
-  layoutModeRef,
   isMobile,
   isMobileRef,
   focusedSplitRatioRef,
@@ -79,9 +75,6 @@ export function useWorkspaceLayout({
   const focusedStateSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusedRatioSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disposablesRef = useRef<Array<{ dispose: () => void }>>([]);
-  const prevLayoutModeRef = useRef(layoutMode);
-  const modeSwitchInProgressRef = useRef(false);
-  const modeSwitchTokenRef = useRef(0);
   const restoreTokenRef = useRef(0);
   const mountedRef = useRef(true);
   const flushFocusedStateRef = useRef<() => void>(() => {});
@@ -89,8 +82,8 @@ export function useWorkspaceLayout({
   // restore resolves, `focusedOrderRef` is empty/partial; saving in that window
   // would clobber the persisted multi-book focused state with an empty one.
   const layoutReadyRef = useRef(false);
-  // `onReady` and the mode-switch effect intentionally omit `books` from their
-  // deps; read the current book ids through a ref to avoid stale closures.
+  // `onReady` intentionally omits `books` from its deps; read the current book
+  // ids through a ref to avoid stale closures.
   const existingBookIdsRef = useRef(new Set<string>());
   existingBookIdsRef.current = new Set(books.map((b) => b.id));
 
@@ -137,36 +130,31 @@ export function useWorkspaceLayout({
   );
 
   const flushFocusedState = useCallback(() => {
-    if (layoutModeRef.current !== "focused") return;
     // Don't persist before the initial restore completes — the cluster refs are
     // still empty/partial and would overwrite the saved multi-book state.
     if (!layoutReadyRef.current) return;
     AppRuntime.runPromise(
       WorkspaceService.pipe(Effect.andThen((s) => s.saveFocusedState(serializeFocusedState()))),
     ).catch(console.error);
-  }, [layoutModeRef, serializeFocusedState]);
+  }, [serializeFocusedState]);
 
   const saveFocusedState = useCallback(() => {
-    if (layoutModeRef.current !== "focused") return;
     if (focusedStateSaveTimerRef.current) clearTimeout(focusedStateSaveTimerRef.current);
     focusedStateSaveTimerRef.current = setTimeout(() => {
       focusedStateSaveTimerRef.current = null;
       flushFocusedState();
     }, FOCUSED_STATE_SAVE_DEBOUNCE_MS);
-  }, [flushFocusedState, layoutModeRef]);
+  }, [flushFocusedState]);
 
   useEffect(() => {
     flushFocusedStateRef.current = flushFocusedState;
   }, [flushFocusedState]);
 
   const flushLayout = useCallback(() => {
-    if (modeSwitchInProgressRef.current) return;
     const api = apiRef.current;
     if (!api) return;
     AppRuntime.runPromise(
-      WorkspaceService.pipe(
-        Effect.andThen((s) => s.saveLayout(prevLayoutModeRef.current, api.toJSON())),
-      ),
+      WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(api.toJSON()))),
     ).catch(console.error);
   }, [apiRef]);
 
@@ -177,8 +165,7 @@ export function useWorkspaceLayout({
 
   const captureFocusedRatio = useCallback(() => {
     if (isMobileRef.current) return;
-    if (layoutModeRef.current !== "focused") return;
-    if (swapInProgressRef.current || modeSwitchInProgressRef.current) return;
+    if (swapInProgressRef.current) return;
     const api = apiRef.current;
     if (!api) return;
 
@@ -213,7 +200,6 @@ export function useWorkspaceLayout({
     focusedSplitRatioRef,
     getActiveClusterId,
     isMobileRef,
-    layoutModeRef,
     swapInProgressRef,
     updateSettings,
   ]);
@@ -224,47 +210,49 @@ export function useWorkspaceLayout({
 
     for (const group of api.groups) {
       const isFocusedBookGroup =
-        layoutModeRef.current === "focused" &&
         !isMobileRef.current &&
         group.panels.length === 1 &&
         (group.panels[0]?.id.startsWith("book-") || group.panels[0]?.id === "new-tab");
       group.element.classList.toggle(FOCUSED_BOOK_GROUP_CLASS, isFocusedBookGroup);
     }
-  }, [apiRef, isMobileRef, layoutModeRef]);
+  }, [apiRef, isMobileRef]);
 
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
       apiRef.current = event.api;
       ws.dockviewApi.current = event.api;
 
-      const mode = layoutModeRef.current;
       const restoreToken = ++restoreTokenRef.current;
       Promise.all([
         AppRuntime.runPromise(
           WorkspaceService.pipe(
-            Effect.andThen((s) => s.getLayout(mode)),
+            Effect.andThen((s) => s.getLayout()),
             Effect.catchAll(() => Effect.succeed(null)),
           ),
         ),
-        mode === "focused"
-          ? AppRuntime.runPromise(
-              WorkspaceService.pipe(
-                Effect.andThen((s) => s.getFocusedState()),
-                Effect.catchAll(() => Effect.succeed(null)),
-              ),
-            )
-          : Promise.resolve(null),
+        AppRuntime.runPromise(
+          WorkspaceService.pipe(
+            Effect.andThen((s) => s.getFocusedState()),
+            Effect.catchAll(() => Effect.succeed(null)),
+          ),
+        ),
       ])
         .then(([layout, focusedState]) => {
-          if (
-            !mountedRef.current ||
-            restoreToken !== restoreTokenRef.current ||
-            mode !== layoutModeRef.current
-          ) {
+          if (!mountedRef.current || restoreToken !== restoreTokenRef.current) {
             return;
           }
-          if (mode === "focused") restoreFocusedState(focusedState);
-          const hasFocusedRestore = mode === "focused" && focusedOrderRef.current.length > 0;
+          console.debug(
+            "[DBG onReady.resolve] layout=",
+            !!layout,
+            "focusedState=",
+            !!focusedState,
+            "panels=",
+            event.api.panels.map((p) => p.id),
+            "active=",
+            ws.activeClusterBookIdRef.current,
+          );
+          restoreFocusedState(focusedState);
+          const hasFocusedRestore = focusedOrderRef.current.length > 0;
           if (layout && !hasFocusedRestore) {
             try {
               event.api.fromJSON(layout);
@@ -273,9 +261,7 @@ export function useWorkspaceLayout({
               console.error("Failed to restore dockview layout:", err);
             }
           }
-          if (mode === "focused") {
-            enforceSingleFocusedCluster();
-          }
+          enforceSingleFocusedCluster();
           updateFocusedBookGroupChrome();
           layoutReadyRef.current = true;
           setLayoutReady(true);
@@ -396,7 +382,6 @@ export function useWorkspaceLayout({
       enforceSingleFocusedCluster,
       focusedClustersRef,
       focusedOrderRef,
-      layoutModeRef,
       restoreFocusedState,
       saveLayout,
       setOpenBookIds,
@@ -408,19 +393,17 @@ export function useWorkspaceLayout({
 
   useEffect(() => {
     updateFocusedBookGroupChrome();
-  }, [layoutMode, isMobile, updateFocusedBookGroupChrome]);
+  }, [isMobile, updateFocusedBookGroupChrome]);
 
   useEffect(() => {
-    if (layoutMode !== "focused") return;
     return ws.subscribeClusterChanges(saveFocusedState);
-  }, [layoutMode, saveFocusedState, ws]);
+  }, [saveFocusedState, ws]);
 
   useEffect(() => {
-    if (layoutMode !== "focused") return;
     const syncFocusedOpenBooks = () => setOpenBookIds(new Set(focusedOrderRef.current));
     syncFocusedOpenBooks();
     return ws.subscribeClusterChanges(syncFocusedOpenBooks);
-  }, [focusedOrderRef, layoutMode, setOpenBookIds, ws]);
+  }, [focusedOrderRef, setOpenBookIds, ws]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -454,72 +437,6 @@ export function useWorkspaceLayout({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [flushFocusedState, flushLayout]);
-
-  useEffect(() => {
-    const prevMode = prevLayoutModeRef.current;
-    if (prevMode === layoutMode) return;
-
-    const api = apiRef.current;
-    if (!api) {
-      prevLayoutModeRef.current = layoutMode;
-      restoreTokenRef.current += 1;
-      return;
-    }
-
-    const token = ++modeSwitchTokenRef.current;
-    restoreTokenRef.current += 1;
-    modeSwitchInProgressRef.current = true;
-    prevLayoutModeRef.current = layoutMode;
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-
-    const doSwap = async () => {
-      try {
-        await AppRuntime.runPromise(
-          WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(prevMode, api.toJSON()))),
-        ).catch(console.error);
-        if (prevMode === "focused") {
-          if (focusedStateSaveTimerRef.current) {
-            clearTimeout(focusedStateSaveTimerRef.current);
-            focusedStateSaveTimerRef.current = null;
-          }
-          await AppRuntime.runPromise(
-            WorkspaceService.pipe(
-              Effect.andThen((s) => s.saveFocusedState(serializeFocusedState())),
-            ),
-          ).catch(console.error);
-        }
-        if (token !== modeSwitchTokenRef.current) return;
-
-        if (layoutMode === "focused") {
-          enforceSingleFocusedCluster();
-        } else {
-          const saved = await AppRuntime.runPromise(
-            WorkspaceService.pipe(
-              Effect.andThen((s) => s.getLayout(layoutMode)),
-              Effect.catchAll(() => Effect.succeed(null)),
-            ),
-          );
-          if (token !== modeSwitchTokenRef.current) return;
-          if (saved) {
-            try {
-              api.fromJSON(saved);
-              removeOrphanedPanels(api, existingBookIdsRef.current);
-            } catch (err) {
-              console.error("Failed to restore dockview layout for mode:", layoutMode, err);
-            }
-          }
-        }
-      } finally {
-        if (token === modeSwitchTokenRef.current) {
-          modeSwitchInProgressRef.current = false;
-        }
-      }
-    };
-    doSwap();
-  }, [apiRef, enforceSingleFocusedCluster, layoutMode, serializeFocusedState]);
 
   useEffect(() => {
     mountedRef.current = true;

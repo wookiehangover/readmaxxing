@@ -79,7 +79,6 @@ export function BugReportDialog({
 
     return {
       route: typeof window === "undefined" ? null : window.location.pathname,
-      layoutMode: settings.layoutMode,
       zenMode: settings.zenMode,
       colorTheme: settings.colorTheme,
       theme: settings.theme,
