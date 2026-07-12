@@ -3,13 +3,13 @@ import type { UIMessage } from "@ai-sdk/react";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { useSyncListener } from "~/hooks/use-sync-listener";
-import { uploadChaptersOnce } from "~/lib/chat/upload-chapters";
 import { useAuth } from "~/lib/context/auth-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
 import { BookService } from "~/lib/stores/book-store";
 import { ChatService } from "~/lib/stores/chat-store";
+import { ensureBookChaptersUploaded } from "~/lib/sync/book-chapter-uploads";
 import { ChatPanelInner } from "./chat-panel-inner";
 import { toUIMessages, uiMessagesToChatMessages } from "./chat-utils";
 
@@ -127,11 +127,17 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
         bookDataRef.current = bookData;
         setBookFormat(book.format);
+        if (chapters.length > 0) {
+          try {
+            await ensureBookChaptersUploaded(bookId, { chapters, format: book.format });
+          } catch (error) {
+            console.error("Failed to upload chapters for chat context:", error);
+          }
+        }
+        if (cancelled) return;
+
         setBookContext({ title: book.title, author: book.author, chapters });
         setInitialMessages(toUIMessages(savedMessages));
-        if (chapters.length > 0) {
-          uploadChaptersOnce(bookId, chapters, book.format).catch(console.error);
-        }
       } catch (error) {
         if (!cancelled) {
           console.error("Failed to load chat data:", error);

@@ -1,6 +1,6 @@
 import { createStore, get, set } from "idb-keyval";
 
-const CHAPTER_UPLOAD_CACHE_VERSION = 2;
+const CHAPTER_UPLOAD_CACHE_VERSION = 3;
 
 /**
  * Tracks which books have had their extracted chapter text uploaded
