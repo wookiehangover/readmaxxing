@@ -197,7 +197,7 @@ export function WorkspaceSidebar({
           </button>
         ) : (
           <div className="flex grow items-center gap-0.5">
-            <p className="font-stretch-50% font-light grow text-xs select-none">readmaxxing</p>
+            <p className="font-stretch-50% font-light grow text-xs select-none">Readmaxxing</p>
             <button
               type="button"
               onClick={() => ws.fileInputRef.current?.click()}
