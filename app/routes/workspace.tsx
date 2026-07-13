@@ -35,7 +35,7 @@ import { useWorkspacePanels } from "~/hooks/use-workspace-panels";
 import { useWorkspaceShortcuts } from "~/hooks/use-workspace-shortcuts";
 import { useOpenBookChapterUploads } from "~/hooks/use-open-book-chapter-uploads";
 import { useDemoOnboarding } from "~/hooks/use-demo-onboarding";
-import { isFirstVisit, seedDemo } from "~/lib/onboarding/demo-seed";
+import { hasDemoOnboardingState, isFirstVisit, seedDemo } from "~/lib/onboarding/demo-seed";
 import {
   Sheet,
   SheetContent,
@@ -57,7 +57,7 @@ export function meta(_args: Route.MetaArgs) {
 export async function clientLoader() {
   const demoBook = (await isFirstVisit()) ? await seedDemo() : null;
   const books = await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())));
-  return { books, demoBook };
+  return { books, demoBook, demoActive: hasDemoOnboardingState() };
 }
 
 clientLoader.hydrate = true as const;
@@ -470,7 +470,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
           <div className="flex flex-1 flex-col min-w-0">
             {!zenMode && (
               <ClusterBar
-                demoActive={loaderData.demoBook !== null}
+                demoActive={loaderData.demoActive}
                 getEntries={getClusterEntries}
                 getActiveId={getActiveClusterId}
                 onActivate={(bookId) => ws.setActiveCluster(bookId)}

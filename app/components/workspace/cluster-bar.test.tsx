@@ -11,6 +11,7 @@ vi.mock("~/components/bug-report-dialog", () => ({
 }));
 
 import { ClusterBarActions } from "~/components/workspace/cluster-bar";
+import { hasDemoOnboardingState } from "~/lib/onboarding/demo-seed";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -32,6 +33,7 @@ function renderActions(demoActive = true) {
 beforeEach(() => {
   auth.isAuthenticated = false;
   auth.isLoading = false;
+  window.localStorage.clear();
 });
 
 afterEach(() => {
@@ -47,6 +49,17 @@ describe("ClusterBarActions", () => {
 
     expect(login?.textContent).toBe("Log in");
     expect(login?.className).toContain("bg-blue-600");
+    expect(container.querySelector('[aria-label="Open book"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Need help?"]')).toBeNull();
+  });
+
+  it("keeps the login link after reload when the demo book is not seeded again", () => {
+    const demoBook = null;
+    window.localStorage.setItem("demo-onboarding", "complete");
+
+    const container = renderActions(demoBook !== null || hasDemoOnboardingState());
+
+    expect(container.querySelector('a[href="/login"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Open book"]')).toBeNull();
     expect(container.querySelector('[aria-label="Need help?"]')).toBeNull();
   });

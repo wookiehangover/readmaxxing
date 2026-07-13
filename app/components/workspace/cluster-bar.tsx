@@ -15,7 +15,7 @@ export interface ClusterBarEntry {
 }
 
 interface ClusterBarProps {
-  /** Whether this workspace load seeded the logged-out demo. */
+  /** Whether this browser has persisted demo-onboarding state. */
   readonly demoActive: boolean;
   /** Ordered list of open cluster book IDs (session-scoped). */
   readonly getEntries: () => ClusterBarEntry[];
