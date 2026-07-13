@@ -13,6 +13,7 @@ import { BookService } from "~/lib/stores/book-store";
 import { ChatService } from "~/lib/stores/chat-store";
 import { ensureBookChaptersUploaded } from "~/lib/sync/book-chapter-uploads";
 import { ChatPanelInner } from "./chat-panel-inner";
+import { resolvePendingChatMessage, type ChatIntent } from "./chat-intent";
 import { toUIMessages, uiMessagesToChatMessages } from "./chat-utils";
 
 interface ChatPanelProps {
@@ -62,6 +63,8 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const [sessionTitle, setSessionTitle] = useState("");
   const [sessionKey, setSessionKey] = useState(0);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [pendingChatIntent, setPendingChatIntent] = useState<ChatIntent>({ type: "none" });
+  const [resumeAfterAuth, setResumeAfterAuth] = useState(false);
   const bookDataRef = useRef<ArrayBuffer | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef("");
@@ -261,9 +264,39 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     setSessionKey((key) => key + 1);
   }, [bookId]);
 
-  const openOnboarding = useCallback(() => setOnboardingOpen(true), []);
+  const openOnboarding = useCallback((intent: ChatIntent) => {
+    setPendingChatIntent(intent);
+    setResumeAfterAuth(false);
+    setOnboardingOpen(true);
+  }, []);
+  const handleOnboardingOpenChange = useCallback((open: boolean) => {
+    setOnboardingOpen(open);
+    if (!open) {
+      setPendingChatIntent({ type: "none" });
+      setResumeAfterAuth(false);
+    }
+  }, []);
+  const handleAuthenticated = useCallback(() => {
+    const typedText = textareaRef.current?.value.trim();
+    if (typedText) {
+      setPendingChatIntent((intent) =>
+        resolvePendingChatMessage(intent) ? intent : { type: "typed", text: typedText },
+      );
+    }
+    setResumeAfterAuth(true);
+    setOnboardingOpen(false);
+  }, []);
+  const handleResumeComplete = useCallback(() => {
+    setPendingChatIntent({ type: "none" });
+    setResumeAfterAuth(false);
+  }, []);
   const isLoggedOutDemoBook = !isAuthenticated && bookId === DEMO_BOOK_ID;
   const isLoggedOutDemoSession = isLoggedOutDemoBook && activeSessionId === DEMO_CHAT_SESSION.id;
+  const pendingMessage = resolvePendingChatMessage(pendingChatIntent);
+
+  useEffect(() => {
+    if (isAuthenticated && resumeAfterAuth && pendingMessage === null) handleResumeComplete();
+  }, [handleResumeComplete, isAuthenticated, pendingMessage, resumeAfterAuth]);
 
   if (authLoading) {
     return (
@@ -337,9 +370,17 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
           setChatMessagesRef.current = setMessages;
         }}
         onChatInteraction={isLoggedOutDemoSession ? openOnboarding : undefined}
+        resumeMessage={
+          isAuthenticated && resumeAfterAuth ? (pendingMessage ?? undefined) : undefined
+        }
+        onResumeComplete={handleResumeComplete}
       />
       {isLoggedOutDemoSession && (
-        <OnboardingDialog open={onboardingOpen} onOpenChange={setOnboardingOpen} />
+        <OnboardingDialog
+          open={onboardingOpen}
+          onOpenChange={handleOnboardingOpenChange}
+          onAuthenticated={handleAuthenticated}
+        />
       )}
     </>
   );
