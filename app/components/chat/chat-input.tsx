@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { Button } from "~/components/ui/button";
 import {
   Attachment,
@@ -46,28 +46,25 @@ export function ChatInput({
       })()
     : null;
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (onInteraction) {
-        e.preventDefault();
-        e.currentTarget.blur();
-        onInteraction({ type: "typed", text: inputRef.current });
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-        e.preventDefault();
-        const form = e.currentTarget.form;
-        form?.requestSubmit();
-      }
-    },
-    [inputRef, onInteraction],
-  );
+  // When gated, we passively open the onboarding dialog once on the first
+  // focus/click so the user sees the CTA, then let subsequent focus and typing
+  // flow through untouched. Submit always re-opens with the current text.
+  const passiveOpenGuardRef = useRef(false);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      const form = e.currentTarget.form;
+      form?.requestSubmit();
+    }
+  }, []);
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       if (onInteraction) {
         e.preventDefault();
-        onInteraction({ type: "typed", text: inputRef.current });
+        const currentValue = textareaRef.current?.value ?? inputRef.current;
+        onInteraction({ type: "typed", text: currentValue });
         return;
       }
       if (highlightText) {
@@ -85,7 +82,7 @@ export function ChatInput({
         onClearHighlightPill?.();
       }
     },
-    [highlightText, inputRef, onClearHighlightPill, onInteraction, onSubmit],
+    [highlightText, inputRef, onClearHighlightPill, onInteraction, onSubmit, textareaRef],
   );
 
   return (
@@ -122,25 +119,20 @@ export function ChatInput({
           )}
           placeholder={`Ask about ${bookTitle}...`}
           onPointerDown={(e) => {
-            if (onInteraction) e.preventDefault();
+            if (onInteraction && !passiveOpenGuardRef.current) e.preventDefault();
           }}
-          onClick={(e) => {
-            if (!onInteraction) return;
-            e.preventDefault();
-            e.currentTarget.blur();
+          onClick={() => {
+            if (!onInteraction || passiveOpenGuardRef.current) return;
+            passiveOpenGuardRef.current = true;
             onInteraction({ type: "none" });
           }}
-          onFocus={(e) => {
-            if (!onInteraction) return;
-            e.currentTarget.blur();
+          onFocus={() => {
+            if (!onInteraction || passiveOpenGuardRef.current) return;
+            passiveOpenGuardRef.current = true;
             onInteraction({ type: "none" });
           }}
           onChange={(e) => {
             inputRef.current = e.target.value;
-            if (onInteraction) {
-              onInteraction({ type: "typed", text: e.target.value });
-              return;
-            }
           }}
           onKeyDown={handleKeyDown}
           disabled={isLoading}

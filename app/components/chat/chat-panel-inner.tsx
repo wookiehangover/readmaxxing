@@ -17,6 +17,7 @@ import { ChatSessionList, EditableTitle, SessionMenuButton } from "./chat-sessio
 import { createChatTransport } from "./chat-utils";
 import { useChatToolHandlers } from "./use-chat-tool-handlers";
 import { useOpenBooks } from "./use-open-books";
+import { useResumeMessage } from "./use-resume-message";
 import { useStreamingAppend } from "./use-streaming-append";
 
 export function ChatPanelInner({
@@ -293,27 +294,15 @@ export function ChatPanelInner({
   });
 
   const isLoading = status === "streaming" || status === "submitted";
-  const resumedMessageRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!resumeMessage) {
-      resumedMessageRef.current = null;
-      return;
-    }
-    if (onChatInteraction || isLoading || resumedMessageRef.current === resumeMessage) return;
-    resumedMessageRef.current = resumeMessage;
-    inputRef.current = "";
-    if (textareaRef.current) textareaRef.current.value = "";
-    void sendMessage({ text: resumeMessage });
-    onResumeComplete?.();
-  }, [
-    inputRef,
-    isLoading,
-    onChatInteraction,
-    onResumeComplete,
+  useResumeMessage({
     resumeMessage,
+    isLoading,
+    gated: Boolean(onChatInteraction),
     sendMessage,
+    onResumeComplete,
+    inputRef,
     textareaRef,
-  ]);
+  });
   const messageIdSet = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   const handleSendMessage = useCallback(
     (message: { text: string }) => {

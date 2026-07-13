@@ -149,6 +149,47 @@ describe("adoptDemoContent", () => {
     });
   });
 
+  it("mints a fresh id for the demo session when a user chat already exists", async () => {
+    const USER_SESSION_ID = "44444444-4444-4444-8444-444444444444";
+    const userSession = {
+      id: USER_SESSION_ID,
+      bookId: DEMO_BOOK_ID,
+      title: "My own chat",
+      messages: [],
+      createdAt: 200,
+      updatedAt: 200,
+    };
+    await Promise.all([
+      set(DEMO_BOOK_ID, [DEMO_CHAT_SESSION, userSession], getChatSessionStore()),
+      set(DEMO_BOOK_ID, USER_SESSION_ID, getActiveSessionStore()),
+    ]);
+    mocks.push.mockImplementation(async () => acceptedSinceLastPush());
+
+    const adopted = await adoptDemoContent("user-2");
+
+    expect(adopted.sessionId).toBe(USER_SESSION_ID);
+    const savedSessions = await get<{ id: string; bookId: string }[]>(
+      ADOPTED_BOOK_ID,
+      getChatSessionStore(),
+    );
+    const ids = savedSessions?.map((session) => session.id) ?? [];
+    expect(ids).toContain(USER_SESSION_ID);
+    expect(ids).toContain(ADOPTED_SESSION_ID);
+    expect(ids).not.toContain(DEMO_CHAT_SESSION.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const sessionChanges = recorded.filter((entry) => entry.entity === "chat_session");
+    const changeIds = sessionChanges.map((entry) => entry.entityId);
+    // Two sessions × two push cycles (initial + canonical) = 4 change entries,
+    // and none should reuse the demo session id or collide within a cycle.
+    expect(sessionChanges).toHaveLength(4);
+    expect(changeIds).not.toContain(DEMO_CHAT_SESSION.id);
+    const uniquePerSession = changeIds.filter((id) => id === ADOPTED_SESSION_ID);
+    expect(uniquePerSession).toHaveLength(2);
+    const uniquePerUser = changeIds.filter((id) => id === USER_SESSION_ID);
+    expect(uniquePerUser).toHaveLength(2);
+    expect(await get(ADOPTED_BOOK_ID, getActiveSessionStore())).toBe(USER_SESSION_ID);
+  });
+
   it("re-records dependents under a server-deduplicated canonical book id", async () => {
     mocks.push.mockImplementation(async () => {
       if (pushedCount === 0) {

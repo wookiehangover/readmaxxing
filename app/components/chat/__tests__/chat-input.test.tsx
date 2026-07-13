@@ -73,7 +73,7 @@ describe("ChatInput", () => {
     act(() => root.unmount());
   });
 
-  it("routes focus, typing, and submit through the interaction gate", () => {
+  it("passively gates focus once, allows typing, and captures the value on submit", () => {
     const container = document.body.appendChild(document.createElement("div"));
     const root = createRoot(container);
     const textareaRef = createRef<HTMLTextAreaElement>();
@@ -98,15 +98,53 @@ describe("ChatInput", () => {
     const textarea = textareaRef.current!;
     act(() => textarea.focus());
     expect(onInteraction).toHaveBeenCalledOnce();
+    expect(onInteraction).toHaveBeenLastCalledWith({ type: "none" });
 
-    act(() => changeTextarea(textarea, "Blocked message"));
-    expect(inputRef.current).toBe("Blocked message");
-    expect(textarea.value).toBe("Blocked message");
+    act(() => changeTextarea(textarea, "Typed message"));
+    expect(inputRef.current).toBe("Typed message");
+    expect(textarea.value).toBe("Typed message");
+    expect(onInteraction).toHaveBeenCalledOnce();
+
+    act(() => textarea.focus());
+    expect(onInteraction).toHaveBeenCalledOnce();
 
     const form = container.querySelector("form")!;
     act(() => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
-    expect(onInteraction).toHaveBeenCalledTimes(3);
+    expect(onInteraction).toHaveBeenCalledTimes(2);
+    expect(onInteraction).toHaveBeenLastCalledWith({ type: "typed", text: "Typed message" });
     expect(onSubmit).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
+  it("does not preventDefault or blur on keystrokes when gated", () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(container);
+    const textareaRef = createRef<HTMLTextAreaElement>();
+    const inputRef = { current: "" };
+    const onInteraction = vi.fn();
+
+    act(() => {
+      root.render(
+        <ChatInput
+          bookTitle="The Great Gatsby"
+          textareaRef={textareaRef}
+          inputRef={inputRef}
+          isLoading={false}
+          onSubmit={vi.fn()}
+          onStop={vi.fn()}
+          onInteraction={onInteraction}
+        />,
+      );
+    });
+
+    const textarea = textareaRef.current!;
+    act(() => textarea.focus());
+    expect(document.activeElement).toBe(textarea);
+
+    const keyEvent = new KeyboardEvent("keydown", { key: "a", bubbles: true, cancelable: true });
+    act(() => textarea.dispatchEvent(keyEvent));
+    expect(keyEvent.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(textarea);
     act(() => root.unmount());
   });
 

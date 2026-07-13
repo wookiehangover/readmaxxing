@@ -306,7 +306,9 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       );
       setResumeAfterAuth(false);
     } finally {
-      setOnboardingOpen(false);
+      // Defer the close so the dialog's own async cleanup (setLoadingAction, etc.)
+      // commits before the dialog unmounts, avoiding a setState-on-unmounted warning.
+      queueMicrotask(() => setOnboardingOpen(false));
     }
   }, []);
   const handleResumeComplete = useCallback(() => {
@@ -406,7 +408,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         }
         onResumeComplete={handleResumeComplete}
       />
-      {isLoggedOutDemoSession && (
+      {(onboardingOpen || isLoggedOutDemoSession) && (
         <OnboardingDialog
           open={onboardingOpen}
           onOpenChange={handleOnboardingOpenChange}
