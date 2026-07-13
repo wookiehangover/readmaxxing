@@ -343,7 +343,7 @@ describe("successor position compatibility", () => {
     }
   });
 
-  it("searches fixture text and returns a standard CFI", async () => {
+  it("searches fixture text and returns range CFIs covering every match", async () => {
     const data = await fixtureArrayBuffer();
     const provider = await openZipResourceProvider(data);
     try {
@@ -352,6 +352,15 @@ describe("successor position compatibility", () => {
       const book = createSuccessorBookAdapter(opened.publication!, provider);
       const directResults = await book.spine.get(1)!.find("elephant");
       expect(directResults[0]?.excerpt).toContain("elephant");
+      // Range CFIs (base,start,end) — not collapsed points — so search
+      // results render as highlight decorations over the matched text.
+      expect(directResults[0]?.cfi).toMatch(/^epubcfi\(.*,.*,.*\)$/);
+
+      const repeated = await book.spine.get(1)!.find("the");
+      expect(repeated.length).toBeGreaterThan(1);
+      for (const result of repeated) {
+        expect(result.cfi).toMatch(/^epubcfi\(.*,.*,.*\)$/);
+      }
     } finally {
       provider.close();
     }
