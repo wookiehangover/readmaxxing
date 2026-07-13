@@ -9,6 +9,7 @@ import {
 } from "~/components/ui/attachment";
 import { Loader2, X, ForwardIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
+import type { ChatIntent } from "./chat-intent";
 
 const HIGHLIGHT_PILL_PREVIEW_WORDS = 5;
 
@@ -31,7 +32,7 @@ export function ChatInput({
   onStop: () => void;
   highlightPill?: { text: string; pageLabel: string };
   onClearHighlightPill?: () => void;
-  onInteraction?: () => void;
+  onInteraction?: (intent: ChatIntent) => void;
 }) {
   const highlightText = highlightPill?.text?.trim();
   const highlightPreview = highlightText
@@ -50,7 +51,7 @@ export function ChatInput({
       if (onInteraction) {
         e.preventDefault();
         e.currentTarget.blur();
-        onInteraction();
+        onInteraction({ type: "typed", text: inputRef.current });
         return;
       }
       if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -59,14 +60,14 @@ export function ChatInput({
         form?.requestSubmit();
       }
     },
-    [onInteraction],
+    [inputRef, onInteraction],
   );
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       if (onInteraction) {
         e.preventDefault();
-        onInteraction();
+        onInteraction({ type: "typed", text: inputRef.current });
         return;
       }
       if (highlightText) {
@@ -127,21 +128,19 @@ export function ChatInput({
             if (!onInteraction) return;
             e.preventDefault();
             e.currentTarget.blur();
-            onInteraction();
+            onInteraction({ type: "none" });
           }}
           onFocus={(e) => {
             if (!onInteraction) return;
             e.currentTarget.blur();
-            onInteraction();
+            onInteraction({ type: "none" });
           }}
           onChange={(e) => {
+            inputRef.current = e.target.value;
             if (onInteraction) {
-              e.currentTarget.value = "";
-              inputRef.current = "";
-              onInteraction();
+              onInteraction({ type: "typed", text: e.target.value });
               return;
             }
-            inputRef.current = e.target.value;
           }}
           onKeyDown={handleKeyDown}
           disabled={isLoading}

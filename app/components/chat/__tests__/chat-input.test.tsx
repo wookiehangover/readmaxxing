@@ -100,8 +100,8 @@ describe("ChatInput", () => {
     expect(onInteraction).toHaveBeenCalledOnce();
 
     act(() => changeTextarea(textarea, "Blocked message"));
-    expect(inputRef.current).toBe("");
-    expect(textarea.value).toBe("");
+    expect(inputRef.current).toBe("Blocked message");
+    expect(textarea.value).toBe("Blocked message");
 
     const form = container.querySelector("form")!;
     act(() => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));

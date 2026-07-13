@@ -11,6 +11,7 @@ import {
 import { ChatService } from "~/lib/stores/chat-store";
 import { ChatBookSelector, type BookSelection } from "./chat-book-selector";
 import { ChatInput } from "./chat-input";
+import type { ChatIntent } from "./chat-intent";
 import { ChatMessageList, type BookAnnotation } from "./chat-message-list";
 import { ChatSessionList, EditableTitle, SessionMenuButton } from "./chat-session-menu";
 import { createChatTransport } from "./chat-utils";
@@ -33,6 +34,8 @@ export function ChatPanelInner({
   onSessionTitleChange,
   onRegisterSetMessages,
   onChatInteraction,
+  resumeMessage,
+  onResumeComplete,
 }: {
   bookId: string;
   bookTitle: string;
@@ -47,7 +50,9 @@ export function ChatPanelInner({
   onNewSession: () => void;
   onSessionTitleChange: (title: string) => void;
   onRegisterSetMessages?: (fn: (messages: UIMessage[]) => void) => void;
-  onChatInteraction?: () => void;
+  onChatInteraction?: (intent: ChatIntent) => void;
+  resumeMessage?: string;
+  onResumeComplete?: () => void;
 }) {
   const workspace = useOptionalWorkspace();
   const fallbackChatContextMap = useRef(
@@ -288,11 +293,32 @@ export function ChatPanelInner({
   });
 
   const isLoading = status === "streaming" || status === "submitted";
+  const resumedMessageRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!resumeMessage) {
+      resumedMessageRef.current = null;
+      return;
+    }
+    if (onChatInteraction || isLoading || resumedMessageRef.current === resumeMessage) return;
+    resumedMessageRef.current = resumeMessage;
+    inputRef.current = "";
+    if (textareaRef.current) textareaRef.current.value = "";
+    void sendMessage({ text: resumeMessage });
+    onResumeComplete?.();
+  }, [
+    inputRef,
+    isLoading,
+    onChatInteraction,
+    onResumeComplete,
+    resumeMessage,
+    sendMessage,
+    textareaRef,
+  ]);
   const messageIdSet = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   const handleSendMessage = useCallback(
     (message: { text: string }) => {
       if (onChatInteraction) {
-        onChatInteraction();
+        onChatInteraction({ type: "suggested", text: message.text });
         return;
       }
       void sendMessage(message);
@@ -303,7 +329,7 @@ export function ChatPanelInner({
     (event: React.FormEvent) => {
       event.preventDefault();
       if (onChatInteraction) {
-        onChatInteraction();
+        onChatInteraction({ type: "typed", text: inputRef.current });
         return;
       }
       const text = inputRef.current.trim();
