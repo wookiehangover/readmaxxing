@@ -120,6 +120,15 @@ export function ChatInput({
             "field-sizing-content max-h-[6lh] min-h-10",
           )}
           placeholder={`Ask about ${bookTitle}...`}
+          onPointerDown={(e) => {
+            if (onInteraction) e.preventDefault();
+          }}
+          onClick={(e) => {
+            if (!onInteraction) return;
+            e.preventDefault();
+            e.currentTarget.blur();
+            onInteraction();
+          }}
           onFocus={(e) => {
             if (!onInteraction) return;
             e.currentTarget.blur();

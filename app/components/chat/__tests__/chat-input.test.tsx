@@ -1,6 +1,8 @@
-import React, { act, createRef } from "react";
+import React, { act, createRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { OnboardingDialog } from "~/components/onboarding/onboarding-dialog";
 import { ChatInput } from "../chat-input";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -15,7 +17,62 @@ function changeTextarea(textarea: HTMLTextAreaElement, value: string) {
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function GatedChatInputWithDialog({
+  textareaRef,
+  onInteraction,
+}: {
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+  onInteraction: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <ChatInput
+        bookTitle="The Great Gatsby"
+        textareaRef={textareaRef}
+        inputRef={{ current: "" }}
+        isLoading={false}
+        onSubmit={vi.fn()}
+        onStop={vi.fn()}
+        onInteraction={() => {
+          onInteraction();
+          setOpen(true);
+        }}
+      />
+      <OnboardingDialog open={open} onOpenChange={setOpen} />
+    </>
+  );
+}
+
 describe("ChatInput", () => {
+  it("keeps the onboarding dialog open after a pointer click", () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(container);
+    const textareaRef = createRef<HTMLTextAreaElement>();
+    const onInteraction = vi.fn();
+
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <GatedChatInputWithDialog textareaRef={textareaRef} onInteraction={onInteraction} />
+        </MemoryRouter>,
+      );
+    });
+
+    const textarea = textareaRef.current!;
+    const pointerDown = new Event("pointerdown", { bubbles: true, cancelable: true });
+    act(() => textarea.dispatchEvent(pointerDown));
+    expect(pointerDown.defaultPrevented).toBe(true);
+    expect(onInteraction).not.toHaveBeenCalled();
+    if (!pointerDown.defaultPrevented) act(() => textarea.focus());
+    act(() => textarea.dispatchEvent(new Event("pointerup", { bubbles: true })));
+    act(() => textarea.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    expect(onInteraction).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    act(() => root.unmount());
+  });
+
   it("routes focus, typing, and submit through the interaction gate", () => {
     const container = document.body.appendChild(document.createElement("div"));
     const root = createRoot(container);
