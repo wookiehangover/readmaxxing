@@ -24,7 +24,10 @@ let demoFetchOk = true;
 
 beforeAll(async () => {
   const bytes = await readFile("public/demo/the-great-gatsby.epub");
-  demoEpub = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  demoEpub = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
 });
 
 afterAll(() => vi.unstubAllGlobals());
