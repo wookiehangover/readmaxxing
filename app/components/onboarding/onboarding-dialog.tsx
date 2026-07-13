@@ -39,31 +39,32 @@ export function OnboardingDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAuthenticated?: () => void;
+  onAuthenticated?: (userId: string) => void | Promise<void>;
 }) {
   const { refreshAuth } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const [loadingAction, setLoadingAction] = useState<"register" | "signin" | null>(null);
+  const [loadingAction, setLoadingAction] = useState<"register" | "signin" | "setup" | null>(null);
   const isLoading = loadingAction !== null;
 
   useEffect(() => {
     if (!open) setError(null);
   }, [open]);
 
-  const finishAuth = () => {
-    refreshAuth();
-    if (onAuthenticated) onAuthenticated();
+  const finishAuth = async (userId: string) => {
+    setLoadingAction("setup");
+    if (onAuthenticated) await onAuthenticated(userId);
     else onOpenChange(false);
+    refreshAuth();
   };
 
   async function handleRegister() {
     setError(null);
     setLoadingAction("register");
     try {
-      await AppRuntime.runPromise(
+      const result = await AppRuntime.runPromise(
         AuthService.pipe(Effect.andThen((service) => service.register("Reader"))),
       );
-      finishAuth();
+      await finishAuth(result.userId);
     } catch (authError: unknown) {
       console.error("Register failed:", authError);
       setError(extractErrorMessage(authError, "Registration failed. Please try again."));
@@ -76,8 +77,11 @@ export function OnboardingDialog({
     setError(null);
     setLoadingAction("signin");
     try {
-      await AppRuntime.runPromise(AuthService.pipe(Effect.andThen((service) => service.signIn())));
-      finishAuth();
+      const result = await AppRuntime.runPromise(
+        AuthService.pipe(Effect.andThen((service) => service.signIn())),
+      );
+      if (!result.user) throw new Error("Sign-in completed without a user account.");
+      await finishAuth(result.user.id);
     } catch (authError: unknown) {
       console.error("Sign-in failed:", authError);
       setError(extractErrorMessage(authError, "Sign-in failed. Please try again."));
@@ -105,6 +109,12 @@ export function OnboardingDialog({
         {error && (
           <p className="text-sm text-destructive" role="alert">
             {error}
+          </p>
+        )}
+        {loadingAction === "setup" && (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+            <Loader2 className="size-4 animate-spin" />
+            Setting up your library…
           </p>
         )}
         <DialogFooter>
