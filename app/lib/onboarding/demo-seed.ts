@@ -21,8 +21,12 @@ import { getActiveSessionStore, getChatSessionStore } from "~/lib/sync/stores";
 const ONBOARDING_FLAG = "demo-onboarding";
 const DEMO_EPUB_URL = "/demo/the-great-gatsby.epub";
 
+export function hasDemoOnboardingState(): boolean {
+  return typeof window !== "undefined" && window.localStorage.getItem(ONBOARDING_FLAG) !== null;
+}
+
 export async function isFirstVisit(): Promise<boolean> {
-  if (typeof window === "undefined" || window.localStorage.getItem(ONBOARDING_FLAG) !== null) {
+  if (typeof window === "undefined" || hasDemoOnboardingState()) {
     return false;
   }
 
