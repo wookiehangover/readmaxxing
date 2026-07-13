@@ -34,6 +34,8 @@ import { useWorkspaceLayout } from "~/hooks/use-workspace-layout";
 import { useWorkspacePanels } from "~/hooks/use-workspace-panels";
 import { useWorkspaceShortcuts } from "~/hooks/use-workspace-shortcuts";
 import { useOpenBookChapterUploads } from "~/hooks/use-open-book-chapter-uploads";
+import { useDemoOnboarding } from "~/hooks/use-demo-onboarding";
+import { hasDemoOnboardingState, isFirstVisit, seedDemo } from "~/lib/onboarding/demo-seed";
 import {
   Sheet,
   SheetContent,
@@ -41,7 +43,6 @@ import {
   SheetTitle,
   SheetDescription,
 } from "~/components/ui/sheet";
-
 export function meta(_args: Route.MetaArgs) {
   return [
     { title: "Readmaxxing" },
@@ -54,15 +55,16 @@ export function meta(_args: Route.MetaArgs) {
 }
 
 export async function clientLoader() {
+  const demoBook = (await isFirstVisit()) ? await seedDemo() : null;
   const books = await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())));
-  return { books };
+  return { books, demoBook, demoActive: hasDemoOnboardingState() };
 }
 
 clientLoader.hydrate = true as const;
 
 export function HydrateFallback() {
   return (
-    <div className="flex h-dvh items-center justify-center">
+    <div className="fixed inset-0 z-50 flex h-dvh items-center justify-center">
       <p className="text-muted-foreground">Loading workspace…</p>
     </div>
   );
@@ -288,6 +290,17 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
     updateSettings,
   });
 
+  const demoBootstrapReady = useDemoOnboarding({
+    demoBook: loaderData.demoBook,
+    layoutReady,
+    sidebarCollapsed: collapsed,
+    updateSettings,
+    openBook,
+    openChat,
+    openNotebook,
+  });
+  const workspaceReady = layoutReady && demoBootstrapReady;
+
   // Wrap setBooks to also update booksRef and notify booksChangeListener.
   // Both the ref mutation and listener notification happen in a queueMicrotask
   // AFTER the setBooks call, so they don't run during another component's
@@ -413,69 +426,72 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
   };
 
   return (
-    <DropZone onBookAdded={handleBookAdded}>
-      <div
-        className={cn(
-          "flex h-dvh",
-          layoutReady ? "animate-in fade-in-0 duration-300" : "opacity-0",
-          { "zen-mode": zenMode },
-        )}
-      >
-        {/* Desktop sidebar — hidden on mobile */}
-        {isMobile !== true && !zenMode && <WorkspaceSidebar {...sidebarProps} />}
-
-        {/* Mobile floating pill + sheet sidebar */}
-        {isMobile === true && !zenMode && (
-          <>
-            <button
-              type="button"
-              onClick={() => setMobileOpen((prev) => !prev)}
-              className={cn(
-                "fixed bottom-12 right-2 z-50 flex items-center justify-center rounded-full border border-border/50 bg-card/80 p-4 text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-card hover:text-foreground active:bg-accent",
-                {
-                  "z-[60]": mobileOpen,
-                },
-              )}
-              aria-label={mobileOpen ? "Close sidebar" : "Open sidebar"}
-            >
-              {mobileOpen ? <X className="size-4" /> : <PanelLeft className="size-4" />}
-            </button>
-            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-              <SheetContent side="left" className="w-75 p-0" showCloseButton={false}>
-                <SheetHeader className="sr-only">
-                  <SheetTitle>Library</SheetTitle>
-                  <SheetDescription>Book library navigation</SheetDescription>
-                </SheetHeader>
-                <WorkspaceSidebar {...sidebarProps} collapsed={false} />
-              </SheetContent>
-            </Sheet>
-          </>
-        )}
-
-        {/* Dockview container — full width when sidebar is collapsed or on mobile */}
-        <div className="flex flex-1 flex-col min-w-0">
-          {!zenMode && (
-            <ClusterBar
-              getEntries={getClusterEntries}
-              getActiveId={getActiveClusterId}
-              onActivate={(bookId) => ws.setActiveCluster(bookId)}
-              onClose={closeFocusedCluster}
-              onReorder={reorderFocusedClusters}
-            />
+    <>
+      {loaderData.demoBook && !workspaceReady && <HydrateFallback />}
+      <DropZone onBookAdded={handleBookAdded}>
+        <div
+          className={cn(
+            "flex h-dvh",
+            workspaceReady ? "animate-in fade-in-0 duration-300" : "opacity-0",
+            { "zen-mode": zenMode },
           )}
-          <div className="flex-1 min-h-0">
-            <DockviewReact
-              theme={dockviewTheme}
-              components={components}
-              watermarkComponent={WatermarkPanel}
-              leftHeaderActionsComponent={LeftHeaderActions}
-              onReady={onReady}
-              disableDnd
-              disableFloatingGroups
-            />
+        >
+          {/* Desktop sidebar — hidden on mobile */}
+          {isMobile !== true && !zenMode && <WorkspaceSidebar {...sidebarProps} />}
+
+          {/* Mobile floating pill + sheet sidebar */}
+          {isMobile === true && !zenMode && (
+            <>
+              <button
+                type="button"
+                onClick={() => setMobileOpen((prev) => !prev)}
+                className={cn(
+                  "fixed bottom-12 right-2 z-50 flex items-center justify-center rounded-full border border-border/50 bg-card/80 p-4 text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:bg-card hover:text-foreground active:bg-accent",
+                  {
+                    "z-[60]": mobileOpen,
+                  },
+                )}
+                aria-label={mobileOpen ? "Close sidebar" : "Open sidebar"}
+              >
+                {mobileOpen ? <X className="size-4" /> : <PanelLeft className="size-4" />}
+              </button>
+              <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+                <SheetContent side="left" className="w-75 p-0" showCloseButton={false}>
+                  <SheetHeader className="sr-only">
+                    <SheetTitle>Library</SheetTitle>
+                    <SheetDescription>Book library navigation</SheetDescription>
+                  </SheetHeader>
+                  <WorkspaceSidebar {...sidebarProps} collapsed={false} />
+                </SheetContent>
+              </Sheet>
+            </>
+          )}
+
+          <div className="flex flex-1 flex-col min-w-0">
+            {!zenMode && (
+              <ClusterBar
+                demoActive={loaderData.demoActive}
+                getEntries={getClusterEntries}
+                getActiveId={getActiveClusterId}
+                onActivate={(bookId) => ws.setActiveCluster(bookId)}
+                onClose={closeFocusedCluster}
+                onReorder={reorderFocusedClusters}
+              />
+            )}
+            <div className="flex-1 min-h-0">
+              <DockviewReact
+                theme={dockviewTheme}
+                components={components}
+                watermarkComponent={WatermarkPanel}
+                leftHeaderActionsComponent={LeftHeaderActions}
+                onReady={onReady}
+                disableDnd
+                disableFloatingGroups
+              />
+            </div>
           </div>
         </div>
-      </div>
-    </DropZone>
+      </DropZone>
+    </>
   );
 }

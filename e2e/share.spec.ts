@@ -170,6 +170,7 @@ async function createShareLink(page: Page, options?: { maxUses?: number; shareCh
 
 async function openShareInNewContext(browser: Browser, shareUrl: string) {
   const context = await browser.newContext();
+  await context.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
   const page = await context.newPage();
   await page.goto(shareUrl);
   return { context, page };
@@ -206,6 +207,7 @@ test.describe("Share", () => {
     await skipIfAuthNotConfigured(request);
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await installVirtualAuthenticator(context, page);
+    await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
 
     await page.goto("/");
     await page.waitForSelector(".dv-dockview", { timeout: 15_000 });

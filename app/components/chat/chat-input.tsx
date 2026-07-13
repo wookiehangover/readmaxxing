@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { Button } from "~/components/ui/button";
 import {
   Attachment,
@@ -9,6 +9,7 @@ import {
 } from "~/components/ui/attachment";
 import { Loader2, X, ForwardIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
+import type { ChatIntent } from "./chat-intent";
 
 const HIGHLIGHT_PILL_PREVIEW_WORDS = 5;
 
@@ -21,6 +22,7 @@ export function ChatInput({
   highlightPill,
   onClearHighlightPill,
   bookTitle,
+  onInteraction,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
@@ -30,6 +32,7 @@ export function ChatInput({
   onStop: () => void;
   highlightPill?: { text: string; pageLabel: string };
   onClearHighlightPill?: () => void;
+  onInteraction?: (intent: ChatIntent) => void;
 }) {
   const highlightText = highlightPill?.text?.trim();
   const highlightPreview = highlightText
@@ -43,6 +46,11 @@ export function ChatInput({
       })()
     : null;
 
+  // When gated, we passively open the onboarding dialog once on the first
+  // focus/click so the user sees the CTA, then let subsequent focus and typing
+  // flow through untouched. Submit always re-opens with the current text.
+  const passiveOpenGuardRef = useRef(false);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -53,6 +61,12 @@ export function ChatInput({
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
+      if (onInteraction) {
+        e.preventDefault();
+        const currentValue = textareaRef.current?.value ?? inputRef.current;
+        onInteraction({ type: "typed", text: currentValue });
+        return;
+      }
       if (highlightText) {
         const userMessage = inputRef.current.trim() || "What does this mean?";
         const quotedText = highlightText
@@ -68,7 +82,7 @@ export function ChatInput({
         onClearHighlightPill?.();
       }
     },
-    [highlightText, inputRef, onClearHighlightPill, onSubmit],
+    [highlightText, inputRef, onClearHighlightPill, onInteraction, onSubmit, textareaRef],
   );
 
   return (
@@ -104,6 +118,19 @@ export function ChatInput({
             "field-sizing-content max-h-[6lh] min-h-10",
           )}
           placeholder={`Ask about ${bookTitle}...`}
+          onPointerDown={(e) => {
+            if (onInteraction && !passiveOpenGuardRef.current) e.preventDefault();
+          }}
+          onClick={() => {
+            if (!onInteraction || passiveOpenGuardRef.current) return;
+            passiveOpenGuardRef.current = true;
+            onInteraction({ type: "none" });
+          }}
+          onFocus={() => {
+            if (!onInteraction || passiveOpenGuardRef.current) return;
+            passiveOpenGuardRef.current = true;
+            onInteraction({ type: "none" });
+          }}
           onChange={(e) => {
             inputRef.current = e.target.value;
           }}

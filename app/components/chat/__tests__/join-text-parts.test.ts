@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { joinTextParts } from "../chat-utils";
+import { DEMO_CHAT_SESSION, DEMO_SUGGESTED_QUESTIONS } from "~/lib/onboarding/demo-content";
+import { joinTextParts, parseSuggestedPrompts, stripSuggestedPrompts } from "../chat-utils";
 
 describe("joinTextParts", () => {
   it("returns an empty string for no parts", () => {
@@ -33,5 +34,14 @@ describe("joinTextParts", () => {
   it("ignores empty parts without inserting spurious spaces", () => {
     expect(joinTextParts(["Hello", "", "world"])).toBe("Hello world");
     expect(joinTextParts(["", "Hello"])).toBe("Hello");
+  });
+});
+
+describe("demo suggested prompts", () => {
+  it("parses contextual questions without displaying their metadata", () => {
+    const message = DEMO_CHAT_SESSION.messages.at(-1)?.content ?? "";
+
+    expect(parseSuggestedPrompts(message)).toEqual(DEMO_SUGGESTED_QUESTIONS);
+    expect(stripSuggestedPrompts(message)).not.toContain("suggested-prompts");
   });
 });

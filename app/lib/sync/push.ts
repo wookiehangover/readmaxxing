@@ -24,10 +24,10 @@ export interface PushContext {
   scheduleFollowUpPush: () => void;
 }
 
-export async function pushChanges(ctx: PushContext): Promise<void> {
-  if (ctx.isStopped()) return;
+export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushResponse | null> {
+  if (ctx.isStopped()) return null;
   const pending = await getUnsyncedChanges();
-  if (pending.length === 0) return;
+  if (pending.length === 0) return null;
 
   // Cap each request at PUSH_BATCH_SIZE so the server handler stays well
   // under Vercel's function timeout. Remaining entries drain on follow-up
@@ -49,7 +49,7 @@ export async function pushChanges(ctx: PushContext): Promise<void> {
 
   if (res.status === 401) {
     ctx.onAuthExpired?.();
-    return;
+    return null;
   }
   if (!res.ok) {
     throw new Error(`Push failed: ${res.status} ${res.statusText}`);
@@ -113,4 +113,10 @@ export async function pushChanges(ctx: PushContext): Promise<void> {
   if (hadFullBatch && !ctx.isStopped()) {
     ctx.scheduleFollowUpPush();
   }
+
+  return result;
+}
+
+export async function pushChanges(ctx: PushContext): Promise<void> {
+  await pushChangesWithResult(ctx);
 }
