@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { Link } from "react-router";
 import { BookPlus, X } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { BookCover } from "~/components/book-list";
 import { BugReportDialog } from "~/components/bug-report-dialog";
 import { cn } from "~/lib/utils";
+import { useAuth } from "~/lib/context/auth-context";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 
@@ -13,6 +15,8 @@ export interface ClusterBarEntry {
 }
 
 interface ClusterBarProps {
+  /** Whether this workspace load seeded the logged-out demo. */
+  readonly demoActive: boolean;
   /** Ordered list of open cluster book IDs (session-scoped). */
   readonly getEntries: () => ClusterBarEntry[];
   /** Currently-active cluster book ID, or null if none. */
@@ -23,6 +27,56 @@ interface ClusterBarProps {
   readonly onClose: (bookId: string) => void;
   /** Persist a reordered list of cluster book IDs. */
   readonly onReorder: (newOrder: string[]) => void;
+}
+
+export function ClusterBarActions({ demoActive }: { readonly demoActive: boolean }) {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (demoActive && isLoading) return null;
+
+  if (demoActive && !isAuthenticated) {
+    return (
+      <Button
+        size="sm"
+        className="bg-blue-600 text-white hover:bg-blue-700"
+        render={<Link to="/login" />}
+        nativeButton={false}
+      >
+        Log in
+      </Button>
+    );
+  }
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className="shrink-0 bg-background text-muted-foreground hover:text-foreground"
+        onClick={handleOpenBookClick}
+        title="Open book"
+        aria-label="Open book"
+      >
+        <BookPlus aria-hidden="true" />
+      </Button>
+      <BugReportDialog
+        triggerSize="icon-sm"
+        triggerClassName="shrink-0 bg-background text-muted-foreground hover:text-foreground"
+      />
+    </>
+  );
+}
+
+function handleOpenBookClick() {
+  window.dispatchEvent(
+    new window.KeyboardEvent("keydown", {
+      key: "k",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
 }
 
 type DropPosition = "before" | "after";
@@ -58,6 +112,7 @@ function getReorderedIds(
  * notifications to re-render when clusters are added/removed/activated.
  */
 export function ClusterBar({
+  demoActive,
   getEntries,
   getActiveId,
   onActivate,
@@ -151,17 +206,6 @@ export function ClusterBar({
     [next[idx], next[targetIndex]] = [next[targetIndex], next[idx]];
     pendingKeyboardFocusBookIdRef.current = entry.bookId;
     onReorder(next);
-  }
-
-  function handleOpenBookClick() {
-    window.dispatchEvent(
-      new window.KeyboardEvent("keydown", {
-        key: "k",
-        metaKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
   }
 
   const bookById = new Map<string, BookMeta>();
@@ -266,21 +310,7 @@ export function ClusterBar({
         })}
       </div>
       <div className="sticky right-0 ml-auto flex shrink-0 items-center gap-1 bg-background">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0 bg-background text-muted-foreground hover:text-foreground"
-          onClick={handleOpenBookClick}
-          title="Open book"
-          aria-label="Open book"
-        >
-          <BookPlus aria-hidden="true" />
-        </Button>
-        <BugReportDialog
-          triggerSize="icon-sm"
-          triggerClassName="shrink-0 bg-background text-muted-foreground hover:text-foreground"
-        />
+        <ClusterBarActions demoActive={demoActive} />
       </div>
     </div>
   );
