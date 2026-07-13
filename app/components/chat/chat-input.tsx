@@ -21,6 +21,7 @@ export function ChatInput({
   highlightPill,
   onClearHighlightPill,
   bookTitle,
+  onInteraction,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
@@ -30,6 +31,7 @@ export function ChatInput({
   onStop: () => void;
   highlightPill?: { text: string; pageLabel: string };
   onClearHighlightPill?: () => void;
+  onInteraction?: () => void;
 }) {
   const highlightText = highlightPill?.text?.trim();
   const highlightPreview = highlightText
@@ -43,16 +45,30 @@ export function ChatInput({
       })()
     : null;
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      const form = e.currentTarget.form;
-      form?.requestSubmit();
-    }
-  }, []);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (onInteraction) {
+        e.preventDefault();
+        e.currentTarget.blur();
+        onInteraction();
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+        e.preventDefault();
+        const form = e.currentTarget.form;
+        form?.requestSubmit();
+      }
+    },
+    [onInteraction],
+  );
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
+      if (onInteraction) {
+        e.preventDefault();
+        onInteraction();
+        return;
+      }
       if (highlightText) {
         const userMessage = inputRef.current.trim() || "What does this mean?";
         const quotedText = highlightText
@@ -68,7 +84,7 @@ export function ChatInput({
         onClearHighlightPill?.();
       }
     },
-    [highlightText, inputRef, onClearHighlightPill, onSubmit],
+    [highlightText, inputRef, onClearHighlightPill, onInteraction, onSubmit],
   );
 
   return (
@@ -104,7 +120,18 @@ export function ChatInput({
             "field-sizing-content max-h-[6lh] min-h-10",
           )}
           placeholder={`Ask about ${bookTitle}...`}
+          onFocus={(e) => {
+            if (!onInteraction) return;
+            e.currentTarget.blur();
+            onInteraction();
+          }}
           onChange={(e) => {
+            if (onInteraction) {
+              e.currentTarget.value = "";
+              inputRef.current = "";
+              onInteraction();
+              return;
+            }
             inputRef.current = e.target.value;
           }}
           onKeyDown={handleKeyDown}

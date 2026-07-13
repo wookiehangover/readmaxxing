@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
+import { OnboardingDialog } from "~/components/onboarding/onboarding-dialog";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useAuth } from "~/lib/context/auth-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
+import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
 import { BookService } from "~/lib/stores/book-store";
 import { ChatService } from "~/lib/stores/chat-store";
@@ -59,13 +61,14 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState("");
   const [sessionKey, setSessionKey] = useState(0);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const bookDataRef = useRef<ArrayBuffer | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef("");
   const setChatMessagesRef = useRef<((messages: UIMessage[]) => void) | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated && bookId !== DEMO_BOOK_ID) return;
     let cancelled = false;
 
     const load = async () => {
@@ -105,7 +108,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
           );
           if (cancelled) return;
           if (session) setSessionTitle(session.title);
-        } else {
+        } else if (isAuthenticated) {
           const session = await AppRuntime.runPromise(
             ChatService.pipe(Effect.andThen((service) => service.createSession(bookId))),
           );
@@ -127,7 +130,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
         bookDataRef.current = bookData;
         setBookFormat(book.format);
-        if (chapters.length > 0) {
+        if (isAuthenticated && chapters.length > 0) {
           try {
             await ensureBookChaptersUploaded(bookId, { chapters, format: book.format });
           } catch (error) {
@@ -258,6 +261,10 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     setSessionKey((key) => key + 1);
   }, [bookId]);
 
+  const openOnboarding = useCallback(() => setOnboardingOpen(true), []);
+  const isLoggedOutDemoBook = !isAuthenticated && bookId === DEMO_BOOK_ID;
+  const isLoggedOutDemoSession = isLoggedOutDemoBook && activeSessionId === DEMO_CHAT_SESSION.id;
+
   if (authLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -266,7 +273,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !isLoggedOutDemoBook) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
         <p className="text-center text-muted-foreground">
@@ -287,7 +294,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     );
   }
 
-  if (!initialMessages || !bookContext || !activeSessionId) {
+  if (!initialMessages || !bookContext || (isAuthenticated && !activeSessionId)) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Loading chat…</p>
@@ -295,24 +302,45 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     );
   }
 
+  if (!isAuthenticated && !isLoggedOutDemoSession) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
+        <p className="text-center text-muted-foreground">
+          Sign in to chat with <span className="italic">{bookTitle}</span>
+        </p>
+        <Button render={<a href="/login" />} nativeButton={false} variant="default">
+          Sign in
+        </Button>
+      </div>
+    );
+  }
+
+  if (!activeSessionId) return null;
+
   return (
-    <ChatPanelInner
-      key={sessionKey}
-      bookId={bookId}
-      bookTitle={bookTitle}
-      bookFormat={bookFormat}
-      initialMessages={initialMessages}
-      bookDataRef={bookDataRef}
-      textareaRef={textareaRef}
-      inputRef={inputRef}
-      activeSessionId={activeSessionId}
-      sessionTitle={sessionTitle}
-      onSwitchSession={handleSwitchSession}
-      onNewSession={handleNewSession}
-      onSessionTitleChange={setSessionTitle}
-      onRegisterSetMessages={(setMessages) => {
-        setChatMessagesRef.current = setMessages;
-      }}
-    />
+    <>
+      <ChatPanelInner
+        key={sessionKey}
+        bookId={bookId}
+        bookTitle={bookTitle}
+        bookFormat={bookFormat}
+        initialMessages={initialMessages}
+        bookDataRef={bookDataRef}
+        textareaRef={textareaRef}
+        inputRef={inputRef}
+        activeSessionId={activeSessionId}
+        sessionTitle={sessionTitle}
+        onSwitchSession={handleSwitchSession}
+        onNewSession={handleNewSession}
+        onSessionTitleChange={setSessionTitle}
+        onRegisterSetMessages={(setMessages) => {
+          setChatMessagesRef.current = setMessages;
+        }}
+        onChatInteraction={isLoggedOutDemoSession ? openOnboarding : undefined}
+      />
+      {isLoggedOutDemoSession && (
+        <OnboardingDialog open={onboardingOpen} onOpenChange={setOnboardingOpen} />
+      )}
+    </>
   );
 }
