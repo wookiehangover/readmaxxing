@@ -12,9 +12,10 @@ afterEach(() => {
 describe("useDemoOnboarding", () => {
   it("waits for layout and sidebar readiness before opening the demo once", () => {
     const updateSettings = vi.fn();
-    const openBook = vi.fn();
-    const openChat = vi.fn();
-    const openNotebook = vi.fn();
+    const calls: string[] = [];
+    const openBook = vi.fn(() => calls.push("book"));
+    const openChat = vi.fn(() => calls.push("chat"));
+    const openNotebook = vi.fn(() => calls.push("notebook"));
     const container = document.body.appendChild(document.createElement("div"));
     const root = createRoot(container);
     let ready = true;
@@ -49,6 +50,7 @@ describe("useDemoOnboarding", () => {
     expect(openBook).toHaveBeenCalledOnce();
     expect(openChat).toHaveBeenCalledOnce();
     expect(openNotebook).toHaveBeenCalledOnce();
+    expect(calls).toEqual(["book", "notebook", "chat"]);
 
     render(true, true);
     expect(openBook).toHaveBeenCalledOnce();

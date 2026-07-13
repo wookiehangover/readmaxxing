@@ -96,6 +96,12 @@ export const DEMO_NOTEBOOK_CONTENT = {
 
 const DEMO_CHAT_STARTED_AT = Date.UTC(2025, 3, 10, 20, 0, 0);
 
+export const DEMO_SUGGESTED_QUESTIONS = [
+  "How does Gatsby's first appearance complicate Nick's judgment of him?",
+  "What does Chapter 3 suggest about performance and authenticity?",
+  "Why does Nick call himself honest after admitting alcohol changed his perception?",
+] as const;
+
 export const DEMO_CHAT_SESSION = {
   id: "39e8921b-1341-49c1-9ef8-0f03e8a36571",
   bookId: DEMO_BOOK_ID,
@@ -123,8 +129,11 @@ export const DEMO_CHAT_SESSION = {
     {
       id: "630ac28e-2e69-47b3-ae70-75f68d8b222c",
       role: "assistant",
-      content:
-        'Yes. Nick first presents himself as an embarrassed outsider, but after two bowls of champagne he says the scene becomes "significant, elemental, and profound." The shift admits that mood and desire alter his perception. He also misrecognizes Gatsby until Gatsby introduces himself, despite spending the evening interpreting strangers and rumors. Chapter 3 therefore shows both his value and his limit: he notices revealing details, but he arranges them through fascination, alcohol, social anxiety, and hindsight. His narration is most useful when read as a beautifully shaped perspective rather than a neutral record.',
+      content: `Yes. Nick first presents himself as an embarrassed outsider, but after two bowls of champagne he says the scene becomes "significant, elemental, and profound." The shift admits that mood and desire alter his perception. He also misrecognizes Gatsby until Gatsby introduces himself, despite spending the evening interpreting strangers and rumors. Chapter 3 therefore shows both his value and his limit: he notices revealing details, but he arranges them through fascination, alcohol, social anxiety, and hindsight. His narration is most useful when read as a beautifully shaped perspective rather than a neutral record.
+
+<!-- suggested-prompts
+${DEMO_SUGGESTED_QUESTIONS.join("\n")}
+-->`,
       createdAt: DEMO_CHAT_STARTED_AT + 180_000,
     },
   ],
