@@ -43,7 +43,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "~/components/ui/sheet";
-
+import { WelcomeBanner } from "~/components/onboarding/welcome-banner";
 export function meta(_args: Route.MetaArgs) {
   return [
     { title: "Readmaxxing" },
@@ -468,7 +468,6 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
             </>
           )}
 
-          {/* Dockview container — full width when sidebar is collapsed or on mobile */}
           <div className="flex flex-1 flex-col min-w-0">
             {!zenMode && (
               <ClusterBar
@@ -479,6 +478,7 @@ function WorkspaceRouteInner({ loaderData }: { loaderData: Route.ComponentProps[
                 onReorder={reorderFocusedClusters}
               />
             )}
+            <WelcomeBanner active={loaderData.demoBook !== null && !zenMode} />
             <div className="flex-1 min-h-0">
               <DockviewReact
                 theme={dockviewTheme}
