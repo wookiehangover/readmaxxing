@@ -40,6 +40,7 @@
     "dockview": "^7.0.2",
     "dockview-react": "^7.0.2",
     "effect": "^3.21.4",
+    "fflate": "^0.8.3",
     "idb-keyval": "^6.3.0",
     "isbot": "^5.2.0",
     "linkedom": "^0.18.13",
