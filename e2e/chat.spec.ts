@@ -311,15 +311,20 @@ test.describe("Chat (server-authoritative)", () => {
       },
       { bookId, changeId, timestamp },
     );
-    expect(seedResult.ok, `notebook seed failed: ${seedResult.status} ${seedResult.text}`).toBe(true);
+    expect(seedResult.ok, `notebook seed failed: ${seedResult.status} ${seedResult.text}`).toBe(
+      true,
+    );
     expect(seedResult.accepted, `notebook seed was not accepted: ${seedResult.text}`).toBe(true);
 
     const marker = "E2E-INLINE-" + Date.now();
     await sendChatMessage(
       page,
-      `Using the edit_notes tool, find the highlightReference block and call notebook.insertAfter on it with the exact text "${marker}". Do not use any other tools, and do not use append or prepend.`,
+      `Call the edit_notes tool exactly once with this exact code argument: const highlight = notebook.find({ type: "highlightReference" })[0]; if (highlight) notebook.insertAfter(highlight, "${marker}"); Do not use any other tools, and do not use append or prepend.`,
     );
     await expect(page.locator(ASSISTANT_BUBBLE).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeEnabled({
+      timeout: 90_000,
+    });
 
     await notebookTab.first().click();
     await expect
