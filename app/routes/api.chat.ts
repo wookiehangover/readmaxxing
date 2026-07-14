@@ -538,8 +538,7 @@ export async function action({ request }: Route.ActionArgs) {
                   appended: false,
                   text,
                   appendedNodes: [],
-                  error:
-                    "append_to_notes: server already has a newer notebook; ignoring this edit",
+                  error: "append_to_notes: server already has a newer notebook; ignoring this edit",
                 };
               }
 
