@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, it, expect } from "vitest";
 import type { JSONContent } from "@tiptap/react";
 import { runEditNotesInSandbox } from "../notebook-sdk-server";
@@ -8,6 +10,13 @@ function p(text: string): JSONContent {
 
 function doc(...content: JSONContent[]): JSONContent {
   return { type: "doc", content };
+}
+
+function highlightReference(highlightId: string, text: string): JSONContent {
+  return {
+    type: "highlightReference",
+    attrs: { highlightId, cfiRange: `epubcfi(${highlightId})`, text },
+  };
 }
 
 describe("runEditNotesInSandbox", () => {
@@ -61,6 +70,22 @@ describe("runEditNotesInSandbox", () => {
     if (result.ok) {
       const texts = (result.updatedContent.content ?? []).map((n) => n.content?.[0]?.text ?? "");
       expect(texts).toEqual(["one", "two", "replaced", "four", "five"]);
+    }
+  });
+
+  it("preserves insertAfter content next to a highlight reference and empty paragraph", async () => {
+    const input = doc(p("Intro note"), highlightReference("highlight-1", "The quick brown fox"), {
+      type: "paragraph",
+    });
+    const result = await runEditNotesInSandbox(
+      input,
+      'const h = notebook.find({ type: "highlightReference" })[0]; if (h) notebook.insertAfter(h, "MARKER");',
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.updatedContent.content).toHaveLength((input.content?.length ?? 0) + 1);
+      expect(result.updatedContent.content?.[2]).toEqual(p("MARKER"));
     }
   });
 

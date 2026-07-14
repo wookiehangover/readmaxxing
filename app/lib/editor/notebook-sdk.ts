@@ -242,7 +242,13 @@ function removeEmptyNestedList(newContent: JSONContent[], block: Block): void {
   }
 }
 
-function parseMarkdownNodes(_editor: Editor, markdown: string): JSONContent[] {
+function parseMarkdownNodes(
+  _editor: Editor,
+  markdown: string,
+  parseMarkdown?: (markdown: string) => JSONContent,
+): JSONContent[] {
+  if (parseMarkdown) return parseMarkdown(markdown).content ?? [];
+
   // Create fresh extension instances to avoid duplicate keyed plugin errors
   const tempEditor = new Editor({
     extensions: [StarterKit, Markdown.configure({ html: false })],
@@ -253,7 +259,10 @@ function parseMarkdownNodes(_editor: Editor, markdown: string): JSONContent[] {
   return nodes;
 }
 
-export function createNotebookSDK(content: JSONContent): {
+export function createNotebookSDK(
+  content: JSONContent,
+  options: { parseMarkdown?: (markdown: string) => JSONContent } = {},
+): {
   sdk: NotebookSDK;
   getResult: () => JSONContent;
   destroy: () => void;
@@ -345,14 +354,14 @@ export function createNotebookSDK(content: JSONContent): {
     },
 
     append(markdown: string): void {
-      const nodes = parseMarkdownNodes(editor, markdown);
+      const nodes = parseMarkdownNodes(editor, markdown, options.parseMarkdown);
       const endPos = editor.state.doc.content.size;
       editor.commands.insertContentAt(endPos, nodes);
       mutationGeneration++;
     },
 
     prepend(markdown: string): void {
-      const nodes = parseMarkdownNodes(editor, markdown);
+      const nodes = parseMarkdownNodes(editor, markdown, options.parseMarkdown);
       editor.commands.insertContentAt(1, nodes);
       mutationGeneration++;
     },
@@ -378,7 +387,7 @@ export function createNotebookSDK(content: JSONContent): {
 
         // Parse replacement and wrap in listItem. If the input has no markdown
         // structure, treat it as plain inline text for the list item.
-        const parsed = parseMarkdownNodes(editor, markdown);
+        const parsed = parseMarkdownNodes(editor, markdown, options.parseMarkdown);
         const listItemContent =
           parsed.length > 0
             ? parsed
@@ -394,7 +403,7 @@ export function createNotebookSDK(content: JSONContent): {
       // Top-level block: use _topLevelIndex
       const idx = resolved._topLevelIndex;
       if (idx === undefined || idx < 0 || idx >= docJson.content.length) return false;
-      const parsed = parseMarkdownNodes(editor, markdown);
+      const parsed = parseMarkdownNodes(editor, markdown, options.parseMarkdown);
       const newContent: JSONContent[] = [...docJson.content];
       newContent.splice(idx, 1, ...parsed);
       editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
@@ -520,7 +529,7 @@ export function createNotebookSDK(content: JSONContent): {
 
       const docJson = editor.getJSON();
       if (!docJson.content) return;
-      const parsed = parseMarkdownNodes(editor, markdown);
+      const parsed = parseMarkdownNodes(editor, markdown, options.parseMarkdown);
 
       if (resolved.type === "listItem") {
         // Insert after this listItem within the parent list (supports nesting)
@@ -558,7 +567,7 @@ export function createNotebookSDK(content: JSONContent): {
 
       const docJson = editor.getJSON();
       if (!docJson.content) return;
-      const parsed = parseMarkdownNodes(editor, markdown);
+      const parsed = parseMarkdownNodes(editor, markdown, options.parseMarkdown);
 
       if (resolved.type === "listItem") {
         // Insert before this listItem within the parent list (supports nesting)
