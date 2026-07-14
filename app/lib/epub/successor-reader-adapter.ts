@@ -245,21 +245,46 @@ function firstTextNode(root: Node): Text | null {
   return walker.nextNode() as Text | null;
 }
 
-function rangeAtTextOffset(document: Document, root: Node, offset: number): Range | null {
+/**
+ * Resolves ascending, non-overlapping text spans to range boundaries in
+ * one tree walk. Spans outside the text content resolve to null. Returns
+ * static boundary objects rather than live Ranges because generateCfi
+ * only reads the boundary points, and Range.setEnd on DOMParser-parsed
+ * documents collapses the range in happy-dom.
+ */
+function rangesAtTextSpans(
+  document: Document,
+  root: Node,
+  spans: ReadonlyArray<readonly [number, number]>,
+): Array<Range | null> {
+  const ranges: Array<Range | null> = spans.map(() => null);
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let remaining = offset;
+  let position = 0;
+  let spanIndex = 0;
+  let pendingStart: { node: Text; offset: number } | null = null;
   let node = walker.nextNode() as Text | null;
-  while (node) {
-    if (remaining <= node.length) {
-      const range = document.createRange();
-      range.setStart(node, remaining);
-      range.collapse(true);
-      return range;
+  while (node && spanIndex < spans.length) {
+    const nodeEnd = position + node.length;
+    while (spanIndex < spans.length) {
+      const [start, end] = spans[spanIndex];
+      if (pendingStart === null) {
+        if (start > nodeEnd) break;
+        pendingStart = { node, offset: start - position };
+      }
+      if (end > nodeEnd) break;
+      ranges[spanIndex] = {
+        startContainer: pendingStart.node,
+        startOffset: pendingStart.offset,
+        endContainer: node,
+        endOffset: end - position,
+      } as unknown as Range;
+      pendingStart = null;
+      spanIndex += 1;
     }
-    remaining -= node.length;
+    position = nodeEnd;
     node = walker.nextNode() as Text | null;
   }
-  return null;
+  return ranges;
 }
 
 function rangeAtCaret(document: Document, x: number, y: number): Range | null {
@@ -657,16 +682,42 @@ export function createSuccessorBookAdapter(
         if (!document) return [];
         const root = document.body ?? document.documentElement;
         const text = root.textContent ?? "";
-        const offset = text.toLocaleLowerCase().indexOf(query.toLocaleLowerCase());
-        if (offset < 0) return [];
-        const range = rangeAtTextOffset(document, root, offset);
-        if (!range) return [];
-        return [
-          {
+        // Case-insensitive matching runs on locale-lowercased copies, but
+        // only when folding preserves lengths — otherwise the offsets found
+        // in the haystack would not map back to `text` (e.g. "İ" folds to
+        // two code units). Fall back to exact matching in that case.
+        let haystack = text.toLocaleLowerCase();
+        let needle = query.toLocaleLowerCase();
+        if (haystack.length !== text.length || needle.length !== query.length) {
+          haystack = text;
+          needle = query;
+        }
+        if (needle.length === 0) return [];
+        const offsets: number[] = [];
+        for (
+          let offset = haystack.indexOf(needle);
+          offset >= 0;
+          offset = haystack.indexOf(needle, offset + needle.length)
+        ) {
+          offsets.push(offset);
+        }
+        // Full-span ranges (not collapsed points) so result CFIs can be
+        // rendered as highlight decorations over the matched text.
+        const ranges = rangesAtTextSpans(
+          document,
+          root,
+          offsets.map((offset) => [offset, offset + needle.length] as const),
+        );
+        const results: Array<{ cfi: string; excerpt: string }> = [];
+        for (const [position, offset] of offsets.entries()) {
+          const range = ranges[position];
+          if (!range) continue;
+          results.push({
             cfi: generateCfi(range, sectionMetadata(publication, index)),
-            excerpt: text.slice(Math.max(0, offset - 40), offset + query.length + 40),
-          },
-        ];
+            excerpt: text.slice(Math.max(0, offset - 40), offset + needle.length + 40),
+          });
+        }
+        return results;
       },
       unload() {
         document = null;
