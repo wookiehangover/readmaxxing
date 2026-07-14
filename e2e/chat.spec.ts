@@ -243,6 +243,103 @@ test.describe("Chat (server-authoritative)", () => {
       .toBeGreaterThan(0);
   });
 
+  test("edit_notes places an annotation inline after a highlight reference", async ({ page }) => {
+    await page.getByRole("button", { name: "Open Notebook" }).first().click();
+    const notebookTab = page.locator(".dv-default-tab", { hasText: "Notes:" });
+    await expect(notebookTab.first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(".ProseMirror")).toBeVisible({ timeout: 15_000 });
+
+    const chatTab = page.locator(".dv-default-tab", { hasText: "Discuss:" });
+    await chatTab.first().click();
+    await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeVisible({
+      timeout: 10_000,
+    });
+
+    const bookId = await readFirstBookIdFromIdb(page);
+    const timestamp = Date.now();
+    const changeId = `e2e-notebook-${timestamp}`;
+    const seedResult = await page.evaluate(
+      async ({ bookId: id, changeId: idOfChange, timestamp: updatedAt }) => {
+        const response = await fetch("/api/sync/push", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            changes: [
+              {
+                id: idOfChange,
+                entity: "notebook",
+                entityId: id,
+                operation: "put",
+                data: {
+                  bookId: id,
+                  content: {
+                    type: "doc",
+                    content: [
+                      {
+                        type: "paragraph",
+                        content: [{ type: "text", text: "Intro note" }],
+                      },
+                      {
+                        type: "highlightReference",
+                        attrs: {
+                          highlightId: `e2e-hl-${updatedAt}`,
+                          cfiRange: "epubcfi(/6/2!/4/2)",
+                          text: "The quick brown fox",
+                        },
+                      },
+                      { type: "paragraph" },
+                    ],
+                  },
+                  updatedAt,
+                },
+                timestamp: updatedAt,
+                synced: false,
+              },
+            ],
+          }),
+        });
+        const text = await response.text();
+        let accepted = false;
+        try {
+          const body = JSON.parse(text) as { accepted?: Array<{ id: string }> };
+          accepted = body.accepted?.some((entry) => entry.id === idOfChange) ?? false;
+        } catch {
+          // The assertions below report the HTTP response if it was not JSON.
+        }
+        return { ok: response.ok, status: response.status, accepted, text: text.slice(0, 200) };
+      },
+      { bookId, changeId, timestamp },
+    );
+    expect(seedResult.ok, `notebook seed failed: ${seedResult.status} ${seedResult.text}`).toBe(true);
+    expect(seedResult.accepted, `notebook seed was not accepted: ${seedResult.text}`).toBe(true);
+
+    const marker = "E2E-INLINE-" + Date.now();
+    await sendChatMessage(
+      page,
+      `Using the edit_notes tool, find the highlightReference block and call notebook.insertAfter on it with the exact text "${marker}". Do not use any other tools, and do not use append or prepend.`,
+    );
+    await expect(page.locator(ASSISTANT_BUBBLE).first()).toBeVisible({ timeout: 30_000 });
+
+    await notebookTab.first().click();
+    await expect
+      .poll(
+        () =>
+          page.evaluate((annotationMarker) => {
+            const children = Array.from(document.querySelectorAll(".ProseMirror > *"));
+            const highlightIndex = children.findIndex((element) =>
+              element.matches("[data-highlight-reference]"),
+            );
+            const markerIndex = children.findIndex((element) =>
+              element.textContent?.includes(annotationMarker),
+            );
+            return highlightIndex >= 0 && markerIndex === highlightIndex + 1;
+          }, marker),
+        { timeout: 90_000, intervals: [500, 1000, 2000] },
+      )
+      .toBe(true);
+  });
+
   test("resumes the stream after a mid-stream reload", async ({ page }) => {
     await sendChatMessage(
       page,
