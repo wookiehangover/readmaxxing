@@ -84,6 +84,8 @@ jobs:
       REDIS_URL: redis://localhost:6379
       WEBAUTHN_RP_ID: localhost
       WEBAUTHN_RP_ORIGIN: http://localhost:5173
+      # Skip AI-dependent tests in CI (chat tests require Anthropic API key which costs money)
+      SKIP_AI_TESTS: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
