@@ -518,10 +518,9 @@ export async function action({ request }: Route.ActionArgs) {
               };
 
               const now = new Date();
-              let updatedAtMs = now.getTime();
+              let row: Awaited<ReturnType<typeof upsertNotebook>>;
               try {
-                const row = await upsertNotebook(userId, target.bookId, updatedContent, now);
-                if (row) updatedAtMs = row.updatedAt.getTime();
+                row = await upsertNotebook(userId, target.bookId, updatedContent, now);
               } catch (err) {
                 console.error("append_to_notes: failed to persist notebook:", err);
                 return {
@@ -533,13 +532,24 @@ export async function action({ request }: Route.ActionArgs) {
                 };
               }
 
+              if (!row) {
+                return {
+                  bookId: target.bookId,
+                  appended: false,
+                  text,
+                  appendedNodes: [],
+                  error:
+                    "append_to_notes: server already has a newer notebook; ignoring this edit",
+                };
+              }
+
               return {
                 bookId: target.bookId,
                 appended: true,
                 text,
                 appendedNodes,
                 updatedContent,
-                updatedAt: updatedAtMs,
+                updatedAt: row.updatedAt.getTime(),
               };
             },
           }),
@@ -552,8 +562,8 @@ export async function action({ request }: Route.ActionArgs) {
                 .describe(
                   "JavaScript code that uses the `notebook` object to edit notes. Available methods: " +
                     "notebook.getMarkdown() — current notes as markdown; " +
-                    "notebook.getBlocks() — all blocks as structured objects; " +
-                    "notebook.find(query) — locate blocks to edit (accepts a string for plain-text search — links show as their display text, not markdown syntax — or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock'|'listItem', text?: string }); " +
+                    "notebook.getBlocks() — all blocks as structured objects; notebook.refresh() — re-read and return the current block list; getBlocks() and find() always reflect live state, so re-read blocks after any mutation because indexes shift; " +
+                    "notebook.find(query) — locate blocks to edit (accepts a string for plain-text search — links show as their display text, not markdown syntax — or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock'|'listItem'|'highlightReference', text?: string }); " +
                     "notebook.setText(block, text) → boolean — PREFERRED for 'change the text of this block'. Preserves heading level, list-item structure, code-block language, etc. Use this to rename headings, fix typos, or reword existing blocks. `text` is inserted verbatim as plain text — do NOT include markdown markers like '#' or '*'; " +
                     "notebook.replace(block, markdown) → boolean — replaces the entire block with newly-parsed markdown. Use when you want to change the block's TYPE (e.g. a paragraph becomes a bulleted list) or insert multiple blocks in place of one; " +
                     "notebook.remove(block) → boolean — delete a single block; " +
@@ -561,11 +571,12 @@ export async function action({ request }: Route.ActionArgs) {
                     "notebook.insertBefore(block, markdown) — insert new content before a block; " +
                     "notebook.append(markdown) — add new content at the END of the notebook; does NOT touch existing content; " +
                     "notebook.prepend(markdown) — add new content at the START of the notebook; does NOT touch existing content. " +
-                    "`find` returns Block objects with { type, text, level?, index, parentIndex?, depth? }. Use type 'listItem' to target individual list items at ANY nesting level. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). setText(), replace() and remove() return true if the block was found and modified, false otherwise. " +
+                    "`find` returns Block objects with { type, text, level?, index, parentIndex?, depth? }. A highlightReference is a clickable anchor to a highlighted passage; `block.text` is the highlighted text. Find it via find(query) or find({ type: 'highlightReference' }). It is an atomic anchor: use insertAfter/insertBefore to add notes around it, not setText. Use type 'listItem' to target individual list items at ANY nesting level. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). setText(), replace() and remove() return true if the block was found and modified, false otherwise. " +
                     "Example — rename a heading (keeps it a heading): const h = notebook.find({ type: 'heading', text: 'Intro' })[0]; if (h) notebook.setText(h, 'Introduction'); " +
                     "Example — fix a typo in a paragraph: const p = notebook.find('teh quick')[0]; if (p) notebook.setText(p, p.text.replace('teh', 'the')); " +
                     "Example — change a paragraph into a bullet list (structural change): const p = notebook.find('items:')[0]; if (p) notebook.replace(p, '- a\\n- b\\n- c'); " +
                     "Example — remove a block: const b = notebook.find({ text: 'obsolete' })[0]; if (b) notebook.remove(b); " +
+                    "Example — place a note under a highlight: const h = notebook.find({ type: 'highlightReference' })[0]; if (h) notebook.insertAfter(h, 'My annotation'); " +
                     "There is NO whole-document replace method. Do NOT rebuild the entire notebook in a single call — the server will reject scripts that reduce the notebook to near-empty.",
                 ),
             }),
