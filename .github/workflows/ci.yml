@@ -92,6 +92,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Initialize database
         run: bash scripts/init-db.sh
       - run: pnpm exec playwright install chromium --with-deps
