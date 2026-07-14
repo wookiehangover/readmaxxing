@@ -270,7 +270,11 @@ export function createNotebookSDK(content: JSONContent): {
   });
 
   const editor = new Editor({
-    extensions: [StarterKit, Markdown.configure({ html: false }), HeadlessHighlightReference],
+    extensions: [
+      StarterKit.configure({ trailingNode: false }),
+      Markdown.configure({ html: false }),
+      HeadlessHighlightReference,
+    ],
     content,
   });
 
@@ -539,12 +543,11 @@ export function createNotebookSDK(content: JSONContent): {
         return;
       }
 
-      // Top-level: insert after _topLevelIndex
+      // Top-level: insert at the resolved node boundary without rebuilding the document.
       const idx = resolved._topLevelIndex;
-      if (idx === undefined) return;
-      const newContent: JSONContent[] = [...docJson.content];
-      newContent.splice(idx + 1, 0, ...parsed);
-      editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
+      if (idx === undefined || idx < 0 || idx >= editor.state.doc.childCount) return;
+      const insertPos = resolved._pos - 1 + editor.state.doc.child(idx).nodeSize;
+      editor.commands.insertContentAt(insertPos, parsed);
       mutationGeneration++;
     },
 
@@ -576,12 +579,10 @@ export function createNotebookSDK(content: JSONContent): {
         return;
       }
 
-      // Top-level: insert before _topLevelIndex
+      // Top-level: insert at the resolved node boundary without rebuilding the document.
       const idx = resolved._topLevelIndex;
-      if (idx === undefined) return;
-      const newContent: JSONContent[] = [...docJson.content];
-      newContent.splice(idx, 0, ...parsed);
-      editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
+      if (idx === undefined || idx < 0 || idx >= editor.state.doc.childCount) return;
+      editor.commands.insertContentAt(resolved._pos - 1, parsed);
       mutationGeneration++;
     },
   };
