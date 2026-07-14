@@ -11,7 +11,13 @@ fi
 
 echo "DATABASE_URL: ${DATABASE_URL}"
 echo "Testing database connection..."
-psql "$DATABASE_URL" -c "SELECT version();" || {
+
+# Extract connection string without search_path parameter for psql
+# psql handles search_path differently than other tools
+BASE_URL="${DATABASE_URL%%\?*}"
+echo "Base URL (no params): ${BASE_URL}"
+
+psql "$BASE_URL" -c "SELECT version();" || {
   echo "Error: Failed to connect to database"
   exit 1
 }
@@ -20,19 +26,19 @@ echo "Initializing readmax schema..."
 
 # Apply baseline schema files in order
 echo "Applying core schema..."
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/readmax/core.sql
+psql "$BASE_URL" -v ON_ERROR_STOP=1 -f database/readmax/core.sql
 
 echo "Applying annotations schema..."
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/readmax/annotations.sql
+psql "$BASE_URL" -v ON_ERROR_STOP=1 -f database/readmax/annotations.sql
 
 echo "Applying chat schema..."
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/readmax/chat.sql
+psql "$BASE_URL" -v ON_ERROR_STOP=1 -f database/readmax/chat.sql
 
 echo "Applying settings schema..."
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/readmax/settings.sql
+psql "$BASE_URL" -v ON_ERROR_STOP=1 -f database/readmax/settings.sql
 
 echo "Applying share schema..."
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/readmax/share.sql
+psql "$BASE_URL" -v ON_ERROR_STOP=1 -f database/readmax/share.sql
 
 # Apply all migrations in order
 echo "Applying migrations..."
@@ -42,7 +48,7 @@ for migration in database/migrations/*.sql; do
   fi
   if [ -f "$migration" ]; then
     echo "  Applying $(basename "$migration")..."
-    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+    psql "$BASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
   fi
 done
 
