@@ -135,6 +135,7 @@ test.describe("Chat (server-authoritative)", () => {
     await skipIfAuthNotConfigured(request);
 
     await installVirtualAuthenticator(context, page);
+    await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
 
     await page.goto("/");
     await page.waitForSelector(".dv-dockview", { timeout: 15_000 });

@@ -62,12 +62,51 @@ const themeScript = `
 })();
 `;
 
+// One-shot recovery when a stale service-worker shell references hashed assets that
+// no longer exist after a deploy. Soft-refresh keeps the SW; hard-refresh bypasses it.
+// If entry chunks 404, React never boots and the normal update toast cannot appear.
+const staleAssetRecoveryScript = `
+(function() {
+  var key = 'readmax-stale-asset-recover';
+  function isAppAsset(url) {
+    try {
+      var u = new URL(url, location.origin);
+      return u.origin === location.origin && u.pathname.indexOf('/assets/') === 0;
+    } catch (e) {
+      return false;
+    }
+  }
+  window.addEventListener('error', function (event) {
+    var el = event.target;
+    if (!el || (el.tagName !== 'SCRIPT' && el.tagName !== 'LINK')) return;
+    var url = el.src || el.href;
+    if (!url || !isAppAsset(url)) return;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    var done = function () { location.reload(); };
+    if (!('serviceWorker' in navigator)) {
+      done();
+      return;
+    }
+    navigator.serviceWorker.getRegistrations().then(function (regs) {
+      return Promise.all(regs.map(function (reg) { return reg.unregister(); }));
+    }).then(function () {
+      if (!('caches' in window)) return;
+      return caches.keys().then(function (keys) {
+        return Promise.all(keys.map(function (name) { return caches.delete(name); }));
+      });
+    }).then(done, done);
+  }, true);
+})();
+`;
+
 const SITE_ORIGIN = typeof __SITE_ORIGIN__ !== "undefined" ? __SITE_ORIGIN__ : "";
 const SW_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 declare global {
   interface Window {
     __readmaxSWUpdateIntervalId?: number;
+    __readmaxSWVisibilityHandler?: () => void;
   }
 }
 
@@ -76,9 +115,24 @@ function startSWUpdatePolling(registration: ServiceWorkerRegistration) {
     return;
   }
 
-  window.__readmaxSWUpdateIntervalId = window.setInterval(() => {
+  const checkForUpdate = () => {
     registration.update().catch(console.error);
-  }, SW_UPDATE_CHECK_INTERVAL_MS);
+  };
+
+  window.__readmaxSWUpdateIntervalId = window.setInterval(
+    checkForUpdate,
+    SW_UPDATE_CHECK_INTERVAL_MS,
+  );
+
+  // Catch deploys sooner than the hourly poll when the user returns to the tab.
+  if (!window.__readmaxSWVisibilityHandler) {
+    window.__readmaxSWVisibilityHandler = () => {
+      if (document.visibilityState === "visible") {
+        checkForUpdate();
+      }
+    };
+    document.addEventListener("visibilitychange", window.__readmaxSWVisibilityHandler);
+  }
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -142,6 +196,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         />
         <meta name="twitter:image" content={`${SITE_ORIGIN}/og-image.png`} />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: staleAssetRecoveryScript }} />
         <Meta />
         <Links />
       </head>

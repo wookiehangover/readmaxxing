@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "react-router build",
+    "build": "react-router build && node ./scripts/patch-sw-index-html-revision.mjs",
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc",
@@ -40,6 +40,7 @@
     "dockview": "^7.0.2",
     "dockview-react": "^7.0.2",
     "effect": "^3.21.4",
+    "fflate": "^0.8.3",
     "idb-keyval": "^6.3.0",
     "isbot": "^5.2.0",
     "linkedom": "^0.18.13",

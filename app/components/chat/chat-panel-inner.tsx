@@ -11,11 +11,13 @@ import {
 import { ChatService } from "~/lib/stores/chat-store";
 import { ChatBookSelector, type BookSelection } from "./chat-book-selector";
 import { ChatInput } from "./chat-input";
+import type { ChatIntent } from "./chat-intent";
 import { ChatMessageList, type BookAnnotation } from "./chat-message-list";
 import { ChatSessionList, EditableTitle, SessionMenuButton } from "./chat-session-menu";
 import { createChatTransport } from "./chat-utils";
 import { useChatToolHandlers } from "./use-chat-tool-handlers";
 import { useOpenBooks } from "./use-open-books";
+import { useResumeMessage } from "./use-resume-message";
 import { useStreamingAppend } from "./use-streaming-append";
 
 export function ChatPanelInner({
@@ -32,6 +34,9 @@ export function ChatPanelInner({
   onNewSession,
   onSessionTitleChange,
   onRegisterSetMessages,
+  onChatInteraction,
+  resumeMessage,
+  onResumeComplete,
 }: {
   bookId: string;
   bookTitle: string;
@@ -46,6 +51,9 @@ export function ChatPanelInner({
   onNewSession: () => void;
   onSessionTitleChange: (title: string) => void;
   onRegisterSetMessages?: (fn: (messages: UIMessage[]) => void) => void;
+  onChatInteraction?: (intent: ChatIntent) => void;
+  resumeMessage?: string;
+  onResumeComplete?: () => void;
 }) {
   const workspace = useOptionalWorkspace();
   const fallbackChatContextMap = useRef(
@@ -233,7 +241,7 @@ export function ChatPanelInner({
     id: activeSessionId,
     transport,
     messages: initialMessages,
-    resume: true,
+    resume: !onChatInteraction,
     onToolCall: onToolCall as any,
     onFinish,
     onError: (error) => console.error("Chat error:", error),
@@ -286,17 +294,40 @@ export function ChatPanelInner({
   });
 
   const isLoading = status === "streaming" || status === "submitted";
+  useResumeMessage({
+    resumeMessage,
+    isLoading,
+    gated: Boolean(onChatInteraction),
+    sendMessage,
+    onResumeComplete,
+    inputRef,
+    textareaRef,
+  });
   const messageIdSet = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
+  const handleSendMessage = useCallback(
+    (message: { text: string }) => {
+      if (onChatInteraction) {
+        onChatInteraction({ type: "suggested", text: message.text });
+        return;
+      }
+      void sendMessage(message);
+    },
+    [onChatInteraction, sendMessage],
+  );
   const handleSubmit = useCallback(
     (event: React.FormEvent) => {
       event.preventDefault();
+      if (onChatInteraction) {
+        onChatInteraction({ type: "typed", text: inputRef.current });
+        return;
+      }
       const text = inputRef.current.trim();
       if (!text || isLoading) return;
       sendMessage({ text });
       inputRef.current = "";
       if (textareaRef.current) textareaRef.current.value = "";
     },
-    [sendMessage, isLoading, inputRef, textareaRef],
+    [sendMessage, isLoading, inputRef, textareaRef, onChatInteraction],
   );
   const handleSwitchSessionFromList = useCallback(
     (sessionId: string) => {
@@ -372,7 +403,7 @@ export function ChatPanelInner({
             bookAnnotations={bookAnnotations}
             messageIdSet={messageIdSet}
             selectedBookTitles={selectedBookTitles}
-            sendMessage={sendMessage}
+            sendMessage={handleSendMessage}
           />
           <ChatInput
             bookTitle={bookTitle}
@@ -383,6 +414,7 @@ export function ChatPanelInner({
             onStop={stop}
             highlightPill={highlightPill ?? undefined}
             onClearHighlightPill={() => setHighlightPill(null)}
+            onInteraction={onChatInteraction}
           />
         </>
       )}

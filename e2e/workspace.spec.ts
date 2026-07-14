@@ -43,6 +43,7 @@ async function uploadAndOpenBook(page: Page) {
 
 test.describe("Workspace route", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
     await page.goto("/");
     // Wait for client-side hydration — the workspace route is the index
     // The dockview container should be present once hydrated
@@ -257,6 +258,9 @@ test.describe("Workspace route", () => {
     const iframe = page.frameLocator("iframe").first();
     const chapterText = iframe.locator("p").first();
     await expect(chapterText).toBeVisible({ timeout: 20_000 });
+
+    // Highlight handlers register after persisted annotations finish loading.
+    await page.waitForTimeout(1_000);
 
     // Do NOT open the notebook first — this is the regression scenario.
     // Select text inside the epub iframe and save a highlight.
