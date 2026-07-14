@@ -9,6 +9,13 @@ if [ -z "${DATABASE_URL:-}" ]; then
   exit 1
 fi
 
+echo "DATABASE_URL: ${DATABASE_URL}"
+echo "Testing database connection..."
+psql "$DATABASE_URL" -c "SELECT version();" || {
+  echo "Error: Failed to connect to database"
+  exit 1
+}
+
 echo "Initializing readmax schema..."
 
 # Apply baseline schema files in order
