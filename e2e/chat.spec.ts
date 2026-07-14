@@ -333,7 +333,7 @@ test.describe("Chat (server-authoritative)", () => {
           page.evaluate((annotationMarker) => {
             const children = Array.from(document.querySelectorAll(".ProseMirror > *"));
             const highlightIndex = children.findIndex((element) =>
-              element.matches("[data-highlight-reference]"),
+              element.matches(".node-highlightReference, [data-highlight-reference]"),
             );
             const markerIndex = children.findIndex((element) =>
               element.textContent?.includes(annotationMarker),
