@@ -204,6 +204,9 @@ test.describe("Share", () => {
   test.setTimeout(180_000);
 
   test.beforeEach(async ({ page, context, request }) => {
+    // Skip share tests in CI - they require Vercel Blob storage for book sync
+    test.skip(!!process.env.SKIP_AI_TESTS, "Share tests skipped (require blob storage, set SKIP_AI_TESTS=true)");
+
     await skipIfAuthNotConfigured(request);
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await installVirtualAuthenticator(context, page);
