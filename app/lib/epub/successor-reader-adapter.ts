@@ -682,8 +682,16 @@ export function createSuccessorBookAdapter(
         if (!document) return [];
         const root = document.body ?? document.documentElement;
         const text = root.textContent ?? "";
-        const haystack = text.toLocaleLowerCase();
-        const needle = query.toLocaleLowerCase();
+        // Case-insensitive matching runs on locale-lowercased copies, but
+        // only when folding preserves lengths — otherwise the offsets found
+        // in the haystack would not map back to `text` (e.g. "İ" folds to
+        // two code units). Fall back to exact matching in that case.
+        let haystack = text.toLocaleLowerCase();
+        let needle = query.toLocaleLowerCase();
+        if (haystack.length !== text.length || needle.length !== query.length) {
+          haystack = text;
+          needle = query;
+        }
         if (needle.length === 0) return [];
         const offsets: number[] = [];
         for (
@@ -698,7 +706,7 @@ export function createSuccessorBookAdapter(
         const ranges = rangesAtTextSpans(
           document,
           root,
-          offsets.map((offset) => [offset, offset + query.length] as const),
+          offsets.map((offset) => [offset, offset + needle.length] as const),
         );
         const results: Array<{ cfi: string; excerpt: string }> = [];
         for (const [position, offset] of offsets.entries()) {
@@ -706,7 +714,7 @@ export function createSuccessorBookAdapter(
           if (!range) continue;
           results.push({
             cfi: generateCfi(range, sectionMetadata(publication, index)),
-            excerpt: text.slice(Math.max(0, offset - 40), offset + query.length + 40),
+            excerpt: text.slice(Math.max(0, offset - 40), offset + needle.length + 40),
           });
         }
         return results;

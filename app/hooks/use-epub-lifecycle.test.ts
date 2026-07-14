@@ -361,6 +361,13 @@ describe("successor position compatibility", () => {
       for (const result of repeated) {
         expect(result.cfi).toMatch(/^epubcfi\(.*,.*,.*\)$/);
       }
+
+      // Queries whose locale case-folding changes length (İ → i̇) fall back
+      // to exact matching instead of producing misaligned offsets.
+      const folded = await book.spine.get(1)!.find("İelephant");
+      expect(folded).toEqual([]);
+      const mixedCase = await book.spine.get(1)!.find("Elephant");
+      expect(mixedCase[0]?.excerpt).toContain("elephant");
     } finally {
       provider.close();
     }
