@@ -77,6 +77,13 @@ function codeBlock(text: string): JSONContent {
   };
 }
 
+function highlightReference(highlightId: string, text: string): JSONContent {
+  return {
+    type: "highlightReference",
+    attrs: { highlightId, cfiRange: `epubcfi(${highlightId})`, text },
+  };
+}
+
 let destroyFn: (() => void) | null = null;
 
 afterEach(() => {
@@ -103,6 +110,16 @@ describe("createNotebookSDK", () => {
     it("handles empty doc", () => {
       const { sdk } = setup({ type: "doc", content: [] });
       expect(sdk.getBlocks()).toHaveLength(0);
+    });
+
+    it("uses highlight reference attrs text as block text", () => {
+      const { sdk } = setup(doc(highlightReference("highlight-1", "Highlighted passage")));
+      const block = sdk.getBlocks()[0];
+      expect(block).toMatchObject({
+        type: "highlightReference",
+        text: "Highlighted passage",
+        attrs: { highlightId: "highlight-1", text: "Highlighted passage" },
+      });
     });
   });
 
@@ -132,6 +149,19 @@ describe("createNotebookSDK", () => {
       const results = sdk.find({ type: "heading", text: "Intro" });
       expect(results).toHaveLength(1);
       expect(results[0].text).toBe("Intro");
+    });
+
+    it("finds highlight references by highlighted text and type", () => {
+      const { sdk } = setup(
+        doc(
+          highlightReference("highlight-1", "Alpha highlighted passage"),
+          highlightReference("highlight-2", "Beta highlighted passage"),
+        ),
+      );
+
+      expect(sdk.find("Alpha highlighted")).toHaveLength(1);
+      expect(sdk.find({ text: "Beta highlighted" })[0].attrs?.highlightId).toBe("highlight-2");
+      expect(sdk.find({ type: "highlightReference" })).toHaveLength(2);
     });
   });
 
@@ -291,6 +321,43 @@ describe("createNotebookSDK", () => {
       const texts = sdk.getBlocks().map((b) => b.text);
       expect(texts.indexOf("Inserted")).toBe(texts.indexOf("First") + 1);
     });
+
+    it("inserts a paragraph containing text after a highlight reference", () => {
+      const { sdk } = setup(doc(highlightReference("highlight-1", "Quoted text"), p("After")));
+      const target = sdk.find({ type: "highlightReference" })[0];
+      sdk.insertAfter(target, "Annotation after");
+      expect(sdk.getBlocks().map(({ type, text }) => ({ type, text }))).toEqual([
+        { type: "highlightReference", text: "Quoted text" },
+        { type: "paragraph", text: "Annotation after" },
+        { type: "paragraph", text: "After" },
+      ]);
+    });
+
+    it("resolves duplicate-text highlight references by ID across mutations", () => {
+      const { sdk } = setup(
+        doc(
+          highlightReference("highlight-1", "Same quoted text"),
+          highlightReference("highlight-2", "Same quoted text"),
+          highlightReference("highlight-3", "Same quoted text"),
+        ),
+      );
+      let blocks = sdk.refresh();
+      const highlights = blocks.filter((block) => block.type === "highlightReference");
+
+      highlights.forEach((highlight, index) => {
+        sdk.insertAfter(highlight, `Annotation ${index + 1}`);
+        blocks = sdk.refresh();
+      });
+
+      expect(blocks.map((block) => block.text)).toEqual([
+        "Same quoted text",
+        "Annotation 1",
+        "Same quoted text",
+        "Annotation 2",
+        "Same quoted text",
+        "Annotation 3",
+      ]);
+    });
   });
 
   describe("insertBefore", () => {
@@ -300,6 +367,17 @@ describe("createNotebookSDK", () => {
       sdk.insertBefore(target, "Inserted");
       const texts = sdk.getBlocks().map((b) => b.text);
       expect(texts.indexOf("Inserted")).toBe(texts.indexOf("Second") - 1);
+    });
+
+    it("inserts a paragraph containing text before a highlight reference", () => {
+      const { sdk } = setup(doc(p("Before"), highlightReference("highlight-1", "Quoted text")));
+      const target = sdk.find({ type: "highlightReference" })[0];
+      sdk.insertBefore(target, "Annotation before");
+      expect(sdk.getBlocks().map(({ type, text }) => ({ type, text }))).toEqual([
+        { type: "paragraph", text: "Before" },
+        { type: "paragraph", text: "Annotation before" },
+        { type: "highlightReference", text: "Quoted text" },
+      ]);
     });
   });
 

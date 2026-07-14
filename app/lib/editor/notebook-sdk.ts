@@ -43,6 +43,8 @@ export interface Block {
 export interface NotebookSDK {
   getMarkdown(): string;
   getBlocks(): Block[];
+  /** Callers must re-read blocks after any mutation to receive current live blocks. */
+  refresh(): Block[];
   find(query: string | { type?: BlockType; text?: string | RegExp }): Block[];
 
   append(markdown: string): void;
@@ -147,6 +149,9 @@ function extractBlocks(editor: Editor, generation: number): Block[] {
     };
     if (node.type.name === "heading") {
       block.level = node.attrs.level;
+    }
+    if (node.type.name === "highlightReference") {
+      block.text = node.attrs?.text ?? "";
     }
     if (node.attrs && Object.keys(node.attrs).length > 0) {
       block.attrs = { ...node.attrs };
@@ -273,15 +278,21 @@ export function createNotebookSDK(content: JSONContent): {
 
   /**
    * Resolve a block to its current position. If the block is stale (from a
-   * previous mutation generation), re-find it by text match and warn.
+   * previous mutation generation), re-find it against the live blocks and warn.
    */
   function resolveBlock(block: Block): Block | null {
     if (block._generation !== undefined && block._generation !== mutationGeneration) {
       console.warn(
-        `notebook: block "${block.text}" is stale (gen ${block._generation} vs ${mutationGeneration}). Re-finding by text.`,
+        `notebook: block "${block.text}" is stale (gen ${block._generation} vs ${mutationGeneration}). Re-finding against live blocks.`,
       );
       const blocks = extractBlocks(editor, mutationGeneration);
-      const found = blocks.find((b) => b.type === block.type && b.text === block.text);
+      const highlightId = block.attrs?.highlightId;
+      const found =
+        block.type === "highlightReference" && highlightId
+          ? blocks.find(
+              (b) => b.type === "highlightReference" && b.attrs?.highlightId === highlightId,
+            )
+          : blocks.find((b) => b.type === block.type && b.text === block.text);
       if (!found) {
         console.warn(`notebook: could not re-find stale block "${block.text}"`);
         return null;
@@ -297,6 +308,10 @@ export function createNotebookSDK(content: JSONContent): {
     },
 
     getBlocks(): Block[] {
+      return extractBlocks(editor, mutationGeneration);
+    },
+
+    refresh(): Block[] {
       return extractBlocks(editor, mutationGeneration);
     },
 
