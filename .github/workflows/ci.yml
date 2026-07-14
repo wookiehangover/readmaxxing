@@ -55,9 +55,35 @@ jobs:
       - run: pnpm test -- --run
 
   e2e:
-    # Temporarily disabled: e2e suite is flaky and slow; re-enable later.
-    if: false
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?search_path=readmax
+      REDIS_URL: redis://localhost:6379
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_RP_ORIGIN: http://localhost:5173
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -66,6 +92,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Initialize database
+        run: bash scripts/init-db.sh
       - run: pnpm exec playwright install chromium --with-deps
       - run: pnpm build
       - run: pnpm e2e
