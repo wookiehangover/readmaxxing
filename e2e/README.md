@@ -65,8 +65,8 @@ These tests work without Postgres/Redis and test core offline functionality:
 ### Database-dependent tests
 These tests require Postgres and use `skipIfAuthNotConfigured()` to skip gracefully when the database is unavailable:
 
-- `chat.spec.ts` — AI chat with tool use (create highlights, append to notes, resumable streaming)
-- `share.spec.ts` — Book sharing via blob storage and share links
+- `chat.spec.ts` — AI chat with tool use (create highlights, append to notes, resumable streaming). Skipped in CI via `SKIP_AI_TESTS` (requires Anthropic API key)
+- `share.spec.ts` — Book sharing via blob storage and share links. Skipped in CI via `SKIP_SHARE_TESTS` (requires Vercel Blob storage)
 
 ## Performance optimizations
 

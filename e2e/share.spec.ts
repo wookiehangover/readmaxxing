@@ -205,7 +205,7 @@ test.describe("Share", () => {
 
   test.beforeEach(async ({ page, context, request }) => {
     // Skip share tests in CI - they require Vercel Blob storage for book sync
-    test.skip(!!process.env.SKIP_AI_TESTS, "Share tests skipped (require blob storage, set SKIP_AI_TESTS=true)");
+    test.skip(!!process.env.SKIP_SHARE_TESTS, "Share tests skipped (require Vercel Blob storage)");
 
     await skipIfAuthNotConfigured(request);
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);

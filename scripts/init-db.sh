@@ -9,12 +9,11 @@ if [ -z "${DATABASE_URL:-}" ]; then
   exit 1
 fi
 
-echo "DATABASE_URL: ${DATABASE_URL}"
-echo "Testing database connection..."
+echo "Initializing database schema..."
 
-# Extract connection string without search_path parameter for psql
-# psql handles search_path differently than other tools
-BASE_URL="${DATABASE_URL%%\?*}"
+# Extract connection string, removing only the search_path parameter for psql
+# psql doesn't support search_path in the URL; preserve other params like sslmode
+BASE_URL=$(echo "$DATABASE_URL" | sed 's/[?&]search_path=[^&]*//g' | sed 's/?&/?/g')
 echo "Base URL (no params): ${BASE_URL}"
 
 psql "$BASE_URL" -c "SELECT version();" || {
