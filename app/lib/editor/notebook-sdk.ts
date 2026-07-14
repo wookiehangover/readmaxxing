@@ -543,11 +543,12 @@ export function createNotebookSDK(content: JSONContent): {
         return;
       }
 
-      // Top-level: insert at the resolved node boundary without rebuilding the document.
+      // Top-level: JSON-splice to avoid atom-to-empty-paragraph boundaries swallowing content.
       const idx = resolved._topLevelIndex;
-      if (idx === undefined || idx < 0 || idx >= editor.state.doc.childCount) return;
-      const insertPos = resolved._pos - 1 + editor.state.doc.child(idx).nodeSize;
-      editor.commands.insertContentAt(insertPos, parsed);
+      if (idx === undefined || idx < 0 || idx >= docJson.content.length) return;
+      const newContent: JSONContent[] = [...docJson.content];
+      newContent.splice(idx + 1, 0, ...parsed);
+      editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
       mutationGeneration++;
     },
 
@@ -579,10 +580,12 @@ export function createNotebookSDK(content: JSONContent): {
         return;
       }
 
-      // Top-level: insert at the resolved node boundary without rebuilding the document.
+      // Top-level: JSON-splice to avoid atom-to-empty-paragraph boundaries swallowing content.
       const idx = resolved._topLevelIndex;
-      if (idx === undefined || idx < 0 || idx >= editor.state.doc.childCount) return;
-      editor.commands.insertContentAt(resolved._pos - 1, parsed);
+      if (idx === undefined || idx < 0 || idx >= docJson.content.length) return;
+      const newContent: JSONContent[] = [...docJson.content];
+      newContent.splice(idx, 0, ...parsed);
+      editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
       mutationGeneration++;
     },
   };

@@ -10,6 +10,10 @@ function p(text: string): JSONContent {
   return { type: "paragraph", content: [{ type: "text", text }] };
 }
 
+function emptyParagraph(): JSONContent {
+  return { type: "paragraph" };
+}
+
 function heading(level: number, text: string): JSONContent {
   return {
     type: "heading",
@@ -322,14 +326,16 @@ describe("createNotebookSDK", () => {
       expect(texts.indexOf("Inserted")).toBe(texts.indexOf("First") + 1);
     });
 
-    it("inserts a paragraph containing text after a highlight reference", () => {
-      const { sdk } = setup(doc(highlightReference("highlight-1", "Quoted text"), p("After")));
+    it("inserts after a highlight reference before its existing empty paragraph", () => {
+      const { sdk } = setup(
+        doc(highlightReference("highlight-1", "Quoted text"), emptyParagraph()),
+      );
       const target = sdk.find({ type: "highlightReference" })[0];
       sdk.insertAfter(target, "Annotation after");
       expect(sdk.getBlocks().map(({ type, text }) => ({ type, text }))).toEqual([
         { type: "highlightReference", text: "Quoted text" },
         { type: "paragraph", text: "Annotation after" },
-        { type: "paragraph", text: "After" },
+        { type: "paragraph", text: "" },
       ]);
     });
 
@@ -369,14 +375,16 @@ describe("createNotebookSDK", () => {
       expect(texts.indexOf("Inserted")).toBe(texts.indexOf("Second") - 1);
     });
 
-    it("inserts a paragraph containing text before a highlight reference", () => {
-      const { sdk } = setup(doc(p("Before"), highlightReference("highlight-1", "Quoted text")));
+    it("inserts before a highlight reference followed by an existing empty paragraph", () => {
+      const { sdk } = setup(
+        doc(highlightReference("highlight-1", "Quoted text"), emptyParagraph()),
+      );
       const target = sdk.find({ type: "highlightReference" })[0];
       sdk.insertBefore(target, "Annotation before");
       expect(sdk.getBlocks().map(({ type, text }) => ({ type, text }))).toEqual([
-        { type: "paragraph", text: "Before" },
         { type: "paragraph", text: "Annotation before" },
         { type: "highlightReference", text: "Quoted text" },
+        { type: "paragraph", text: "" },
       ]);
     });
   });
