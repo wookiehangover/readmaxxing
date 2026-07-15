@@ -52,6 +52,19 @@ CREATE TABLE readmax.challenge (
 
 CREATE INDEX challenge_user_id_idx ON readmax.challenge (user_id);
 
+-- Magic links
+
+CREATE TABLE readmax.magic_link (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES readmax.user(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX magic_link_token_hash_idx ON readmax.magic_link (token_hash);
+CREATE INDEX magic_link_user_id_idx ON readmax.magic_link (user_id);
+
 -- Books
 
 CREATE TABLE readmax.book (
