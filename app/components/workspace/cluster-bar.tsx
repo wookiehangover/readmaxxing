@@ -31,19 +31,30 @@ interface ClusterBarProps {
 
 export function ClusterBarActions({ demoActive }: { readonly demoActive: boolean }) {
   const { isAuthenticated, isLoading } = useAuth();
+  const ws = useWorkspace();
 
   if (demoActive && isLoading) return null;
 
   if (demoActive && !isAuthenticated) {
     return (
-      <Button
-        size="sm"
-        className="bg-blue-600 text-white hover:bg-blue-700"
-        render={<Link to="/login" />}
-        nativeButton={false}
-      >
-        Log in
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => ws.openStandardEbooksRef.current?.()}
+        >
+          More books →
+        </Button>
+        <Button
+          size="sm"
+          className="bg-blue-600 text-white hover:bg-blue-700"
+          render={<Link to="/login" />}
+          nativeButton={false}
+        >
+          Log in
+        </Button>
+      </div>
     );
   }
 
