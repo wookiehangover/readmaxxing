@@ -1,6 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { DEMO_SUGGESTED_QUESTIONS } from "~/lib/onboarding/demo-content";
-import { joinTextParts, parseSuggestedPrompts, stripSuggestedPrompts } from "../chat-utils";
+import {
+  DEMO_CAPABILITIES_ANSWER,
+  DEMO_INTRO_QUESTION,
+  DEMO_SUGGESTED_QUESTIONS,
+} from "~/lib/onboarding/demo-content";
+import {
+  createDemoIntroChat,
+  joinTextParts,
+  parseSuggestedPrompts,
+  stripSuggestedPrompts,
+} from "../chat-utils";
 
 describe("joinTextParts", () => {
   it("returns an empty string for no parts", () => {
@@ -47,5 +56,19 @@ ${DEMO_SUGGESTED_QUESTIONS.join("\n")}
 
     expect(parseSuggestedPrompts(message)).toEqual(DEMO_SUGGESTED_QUESTIONS);
     expect(stripSuggestedPrompts(message)).not.toContain("suggested-prompts");
+  });
+
+  it("builds the ephemeral intro from the demo content source of truth", () => {
+    const chat = createDemoIntroChat();
+    const intro = chat.next(chat.get(0));
+    const messages = chat.get();
+    const answer = messages[1].parts[0];
+
+    expect(intro?.role).toBe("user");
+    expect(intro?.parts).toEqual([{ type: "text", text: DEMO_INTRO_QUESTION }]);
+    expect(answer).toMatchObject({ type: "text" });
+    if (answer.type !== "text") throw new Error("Expected the intro answer to contain text");
+    expect(answer.text).toContain(DEMO_CAPABILITIES_ANSWER);
+    expect(parseSuggestedPrompts(answer.text)).toEqual(DEMO_SUGGESTED_QUESTIONS);
   });
 });

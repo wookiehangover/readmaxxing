@@ -22,6 +22,7 @@
     "@react-router/node": "^8",
     "@react-router/serve": "^8",
     "@readmaxxing/epub-successor": "workspace:*",
+    "@shadcn/helpers": "^0.1.0",
     "@shadcn/react": "^0.2.1",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",
