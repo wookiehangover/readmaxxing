@@ -2,12 +2,21 @@ import { openPublication, openZipResourceProvider } from "@readmaxxing/epub-succ
 import type { Link, TocEntry } from "@readmaxxing/epub-successor";
 import { extractCompatibleToc } from "~/lib/epub/successor-reader-adapter";
 
+export interface BookChapterSegment {
+  spineIndex: number;
+  href: string;
+  start: number;
+  end: number;
+}
+
 export interface BookChapter {
   index: number;
   title: string;
   text: string;
   spineStart: number;
   spineEnd: number;
+  /** Absent on chapters extracted before per-spine bookkeeping was added. */
+  segments?: BookChapterSegment[];
 }
 
 interface SpineTextItem {
@@ -19,6 +28,26 @@ interface SpineTextItem {
 interface TocChapterStart {
   title: string;
   spineStart: number;
+}
+
+export function joinSpineTextSegments(spineTexts: readonly SpineTextItem[]): {
+  text: string;
+  segments: BookChapterSegment[];
+} {
+  let text = "";
+  const segments: BookChapterSegment[] = [];
+
+  for (const item of spineTexts) {
+    if (!item.text) continue;
+
+    // Separators are gaps between segments and belong to neither spine item.
+    if (text) text += "\n\n";
+    const start = text.length;
+    text += item.text;
+    segments.push({ spineIndex: item.index, href: item.href, start, end: text.length });
+  }
+
+  return { text, segments };
 }
 
 function normalizeEpubHref(href: string): string {
@@ -116,13 +145,16 @@ function buildTocChapterStarts(
 function buildFallbackChapters(spineTexts: SpineTextItem[]): BookChapter[] {
   return spineTexts
     .filter((item) => item.text.length > 0)
-    .map((item) => ({
-      index: item.index,
-      title: filenameFromHref(item.href) || `Chapter ${item.index + 1}`,
-      text: item.text,
-      spineStart: item.index,
-      spineEnd: item.index + 1,
-    }));
+    .map((item) => {
+      const content = joinSpineTextSegments([item]);
+      return {
+        index: item.index,
+        title: filenameFromHref(item.href) || `Chapter ${item.index + 1}`,
+        ...content,
+        spineStart: item.index,
+        spineEnd: item.index + 1,
+      };
+    });
 }
 
 /**
@@ -171,21 +203,18 @@ export async function extractBookChapters(data: ArrayBuffer): Promise<BookChapte
     const chapters = tocStarts
       .map((start, index): BookChapter | null => {
         const spineEnd = tocStarts[index + 1]?.spineStart ?? spineItems.length;
-        const text = spineTexts
-          .filter((item) => item.index >= start.spineStart && item.index < spineEnd)
-          .map((item) => item.text)
-          .filter(Boolean)
-          .join("\n\n")
-          .trim();
+        const content = joinSpineTextSegments(
+          spineTexts.filter((item) => item.index >= start.spineStart && item.index < spineEnd),
+        );
 
-        if (!text) {
+        if (!content.text) {
           return null;
         }
 
         return {
           index,
           title: start.title,
-          text,
+          ...content,
           spineStart: start.spineStart,
           spineEnd,
         };
