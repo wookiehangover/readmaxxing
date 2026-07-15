@@ -52,6 +52,7 @@ export interface NotebookSDK {
   replace(block: Block, markdown: string): boolean;
   setText(block: Block, text: string): boolean;
   remove(block: Block): boolean;
+  move(block: Block, target: Block, position?: "before" | "after"): boolean;
   insertAfter(block: Block, markdown: string): void;
   insertBefore(block: Block, markdown: string): void;
 }
@@ -518,6 +519,46 @@ export function createNotebookSDK(
       if (idx === undefined || idx < 0 || idx >= docJson.content.length) return false;
       const newContent: JSONContent[] = [...docJson.content];
       newContent.splice(idx, 1);
+      editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
+      mutationGeneration++;
+      return true;
+    },
+
+    move(block: Block, target: Block, position: "before" | "after" = "after"): boolean {
+      const resolvedBlock = resolveBlock(block);
+      const resolvedTarget = resolveBlock(target);
+      if (!resolvedBlock || !resolvedTarget) return false;
+
+      if (resolvedBlock.type === "listItem" || resolvedTarget.type === "listItem") {
+        console.warn(
+          "notebook.move(): cannot move a listItem or use one as a target. " +
+            "Move top-level blocks only.",
+        );
+        return false;
+      }
+
+      const docJson = editor.getJSON();
+      if (!docJson.content) return false;
+
+      const sourceIdx = resolvedBlock._topLevelIndex;
+      const targetIdx = resolvedTarget._topLevelIndex;
+      if (
+        sourceIdx === undefined ||
+        targetIdx === undefined ||
+        sourceIdx < 0 ||
+        sourceIdx >= docJson.content.length ||
+        targetIdx < 0 ||
+        targetIdx >= docJson.content.length
+      )
+        return false;
+
+      if (sourceIdx === targetIdx) return true;
+
+      const newContent: JSONContent[] = [...docJson.content];
+      const [sourceNode] = newContent.splice(sourceIdx, 1);
+      const adjustedTargetIdx = sourceIdx < targetIdx ? targetIdx - 1 : targetIdx;
+      const insertionIdx = position === "before" ? adjustedTargetIdx : adjustedTargetIdx + 1;
+      newContent.splice(insertionIdx, 0, sourceNode);
       editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
       mutationGeneration++;
       return true;

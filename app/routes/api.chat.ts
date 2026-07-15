@@ -33,7 +33,11 @@ import {
 import { runEditNotesInSandbox } from "~/lib/editor/notebook-sdk-server";
 import { markdownToTiptapJsonServer } from "~/lib/editor/markdown-to-tiptap-server";
 import { resolveCreateHighlightAnchor } from "~/lib/chat/create-highlight-anchor";
-import { getNotebookHighlightIds, listLiveHighlightsForBook } from "~/lib/chat/highlight-tools";
+import {
+  appendHighlightReferenceToContent,
+  getNotebookHighlightIds,
+  listLiveHighlightsForBook,
+} from "~/lib/chat/highlight-tools";
 import type { JSONContent } from "@tiptap/react";
 import {
   getMessagesBySession,
@@ -591,6 +595,7 @@ export async function action({ request }: Route.ActionArgs) {
                     "notebook.setText(block, text) → boolean — PREFERRED for 'change the text of this block'. Preserves heading level, list-item structure, code-block language, etc. Use this to rename headings, fix typos, or reword existing blocks. `text` is inserted verbatim as plain text — do NOT include markdown markers like '#' or '*'; " +
                     "notebook.replace(block, markdown) → boolean — replaces the entire block with newly-parsed markdown. Use when you want to change the block's TYPE (e.g. a paragraph becomes a bulleted list) or insert multiple blocks in place of one; " +
                     "notebook.remove(block) → boolean — delete a single block; " +
+                    "notebook.move(block, target, position?) → boolean — move an existing top-level block before or after another top-level block; defaults to 'after' and does not support listItem; " +
                     "notebook.insertAfter(block, markdown) — insert new content after a block; " +
                     "notebook.insertBefore(block, markdown) — insert new content before a block; " +
                     "notebook.append(markdown) — add new content at the END of the notebook; does NOT touch existing content; " +
@@ -601,6 +606,7 @@ export async function action({ request }: Route.ActionArgs) {
                     "Example — change a paragraph into a bullet list (structural change): const p = notebook.find('items:')[0]; if (p) notebook.replace(p, '- a\\n- b\\n- c'); " +
                     "Example — remove a block: const b = notebook.find({ text: 'obsolete' })[0]; if (b) notebook.remove(b); " +
                     "Example — place a note under a highlight: const h = notebook.find({ type: 'highlightReference' })[0]; if (h) notebook.insertAfter(h, 'My annotation'); " +
+                    "Example — move a highlight under a heading: const h = notebook.find({ type: 'highlightReference' })[0]; const section = notebook.find({ type: 'heading', text: 'Key ideas' })[0]; if (h && section) notebook.move(h, section); " +
                     "There is NO whole-document replace method. Do NOT rebuild the entire notebook in a single call — the server will reject scripts that reduce the notebook to near-empty.",
                 ),
             }),
@@ -790,6 +796,55 @@ export async function action({ request }: Route.ActionArgs) {
                 bookId: target.bookId,
                 highlights: listLiveHighlightsForBook(highlights, target.bookId, notebookIds),
               };
+            },
+          }),
+          attach_highlight: tool({
+            description:
+              "Re-attach an existing live highlight to its notebook by appending a highlightReference block. Use list_highlights to find a highlight with inNotebook:false. This does not create a new highlight.",
+            inputSchema: z.object({
+              highlightId: z.string().describe("The existing highlight id from list_highlights"),
+            }),
+            execute: async ({ highlightId }) => {
+              const highlights = await getHighlightsByUser(userId);
+              const highlight = highlights.find(
+                (candidate) => candidate.id === highlightId && candidate.deletedAt === null,
+              );
+              if (!highlight) {
+                return { attached: false, reason: "highlight not found or deleted" };
+              }
+
+              const notebook = await getNotebookForUser(userId, highlight.bookId);
+              if (getNotebookHighlightIds(notebook?.content).has(highlightId)) {
+                return { attached: false, alreadyPresent: true };
+              }
+
+              const updatedContent = appendHighlightReferenceToContent(
+                notebook?.content,
+                highlight,
+              );
+              let row: Awaited<ReturnType<typeof upsertNotebook>>;
+              try {
+                row = await upsertNotebook(userId, highlight.bookId, updatedContent, new Date());
+              } catch (err) {
+                console.error("attach_highlight: failed to persist updated notebook:", err);
+                return {
+                  attached: false,
+                  error: err instanceof Error ? err.message : String(err),
+                };
+              }
+
+              if (!row) {
+                console.warn(
+                  "attach_highlight: upsertNotebook returned null (LWW filtered); skipping attachment",
+                );
+                return {
+                  attached: false,
+                  error:
+                    "attach_highlight: server already has a newer notebook; ignoring this edit",
+                };
+              }
+
+              return { attached: true, updatedAt: row.updatedAt.getTime() };
             },
           }),
           delete_highlight: tool({

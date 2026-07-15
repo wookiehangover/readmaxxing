@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { HighlightRow } from "~/lib/database/annotation/highlight";
-import { getNotebookHighlightIds, listLiveHighlightsForBook } from "../highlight-tools";
+import {
+  appendHighlightReferenceToContent,
+  getNotebookHighlightIds,
+  listLiveHighlightsForBook,
+} from "../highlight-tools";
 
 function highlight(overrides: Partial<HighlightRow> & { id: string }): HighlightRow {
   const now = new Date(0);
@@ -25,6 +29,47 @@ function highlight(overrides: Partial<HighlightRow> & { id: string }): Highlight
 }
 
 describe("highlight tool helpers", () => {
+  it("appends an existing highlight reference and trailing paragraph", () => {
+    const existingParagraph = {
+      type: "paragraph",
+      content: [{ type: "text", text: "Existing note" }],
+    };
+
+    expect(
+      appendHighlightReferenceToContent(
+        { type: "doc", content: [existingParagraph] },
+        highlight({ id: "orphan", cfiRange: "epubcfi(/6/4)", text: "Quoted passage" }),
+      ),
+    ).toEqual({
+      type: "doc",
+      content: [
+        existingParagraph,
+        {
+          type: "highlightReference",
+          attrs: {
+            highlightId: "orphan",
+            cfiRange: "epubcfi(/6/4)",
+            text: "Quoted passage",
+          },
+        },
+        { type: "paragraph" },
+      ],
+    });
+  });
+
+  it("creates a document and uses an empty CFI when stored content and CFI are absent", () => {
+    expect(appendHighlightReferenceToContent(null, highlight({ id: "orphan" }))).toEqual({
+      type: "doc",
+      content: [
+        {
+          type: "highlightReference",
+          attrs: { highlightId: "orphan", cfiRange: "", text: "passage" },
+        },
+        { type: "paragraph" },
+      ],
+    });
+  });
+
   it("marks notebook references by highlightId and leaves orphan highlights unmarked", () => {
     const notebook = {
       type: "doc",
