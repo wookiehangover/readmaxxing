@@ -151,6 +151,7 @@ export interface TextAnchor {
   chapterIndex: number;
   snippet: string;
   offset?: number;
+  matchQuality: "exact" | "fuzzy";
 }
 
 /**
@@ -164,6 +165,8 @@ function normalizeForMatch(text: string): string {
     .replace(/\u2014/g, "--")
     .replace(/\u2013/g, "-")
     .replace(/\u2026/g, "...")
+    .replace(/[\u00A0\u202F]/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -173,8 +176,8 @@ function normalizeForMatch(text: string): string {
  * its chapter, a snippet suitable for client-side CFI resolution, and an
  * optional character offset within the chapter text.
  *
- * Runs the Orama index to pick the most likely chapter, then tries to pin
- * down an exact character offset in that chapter's text.
+ * Uses the Orama result as the first candidate, then verifies normalized
+ * substrings across every chapter before accepting a fuzzy fallback.
  */
 export function locateTextAnchor(
   chapters: BookChapter[],
@@ -184,32 +187,58 @@ export function locateTextAnchor(
   const trimmed = text.trim();
   if (!trimmed) return null;
 
+  const needle = normalizeForMatch(trimmed);
+  if (!needle) return null;
+
   const hits = searchBook(db, trimmed, 1);
-  if (hits.length === 0) return null;
-
-  const chapterIndex = hits[0].chapterIndex;
-  const chapter = chapters.find((c) => c.index === chapterIndex);
-
   const snippetSource = trimmed.length > 160 ? trimmed.slice(0, 160) : trimmed;
 
-  let offset: number | undefined;
-  if (chapter) {
-    const norm = normalizeForMatch(chapter.text);
-    const needle = normalizeForMatch(trimmed);
-    let idx = norm.indexOf(needle);
-    if (idx < 0 && needle.length > 40) {
-      idx = norm.indexOf(needle.slice(0, 40));
-    }
-    if (idx >= 0) {
-      offset = idx;
+  const topHit = hits[0];
+  const topChapter = topHit
+    ? chapters.find((chapter) => chapter.index === topHit.chapterIndex)
+    : undefined;
+  if (topChapter) {
+    const offset = normalizeForMatch(topChapter.text).indexOf(needle);
+    if (offset >= 0) {
+      return {
+        chapterIndex: topChapter.index,
+        snippet: snippetSource,
+        offset,
+        matchQuality: "exact",
+      };
     }
   }
 
-  return {
-    chapterIndex,
-    snippet: snippetSource,
-    ...(offset != null ? { offset } : {}),
+  const findExactChapter = (searchNeedle: string): TextAnchor | null => {
+    for (const chapter of chapters) {
+      const offset = normalizeForMatch(chapter.text).indexOf(searchNeedle);
+      if (offset >= 0) {
+        return {
+          chapterIndex: chapter.index,
+          snippet: snippetSource,
+          offset,
+          matchQuality: "exact",
+        };
+      }
+    }
+    return null;
   };
+
+  const exactAnchor = findExactChapter(needle);
+  if (exactAnchor) return exactAnchor;
+
+  if (needle.length > 40) {
+    const prefixAnchor = findExactChapter(needle.slice(0, 40));
+    if (prefixAnchor) return prefixAnchor;
+  }
+
+  return topHit
+    ? {
+        chapterIndex: topHit.chapterIndex,
+        snippet: snippetSource,
+        matchQuality: "fuzzy",
+      }
+    : null;
 }
 
 export function searchBook(db: AnyOrama, query: string, limit: number = 10): BookSearchResult[] {
