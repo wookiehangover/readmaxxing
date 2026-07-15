@@ -214,6 +214,78 @@ describe("createNotebookSDK", () => {
     });
   });
 
+  describe("move", () => {
+    it("moves a highlight reference after a heading and preserves its attrs", () => {
+      const highlight = highlightReference("highlight-1", "Quoted text");
+      const { sdk, getResult } = setup(doc(heading(2, "Section"), p("Middle"), highlight));
+      const source = sdk.find({ type: "highlightReference" })[0];
+      const target = sdk.find({ type: "heading", text: "Section" })[0];
+
+      expect(sdk.move(source, target)).toBe(true);
+      expect(sdk.getBlocks().map((block) => block.text)).toEqual([
+        "Section",
+        "Quoted text",
+        "Middle",
+      ]);
+      expect(getResult().content?.[1]).toEqual(highlight);
+    });
+
+    it("moves a block before its target", () => {
+      const { sdk } = setup(doc(p("First"), heading(2, "Section"), p("Move me")));
+      const source = sdk.find("Move me")[0];
+      const target = sdk.find({ type: "heading", text: "Section" })[0];
+
+      expect(sdk.move(source, target, "before")).toBe(true);
+      expect(sdk.getBlocks().map((block) => block.text)).toEqual(["First", "Move me", "Section"]);
+    });
+
+    it("returns true without mutating when source and target are the same block", () => {
+      const { sdk, getResult } = setup(doc(p("First"), p("Same"), p("Last")));
+      const block = sdk.find("Same")[0];
+      const before = getResult();
+
+      expect(sdk.move(block, block)).toBe(true);
+      expect(getResult()).toEqual(before);
+    });
+
+    it("adjusts the target index when the source precedes the target", () => {
+      const { sdk } = setup(doc(p("Source"), p("Middle"), p("Target"), p("Last")));
+      const source = sdk.find("Source")[0];
+      const target = sdk.find("Target")[0];
+
+      expect(sdk.move(source, target)).toBe(true);
+      expect(sdk.getBlocks().map((block) => block.text)).toEqual([
+        "Middle",
+        "Target",
+        "Source",
+        "Last",
+      ]);
+    });
+
+    it("returns false when the source or target cannot be resolved", () => {
+      const { sdk } = setup(doc(p("Source"), p("Target")));
+      const source = sdk.find("Source")[0];
+      const target = sdk.find("Target")[0];
+      const missingSource = { ...source, text: "Missing source", _generation: -1 };
+      const missingTarget = { ...target, text: "Missing target", _generation: -1 };
+
+      expect(sdk.move(missingSource, target)).toBe(false);
+      expect(sdk.move(source, missingTarget)).toBe(false);
+      expect(sdk.getBlocks().map((block) => block.text)).toEqual(["Source", "Target"]);
+    });
+
+    it("returns false when the source or target is a listItem", () => {
+      const { sdk, getResult } = setup(doc(p("Paragraph"), bulletList("List item")));
+      const paragraph = sdk.find({ type: "paragraph" })[0];
+      const listItem = sdk.find({ type: "listItem" })[0];
+      const before = getResult();
+
+      expect(sdk.move(listItem, paragraph)).toBe(false);
+      expect(sdk.move(paragraph, listItem)).toBe(false);
+      expect(getResult()).toEqual(before);
+    });
+  });
+
   describe("setText", () => {
     it("setText on heading preserves level and only swaps text", () => {
       const { sdk } = setup(doc(p("Before"), heading(2, "Old Heading"), p("After")));
