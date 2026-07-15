@@ -34,6 +34,38 @@ export async function createMagicLink(data: CreateMagicLinkData): Promise<MagicL
   return result.rows[0];
 }
 
+export async function replaceMagicLinkForUser(
+  data: CreateMagicLinkData,
+): Promise<MagicLinkRow | null> {
+  const pool = getPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    await client.query(sql`
+      DELETE FROM readmax.magic_link
+      WHERE user_id = ${data.userId}
+    `);
+    const result = await client.query<MagicLinkRow>(sql`
+      INSERT INTO readmax.magic_link (user_id, token_hash, expires_at)
+      VALUES (${data.userId}, ${data.tokenHash}, ${data.expiresAt.toISOString()})
+      RETURNING
+        id,
+        user_id AS "userId",
+        token_hash AS "tokenHash",
+        expires_at AS "expiresAt",
+        created_at AS "createdAt"
+    `);
+    await client.query("COMMIT");
+    return result.rows[0] ?? null;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(console.error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function getMagicLinkByHash(tokenHash: string): Promise<MagicLinkRow | null> {
   const pool = getPool();
   const result = await pool.query<MagicLinkRow>(sql`
