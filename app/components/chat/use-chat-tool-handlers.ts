@@ -251,6 +251,7 @@ export function useChatToolHandlers({
                 text: string;
                 note?: string | null;
                 color?: string;
+                cfiRange?: string | null;
                 createdAt: number;
                 textAnchor: { chapterIndex: number; snippet: string; offset?: number };
               };
@@ -342,17 +343,19 @@ export function useChatToolHandlers({
               }
             } else {
               // Epub path
-              const { fuzzySearchEpubForCfi } = await import("~/lib/epub/epub-search");
-              // Prefer the server's text-anchor snippet when present — the
-              // server already located the best chapter, so searching for the
-              // snippet first improves the odds of a clean match.
-              const snippet = serverHighlight?.textAnchor.snippet ?? highlightText;
-              let results = await fuzzySearchEpubForCfi(data.slice(0), snippet);
-              if (results.length === 0 && snippet !== highlightText) {
-                results = await fuzzySearchEpubForCfi(data.slice(0), highlightText);
+              let cfiRange = serverHighlight?.cfiRange ?? "";
+              if (!cfiRange) {
+                const { fuzzySearchEpubForCfi } = await import("~/lib/epub/epub-search");
+                // Prefer the server's text-anchor snippet when present — the
+                // server already located the best chapter, so searching for the
+                // snippet first improves the odds of a clean match.
+                const snippet = serverHighlight?.textAnchor.snippet ?? highlightText;
+                let results = await fuzzySearchEpubForCfi(data.slice(0), snippet);
+                if (results.length === 0 && snippet !== highlightText) {
+                  results = await fuzzySearchEpubForCfi(data.slice(0), highlightText);
+                }
+                cfiRange = results[0]?.cfi ?? "";
               }
-
-              const cfiRange = results[0]?.cfi ?? "";
               const highlight = {
                 id: serverHighlight?.id ?? crypto.randomUUID(),
                 bookId: targetBookId,

@@ -8,12 +8,18 @@ const mockNotebookEditorCallbackMap = { current: new Map<string, NotebookEditorC
 const mockNotebookContentChangeMap = {
   current: new Map<string, (markdown: string) => void>(),
 };
+const mockNotebookCallbackMap = {
+  current: new Map<
+    string,
+    (attrs: { highlightId: string; cfiRange: string; text: string }) => void
+  >(),
+};
 
 vi.mock("~/lib/context/workspace-context", () => ({
   useWorkspace: () => ({
     waitForNavForBook: vi.fn(),
     applyTempHighlightForBook: vi.fn(),
-    notebookCallbackMap: { current: new Map() },
+    notebookCallbackMap: mockNotebookCallbackMap,
     notebookEditorCallbackMap: mockNotebookEditorCallbackMap,
     notebookContentChangeMap: mockNotebookContentChangeMap,
   }),
@@ -31,6 +37,9 @@ vi.mock("~/lib/stores/annotations-store", () => ({
     pipe: vi.fn().mockReturnValue({ __tag: "annotation-effect" }),
   },
 }));
+
+const fuzzySearchEpubForCfi = vi.fn();
+vi.mock("~/lib/epub/epub-search", () => ({ fuzzySearchEpubForCfi }));
 
 // Must import AFTER mocks are set up
 const { useChatToolHandlers } = await import("../use-chat-tool-handlers");
@@ -351,6 +360,58 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
     } finally {
       window.removeEventListener("sync:entity-updated", listener);
     }
+  });
+});
+
+describe("useChatToolHandlers – create_highlight", () => {
+  it("preserves a server CFI without running fuzzy EPUB search", async () => {
+    fuzzySearchEpubForCfi.mockClear();
+    const appendHighlight = vi.fn();
+    mockNotebookCallbackMap.current.set("book-1", appendHighlight);
+    const { onFinish } = renderHookSimple(() =>
+      useChatToolHandlers({
+        bookId: "book-1",
+        bookFormat: "epub",
+        bookDataRef: { current: new ArrayBuffer(1) },
+        streamedToolCallIdRef: { current: new Set<string>() },
+      }),
+    );
+    const cfiRange = "epubcfi(/6/2!/4/2,/1:0,/1:7)";
+
+    onFinish({
+      message: {
+        id: "msg-highlight",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-create_highlight",
+            toolCallId: "tc-highlight",
+            state: "output-available",
+            input: { text: "passage" },
+            output: {
+              bookId: "book-1",
+              created: true,
+              highlight: {
+                id: "highlight-1",
+                bookId: "book-1",
+                text: "passage",
+                cfiRange,
+                createdAt: 1,
+                textAnchor: { chapterIndex: 0, snippet: "passage" },
+              },
+            },
+          } as unknown as UIMessage["parts"][number],
+        ],
+      },
+    });
+    await waitForMicrotasks();
+
+    expect(fuzzySearchEpubForCfi).not.toHaveBeenCalled();
+    expect(appendHighlight).toHaveBeenCalledWith({
+      highlightId: "highlight-1",
+      cfiRange,
+      text: "passage",
+    });
   });
 });
 
