@@ -46,8 +46,37 @@ describe("resolveCreateHighlightAnchor", () => {
     expect(resolveOffsetToCfi).toHaveBeenCalledOnce();
   });
 
-  it("falls back to fuzzy without resolving a CFI when the slice does not match", async () => {
-    const resolveOffsetToCfi = vi.fn();
+  it("derives an exact span when endOffset is omitted", async () => {
+    const resolveOffsetToCfi = vi.fn().mockResolvedValue("derived-cfi");
+    const result = await resolveCreateHighlightAnchor(
+      {
+        chapters: [chapter(0, "wrong fuzzy chapter"), chapter(3, "Before first\t\t\tsecond after")],
+        text: "first second",
+        textAnchor,
+        fileBlobUrl: "https://example.com/book.epub",
+        chapterIndex: 3,
+        startOffset: 7,
+      },
+      resolveOffsetToCfi,
+    );
+
+    expect(result).toMatchObject({
+      cfiRange: "derived-cfi",
+      matchQuality: "exact",
+      chapterIndex: 3,
+      textAnchor: { chapterIndex: 3, offset: 7, matchQuality: "exact" },
+    });
+    expect(resolveOffsetToCfi).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startOffset: 7,
+        endOffset: 21,
+        expectedText: "first\t\t\tsecond",
+      }),
+    );
+  });
+
+  it("derives an exact span when the provided endOffset is wrong", async () => {
+    const resolveOffsetToCfi = vi.fn().mockResolvedValue("derived-cfi");
     const result = await resolveCreateHighlightAnchor(
       {
         chapters: [chapter(0, "wrong fuzzy chapter"), chapter(3, "Before passage after")],
@@ -55,8 +84,29 @@ describe("resolveCreateHighlightAnchor", () => {
         textAnchor,
         fileBlobUrl: "https://example.com/book.epub",
         chapterIndex: 3,
-        startOffset: 0,
-        endOffset: 6,
+        startOffset: 7,
+        endOffset: 13,
+      },
+      resolveOffsetToCfi,
+    );
+
+    expect(result).toMatchObject({ cfiRange: "derived-cfi", matchQuality: "exact" });
+    expect(resolveOffsetToCfi).toHaveBeenCalledWith(
+      expect.objectContaining({ startOffset: 7, endOffset: 14, expectedText: "passage" }),
+    );
+  });
+
+  it("falls back to fuzzy when the text is not present at or after startOffset", async () => {
+    const resolveOffsetToCfi = vi.fn();
+    const result = await resolveCreateHighlightAnchor(
+      {
+        chapters: [chapter(0, "Before passage after")],
+        text: "passage",
+        textAnchor,
+        fileBlobUrl: "https://example.com/book.epub",
+        chapterIndex: 0,
+        startOffset: 15,
+        endOffset: 16,
       },
       resolveOffsetToCfi,
     );
@@ -67,26 +117,6 @@ describe("resolveCreateHighlightAnchor", () => {
       chapterIndex: 0,
       textAnchor,
     });
-    expect(resolveOffsetToCfi).not.toHaveBeenCalled();
-  });
-
-  it("reports a non-matching one-character offset as fuzzy", async () => {
-    const resolveOffsetToCfi = vi.fn();
-    const result = await resolveCreateHighlightAnchor(
-      {
-        chapters: [chapter(0, "Before passage after")],
-        text: "passage",
-        textAnchor,
-        fileBlobUrl: "https://example.com/book.epub",
-        chapterIndex: 0,
-        startOffset: 0,
-        endOffset: 1,
-      },
-      resolveOffsetToCfi,
-    );
-
-    expect(result.matchQuality).toBe("fuzzy");
-    expect(result.cfiRange).toBeNull();
     expect(resolveOffsetToCfi).not.toHaveBeenCalled();
   });
 });

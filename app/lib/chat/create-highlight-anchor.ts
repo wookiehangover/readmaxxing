@@ -4,6 +4,74 @@ import { normalizeForMatch, type TextAnchor } from "~/lib/orama-book-search";
 
 type ResolveOffsetToCfi = typeof offsetToCfi;
 
+interface TextRange {
+  start: number;
+  end: number;
+}
+
+interface NormalizedCharacter extends TextRange {
+  value: string;
+}
+
+function normalizeCharacter(character: string): string {
+  return normalizeForMatch(`a${character}b`).slice(1, -1);
+}
+
+function normalizedCharacters(text: string): NormalizedCharacter[] | null {
+  const characters: NormalizedCharacter[] = [];
+  let pendingWhitespaceStart: number | undefined;
+  let pendingWhitespaceEnd = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const replacement = normalizeCharacter(text[index] ?? "");
+    if (!replacement) continue;
+
+    if (/^\s+$/.test(replacement)) {
+      if (characters.length > 0) {
+        pendingWhitespaceStart ??= index;
+        pendingWhitespaceEnd = index + 1;
+      }
+      continue;
+    }
+
+    if (pendingWhitespaceStart !== undefined) {
+      characters.push({
+        value: " ",
+        start: pendingWhitespaceStart,
+        end: pendingWhitespaceEnd,
+      });
+      pendingWhitespaceStart = undefined;
+    }
+    for (const value of replacement) {
+      characters.push({ value, start: index, end: index + 1 });
+    }
+  }
+
+  return characters.map(({ value }) => value).join("") === normalizeForMatch(text)
+    ? characters
+    : null;
+}
+
+function findNormalizedRange(text: string, passage: string, startOffset: number): TextRange | null {
+  const needle = normalizeForMatch(passage);
+  if (!needle) return null;
+
+  const characters = normalizedCharacters(text.slice(startOffset));
+  if (!characters) return null;
+  const normalizedText = characters.map(({ value }) => value).join("");
+  let matchIndex = normalizedText.indexOf(needle);
+  while (matchIndex >= 0) {
+    const first = characters[matchIndex];
+    const last = characters[matchIndex + needle.length - 1];
+    if (first && last) {
+      const range = { start: startOffset + first.start, end: startOffset + last.end };
+      if (normalizeForMatch(text.slice(range.start, range.end)) === needle) return range;
+    }
+    matchIndex = normalizedText.indexOf(needle, matchIndex + 1);
+  }
+  return null;
+}
+
 interface ResolveCreateHighlightAnchorInput {
   chapters: readonly BookChapter[];
   text: string;
@@ -34,23 +102,33 @@ export async function resolveCreateHighlightAnchor(
   const chapter = input.chapters.find(
     (candidate) => candidate.index === (input.chapterIndex ?? input.textAnchor.chapterIndex),
   );
+  if (input.startOffset === undefined || !chapter?.segments || !input.fileBlobUrl) {
+    return fallback;
+  }
+
+  const requestedText = normalizeForMatch(input.text);
+  const providedRangeMatches =
+    input.endOffset !== undefined &&
+    normalizeForMatch(chapter.text.slice(input.startOffset, input.endOffset)) === requestedText;
+  const range = providedRangeMatches
+    ? { start: input.startOffset, end: input.endOffset as number }
+    : findNormalizedRange(chapter.text, input.text, input.startOffset);
   if (
-    input.startOffset === undefined ||
-    input.endOffset === undefined ||
-    !chapter?.segments ||
-    !input.fileBlobUrl ||
-    normalizeForMatch(chapter.text.slice(input.startOffset, input.endOffset)) !==
-      normalizeForMatch(input.text)
+    !range ||
+    !requestedText ||
+    normalizeForMatch(chapter.text.slice(range.start, range.end)) !== requestedText
   ) {
     return fallback;
   }
 
   try {
+    const expectedText = chapter.text.slice(range.start, range.end);
     const cfiRange = await resolveOffsetToCfi({
       epubSource: new URL(input.fileBlobUrl),
       segments: chapter.segments,
-      startOffset: input.startOffset,
-      endOffset: input.endOffset,
+      startOffset: range.start,
+      endOffset: range.end,
+      expectedText,
     });
     if (!cfiRange) return fallback;
 
@@ -61,7 +139,7 @@ export async function resolveCreateHighlightAnchor(
       textAnchor: {
         ...input.textAnchor,
         chapterIndex: chapter.index,
-        offset: input.startOffset,
+        offset: range.start,
         matchQuality: "exact",
       },
     };
