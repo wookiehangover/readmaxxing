@@ -38,6 +38,7 @@ done
 | 005 | `005-chat-active-stream-and-book-chapters.sql` | Add `chat_session.active_stream_id` for resumable SSE streams. Create `readmax.book_chapters` to cache parsed epub TOC per user/book. | Introduced on the chat-sync branch. |
 | 006 | `006-highlight-text-anchor-and-note.sql`       | Add `text_anchor` (JSONB) and `note` (TEXT) columns to `readmax.highlight`. Required by the server-side `create_highlight` AI tool.   | Introduced on the chat-sync branch. |
 | 012 | `012-bug-report-admin.sql`                     | Add `bug_report.notes` for triage.                                                                                                    | Safe to re-run.                     |
+| 013 | `013-magic-links.sql`                          | Add `readmax.magic_link` for timeboxed login links.                                                                                   | Safe to re-run.                     |
 
 ### Deploy checklist (chat-sync branch → main)
 
