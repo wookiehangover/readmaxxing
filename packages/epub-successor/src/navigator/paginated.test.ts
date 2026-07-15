@@ -9,11 +9,13 @@ import {
   effectivePagesPerSpread,
   lastSpreadPageIndex,
   logicalOffsetFromScrollLeft,
+  measurePaginatedLayout,
   pageChromeInsets,
   pageIndexFromOffset,
   pageProgression,
   paginatedProgression,
   scrollLeftFromLogicalOffset,
+  scrollToPage,
   snapToSpread,
   spreadPageCount,
   type RtlScrollType,
@@ -206,6 +208,62 @@ describe("paginated page math", () => {
     expect(lastSpreadPageIndex(5, 2)).toBe(4);
     expect(pageIndexFromOffset(geometry.columnStride * 2, geometry)).toBe(2);
     expect(pageProgression(2, 5)).toBe(0.5);
+  });
+
+  function measurableDocument(naturalWidth: number, clientWidth: number) {
+    const doc = document.implementation.createHTMLDocument("fixture");
+    Object.defineProperty(doc.documentElement, "clientWidth", {
+      configurable: true,
+      value: clientWidth,
+    });
+    Object.defineProperty(doc.documentElement, "scrollWidth", {
+      configurable: true,
+      get() {
+        const pad = doc.getElementById("epub-successor-pagination-pad")?.textContent ?? "";
+        const match = /width:([0-9]+)px/.exec(pad);
+        return match ? Number(match[1]) : naturalWidth;
+      },
+    });
+    return doc;
+  }
+
+  it("pads an odd column count to a full final two-page spread", () => {
+    const geometry = calculateColumnGeometry(800, 64, 2);
+    // 5 columns: the last spread would start on column 4 but clamp to 3.
+    const doc = measurableDocument(5 * geometry.columnStride - geometry.columnGap, 800);
+
+    const state = measurePaginatedLayout(doc, geometry, "ltr");
+
+    expect(state.pageCount).toBe(6);
+    expect(state.maxOffset).toBe(4 * geometry.columnStride);
+    scrollToPage(state, lastSpreadPageIndex(state.pageCount, state.pagesPerSpread));
+    // Final turn lands exactly on the spread boundary — no clamped re-show of
+    // the second-to-last column.
+    expect(state.scrolling.scrollLeft).toBe(4 * geometry.columnStride);
+    expect(state.scrolling.scrollLeft % (2 * geometry.columnStride)).toBe(0);
+  });
+
+  it("leaves an even column count unpadded", () => {
+    const geometry = calculateColumnGeometry(800, 64, 2);
+    const doc = measurableDocument(4 * geometry.columnStride - geometry.columnGap, 800);
+
+    const state = measurePaginatedLayout(doc, geometry, "ltr");
+
+    expect(state.pageCount).toBe(4);
+    expect(doc.getElementById("epub-successor-pagination-pad")?.textContent).toBe("");
+    expect(state.maxOffset).toBe(2 * geometry.columnStride);
+    scrollToPage(state, lastSpreadPageIndex(state.pageCount, state.pagesPerSpread));
+    expect(state.scrolling.scrollLeft).toBe(2 * geometry.columnStride);
+  });
+
+  it("does not pad single-page layouts", () => {
+    const geometry = calculateColumnGeometry(800, 32, 1);
+    const doc = measurableDocument(5 * geometry.columnStride - geometry.columnGap, 800);
+
+    const state = measurePaginatedLayout(doc, geometry, "ltr");
+
+    expect(state.pageCount).toBe(5);
+    expect(doc.getElementById("epub-successor-pagination-pad")?.textContent).toBe("");
   });
 
   it("maps a clamped final two-page spread to its final progression", () => {

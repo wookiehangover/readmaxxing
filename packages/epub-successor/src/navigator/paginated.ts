@@ -22,6 +22,7 @@ export interface PageScrollAnimation {
 }
 
 const PAGINATION_STYLE_ID = "epub-successor-pagination-style";
+const PAGINATION_PAD_STYLE_ID = "epub-successor-pagination-pad";
 const XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 export const DEFAULT_MIN_SPREAD_WIDTH = 800;
 /** Gap between columns in a multi-page spread (middle gutter only). */
@@ -151,13 +152,21 @@ export function detectRtlScrollType(document: Document): RtlScrollType {
   return type;
 }
 
-function layoutStyle(document: Document): HTMLStyleElement {
-  const existing = document.getElementById(PAGINATION_STYLE_ID);
+function styleElement(document: Document, id: string): HTMLStyleElement {
+  const existing = document.getElementById(id);
   if (existing?.localName === "style") return existing as HTMLStyleElement;
   const style = document.createElementNS(XHTML_NAMESPACE, "style") as HTMLStyleElement;
-  style.id = PAGINATION_STYLE_ID;
+  style.id = id;
   (document.head ?? document.documentElement).append(style);
   return style;
+}
+
+function layoutStyle(document: Document): HTMLStyleElement {
+  return styleElement(document, PAGINATION_STYLE_ID);
+}
+
+function padStyle(document: Document): HTMLStyleElement {
+  return styleElement(document, PAGINATION_PAD_STYLE_ID);
 }
 
 /**
@@ -203,6 +212,8 @@ export function applyPaginatedLayout(
 ): ColumnGeometry {
   const chrome = pageChromeInsets(viewport.width, columnGap, pagesPerSpread);
   const height = contained(viewport.height, 1);
+  // Reset any spread padding from a previous layout before re-measuring.
+  padStyle(document).textContent = "";
   // Do not set background here — theme/preference CSS owns html+body paint.
   // Horizontal padding stays 0 so every column page aligns the same.
   layoutStyle(document).textContent =
@@ -224,6 +235,7 @@ export function clearPaginatedLayout(document: Document): void {
   layoutStyle(document).textContent =
     `body{box-sizing:border-box !important;margin:0 !important;` +
     `padding:${DEFAULT_BLOCK_PADDING}px 0 !important;}`;
+  padStyle(document).textContent = "";
   const scrolling = document.scrollingElement ?? document.documentElement;
   scrolling.scrollLeft = 0;
 }
@@ -234,11 +246,23 @@ export function measurePaginatedLayout(
   direction: "ltr" | "rtl",
 ): PaginatedLayoutState {
   const scrolling = document.scrollingElement ?? document.documentElement;
+  padStyle(document).textContent = "";
+  let pageCount = calculatePageCount(scrolling.scrollWidth, geometry);
+  // Two-page spreads: widen the body to a whole number of spreads so the last
+  // spread starts on a spread boundary (trailing column stays blank). With an
+  // odd column count the final turn's target offset exceeds maxOffset, the
+  // browser clamps the scroll, and the last spread re-shows the second-to-last
+  // column in its first slot.
+  if (geometry.pagesPerSpread === 2 && pageCount % 2 !== 0) {
+    pageCount += 1;
+    const paddedWidth = pageCount * geometry.columnStride - geometry.columnGap;
+    padStyle(document).textContent = `body{width:${paddedWidth}px !important;}`;
+  }
   const maxOffset = Math.max(0, scrolling.scrollWidth - scrolling.clientWidth);
   return {
     ...geometry,
     direction,
-    pageCount: calculatePageCount(scrolling.scrollWidth, geometry),
+    pageCount,
     maxOffset,
     rtlScrollType: direction === "rtl" ? detectRtlScrollType(document) : "reverse",
     scrolling,
