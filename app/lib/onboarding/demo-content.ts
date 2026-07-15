@@ -127,7 +127,7 @@ export const DEMO_CAPABILITIES_ANSWER = `Readmaxxing brings reading, questions, 
 - **Click a suggested question** whenever you want a useful next step.
 - **Arrange reading, notes, and chat together** in the layout that works for you.
 
-Explore the demo by reading, asking a question, or choosing one of the suggestions below. Sign in when you are ready to save your library, notes, highlights, chats, and reading progress across devices.`;
+Explore the demo by reading and choosing one of the suggestions below. Sign in to continue chatting and to save your library, notes, highlights, and reading progress across devices.`;
 
 const DEMO_CHAT_STARTED_AT = Date.UTC(2025, 3, 10, 20, 0, 0);
 
