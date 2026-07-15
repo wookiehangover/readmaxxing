@@ -14,7 +14,7 @@ import {
 import { logicalChapterIndex } from "~/lib/epub/successor-toc";
 import type { TocEntry } from "~/lib/context/reader-context";
 import { fuzzySearchEpubForCfi } from "~/lib/epub/epub-search";
-import { extractBookChapters } from "~/lib/epub/epub-text-extract";
+import { extractBookChapters, joinSpineTextSegments } from "~/lib/epub/epub-text-extract";
 import {
   createSuccessorBookAdapter,
   pageIndexFromPositions,
@@ -378,12 +378,46 @@ describe("successor position compatibility", () => {
   });
 
   it("extracts logical chapters with the successor parser", async () => {
-    const chapters = await extractBookChapters(await fixtureArrayBuffer());
+    const data = await fixtureArrayBuffer();
+    const chapters = await extractBookChapters(data);
     expect(chapters.map(({ title }) => title)).toEqual([
       "Chapter 1: The Beginning",
       "Chapter 2: The End",
     ]);
     expect(chapters[1]?.text).toContain("elephant appears exactly once");
+
+    const provider = await openZipResourceProvider(data);
+    try {
+      for (const chapter of chapters) {
+        expect(chapter.segments?.length).toBeGreaterThan(0);
+        for (const segment of chapter.segments ?? []) {
+          const source = await provider.readText(segment.href);
+          const document = new DOMParser().parseFromString(source, "application/xhtml+xml");
+          const contributedText = document.body?.textContent?.trim() ?? "";
+          expect(chapter.text.slice(segment.start, segment.end)).toBe(contributedText);
+        }
+      }
+    } finally {
+      provider.close();
+    }
+  });
+
+  it("records ordered spine ranges while leaving separator gaps", () => {
+    const content = joinSpineTextSegments([
+      { index: 2, href: "chapter-a.xhtml", text: "Alpha" },
+      { index: 3, href: "chapter-b.xhtml", text: "Beta" },
+    ]);
+
+    expect(content.text).toBe("Alpha\n\nBeta");
+    expect(content.segments).toEqual([
+      { spineIndex: 2, href: "chapter-a.xhtml", start: 0, end: 5 },
+      { spineIndex: 3, href: "chapter-b.xhtml", start: 7, end: 11 },
+    ]);
+    expect(content.segments.map(({ start, end }) => content.text.slice(start, end))).toEqual([
+      "Alpha",
+      "Beta",
+    ]);
+    expect(content.text.slice(content.segments[0]!.end, content.segments[1]!.start)).toBe("\n\n");
   });
 });
 
