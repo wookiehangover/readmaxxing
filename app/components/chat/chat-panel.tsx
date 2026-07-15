@@ -403,6 +403,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
           setChatMessagesRef.current = setMessages;
         }}
         onChatInteraction={isLoggedOutDemoSession ? openOnboarding : undefined}
+        simulateDemoStream={isLoggedOutDemoSession}
         resumeMessage={
           isAuthenticated && resumeAfterAuth ? (pendingMessage ?? undefined) : undefined
         }

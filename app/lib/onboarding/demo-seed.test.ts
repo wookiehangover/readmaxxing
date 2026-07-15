@@ -1,7 +1,19 @@
 import { readFile } from "node:fs/promises";
+import { openPublication, openZipResourceProvider, resolveCfi } from "@readmaxxing/epub-successor";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { del, get, set } from "idb-keyval";
-import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
+import {
+  DEFAULT_DEMO_BOOK,
+  DEMO_BOOK_ID,
+  DEMO_BOOK_METADATA,
+  DEMO_CAPABILITIES_ANSWER,
+  DEMO_CHAT_SESSION,
+  DEMO_EPUB_PATH,
+  DEMO_INTRO_QUESTION,
+  DEMO_POSITION_CFI,
+  DEMO_SUGGESTED_QUESTIONS,
+} from "~/lib/onboarding/demo-content";
+import { spineIndexFromCfi } from "~/lib/epub/successor-reader-adapter";
 import { isFirstVisit, seedDemo } from "~/lib/onboarding/demo-seed";
 import type { ChatSession } from "~/lib/stores/chat-store";
 import {
@@ -23,7 +35,7 @@ let authenticated = false;
 let demoFetchOk = true;
 
 beforeAll(async () => {
-  const bytes = await readFile("public/demo/the-great-gatsby.epub");
+  const bytes = await readFile(`public${DEFAULT_DEMO_BOOK.epubPath}`);
   demoEpub = bytes.buffer.slice(
     bytes.byteOffset,
     bytes.byteOffset + bytes.byteLength,
@@ -58,7 +70,7 @@ beforeEach(async () => {
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
-      if (url === "/demo/the-great-gatsby.epub") {
+      if (url === DEFAULT_DEMO_BOOK.epubPath) {
         return new Response(demoFetchOk ? demoEpub : null, { status: demoFetchOk ? 200 : 500 });
       }
       return new Response(null, { status: 404 });
@@ -94,6 +106,37 @@ describe("isFirstVisit", () => {
 });
 
 describe("seedDemo", () => {
+  it("derives the public demo values from the default-book config", () => {
+    expect(DEMO_BOOK_ID).toBe(DEFAULT_DEMO_BOOK.bookId);
+    expect(DEMO_BOOK_METADATA).toEqual({
+      ...DEFAULT_DEMO_BOOK.metadata,
+      id: DEFAULT_DEMO_BOOK.bookId,
+    });
+    expect(DEMO_EPUB_PATH).toBe(DEFAULT_DEMO_BOOK.epubPath);
+    expect(DEMO_INTRO_QUESTION).toBe(DEFAULT_DEMO_BOOK.introQuestion);
+    expect(DEMO_SUGGESTED_QUESTIONS).toBe(DEFAULT_DEMO_BOOK.suggestedQuestions);
+    expect(DEMO_CAPABILITIES_ANSWER).not.toContain(DEFAULT_DEMO_BOOK.metadata.title);
+  });
+
+  it("uses a resolvable Chapter 1 position in the configured EPUB", async () => {
+    const provider = await openZipResourceProvider(demoEpub);
+    try {
+      const opened = await openPublication(provider);
+      expect(opened.publication).not.toBeNull();
+      const spineIndex = spineIndexFromCfi(DEMO_POSITION_CFI);
+      expect(spineIndex).not.toBeNull();
+      const chapter = opened.publication!.readingOrder[spineIndex!];
+      expect(chapter?.href).toMatch(/chapter-1\.xhtml$/);
+
+      const source = (await provider.readText(chapter!.href)).replace(/<link\b[^>]*\/>/g, "");
+      const document = new DOMParser().parseFromString(source, "application/xhtml+xml");
+      const resolved = resolveCfi(DEMO_POSITION_CFI, document, { spineIndex: spineIndex! });
+      expect(resolved?.startContainer.parentElement?.closest("section")?.id).toBe("chapter-1");
+    } finally {
+      provider.close();
+    }
+  });
+
   it("provisions the demo content once and sets the first-visit flag", async () => {
     const book = await seedDemo();
 
@@ -106,6 +149,7 @@ describe("seedDemo", () => {
     const sessions = await get<ChatSession[]>(DEMO_BOOK_ID, getChatSessionStore());
     expect(sessions).toHaveLength(1);
     expect(sessions?.[0].id).toBe(DEMO_CHAT_SESSION.id);
+    expect(sessions?.[0].messages).toEqual([]);
     expect(await get(DEMO_BOOK_ID, getActiveSessionStore())).toBe(DEMO_CHAT_SESSION.id);
     expect(window.localStorage.getItem("demo-onboarding")).toBe("complete");
     expect(await isFirstVisit()).toBe(false);

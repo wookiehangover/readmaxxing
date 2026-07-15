@@ -14,7 +14,7 @@ import { ChatInput } from "./chat-input";
 import type { ChatIntent } from "./chat-intent";
 import { ChatMessageList, type BookAnnotation } from "./chat-message-list";
 import { ChatSessionList, EditableTitle, SessionMenuButton } from "./chat-session-menu";
-import { createChatTransport } from "./chat-utils";
+import { createChatTransport, createDemoIntroChat } from "./chat-utils";
 import { useChatToolHandlers } from "./use-chat-tool-handlers";
 import { useOpenBooks } from "./use-open-books";
 import { useResumeMessage } from "./use-resume-message";
@@ -35,6 +35,7 @@ export function ChatPanelInner({
   onSessionTitleChange,
   onRegisterSetMessages,
   onChatInteraction,
+  simulateDemoStream,
   resumeMessage,
   onResumeComplete,
 }: {
@@ -52,6 +53,7 @@ export function ChatPanelInner({
   onSessionTitleChange: (title: string) => void;
   onRegisterSetMessages?: (fn: (messages: UIMessage[]) => void) => void;
   onChatInteraction?: (intent: ChatIntent) => void;
+  simulateDemoStream?: boolean;
   resumeMessage?: string;
   onResumeComplete?: () => void;
 }) {
@@ -168,18 +170,21 @@ export function ChatPanelInner({
     },
     [bookId, chatContextMap],
   );
-  const transport = useMemo(
-    () =>
-      createChatTransport({
-        sessionId: activeSessionId,
-        bookId,
-        visibleTextRef,
-        currentChapterRef,
-        selectedBookIdsRef,
-        getBookContext,
-      }),
-    [activeSessionId, bookId, getBookContext],
+  const demoChat = useMemo(
+    () => (simulateDemoStream ? createDemoIntroChat() : null),
+    [simulateDemoStream],
   );
+  const transport = useMemo(() => {
+    if (demoChat) return demoChat.transport({ delayMs: 25 });
+    return createChatTransport({
+      sessionId: activeSessionId,
+      bookId,
+      visibleTextRef,
+      currentChapterRef,
+      selectedBookIdsRef,
+      getBookContext,
+    });
+  }, [activeSessionId, bookId, demoChat, getBookContext]);
 
   const messagesRef = useRef<UIMessage[]>(initialMessages);
   const streamedToolCallIdRef = useRef<Set<string>>(new Set());
@@ -192,6 +197,7 @@ export function ChatPanelInner({
   const titleGeneratedRef = useRef(false);
   const onFinish = useCallback(
     (event: { message: UIMessage }) => {
+      if (simulateDemoStream) return;
       onToolFinish(event);
       const currentMessages = messagesRef.current;
       if (
@@ -234,19 +240,33 @@ export function ChatPanelInner({
       };
       generateTitle().catch(console.error);
     },
-    [onToolFinish, bookId, onSessionTitleChange],
+    [simulateDemoStream, onToolFinish, bookId, onSessionTitleChange],
   );
 
-  const { messages, sendMessage, setMessages, status, stop } = useChat({
+  const chatInitialMessages = useMemo(
+    () => demoChat?.get(1) ?? initialMessages,
+    [demoChat, initialMessages],
+  );
+
+  const { messages, regenerate, sendMessage, setMessages, status, stop } = useChat({
     id: activeSessionId,
     transport,
-    messages: initialMessages,
+    messages: chatInitialMessages,
     resume: !onChatInteraction,
-    onToolCall: onToolCall as any,
+    onToolCall: simulateDemoStream ? undefined : (onToolCall as any),
     onFinish,
     onError: (error) => console.error("Chat error:", error),
   });
   messagesRef.current = messages;
+
+  const didSimulateDemoStreamRef = useRef(false);
+  useEffect(() => {
+    if (!demoChat || didSimulateDemoStreamRef.current || status !== "ready") return;
+    didSimulateDemoStreamRef.current = true;
+    void regenerate().catch((error: unknown) => {
+      console.error("Failed to simulate demo chat:", error);
+    });
+  }, [demoChat, regenerate, status]);
 
   const previousSelectedBookIdsRef = useRef(selectedBookIds);
   useEffect(() => {

@@ -38,6 +38,9 @@ importers:
       '@readmaxxing/epub-successor':
         specifier: workspace:*
         version: link:packages/epub-successor
+      '@shadcn/helpers':
+        specifier: ^0.1.0
+        version: 0.1.0(ai@7.0.22(zod@4.4.3))
       '@shadcn/react':
         specifier: ^0.2.1
         version: 0.2.1(@types/react@19.2.17)(react@19.2.7)
@@ -2100,6 +2103,20 @@ packages:
 
   '@sec-ant/readable-stream@0.4.1':
     resolution: {integrity: sha512-831qok9r2t8AlxLko40y2ebgSDhenenCatLVeW/uBtnHPyhHOvG0C7TvfgecV+wHzIm5KUICgzmVpWS+IMEAeg==}
+
+  '@shadcn/helpers@0.1.0':
+    resolution: {integrity: sha512-A80apw7i2ZcuwgKKW51zmPSaUXfzLeAQ28XmACB/KeIAVA7PQuaON1hyIEHU3yvk9oriCaWuzU20r0CgieYmmA==}
+    peerDependencies:
+      '@tanstack/ai': '>=0.40.0 <0.41.0'
+      '@tanstack/ai-client': '>=0.20.0 <0.21.0'
+      ai: '>=7.0.0 <8'
+    peerDependenciesMeta:
+      '@tanstack/ai':
+        optional: true
+      '@tanstack/ai-client':
+        optional: true
+      ai:
+        optional: true
 
   '@shadcn/react@0.2.1':
     resolution: {integrity: sha512-5krgi3dRMKb5jH6a+qPzVJUy/54s0kKE4Rw4LjDfLqOdVQTWKUgxWf1kW8r912I0jX/Lzxqc+pgjkjWxUIK5BQ==}
@@ -7908,6 +7925,10 @@ snapshots:
       rollup: 2.80.0
 
   '@sec-ant/readable-stream@0.4.1': {}
+
+  '@shadcn/helpers@0.1.0(ai@7.0.22(zod@4.4.3))':
+    optionalDependencies:
+      ai: 7.0.22(zod@4.4.3)
 
   '@shadcn/react@0.2.1(@types/react@19.2.17)(react@19.2.7)':
     optionalDependencies:

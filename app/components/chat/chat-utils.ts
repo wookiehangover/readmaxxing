@@ -1,7 +1,24 @@
 import type React from "react";
 import type { UIMessage } from "@ai-sdk/react";
+import { createChat } from "@shadcn/helpers/ai-sdk";
 import { DefaultChatTransport } from "ai";
+import {
+  DEMO_CAPABILITIES_ANSWER,
+  DEMO_INTRO_QUESTION,
+  DEMO_SUGGESTED_QUESTIONS,
+} from "~/lib/onboarding/demo-content";
 import type { ChatMessage } from "~/lib/stores/chat-store";
+
+/** Build the ephemeral logged-out intro conversation used by the mock transport. */
+export function createDemoIntroChat() {
+  const suggestedPrompts = `<!-- suggested-prompts
+${DEMO_SUGGESTED_QUESTIONS.join("\n")}
+-->`;
+  return createChat()
+    .user(DEMO_INTRO_QUESTION)
+    .sleep(700)
+    .assistant(`${DEMO_CAPABILITIES_ANSWER}\n\n${suggestedPrompts}`);
+}
 
 /** Extract a normalized tool info object from an AI SDK tool part (static or dynamic). */
 export function getToolInfo(part: any): {
