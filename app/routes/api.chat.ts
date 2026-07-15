@@ -654,7 +654,7 @@ export async function action({ request }: Route.ActionArgs) {
           }),
           create_highlight: tool({
             description:
-              "Highlight a passage in a book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. For precise EPUB anchoring, pass chapterIndex, startOffset, and endOffset for the exact passage from the SAME read_chapter call; both offsets are required. The highlight will appear in the epub reader and be saved to the reader's notebook. A fuzzy result means the anchor was reconstructed from text and you should tell the user to highlight manually if precision matters." +
+              "Highlight a passage in a book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. For precise EPUB anchoring, pass the exact passage text with chapterIndex and startOffset from the SAME read_chapter call; endOffset is optional because the tool derives the end from the passage text. The highlight will appear in the epub reader and be saved to the reader's notebook. A fuzzy result means the anchor was reconstructed from text and you should tell the user to highlight manually if precision matters." +
               multiBookToolHint,
             inputSchema: z.object({
               text: z
@@ -681,7 +681,9 @@ export async function action({ request }: Route.ActionArgs) {
                 .int()
                 .positive()
                 .optional()
-                .describe("Chapter-relative exclusive end offset from read_chapter"),
+                .describe(
+                  "Optional chapter-relative exclusive end; derived from text when omitted",
+                ),
               bookId: bookIdArgSchema,
             }),
             execute: async ({
