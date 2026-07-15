@@ -70,6 +70,30 @@ describe("highlight tool helpers", () => {
     });
   });
 
+  it("signals an already-present highlight without changing or duplicating its reference", () => {
+    const notebook = {
+      type: "doc",
+      content: [
+        {
+          type: "highlightReference",
+          attrs: { highlightId: "existing", cfiRange: "epubcfi(/6/4)", text: "passage" },
+        },
+        { type: "paragraph" },
+      ],
+    };
+    const originalContent = structuredClone(notebook);
+
+    const alreadyPresent = getNotebookHighlightIds(notebook).has("existing");
+
+    expect(alreadyPresent).toBe(true);
+    expect(notebook).toEqual(originalContent);
+    expect(
+      notebook.content.filter(
+        (node) => node.type === "highlightReference" && node.attrs?.highlightId === "existing",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("marks notebook references by highlightId and leaves orphan highlights unmarked", () => {
     const notebook = {
       type: "doc",
