@@ -16,6 +16,7 @@ ${DEMO_SUGGESTED_QUESTIONS.join("\n")}
 -->`;
   return createChat()
     .user(DEMO_INTRO_QUESTION)
+    .sleep(700)
     .assistant(`${DEMO_CAPABILITIES_ANSWER}\n\n${suggestedPrompts}`);
 }
 

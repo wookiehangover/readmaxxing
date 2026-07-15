@@ -58,12 +58,14 @@ ${DEMO_SUGGESTED_QUESTIONS.join("\n")}
     expect(stripSuggestedPrompts(message)).not.toContain("suggested-prompts");
   });
 
-  it("builds the ephemeral intro from the demo content source of truth", () => {
+  it("builds the seeded ephemeral intro from the demo content source of truth", () => {
     const chat = createDemoIntroChat();
-    const intro = chat.next(chat.get(0));
+    const initialMessages = chat.get(1);
+    const intro = initialMessages[0];
     const messages = chat.get();
     const answer = messages[1].parts[0];
 
+    expect(initialMessages).toHaveLength(1);
     expect(intro?.role).toBe("user");
     expect(intro?.parts).toEqual([{ type: "text", text: DEMO_INTRO_QUESTION }]);
     expect(answer).toMatchObject({ type: "text" });

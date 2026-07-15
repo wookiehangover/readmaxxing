@@ -244,11 +244,11 @@ export function ChatPanelInner({
   );
 
   const chatInitialMessages = useMemo(
-    () => demoChat?.get(0) ?? initialMessages,
+    () => demoChat?.get(1) ?? initialMessages,
     [demoChat, initialMessages],
   );
 
-  const { messages, sendMessage, setMessages, status, stop } = useChat({
+  const { messages, regenerate, sendMessage, setMessages, status, stop } = useChat({
     id: activeSessionId,
     transport,
     messages: chatInitialMessages,
@@ -262,17 +262,11 @@ export function ChatPanelInner({
   const didSimulateDemoStreamRef = useRef(false);
   useEffect(() => {
     if (!demoChat || didSimulateDemoStreamRef.current || status !== "ready") return;
-    const nextMessage = demoChat.next(messages);
-    if (!nextMessage) return;
-    const timeoutId = window.setTimeout(() => {
-      if (didSimulateDemoStreamRef.current) return;
-      didSimulateDemoStreamRef.current = true;
-      void sendMessage(nextMessage).catch((error: unknown) => {
-        console.error("Failed to simulate demo chat:", error);
-      });
-    }, 700);
-    return () => window.clearTimeout(timeoutId);
-  }, [demoChat, messages, sendMessage, status]);
+    didSimulateDemoStreamRef.current = true;
+    void regenerate().catch((error: unknown) => {
+      console.error("Failed to simulate demo chat:", error);
+    });
+  }, [demoChat, regenerate, status]);
 
   const previousSelectedBookIdsRef = useRef(selectedBookIds);
   useEffect(() => {
