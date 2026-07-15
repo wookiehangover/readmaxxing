@@ -707,9 +707,15 @@ export async function action({ request }: Route.ActionArgs) {
                 };
               }
 
+              const chapterTitle =
+                target.chapters.find((chapter) => chapter.index === anchor.chapterIndex)?.title ??
+                null;
               return {
                 bookId: target.bookId,
                 created: true,
+                matchQuality: anchor.matchQuality,
+                chapterIndex: anchor.chapterIndex,
+                chapterTitle,
                 highlight: {
                   id,
                   bookId: target.bookId,
@@ -724,7 +730,7 @@ export async function action({ request }: Route.ActionArgs) {
           }),
           read_chapter: tool({
             description:
-              "Read the full text of a specific chapter. Use this to understand a chapter's full argument before answering detailed questions about it." +
+              "Read a 15,000-character window of a chapter. Use the returned nextOffset as startOffset to continue reading past the first window." +
               multiBookToolHint,
             inputSchema: z.object({
               chapterIndex: z.number().optional().describe("The 0-based chapter index"),
@@ -732,9 +738,17 @@ export async function action({ request }: Route.ActionArgs) {
                 .string()
                 .optional()
                 .describe("The chapter title to look up (partial match OK)"),
+              startOffset: z
+                .number()
+                .int()
+                .nonnegative()
+                .default(0)
+                .describe(
+                  "The 0-based character offset to start reading from; pass the previous nextOffset to read past the first window",
+                ),
               bookId: bookIdArgSchema,
             }),
-            execute: async ({ chapterIndex, chapterTitle, bookId: targetBookId }) => {
+            execute: async ({ chapterIndex, chapterTitle, startOffset, bookId: targetBookId }) => {
               const target = resolveTargetBook(targetBookId);
               let chapter: BookChapter | undefined;
               if (chapterIndex != null) {
@@ -744,11 +758,14 @@ export async function action({ request }: Route.ActionArgs) {
                 chapter = target.chapters.find((c) => c.title.toLowerCase().includes(lower));
               }
               if (!chapter) return { error: "Chapter not found" };
-              const text =
-                chapter.text.length > 15000
-                  ? chapter.text.slice(0, 15000) + "\n[truncated — chapter continues]"
-                  : chapter.text;
-              return { chapterIndex: chapter.index, title: chapter.title, text };
+              const text = chapter.text.slice(startOffset, startOffset + 15000);
+              const endOffset = startOffset + text.length;
+              return {
+                chapterIndex: chapter.index,
+                title: chapter.title,
+                text,
+                ...(endOffset < chapter.text.length ? { nextOffset: endOffset } : {}),
+              };
             },
           }),
           search_standard_ebooks: tool({
