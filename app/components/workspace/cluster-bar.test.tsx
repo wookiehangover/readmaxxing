@@ -4,8 +4,14 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const auth = vi.hoisted(() => ({ isAuthenticated: false, isLoading: false }));
+const workspace = vi.hoisted(() => ({ openStandardEbooks: vi.fn() }));
 
 vi.mock("~/lib/context/auth-context", () => ({ useAuth: () => auth }));
+vi.mock("~/lib/context/workspace-context", () => ({
+  useWorkspace: () => ({
+    openStandardEbooksRef: { current: workspace.openStandardEbooks },
+  }),
+}));
 vi.mock("~/components/bug-report-dialog", () => ({
   BugReportDialog: () => <button aria-label="Need help?" />,
 }));
@@ -33,6 +39,7 @@ function renderActions(demoActive = true) {
 beforeEach(() => {
   auth.isAuthenticated = false;
   auth.isLoading = false;
+  workspace.openStandardEbooks.mockClear();
   window.localStorage.clear();
 });
 
@@ -46,9 +53,15 @@ describe("ClusterBarActions", () => {
   it("replaces workspace actions with a primary login link for logged-out demos", () => {
     const container = renderActions();
     const login = container.querySelector<HTMLAnchorElement>('a[href="/login"]');
+    const moreBooks = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "More books →",
+    );
 
     expect(login?.textContent).toBe("Log in");
     expect(login?.className).toContain("bg-blue-600");
+    expect(moreBooks).toBeDefined();
+    act(() => moreBooks?.click());
+    expect(workspace.openStandardEbooks).toHaveBeenCalledOnce();
     expect(container.querySelector('[aria-label="Open book"]')).toBeNull();
     expect(container.querySelector('[aria-label="Need help?"]')).toBeNull();
   });
@@ -60,6 +73,7 @@ describe("ClusterBarActions", () => {
     const container = renderActions(demoBook !== null || hasDemoOnboardingState());
 
     expect(container.querySelector('a[href="/login"]')).not.toBeNull();
+    expect(container.textContent).toContain("More books →");
     expect(container.querySelector('[aria-label="Open book"]')).toBeNull();
     expect(container.querySelector('[aria-label="Need help?"]')).toBeNull();
   });
@@ -69,6 +83,7 @@ describe("ClusterBarActions", () => {
     const authenticated = renderActions();
 
     expect(authenticated.querySelector('a[href="/login"]')).toBeNull();
+    expect(authenticated.textContent).not.toContain("More books →");
     expect(authenticated.querySelector('[aria-label="Open book"]')).not.toBeNull();
     expect(authenticated.querySelector('[aria-label="Need help?"]')).not.toBeNull();
 
@@ -77,6 +92,7 @@ describe("ClusterBarActions", () => {
     auth.isAuthenticated = false;
     const regularWorkspace = renderActions(false);
     expect(regularWorkspace.querySelector('a[href="/login"]')).toBeNull();
+    expect(regularWorkspace.textContent).not.toContain("More books →");
     expect(regularWorkspace.querySelector('[aria-label="Open book"]')).not.toBeNull();
     expect(regularWorkspace.querySelector('[aria-label="Need help?"]')).not.toBeNull();
   });
