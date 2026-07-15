@@ -80,7 +80,7 @@ describe("AccountSection", () => {
     mocks.auth.isAuthenticated = true;
     mocks.runPromise.mockResolvedValue({
       url: "https://example.com/api/auth/magic-link/token",
-      expiresAt: "2026-07-15T12:15:00.000Z",
+      expiresAt: new Date(Date.now() + 7 * 60_000).toISOString(),
     });
     mocks.writeText.mockResolvedValue(undefined);
     renderSection();
@@ -95,7 +95,7 @@ describe("AccountSection", () => {
 
     const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Magic link"]');
     expect(input?.value).toBe("https://example.com/api/auth/magic-link/token");
-    expect(document.body.textContent).toContain("Expires in 15 minutes.");
+    expect(document.body.textContent).toContain("Expires in 7 minutes.");
     expect(document.body.textContent).toContain("Regenerate magic link");
 
     const copyButton = Array.from(document.body.querySelectorAll("button")).find(

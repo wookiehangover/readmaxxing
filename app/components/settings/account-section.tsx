@@ -5,23 +5,26 @@ import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Separator } from "~/components/ui/separator";
-import { AuthService } from "~/lib/auth-service";
+import { AuthService, type MagicLinkResponse } from "~/lib/auth-service";
 import { useAuth } from "~/lib/context/auth-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 
 export function AccountSection() {
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
-  const [magicLinkUrl, setMagicLinkUrl] = useState<string | null>(null);
+  const [magicLink, setMagicLink] = useState<MagicLinkResponse | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const minutesUntilExpiry = magicLink
+    ? Math.max(1, Math.round((new Date(magicLink.expiresAt).getTime() - Date.now()) / 60_000))
+    : null;
 
   async function handleGenerate() {
     setIsGenerating(true);
-    setMagicLinkUrl(null);
+    setMagicLink(null);
     try {
       const result = await AppRuntime.runPromise(
         AuthService.pipe(Effect.andThen((service) => service.generateMagicLink())),
       );
-      setMagicLinkUrl(result.url);
+      setMagicLink(result);
     } catch (cause) {
       console.error("Failed to generate magic link:", cause);
       toast.error("Could not generate magic link");
@@ -31,9 +34,9 @@ export function AccountSection() {
   }
 
   async function handleCopy() {
-    if (!magicLinkUrl) return;
+    if (!magicLink) return;
     try {
-      await navigator.clipboard.writeText(magicLinkUrl);
+      await navigator.clipboard.writeText(magicLink.url);
       toast.success("Magic link copied");
     } catch {
       toast.error("Could not copy magic link");
@@ -74,24 +77,25 @@ export function AccountSection() {
         >
           {isGenerating
             ? "Generating…"
-            : magicLinkUrl
+            : magicLink
               ? "Regenerate magic link"
               : "Generate magic link"}
         </Button>
       </div>
 
-      {magicLinkUrl && (
+      {magicLink && (
         <>
           <Separator />
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 max-sm:flex-col max-sm:items-stretch">
-              <Input aria-label="Magic link" readOnly value={magicLinkUrl} />
+              <Input aria-label="Magic link" readOnly value={magicLink.url} />
               <Button variant="outline" onClick={() => void handleCopy()}>
                 Copy
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Expires in 15 minutes. Anyone with this link can sign in to your account until then.
+              Expires in {minutesUntilExpiry} minute{minutesUntilExpiry === 1 ? "" : "s"}. Anyone
+              with this link can sign in to your account until then.
             </p>
           </div>
         </>

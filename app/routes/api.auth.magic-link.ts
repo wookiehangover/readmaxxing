@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.auth.magic-link";
 import { getRpOrigin, MAGIC_LINK_TTL_SECONDS } from "~/lib/auth-config";
 import { generateMagicLinkToken } from "~/lib/auth-token.server";
 import { requireAuth } from "~/lib/database/auth-middleware";
-import { createMagicLink, deleteMagicLinksForUser } from "~/lib/database/auth/magic-link";
+import { replaceMagicLinkForUser } from "~/lib/database/auth/magic-link";
 
 export async function action({ request }: Route.ActionArgs) {
   if (!process.env.DATABASE_URL) {
@@ -17,8 +17,7 @@ export async function action({ request }: Route.ActionArgs) {
   const { token, tokenHash } = generateMagicLinkToken();
   const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_SECONDS * 1000);
 
-  await deleteMagicLinksForUser(userId);
-  const magicLink = await createMagicLink({ userId, tokenHash, expiresAt });
+  const magicLink = await replaceMagicLinkForUser({ userId, tokenHash, expiresAt });
   if (!magicLink) {
     return Response.json({ error: "Failed to create magic link" }, { status: 500 });
   }
