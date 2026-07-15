@@ -1,3 +1,4 @@
+import type { JSONContent } from "@tiptap/react";
 import type { HighlightRow } from "~/lib/database/annotation/highlight";
 
 export interface ListedHighlight {
@@ -6,6 +7,29 @@ export interface ListedHighlight {
   note: string | null;
   chapterIndex: number | null;
   inNotebook: boolean;
+}
+
+export function appendHighlightReferenceToContent(
+  content: unknown,
+  highlight: Pick<HighlightRow, "id" | "cfiRange" | "text">,
+): JSONContent {
+  const doc = content && typeof content === "object" ? (content as JSONContent) : null;
+  const existingContent = Array.isArray(doc?.content) ? doc.content : [];
+  return {
+    type: "doc",
+    content: [
+      ...existingContent,
+      {
+        type: "highlightReference",
+        attrs: {
+          highlightId: highlight.id,
+          cfiRange: highlight.cfiRange ?? "",
+          text: highlight.text,
+        },
+      },
+      { type: "paragraph" },
+    ],
+  };
 }
 
 export function getNotebookHighlightIds(content: unknown): Set<string> {
