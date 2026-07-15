@@ -70,11 +70,35 @@ describe("offsetToCfi", () => {
       segments: chapter.segments,
       startOffset,
       endOffset: startOffset + FIRST_PHRASE.length,
+      expectedText: FIRST_PHRASE,
     });
 
     expect(cfi).not.toBeNull();
     const resolved = await resolveFixtureCfi(data, cfi!, chapter.segments![0]!);
     expect(resolved).toBe(FIRST_PHRASE);
+  });
+
+  it("round-trips a fixture passage across differing internal whitespace", async () => {
+    const data = await fixtureData();
+    ensureEpubServerDom();
+    const chapter = (await extractBookChapters(data))[0]!;
+    const segment = chapter.segments![0]!;
+    const serverPassage = "working correctly.\nThe quick brown fox";
+    const extractionPassage = "working correctly.\t\t\tThe quick brown fox";
+    expect(chapter.text).toContain(serverPassage);
+
+    const extractionText = chapter.text.replace(serverPassage, extractionPassage);
+    const startOffset = extractionText.indexOf(extractionPassage);
+    const cfi = await offsetToCfi({
+      epubSource: data,
+      segments: [{ ...segment, end: segment.end + extractionText.length - chapter.text.length }],
+      startOffset,
+      endOffset: startOffset + extractionPassage.length,
+      expectedText: extractionPassage,
+    });
+
+    expect(cfi).not.toBeNull();
+    await expect(resolveFixtureCfi(data, cfi!, segment)).resolves.toBe(serverPassage);
   });
 
   it("round-trips an offset in the second segment of a multi-spine chapter", async () => {
@@ -88,6 +112,7 @@ describe("offsetToCfi", () => {
       segments: chapter.segments,
       startOffset,
       endOffset: startOffset + SECOND_PHRASE.length,
+      expectedText: SECOND_PHRASE,
     });
 
     expect(cfi).not.toBeNull();
@@ -107,6 +132,7 @@ describe("offsetToCfi", () => {
         segments: chapter.segments,
         startOffset: first!.end,
         endOffset: second!.start,
+        expectedText: FIRST_PHRASE,
       }),
     ).resolves.toBeNull();
     await expect(
@@ -115,6 +141,7 @@ describe("offsetToCfi", () => {
         segments: chapter.segments,
         startOffset: first!.end - 1,
         endOffset: second!.start + 1,
+        expectedText: FIRST_PHRASE,
       }),
     ).resolves.toBeNull();
     await expect(
@@ -123,6 +150,7 @@ describe("offsetToCfi", () => {
         segments: [{ ...first!, end: first!.end - 1 }],
         startOffset: 0,
         endOffset: 1,
+        expectedText: FIRST_PHRASE,
       }),
     ).resolves.toBeNull();
     await expect(
@@ -131,6 +159,7 @@ describe("offsetToCfi", () => {
         segments: [],
         startOffset: 0,
         endOffset: 1,
+        expectedText: FIRST_PHRASE,
       }),
     ).resolves.toBeNull();
     await expect(
@@ -139,6 +168,29 @@ describe("offsetToCfi", () => {
         segments: [first!],
         startOffset: 0,
         endOffset: 1,
+        expectedText: FIRST_PHRASE,
+      }),
+    ).resolves.toBeNull();
+
+    const mismatchedOffset = chapter.text.indexOf(FIRST_PHRASE);
+    await expect(
+      offsetToCfi({
+        epubSource: data,
+        segments: chapter.segments,
+        startOffset: mismatchedOffset,
+        endOffset: mismatchedOffset + FIRST_PHRASE.length,
+        expectedText: "x".repeat(FIRST_PHRASE.length),
+      }),
+    ).resolves.toBeNull();
+
+    const ambiguousOffset = chapter.text.indexOf("the");
+    await expect(
+      offsetToCfi({
+        epubSource: data,
+        segments: chapter.segments,
+        startOffset: ambiguousOffset,
+        endOffset: ambiguousOffset + 3,
+        expectedText: "the",
       }),
     ).resolves.toBeNull();
   });

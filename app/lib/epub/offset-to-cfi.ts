@@ -17,12 +17,19 @@ export interface OffsetToCfiInput {
   segments?: readonly BookChapterSegment[];
   startOffset: number;
   endOffset: number;
+  expectedText: string;
   publication?: Publication;
 }
 
 interface TextBoundary {
   node: Text;
   offset: number;
+}
+
+interface NormalizedTextAlignment {
+  text: string;
+  rawStarts: number[];
+  rawEnds: number[];
 }
 
 function segmentsAreValid(segments: readonly BookChapterSegment[]): boolean {
@@ -58,11 +65,56 @@ function textBoundaryAtOffset(root: Node, offset: number): TextBoundary | null {
   return null;
 }
 
+function normalizeWhitespaceWithAlignment(value: string): NormalizedTextAlignment {
+  let text = "";
+  const rawStarts: number[] = [];
+  const rawEnds: number[] = [];
+
+  for (let index = 0; index < value.length;) {
+    if (/\s/.test(value[index]!)) {
+      let end = index + 1;
+      while (end < value.length && /\s/.test(value[end]!)) end++;
+      text += " ";
+      rawStarts.push(index);
+      rawEnds.push(end);
+      index = end;
+    } else {
+      text += value[index];
+      rawStarts.push(index);
+      rawEnds.push(index + 1);
+      index++;
+    }
+  }
+
+  return { text, rawStarts, rawEnds };
+}
+
+function locateUniqueWhitespaceMatch(
+  segmentText: string,
+  expectedText: string,
+): { start: number; end: number; text: string } | null {
+  const segment = normalizeWhitespaceWithAlignment(segmentText);
+  const expected = normalizeWhitespaceWithAlignment(expectedText.trim()).text;
+  if (!expected) return null;
+
+  const matchStart = segment.text.indexOf(expected);
+  if (matchStart < 0 || segment.text.indexOf(expected, matchStart + 1) >= 0) return null;
+
+  const matchEnd = matchStart + expected.length;
+  const start = segment.rawStarts[matchStart];
+  const end = segment.rawEnds[matchEnd - 1];
+  if (start === undefined || end === undefined) return null;
+
+  const text = segmentText.slice(start, end);
+  if (normalizeWhitespaceWithAlignment(text).text !== expected) return null;
+  return { start, end, text };
+}
+
 /** Converts a chapter-level character window into a spine-qualified range CFI. */
 export async function offsetToCfi(input: OffsetToCfiInput): Promise<string | null> {
   try {
     return await withEpubServerDom(async () => {
-      const { segments, startOffset, endOffset } = input;
+      const { segments, startOffset, endOffset, expectedText } = input;
       if (
         !segments ||
         segments.length === 0 ||
@@ -70,7 +122,10 @@ export async function offsetToCfi(input: OffsetToCfiInput): Promise<string | nul
         !Number.isInteger(startOffset) ||
         !Number.isInteger(endOffset) ||
         startOffset < 0 ||
-        endOffset <= startOffset
+        endOffset <= startOffset ||
+        typeof expectedText !== "string" ||
+        expectedText.trim().length === 0 ||
+        expectedText.length !== endOffset - startOffset
       ) {
         return null;
       }
@@ -104,22 +159,18 @@ export async function offsetToCfi(input: OffsetToCfiInput): Promise<string | nul
         if (document.getElementsByTagName("parsererror").length > 0 || !document.body) return null;
 
         const rawText = document.body.textContent ?? "";
-        const normalizedText = rawText.trim();
-        const segmentLength = segment.end - segment.start;
-        if (normalizedText.length !== segmentLength) return null;
-
-        const localStart = startOffset - segment.start;
-        const localEnd = endOffset - segment.start;
         const leadingTrim = rawText.length - rawText.trimStart().length;
-        const start = textBoundaryAtOffset(document.body, leadingTrim + localStart);
-        const end = textBoundaryAtOffset(document.body, leadingTrim + localEnd);
+        const match = locateUniqueWhitespaceMatch(rawText.trim(), expectedText);
+        if (!match) return null;
+
+        const start = textBoundaryAtOffset(document.body, leadingTrim + match.start);
+        const end = textBoundaryAtOffset(document.body, leadingTrim + match.end);
         if (!start || !end) return null;
 
-        const expectedText = normalizedText.slice(localStart, localEnd);
         const range = document.createRange();
         range.setEnd(end.node, end.offset);
         range.setStart(start.node, start.offset);
-        if (range.toString() !== expectedText) return null;
+        if (range.toString() !== match.text) return null;
 
         const section = sectionMetadata(publication, segment.spineIndex);
         const cfi = generateCfi(range, section);
@@ -130,7 +181,7 @@ export async function offsetToCfi(input: OffsetToCfiInput): Promise<string | nul
           resolved.startOffset !== range.startOffset ||
           resolved.endContainer !== range.endContainer ||
           resolved.endOffset !== range.endOffset ||
-          resolved.toString() !== expectedText
+          resolved.toString() !== match.text
         ) {
           return null;
         }
