@@ -158,7 +158,7 @@ export interface TextAnchor {
  * Normalize text for substring matching across quote styles, dashes, and
  * whitespace differences that AI-generated quotes often have vs the source.
  */
-function normalizeForMatch(text: string): string {
+export function normalizeForMatch(text: string): string {
   return text
     .replace(/[\u2018\u2019\u201A]/g, "'")
     .replace(/[\u201C\u201D\u201E]/g, '"')
