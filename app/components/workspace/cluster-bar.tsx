@@ -31,30 +31,19 @@ interface ClusterBarProps {
 
 export function ClusterBarActions({ demoActive }: { readonly demoActive: boolean }) {
   const { isAuthenticated, isLoading } = useAuth();
-  const ws = useWorkspace();
 
   if (demoActive && isLoading) return null;
 
   if (demoActive && !isAuthenticated) {
     return (
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => ws.openStandardEbooksRef.current?.()}
-        >
-          More books →
-        </Button>
-        <Button
-          size="sm"
-          className="bg-blue-600 text-white hover:bg-blue-700"
-          render={<Link to="/login" />}
-          nativeButton={false}
-        >
-          Log in
-        </Button>
-      </div>
+      <Button
+        size="sm"
+        className="bg-blue-600 text-white hover:bg-blue-700"
+        render={<Link to="/login" />}
+        nativeButton={false}
+      >
+        Log in
+      </Button>
     );
   }
 
@@ -130,7 +119,8 @@ export function ClusterBar({
   onClose,
   onReorder,
 }: ClusterBarProps) {
-  const { subscribeClusterChanges, booksRef } = useWorkspace();
+  const { isAuthenticated, isLoading } = useAuth();
+  const { subscribeClusterChanges, booksRef, openStandardEbooksRef } = useWorkspace();
   const [, setVersion] = useState(0);
   const [draggedBookId, setDraggedBookId] = useState<string | null>(null);
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
@@ -320,6 +310,16 @@ export function ClusterBar({
           );
         })}
       </div>
+      {demoActive && !isLoading && !isAuthenticated && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => openStandardEbooksRef.current?.()}
+        >
+          More books →
+        </Button>
+      )}
       <div className="sticky right-0 ml-auto flex shrink-0 items-center gap-1 bg-background">
         <ClusterBarActions demoActive={demoActive} />
       </div>
