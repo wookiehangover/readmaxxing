@@ -12,6 +12,11 @@ export interface AuthSession {
   user: AuthUser | null;
 }
 
+export interface MagicLinkResponse {
+  url: string;
+  expiresAt: string;
+}
+
 // --- Effect Service ---
 
 export class AuthService extends Context.Tag("AuthService")<
@@ -21,6 +26,7 @@ export class AuthService extends Context.Tag("AuthService")<
       displayName?: string,
     ) => Effect.Effect<{ verified: boolean; userId: string }, AuthError>;
     readonly signIn: () => Effect.Effect<{ verified: boolean; user: AuthUser | null }, AuthError>;
+    readonly generateMagicLink: () => Effect.Effect<MagicLinkResponse, AuthError>;
     readonly logout: () => Effect.Effect<void, AuthError>;
     readonly getSession: () => Effect.Effect<AuthSession, AuthError>;
   }
@@ -87,6 +93,19 @@ export const AuthServiceLive = Layer.succeed(AuthService, {
         return (await verifyRes.json()) as { verified: boolean; user: AuthUser | null };
       },
       catch: (cause) => new AuthError({ operation: "signIn", cause }),
+    }),
+
+  generateMagicLink: () =>
+    Effect.tryPromise({
+      try: async () => {
+        const res = await fetch("/api/auth/magic-link", { method: "POST" });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? "Failed to generate magic link");
+        }
+        return (await res.json()) as MagicLinkResponse;
+      },
+      catch: (cause) => new AuthError({ operation: "generateMagicLink", cause }),
     }),
 
   logout: () =>
