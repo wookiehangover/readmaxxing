@@ -20,7 +20,11 @@ import { getOrBuildBookIndex, locateTextAnchor, searchBook } from "~/lib/orama-b
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { getBookChaptersForUser } from "~/lib/database/book/book-chapters";
-import { upsertHighlight } from "~/lib/database/annotation/highlight";
+import {
+  getHighlightsByUser,
+  softDeleteHighlight,
+  upsertHighlight,
+} from "~/lib/database/annotation/highlight";
 import {
   getNotebookForUser,
   getNotebookMarkdownForUser,
@@ -28,6 +32,8 @@ import {
 } from "~/lib/database/annotation/notebook";
 import { runEditNotesInSandbox } from "~/lib/editor/notebook-sdk-server";
 import { markdownToTiptapJsonServer } from "~/lib/editor/markdown-to-tiptap-server";
+import { offsetToCfi } from "~/lib/epub/offset-to-cfi";
+import { getNotebookHighlightIds, listLiveHighlightsForBook } from "~/lib/chat/highlight-tools";
 import type { JSONContent } from "@tiptap/react";
 import {
   getMessagesBySession,
@@ -59,6 +65,7 @@ interface LoadedBook {
   title: string;
   author: string;
   format: string | null;
+  fileBlobUrl: string | null;
   chapters: BookChapter[];
   bookIndex: ReturnType<typeof getOrBuildBookIndex>;
   isPrimary: boolean;
@@ -370,6 +377,7 @@ export async function action({ request }: Route.ActionArgs) {
     title: primaryBook.title ?? "Untitled",
     author: primaryBook.author ?? "Unknown",
     format: primaryBook.format ?? null,
+    fileBlobUrl: primaryBook.fileBlobUrl,
     chapters: primaryChaptersRow.chapters,
     bookIndex: getOrBuildBookIndex(primaryChaptersRow.chapters),
     isPrimary: true,
@@ -401,6 +409,7 @@ export async function action({ request }: Route.ActionArgs) {
       title: secondaryBook.title ?? "Untitled",
       author: secondaryBook.author ?? "Unknown",
       format: secondaryBook.format ?? null,
+      fileBlobUrl: secondaryBook.fileBlobUrl,
       chapters: chaptersRow.chapters,
       bookIndex: getOrBuildBookIndex(chaptersRow.chapters),
       isPrimary: false,
@@ -645,7 +654,7 @@ export async function action({ request }: Route.ActionArgs) {
           }),
           create_highlight: tool({
             description:
-              "Highlight a passage in a book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. The highlight will appear in the epub reader and be saved to the reader's notebook." +
+              "Highlight a passage in a book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. For precise EPUB anchoring, pass the chapter-relative startOffset and endOffset for the exact passage from read_chapter; both offsets are required. The highlight will appear in the epub reader and be saved to the reader's notebook. A fuzzy result means the anchor was reconstructed from text and you should tell the user to highlight manually if precision matters." +
               multiBookToolHint,
             inputSchema: z.object({
               text: z
@@ -655,9 +664,21 @@ export async function action({ request }: Route.ActionArgs) {
                 .string()
                 .optional()
                 .describe("A brief note explaining why this passage is significant"),
+              startOffset: z
+                .number()
+                .int()
+                .nonnegative()
+                .optional()
+                .describe("Chapter-relative inclusive start offset from read_chapter"),
+              endOffset: z
+                .number()
+                .int()
+                .positive()
+                .optional()
+                .describe("Chapter-relative exclusive end offset from read_chapter"),
               bookId: bookIdArgSchema,
             }),
-            execute: async ({ text, note, bookId: targetBookId }) => {
+            execute: async ({ text, note, startOffset, endOffset, bookId: targetBookId }) => {
               const target = resolveTargetBook(targetBookId);
               // PDF is not supported server-side yet — client falls back to
               // its own PDF search + persist path on unsupported responses.
@@ -685,11 +706,32 @@ export async function action({ request }: Route.ActionArgs) {
               const id = generateId();
               const createdAt = new Date();
               const color = "rgba(255, 213, 79, 0.4)";
+              const chapter = target.chapters.find(
+                (candidate) => candidate.index === anchor.chapterIndex,
+              );
+              let cfiRange: string | null = null;
+              if (
+                startOffset !== undefined &&
+                endOffset !== undefined &&
+                chapter?.segments &&
+                target.fileBlobUrl
+              ) {
+                try {
+                  cfiRange = await offsetToCfi({
+                    epubSource: new URL(target.fileBlobUrl),
+                    segments: chapter.segments,
+                    startOffset,
+                    endOffset,
+                  });
+                } catch {
+                  // Fail closed to the existing text-anchor path.
+                }
+              }
               try {
                 await upsertHighlight(userId, {
                   id,
                   bookId: target.bookId,
-                  cfiRange: null,
+                  cfiRange,
                   text,
                   color,
                   textAnchor: anchor,
@@ -713,7 +755,7 @@ export async function action({ request }: Route.ActionArgs) {
               return {
                 bookId: target.bookId,
                 created: true,
-                matchQuality: anchor.matchQuality,
+                matchQuality: cfiRange ? "exact" : "fuzzy",
                 chapterIndex: anchor.chapterIndex,
                 chapterTitle,
                 highlight: {
@@ -722,10 +764,46 @@ export async function action({ request }: Route.ActionArgs) {
                   text,
                   note: note ?? null,
                   color,
+                  cfiRange,
                   textAnchor: anchor,
                   createdAt: createdAt.getTime(),
                 },
               };
+            },
+          }),
+          list_highlights: tool({
+            description:
+              "List all live highlights for a book, including whether each highlight still has a highlightReference block in the notebook JSON." +
+              multiBookToolHint,
+            inputSchema: z.object({ bookId: bookIdArgSchema }),
+            execute: async ({ bookId: targetBookId }) => {
+              const target = resolveTargetBook(targetBookId);
+              const [highlights, notebook] = await Promise.all([
+                getHighlightsByUser(userId),
+                getNotebookForUser(userId, target.bookId),
+              ]);
+              const notebookIds = getNotebookHighlightIds(notebook?.content);
+              return {
+                bookId: target.bookId,
+                highlights: listLiveHighlightsForBook(highlights, target.bookId, notebookIds),
+              };
+            },
+          }),
+          delete_highlight: tool({
+            description:
+              "Soft-delete any highlight by id. This does not remove its existing notebook highlightReference block. Known limitation: a stale pending client highlight upload can resurrect the server row before the client pulls the deletion tombstone.",
+            inputSchema: z.object({
+              highlightId: z.string().describe("The highlight id returned by list_highlights"),
+            }),
+            execute: async ({ highlightId }) => {
+              const highlights = await getHighlightsByUser(userId);
+              const highlight = highlights.find((candidate) => candidate.id === highlightId);
+              const notebook = highlight
+                ? await getNotebookForUser(userId, highlight.bookId)
+                : null;
+              const inNotebook = getNotebookHighlightIds(notebook?.content).has(highlightId);
+              const deleted = await softDeleteHighlight(userId, highlightId);
+              return { deleted, inNotebook };
             },
           }),
           read_chapter: tool({
