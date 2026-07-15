@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEMO_CHAT_SESSION, DEMO_SUGGESTED_QUESTIONS } from "~/lib/onboarding/demo-content";
+import { DEMO_SUGGESTED_QUESTIONS } from "~/lib/onboarding/demo-content";
 import { joinTextParts, parseSuggestedPrompts, stripSuggestedPrompts } from "../chat-utils";
 
 describe("joinTextParts", () => {
@@ -39,7 +39,11 @@ describe("joinTextParts", () => {
 
 describe("demo suggested prompts", () => {
   it("parses contextual questions without displaying their metadata", () => {
-    const message = DEMO_CHAT_SESSION.messages.at(-1)?.content ?? "";
+    const message = `Answer text.
+
+<!-- suggested-prompts
+${DEMO_SUGGESTED_QUESTIONS.join("\n")}
+-->`;
 
     expect(parseSuggestedPrompts(message)).toEqual(DEMO_SUGGESTED_QUESTIONS);
     expect(stripSuggestedPrompts(message)).not.toContain("suggested-prompts");
