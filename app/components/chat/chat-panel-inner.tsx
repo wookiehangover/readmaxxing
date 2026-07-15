@@ -264,10 +264,14 @@ export function ChatPanelInner({
     if (!demoChat || didSimulateDemoStreamRef.current || status !== "ready") return;
     const nextMessage = demoChat.next(messages);
     if (!nextMessage) return;
-    didSimulateDemoStreamRef.current = true;
-    void sendMessage(nextMessage).catch((error: unknown) => {
-      console.error("Failed to simulate demo chat:", error);
-    });
+    const timeoutId = window.setTimeout(() => {
+      if (didSimulateDemoStreamRef.current) return;
+      didSimulateDemoStreamRef.current = true;
+      void sendMessage(nextMessage).catch((error: unknown) => {
+        console.error("Failed to simulate demo chat:", error);
+      });
+    }, 700);
+    return () => window.clearTimeout(timeoutId);
   }, [demoChat, messages, sendMessage, status]);
 
   const previousSelectedBookIdsRef = useRef(selectedBookIds);
