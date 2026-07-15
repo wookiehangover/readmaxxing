@@ -119,8 +119,15 @@ export const DEMO_NOTEBOOK_CONTENT = DEFAULT_DEMO_BOOK.notebookContent;
 export const DEMO_INTRO_QUESTION = DEFAULT_DEMO_BOOK.introQuestion;
 export const DEMO_SUGGESTED_QUESTIONS = DEFAULT_DEMO_BOOK.suggestedQuestions;
 
-export const DEMO_CAPABILITIES_ANSWER =
-  "Readmaxxing is a local-first reading workspace for EPUBs and PDFs. You can keep a notebook beside each book, highlight passages, and ask questions grounded in the text you are reading. Workspaces let you arrange reading, notes, and chat together, while an account lets you sync your library and reading progress across devices.";
+export const DEMO_CAPABILITIES_ANSWER = `Readmaxxing brings reading, questions, and notes together in one workspace. You can:
+
+- **Read EPUBs and PDFs** with your place kept as you move through the book.
+- **Ask questions in chat** grounded in the text you are reading.
+- **Take notes and highlight passages** without leaving your reading workspace.
+- **Click a suggested question** whenever you want a useful next step.
+- **Arrange reading, notes, and chat together** in the layout that works for you.
+
+Explore the demo by reading, asking a question, or choosing one of the suggestions below. Sign in when you are ready to save your library, notes, highlights, chats, and reading progress across devices.`;
 
 const DEMO_CHAT_STARTED_AT = Date.UTC(2025, 3, 10, 20, 0, 0);
 

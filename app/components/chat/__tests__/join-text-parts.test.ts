@@ -69,6 +69,11 @@ ${DEMO_SUGGESTED_QUESTIONS.join("\n")}
     expect(answer).toMatchObject({ type: "text" });
     if (answer.type !== "text") throw new Error("Expected the intro answer to contain text");
     expect(answer.text).toContain(DEMO_CAPABILITIES_ANSWER);
+    expect(DEMO_CAPABILITIES_ANSWER.match(/^- /gm)).toHaveLength(5);
+    expect(DEMO_CAPABILITIES_ANSWER).toContain("Ask questions in chat");
+    expect(DEMO_CAPABILITIES_ANSWER).toContain("Take notes and highlight passages");
+    expect(DEMO_CAPABILITIES_ANSWER).toContain("Click a suggested question");
+    expect(DEMO_CAPABILITIES_ANSWER).toContain("Sign in");
     expect(parseSuggestedPrompts(answer.text)).toEqual(DEMO_SUGGESTED_QUESTIONS);
   });
 });
