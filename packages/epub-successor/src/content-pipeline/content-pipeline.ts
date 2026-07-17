@@ -14,10 +14,12 @@ const URL_ATTRIBUTES = new Set([
 ]);
 
 /**
- * Same-origin is needed for parent-owned measurement and selection. Scripts are
- * deliberately not granted; never combine this value with `allow-scripts`.
+ * Same-origin is needed for parent-owned measurement and selection. Current
+ * Safari also requires `allow-scripts` for callbacks installed by the trusted
+ * host (keyboard, selection, and decoration handlers). Publication-authored
+ * scripts remain blocked by sanitization and `script-src 'none'` below.
  */
-export const CONTENT_IFRAME_SANDBOX = "allow-same-origin" as const;
+export const CONTENT_IFRAME_SANDBOX = "allow-same-origin allow-scripts" as const;
 export const CONTENT_SECURITY_POLICY =
   "default-src 'none'; img-src blob:; font-src blob: 'self'; media-src blob:; " +
   "style-src 'unsafe-inline' blob:; script-src 'none'; connect-src 'none'; " +

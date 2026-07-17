@@ -112,7 +112,7 @@ describe("assembleSectionDocument", () => {
     expect(CONTENT_SECURITY_POLICY).toContain("default-src 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("connect-src 'none'");
     expect(CONTENT_SECURITY_POLICY).toContain("font-src blob: 'self'");
-    expect(CONTENT_IFRAME_SANDBOX).toBe("allow-same-origin");
+    expect(CONTENT_IFRAME_SANDBOX).toBe("allow-same-origin allow-scripts");
   });
 
   it("creates a head and stable empty style placeholders when they are absent", () => {

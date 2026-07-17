@@ -295,7 +295,7 @@ describe("scrolling Navigator", () => {
     const frame = container.querySelector("iframe")!;
     const serialized = await blobs.at(-1)!.text();
 
-    expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
+    expect(frame.getAttribute("sandbox")).toBe("allow-same-origin allow-scripts");
     expect(serialized).toContain("Content-Security-Policy");
     expect(serialized).not.toContain("<script");
     expect(scrollIntoView).toHaveBeenCalledOnce();
