@@ -40,7 +40,7 @@ Browser columns describe the package commitment on current engines, not the engi
 | Multiple renditions                     | D       | D        | D       | D      | Default rootfile only                                       |
 | Advanced CFI temporal/spatial terms     | D       | D        | D       | D      | Typed diagnostic and fallback when possible                 |
 | Collections/dictionaries/indexes UX     | D       | D        | D       | D      | Metadata may be preserved; no specialized behavior          |
-| Scripted content                        | R       | R        | R       | R      | Removed; sandbox omits `allow-scripts`                      |
+| Scripted content                        | R       | R        | R       | R      | Removed by sanitizer and blocked by `script-src 'none'`     |
 | Forms, popups, downloads, nested frames | R       | R        | R       | R      | Removed and blocked by sandbox/CSP                          |
 | External/remote publication resources   | R       | R        | R       | R      | No publication-initiated network requests                   |
 | Arbitrary `javascript:` / `data:` URLs  | R       | R        | R       | R      | Unsafe schemes rejected; bounded raster exception by policy |

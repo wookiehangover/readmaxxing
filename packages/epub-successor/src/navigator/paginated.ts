@@ -310,6 +310,7 @@ export function animateScrollToPage(
   state: PaginatedLayoutState,
   pageIndex: number,
   durationMs: number,
+  scheduler?: Window,
 ): PageScrollAnimation {
   const page = Math.min(state.pageCount - 1, Math.max(0, Math.round(pageIndex)));
   const target = scrollLeftFromLogicalOffset(
@@ -320,7 +321,9 @@ export function animateScrollToPage(
   );
   const start = state.scrolling.scrollLeft;
   const duration = Math.max(0, Number.isFinite(durationMs) ? durationMs : 0);
-  const view = state.scrolling.ownerDocument.defaultView;
+  // Safari blocks script callbacks scheduled in a sandboxed publication
+  // window. Callers embedding the document pass their trusted host window.
+  const view = scheduler ?? state.scrolling.ownerDocument.defaultView;
   if (!view || duration === 0 || start === target) {
     state.scrolling.scrollLeft = target;
     return { finished: Promise.resolve(), cancel: () => {} };

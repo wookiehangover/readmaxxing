@@ -18,7 +18,7 @@ test("loads fixture content, reports scrolling relocations, and navigates fragme
 }) => {
   const initial = await openDemo(page, "test=1&stress=1&fixture=minimal-epub3.epub");
 
-  expect(initial.sandbox).toBe("allow-same-origin");
+  expect(initial.sandbox).toBe("allow-same-origin allow-scripts");
   expect(initial.iframeSrc).toMatch(/^blob:/);
   expect(initial.text).toContain("Fixture");
   expect(initial.visibleAnchors[0]).toContain("Fixture");

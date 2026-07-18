@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-10
+- Amended: 2026-07-17 to distinguish the sandbox token from publication scripting
 
 ## Context
 
@@ -14,7 +15,7 @@ Supporting scripts would require a distinct trust model, origin isolation, stora
 Publication scripts are disabled and unsupported in the first product scope:
 
 - Sanitization removes script elements, inline handlers, script URLs, script-capable embeds, and active SVG/MathML constructs.
-- The iframe sandbox omits `allow-scripts`.
+- The iframe includes `allow-scripts` only for trusted host-installed callbacks required by current Safari; sanitization and CSP still prohibit publication-authored execution.
 - CSP sets `script-src 'none'` and blocks connections, frames, objects, forms, and base changes.
 - The public content policy cannot opt into scripts.
 - Scripted spine items are rendered as inert content when safely possible and otherwise rejected with a diagnostic.
@@ -38,13 +39,13 @@ Negative:
 ## Alternatives rejected
 
 - **Scripts enabled by option:** makes security dependent on application callers and creates two incompatible engine modes.
-- **Scripts in the same-origin iframe:** unacceptable combination with the required DOM access.
+- **Publication scripts in the same-origin iframe:** unacceptable combination with the required DOM access; the sandbox token does not opt book code into execution.
 - **Opaque-origin scripted iframe:** safer than same-origin scripts but cannot satisfy current measurement/contracts without a separate message-based renderer architecture.
 - **Static script analysis:** cannot reliably prove arbitrary JavaScript safe.
 
 ## Revisit criteria
 
-Revisit only as a separately threat-modeled subsystem with a distinct origin, explicit capability protocol, no host DOM access, conformance fixtures, and application opt-in. It must not weaken the scriptless default.
+Revisit only as a separately threat-modeled subsystem with a distinct origin, explicit capability protocol, no host DOM access, conformance fixtures, and application opt-in. It must not weaken the publication-script-free default.
 
 ## References
 

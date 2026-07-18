@@ -2,7 +2,7 @@
 
 Browser-first TypeScript library for parsing and rendering reflowable EPUB 2/3 publications. Private workspace package used by the readmaxxing app as the replacement for epub.js.
 
-The browser is the layout authority. The engine opens the archive, sanitizes content, mounts one spine section at a time in a scriptless sandboxed iframe, and derives navigation, locators, and decorations from measured DOM geometry.
+The browser is the layout authority. The engine opens the archive, sanitizes content, mounts one spine section at a time in a publication-script-free sandboxed iframe, and derives navigation, locators, and decorations from measured DOM geometry.
 
 ## Features
 
@@ -199,8 +199,8 @@ EPUB bytes are untrusted. Default policy:
 
 1. Bounded ZIP inflate; reject traversal, bombs, and unsafe paths.
 2. Sanitize markup/CSS before any iframe load; strip scripts and active content.
-3. Mount with `sandbox="allow-same-origin"` and **without** `allow-scripts`.
-4. Inject a restrictive CSP (`default-src 'none'`, no network, no scripts).
+3. Mount with `sandbox="allow-same-origin allow-scripts"`; `allow-scripts` is required by current Safari for trusted host-installed callbacks, not publication code.
+4. Inject a restrictive CSP (`default-src 'none'`, no network, `script-src 'none'`).
 5. Rewrite package resources to short-lived blob URLs owned by section leases.
 6. Close/destroy revokes every remaining blob URL.
 

@@ -82,6 +82,7 @@ interface SectionMount {
   readonly documentLease: ResourceUrlLease;
   removeScrollListener?: () => void;
   scrollFrame?: number;
+  scrollScheduler?: Window;
   pagination?: PaginatedLayoutState;
   visibleAnchor?: Element;
   settledWidth?: number;
@@ -544,6 +545,11 @@ export class Navigator extends EventTarget {
 
   #installScrollListener(mount: SectionMount, view: Window): void {
     mount.removeScrollListener?.();
+    // WebKit may block callbacks scheduled in a sandboxed publication frame. The
+    // listener still observes the publication window, but its coalescing frame
+    // belongs to the trusted host document.
+    const scheduler = this.#container.ownerDocument.defaultView ?? view;
+    mount.scrollScheduler = scheduler;
     const scroll = () => {
       if (
         this.#active !== mount ||
@@ -552,7 +558,7 @@ export class Navigator extends EventTarget {
         mount.scrollFrame !== undefined
       )
         return;
-      mount.scrollFrame = view.requestAnimationFrame(() => {
+      mount.scrollFrame = scheduler.requestAnimationFrame(() => {
         mount.scrollFrame = undefined;
         if (this.#active === mount && this.#state === "settled" && this.#pageMove?.mount !== mount)
           this.#emitRelocation(mount);
@@ -678,7 +684,7 @@ export class Navigator extends EventTarget {
   #unmount(mount: SectionMount): void {
     mount.removeScrollListener?.();
     if (mount.scrollFrame !== undefined)
-      mount.frame.contentWindow?.cancelAnimationFrame(mount.scrollFrame);
+      mount.scrollScheduler?.cancelAnimationFrame(mount.scrollFrame);
     this.#releaseOverlay(mount);
     mount.frame.remove();
     if (this.#active === mount) this.#active = undefined;
@@ -711,9 +717,8 @@ export class Navigator extends EventTarget {
   }
 
   async #moveToPage(mount: SectionMount, pageIndex: number): Promise<void> {
-    const view = mount.frame.contentWindow;
     if (mount.scrollFrame !== undefined) {
-      view?.cancelAnimationFrame(mount.scrollFrame);
+      mount.scrollScheduler?.cancelAnimationFrame(mount.scrollFrame);
       mount.scrollFrame = undefined;
     }
     const move: ActivePageMove = { mount };
@@ -723,6 +728,7 @@ export class Navigator extends EventTarget {
         mount.pagination!,
         pageIndex,
         this.#pageTurnDurationMs(),
+        this.#container.ownerDocument.defaultView ?? undefined,
       );
       await move.animation.finished;
     } else scrollToPage(mount.pagination!, pageIndex);
@@ -757,7 +763,7 @@ export class Navigator extends EventTarget {
   }
 
   async #finishPageMove(mount: SectionMount, move?: ActivePageMove): Promise<void> {
-    const view = mount.frame.contentWindow;
+    const view = this.#container.ownerDocument.defaultView;
     const signal = this.#operation?.signal;
     if (!view || !signal) return;
     await nextAnimationFrame(view, signal);
