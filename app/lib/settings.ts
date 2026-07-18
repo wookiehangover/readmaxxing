@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useSyncExternalStore } from "react";
 import { Schema } from "effect";
 import { recordChange } from "~/lib/sync/change-log";
 
@@ -340,4 +340,26 @@ export function resolveTheme(theme: Theme): "light" | "dark" {
   if (theme !== "system") return theme;
   if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+const SYSTEM_THEME_QUERY = "(prefers-color-scheme: dark)";
+
+function subscribeToSystemTheme(onStoreChange: () => void): () => void {
+  const media = window.matchMedia(SYSTEM_THEME_QUERY);
+  media.addEventListener("change", onStoreChange);
+  return () => media.removeEventListener("change", onStoreChange);
+}
+
+function getSystemTheme(): "light" | "dark" {
+  return window.matchMedia(SYSTEM_THEME_QUERY).matches ? "dark" : "light";
+}
+
+/** Resolve a theme setting and react when the operating-system appearance changes. */
+export function useResolvedTheme(theme: Theme): "light" | "dark" {
+  const systemTheme = useSyncExternalStore(
+    subscribeToSystemTheme,
+    getSystemTheme,
+    (): "light" => "light",
+  );
+  return theme === "system" ? systemTheme : theme;
 }

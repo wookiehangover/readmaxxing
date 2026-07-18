@@ -15,7 +15,7 @@ import { useReaderSearch } from "~/hooks/use-reader-search";
 import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import { useSettings, resolveTheme } from "~/lib/settings";
+import { useResolvedTheme, useSettings } from "~/lib/settings";
 import type { PdfLayout, ReaderLayout, Settings, TextAlign } from "~/lib/settings";
 import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
@@ -201,6 +201,7 @@ function WorkspaceBookReaderInner({
   const renditionRef = useRef<SuccessorRenditionAdapter | null>(null);
 
   const [settings] = useSettings();
+  const resolvedTheme = useResolvedTheme(settings.theme);
 
   // Per-panel typography overrides: initialized from panel params (restored layout)
   // or global settings as fallback. These are local to this panel instance.
@@ -311,7 +312,7 @@ function WorkspaceBookReaderInner({
     bookId: book.id,
     renditionRef,
     onHighlightClick: () => handleOpenNotebookRef.current(),
-    theme: settings.theme,
+    theme: resolvedTheme,
   });
 
   const {
@@ -332,7 +333,7 @@ function WorkspaceBookReaderInner({
     fontSize: localFontSize,
     lineHeight: localLineHeight,
     textAlign: localTextAlign,
-    theme: settings.theme,
+    theme: resolvedTheme,
     loadAndApplyHighlights,
     registerSelectionHandler,
     enabled: hasBeenVisible,
@@ -415,10 +416,9 @@ function WorkspaceBookReaderInner({
       registerThemeColors(rendition);
 
       // Directly inject updated theme CSS into iframe documents
-      const effectiveTheme = resolveTheme(settings.theme);
-      injectThemeColors(rendition, effectiveTheme);
+      injectThemeColors(rendition, resolvedTheme);
 
-      rendition.themes.select(effectiveTheme);
+      rendition.themes.select(resolvedTheme);
     };
 
     const readContainerSize = (): { width: number; height: number } | null => {
@@ -489,7 +489,7 @@ function WorkspaceBookReaderInner({
       dimensionsDisposable.dispose();
       if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
     };
-  }, [panelApi, settings.theme, flushPositionSave]);
+  }, [panelApi, resolvedTheme, flushPositionSave]);
 
   const handlePrev = useCallback(() => {
     const rendition = renditionRef.current;
