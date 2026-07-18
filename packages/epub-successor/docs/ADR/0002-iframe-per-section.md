@@ -1,7 +1,8 @@
-# ADR-0002: One scriptless sandboxed iframe per active section
+# ADR-0002: One sanitized sandboxed iframe per active section
 
 - Status: Accepted
 - Date: 2026-07-10
+- Amended: 2026-07-17 for current Safari host-callback compatibility
 
 ## Context
 
@@ -11,11 +12,11 @@ Rendering all spine items together increases DOM/memory cost, broadens the activ
 
 ## Decision
 
-The navigator mounts exactly one active spine section in an iframe loaded from a prepared blob URL. The iframe uses `sandbox="allow-same-origin"` and intentionally omits `allow-scripts` and all other capability tokens.
+The navigator mounts exactly one active spine section in an iframe loaded from a prepared blob URL. The iframe uses `sandbox="allow-same-origin allow-scripts"` and omits all other capability tokens. Current Safari requires `allow-scripts` to execute trusted keyboard, selection, decoration, and animation callbacks installed by the parent.
 
 Before mounting, the content pipeline sanitizes the document, rewrites allowed package resources, and injects a restrictive CSP. The parent owns link listeners, navigation, measurement, and decoration behavior. Section replacement follows prepare → mount/load → settle → unload old frame → release old lease.
 
-`allow-same-origin` is required because blob URLs inherit the creator origin and parent DOM access is part of the navigator contract. The unsafe `allow-same-origin` plus `allow-scripts` combination is prohibited.
+`allow-same-origin` is required because blob URLs inherit the creator origin and parent DOM access is part of the navigator contract. Publication-authored execution remains prohibited: sanitization removes scripts, handlers, and active URLs, and CSP enforces `script-src 'none'`. Combining same-origin and scripts increases the impact of a sanitizer/CSP bypass, so both controls and hostile-content browser tests are mandatory security boundaries.
 
 ## Consequences
 
@@ -28,7 +29,7 @@ Positive:
 
 Negative:
 
-- Same-origin access leaves a larger residual impact if script prevention fails.
+- Same-origin access plus the Safari callback token leaves a larger residual impact if sanitizer and CSP script prevention both fail.
 - Cross-section continuous scrolling requires orchestration or a future bounded window design.
 - iframe loading, focus, and accessibility require explicit tests in every browser.
 
@@ -37,7 +38,7 @@ Negative:
 - **Render into host shadow DOM:** CSS isolation is incomplete for several document behaviors and the attack surface shares the host realm.
 - **Opaque-origin sandbox without `allow-same-origin`:** prevents parent DOM measurement and range/decorations contracts.
 - **All spine items in one iframe:** increases memory, URL lifetimes, and layout churn.
-- **`allow-scripts` for scripted EPUB:** conflicts with the default threat model and materially weakens same-origin isolation.
+- **Publication scripting in this frame:** conflicts with the default threat model and materially weakens same-origin isolation; the token is reserved for trusted host callbacks.
 
 ## Validation
 
