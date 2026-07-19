@@ -438,6 +438,7 @@ describe("paginated Navigator", () => {
     expect(doubleCss).toContain("padding:24px 0");
     expect(doubleCss).toContain("max-width:368px");
     expect(doubleCss).toContain("max-height:552px");
+    expect(doubleCss).toContain("object-position:left center");
 
     await navigator.setPreferences({
       fontFamily: "Literata",

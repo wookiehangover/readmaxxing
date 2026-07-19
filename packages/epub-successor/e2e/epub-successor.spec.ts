@@ -132,6 +132,38 @@ test("loads real blob images and fonts, settles frames, resettles resize, and re
   expect((await page.evaluate(() => window.__epubDemo.snapshot())).visibleAnchors[0]).toBe(anchor);
 });
 
+test("left-aligns contained images with text in paginated flow", async ({ page }) => {
+  await openDemo(page, "test=1&flow=paginated&fixture=images.epub");
+
+  const alignment = await page.evaluate(() => {
+    const frame = document.querySelector<HTMLIFrameElement>("iframe");
+    const doc = frame?.contentDocument;
+    const image = doc?.querySelector<HTMLImageElement>('img[alt="pixel"]');
+    const text = doc?.querySelector<HTMLElement>("#text-edge");
+    const view = doc?.defaultView;
+    if (!image || !text || !view) throw new Error("Image fixture did not render");
+
+    const imageRect = image.getBoundingClientRect();
+    const bodyStyle = view.getComputedStyle(doc.body);
+    return {
+      imageLeft: imageRect.left,
+      textLeft: text.getBoundingClientRect().left,
+      imageWidth: imageRect.width,
+      imageHeight: imageRect.height,
+      columnStride:
+        Number.parseFloat(bodyStyle.columnWidth) + Number.parseFloat(bodyStyle.columnGap),
+      objectPosition: view.getComputedStyle(image).objectPosition,
+    };
+  });
+
+  // The wide image box makes object positioning observable: `contain` leaves
+  // horizontal room around the square bitmap after pagination caps its height.
+  expect(alignment.imageWidth).toBeGreaterThan(alignment.imageHeight);
+  const columnDelta = (alignment.imageLeft - alignment.textLeft) / alignment.columnStride;
+  expect(columnDelta).toBeCloseTo(Math.round(columnDelta), 1);
+  expect(alignment.objectPosition.split(/\s+/)[0]).toMatch(/^(?:left|0%)$/);
+});
+
 test("cancels a display during browser settling and retains one current frame", async ({
   page,
 }) => {
