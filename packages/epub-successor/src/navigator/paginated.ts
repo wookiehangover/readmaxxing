@@ -213,6 +213,7 @@ export function applyPaginatedLayout(
   const chrome = pageChromeInsets(viewport.width, columnGap, pagesPerSpread);
   const height = contained(viewport.height, 1);
   const contentHeight = Math.max(1, height - chrome.padBlock * 2);
+  const imageInlinePosition = direction === "rtl" ? "right" : "left";
   // Reset any spread padding from a previous layout before re-measuring.
   padStyle(document).textContent = "";
   // Do not set background here — theme/preference CSS owns html+body paint.
@@ -228,7 +229,7 @@ export function applyPaginatedLayout(
     `img{box-sizing:border-box !important;` +
     `max-width:${chrome.geometry.columnWidth}px !important;` +
     `max-height:${contentHeight}px !important;object-fit:contain !important;` +
-    `object-position:left center !important;}` +
+    `object-position:${imageInlinePosition} center !important;}` +
     `body::after{content:"" !important;display:block !important;` +
     `width:100% !important;height:1px !important;` +
     `margin-block-start:-1px !important;}`;

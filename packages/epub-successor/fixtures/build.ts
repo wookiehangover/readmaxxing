@@ -147,7 +147,13 @@ export function buildFixtureArchives(): Readonly<Record<string, Uint8Array<Array
       epub3Entries({
         title: "RTL",
         spineAttributes: 'page-progression-direction="rtl"',
-        chapter: xhtml('<h1 id="start">עברית</h1><p>مرحبا بالعالم</p>', "<title>RTL</title>", "he"),
+        manifestExtra: '<item id="pixel" href="images/pixel.png" media-type="image/png"/>',
+        chapter: xhtml(
+          '<h1 id="start">עברית</h1><p id="text-edge">مرحبا بالعالم</p><img src="../images/pixel.png" alt="pixel" style="display:block;width:100%;height:1200px"/>',
+          "<title>RTL</title>",
+          "he",
+        ),
+        extras: { "EPUB/images/pixel.png": ONE_PIXEL_PNG },
       }),
     ),
     "embedded-font.epub": archive(
