@@ -227,7 +227,7 @@ export function applyPaginatedLayout(
     `column-fill:auto !important;column-gap:${chrome.geometry.columnGap}px !important;` +
     `column-width:${chrome.geometry.columnWidth}px !important;overflow:visible !important;}` +
     `img{box-sizing:border-box !important;` +
-    `max-width:${chrome.geometry.columnWidth}px !important;` +
+    `max-width:min(100%,${chrome.geometry.columnWidth}px) !important;` +
     `max-height:${contentHeight}px !important;object-fit:contain !important;` +
     `object-position:${imageInlinePosition} center !important;}` +
     `body::after{content:"" !important;display:block !important;` +

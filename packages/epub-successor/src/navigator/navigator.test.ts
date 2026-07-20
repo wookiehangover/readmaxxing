@@ -436,7 +436,7 @@ describe("paginated Navigator", () => {
     expect(doubleCss).toContain("column-width:368px");
     expect(doubleCss).toContain("column-gap:64px");
     expect(doubleCss).toContain("padding:24px 0");
-    expect(doubleCss).toContain("max-width:368px");
+    expect(doubleCss).toContain("max-width:min(100%,368px)");
     expect(doubleCss).toContain("max-height:552px");
     expect(doubleCss).toContain("object-position:left center");
 
@@ -459,7 +459,7 @@ describe("paginated Navigator", () => {
       frame.contentDocument!.getElementById("epub-successor-pagination-style")?.textContent ?? "";
     expect(singleCss).toContain("column-width:800px");
     expect(singleCss).toContain("padding:24px 0");
-    expect(singleCss).toContain("max-width:800px");
+    expect(singleCss).toContain("max-width:min(100%,800px)");
     navigator.destroy();
   });
 

@@ -146,15 +146,21 @@ for (const { direction, fixture, position } of [
       const doc = frame?.contentDocument;
       const image = doc?.querySelector<HTMLImageElement>('img[alt="pixel"]');
       const text = doc?.querySelector<HTMLElement>("#text-edge");
+      const container = doc?.querySelector<HTMLElement>("#image-container");
       const view = doc?.defaultView;
-      if (!image || !text || !view) throw new Error("Image fixture did not render");
+      if (!image || !text || !container || !view) throw new Error("Image fixture did not render");
 
       const imageRect = image.getBoundingClientRect();
       const textRect = text.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
       const bodyStyle = view.getComputedStyle(doc.body);
       return {
         imageEdge: expectedDirection === "rtl" ? imageRect.right : imageRect.left,
         textEdge: expectedDirection === "rtl" ? textRect.right : textRect.left,
+        imageLeft: imageRect.left,
+        imageRight: imageRect.right,
+        containerLeft: containerRect.left,
+        containerRight: containerRect.right,
         imageWidth: imageRect.width,
         imageHeight: imageRect.height,
         columnStride:
@@ -163,9 +169,11 @@ for (const { direction, fixture, position } of [
       };
     }, direction);
 
-    // The wide image box makes object positioning observable: `contain` leaves
-    // horizontal room around the square bitmap after pagination caps its height.
+    // Publisher margins narrow the containing block below the column width.
+    // The image must stay within both edges rather than spilling into the gutter.
     expect(alignment.imageWidth).toBeGreaterThan(alignment.imageHeight);
+    expect(alignment.imageLeft).toBeGreaterThanOrEqual(alignment.containerLeft - 0.5);
+    expect(alignment.imageRight).toBeLessThanOrEqual(alignment.containerRight + 0.5);
     const columnDelta = (alignment.imageEdge - alignment.textEdge) / alignment.columnStride;
     expect(columnDelta).toBeCloseTo(Math.round(columnDelta), 1);
     expect(alignment.objectPosition.split(/\s+/)[0]).toMatch(position);
