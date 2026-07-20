@@ -170,7 +170,10 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       },
       setContent(content: JSONContent) {
         if (!editor) return;
-        editor.commands.setContent(content);
+        // Programmatic content always comes from an authoritative server/sync
+        // snapshot. Do not emit onUpdate, which would enqueue a newer local
+        // autosave and could overwrite a subsequent remote change.
+        editor.commands.setContent(content, { emitUpdate: false });
       },
       getContent() {
         if (!editor) return { type: "doc", content: [] };

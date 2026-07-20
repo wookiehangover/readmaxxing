@@ -533,11 +533,27 @@ export async function action({ request }: Route.ActionArgs) {
               }
 
               if (!row) {
+                let authoritative = existing;
+                try {
+                  authoritative =
+                    (await getNotebookForUser(userId, target.bookId)) ?? authoritative;
+                } catch (err) {
+                  console.error(
+                    "append_to_notes: failed to reload authoritative notebook after conflict:",
+                    err,
+                  );
+                }
                 return {
                   bookId: target.bookId,
                   appended: false,
                   text,
                   appendedNodes: [],
+                  ...(authoritative
+                    ? {
+                        updatedContent: authoritative.content as JSONContent,
+                        updatedAt: authoritative.updatedAt.getTime(),
+                      }
+                    : {}),
                   error: "append_to_notes: server already has a newer notebook; ignoring this edit",
                 };
               }

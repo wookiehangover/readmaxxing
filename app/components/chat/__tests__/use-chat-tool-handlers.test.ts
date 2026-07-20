@@ -209,6 +209,63 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
     expect(AppRuntime.runPromise).not.toHaveBeenCalled();
   });
 
+  it("restores and caches the authoritative notebook when a streamed append loses an LWW race", async () => {
+    const setContentSpy = vi.fn();
+    const seedSpy = vi.fn();
+    mockNotebookEditorCallbackMap.current.set(
+      "book-1",
+      makeEditorCallbacks({ setContent: setContentSpy, seedLastContent: seedSpy }),
+    );
+    streamedToolCallIdRef.current.add("tc-conflict");
+
+    const authoritativeContent: JSONContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "newer remote note" }] }],
+    };
+    const authoritativeUpdatedAt = 1_700_000_999_000;
+    const msg: UIMessage = {
+      id: "msg-conflict",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-append_to_notes",
+          toolCallId: "tc-conflict",
+          state: "output-available",
+          input: { text: "optimistic preview" },
+          output: {
+            bookId: "book-1",
+            appended: false,
+            text: "optimistic preview",
+            appendedNodes: [],
+            updatedContent: authoritativeContent,
+            updatedAt: authoritativeUpdatedAt,
+            error: "append_to_notes: server already has a newer notebook; ignoring this edit",
+          },
+        } as unknown as UIMessage["parts"][number],
+      ],
+    };
+
+    const events: CustomEvent[] = [];
+    const listener = (event: Event) => events.push(event as CustomEvent);
+    window.addEventListener("sync:entity-updated", listener);
+
+    try {
+      const onFinish = getOnFinish();
+      onFinish({ message: msg });
+
+      expect(streamedToolCallIdRef.current.has("tc-conflict")).toBe(false);
+      expect(setContentSpy).toHaveBeenCalledWith(authoritativeContent);
+      expect(seedSpy).toHaveBeenCalledWith(authoritativeContent);
+      expect(AppRuntime.runPromise).toHaveBeenCalledTimes(1);
+
+      await waitForMicrotasks();
+      expect(events).toHaveLength(1);
+      expect(events[0].detail).toEqual({ entity: "notebook" });
+    } finally {
+      window.removeEventListener("sync:entity-updated", listener);
+    }
+  });
+
   it("caches updatedContent to IDB and dispatches sync:entity-updated for notebook", async () => {
     const seedSpy = vi.fn();
     mockNotebookEditorCallbackMap.current.set(
