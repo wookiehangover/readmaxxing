@@ -3,6 +3,7 @@ import { del, get, set } from "idb-keyval";
 import { Effect } from "effect";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "./demo-content";
 import { AppRuntime } from "~/lib/effect-runtime";
+import type { ChatSession } from "~/lib/stores/chat-store";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import type { ChangeEntry, SyncPushResponse } from "~/lib/sync/types";
 import { remapBookId } from "~/lib/sync/remap";
@@ -135,6 +136,8 @@ describe("adoptDemoContent", () => {
     expect(order).toEqual(["push", "push", "chapters"]);
     expect(recorded.filter((entry) => entry.entity === "chat_session")).toHaveLength(2);
     expect(await get(ADOPTED_BOOK_ID, getActiveSessionStore())).toBe(ADOPTED_SESSION_ID);
+    const sessions = await get<ChatSession[]>(ADOPTED_BOOK_ID, getChatSessionStore());
+    expect(sessions?.find((session) => session.id === ADOPTED_SESSION_ID)?.messages).toEqual([]);
     expect(recorded[0]).toMatchObject({ entity: "book", entityId: ADOPTED_BOOK_ID });
     expect(await get<Record<string, unknown>>(DEMO_BOOK_ID, getBookStore())).toHaveProperty(
       "deletedAt",

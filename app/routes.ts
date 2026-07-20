@@ -28,6 +28,8 @@ export default [
   route("api/auth/register-verify", "routes/api.auth.register-verify.ts"),
   route("api/auth/login-options", "routes/api.auth.login-options.ts"),
   route("api/auth/login-verify", "routes/api.auth.login-verify.ts"),
+  route("api/auth/magic-link", "routes/api.auth.magic-link.ts"),
+  route("api/auth/magic-link/consume", "routes/api.auth.magic-link.consume.ts"),
   route("api/auth/logout", "routes/api.auth.logout.ts"),
   route("api/auth/session", "routes/api.auth.session.ts"),
   route("api/sync/push", "routes/api.sync.push.ts"),

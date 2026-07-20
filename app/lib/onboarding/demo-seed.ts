@@ -9,6 +9,7 @@ import {
   DEMO_BOOK_ID,
   DEMO_BOOK_METADATA,
   DEMO_CHAT_SESSION,
+  DEMO_EPUB_PATH,
   DEMO_NOTEBOOK_CONTENT,
   DEMO_POSITION_CFI,
 } from "~/lib/onboarding/demo-content";
@@ -19,7 +20,6 @@ import { ReadingPositionService } from "~/lib/stores/position-store";
 import { getActiveSessionStore, getChatSessionStore } from "~/lib/sync/stores";
 
 const ONBOARDING_FLAG = "demo-onboarding";
-const DEMO_EPUB_URL = "/demo/the-great-gatsby.epub";
 
 export function hasDemoOnboardingState(): boolean {
   return typeof window !== "undefined" && window.localStorage.getItem(ONBOARDING_FLAG) !== null;
@@ -45,7 +45,7 @@ export async function isFirstVisit(): Promise<boolean> {
 function fetchDemoEpub() {
   return Effect.tryPromise({
     try: async () => {
-      const response = await fetch(DEMO_EPUB_URL);
+      const response = await fetch(DEMO_EPUB_PATH);
       if (!response.ok) {
         throw new Error(`Failed to fetch demo EPUB (${response.status})`);
       }

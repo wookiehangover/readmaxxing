@@ -182,9 +182,9 @@ No blob URL is persisted, logged as a stable identifier, or placed in a locator.
 
 ## Sandboxed iframe strategy
 
-Prepared sections are loaded from package-owned blob URLs into an iframe with `sandbox="allow-same-origin"`. No `allow-scripts`, forms, popups, downloads, modals, pointer lock, or top-navigation capability is granted.
+Prepared sections are loaded from package-owned blob URLs into an iframe with `sandbox="allow-same-origin allow-scripts"`. Forms, popups, downloads, modals, pointer lock, and top-navigation capabilities are not granted.
 
-`allow-same-origin` is deliberate: blob URLs inherit the creator origin, and the host must inspect the content DOM to measure layout, build ranges, and paint decorations. The dangerous combination is `allow-same-origin` plus `allow-scripts`; publication scripts are removed and sandbox script execution is not enabled.
+`allow-same-origin` is deliberate: blob URLs inherit the creator origin, and the host must inspect the content DOM to measure layout, build ranges, and paint decorations. Current Safari also requires `allow-scripts` before it will execute trusted callbacks that the parent installs for keyboard input, selection, and decorations. This token does not opt publication code into scripting: the sanitizer removes script elements, event handlers, and script URLs, while the injected CSP sets `script-src 'none'`. Because `allow-same-origin` plus `allow-scripts` weakens the sandbox if those controls fail, hostile-content tests and the CSP are required parts of the boundary.
 
 Defense in depth:
 

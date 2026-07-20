@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { redirect, useNavigate } from "react-router";
+import { redirect, useNavigate, useSearchParams } from "react-router";
 import { Cause, Effect, Runtime } from "effect";
 import { Loader2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -67,6 +67,7 @@ export function HydrateFallback() {
 
 export default function LoginRoute() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { refreshAuth } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState<"register" | "signin" | null>(null);
@@ -104,6 +105,11 @@ export default function LoginRoute() {
   }
 
   const isLoading = loadingAction !== null;
+  const magicLinkError =
+    searchParams.get("error") === "magic_link"
+      ? "That magic link has expired or is invalid. Sign in below."
+      : null;
+  const displayedError = error ?? magicLinkError;
 
   return (
     <div className="flex h-dvh items-center justify-center bg-background p-4">
@@ -136,9 +142,9 @@ export default function LoginRoute() {
           </Button>
         </div>
 
-        {error && (
+        {displayedError && (
           <p className="text-center text-sm text-destructive" role="alert">
-            {error}
+            {displayedError}
           </p>
         )}
       </div>

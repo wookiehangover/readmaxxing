@@ -116,7 +116,7 @@ test.describe("Workspace route", () => {
     await nextButton.first().click();
   });
 
-  test("search bar opens and accepts input", async ({ page }) => {
+  test("search bar opens, finds results, and highlights matches", async ({ page }) => {
     await uploadAndOpenBook(page);
 
     // Open search with keyboard shortcut
@@ -127,11 +127,31 @@ test.describe("Workspace route", () => {
     const searchInput = page.getByPlaceholder("Search in book…");
     await expect(searchInput).toBeVisible({ timeout: 5_000 });
 
-    // Type a search query
+    // Type a search query and wait for the debounced search to resolve
     await searchInput.fill("elephant");
+    await expect(page.getByText("1 of 1")).toBeVisible({ timeout: 10_000 });
 
-    // Press enter to trigger search
-    await searchInput.press("Enter");
+    // The match renders as a highlight decoration in the reader iframe —
+    // either through the CSS Custom Highlight API or overlay spans.
+    await expect
+      .poll(
+        async () => {
+          let count = 0;
+          for (const frame of page.frames()) {
+            count += await frame
+              .evaluate(
+                () =>
+                  ((globalThis as { CSS?: { highlights?: { size: number } } }).CSS?.highlights
+                    ?.size ?? 0) +
+                  document.querySelectorAll("[data-decoration-id^='search-highlight-']").length,
+              )
+              .catch(() => 0);
+          }
+          return count;
+        },
+        { timeout: 10_000 },
+      )
+      .toBeGreaterThan(0);
   });
 
   test("TOC popover opens when book has table of contents", async ({ page }) => {

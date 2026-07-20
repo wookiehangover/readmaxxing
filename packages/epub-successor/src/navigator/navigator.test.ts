@@ -295,7 +295,7 @@ describe("scrolling Navigator", () => {
     const frame = container.querySelector("iframe")!;
     const serialized = await blobs.at(-1)!.text();
 
-    expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
+    expect(frame.getAttribute("sandbox")).toBe("allow-same-origin allow-scripts");
     expect(serialized).toContain("Content-Security-Policy");
     expect(serialized).not.toContain("<script");
     expect(scrollIntoView).toHaveBeenCalledOnce();
@@ -436,6 +436,12 @@ describe("paginated Navigator", () => {
     expect(doubleCss).toContain("column-width:368px");
     expect(doubleCss).toContain("column-gap:64px");
     expect(doubleCss).toContain("padding:24px 0");
+    expect(doubleCss).toContain("blockquote:has(img)");
+    expect(doubleCss).toContain("inline-size:auto");
+    expect(doubleCss).toContain("blockquote:has(> img:only-child){text-indent:0");
+    expect(doubleCss).toContain("max-width:min(100%,368px)");
+    expect(doubleCss).toContain("max-height:552px");
+    expect(doubleCss).toContain("object-position:left center");
 
     await navigator.setPreferences({
       fontFamily: "Literata",
@@ -456,6 +462,7 @@ describe("paginated Navigator", () => {
       frame.contentDocument!.getElementById("epub-successor-pagination-style")?.textContent ?? "";
     expect(singleCss).toContain("column-width:800px");
     expect(singleCss).toContain("padding:24px 0");
+    expect(singleCss).toContain("max-width:min(100%,800px)");
     navigator.destroy();
   });
 

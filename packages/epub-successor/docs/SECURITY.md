@@ -15,7 +15,7 @@ untrusted EPUB bytes
   → validated publication model
   → sanitizer and URL rewriter
   → blob URL registry
-  → sandboxed, scriptless iframe
+  → sandboxed, publication-script-free iframe
   → narrow NavigatorContracts
   → trusted host application
 ```
@@ -73,7 +73,7 @@ Controls:
 - Default-deny element/attribute sanitizer with namespace-aware SVG and MathML policies.
 - Remove scripts, event handlers, forms, `<base>`, meta refresh, `object`, `embed`, iframe/frame, portals, and active SVG constructs.
 - Drop `srcdoc`, `ping`, `autofocus`, `contenteditable`, and navigation-related attributes not required for reading.
-- Do not grant `allow-scripts` in the iframe sandbox.
+- Grant `allow-scripts` only so current Safari can execute trusted host-installed callbacks; never use it to enable publication-authored code.
 - Inject CSP that sets `default-src 'none'`, `font-src blob: 'self'`, `script-src 'none'`, `connect-src 'none'`, `object-src 'none'`, `frame-src 'none'`, `base-uri 'none'`, and `form-action 'none'`.
 - Treat scripted EPUB content as unsupported, never partially enabled.
 
@@ -95,13 +95,13 @@ The pipeline must use a CSS parser/AST, not regular expressions, for URL rewriti
 
 ### Same-origin iframe exposure
 
-`sandbox="allow-same-origin"` is required for host measurement and selection. Since no scripts run, the EPUB cannot directly execute code to access the parent. Residual risks include browser vulnerabilities, sanitizer bypasses, script-capable subresources, and trusted host code accidentally evaluating book-derived strings.
+`sandbox="allow-same-origin allow-scripts"` is required for host measurement and selection and for trusted host-installed callbacks in current Safari. Publication-authored scripts remain removed by sanitization and blocked by `script-src 'none'`, so an EPUB cannot directly execute code to access the parent under the supported policy. Residual risks include browser vulnerabilities, sanitizer or CSP bypasses, script-capable subresources, and trusted host code accidentally evaluating book-derived strings. Because same-origin plus scripts would let any successful script-policy bypass reach the parent, the sanitizer and CSP are both release-blocking controls rather than optional defense in depth.
 
 Controls:
 
-- Never combine `allow-same-origin` with `allow-scripts`.
+- Never inject or evaluate publication-derived script, and never relax `script-src 'none'` while the frame has both `allow-same-origin` and `allow-scripts`.
 - Use generated blob URLs rather than `srcdoc` so the prepared artifact has a discrete lifecycle.
-- Do not inject host secrets, privileged callbacks, or application script into the document.
+- Keep parent-installed callbacks closed over the minimum host state; never expose host secrets or evaluate publication-derived code.
 - Keep all interactions in parent-owned event listeners and convert link clicks into validated navigator commands.
 - Sanitize again when copying publication text or metadata into a different HTML sink.
 - Run hostile-content regression tests in every supported browser.
@@ -153,8 +153,8 @@ Policies may become stricter. Enabling scripts or arbitrary external resources i
 
 ## Known browser limitations
 
-- A CSP delivered by injected `<meta http-equiv>` is weaker than a response header: some directives are unavailable in meta delivery, and the element must precede all author-controlled resource-bearing content. Sanitization and sandboxing remain primary controls.
-- `sandbox="allow-same-origin"` deliberately keeps the prepared blob document accessible to the parent. An opaque-origin iframe would isolate more strongly but would prevent the DOM measurement and range contracts; this design must never add `allow-scripts`.
+- A CSP delivered by injected `<meta http-equiv>` is weaker than a response header: some directives are unavailable in meta delivery, and the element must precede all author-controlled resource-bearing content. Sanitization and CSP remain the primary script controls; sandboxing still blocks every capability token not explicitly granted.
+- `sandbox="allow-same-origin allow-scripts"` deliberately keeps the prepared blob document accessible to the parent and lets WebKit run parent-installed callbacks. An opaque-origin iframe would isolate more strongly but would prevent the DOM measurement and range contracts. Any future publication scripting requires a separately originated renderer; it must not reuse this same-origin frame.
 - Blob URLs inherit the creator origin and are partitioned with the creator's storage key. Revocation prevents future use but browsers may retain already-decoded resource data until internal caches or documents release it.
 - CSS layout, SVG/MathML parsing, image/font decoding, CSP enforcement details, and iframe focus differ across Chromium, Firefox, and WebKit. Browser bugs remain in the trusted computing base.
 - CSP and URL rewriting block network exfiltration but cannot place a strict CPU bound on every pathological CSS layout. DOM/stylesheet limits, timeouts, cancellation, and an iframe kill path are still required.

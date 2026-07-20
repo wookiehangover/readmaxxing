@@ -147,7 +147,13 @@ export function buildFixtureArchives(): Readonly<Record<string, Uint8Array<Array
       epub3Entries({
         title: "RTL",
         spineAttributes: 'page-progression-direction="rtl"',
-        chapter: xhtml('<h1 id="start">עברית</h1><p>مرحبا بالعالم</p>', "<title>RTL</title>", "he"),
+        manifestExtra: '<item id="pixel" href="images/pixel.png" media-type="image/png"/>',
+        chapter: xhtml(
+          '<h1 id="start">עברית</h1><blockquote id="image-container" style="width:100%;margin-inline-start:32px;text-indent:32px;text-align:center;break-inside:avoid"><img src="../images/pixel.png" alt="pixel" style="width:1200px;height:400px"/></blockquote>',
+          "<title>RTL</title>",
+          "he",
+        ),
+        extras: { "EPUB/images/pixel.png": ONE_PIXEL_PNG },
       }),
     ),
     "embedded-font.epub": archive(
@@ -183,7 +189,9 @@ export function buildFixtureArchives(): Readonly<Record<string, Uint8Array<Array
       epub3Entries({
         title: "Images",
         manifestExtra: '<item id="pixel" href="images/pixel.png" media-type="image/png"/>',
-        chapter: xhtml('<h1 id="start">Image</h1><img src="../images/pixel.png" alt="pixel"/>'),
+        chapter: xhtml(
+          '<h1 id="start">Image</h1><blockquote id="image-container" style="width:100%;margin-inline-start:32px;text-indent:32px;text-align:center;break-inside:avoid"><img src="../images/pixel.png" alt="pixel" style="width:1200px;height:400px"/></blockquote>',
+        ),
         extras: { "EPUB/images/pixel.png": ONE_PIXEL_PNG },
       }),
     ),

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
+import { AccountSection } from "~/components/settings/account-section";
 import { AppearanceSection } from "~/components/settings/appearance-section";
 import { BugReportsSection } from "~/components/settings/bug-reports-section";
 import { DataSection } from "~/components/settings/data-section";
@@ -23,9 +24,10 @@ export function HydrateFallback() {
   );
 }
 
-type SettingsSectionId = "appearance" | "reading" | "bug-reports" | "updates" | "data";
+type SettingsSectionId = "account" | "appearance" | "reading" | "bug-reports" | "updates" | "data";
 
 const sections: { id: SettingsSectionId; label: string }[] = [
+  { id: "account", label: "Account" },
   { id: "appearance", label: "Appearance" },
   { id: "reading", label: "Reading" },
   { id: "bug-reports", label: "Bug reports" },
@@ -35,6 +37,8 @@ const sections: { id: SettingsSectionId; label: string }[] = [
 
 function renderSection(section: SettingsSectionId) {
   switch (section) {
+    case "account":
+      return <AccountSection />;
     case "appearance":
       return <AppearanceSection />;
     case "reading":

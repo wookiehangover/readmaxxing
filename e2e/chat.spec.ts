@@ -130,6 +130,9 @@ test.describe("Chat (server-authoritative)", () => {
   test.setTimeout(180_000);
 
   test.beforeEach(async ({ page, context, request }) => {
+    // Skip AI-dependent tests in CI to avoid API costs
+    test.skip(!!process.env.SKIP_AI_TESTS, "AI tests skipped (set SKIP_AI_TESTS=true)");
+
     // Chat + auth require Postgres. When DATABASE_URL is unset (CI without a
     // DB service) the auth endpoints respond 503 — skip the whole suite.
     await skipIfAuthNotConfigured(request);

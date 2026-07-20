@@ -119,7 +119,8 @@ export function ClusterBar({
   onClose,
   onReorder,
 }: ClusterBarProps) {
-  const { subscribeClusterChanges, booksRef } = useWorkspace();
+  const { isAuthenticated, isLoading } = useAuth();
+  const { subscribeClusterChanges, booksRef, openStandardEbooksRef } = useWorkspace();
   const [, setVersion] = useState(0);
   const [draggedBookId, setDraggedBookId] = useState<string | null>(null);
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
@@ -309,6 +310,16 @@ export function ClusterBar({
           );
         })}
       </div>
+      {demoActive && !isLoading && !isAuthenticated && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => openStandardEbooksRef.current?.()}
+        >
+          More books →
+        </Button>
+      )}
       <div className="sticky right-0 ml-auto flex shrink-0 items-center gap-1 bg-background">
         <ClusterBarActions demoActive={demoActive} />
       </div>
