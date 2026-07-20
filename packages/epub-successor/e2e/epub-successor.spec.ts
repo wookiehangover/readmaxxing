@@ -154,6 +154,7 @@ for (const { direction, fixture, position } of [
       const textRect = text.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
       const bodyStyle = view.getComputedStyle(doc.body);
+      const containerStyle = view.getComputedStyle(container);
       return {
         imageEdge: expectedDirection === "rtl" ? imageRect.right : imageRect.left,
         textEdge: expectedDirection === "rtl" ? textRect.right : textRect.left,
@@ -163,8 +164,12 @@ for (const { direction, fixture, position } of [
         containerRight: containerRect.right,
         imageWidth: imageRect.width,
         imageHeight: imageRect.height,
-        columnStride:
-          Number.parseFloat(bodyStyle.columnWidth) + Number.parseFloat(bodyStyle.columnGap),
+        columnWidth: Number.parseFloat(bodyStyle.columnWidth),
+        columnGap: Number.parseFloat(bodyStyle.columnGap),
+        containerMarginBoxWidth:
+          containerRect.width +
+          Number.parseFloat(containerStyle.marginLeft) +
+          Number.parseFloat(containerStyle.marginRight),
         objectPosition: view.getComputedStyle(image).objectPosition,
       };
     }, direction);
@@ -174,7 +179,9 @@ for (const { direction, fixture, position } of [
     expect(alignment.imageWidth).toBeGreaterThan(alignment.imageHeight);
     expect(alignment.imageLeft).toBeGreaterThanOrEqual(alignment.containerLeft - 0.5);
     expect(alignment.imageRight).toBeLessThanOrEqual(alignment.containerRight + 0.5);
-    const columnDelta = (alignment.imageEdge - alignment.textEdge) / alignment.columnStride;
+    expect(alignment.containerMarginBoxWidth).toBeLessThanOrEqual(alignment.columnWidth + 0.5);
+    const columnDelta =
+      (alignment.imageEdge - alignment.textEdge) / (alignment.columnWidth + alignment.columnGap);
     expect(columnDelta).toBeCloseTo(Math.round(columnDelta), 1);
     expect(alignment.objectPosition.split(/\s+/)[0]).toMatch(position);
   });
