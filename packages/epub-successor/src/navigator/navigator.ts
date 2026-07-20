@@ -7,6 +7,7 @@ import type { Publication } from "../publication-model/publication-model";
 import { normalizePublicationPath, type PublicationPath } from "../publication-model/paths";
 import type { ResourceProvider } from "../resource-loader/resource-loader";
 import {
+  INTERNAL_LINK_ATTRIBUTE,
   ResourceUrlManager,
   type ResourceUrlLease,
   type ResourceUrlScope,
@@ -80,6 +81,7 @@ interface SectionMount {
   readonly frame: HTMLIFrameElement;
   readonly scope: ResourceUrlScope;
   readonly documentLease: ResourceUrlLease;
+  removeInternalLinkListener?: () => void;
   removeScrollListener?: () => void;
   scrollFrame?: number;
   scrollScheduler?: Window;
@@ -226,6 +228,7 @@ export class Navigator extends EventTarget {
       mount = this.#mount(prepared, operationId, outgoing);
       prepared = undefined;
       await this.#waitForLoad(mount.frame, controller.signal);
+      this.#installInternalLinkListener(mount);
       this.#assertCurrent(operationId, controller.signal);
       this.#setState("settling");
       await this.#settle(mount, resolved.fragment, controller.signal);
@@ -568,6 +571,27 @@ export class Navigator extends EventTarget {
     mount.removeScrollListener = () => view.removeEventListener("scroll", scroll, true);
   }
 
+  #installInternalLinkListener(mount: SectionMount): void {
+    const document = mount.frame.contentDocument;
+    if (!document) return;
+    const click = (event: MouseEvent) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+        return;
+      const target = event.target as Node | null;
+      const element = target?.nodeType === 1 ? (target as Element) : target?.parentElement;
+      const href = element
+        ?.closest(`a[${INTERNAL_LINK_ATTRIBUTE}]`)
+        ?.getAttribute(INTERNAL_LINK_ATTRIBUTE);
+      if (href === null || href === undefined) return;
+      event.preventDefault();
+      try {
+        void this.display({ href: normalizePublicationPath(href) }).catch(() => {});
+      } catch {}
+    };
+    document.addEventListener("click", click, true);
+    mount.removeInternalLinkListener = () => document.removeEventListener("click", click, true);
+  }
+
   #emitRelocation(mount: SectionMount, visibleAnchor?: Element): Relocation {
     const document = mount.frame.contentDocument;
     if (!document) throw new Error("Publication section document is inaccessible");
@@ -682,6 +706,7 @@ export class Navigator extends EventTarget {
   }
 
   #unmount(mount: SectionMount): void {
+    mount.removeInternalLinkListener?.();
     mount.removeScrollListener?.();
     if (mount.scrollFrame !== undefined)
       mount.scrollScheduler?.cancelAnimationFrame(mount.scrollFrame);
