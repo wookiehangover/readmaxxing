@@ -228,6 +228,7 @@ export function applyPaginatedLayout(
     `column-width:${chrome.geometry.columnWidth}px !important;overflow:visible !important;}` +
     `blockquote:has(img){box-sizing:border-box !important;inline-size:auto !important;` +
     `min-inline-size:0 !important;max-inline-size:100% !important;}` +
+    `blockquote:has(> img:only-child){text-indent:0 !important;}` +
     `img{box-sizing:border-box !important;` +
     `max-width:min(100%,${chrome.geometry.columnWidth}px) !important;` +
     `max-height:${contentHeight}px !important;object-fit:contain !important;` +

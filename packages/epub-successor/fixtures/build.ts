@@ -149,7 +149,7 @@ export function buildFixtureArchives(): Readonly<Record<string, Uint8Array<Array
         spineAttributes: 'page-progression-direction="rtl"',
         manifestExtra: '<item id="pixel" href="images/pixel.png" media-type="image/png"/>',
         chapter: xhtml(
-          '<h1 id="start">עברית</h1><blockquote id="image-container" style="width:100%;margin-inline:96px;break-inside:avoid"><p id="text-edge">مرحبا بالعالم</p><img src="../images/pixel.png" alt="pixel" style="display:block;width:1200px;height:400px"/></blockquote>',
+          '<h1 id="start">עברית</h1><blockquote id="image-container" style="width:100%;margin-inline-start:32px;text-indent:32px;text-align:center;break-inside:avoid"><img src="../images/pixel.png" alt="pixel" style="width:1200px;height:400px"/></blockquote>',
           "<title>RTL</title>",
           "he",
         ),
@@ -190,7 +190,7 @@ export function buildFixtureArchives(): Readonly<Record<string, Uint8Array<Array
         title: "Images",
         manifestExtra: '<item id="pixel" href="images/pixel.png" media-type="image/png"/>',
         chapter: xhtml(
-          '<h1 id="start">Image</h1><blockquote id="image-container" style="width:100%;margin-inline:96px;break-inside:avoid"><p id="text-edge">Aligned text</p><img src="../images/pixel.png" alt="pixel" style="display:block;width:1200px;height:400px"/></blockquote>',
+          '<h1 id="start">Image</h1><blockquote id="image-container" style="width:100%;margin-inline-start:32px;text-indent:32px;text-align:center;break-inside:avoid"><img src="../images/pixel.png" alt="pixel" style="width:1200px;height:400px"/></blockquote>',
         ),
         extras: { "EPUB/images/pixel.png": ONE_PIXEL_PNG },
       }),

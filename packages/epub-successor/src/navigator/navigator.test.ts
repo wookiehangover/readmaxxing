@@ -438,6 +438,7 @@ describe("paginated Navigator", () => {
     expect(doubleCss).toContain("padding:24px 0");
     expect(doubleCss).toContain("blockquote:has(img)");
     expect(doubleCss).toContain("inline-size:auto");
+    expect(doubleCss).toContain("blockquote:has(> img:only-child){text-indent:0");
     expect(doubleCss).toContain("max-width:min(100%,368px)");
     expect(doubleCss).toContain("max-height:552px");
     expect(doubleCss).toContain("object-position:left center");

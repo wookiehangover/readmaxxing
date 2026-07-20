@@ -145,19 +145,19 @@ for (const { direction, fixture, position } of [
       const frame = document.querySelector<HTMLIFrameElement>("iframe");
       const doc = frame?.contentDocument;
       const image = doc?.querySelector<HTMLImageElement>('img[alt="pixel"]');
-      const text = doc?.querySelector<HTMLElement>("#text-edge");
       const container = doc?.querySelector<HTMLElement>("#image-container");
       const view = doc?.defaultView;
-      if (!image || !text || !container || !view) throw new Error("Image fixture did not render");
+      if (!image || !container || !view) throw new Error("Image fixture did not render");
 
       const imageRect = image.getBoundingClientRect();
-      const textRect = text.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
       const bodyStyle = view.getComputedStyle(doc.body);
       const containerStyle = view.getComputedStyle(container);
       return {
-        imageEdge: expectedDirection === "rtl" ? imageRect.right : imageRect.left,
-        textEdge: expectedDirection === "rtl" ? textRect.right : textRect.left,
+        imageInlineOffset:
+          expectedDirection === "rtl"
+            ? containerRect.right - imageRect.right
+            : imageRect.left - containerRect.left,
         imageLeft: imageRect.left,
         imageRight: imageRect.right,
         containerLeft: containerRect.left,
@@ -165,11 +165,11 @@ for (const { direction, fixture, position } of [
         imageWidth: imageRect.width,
         imageHeight: imageRect.height,
         columnWidth: Number.parseFloat(bodyStyle.columnWidth),
-        columnGap: Number.parseFloat(bodyStyle.columnGap),
         containerMarginBoxWidth:
           containerRect.width +
           Number.parseFloat(containerStyle.marginLeft) +
           Number.parseFloat(containerStyle.marginRight),
+        containerTextIndent: containerStyle.textIndent,
         objectPosition: view.getComputedStyle(image).objectPosition,
       };
     }, direction);
@@ -180,9 +180,8 @@ for (const { direction, fixture, position } of [
     expect(alignment.imageLeft).toBeGreaterThanOrEqual(alignment.containerLeft - 0.5);
     expect(alignment.imageRight).toBeLessThanOrEqual(alignment.containerRight + 0.5);
     expect(alignment.containerMarginBoxWidth).toBeLessThanOrEqual(alignment.columnWidth + 0.5);
-    const columnDelta =
-      (alignment.imageEdge - alignment.textEdge) / (alignment.columnWidth + alignment.columnGap);
-    expect(columnDelta).toBeCloseTo(Math.round(columnDelta), 1);
+    expect(alignment.imageInlineOffset).toBeCloseTo(0, 1);
+    expect(alignment.containerTextIndent).toBe("0px");
     expect(alignment.objectPosition.split(/\s+/)[0]).toMatch(position);
   });
 }
