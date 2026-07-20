@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   alignPaginationToElement,
   animateScrollToPage,
+  applyPaginatedLayout,
   calculateColumnGeometry,
   calculatePageCount,
   currentSpreadIndex,
@@ -47,6 +48,19 @@ function mockAnimationFrames(view: Window) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("paginated page math", () => {
+  it.each([
+    ["ltr", "left"],
+    ["rtl", "right"],
+  ] as const)("aligns contained images to the %s reading-order start", (direction, position) => {
+    const doc = document.implementation.createHTMLDocument();
+
+    applyPaginatedLayout(doc, { width: 800, height: 600 }, 1, direction);
+
+    expect(doc.getElementById("epub-successor-pagination-style")?.textContent).toContain(
+      `object-position:${position} center`,
+    );
+  });
+
   it("floors column geometry so fractional viewports never exceed the live frame", () => {
     expect(calculateColumnGeometry(801.4, 31.6, 1)).toEqual({
       viewportWidth: 801,

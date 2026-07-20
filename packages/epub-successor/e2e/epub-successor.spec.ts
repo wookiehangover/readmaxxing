@@ -132,6 +132,60 @@ test("loads real blob images and fonts, settles frames, resettles resize, and re
   expect((await page.evaluate(() => window.__epubDemo.snapshot())).visibleAnchors[0]).toBe(anchor);
 });
 
+for (const { direction, fixture, position } of [
+  { direction: "ltr", fixture: "images.epub", position: /^(?:left|0%)$/ },
+  { direction: "rtl", fixture: "rtl.epub", position: /^(?:right|100%)$/ },
+] as const) {
+  test(`aligns contained images with the ${direction} text edge in paginated flow`, async ({
+    page,
+  }) => {
+    await openDemo(page, `test=1&flow=paginated&fixture=${fixture}`);
+
+    const alignment = await page.evaluate((expectedDirection) => {
+      const frame = document.querySelector<HTMLIFrameElement>("iframe");
+      const doc = frame?.contentDocument;
+      const image = doc?.querySelector<HTMLImageElement>('img[alt="pixel"]');
+      const container = doc?.querySelector<HTMLElement>("#image-container");
+      const view = doc?.defaultView;
+      if (!image || !container || !view) throw new Error("Image fixture did not render");
+
+      const imageRect = image.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const bodyStyle = view.getComputedStyle(doc.body);
+      const containerStyle = view.getComputedStyle(container);
+      return {
+        imageInlineOffset:
+          expectedDirection === "rtl"
+            ? containerRect.right - imageRect.right
+            : imageRect.left - containerRect.left,
+        imageLeft: imageRect.left,
+        imageRight: imageRect.right,
+        containerLeft: containerRect.left,
+        containerRight: containerRect.right,
+        imageWidth: imageRect.width,
+        imageHeight: imageRect.height,
+        columnWidth: Number.parseFloat(bodyStyle.columnWidth),
+        containerMarginBoxWidth:
+          containerRect.width +
+          Number.parseFloat(containerStyle.marginLeft) +
+          Number.parseFloat(containerStyle.marginRight),
+        containerTextIndent: containerStyle.textIndent,
+        objectPosition: view.getComputedStyle(image).objectPosition,
+      };
+    }, direction);
+
+    // Publisher margins narrow the containing block below the column width.
+    // The image must stay within both edges rather than spilling into the gutter.
+    expect(alignment.imageWidth).toBeGreaterThan(alignment.imageHeight);
+    expect(alignment.imageLeft).toBeGreaterThanOrEqual(alignment.containerLeft - 0.5);
+    expect(alignment.imageRight).toBeLessThanOrEqual(alignment.containerRight + 0.5);
+    expect(alignment.containerMarginBoxWidth).toBeLessThanOrEqual(alignment.columnWidth + 0.5);
+    expect(alignment.imageInlineOffset).toBeCloseTo(0, 1);
+    expect(alignment.containerTextIndent).toBe("0px");
+    expect(alignment.objectPosition.split(/\s+/)[0]).toMatch(position);
+  });
+}
+
 test("cancels a display during browser settling and retains one current frame", async ({
   page,
 }) => {
