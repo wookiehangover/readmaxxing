@@ -13,6 +13,7 @@ interface UsePdfWorkspacePanelsOptions {
   book: BookMeta;
   panelApi?: DockviewPanelApi;
   currentPage: number;
+  selectionText?: string;
   pdfDocRef?: React.RefObject<any>;
   saveHighlightFromPopover: () => Promise<SavedHighlight | null>;
   applyTempHighlight: (text: string) => void;
@@ -25,6 +26,7 @@ export function usePdfWorkspacePanels({
   book,
   panelApi,
   currentPage,
+  selectionText,
   pdfDocRef,
   saveHighlightFromPopover,
   applyTempHighlight,
@@ -162,6 +164,25 @@ export function usePdfWorkspacePanels({
     ws.openChatRef,
   ]);
 
+  const handleExplainThis = useCallback(() => {
+    const quote = selectionText;
+    if (!quote) return;
+
+    const message = `Explain this passage:\n\n${quote
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n")}`;
+    ws.pendingChatPromptMap.current.set(book.id, message);
+    ws.openChatRef.current?.(book);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("chat:explain", { detail: { bookId: book.id, message } }),
+      );
+    });
+    dismissPopovers();
+    window.getSelection()?.removeAllRanges();
+  }, [book, dismissPopovers, selectionText, ws.openChatRef, ws.pendingChatPromptMap]);
+
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
@@ -237,6 +258,7 @@ export function usePdfWorkspacePanels({
   return {
     handleSaveHighlight,
     handleAskQuestion,
+    handleExplainThis,
     handleOpenNotebook,
     handleOpenChat,
     setGoToPage,
