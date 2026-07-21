@@ -294,6 +294,7 @@ function WorkspacePdfReaderInner({
   const {
     handleSaveHighlight,
     handleAskQuestion,
+    handleExplainThis,
     handleOpenNotebook,
     handleOpenChat,
     setGoToPage,
@@ -301,6 +302,7 @@ function WorkspacePdfReaderInner({
     book,
     panelApi,
     currentPage,
+    selectionText: selectionPopover?.text,
     pdfDocRef,
     saveHighlightFromPopover,
     applyTempHighlight,
@@ -564,6 +566,7 @@ function WorkspacePdfReaderInner({
             position={selectionPopover.position}
             onCopyAsMarkdown={handleCopyAsMarkdown}
             onAskQuestion={handleAskQuestion}
+            onExplain={handleExplainThis}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
           />,

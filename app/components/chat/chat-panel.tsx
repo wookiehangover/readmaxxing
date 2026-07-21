@@ -5,6 +5,7 @@ import { Button } from "~/components/ui/button";
 import { OnboardingDialog } from "~/components/onboarding/onboarding-dialog";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useAuth } from "~/lib/context/auth-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
@@ -52,6 +53,7 @@ function messagesDiffer(current: UIMessage[], next: UIMessage[]): boolean {
 
 export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { pendingChatPromptMap } = useWorkspace();
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
   const [bookContext, setBookContext] = useState<{
     title: string;
@@ -66,6 +68,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [pendingChatIntent, setPendingChatIntent] = useState<ChatIntent>({ type: "none" });
   const [resumeAfterAuth, setResumeAfterAuth] = useState(false);
+  const [explainPrompt, setExplainPrompt] = useState<string | null>(null);
   const [adoptedBookId, setAdoptedBookId] = useState<string | null>(null);
   const [adoptionError, setAdoptionError] = useState<string | null>(null);
   const bookDataRef = useRef<ArrayBuffer | null>(null);
@@ -74,6 +77,56 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const setChatMessagesRef = useRef<((messages: UIMessage[]) => void) | null>(null);
 
   const chatBookId = adoptedBookId ?? bookId;
+
+  const startExplanationSession = useCallback(
+    (message: string) => {
+      AppRuntime.runPromise(
+        ChatService.pipe(Effect.andThen((service) => service.createSession(chatBookId))),
+      )
+        .then((session) => {
+          setActiveSessionId(session.id);
+          setSessionTitle(session.title);
+          setInitialMessages([]);
+          setSessionKey((key) => key + 1);
+          setExplainPrompt(message);
+        })
+        .catch((error) => console.error("Failed to start explanation chat:", error));
+    },
+    [chatBookId],
+  );
+
+  const consumePendingExplanation = useCallback(
+    (expectedMessage?: string) => {
+      const message = pendingChatPromptMap.current.get(chatBookId);
+      if (!message || (expectedMessage !== undefined && message !== expectedMessage)) return;
+      pendingChatPromptMap.current.delete(chatBookId);
+      startExplanationSession(message);
+    },
+    [chatBookId, pendingChatPromptMap, startExplanationSession],
+  );
+
+  const chatReady =
+    isAuthenticated && initialMessages !== null && bookContext !== null && activeSessionId !== null;
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const handleExplain = (event: Event) => {
+      const { bookId: eventBookId, message } = (
+        event as CustomEvent<{ bookId: string; message: string }>
+      ).detail;
+      if (!chatReady || eventBookId !== chatBookId) return;
+      consumePendingExplanation(message);
+    };
+
+    window.addEventListener("chat:explain", handleExplain);
+    return () => window.removeEventListener("chat:explain", handleExplain);
+  }, [chatBookId, chatReady, consumePendingExplanation, isAuthenticated]);
+
+  useEffect(() => {
+    if (!chatReady) return;
+    consumePendingExplanation();
+  }, [chatReady, consumePendingExplanation]);
 
   useEffect(() => {
     if (!isAuthenticated && chatBookId !== DEMO_BOOK_ID) return;
@@ -314,6 +367,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const handleResumeComplete = useCallback(() => {
     setPendingChatIntent({ type: "none" });
     setResumeAfterAuth(false);
+    setExplainPrompt(null);
   }, []);
   const isLoggedOutDemoBook = !isAuthenticated && bookId === DEMO_BOOK_ID;
   const isLoggedOutDemoSession = isLoggedOutDemoBook && activeSessionId === DEMO_CHAT_SESSION.id;
@@ -405,7 +459,8 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         onChatInteraction={isLoggedOutDemoSession ? openOnboarding : undefined}
         simulateDemoStream={isLoggedOutDemoSession}
         resumeMessage={
-          isAuthenticated && resumeAfterAuth ? (pendingMessage ?? undefined) : undefined
+          explainPrompt ??
+          (isAuthenticated && resumeAfterAuth ? (pendingMessage ?? undefined) : undefined)
         }
         onResumeComplete={handleResumeComplete}
       />

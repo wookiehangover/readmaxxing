@@ -655,6 +655,26 @@ function WorkspaceBookReaderInner({
     }
   }, [selectionPopover, saveHighlightFromPopover, book, ws, dismissPopovers, currentPage]);
 
+  const handleExplainThis = useCallback(() => {
+    if (!selectionPopover) return;
+    const quote = selectionPopover.text;
+    if (!quote) return;
+
+    const message = `Explain this passage:\n\n> ${quote}`;
+    ws.pendingChatPromptMap.current.set(book.id, message);
+    ws.openChatRef.current?.(book);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("chat:explain", { detail: { bookId: book.id, message } }),
+      );
+    });
+    dismissPopovers();
+    const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
+    contents?.forEach((content: any) => {
+      content.document?.defaultView?.getSelection()?.removeAllRanges();
+    });
+  }, [book, dismissPopovers, selectionPopover, ws.openChatRef, ws.pendingChatPromptMap]);
+
   const handleCopyAsMarkdown = useCallback(async () => {
     if (!selectionPopover) return;
 
@@ -960,6 +980,7 @@ function WorkspaceBookReaderInner({
               position={selectionPopover.position}
               onCopyAsMarkdown={handleCopyAsMarkdown}
               onAskQuestion={handleAskQuestion}
+              onExplain={handleExplainThis}
               onSave={handleSaveHighlight}
               onDismiss={dismissPopovers}
             />,
