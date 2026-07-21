@@ -82,6 +82,8 @@ export interface WorkspaceContextValue {
   >;
   /** bookId -> pending highlighted text for chat input pill */
   pendingHighlightPillMap: React.MutableRefObject<Map<string, { text: string; pageLabel: string }>>;
+  /** bookId -> pending prompt to send after opening chat */
+  pendingChatPromptMap: React.MutableRefObject<Map<string, string>>;
   /** Find TOC entries for a book by scanning dockview panels */
   findTocForBook: (bookId: string) => TocEntry[] | undefined;
   /** panelId -> temporary highlight callback */
@@ -165,6 +167,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     >(),
   );
   const pendingHighlightPillMap = useRef(new Map<string, { text: string; pageLabel: string }>());
+  const pendingChatPromptMap = useRef(new Map<string, string>());
   const tempHighlightMap = useRef(new Map<string, (cfi: string) => void>());
   const highlightDeleteMap = useRef(new Map<string, (cfiRange: string) => void>());
   const notebookEditorCallbackMap = useRef(new Map<string, NotebookEditorCallbacks>());
@@ -329,6 +332,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       onBookDeletedRef,
       chatContextMap,
       pendingHighlightPillMap,
+      pendingChatPromptMap,
       findNavForBook,
       waitForNavForBook,
       findTocForBook,
