@@ -75,22 +75,38 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef("");
   const setChatMessagesRef = useRef<((messages: UIMessage[]) => void) | null>(null);
+  const explanationInFlightRef = useRef<{ bookId: string; message: string } | null>(null);
 
   const chatBookId = adoptedBookId ?? bookId;
 
+  const explanationScopeRef = useRef({ active: false, bookId: chatBookId });
+  useEffect(() => {
+    const scope = { active: true, bookId: chatBookId };
+    explanationScopeRef.current = scope;
+    return () => {
+      scope.active = false;
+    };
+  }, [chatBookId]);
+
   const startExplanationSession = useCallback(
     (message: string) => {
-      AppRuntime.runPromise(
+      const scope = explanationScopeRef.current;
+      return AppRuntime.runPromise(
         ChatService.pipe(Effect.andThen((service) => service.createSession(chatBookId))),
       )
         .then((session) => {
+          if (!scope.active || scope.bookId !== chatBookId) return false;
           setActiveSessionId(session.id);
           setSessionTitle(session.title);
           setInitialMessages([]);
           setSessionKey((key) => key + 1);
           setExplainPrompt(message);
+          return true;
         })
-        .catch((error) => console.error("Failed to start explanation chat:", error));
+        .catch((error) => {
+          console.error("Failed to start explanation chat:", error);
+          return false;
+        });
     },
     [chatBookId],
   );
@@ -99,8 +115,21 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     (expectedMessage?: string) => {
       const message = pendingChatPromptMap.current.get(chatBookId);
       if (!message || (expectedMessage !== undefined && message !== expectedMessage)) return;
-      pendingChatPromptMap.current.delete(chatBookId);
-      startExplanationSession(message);
+      if (explanationInFlightRef.current?.bookId === chatBookId) return;
+
+      const inFlight = { bookId: chatBookId, message };
+      explanationInFlightRef.current = inFlight;
+      startExplanationSession(message)
+        .then((started) => {
+          if (started && pendingChatPromptMap.current.get(chatBookId) === message) {
+            pendingChatPromptMap.current.delete(chatBookId);
+          }
+        })
+        .finally(() => {
+          if (explanationInFlightRef.current === inFlight) {
+            explanationInFlightRef.current = null;
+          }
+        });
     },
     [chatBookId, pendingChatPromptMap, startExplanationSession],
   );

@@ -660,7 +660,10 @@ function WorkspaceBookReaderInner({
     const quote = selectionPopover.text;
     if (!quote) return;
 
-    const message = `Explain this passage:\n\n> ${quote}`;
+    const message = `Explain this passage:\n\n${quote
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n")}`;
     ws.pendingChatPromptMap.current.set(book.id, message);
     ws.openChatRef.current?.(book);
     queueMicrotask(() => {
