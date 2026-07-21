@@ -1,10 +1,11 @@
 import { useRef, useEffect } from "react";
-import { Copy, MessageSquare, NotebookPen } from "lucide-react";
+import { Copy, MessageSquare, NotebookPen, Sparkles } from "lucide-react";
 
 interface HighlightPopoverProps {
   position: { x: number; y: number };
   onCopyAsMarkdown: () => void;
   onAskQuestion?: () => void;
+  onExplain?: () => void;
   onSave: () => void;
   onDismiss: () => void;
 }
@@ -16,6 +17,7 @@ export function HighlightPopover({
   position,
   onCopyAsMarkdown,
   onAskQuestion,
+  onExplain,
   onSave,
   onDismiss,
 }: HighlightPopoverProps) {
@@ -87,6 +89,12 @@ export function HighlightPopover({
         <button type="button" className={menuItemClassName} onClick={onAskQuestion}>
           <MessageSquare className="size-4" />
           <span>Ask a question</span>
+        </button>
+      ) : null}
+      {onExplain ? (
+        <button type="button" className={menuItemClassName} onClick={onExplain}>
+          <Sparkles className="size-4" />
+          <span>Explain this</span>
         </button>
       ) : null}
       <button type="button" className={menuItemClassName} onClick={onSave}>
