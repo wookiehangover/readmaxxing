@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Publication } from "../publication-model/publication-model";
 import { normalizePublicationPath, type PublicationPath } from "../publication-model/paths";
 import type { ResourceProvider } from "../resource-loader/resource-loader";
+import { INTERNAL_LINK_ATTRIBUTE } from "../resource-loader/urls";
 import { PREFERENCE_STYLE_ID } from "../content-pipeline/content-pipeline";
 import {
   createNavigator,
@@ -299,6 +300,34 @@ describe("scrolling Navigator", () => {
     expect(serialized).toContain("Content-Security-Policy");
     expect(serialized).not.toContain("<script");
     expect(scrollIntoView).toHaveBeenCalledOnce();
+    navigator.destroy();
+  });
+
+  it("routes same-section and cross-spine internal link clicks through display", async () => {
+    const { container, navigator } = setup();
+    const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
+    await displayAt(navigator, container, 0);
+    const firstFrame = container.querySelector("iframe")!;
+    const firstDocument = firstFrame.contentDocument!;
+    const link = firstDocument.createElement("a");
+    firstDocument.body.append(link);
+
+    link.setAttribute(INTERNAL_LINK_ATTRIBUTE, "OPS/one.xhtml#target");
+    const sameSectionClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+    link.dispatchEvent(sameSectionClick);
+    expect(sameSectionClick.defaultPrevented).toBe(true);
+    await vi.waitFor(() => expect(navigator.state).toBe("settled"));
+    expect(container.querySelector("iframe")).toBe(firstFrame);
+    expect(scrollIntoView).toHaveBeenCalledOnce();
+
+    link.setAttribute(INTERNAL_LINK_ATTRIBUTE, "OPS/two.xhtml#target");
+    const crossSpineClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+    link.dispatchEvent(crossSpineClick);
+    expect(crossSpineClick.defaultPrevented).toBe(true);
+    await waitForFrameCount(container, 2);
+    container.querySelectorAll("iframe")[1]!.dispatchEvent(new Event("load"));
+    await vi.waitFor(() => expect(navigator.currentRelocation?.spineIndex).toBe(1));
+    expect(navigator.contentDocument?.getElementById("target")).not.toBeNull();
     navigator.destroy();
   });
 
