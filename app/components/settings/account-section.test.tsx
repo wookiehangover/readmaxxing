@@ -154,7 +154,8 @@ describe("AccountSection", () => {
     await renderSignedIn();
 
     expect(document.body.textContent).toContain("Laptop");
-    expect(document.body.textContent).toContain("Backed up");
+    expect(document.body.textContent).not.toContain("Backed up");
+    expect(document.body.textContent).not.toContain("Backup");
     expect(document.body.querySelector("time")?.dateTime).toBe(firstPasskey.createdAt);
     expect(findButton("Generate magic link")).toBeDefined();
   });
@@ -171,7 +172,7 @@ describe("AccountSection", () => {
     await click(findButton("Add passkey"));
 
     expect(document.body.textContent).toContain("Phone");
-    expect(document.body.textContent).toContain("Not backed up");
+    expect(document.body.textContent).not.toContain("Not backed up");
     expect(mocks.toastSuccess).toHaveBeenCalledWith("Passkey added");
   });
 

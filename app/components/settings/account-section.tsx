@@ -198,7 +198,6 @@ export function AccountSection() {
             <TableRow>
               <TableHead>Passkey</TableHead>
               <TableHead>Created</TableHead>
-              <TableHead>Backup</TableHead>
               <TableHead className="text-right">
                 <span className="sr-only">Actions</span>
               </TableHead>
@@ -239,7 +238,6 @@ export function AccountSection() {
                 <TableCell>
                   <time dateTime={passkey.createdAt}>{formatCreatedAt(passkey.createdAt)}</time>
                 </TableCell>
-                <TableCell>{passkey.backedUp ? "Backed up" : "Not backed up"}</TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-1">
                     <Button
