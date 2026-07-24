@@ -2,11 +2,7 @@ import { verifyAuthenticationResponse } from "@simplewebauthn/server";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
 import { getRpId, getRpOrigin, SESSION_MAX_AGE_SECONDS } from "~/lib/auth-config";
 import { getChallenge, deleteChallenge } from "~/lib/database/auth/challenge";
-import {
-  getPasskeyById,
-  touchPasskeyLastUsed,
-  updatePasskeyCounter,
-} from "~/lib/database/auth/passkey";
+import { getPasskeyById, updatePasskeyCounter } from "~/lib/database/auth/passkey";
 import { createSession } from "~/lib/database/auth/session";
 import { getUser } from "~/lib/database/user/user";
 import { setSessionCookie } from "~/lib/database/auth-middleware";
@@ -73,7 +69,6 @@ export async function action({ request }: { request: Request }) {
 
   // Update the passkey counter to prevent replay attacks
   await updatePasskeyCounter(passkey.id, verification.authenticationInfo.newCounter);
-  await touchPasskeyLastUsed(passkey.id);
 
   // Create a server session
   const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000);

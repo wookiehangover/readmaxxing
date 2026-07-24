@@ -22,8 +22,6 @@ CREATE TABLE readmax.passkey (
     device_type VARCHAR(32),
     backed_up BOOLEAN DEFAULT FALSE,
     transports TEXT,
-    name TEXT,
-    last_used_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
