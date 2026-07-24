@@ -133,6 +133,25 @@ export async function deletePasskey(id: string, userId: string): Promise<boolean
   return (result.rowCount ?? 0) > 0;
 }
 
+export async function deletePasskeyIfNotLast(
+  id: string,
+  userId: string,
+): Promise<"deleted" | "not_found" | "last_passkey"> {
+  const pool = getPool();
+  const result = await pool.query(sql`
+    DELETE FROM readmax.passkey
+    WHERE id = ${id}
+      AND user_id = ${userId}
+      AND (SELECT COUNT(*) FROM readmax.passkey WHERE user_id = ${userId}) > 1
+  `);
+  if ((result.rowCount ?? 0) > 0) return "deleted";
+  const exists = await pool.query<{ count: string }>(sql`
+    SELECT COUNT(*) AS count FROM readmax.passkey
+    WHERE id = ${id} AND user_id = ${userId}
+  `);
+  return Number(exists.rows[0]?.count ?? 0) > 0 ? "last_passkey" : "not_found";
+}
+
 export async function updatePasskeyName(
   id: string,
   userId: string,

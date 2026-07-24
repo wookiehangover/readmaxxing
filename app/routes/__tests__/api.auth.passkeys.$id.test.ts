@@ -5,16 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireAuth: vi.fn(),
   getPasskeyById: vi.fn(),
-  countPasskeysByUserId: vi.fn(),
-  deletePasskey: vi.fn(),
+  deletePasskeyIfNotLast: vi.fn(),
   updatePasskeyName: vi.fn(),
 }));
 
 vi.mock("~/lib/database/auth-middleware", () => ({ requireAuth: mocks.requireAuth }));
 vi.mock("~/lib/database/auth/passkey", () => ({
   getPasskeyById: mocks.getPasskeyById,
-  countPasskeysByUserId: mocks.countPasskeysByUserId,
-  deletePasskey: mocks.deletePasskey,
+  deletePasskeyIfNotLast: mocks.deletePasskeyIfNotLast,
   updatePasskeyName: mocks.updatePasskeyName,
 }));
 
@@ -71,32 +69,30 @@ describe("passkey rename and delete API", () => {
   });
 
   it("deletes an owned passkey when another remains", async () => {
-    mocks.countPasskeysByUserId.mockResolvedValue(2);
-    mocks.deletePasskey.mockResolvedValue(true);
+    mocks.deletePasskeyIfNotLast.mockResolvedValue("deleted");
 
     const response = await run("DELETE");
 
     expect(response.status).toBe(200);
-    expect(mocks.deletePasskey).toHaveBeenCalledWith("credential-1", "user-1");
+    expect(mocks.deletePasskeyIfNotLast).toHaveBeenCalledWith("credential-1", "user-1");
   });
 
   it("refuses to delete the user's last passkey", async () => {
-    mocks.countPasskeysByUserId.mockResolvedValue(1);
+    mocks.deletePasskeyIfNotLast.mockResolvedValue("last_passkey");
 
     const response = await run("DELETE");
 
     expect(response.status).toBe(400);
-    expect(mocks.deletePasskey).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({ error: "Cannot remove the last passkey" });
   });
 
-  it("checks ownership before counting passkeys", async () => {
+  it("checks ownership before attempting delete", async () => {
     mocks.getPasskeyById.mockResolvedValue({ id: "credential-1", userId: "user-2" });
 
     const response = await run("DELETE");
 
     expect(response.status).toBe(404);
-    expect(mocks.countPasskeysByUserId).not.toHaveBeenCalled();
-    expect(mocks.deletePasskey).not.toHaveBeenCalled();
+    expect(mocks.deletePasskeyIfNotLast).not.toHaveBeenCalled();
   });
 
   it("requires authentication", async () => {

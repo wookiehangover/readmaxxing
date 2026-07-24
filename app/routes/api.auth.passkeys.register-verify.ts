@@ -5,12 +5,6 @@ import { deleteChallenge, getChallenge } from "~/lib/database/auth/challenge";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { savePasskey } from "~/lib/database/auth/passkey";
 
-interface PasskeyRegisterVerifyBody {
-  challengeId: string;
-  response: RegistrationResponseJSON;
-  userId?: string;
-}
-
 export async function action({ request }: { request: Request }) {
   if (!process.env.DATABASE_URL) {
     return Response.json({ error: "Auth not configured" }, { status: 503 });
@@ -21,18 +15,42 @@ export async function action({ request }: { request: Request }) {
   }
 
   const session = await requireAuth(request);
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("challengeId" in body) ||
+    !("response" in body) ||
+    typeof body.challengeId !== "string" ||
+    !body.challengeId ||
+    typeof body.response !== "object" ||
+    body.response === null
+  ) {
+    return Response.json(
+      { error: "challengeId must be a non-empty string and response must be an object" },
+      { status: 400 },
+    );
+  }
+
   const {
     challengeId,
     response,
     userId: clientUserId,
-  } = (await request.json()) as PasskeyRegisterVerifyBody;
+  } = body as {
+    challengeId: string;
+    response: RegistrationResponseJSON;
+    userId?: string;
+  };
 
   if (clientUserId !== undefined && clientUserId !== session.userId) {
     return Response.json({ error: "User does not match session" }, { status: 403 });
-  }
-
-  if (!challengeId || !response) {
-    return Response.json({ error: "Missing required fields" }, { status: 400 });
   }
 
   const challengeRow = await getChallenge(challengeId);

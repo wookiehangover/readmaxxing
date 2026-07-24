@@ -168,6 +168,9 @@ export const AuthServiceLive = Layer.succeed(AuthService, {
           throw new Error(body.error ?? "Failed to get registration options");
         }
         const { options, challengeId } = await optionsRes.json();
+        if (typeof challengeId !== "string" || !challengeId) {
+          throw new Error("Invalid challenge ID from server");
+        }
         const registration = await startRegistration({ optionsJSON: options });
         const verifyRes = await fetch("/api/auth/passkeys/register-verify", {
           method: "POST",

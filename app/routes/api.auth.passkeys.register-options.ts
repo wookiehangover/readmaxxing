@@ -42,5 +42,9 @@ export async function action({ request }: { request: Request }) {
     expiresAt: new Date(Date.now() + CHALLENGE_TTL_SECONDS * 1000),
   });
 
-  return Response.json({ options, challengeId: challengeRow?.id ?? null });
+  if (!challengeRow) {
+    return Response.json({ error: "Failed to create challenge" }, { status: 500 });
+  }
+
+  return Response.json({ options, challengeId: challengeRow.id });
 }

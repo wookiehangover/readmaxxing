@@ -1,7 +1,6 @@
 import { requireAuth } from "~/lib/database/auth-middleware";
 import {
-  countPasskeysByUserId,
-  deletePasskey,
+  deletePasskeyIfNotLast,
   getPasskeyById,
   updatePasskeyName,
 } from "~/lib/database/auth/passkey";
@@ -32,14 +31,14 @@ export async function action({ request, params }: ActionArgs) {
   }
 
   if (request.method === "DELETE") {
-    if ((await countPasskeysByUserId(userId)) <= 1) {
+    const result = await deletePasskeyIfNotLast(passkey.id, userId);
+    if (result === "last_passkey") {
       return Response.json({ error: "Cannot remove the last passkey" }, { status: 400 });
     }
-
-    const deleted = await deletePasskey(passkey.id, userId);
-    return deleted
-      ? Response.json({ ok: true })
-      : Response.json({ error: "Passkey not found" }, { status: 404 });
+    if (result === "not_found") {
+      return Response.json({ error: "Passkey not found" }, { status: 404 });
+    }
+    return Response.json({ ok: true });
   }
 
   let body: unknown;

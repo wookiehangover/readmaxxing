@@ -78,9 +78,69 @@ describe("add-passkey registration options", () => {
       challengeId: "challenge-row-1",
     });
   });
+
+  it("returns 500 when saveChallenge fails", async () => {
+    mocks.getPasskeysByUserId.mockResolvedValue([]);
+    mocks.generateRegistrationOptions.mockResolvedValue({ challenge: "challenge-1" });
+    mocks.saveChallenge.mockResolvedValue(null);
+
+    const request = post("/api/auth/passkeys/register-options");
+    const response = await optionsAction({ request });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: "Failed to create challenge" });
+  });
 });
 
 describe("add-passkey registration verification", () => {
+  it("rejects invalid JSON body", async () => {
+    const request = new Request("https://example.com/api/auth/passkeys/register-verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not-json",
+    });
+
+    const response = await verifyAction({ request });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid JSON body" });
+  });
+
+  it("rejects missing challengeId", async () => {
+    const response = await verifyAction({
+      request: post("/api/auth/passkeys/register-verify", {
+        response: { id: "credential-1" },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(mocks.getChallenge).not.toHaveBeenCalled();
+  });
+
+  it("rejects empty string challengeId", async () => {
+    const response = await verifyAction({
+      request: post("/api/auth/passkeys/register-verify", {
+        challengeId: "",
+        response: { id: "credential-1" },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(mocks.getChallenge).not.toHaveBeenCalled();
+  });
+
+  it("rejects numeric challengeId", async () => {
+    const response = await verifyAction({
+      request: post("/api/auth/passkeys/register-verify", {
+        challengeId: 123,
+        response: { id: "credential-1" },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(mocks.getChallenge).not.toHaveBeenCalled();
+  });
+
   it("rejects a client-supplied foreign user ID", async () => {
     const response = await verifyAction({
       request: post("/api/auth/passkeys/register-verify", {
