@@ -36,6 +36,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         // revision is stamped post-build by scripts/patch-sw-index-html-revision.mjs
         additionalManifestEntries: [{ url: "/index.html", revision: null }],
+        navigateFallback: null,
         runtimeCaching: [
           {
             urlPattern: ({ request, url, sameOrigin }) =>
