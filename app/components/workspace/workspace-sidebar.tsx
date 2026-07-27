@@ -148,6 +148,7 @@ export function WorkspaceSidebar({
   );
   const isLibraryRoute = location.pathname === "/library";
   const isStandardEbooksRoute = location.pathname === "/standard-ebooks";
+  const isWorkspaceRoute = location.pathname === "/";
   const showStandardEbooks = isLibraryRoute || isStandardEbooksRoute;
   const activeClusterBook = useMemo(() => {
     if (!activeClusterId) return null;
@@ -333,7 +334,8 @@ export function WorkspaceSidebar({
               </div>
             )}
           </div>
-          {activeClusterBook &&
+          {isWorkspaceRoute &&
+            activeClusterBook &&
             (() => {
               const activeBookId = activeClusterBook.id;
               const api = ws.dockviewApi.current;
