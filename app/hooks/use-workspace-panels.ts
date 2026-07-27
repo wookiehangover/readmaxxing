@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { useNavigate } from "react-router";
 import { Effect } from "effect";
 import type { AddPanelPositionOptions, DockviewApi } from "dockview-react";
 import type { FocusedCluster } from "~/hooks/use-focused-mode";
@@ -64,6 +65,7 @@ export function useWorkspacePanels({
   focusedOrderRef,
   updateSettings,
 }: UseWorkspacePanelsParams): UseWorkspacePanelsResult {
+  const navigate = useNavigate();
   const openBook = useCallback(
     (book: BookMeta) => {
       const api = apiRef.current;
@@ -281,20 +283,8 @@ export function useWorkspacePanels({
   );
 
   const openStandardEbooks = useCallback(() => {
-    const api = apiRef.current;
-    if (!api) return;
-    const existing = api.panels.find((p) => p.id.startsWith("standard-ebooks-"));
-    if (existing) {
-      existing.focus();
-      return;
-    }
-    api.addPanel({
-      id: `standard-ebooks-${crypto.randomUUID().slice(0, 8)}`,
-      component: "standard-ebooks",
-      title: "Standard Ebooks",
-      params: {},
-    });
-  }, [apiRef]);
+    navigate("/standard-ebooks");
+  }, [navigate]);
 
   const closeBookPanels = useCallback(
     (bookId: string) => {

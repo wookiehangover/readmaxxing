@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DockviewApi, DockviewReadyEvent } from "dockview-react";
 import { Effect } from "effect";
 import { PanelLeft, X } from "lucide-react";
-import { Outlet, useLocation } from "react-router";
+import { Outlet, useLocation, useNavigate } from "react-router";
 import type { Route } from "./+types/app-frame";
 import { ClusterBar } from "~/components/workspace/cluster-bar";
 import { DropZone } from "~/components/drop-zone";
@@ -117,6 +117,7 @@ export function HydrateFallback() {
 export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const ws = useWorkspace();
   const location = useLocation();
+  const navigate = useNavigate();
   const isWorkspaceRoute = location.pathname === "/";
   const isMobile = useIsMobile();
   const isMobileRef = useRef(isMobile);
@@ -163,7 +164,6 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     focusedClustersRef,
     focusedOrderRef,
     swapInProgressRef,
-    activateFocusedLibrary,
     closeFocusedCluster,
     reorderFocusedClusters,
     getClusterEntries,
@@ -347,9 +347,17 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   );
 
   const handleOpenLibrary = useCallback(() => {
-    activateFocusedLibrary();
+    navigate("/library");
     setMobileOpen(false);
-  }, [activateFocusedLibrary]);
+  }, [navigate]);
+
+  const handleActivateCluster = useCallback(
+    (bookId: string) => {
+      if (!isWorkspaceRoute) navigate("/");
+      ws.setActiveCluster(bookId);
+    },
+    [isWorkspaceRoute, navigate, ws],
+  );
 
   useEffect(() => {
     ws.openBookRef.current = openBook;
@@ -459,7 +467,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
                 demoActive={loaderData.demoActive}
                 getEntries={getClusterEntries}
                 getActiveId={getActiveClusterId}
-                onActivate={(bookId) => ws.setActiveCluster(bookId)}
+                onActivate={handleActivateCluster}
                 onClose={closeFocusedCluster}
                 onReorder={reorderFocusedClusters}
               />

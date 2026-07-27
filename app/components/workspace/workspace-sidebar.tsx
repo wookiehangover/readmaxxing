@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import {
   Bookmark,
   ChartLine,
@@ -117,6 +117,7 @@ export function WorkspaceSidebar({
   onFileInput,
 }: WorkspaceSidebarProps) {
   const ws = useWorkspace();
+  const location = useLocation();
   const [libraryExpanded, setLibraryExpanded] = useState(true);
   // Bump on cluster add/remove/activate so the collapsed rail re-derives its
   // entries from `getClusterEntries()`.
@@ -145,7 +146,12 @@ export function WorkspaceSidebar({
     () => getActiveClusterId(),
     [getActiveClusterId, clusterVersion],
   );
-  const isLibraryActive = activeClusterId === null;
+  const isLibraryRoute = location.pathname === "/library";
+  const isStandardEbooksRoute = location.pathname === "/standard-ebooks";
+  const showStandardEbooks =
+    isLibraryRoute ||
+    isStandardEbooksRoute ||
+    (location.pathname === "/" && activeClusterId === null);
   const activeClusterBook = useMemo(() => {
     if (!activeClusterId) return null;
 
@@ -249,14 +255,16 @@ export function WorkspaceSidebar({
                   label="Library"
                   srLabel="Open library"
                   icon={Library}
+                  active={isLibraryRoute}
                   onClick={onOpenLibrary}
                 />
-                {isLibraryActive && (
+                {showStandardEbooks && (
                   <WorkspaceSidebarActionButton
                     collapsed={collapsed}
                     label="Standard Ebooks"
                     srLabel="Open Standard Ebooks"
                     icon={Globe}
+                    active={isStandardEbooksRoute}
                     onClick={() => ws.openStandardEbooksRef.current?.()}
                   />
                 )}
@@ -267,7 +275,10 @@ export function WorkspaceSidebar({
                   <button
                     type="button"
                     onClick={onOpenLibrary}
-                    className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted hover:text-foreground"
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted hover:text-foreground",
+                      { "bg-muted text-foreground": isLibraryRoute },
+                    )}
                   >
                     <Library className="size-4 shrink-0" />
                     <span className="truncate">Library</span>
@@ -312,12 +323,13 @@ export function WorkspaceSidebar({
                     </div>
                   </div>
                 )}
-                {isLibraryActive && (
+                {showStandardEbooks && (
                   <WorkspaceSidebarActionButton
                     collapsed={collapsed}
                     label="Standard Ebooks"
                     srLabel="Open Standard Ebooks"
                     icon={Globe}
+                    active={isStandardEbooksRoute}
                     onClick={() => ws.openStandardEbooksRef.current?.()}
                   />
                 )}

@@ -1,7 +1,16 @@
+import { useCallback } from "react";
+import { StandardEbooksBrowser } from "~/components/standard-ebooks-browser";
+import { useWorkspace } from "~/lib/context/workspace-context";
+import type { BookMeta } from "~/lib/stores/book-store";
+
 export default function WorkspaceStandardEbooksRoute() {
-  return (
-    <main className="h-full overflow-auto p-6">
-      <h1 className="text-xl font-semibold">Standard Ebooks</h1>
-    </main>
+  const ws = useWorkspace();
+  const handleBookAdded = useCallback(
+    (book: BookMeta) => {
+      ws.onBookAddedRef.current?.(book);
+    },
+    [ws],
   );
+
+  return <StandardEbooksBrowser onBookAdded={handleBookAdded} />;
 }

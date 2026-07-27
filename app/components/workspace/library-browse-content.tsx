@@ -41,6 +41,8 @@ import { Link } from "react-router";
 interface LibraryBrowseContentProps {
   /** Dockview panel API — when provided, enables visibility-based refresh. */
   panelApi?: DockviewPanelApi;
+  /** Overrides the default Dockview book opener for route-level rendering. */
+  onOpenBook?: (book: BookMeta) => void;
 }
 
 /** Minimum interval between panel-activation-triggered refreshes (ms). */
@@ -71,7 +73,7 @@ function saveLibrarySortBy(sortBy: WorkspaceSortBy): void {
   }
 }
 
-export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {}) {
+export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseContentProps = {}) {
   const ws = useWorkspace();
   const { isAuthenticated } = useAuth();
   const [books, setBooks] = useState<BookMeta[]>(ws.booksRef.current);
@@ -98,10 +100,14 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
 
   const handleOpenBook = useCallback(
     (book: BookMeta) => {
+      if (onOpenBook) {
+        onOpenBook(book);
+        return;
+      }
       ws.openBookRef.current?.(book);
       panelApi?.close();
     },
-    [panelApi, ws],
+    [onOpenBook, panelApi, ws],
   );
 
   const handleOpenNotebook = useCallback(
@@ -229,7 +235,7 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
             Upload an epub or PDF
           </Button>
           <span className="text-sm text-muted-foreground">or</span>
-          <Button variant="outline" onClick={() => ws.openStandardEbooksRef.current?.()}>
+          <Button variant="outline" render={<Link to="/standard-ebooks" />}>
             <Globe className="size-4" />
             Browse Standard Ebooks
           </Button>
@@ -303,14 +309,13 @@ export function LibraryBrowseContent({ panelApi }: LibraryBrowseContentProps = {
                   <AddBookCard onClick={() => fileInputRef.current?.click()} />
                 </div>
                 <div>
-                  <button
-                    type="button"
-                    onClick={() => ws.openStandardEbooksRef.current?.()}
+                  <Link
+                    to="/standard-ebooks"
                     className="flex aspect-[2/3] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground"
                   >
                     <Globe className="size-6" />
                     <span className="text-xs font-medium">Standard Ebooks</span>
-                  </button>
+                  </Link>
                 </div>
               </div>
             </div>
