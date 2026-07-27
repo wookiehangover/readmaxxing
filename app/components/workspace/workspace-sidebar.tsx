@@ -142,10 +142,7 @@ export function WorkspaceSidebar({
   // Actions operate on the active cluster's book. Resolve it from the lists the
   // parent already passes; fall back to a stub if the book hasn't loaded yet so
   // buttons remain clickable.
-  const activeClusterId = useMemo(
-    () => getActiveClusterId(),
-    [getActiveClusterId, clusterVersion],
-  );
+  const activeClusterId = useMemo(() => getActiveClusterId(), [getActiveClusterId, clusterVersion]);
   const isLibraryRoute = location.pathname === "/library";
   const isStandardEbooksRoute = location.pathname === "/standard-ebooks";
   const isWorkspaceRoute = location.pathname === "/";
