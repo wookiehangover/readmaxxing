@@ -53,6 +53,7 @@ export interface UseWorkspaceLayoutParams {
 export interface UseWorkspaceLayoutResult {
   readonly layoutReady: boolean;
   readonly onReady: (event: DockviewReadyEvent) => void;
+  readonly onDispose: () => void;
 }
 
 export function useWorkspaceLayout({
@@ -78,10 +79,6 @@ export function useWorkspaceLayout({
   const restoreTokenRef = useRef(0);
   const mountedRef = useRef(true);
   const flushFocusedStateRef = useRef<() => void>(() => {});
-  // Mirrors `layoutReady` for the debounced save callbacks. Until the initial
-  // restore resolves, `focusedOrderRef` is empty/partial; saving in that window
-  // would clobber the persisted multi-book focused state with an empty one.
-  const layoutReadyRef = useRef(false);
   // `onReady` intentionally omits `books` from its deps; read the current book
   // ids through a ref to avoid stale closures.
   const existingBookIdsRef = useRef(new Set<string>());
@@ -98,41 +95,7 @@ export function useWorkspaceLayout({
     };
   }, [focusedClustersRef, focusedOrderRef, ws]);
 
-  const restoreFocusedState = useCallback(
-    (state: FocusedWorkspaceState | null) => {
-      if (!state) return;
-
-      const booksById = new Map(books.map((book) => [book.id, book]));
-      const clustersById = new Map(state.clusters.map((cluster) => [cluster.bookId, cluster]));
-      const restored = new Map<string, FocusedCluster>();
-      const order: string[] = [];
-
-      for (const bookId of state.order) {
-        const cluster = clustersById.get(bookId);
-        const book = booksById.get(bookId);
-        if (!cluster || !book || restored.has(bookId)) continue;
-        restored.set(bookId, {
-          ...cluster,
-          bookTitle: book.title,
-          bookFormat: book.format,
-        });
-        order.push(bookId);
-      }
-
-      focusedClustersRef.current = restored;
-      focusedOrderRef.current = order;
-      ws.activeClusterBookIdRef.current =
-        state.activeBookId && restored.has(state.activeBookId)
-          ? state.activeBookId
-          : (order[order.length - 1] ?? null);
-    },
-    [books, focusedClustersRef, focusedOrderRef, ws],
-  );
-
   const flushFocusedState = useCallback(() => {
-    // Don't persist before the initial restore completes — the cluster refs are
-    // still empty/partial and would overwrite the saved multi-book state.
-    if (!layoutReadyRef.current) return;
     AppRuntime.runPromise(
       WorkspaceService.pipe(Effect.andThen((s) => s.saveFocusedState(serializeFocusedState()))),
     ).catch(console.error);
@@ -217,31 +180,37 @@ export function useWorkspaceLayout({
     }
   }, [apiRef, isMobileRef]);
 
+  const onDispose = useCallback(() => {
+    restoreTokenRef.current += 1;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+      flushLayout();
+    }
+    for (const disposable of disposablesRef.current) disposable.dispose();
+    disposablesRef.current = [];
+    apiRef.current = null;
+    ws.dockviewApi.current = null;
+    setLayoutReady(false);
+  }, [apiRef, flushLayout, ws]);
+
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
+      onDispose();
       apiRef.current = event.api;
       ws.dockviewApi.current = event.api;
 
       const restoreToken = ++restoreTokenRef.current;
-      Promise.all([
-        AppRuntime.runPromise(
-          WorkspaceService.pipe(
-            Effect.andThen((s) => s.getLayout()),
-            Effect.catchAll(() => Effect.succeed(null)),
-          ),
+      AppRuntime.runPromise(
+        WorkspaceService.pipe(
+          Effect.andThen((s) => s.getLayout()),
+          Effect.catchAll(() => Effect.succeed(null)),
         ),
-        AppRuntime.runPromise(
-          WorkspaceService.pipe(
-            Effect.andThen((s) => s.getFocusedState()),
-            Effect.catchAll(() => Effect.succeed(null)),
-          ),
-        ),
-      ])
-        .then(([layout, focusedState]) => {
+      )
+        .then((layout) => {
           if (!mountedRef.current || restoreToken !== restoreTokenRef.current) {
             return;
           }
-          restoreFocusedState(focusedState);
           const hasFocusedRestore = focusedOrderRef.current.length > 0;
           if (layout && !hasFocusedRestore) {
             try {
@@ -253,14 +222,12 @@ export function useWorkspaceLayout({
           }
           enforceSingleFocusedCluster();
           updateFocusedBookGroupChrome();
-          layoutReadyRef.current = true;
           setLayoutReady(true);
         })
         .catch((err) => {
           if (!mountedRef.current || restoreToken !== restoreTokenRef.current) return;
           console.error(err);
           updateFocusedBookGroupChrome();
-          layoutReadyRef.current = true;
           setLayoutReady(true);
         });
 
@@ -372,7 +339,7 @@ export function useWorkspaceLayout({
       enforceSingleFocusedCluster,
       focusedClustersRef,
       focusedOrderRef,
-      restoreFocusedState,
+      onDispose,
       saveLayout,
       setOpenBookIds,
       swapInProgressRef,
@@ -441,6 +408,8 @@ export function useWorkspaceLayout({
       if (focusedRatioSaveTimerRef.current) clearTimeout(focusedRatioSaveTimerRef.current);
       for (const d of disposablesRef.current) d.dispose();
       disposablesRef.current = [];
+      apiRef.current = null;
+      ws.dockviewApi.current = null;
       ws.navigationMap.current.clear();
       ws.tocMap.current.clear();
       ws.notebookCallbackMap.current.clear();
@@ -448,7 +417,7 @@ export function useWorkspaceLayout({
       ws.clustersRef.current.clear();
       ws.activeClusterBookIdRef.current = null;
     };
-  }, [ws]);
+  }, [apiRef, ws]);
 
-  return { layoutReady, onReady };
+  return { layoutReady, onReady, onDispose };
 }
