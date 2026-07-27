@@ -139,6 +139,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const zenPreStateRef = useRef<ZenPreState | null>(null);
   const sortBy = settings.workspaceSortBy;
   const apiRef = useRef<DockviewApi | null>(null);
+  const pendingClusterActivationRef = useRef<string | null>(null);
   const [, setTocVersion] = useState(0);
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(
     () => new Set(initialFocusedState.order),
@@ -199,6 +200,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     focusedClustersRef,
     focusedOrderRef,
     swapInProgressRef,
+    pendingClusterActivationRef,
     getActiveClusterId,
     enforceSingleFocusedCluster,
     updateSettings,
@@ -353,8 +355,9 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
 
   const handleActivateCluster = useCallback(
     (bookId: string) => {
-      if (!isWorkspaceRoute) navigate("/");
+      if (!isWorkspaceRoute) pendingClusterActivationRef.current = bookId;
       ws.setActiveCluster(bookId);
+      if (!isWorkspaceRoute) navigate("/");
     },
     [isWorkspaceRoute, navigate, ws],
   );

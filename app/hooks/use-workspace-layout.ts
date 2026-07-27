@@ -16,6 +16,18 @@ const FOCUSED_BOOK_GROUP_CLASS = "dv-focused-book-group";
 
 type WorkspaceContext = ReturnType<typeof useWorkspace>;
 
+export function consumePendingClusterActivation(
+  pendingBookIdRef: React.MutableRefObject<string | null>,
+  activeBookIdRef: React.MutableRefObject<string | null>,
+  focusedClusters: ReadonlyMap<string, unknown>,
+): void {
+  const pendingBookId = pendingBookIdRef.current;
+  pendingBookIdRef.current = null;
+  if (pendingBookId !== null && focusedClusters.has(pendingBookId)) {
+    activeBookIdRef.current = pendingBookId;
+  }
+}
+
 /**
  * Remove restored panels whose bookId no longer exists. Runs after a
  * successful `fromJSON` restore — mutating the serialized layout up front
@@ -44,6 +56,7 @@ export interface UseWorkspaceLayoutParams {
   readonly focusedClustersRef: React.MutableRefObject<Map<string, FocusedCluster>>;
   readonly focusedOrderRef: React.MutableRefObject<string[]>;
   readonly swapInProgressRef: React.MutableRefObject<boolean>;
+  readonly pendingClusterActivationRef: React.MutableRefObject<string | null>;
   readonly getActiveClusterId: () => string | null;
   readonly enforceSingleFocusedCluster: () => void;
   readonly updateSettings: (patch: Partial<Settings>) => void;
@@ -66,6 +79,7 @@ export function useWorkspaceLayout({
   focusedClustersRef,
   focusedOrderRef,
   swapInProgressRef,
+  pendingClusterActivationRef,
   getActiveClusterId,
   enforceSingleFocusedCluster,
   updateSettings,
@@ -220,6 +234,11 @@ export function useWorkspaceLayout({
               console.error("Failed to restore dockview layout:", err);
             }
           }
+          consumePendingClusterActivation(
+            pendingClusterActivationRef,
+            ws.activeClusterBookIdRef,
+            focusedClustersRef.current,
+          );
           enforceSingleFocusedCluster();
           updateFocusedBookGroupChrome();
           setLayoutReady(true);
@@ -340,6 +359,7 @@ export function useWorkspaceLayout({
       focusedClustersRef,
       focusedOrderRef,
       onDispose,
+      pendingClusterActivationRef,
       saveLayout,
       setOpenBookIds,
       swapInProgressRef,
