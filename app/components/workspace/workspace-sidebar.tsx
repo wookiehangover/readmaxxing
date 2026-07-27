@@ -239,13 +239,22 @@ export function WorkspaceSidebar({
             })}
           >
             {collapsed ? (
-              <WorkspaceSidebarActionButton
-                collapsed={collapsed}
-                label="Library"
-                srLabel="Open library"
-                icon={Library}
-                onClick={onOpenLibrary}
-              />
+              <>
+                <WorkspaceSidebarActionButton
+                  collapsed={collapsed}
+                  label="Library"
+                  srLabel="Open library"
+                  icon={Library}
+                  onClick={onOpenLibrary}
+                />
+                <WorkspaceSidebarActionButton
+                  collapsed={collapsed}
+                  label="Standard Ebooks"
+                  srLabel="Open Standard Ebooks"
+                  icon={Globe}
+                  onClick={() => ws.openStandardEbooksRef.current?.()}
+                />
+              </>
             ) : (
               <div className="w-full">
                 <div className="flex h-10 items-center gap-1 rounded-md text-muted-foreground">
