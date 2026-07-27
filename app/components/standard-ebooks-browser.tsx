@@ -4,6 +4,8 @@ import { Globe, Loader2, Plus, Check } from "lucide-react";
 import { StandardEbooksToolbar } from "~/components/standard-ebooks-toolbar";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
+import { StandardEbooksTable } from "~/components/workspace/standard-ebooks-table";
+import { useSettings } from "~/lib/settings";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { parseEpubEffect } from "~/lib/epub/epub-service";
@@ -16,6 +18,7 @@ interface StandardEbooksBrowserProps {
 }
 
 export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProps) {
+  const [settings] = useSettings();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchPage, setSearchPage] = useState(1);
@@ -141,6 +144,11 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
     },
     [downloadingUrls, addedUrls, onBookAdded],
   );
+  const isBookDownloading = useCallback(
+    (book: SEBook) => downloadingUrls.has(book.urlPath),
+    [downloadingUrls],
+  );
+  const isBookAdded = useCallback((book: SEBook) => addedUrls.has(book.urlPath), [addedUrls]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -173,28 +181,41 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
         )}
 
         {isInitialLoading ? (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
+          settings.standardEbooksView === "grid" ? (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <SkeletonCard key={i} />
+              ))}
+            </div>
+          ) : (
+            <StandardEbooksTableSkeleton />
+          )
         ) : books.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <p className="text-sm text-muted-foreground">
               {isSearching ? "No books found for this search." : "No books available."}
             </p>
           </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+        ) : settings.standardEbooksView === "grid" ? (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {books.map((book) => (
               <SEBookCard
                 key={book.urlPath}
                 book={book}
-                isDownloading={downloadingUrls.has(book.urlPath)}
-                isAdded={addedUrls.has(book.urlPath)}
+                isDownloading={isBookDownloading(book)}
+                isAdded={isBookAdded(book)}
                 onDownload={handleDownload}
               />
             ))}
+          </div>
+        ) : (
+          <div className="[&>div]:h-auto [&>div]:overflow-visible">
+            <StandardEbooksTable
+              books={books}
+              isDownloading={isBookDownloading}
+              isAdded={isBookAdded}
+              onDownload={handleDownload}
+            />
           </div>
         )}
 
@@ -321,6 +342,19 @@ function SkeletonCard() {
         <Skeleton className="h-3 w-1/2" />
         <Skeleton className="mt-1 h-8 w-full" />
       </div>
+    </div>
+  );
+}
+
+function StandardEbooksTableSkeleton() {
+  return (
+    <div className="flex flex-col overflow-hidden rounded-md border">
+      <Skeleton className="h-10 w-full rounded-none" />
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="border-t p-2">
+          <Skeleton className="h-12 w-full" />
+        </div>
+      ))}
     </div>
   );
 }
