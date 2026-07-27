@@ -147,10 +147,10 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
       <div className="shrink-0">
         <div className="flex flex-col gap-3 px-4 pt-4 md:px-6">
           <div>
-          <h2 className="text-lg font-semibold">Browse Standard Ebooks</h2>
-          <p className="text-sm text-muted-foreground">
-            Search and import free, beautifully formatted public domain ebooks.
-          </p>
+            <h2 className="text-lg font-semibold">Browse Standard Ebooks</h2>
+            <p className="text-sm text-muted-foreground">
+              Search and import free, beautifully formatted public domain ebooks.
+            </p>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
