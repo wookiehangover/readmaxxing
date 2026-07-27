@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Effect } from "effect";
-import { Globe, Loader2, Plus, Check, Search } from "lucide-react";
-import { Input } from "~/components/ui/input";
+import { Globe, Loader2, Plus, Check } from "lucide-react";
+import { StandardEbooksToolbar } from "~/components/standard-ebooks-toolbar";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
@@ -144,31 +144,25 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 space-y-3 p-4 pb-0">
-        <div>
+      <div className="shrink-0">
+        <div className="flex flex-col gap-3 px-4 pt-4 md:px-6">
+          <div>
           <h2 className="text-lg font-semibold">Browse Standard Ebooks</h2>
           <p className="text-sm text-muted-foreground">
             Search and import free, beautifully formatted public domain ebooks.
           </p>
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+
+          {loadError && (
+            <p className="text-sm text-destructive">
+              Failed to load books. Check your network connection and try again.
+            </p>
+          )}
         </div>
 
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search Standard Ebooks…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        {loadError && (
-          <p className="text-sm text-destructive">
-            Failed to load books. Check your network connection and try again.
-          </p>
-        )}
+        <StandardEbooksToolbar query={query} onQueryChange={setQuery} />
       </div>
 
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
