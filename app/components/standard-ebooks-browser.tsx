@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Effect } from "effect";
-import { Globe, Loader2, Plus, Check, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Globe, Loader2, Plus, Check, Search } from "lucide-react";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
@@ -19,10 +19,13 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchPage, setSearchPage] = useState(1);
+  const [books, setBooks] = useState<SEBook[]>([]);
   const [downloadingUrls, setDownloadingUrls] = useState<Set<string>>(new Set());
   const [addedUrls, setAddedUrls] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Debounce search input
   useEffect(() => {
@@ -52,8 +55,46 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
     [debouncedQuery, searchPage],
   );
 
+  useEffect(() => {
+    setBooks([]);
+    if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+  }, [debouncedQuery]);
+
+  useEffect(() => {
+    if (!searchResult) return;
+
+    setBooks((previousBooks) => {
+      const booksByUrl = new Map(
+        (searchResult.currentPage === 1 ? [] : previousBooks).map((book) => [book.urlPath, book]),
+      );
+      for (const book of searchResult.books) booksByUrl.set(book.urlPath, book);
+      return Array.from(booksByUrl.values());
+    });
+  }, [searchResult]);
+
   const isSearching = debouncedQuery.length > 0;
-  const books = searchResult?.books ?? [];
+  const isInitialLoading = isLoading && books.length === 0;
+  const isLoadingMore = isLoading && books.length > 0;
+  const hasMore =
+    searchResult !== undefined &&
+    searchResult.currentPage === searchPage &&
+    searchResult.currentPage < searchResult.totalPages;
+
+  useEffect(() => {
+    const loadMoreElement = loadMoreRef.current;
+    if (!loadMoreElement || !hasMore || isLoading) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        observer.disconnect();
+        setSearchPage((page) => page + 1);
+      },
+      { root: scrollContainerRef.current, rootMargin: "200px 0px" },
+    );
+    observer.observe(loadMoreElement);
+    return () => observer.disconnect();
+  }, [hasMore, isLoading]);
 
   const handleDownload = useCallback(
     async (seBook: SEBook) => {
@@ -130,14 +171,14 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
-        {!isSearching && !isLoading && books.length > 0 && (
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
+        {!isSearching && books.length > 0 && (
           <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
             Most Popular
           </p>
         )}
 
-        {isLoading ? (
+        {isInitialLoading ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
             {Array.from({ length: 8 }).map((_, i) => (
               <SkeletonCard key={i} />
@@ -160,6 +201,21 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
                 onDownload={handleDownload}
               />
             ))}
+          </div>
+        )}
+
+        {(hasMore || isLoadingMore) && (
+          <div
+            ref={loadMoreRef}
+            className="flex h-12 items-center justify-center"
+            aria-live="polite"
+          >
+            {isLoadingMore && (
+              <>
+                <Loader2 className="mr-2 size-4 animate-spin" />
+                <span className="text-sm text-muted-foreground">Loading more books…</span>
+              </>
+            )}
           </div>
         )}
 
@@ -189,32 +245,6 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
           </a>
         </div>
       </div>
-
-      {searchResult && searchResult.totalPages > 1 && (
-        <div className="flex shrink-0 items-center justify-center gap-2 border-t p-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={searchPage <= 1}
-            onClick={() => setSearchPage(searchPage - 1)}
-          >
-            <ChevronLeft className="size-4" />
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {searchResult.currentPage} of {searchResult.totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={searchPage >= searchResult.totalPages}
-            onClick={() => setSearchPage(searchPage + 1)}
-          >
-            Next
-            <ChevronRight className="size-4" />
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
