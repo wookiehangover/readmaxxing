@@ -141,7 +141,11 @@ export function WorkspaceSidebar({
   // Actions operate on the active cluster's book. Resolve it from the lists the
   // parent already passes; fall back to a stub if the book hasn't loaded yet so
   // buttons remain clickable.
-  const activeClusterId = getActiveClusterId();
+  const activeClusterId = useMemo(
+    () => getActiveClusterId(),
+    [getActiveClusterId, clusterVersion],
+  );
+  const isLibraryActive = activeClusterId === null;
   const activeClusterBook = useMemo(() => {
     if (!activeClusterId) return null;
 
@@ -247,13 +251,15 @@ export function WorkspaceSidebar({
                   icon={Library}
                   onClick={onOpenLibrary}
                 />
-                <WorkspaceSidebarActionButton
-                  collapsed={collapsed}
-                  label="Standard Ebooks"
-                  srLabel="Open Standard Ebooks"
-                  icon={Globe}
-                  onClick={() => ws.openStandardEbooksRef.current?.()}
-                />
+                {isLibraryActive && (
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="Standard Ebooks"
+                    srLabel="Open Standard Ebooks"
+                    icon={Globe}
+                    onClick={() => ws.openStandardEbooksRef.current?.()}
+                  />
+                )}
               </>
             ) : (
               <div className="w-full">
@@ -306,13 +312,15 @@ export function WorkspaceSidebar({
                     </div>
                   </div>
                 )}
-                <WorkspaceSidebarActionButton
-                  collapsed={collapsed}
-                  label="Standard Ebooks"
-                  srLabel="Open Standard Ebooks"
-                  icon={Globe}
-                  onClick={() => ws.openStandardEbooksRef.current?.()}
-                />
+                {isLibraryActive && (
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="Standard Ebooks"
+                    srLabel="Open Standard Ebooks"
+                    icon={Globe}
+                    onClick={() => ws.openStandardEbooksRef.current?.()}
+                  />
+                )}
               </div>
             )}
           </div>
