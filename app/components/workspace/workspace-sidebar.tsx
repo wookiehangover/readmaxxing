@@ -148,8 +148,7 @@ export function WorkspaceSidebar({
   );
   const isLibraryRoute = location.pathname === "/library";
   const isStandardEbooksRoute = location.pathname === "/standard-ebooks";
-  const showBrowseNav =
-    location.pathname === "/library" || location.pathname === "/standard-ebooks";
+  const showStandardEbooks = isLibraryRoute || isStandardEbooksRoute;
   const activeClusterBook = useMemo(() => {
     if (!activeClusterId) return null;
 
@@ -246,7 +245,7 @@ export function WorkspaceSidebar({
               "items-center": collapsed,
             })}
           >
-            {collapsed && showBrowseNav ? (
+            {collapsed ? (
               <>
                 <WorkspaceSidebarActionButton
                   collapsed={collapsed}
@@ -256,16 +255,18 @@ export function WorkspaceSidebar({
                   active={isLibraryRoute}
                   onClick={onOpenLibrary}
                 />
-                <WorkspaceSidebarActionButton
-                  collapsed={collapsed}
-                  label="Standard Ebooks"
-                  srLabel="Open Standard Ebooks"
-                  icon={Globe}
-                  active={isStandardEbooksRoute}
-                  onClick={() => ws.openStandardEbooksRef.current?.()}
-                />
+                {showStandardEbooks && (
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="Standard Ebooks"
+                    srLabel="Open Standard Ebooks"
+                    icon={Globe}
+                    active={isStandardEbooksRoute}
+                    onClick={() => ws.openStandardEbooksRef.current?.()}
+                  />
+                )}
               </>
-            ) : !collapsed && showBrowseNav ? (
+            ) : (
               <div className="w-full">
                 <div className="flex h-10 items-center gap-1 rounded-md text-muted-foreground">
                   <button
@@ -319,16 +320,18 @@ export function WorkspaceSidebar({
                     </div>
                   </div>
                 )}
-                <WorkspaceSidebarActionButton
-                  collapsed={collapsed}
-                  label="Standard Ebooks"
-                  srLabel="Open Standard Ebooks"
-                  icon={Globe}
-                  active={isStandardEbooksRoute}
-                  onClick={() => ws.openStandardEbooksRef.current?.()}
-                />
+                {showStandardEbooks && (
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="Standard Ebooks"
+                    srLabel="Open Standard Ebooks"
+                    icon={Globe}
+                    active={isStandardEbooksRoute}
+                    onClick={() => ws.openStandardEbooksRef.current?.()}
+                  />
+                )}
               </div>
-            ) : null}
+            )}
           </div>
           {activeClusterBook &&
             (() => {
