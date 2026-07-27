@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import {
   Bookmark,
   ChartLine,
+  Globe,
   MessageSquare,
   Minus,
   Plus,
@@ -296,6 +297,13 @@ export function WorkspaceSidebar({
                     </div>
                   </div>
                 )}
+                <WorkspaceSidebarActionButton
+                  collapsed={collapsed}
+                  label="Standard Ebooks"
+                  srLabel="Open Standard Ebooks"
+                  icon={Globe}
+                  onClick={() => ws.openStandardEbooksRef.current?.()}
+                />
               </div>
             )}
           </div>
