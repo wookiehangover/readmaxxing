@@ -110,6 +110,7 @@ export function useWorkspaceLayout({
   }, [focusedClustersRef, focusedOrderRef, ws]);
 
   const flushFocusedState = useCallback(() => {
+    if (!mountedRef.current) return;
     AppRuntime.runPromise(
       WorkspaceService.pipe(Effect.andThen((s) => s.saveFocusedState(serializeFocusedState()))),
     ).catch(console.error);
@@ -128,6 +129,7 @@ export function useWorkspaceLayout({
   }, [flushFocusedState]);
 
   const flushLayout = useCallback(() => {
+    if (!mountedRef.current) return;
     const api = apiRef.current;
     if (!api) return;
     AppRuntime.runPromise(
@@ -137,7 +139,10 @@ export function useWorkspaceLayout({
 
   const saveLayout = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(flushLayout, LAYOUT_SAVE_DEBOUNCE_MS);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      flushLayout();
+    }, LAYOUT_SAVE_DEBOUNCE_MS);
   }, [flushLayout]);
 
   const captureFocusedRatio = useCallback(() => {
@@ -168,6 +173,8 @@ export function useWorkspaceLayout({
 
     if (focusedRatioSaveTimerRef.current) clearTimeout(focusedRatioSaveTimerRef.current);
     focusedRatioSaveTimerRef.current = setTimeout(() => {
+      focusedRatioSaveTimerRef.current = null;
+      if (!mountedRef.current) return;
       if (Math.abs(nextRatio - focusedSplitRatioRef.current) < FOCUSED_RATIO_EPSILON) return;
       updateSettings({ focusedSplitRatio: nextRatio });
     }, FOCUSED_RATIO_SAVE_DEBOUNCE_MS);
@@ -201,12 +208,21 @@ export function useWorkspaceLayout({
       saveTimerRef.current = null;
       flushLayout();
     }
+    if (focusedStateSaveTimerRef.current) {
+      clearTimeout(focusedStateSaveTimerRef.current);
+      focusedStateSaveTimerRef.current = null;
+      flushFocusedState();
+    }
+    if (focusedRatioSaveTimerRef.current) {
+      clearTimeout(focusedRatioSaveTimerRef.current);
+      focusedRatioSaveTimerRef.current = null;
+    }
     for (const disposable of disposablesRef.current) disposable.dispose();
     disposablesRef.current = [];
     apiRef.current = null;
     ws.dockviewApi.current = null;
     setLayoutReady(false);
-  }, [apiRef, flushLayout, ws]);
+  }, [apiRef, flushFocusedState, flushLayout, ws]);
 
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
@@ -418,14 +434,21 @@ export function useWorkspaceLayout({
   useEffect(() => {
     mountedRef.current = true;
     return () => {
-      mountedRef.current = false;
       restoreTokenRef.current += 1;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
       if (focusedStateSaveTimerRef.current) {
         clearTimeout(focusedStateSaveTimerRef.current);
+        focusedStateSaveTimerRef.current = null;
         flushFocusedStateRef.current();
       }
-      if (focusedRatioSaveTimerRef.current) clearTimeout(focusedRatioSaveTimerRef.current);
+      if (focusedRatioSaveTimerRef.current) {
+        clearTimeout(focusedRatioSaveTimerRef.current);
+        focusedRatioSaveTimerRef.current = null;
+      }
+      mountedRef.current = false;
       for (const d of disposablesRef.current) d.dispose();
       disposablesRef.current = [];
       apiRef.current = null;
