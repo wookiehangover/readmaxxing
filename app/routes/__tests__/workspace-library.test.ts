@@ -25,7 +25,7 @@ describe("openBookInWorkspace", () => {
       openBookRef: { current: openBook },
     } as Pick<WorkspaceContextValue, "dockviewApi" | "openBookRef">;
 
-    openBookInWorkspace(book, navigate, workspace, scheduleFrame);
+    openBookInWorkspace(book, navigate, workspace, { scheduleFrame });
 
     expect(navigate).toHaveBeenCalledWith("/");
     frames.shift()?.(0);
@@ -34,5 +34,48 @@ describe("openBookInWorkspace", () => {
     workspace.dockviewApi.current = {} as WorkspaceContextValue["dockviewApi"]["current"];
     frames.shift()?.(1);
     expect(openBook).toHaveBeenCalledWith(book);
+  });
+
+  it("stops waiting when the pending open is cancelled", () => {
+    const controller = new AbortController();
+    const frames: FrameRequestCallback[] = [];
+    const scheduleFrame = vi.fn((callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const workspace = {
+      dockviewApi: { current: null },
+      openBookRef: { current: vi.fn() },
+    } as Pick<WorkspaceContextValue, "dockviewApi" | "openBookRef">;
+
+    openBookInWorkspace(book, vi.fn(), workspace, {
+      signal: controller.signal,
+      scheduleFrame,
+    });
+    controller.abort();
+    frames.shift()?.(0);
+
+    expect(scheduleFrame).toHaveBeenCalledTimes(1);
+    expect(workspace.openBookRef.current).not.toHaveBeenCalled();
+  });
+
+  it("stops waiting after the maximum number of frames", () => {
+    const frames: FrameRequestCallback[] = [];
+    const scheduleFrame = vi.fn((callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const workspace = {
+      dockviewApi: { current: null },
+      openBookRef: { current: vi.fn() },
+    } as Pick<WorkspaceContextValue, "dockviewApi" | "openBookRef">;
+
+    openBookInWorkspace(book, vi.fn(), workspace, { scheduleFrame, maxFrames: 2 });
+    frames.shift()?.(0);
+    frames.shift()?.(1);
+
+    expect(scheduleFrame).toHaveBeenCalledTimes(2);
+    expect(frames).toHaveLength(0);
+    expect(workspace.openBookRef.current).not.toHaveBeenCalled();
   });
 });
