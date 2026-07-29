@@ -16,6 +16,18 @@ const FOCUSED_BOOK_GROUP_CLASS = "dv-focused-book-group";
 
 type WorkspaceContext = ReturnType<typeof useWorkspace>;
 
+export function consumePendingClusterActivation(
+  pendingBookIdRef: React.MutableRefObject<string | null>,
+  activeBookIdRef: React.MutableRefObject<string | null>,
+  focusedClusters: ReadonlyMap<string, unknown>,
+): void {
+  const pendingBookId = pendingBookIdRef.current;
+  pendingBookIdRef.current = null;
+  if (pendingBookId !== null && focusedClusters.has(pendingBookId)) {
+    activeBookIdRef.current = pendingBookId;
+  }
+}
+
 /**
  * Remove restored panels whose bookId no longer exists. Runs after a
  * successful `fromJSON` restore — mutating the serialized layout up front
@@ -44,6 +56,7 @@ export interface UseWorkspaceLayoutParams {
   readonly focusedClustersRef: React.MutableRefObject<Map<string, FocusedCluster>>;
   readonly focusedOrderRef: React.MutableRefObject<string[]>;
   readonly swapInProgressRef: React.MutableRefObject<boolean>;
+  readonly pendingClusterActivationRef: React.MutableRefObject<string | null>;
   readonly getActiveClusterId: () => string | null;
   readonly enforceSingleFocusedCluster: () => void;
   readonly updateSettings: (patch: Partial<Settings>) => void;
@@ -53,6 +66,7 @@ export interface UseWorkspaceLayoutParams {
 export interface UseWorkspaceLayoutResult {
   readonly layoutReady: boolean;
   readonly onReady: (event: DockviewReadyEvent) => void;
+  readonly onDispose: () => void;
 }
 
 export function useWorkspaceLayout({
@@ -65,6 +79,7 @@ export function useWorkspaceLayout({
   focusedClustersRef,
   focusedOrderRef,
   swapInProgressRef,
+  pendingClusterActivationRef,
   getActiveClusterId,
   enforceSingleFocusedCluster,
   updateSettings,
@@ -78,10 +93,6 @@ export function useWorkspaceLayout({
   const restoreTokenRef = useRef(0);
   const mountedRef = useRef(true);
   const flushFocusedStateRef = useRef<() => void>(() => {});
-  // Mirrors `layoutReady` for the debounced save callbacks. Until the initial
-  // restore resolves, `focusedOrderRef` is empty/partial; saving in that window
-  // would clobber the persisted multi-book focused state with an empty one.
-  const layoutReadyRef = useRef(false);
   // `onReady` intentionally omits `books` from its deps; read the current book
   // ids through a ref to avoid stale closures.
   const existingBookIdsRef = useRef(new Set<string>());
@@ -98,41 +109,8 @@ export function useWorkspaceLayout({
     };
   }, [focusedClustersRef, focusedOrderRef, ws]);
 
-  const restoreFocusedState = useCallback(
-    (state: FocusedWorkspaceState | null) => {
-      if (!state) return;
-
-      const booksById = new Map(books.map((book) => [book.id, book]));
-      const clustersById = new Map(state.clusters.map((cluster) => [cluster.bookId, cluster]));
-      const restored = new Map<string, FocusedCluster>();
-      const order: string[] = [];
-
-      for (const bookId of state.order) {
-        const cluster = clustersById.get(bookId);
-        const book = booksById.get(bookId);
-        if (!cluster || !book || restored.has(bookId)) continue;
-        restored.set(bookId, {
-          ...cluster,
-          bookTitle: book.title,
-          bookFormat: book.format,
-        });
-        order.push(bookId);
-      }
-
-      focusedClustersRef.current = restored;
-      focusedOrderRef.current = order;
-      ws.activeClusterBookIdRef.current =
-        state.activeBookId && restored.has(state.activeBookId)
-          ? state.activeBookId
-          : (order[order.length - 1] ?? null);
-    },
-    [books, focusedClustersRef, focusedOrderRef, ws],
-  );
-
   const flushFocusedState = useCallback(() => {
-    // Don't persist before the initial restore completes — the cluster refs are
-    // still empty/partial and would overwrite the saved multi-book state.
-    if (!layoutReadyRef.current) return;
+    if (!mountedRef.current) return;
     AppRuntime.runPromise(
       WorkspaceService.pipe(Effect.andThen((s) => s.saveFocusedState(serializeFocusedState()))),
     ).catch(console.error);
@@ -151,6 +129,7 @@ export function useWorkspaceLayout({
   }, [flushFocusedState]);
 
   const flushLayout = useCallback(() => {
+    if (!mountedRef.current) return;
     const api = apiRef.current;
     if (!api) return;
     AppRuntime.runPromise(
@@ -160,7 +139,10 @@ export function useWorkspaceLayout({
 
   const saveLayout = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(flushLayout, LAYOUT_SAVE_DEBOUNCE_MS);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      flushLayout();
+    }, LAYOUT_SAVE_DEBOUNCE_MS);
   }, [flushLayout]);
 
   const captureFocusedRatio = useCallback(() => {
@@ -191,6 +173,8 @@ export function useWorkspaceLayout({
 
     if (focusedRatioSaveTimerRef.current) clearTimeout(focusedRatioSaveTimerRef.current);
     focusedRatioSaveTimerRef.current = setTimeout(() => {
+      focusedRatioSaveTimerRef.current = null;
+      if (!mountedRef.current) return;
       if (Math.abs(nextRatio - focusedSplitRatioRef.current) < FOCUSED_RATIO_EPSILON) return;
       updateSettings({ focusedSplitRatio: nextRatio });
     }, FOCUSED_RATIO_SAVE_DEBOUNCE_MS);
@@ -217,31 +201,46 @@ export function useWorkspaceLayout({
     }
   }, [apiRef, isMobileRef]);
 
+  const onDispose = useCallback(() => {
+    restoreTokenRef.current += 1;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+      flushLayout();
+    }
+    if (focusedStateSaveTimerRef.current) {
+      clearTimeout(focusedStateSaveTimerRef.current);
+      focusedStateSaveTimerRef.current = null;
+      flushFocusedState();
+    }
+    if (focusedRatioSaveTimerRef.current) {
+      clearTimeout(focusedRatioSaveTimerRef.current);
+      focusedRatioSaveTimerRef.current = null;
+    }
+    for (const disposable of disposablesRef.current) disposable.dispose();
+    disposablesRef.current = [];
+    apiRef.current = null;
+    ws.dockviewApi.current = null;
+    setLayoutReady(false);
+  }, [apiRef, flushFocusedState, flushLayout, ws]);
+
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
+      onDispose();
       apiRef.current = event.api;
       ws.dockviewApi.current = event.api;
 
       const restoreToken = ++restoreTokenRef.current;
-      Promise.all([
-        AppRuntime.runPromise(
-          WorkspaceService.pipe(
-            Effect.andThen((s) => s.getLayout()),
-            Effect.catchAll(() => Effect.succeed(null)),
-          ),
+      AppRuntime.runPromise(
+        WorkspaceService.pipe(
+          Effect.andThen((s) => s.getLayout()),
+          Effect.catchAll(() => Effect.succeed(null)),
         ),
-        AppRuntime.runPromise(
-          WorkspaceService.pipe(
-            Effect.andThen((s) => s.getFocusedState()),
-            Effect.catchAll(() => Effect.succeed(null)),
-          ),
-        ),
-      ])
-        .then(([layout, focusedState]) => {
+      )
+        .then((layout) => {
           if (!mountedRef.current || restoreToken !== restoreTokenRef.current) {
             return;
           }
-          restoreFocusedState(focusedState);
           const hasFocusedRestore = focusedOrderRef.current.length > 0;
           if (layout && !hasFocusedRestore) {
             try {
@@ -251,16 +250,19 @@ export function useWorkspaceLayout({
               console.error("Failed to restore dockview layout:", err);
             }
           }
+          consumePendingClusterActivation(
+            pendingClusterActivationRef,
+            ws.activeClusterBookIdRef,
+            focusedClustersRef.current,
+          );
           enforceSingleFocusedCluster();
           updateFocusedBookGroupChrome();
-          layoutReadyRef.current = true;
           setLayoutReady(true);
         })
         .catch((err) => {
           if (!mountedRef.current || restoreToken !== restoreTokenRef.current) return;
           console.error(err);
           updateFocusedBookGroupChrome();
-          layoutReadyRef.current = true;
           setLayoutReady(true);
         });
 
@@ -372,7 +374,8 @@ export function useWorkspaceLayout({
       enforceSingleFocusedCluster,
       focusedClustersRef,
       focusedOrderRef,
-      restoreFocusedState,
+      onDispose,
+      pendingClusterActivationRef,
       saveLayout,
       setOpenBookIds,
       swapInProgressRef,
@@ -431,16 +434,25 @@ export function useWorkspaceLayout({
   useEffect(() => {
     mountedRef.current = true;
     return () => {
-      mountedRef.current = false;
       restoreTokenRef.current += 1;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
       if (focusedStateSaveTimerRef.current) {
         clearTimeout(focusedStateSaveTimerRef.current);
+        focusedStateSaveTimerRef.current = null;
         flushFocusedStateRef.current();
       }
-      if (focusedRatioSaveTimerRef.current) clearTimeout(focusedRatioSaveTimerRef.current);
+      if (focusedRatioSaveTimerRef.current) {
+        clearTimeout(focusedRatioSaveTimerRef.current);
+        focusedRatioSaveTimerRef.current = null;
+      }
+      mountedRef.current = false;
       for (const d of disposablesRef.current) d.dispose();
       disposablesRef.current = [];
+      apiRef.current = null;
+      ws.dockviewApi.current = null;
       ws.navigationMap.current.clear();
       ws.tocMap.current.clear();
       ws.notebookCallbackMap.current.clear();
@@ -448,7 +460,7 @@ export function useWorkspaceLayout({
       ws.clustersRef.current.clear();
       ws.activeClusterBookIdRef.current = null;
     };
-  }, [ws]);
+  }, [apiRef, ws]);
 
-  return { layoutReady, onReady };
+  return { layoutReady, onReady, onDispose };
 }

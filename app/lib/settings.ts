@@ -7,6 +7,7 @@ export type ReaderLayout = "single" | "spread" | "scroll";
 export type PdfLayout = "original" | "fit-height" | "fit-width" | "two-page" | "continuous";
 export type WorkspaceSortBy = "title" | "author" | "recent";
 export type LibraryView = "grid" | "table";
+export type StandardEbooksView = "grid" | "table";
 export type TextAlign = "left" | "center" | "right" | "justify" | undefined;
 
 // --- Schema ---
@@ -66,6 +67,9 @@ export const LocalUISettingsSchema = Schema.Struct({
   libraryView: Schema.optionalWith(Schema.Literal("grid", "table"), {
     default: () => "grid" as const,
   }),
+  standardEbooksView: Schema.optionalWith(Schema.Literal("grid", "table"), {
+    default: () => "grid" as const,
+  }),
   workspaceSortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), {
     default: () => "recent" as const,
   }),
@@ -112,6 +116,7 @@ export const LOCAL_UI_SETTINGS_KEYS = [
   "pdfLayout",
   "sidebarCollapsed",
   "libraryView",
+  "standardEbooksView",
   "workspaceSortBy",
   "focusedSplitRatio",
   "fontFamily",
@@ -138,6 +143,7 @@ const defaultSettings: Settings = {
   zenMode: false,
   workspaceSortBy: "recent",
   libraryView: "grid",
+  standardEbooksView: "grid",
   colorTheme: "default",
   focusedSplitRatio: FOCUSED_SPLIT_RATIO_DEFAULT,
 };

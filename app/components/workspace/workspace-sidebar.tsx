@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import {
   Bookmark,
   ChartLine,
+  Globe,
   MessageSquare,
   Minus,
   Plus,
@@ -116,6 +117,7 @@ export function WorkspaceSidebar({
   onFileInput,
 }: WorkspaceSidebarProps) {
   const ws = useWorkspace();
+  const location = useLocation();
   const [libraryExpanded, setLibraryExpanded] = useState(true);
   // Bump on cluster add/remove/activate so the collapsed rail re-derives its
   // entries from `getClusterEntries()`.
@@ -140,7 +142,11 @@ export function WorkspaceSidebar({
   // Actions operate on the active cluster's book. Resolve it from the lists the
   // parent already passes; fall back to a stub if the book hasn't loaded yet so
   // buttons remain clickable.
-  const activeClusterId = getActiveClusterId();
+  const activeClusterId = useMemo(() => getActiveClusterId(), [getActiveClusterId, clusterVersion]);
+  const isLibraryRoute = location.pathname === "/library";
+  const isStandardEbooksRoute = location.pathname === "/standard-ebooks";
+  const isWorkspaceRoute = location.pathname === "/";
+  const showStandardEbooks = isLibraryRoute || isStandardEbooksRoute;
   const activeClusterBook = useMemo(() => {
     if (!activeClusterId) return null;
 
@@ -238,20 +244,36 @@ export function WorkspaceSidebar({
             })}
           >
             {collapsed ? (
-              <WorkspaceSidebarActionButton
-                collapsed={collapsed}
-                label="Library"
-                srLabel="Open library"
-                icon={Library}
-                onClick={onOpenLibrary}
-              />
+              <>
+                <WorkspaceSidebarActionButton
+                  collapsed={collapsed}
+                  label="Library"
+                  srLabel="Open library"
+                  icon={Library}
+                  active={isLibraryRoute}
+                  onClick={onOpenLibrary}
+                />
+                {showStandardEbooks && (
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="Standard Ebooks"
+                    srLabel="Open Standard Ebooks"
+                    icon={Globe}
+                    active={isStandardEbooksRoute}
+                    onClick={() => ws.openStandardEbooksRef.current?.()}
+                  />
+                )}
+              </>
             ) : (
               <div className="w-full">
                 <div className="flex h-10 items-center gap-1 rounded-md text-muted-foreground">
                   <button
                     type="button"
                     onClick={onOpenLibrary}
-                    className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted hover:text-foreground"
+                    className={cn(
+                      "flex min-w-0 flex-1 items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted hover:text-foreground",
+                      { "bg-muted text-foreground": isLibraryRoute },
+                    )}
                   >
                     <Library className="size-4 shrink-0" />
                     <span className="truncate">Library</span>
@@ -296,10 +318,21 @@ export function WorkspaceSidebar({
                     </div>
                   </div>
                 )}
+                {showStandardEbooks && (
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="Standard Ebooks"
+                    srLabel="Open Standard Ebooks"
+                    icon={Globe}
+                    active={isStandardEbooksRoute}
+                    onClick={() => ws.openStandardEbooksRef.current?.()}
+                  />
+                )}
               </div>
             )}
           </div>
-          {activeClusterBook &&
+          {isWorkspaceRoute &&
+            activeClusterBook &&
             (() => {
               const activeBookId = activeClusterBook.id;
               const api = ws.dockviewApi.current;
