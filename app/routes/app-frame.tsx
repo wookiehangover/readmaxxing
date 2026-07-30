@@ -140,6 +140,8 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const sortBy = settings.workspaceSortBy;
   const apiRef = useRef<DockviewApi | null>(null);
   const pendingClusterActivationRef = useRef<string | null>(null);
+  const pendingOpenBookRef = useRef<BookMeta | null>(null);
+  const layoutReadyRef = useRef(false);
   const [, setTocVersion] = useState(0);
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(
     () => new Set(initialFocusedState.order),
@@ -190,6 +192,27 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     return { openBooks: open, otherBooks: sortBooks(other, sortBy, lastOpenedMap) };
   }, [books, lastOpenedMap, openBookIds, sortBy]);
 
+  const {
+    openBook,
+    openNotebook,
+    openChat,
+    openBookmarks,
+    openReadingHistory,
+    openStandardEbooks,
+    closeBookPanels,
+  } = useWorkspacePanels({
+    apiRef,
+    ws,
+    isMobileRef,
+    collapsedRef,
+    focusedClustersRef,
+    focusedOrderRef,
+    pendingOpenBookRef,
+    layoutReadyRef,
+    isWorkspaceRoute,
+    updateSettings,
+  });
+
   const { layoutReady, onReady, onDispose } = useWorkspaceLayout({
     apiRef,
     ws,
@@ -201,6 +224,9 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     focusedOrderRef,
     swapInProgressRef,
     pendingClusterActivationRef,
+    pendingOpenBookRef,
+    layoutReadyRef,
+    openBook,
     getActiveClusterId,
     enforceSingleFocusedCluster,
     updateSettings,
@@ -210,7 +236,8 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
 
   useEffect(() => {
     setMobileOpen(false);
-  }, [location.pathname]);
+    if (!isWorkspaceRoute) pendingOpenBookRef.current = null;
+  }, [isWorkspaceRoute, location.pathname]);
 
   useEffect(() => {
     ws.booksRef.current = books;
@@ -272,24 +299,6 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     queueMicrotask(() => window.dispatchEvent(new Event("resize")));
     zenPreStateRef.current = null;
   }, [zenMode, updateSettings]);
-
-  const {
-    openBook,
-    openNotebook,
-    openChat,
-    openBookmarks,
-    openReadingHistory,
-    openStandardEbooks,
-    closeBookPanels,
-  } = useWorkspacePanels({
-    apiRef,
-    ws,
-    isMobileRef,
-    collapsedRef,
-    focusedClustersRef,
-    focusedOrderRef,
-    updateSettings,
-  });
 
   const demoBootstrapReady = useDemoOnboarding({
     demoBook: loaderData.demoBook,

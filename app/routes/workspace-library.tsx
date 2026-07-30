@@ -4,16 +4,13 @@ import { LibraryBrowseContent } from "~/components/workspace/library-browse-cont
 import { useWorkspace, type WorkspaceContextValue } from "~/lib/context/workspace-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 
-type WorkspaceBookRefs = Pick<WorkspaceContextValue, "dockviewApi" | "openBookRef">;
+type WorkspaceBookRefs = Pick<WorkspaceContextValue, "openBookRef">;
 type FrameScheduler = (callback: FrameRequestCallback) => number;
 interface OpenBookOptions {
   signal?: AbortSignal;
   scheduleFrame?: FrameScheduler;
-  maxFrames?: number;
   isWorkspaceActive?: () => boolean;
 }
-
-const MAX_READY_FRAMES = 120;
 
 export function openBookInWorkspace(
   book: BookMeta,
@@ -22,24 +19,16 @@ export function openBookInWorkspace(
   {
     signal,
     scheduleFrame = window.requestAnimationFrame,
-    maxFrames = MAX_READY_FRAMES,
     isWorkspaceActive = () => true,
   }: OpenBookOptions = {},
 ) {
   navigate("/");
 
-  let frameCount = 0;
-  const openWhenReady: FrameRequestCallback = () => {
+  const handOffOpen: FrameRequestCallback = () => {
     if (signal?.aborted || !isWorkspaceActive()) return;
-
-    frameCount += 1;
-    if (!workspace.dockviewApi.current) {
-      if (frameCount < maxFrames) scheduleFrame(openWhenReady);
-      return;
-    }
     workspace.openBookRef.current?.(book);
   };
-  if (maxFrames > 0 && !signal?.aborted) scheduleFrame(openWhenReady);
+  if (!signal?.aborted) scheduleFrame(handOffOpen);
 }
 
 export default function WorkspaceLibraryRoute() {
