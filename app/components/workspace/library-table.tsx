@@ -6,6 +6,7 @@ import {
   ArrowUpDown,
   CloudDownload,
   Ellipsis,
+  Loader2,
   MessageSquare,
   NotebookPen,
   RefreshCw,
@@ -44,6 +45,7 @@ interface LibraryTableProps {
   onDeleteBook: (bookId: string) => void;
   onReloadBook: (bookId: string) => void;
   syncActive: boolean;
+  downloadingBookIds: ReadonlySet<string>;
 }
 
 type SortState = { column: TableSortColumn; direction: SortDirection };
@@ -95,6 +97,7 @@ export function LibraryTable({
   onDeleteBook,
   onReloadBook,
   syncActive,
+  downloadingBookIds,
 }: LibraryTableProps) {
   const { isAuthenticated } = useAuth();
   const { data: lastOpenedMap } = useEffectQuery(
@@ -162,12 +165,19 @@ export function LibraryTable({
         <TableBody>
           {sortedBooks.map((book) => {
             const needsDownload = bookNeedsDownload(book);
+            const isDownloading = downloadingBookIds.has(book.id);
             const lastOpened = lastOpenedMap?.get(book.id);
             return (
               <TableRow
                 key={book.id}
-                className={cn("cursor-pointer", { "opacity-70": needsDownload })}
-                onClick={() => onOpenBook(book)}
+                className={cn("cursor-pointer", {
+                  "opacity-70": needsDownload,
+                  "cursor-wait": isDownloading,
+                })}
+                aria-disabled={isDownloading}
+                onClick={() => {
+                  if (!isDownloading) onOpenBook(book);
+                }}
               >
                 <TableCell>
                   <div className="relative">
@@ -183,9 +193,14 @@ export function LibraryTable({
                         <span className="text-xs text-muted-foreground">📖</span>
                       </div>
                     )}
-                    {needsDownload && (
+                    {(needsDownload || isDownloading) && (
                       <div className="absolute inset-0 flex items-center justify-center rounded bg-black/30">
-                        <CloudDownload className="size-3 text-white" />
+                        {isDownloading ? (
+                          <Loader2 className="size-3 animate-spin text-white" aria-hidden="true" />
+                        ) : (
+                          <CloudDownload className="size-3 text-white" />
+                        )}
+                        {isDownloading && <span className="sr-only">Downloading…</span>}
                       </div>
                     )}
                   </div>

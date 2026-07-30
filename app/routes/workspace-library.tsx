@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import { LibraryBrowseContent } from "~/components/workspace/library-browse-content";
 import { useWorkspace, type WorkspaceContextValue } from "~/lib/context/workspace-context";
+import { ensureLocalThenOpen, refreshWorkspaceBooks } from "~/lib/library-book-open";
 import type { BookMeta } from "~/lib/stores/book-store";
 
 type WorkspaceBookRefs = Pick<WorkspaceContextValue, "openBookRef">;
@@ -46,14 +48,25 @@ export default function WorkspaceLibraryRoute() {
   );
 
   const handleOpenBook = useCallback(
-    (book: BookMeta) => {
+    async (book: BookMeta) => {
       pendingOpenControllerRef.current?.abort();
       const controller = new AbortController();
       pendingOpenControllerRef.current = controller;
-      openBookInWorkspace(book, navigate, ws, {
-        signal: controller.signal,
-        isWorkspaceActive: () => window.location.pathname === "/",
-      });
+      try {
+        await ensureLocalThenOpen(book, {
+          signal: controller.signal,
+          refreshBooks: (books) => refreshWorkspaceBooks(ws, books),
+          openBook: (localBook) => {
+            openBookInWorkspace(localBook, navigate, ws, {
+              signal: controller.signal,
+              isWorkspaceActive: () => window.location.pathname === "/",
+            });
+          },
+        });
+      } catch (error) {
+        console.error("Failed to download library book before opening:", error);
+        toast.error(`Could not download “${book.title}”. Please try again.`);
+      }
     },
     [navigate, ws],
   );
