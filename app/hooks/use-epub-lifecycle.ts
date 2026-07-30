@@ -113,6 +113,7 @@ export interface UseEpubLifecycleConfig {
 export interface UseEpubLifecycleReturn {
   bookRef: React.MutableRefObject<any | null>;
   renditionRef: React.MutableRefObject<any | null>;
+  loadError: boolean;
   navigationInProgressRef: React.MutableRefObject<boolean>;
   markNavigationInProgress: () => void;
   toc: TocEntry[];
@@ -191,6 +192,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   const [totalPages, setTotalPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState<number | null>(null);
   const [hasRestoredPosition, setHasRestoredPosition] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const ws = useOptionalWorkspace();
 
   const clearNavigationInProgress = useCallback(() => {
@@ -316,6 +318,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     let publisherPages: PublisherPageMap | null = null;
     registerActiveReader(bookId);
     setHasRestoredPosition(false);
+    setLoadError(false);
 
     const saveRelocation = (cfi: string, relocation: Relocation) => {
       latestLayoutRef.current = {
@@ -543,7 +546,10 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     window.addEventListener("pagehide", flushPositionSave);
     void init().catch((error) => {
       unregisterActiveReader(bookId);
-      if (!cancelled) console.error("Failed to load book data:", error);
+      if (!cancelled) {
+        setLoadError(true);
+        console.error("Failed to load book data:", error);
+      }
     });
 
     return () => {
@@ -596,6 +602,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   return {
     bookRef,
     renditionRef,
+    loadError,
     navigationInProgressRef,
     markNavigationInProgress,
     toc,
