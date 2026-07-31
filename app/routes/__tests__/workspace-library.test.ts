@@ -54,6 +54,25 @@ describe("openBookInWorkspace", () => {
     expect(workspace.openBookRef.current).not.toHaveBeenCalled();
   });
 
+  it("does not navigate when the pending open is already cancelled", () => {
+    const controller = new AbortController();
+    controller.abort();
+    const navigate = vi.fn();
+    const scheduleFrame = vi.fn();
+    const workspace = {
+      openBookRef: { current: vi.fn() },
+    } as Pick<WorkspaceContextValue, "openBookRef">;
+
+    openBookInWorkspace(book, navigate, workspace, {
+      signal: controller.signal,
+      scheduleFrame,
+    });
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(scheduleFrame).not.toHaveBeenCalled();
+    expect(workspace.openBookRef.current).not.toHaveBeenCalled();
+  });
+
   it("does not hand off after the user leaves the workspace route", () => {
     const frames: FrameRequestCallback[] = [];
     const scheduleFrame = vi.fn((callback: FrameRequestCallback) => {

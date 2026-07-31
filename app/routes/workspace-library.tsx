@@ -24,6 +24,7 @@ export function openBookInWorkspace(
     isWorkspaceActive = () => true,
   }: OpenBookOptions = {},
 ) {
+  if (signal?.aborted) return;
   navigate("/");
 
   const handOffOpen: FrameRequestCallback = () => {
@@ -40,8 +41,8 @@ export default function WorkspaceLibraryRoute() {
 
   useEffect(
     () => () => {
-      // Preserve the intended /library → / handoff. Once there, the route
-      // predicate and frame limit still stop polling if the user leaves again.
+      // Preserve the intended /library → / handoff; otherwise abort the pending open
+      // when leaving the library route.
       if (window.location.pathname !== "/") pendingOpenControllerRef.current?.abort();
     },
     [],
