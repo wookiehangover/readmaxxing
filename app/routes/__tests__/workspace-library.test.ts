@@ -12,7 +12,7 @@ const book: BookMeta = {
 };
 
 describe("openBookInWorkspace", () => {
-  it("navigates to the workspace and waits for Dockview before opening the book", () => {
+  it("navigates to the workspace and hands the book to the pending-open handler", () => {
     const navigate = vi.fn();
     const openBook = vi.fn();
     const frames: FrameRequestCallback[] = [];
@@ -21,18 +21,14 @@ describe("openBookInWorkspace", () => {
       return frames.length;
     });
     const workspace = {
-      dockviewApi: { current: null },
       openBookRef: { current: openBook },
-    } as Pick<WorkspaceContextValue, "dockviewApi" | "openBookRef">;
+    } as Pick<WorkspaceContextValue, "openBookRef">;
 
     openBookInWorkspace(book, navigate, workspace, { scheduleFrame });
 
     expect(navigate).toHaveBeenCalledWith("/");
-    frames.shift()?.(0);
     expect(openBook).not.toHaveBeenCalled();
-
-    workspace.dockviewApi.current = {} as WorkspaceContextValue["dockviewApi"]["current"];
-    frames.shift()?.(1);
+    frames.shift()?.(0);
     expect(openBook).toHaveBeenCalledWith(book);
   });
 
@@ -44,9 +40,8 @@ describe("openBookInWorkspace", () => {
       return frames.length;
     });
     const workspace = {
-      dockviewApi: { current: null },
       openBookRef: { current: vi.fn() },
-    } as Pick<WorkspaceContextValue, "dockviewApi" | "openBookRef">;
+    } as Pick<WorkspaceContextValue, "openBookRef">;
 
     openBookInWorkspace(book, vi.fn(), workspace, {
       signal: controller.signal,
@@ -59,22 +54,42 @@ describe("openBookInWorkspace", () => {
     expect(workspace.openBookRef.current).not.toHaveBeenCalled();
   });
 
-  it("stops waiting after the maximum number of frames", () => {
+  it("does not navigate when the pending open is already cancelled", () => {
+    const controller = new AbortController();
+    controller.abort();
+    const navigate = vi.fn();
+    const scheduleFrame = vi.fn();
+    const workspace = {
+      openBookRef: { current: vi.fn() },
+    } as Pick<WorkspaceContextValue, "openBookRef">;
+
+    openBookInWorkspace(book, navigate, workspace, {
+      signal: controller.signal,
+      scheduleFrame,
+    });
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(scheduleFrame).not.toHaveBeenCalled();
+    expect(workspace.openBookRef.current).not.toHaveBeenCalled();
+  });
+
+  it("does not hand off after the user leaves the workspace route", () => {
     const frames: FrameRequestCallback[] = [];
     const scheduleFrame = vi.fn((callback: FrameRequestCallback) => {
       frames.push(callback);
       return frames.length;
     });
     const workspace = {
-      dockviewApi: { current: null },
       openBookRef: { current: vi.fn() },
-    } as Pick<WorkspaceContextValue, "dockviewApi" | "openBookRef">;
+    } as Pick<WorkspaceContextValue, "openBookRef">;
 
-    openBookInWorkspace(book, vi.fn(), workspace, { scheduleFrame, maxFrames: 2 });
+    openBookInWorkspace(book, vi.fn(), workspace, {
+      scheduleFrame,
+      isWorkspaceActive: () => false,
+    });
     frames.shift()?.(0);
-    frames.shift()?.(1);
 
-    expect(scheduleFrame).toHaveBeenCalledTimes(2);
+    expect(scheduleFrame).toHaveBeenCalledTimes(1);
     expect(frames).toHaveLength(0);
     expect(workspace.openBookRef.current).not.toHaveBeenCalled();
   });

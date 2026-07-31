@@ -3,6 +3,7 @@ import type { DockviewApi, DockviewReadyEvent } from "dockview-react";
 import { Effect } from "effect";
 import { PanelLeft, X } from "lucide-react";
 import { Outlet, useLocation, useNavigate } from "react-router";
+import { toast } from "sonner";
 import type { Route } from "./+types/app-frame";
 import { ClusterBar } from "~/components/workspace/cluster-bar";
 import { DropZone } from "~/components/drop-zone";
@@ -30,9 +31,10 @@ import { useWorkspacePanels } from "~/hooks/use-workspace-panels";
 import { useWorkspaceShortcuts } from "~/hooks/use-workspace-shortcuts";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { ensureLocalThenOpen } from "~/lib/library-book-open";
 import { hasDemoOnboardingState, isFirstVisit, seedDemo } from "~/lib/onboarding/demo-seed";
 import { clampFocusedSplitRatio, type ReaderLayout, useSettings } from "~/lib/settings";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
+import { BookService, bookNeedsDownload, type BookMeta } from "~/lib/stores/book-store";
 import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 import { cn } from "~/lib/utils";
 import { sortBooks } from "~/lib/workspace-utils";
@@ -140,7 +142,13 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const sortBy = settings.workspaceSortBy;
   const apiRef = useRef<DockviewApi | null>(null);
   const pendingClusterActivationRef = useRef<string | null>(null);
+  const pendingOpenBookRef = useRef<BookMeta | null>(null);
+  const layoutReadyRef = useRef(false);
+  const downloadingSidebarBookIdsRef = useRef(new Set<string>());
   const [, setTocVersion] = useState(0);
+  const [downloadingSidebarBookIds, setDownloadingSidebarBookIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const [openBookIds, setOpenBookIds] = useState<Set<string>>(
     () => new Set(initialFocusedState.order),
   );
@@ -190,6 +198,27 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     return { openBooks: open, otherBooks: sortBooks(other, sortBy, lastOpenedMap) };
   }, [books, lastOpenedMap, openBookIds, sortBy]);
 
+  const {
+    openBook,
+    openNotebook,
+    openChat,
+    openBookmarks,
+    openReadingHistory,
+    openStandardEbooks,
+    closeBookPanels,
+  } = useWorkspacePanels({
+    apiRef,
+    ws,
+    isMobileRef,
+    collapsedRef,
+    focusedClustersRef,
+    focusedOrderRef,
+    pendingOpenBookRef,
+    layoutReadyRef,
+    isWorkspaceRoute,
+    updateSettings,
+  });
+
   const { layoutReady, onReady, onDispose } = useWorkspaceLayout({
     apiRef,
     ws,
@@ -201,6 +230,9 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     focusedOrderRef,
     swapInProgressRef,
     pendingClusterActivationRef,
+    pendingOpenBookRef,
+    layoutReadyRef,
+    openBook,
     getActiveClusterId,
     enforceSingleFocusedCluster,
     updateSettings,
@@ -210,7 +242,8 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
 
   useEffect(() => {
     setMobileOpen(false);
-  }, [location.pathname]);
+    if (!isWorkspaceRoute) pendingOpenBookRef.current = null;
+  }, [isWorkspaceRoute, location.pathname]);
 
   useEffect(() => {
     ws.booksRef.current = books;
@@ -272,24 +305,6 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     queueMicrotask(() => window.dispatchEvent(new Event("resize")));
     zenPreStateRef.current = null;
   }, [zenMode, updateSettings]);
-
-  const {
-    openBook,
-    openNotebook,
-    openChat,
-    openBookmarks,
-    openReadingHistory,
-    openStandardEbooks,
-    closeBookPanels,
-  } = useWorkspacePanels({
-    apiRef,
-    ws,
-    isMobileRef,
-    collapsedRef,
-    focusedClustersRef,
-    focusedOrderRef,
-    updateSettings,
-  });
 
   const demoBootstrapReady = useDemoOnboarding({
     demoBook: loaderData.demoBook,
@@ -353,6 +368,35 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     setMobileOpen(false);
   }, [navigate]);
 
+  const handleOpenSidebarBook = useCallback(
+    async (book: BookMeta) => {
+      const needsDownload = bookNeedsDownload(book);
+      if (needsDownload && downloadingSidebarBookIdsRef.current.has(book.id)) return;
+
+      if (needsDownload) {
+        downloadingSidebarBookIdsRef.current.add(book.id);
+        setDownloadingSidebarBookIds(new Set(downloadingSidebarBookIdsRef.current));
+      }
+
+      try {
+        await ensureLocalThenOpen(book, {
+          refreshBooks: (freshBooks) => updateBooks(() => freshBooks),
+          openBook,
+        });
+        setMobileOpen(false);
+      } catch (error) {
+        console.error("Failed to download sidebar book before opening:", error);
+        toast.error(`Could not download “${book.title}”. Please try again.`);
+      } finally {
+        if (needsDownload) {
+          downloadingSidebarBookIdsRef.current.delete(book.id);
+          setDownloadingSidebarBookIds(new Set(downloadingSidebarBookIdsRef.current));
+        }
+      }
+    },
+    [openBook, updateBooks],
+  );
+
   const handleActivateCluster = useCallback(
     (bookId: string) => {
       if (!isWorkspaceRoute) pendingClusterActivationRef.current = bookId;
@@ -399,14 +443,12 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     books: sidebarBooks,
     openBooks,
     otherBooks,
+    downloadingBookIds: downloadingSidebarBookIds,
     getClusterEntries,
     getActiveClusterId,
     onUpdateSettings: updateSettings,
     onOpenLibrary: handleOpenLibrary,
-    onOpenBook: (book: BookMeta) => {
-      openBook(book);
-      setMobileOpen(false);
-    },
+    onOpenBook: handleOpenSidebarBook,
     onOpenChat: (book: BookMeta) => {
       openChat(book);
       setMobileOpen(false);

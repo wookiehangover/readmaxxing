@@ -84,6 +84,52 @@ describe("BookService", () => {
     });
   });
 
+  describe("on-demand download", () => {
+    it("downloads and caches a remote book when local data is missing", async () => {
+      const suffix = `test-${++testCounter}-${Date.now()}`;
+      const bookStore = createStore(`book-db-${suffix}`, "books");
+      const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
+      const remoteBook = {
+        id: "remote-book",
+        title: "Remote Book",
+        author: "Remote Author",
+        coverImage: null,
+        format: "epub" as const,
+        remoteFileUrl: "https://example.com/remote-book.epub",
+        hasLocalFile: false,
+      };
+      const downloaded = new Uint8Array([1, 2, 3, 4]).buffer;
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(downloaded, {
+          status: 200,
+          headers: { "Content-Type": "application/epub+zip" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      try {
+        await set(remoteBook.id, remoteBook, bookStore);
+        const bookLayer = Layer.succeed(BookService, makeBookService({ bookStore, bookDataStore }));
+        const data = await Effect.runPromise(
+          Effect.provide(
+            BookService.pipe(Effect.andThen((service) => service.getBookData(remoteBook.id))),
+            bookLayer,
+          ),
+        );
+
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/sync/files/download?bookId=remote-book&type=file",
+          { credentials: "include" },
+        );
+        expect(Array.from(new Uint8Array(data))).toEqual([1, 2, 3, 4]);
+        expect(await get<ArrayBuffer>(remoteBook.id, bookDataStore)).toEqual(data);
+        expect(await get(remoteBook.id, bookStore)).toMatchObject({ hasLocalFile: true });
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+  });
+
   describe("deleteBook", () => {
     it("deletes a book", async () => {
       const { bookLayer } = makeTestLayer();

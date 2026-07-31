@@ -13,6 +13,7 @@ import {
   Search,
   Notebook,
   Library,
+  Loader2,
 } from "lucide-react";
 import { LibrarySortControl } from "~/components/library-sort-control";
 import { SyncStatus } from "~/components/sync-status";
@@ -79,6 +80,7 @@ export interface WorkspaceSidebarProps {
   books: BookMeta[];
   openBooks: BookMeta[];
   otherBooks: BookMeta[];
+  downloadingBookIds: ReadonlySet<string>;
   /**
    * Snapshot getter for the current clusters, in `focusedOrderRef` order. The
    * sidebar re-renders on cluster changes via `subscribeClusterChanges`.
@@ -105,6 +107,7 @@ export function WorkspaceSidebar({
   books,
   openBooks,
   otherBooks,
+  downloadingBookIds,
   getClusterEntries,
   getActiveClusterId,
   onUpdateSettings,
@@ -303,15 +306,27 @@ export function WorkspaceSidebar({
                           key={book.id}
                           type="button"
                           onClick={() => onOpenBook(book)}
-                          className="flex w-full min-w-0 flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                          disabled={downloadingBookIds.has(book.id)}
+                          className="flex w-full min-w-0 flex-col rounded-md px-2 py-1.5 text-left hover:bg-muted disabled:cursor-wait"
                         >
-                          <span className="truncate text-xs font-medium text-foreground">
-                            {book.title}
+                          <span className="flex w-full min-w-0 items-center gap-2">
+                            <span className="truncate text-xs font-medium text-foreground">
+                              {book.title}
+                            </span>
+                            {downloadingBookIds.has(book.id) && (
+                              <Loader2
+                                className="ml-auto size-3 shrink-0 animate-spin"
+                                aria-hidden="true"
+                              />
+                            )}
                           </span>
                           {book.author && (
                             <span className="truncate text-[11px] text-muted-foreground">
                               {book.author}
                             </span>
+                          )}
+                          {downloadingBookIds.has(book.id) && (
+                            <span className="sr-only">Downloading…</span>
                           )}
                         </button>
                       ))}

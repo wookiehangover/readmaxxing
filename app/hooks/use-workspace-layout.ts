@@ -28,6 +28,16 @@ export function consumePendingClusterActivation(
   }
 }
 
+export function consumePendingBookOpen(
+  pendingBookRef: React.MutableRefObject<BookMeta | null>,
+  openBook: (book: BookMeta) => void,
+): void {
+  const pendingBook = pendingBookRef.current;
+  if (pendingBook === null) return;
+  pendingBookRef.current = null;
+  openBook(pendingBook);
+}
+
 /**
  * Remove restored panels whose bookId no longer exists. Runs after a
  * successful `fromJSON` restore — mutating the serialized layout up front
@@ -57,6 +67,9 @@ export interface UseWorkspaceLayoutParams {
   readonly focusedOrderRef: React.MutableRefObject<string[]>;
   readonly swapInProgressRef: React.MutableRefObject<boolean>;
   readonly pendingClusterActivationRef: React.MutableRefObject<string | null>;
+  readonly pendingOpenBookRef: React.MutableRefObject<BookMeta | null>;
+  readonly layoutReadyRef: React.MutableRefObject<boolean>;
+  readonly openBook: (book: BookMeta) => void;
   readonly getActiveClusterId: () => string | null;
   readonly enforceSingleFocusedCluster: () => void;
   readonly updateSettings: (patch: Partial<Settings>) => void;
@@ -80,6 +93,9 @@ export function useWorkspaceLayout({
   focusedOrderRef,
   swapInProgressRef,
   pendingClusterActivationRef,
+  pendingOpenBookRef,
+  layoutReadyRef,
+  openBook,
   getActiveClusterId,
   enforceSingleFocusedCluster,
   updateSettings,
@@ -221,8 +237,9 @@ export function useWorkspaceLayout({
     disposablesRef.current = [];
     apiRef.current = null;
     ws.dockviewApi.current = null;
+    layoutReadyRef.current = false;
     setLayoutReady(false);
-  }, [apiRef, flushFocusedState, flushLayout, ws]);
+  }, [apiRef, flushFocusedState, flushLayout, layoutReadyRef, ws]);
 
   const onReady = useCallback(
     (event: DockviewReadyEvent) => {
@@ -256,12 +273,16 @@ export function useWorkspaceLayout({
             focusedClustersRef.current,
           );
           enforceSingleFocusedCluster();
+          layoutReadyRef.current = true;
+          consumePendingBookOpen(pendingOpenBookRef, openBook);
           updateFocusedBookGroupChrome();
           setLayoutReady(true);
         })
         .catch((err) => {
           if (!mountedRef.current || restoreToken !== restoreTokenRef.current) return;
           console.error(err);
+          layoutReadyRef.current = true;
+          consumePendingBookOpen(pendingOpenBookRef, openBook);
           updateFocusedBookGroupChrome();
           setLayoutReady(true);
         });
@@ -374,8 +395,11 @@ export function useWorkspaceLayout({
       enforceSingleFocusedCluster,
       focusedClustersRef,
       focusedOrderRef,
+      layoutReadyRef,
       onDispose,
+      openBook,
       pendingClusterActivationRef,
+      pendingOpenBookRef,
       saveLayout,
       setOpenBookIds,
       swapInProgressRef,

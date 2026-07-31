@@ -12,6 +12,7 @@ import {
   Trash2,
   Upload,
   Edit3Icon,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { CoverImage } from "~/components/book-grid/cover-image";
@@ -36,13 +37,14 @@ import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
 import { filterBooks, sortBooks } from "~/lib/workspace-utils";
 import { useAuth } from "~/lib/context/auth-context";
 import { useEffectQuery } from "~/hooks/use-effect-query";
+import { ensureLocalThenOpen, refreshWorkspaceBooks } from "~/lib/library-book-open";
 import { Link } from "react-router";
 
 interface LibraryBrowseContentProps {
   /** Dockview panel API — when provided, enables visibility-based refresh. */
   panelApi?: DockviewPanelApi;
   /** Overrides the default Dockview book opener for route-level rendering. */
-  onOpenBook?: (book: BookMeta) => void;
+  onOpenBook?: (book: BookMeta) => void | Promise<void>;
 }
 
 /** Minimum interval between panel-activation-triggered refreshes (ms). */
@@ -82,8 +84,10 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
     getStoredLibrarySortBy(),
   );
   const [shareBook, setShareBook] = useState<BookMeta | null>(null);
+  const [downloadingBookIds, setDownloadingBookIds] = useState<ReadonlySet<string>>(new Set());
   const [settings] = useSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const downloadingBookIdsRef = useRef(new Set<string>());
   const lastRefreshedAtRef = useRef(0);
   const { data: lastOpenedMap } = useEffectQuery(
     () => WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())),
@@ -99,13 +103,36 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
   }, [ws]);
 
   const handleOpenBook = useCallback(
-    (book: BookMeta) => {
-      if (onOpenBook) {
-        onOpenBook(book);
-        return;
+    async (book: BookMeta) => {
+      const needsDownload = bookNeedsDownload(book);
+      if (needsDownload && downloadingBookIdsRef.current.has(book.id)) return;
+
+      if (needsDownload) {
+        downloadingBookIdsRef.current.add(book.id);
+        setDownloadingBookIds(new Set(downloadingBookIdsRef.current));
       }
-      ws.openBookRef.current?.(book);
-      panelApi?.close();
+
+      try {
+        if (onOpenBook) {
+          await onOpenBook(book);
+          return;
+        }
+        await ensureLocalThenOpen(book, {
+          refreshBooks: (freshBooks) => refreshWorkspaceBooks(ws, freshBooks),
+          openBook: (localBook) => {
+            ws.openBookRef.current?.(localBook);
+            panelApi?.close();
+          },
+        });
+      } catch (error) {
+        console.error("Failed to download book before opening:", error);
+        toast.error(`Could not download “${book.title}”. Please try again.`);
+      } finally {
+        if (needsDownload) {
+          downloadingBookIdsRef.current.delete(book.id);
+          setDownloadingBookIds(new Set(downloadingBookIdsRef.current));
+        }
+      }
     },
     [onOpenBook, panelApi, ws],
   );
@@ -284,6 +311,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
                 onDeleteBook={handleDeleteBook}
                 onReloadBook={handleReloadBook}
                 syncActive={syncActive}
+                downloadingBookIds={downloadingBookIds}
               />
             </div>
           ) : (
@@ -302,6 +330,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
                       handleShareBook={handleShareBook}
                       isAuthenticated={isAuthenticated}
                       syncActive={syncActive}
+                      isDownloading={downloadingBookIds.has(book.id)}
                     />
                   );
                 })}
@@ -343,6 +372,7 @@ function LibraryBook({
   handleShareBook,
   isAuthenticated,
   syncActive,
+  isDownloading,
 }: {
   book: BookMeta;
   handleOpenBook: (book: BookMeta) => void;
@@ -353,12 +383,19 @@ function LibraryBook({
   handleShareBook: (book: BookMeta) => void;
   isAuthenticated: boolean;
   syncActive: boolean;
+  isDownloading: boolean;
 }) {
   const needsDownload = bookNeedsDownload(book);
 
   return (
     <div key={book.id} className="group relative">
-      <button type="button" onClick={() => handleOpenBook(book)} className="block w-full text-left">
+      <button
+        type="button"
+        onClick={() => handleOpenBook(book)}
+        disabled={isDownloading}
+        aria-label={isDownloading ? `Downloading ${book.title}` : `Open ${book.title}`}
+        className="block w-full text-left disabled:cursor-wait"
+      >
         <div className="relative shadow-lg transition-shadow duration-500 book-cover-container group-hover:shadow-2xl">
           {book.coverImage || book.remoteCoverUrl ? (
             <CoverImage
@@ -371,6 +408,12 @@ function LibraryBook({
             />
           ) : (
             <CoverPlaceholder title={book.title} author={book.author} />
+          )}
+          {isDownloading && (
+            <div className="absolute inset-0 flex items-center justify-center rounded bg-background/70">
+              <Loader2 className="size-6 animate-spin" aria-hidden="true" />
+              <span className="sr-only">Downloading…</span>
+            </div>
           )}
         </div>
         {/*<p className="mt-2 truncate text-sm font-medium">{book.title}</p>*/}

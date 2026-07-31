@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { consumePendingClusterActivation } from "~/hooks/use-workspace-layout";
+import { describe, expect, it, vi } from "vitest";
+import {
+  consumePendingBookOpen,
+  consumePendingClusterActivation,
+} from "~/hooks/use-workspace-layout";
+import type { BookMeta } from "~/lib/stores/book-store";
 
 describe("consumePendingClusterActivation", () => {
   const clusters = new Map([
@@ -26,5 +30,35 @@ describe("consumePendingClusterActivation", () => {
 
     expect(active.current).toBe("book-b");
     expect(pending.current).toBeNull();
+  });
+});
+
+describe("consumePendingBookOpen", () => {
+  const book: BookMeta = {
+    id: "book-a",
+    title: "Book A",
+    author: "Author A",
+    coverImage: null,
+    format: "epub",
+  };
+
+  it("defers a pending open until layout restore consumes it", () => {
+    const pending = { current: book as BookMeta | null };
+    const openBook = vi.fn();
+
+    expect(openBook).not.toHaveBeenCalled();
+    consumePendingBookOpen(pending, openBook);
+
+    expect(openBook).toHaveBeenCalledWith(book);
+    expect(pending.current).toBeNull();
+  });
+
+  it("does nothing when no book is pending", () => {
+    const pending = { current: null as BookMeta | null };
+    const openBook = vi.fn();
+
+    consumePendingBookOpen(pending, openBook);
+
+    expect(openBook).not.toHaveBeenCalled();
   });
 });

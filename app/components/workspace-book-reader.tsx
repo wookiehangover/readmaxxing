@@ -320,6 +320,7 @@ function WorkspaceBookReaderInner({
     currentChapterLabel,
     currentPage,
     totalPages,
+    loadError,
     navigateToTocHref,
     flushPositionSave,
     latestCfiRef,
@@ -828,6 +829,16 @@ function WorkspaceBookReaderInner({
               "px-16 pt-6 pb-2 md:pt-10 md:pb-4": localReaderLayout,
             })}
           />
+          {loadError && (
+            <div
+              className="bg-background absolute inset-0 z-20 flex items-center justify-center p-6 text-center"
+              role="alert"
+            >
+              <p className="text-muted-foreground">
+                Unable to load this book. Check your connection and try again.
+              </p>
+            </div>
+          )}
           {!isScrollMode && (
             <div className="pointer-events-none absolute inset-0 z-[5]">
               {/* Previous page zone: narrow margin on desktop, 25% on mobile */}

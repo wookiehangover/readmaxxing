@@ -22,6 +22,9 @@ export interface UseWorkspacePanelsParams {
   readonly collapsedRef: React.MutableRefObject<boolean>;
   readonly focusedClustersRef: React.MutableRefObject<Map<string, FocusedCluster>>;
   readonly focusedOrderRef: React.MutableRefObject<string[]>;
+  readonly pendingOpenBookRef: React.MutableRefObject<BookMeta | null>;
+  readonly layoutReadyRef: React.MutableRefObject<boolean>;
+  readonly isWorkspaceRoute: boolean;
   readonly updateSettings: (patch: Partial<Settings>) => void;
 }
 
@@ -63,13 +66,20 @@ export function useWorkspacePanels({
   collapsedRef,
   focusedClustersRef,
   focusedOrderRef,
+  pendingOpenBookRef,
+  layoutReadyRef,
+  isWorkspaceRoute,
   updateSettings,
 }: UseWorkspacePanelsParams): UseWorkspacePanelsResult {
   const navigate = useNavigate();
   const openBook = useCallback(
     (book: BookMeta) => {
       const api = apiRef.current;
-      if (!api) return;
+      if (!isWorkspaceRoute || !api || !layoutReadyRef.current) {
+        pendingOpenBookRef.current = book;
+        if (!isWorkspaceRoute) navigate("/");
+        return;
+      }
 
       AppRuntime.runPromise(
         WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
@@ -119,7 +129,19 @@ export function useWorkspacePanels({
 
       openPanels();
     },
-    [apiRef, collapsedRef, focusedClustersRef, focusedOrderRef, isMobileRef, updateSettings, ws],
+    [
+      apiRef,
+      collapsedRef,
+      focusedClustersRef,
+      focusedOrderRef,
+      isMobileRef,
+      isWorkspaceRoute,
+      layoutReadyRef,
+      navigate,
+      pendingOpenBookRef,
+      updateSettings,
+      ws,
+    ],
   );
 
   const openNotebook = useCallback(

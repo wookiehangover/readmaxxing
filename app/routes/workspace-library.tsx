@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 import { LibraryBrowseContent } from "~/components/workspace/library-browse-content";
 import { useWorkspace, type WorkspaceContextValue } from "~/lib/context/workspace-context";
+import { ensureLocalThenOpen, refreshWorkspaceBooks } from "~/lib/library-book-open";
 import type { BookMeta } from "~/lib/stores/book-store";
 
-type WorkspaceBookRefs = Pick<WorkspaceContextValue, "dockviewApi" | "openBookRef">;
+type WorkspaceBookRefs = Pick<WorkspaceContextValue, "openBookRef">;
 type FrameScheduler = (callback: FrameRequestCallback) => number;
 interface OpenBookOptions {
   signal?: AbortSignal;
   scheduleFrame?: FrameScheduler;
-  maxFrames?: number;
   isWorkspaceActive?: () => boolean;
 }
-
-const MAX_READY_FRAMES = 120;
 
 export function openBookInWorkspace(
   book: BookMeta,
@@ -22,24 +21,17 @@ export function openBookInWorkspace(
   {
     signal,
     scheduleFrame = window.requestAnimationFrame,
-    maxFrames = MAX_READY_FRAMES,
     isWorkspaceActive = () => true,
   }: OpenBookOptions = {},
 ) {
+  if (signal?.aborted) return;
   navigate("/");
 
-  let frameCount = 0;
-  const openWhenReady: FrameRequestCallback = () => {
+  const handOffOpen: FrameRequestCallback = () => {
     if (signal?.aborted || !isWorkspaceActive()) return;
-
-    frameCount += 1;
-    if (!workspace.dockviewApi.current) {
-      if (frameCount < maxFrames) scheduleFrame(openWhenReady);
-      return;
-    }
     workspace.openBookRef.current?.(book);
   };
-  if (maxFrames > 0 && !signal?.aborted) scheduleFrame(openWhenReady);
+  if (!signal?.aborted) scheduleFrame(handOffOpen);
 }
 
 export default function WorkspaceLibraryRoute() {
@@ -49,22 +41,33 @@ export default function WorkspaceLibraryRoute() {
 
   useEffect(
     () => () => {
-      // Preserve the intended /library → / handoff. Once there, the route
-      // predicate and frame limit still stop polling if the user leaves again.
+      // Preserve the intended /library → / handoff; otherwise abort the pending open
+      // when leaving the library route.
       if (window.location.pathname !== "/") pendingOpenControllerRef.current?.abort();
     },
     [],
   );
 
   const handleOpenBook = useCallback(
-    (book: BookMeta) => {
+    async (book: BookMeta) => {
       pendingOpenControllerRef.current?.abort();
       const controller = new AbortController();
       pendingOpenControllerRef.current = controller;
-      openBookInWorkspace(book, navigate, ws, {
-        signal: controller.signal,
-        isWorkspaceActive: () => window.location.pathname === "/",
-      });
+      try {
+        await ensureLocalThenOpen(book, {
+          signal: controller.signal,
+          refreshBooks: (books) => refreshWorkspaceBooks(ws, books),
+          openBook: (localBook) => {
+            openBookInWorkspace(localBook, navigate, ws, {
+              signal: controller.signal,
+              isWorkspaceActive: () => window.location.pathname === "/",
+            });
+          },
+        });
+      } catch (error) {
+        console.error("Failed to download library book before opening:", error);
+        toast.error(`Could not download “${book.title}”. Please try again.`);
+      }
     },
     [navigate, ws],
   );
