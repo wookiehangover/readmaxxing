@@ -27,7 +27,10 @@ import { useIsMobile } from "~/hooks/use-mobile";
 import { useOpenBookChapterUploads } from "~/hooks/use-open-book-chapter-uploads";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useWorkspaceLayout } from "~/hooks/use-workspace-layout";
-import { useWorkspacePanels } from "~/hooks/use-workspace-panels";
+import {
+  clearPendingBookOpenOnWorkspaceExit,
+  useWorkspacePanels,
+} from "~/hooks/use-workspace-panels";
 import { useWorkspaceShortcuts } from "~/hooks/use-workspace-shortcuts";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
@@ -121,6 +124,9 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const isWorkspaceRoute = location.pathname === "/";
+  const isWorkspaceRouteRef = useRef(isWorkspaceRoute);
+  isWorkspaceRouteRef.current = isWorkspaceRoute;
+  const previousWorkspaceRouteRef = useRef(isWorkspaceRoute);
   const isMobile = useIsMobile();
   const isMobileRef = useRef(isMobile);
   isMobileRef.current = isMobile;
@@ -215,7 +221,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     focusedOrderRef,
     pendingOpenBookRef,
     layoutReadyRef,
-    isWorkspaceRoute,
+    isWorkspaceRouteRef,
     updateSettings,
   });
 
@@ -242,7 +248,12 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
 
   useEffect(() => {
     setMobileOpen(false);
-    if (!isWorkspaceRoute) pendingOpenBookRef.current = null;
+    clearPendingBookOpenOnWorkspaceExit(
+      previousWorkspaceRouteRef.current,
+      isWorkspaceRoute,
+      pendingOpenBookRef,
+    );
+    previousWorkspaceRouteRef.current = isWorkspaceRoute;
   }, [isWorkspaceRoute, location.pathname]);
 
   useEffect(() => {

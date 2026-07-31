@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { LibraryBrowseContent } from "~/components/workspace/library-browse-content";
 import { useWorkspace, type WorkspaceContextValue } from "~/lib/context/workspace-context";
@@ -7,35 +6,17 @@ import { ensureLocalThenOpen, refreshWorkspaceBooks } from "~/lib/library-book-o
 import type { BookMeta } from "~/lib/stores/book-store";
 
 type WorkspaceBookRefs = Pick<WorkspaceContextValue, "openBookRef">;
-type FrameScheduler = (callback: FrameRequestCallback) => number;
-interface OpenBookOptions {
-  signal?: AbortSignal;
-  scheduleFrame?: FrameScheduler;
-  isWorkspaceActive?: () => boolean;
-}
 
 export function openBookInWorkspace(
   book: BookMeta,
-  navigate: (path: string) => void | Promise<void>,
   workspace: WorkspaceBookRefs,
-  {
-    signal,
-    scheduleFrame = window.requestAnimationFrame,
-    isWorkspaceActive = () => true,
-  }: OpenBookOptions = {},
+  signal?: AbortSignal,
 ) {
   if (signal?.aborted) return;
-  navigate("/");
-
-  const handOffOpen: FrameRequestCallback = () => {
-    if (signal?.aborted || !isWorkspaceActive()) return;
-    workspace.openBookRef.current?.(book);
-  };
-  if (!signal?.aborted) scheduleFrame(handOffOpen);
+  workspace.openBookRef.current?.(book);
 }
 
 export default function WorkspaceLibraryRoute() {
-  const navigate = useNavigate();
   const ws = useWorkspace();
   const pendingOpenControllerRef = useRef<AbortController | null>(null);
 
@@ -58,10 +39,7 @@ export default function WorkspaceLibraryRoute() {
           signal: controller.signal,
           refreshBooks: (books) => refreshWorkspaceBooks(ws, books),
           openBook: (localBook) => {
-            openBookInWorkspace(localBook, navigate, ws, {
-              signal: controller.signal,
-              isWorkspaceActive: () => window.location.pathname === "/",
-            });
+            openBookInWorkspace(localBook, ws, controller.signal);
           },
         });
       } catch (error) {
@@ -69,7 +47,7 @@ export default function WorkspaceLibraryRoute() {
         toast.error(`Could not download “${book.title}”. Please try again.`);
       }
     },
-    [navigate, ws],
+    [ws],
   );
 
   return <LibraryBrowseContent onOpenBook={handleOpenBook} />;
