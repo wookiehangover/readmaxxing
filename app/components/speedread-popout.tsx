@@ -327,7 +327,7 @@ export function SpeedreadPopout({ bookId, open, words, onClose }: SpeedreadPopou
           <Button
             variant="outline"
             size="icon"
-            disabled={!hasWords}
+            disabled={!hasWords || (!isPlaying && wordIndex >= words.length - 1)}
             onClick={togglePlayback}
             aria-label={isPlaying ? "Pause Speedread" : "Play Speedread"}
           >

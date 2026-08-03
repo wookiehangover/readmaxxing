@@ -291,7 +291,7 @@ export function ReaderActionsMenu({
           <DropdownMenuGroup>
             {onOpenSpeedread && (
               <DropdownMenuItem onClick={onOpenSpeedread}>
-                <FastForward />
+                <FastForward className="size-4" />
                 Speedread
               </DropdownMenuItem>
             )}

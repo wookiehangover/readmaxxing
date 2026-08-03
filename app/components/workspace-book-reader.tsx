@@ -735,11 +735,11 @@ function WorkspaceBookReaderInner({
   }, []);
 
   const handleOpenSpeedread = useCallback(() => {
-    const text = renditionRef.current
-      ?.getContents()
+    const contents = renditionRef.current?.getContents?.() ?? [];
+    const text = contents
       .map((content: any) => content.document?.body?.innerText ?? "")
       .join("\n\n");
-    setSpeedreadWords(tokenizeSpeedreadText(text ?? ""));
+    setSpeedreadWords(tokenizeSpeedreadText(text));
     setSpeedreadOpen(true);
   }, []);
 
