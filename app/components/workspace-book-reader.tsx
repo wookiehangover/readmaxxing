@@ -18,6 +18,7 @@ import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useResolvedTheme, useSettings } from "~/lib/settings";
 import type { PdfLayout, ReaderLayout, Settings, TextAlign } from "~/lib/settings";
 import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
+import { SpeedreadPopout } from "~/components/speedread-popout";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
 import { useEffectQuery } from "~/hooks/use-effect-query";
@@ -41,6 +42,7 @@ import type {
   SuccessorBookAdapter,
   SuccessorRenditionAdapter,
 } from "~/lib/epub/successor-reader-adapter";
+import { tokenizeSpeedreadText } from "~/lib/speedread";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -223,6 +225,8 @@ function WorkspaceBookReaderInner({
 
   const [tocOpen, setTocOpen] = useState(false);
   const [bookmarkVersion, setBookmarkVersion] = useState(0);
+  const [speedreadWords, setSpeedreadWords] = useState<string[]>([]);
+  const [speedreadOpen, setSpeedreadOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -730,6 +734,15 @@ function WorkspaceBookReaderInner({
     navigator.clipboard.writeText(text).catch(console.error);
   }, []);
 
+  const handleOpenSpeedread = useCallback(() => {
+    const contents = renditionRef.current?.getContents?.() ?? [];
+    const text = contents
+      .map((content: any) => content.document?.body?.innerText ?? "")
+      .join("\n\n");
+    setSpeedreadWords(tokenizeSpeedreadText(text));
+    setSpeedreadOpen(true);
+  }, []);
+
   const getCurrentCfi = useCallback(() => {
     const latestCfi = latestCfiRef.current;
     if (latestCfi) return latestCfi;
@@ -980,6 +993,7 @@ function WorkspaceBookReaderInner({
                 book={book}
                 onDownload={handleDownload}
                 onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+                onOpenSpeedread={handleOpenSpeedread}
                 onBookmarkPage={handleBookmarkPage}
                 isBookmarked={Boolean(currentBookmark)}
               />
@@ -1000,6 +1014,14 @@ function WorkspaceBookReaderInner({
             />,
             document.body,
           )}
+        {speedreadOpen && (
+          <SpeedreadPopout
+            bookId={book.id}
+            open
+            words={speedreadWords}
+            onClose={() => setSpeedreadOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

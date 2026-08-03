@@ -3,6 +3,7 @@ import {
   Bookmark,
   BookmarkCheck,
   Download,
+  FastForward,
   MoreHorizontal,
   Minus,
   Plus,
@@ -42,6 +43,7 @@ interface ReaderActionsMenuProps {
   onDownload: () => void | Promise<void>;
   onBookmarkPage: () => void | Promise<void>;
   onCopyPageAsMarkdown?: () => void;
+  onOpenSpeedread?: () => void;
   isBookmarked?: boolean;
 }
 
@@ -263,6 +265,7 @@ export function ReaderActionsMenu({
   onDownload,
   onBookmarkPage,
   onCopyPageAsMarkdown,
+  onOpenSpeedread,
   isBookmarked,
 }: ReaderActionsMenuProps) {
   const { isAuthenticated } = useAuth();
@@ -286,6 +289,12 @@ export function ReaderActionsMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52 text-xs">
           <DropdownMenuGroup>
+            {onOpenSpeedread && (
+              <DropdownMenuItem onClick={onOpenSpeedread}>
+                <FastForward className="size-4" />
+                Speedread
+              </DropdownMenuItem>
+            )}
             {onCopyPageAsMarkdown && (
               <DropdownMenuItem onClick={onCopyPageAsMarkdown}>
                 <ClipboardCopyIcon className="size-4" />
