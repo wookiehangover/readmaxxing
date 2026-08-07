@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCursorsParam } from "../sync-cursors";
+import { encodePullCursor, parseCursorsParam } from "../sync-cursors";
 import type { EntityType, SyncCursor } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -40,6 +40,24 @@ describe("parseCursorsParam", () => {
     expect(cursorsByEntity.chat_session.getTime()).toBe(0);
     expect(cursorsByEntity.chat_message.getTime()).toBe(0);
     expect(cursorsByEntity.settings.getTime()).toBe(0);
+  });
+
+  it("parses encoded keyset cursors with a timestamp and row id", () => {
+    const payload: SyncCursor[] = [
+      {
+        entityType: "book",
+        cursor: encodePullCursor(new Date("2026-04-22T12:00:00.000Z"), "book-1"),
+      },
+    ];
+
+    const { cursorsByEntity, cursorIdsByEntity, error } = parseCursorsParam(
+      JSON.stringify(payload),
+    );
+
+    expect(error).toBeUndefined();
+    expect(cursorsByEntity.book.toISOString()).toBe("2026-04-22T12:00:00.000Z");
+    expect(cursorIdsByEntity.book).toBe("book-1");
+    expect(cursorIdsByEntity.highlight).toBeNull();
   });
 
   it("returns a 400-ready error for malformed JSON", () => {

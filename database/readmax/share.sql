@@ -14,3 +14,4 @@ CREATE TABLE readmax.share_link (
 );
 
 CREATE INDEX share_link_user_book_idx ON readmax.share_link (user_id, book_id);
+CREATE INDEX share_link_user_book_created_idx ON readmax.share_link (user_id, book_id, created_at DESC);
