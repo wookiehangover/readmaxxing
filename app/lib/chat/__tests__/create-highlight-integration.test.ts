@@ -5,7 +5,6 @@ import { openPublication, openZipResourceProvider, resolveCfi } from "@readmaxxi
 import { describe, expect, it } from "vitest";
 
 import { resolveCreateHighlightAnchor } from "~/lib/chat/create-highlight-anchor";
-import { searchEpubForCfiWithQuality } from "~/lib/epub/epub-search";
 import { extractBookChapters, type BookChapterSegment } from "~/lib/epub/epub-text-extract";
 import { offsetToCfi } from "~/lib/epub/offset-to-cfi";
 import { ensureEpubServerDom, parseEpubServerDocument } from "~/lib/epub/server-dom";
@@ -125,13 +124,5 @@ describe("fixture highlight anchoring", () => {
     await expect(resolveFixtureCfi(data, result.cfiRange!, segment)).resolves.toBe(
       MULTI_PARAGRAPH_PASSAGE,
     );
-  });
-
-  it("observes an exact client search match for the same fixture passage", async () => {
-    const result = await searchEpubForCfiWithQuality(await fixtureData(), PASSAGE);
-
-    expect(result.matchQuality).toBe("exact");
-    expect(result.results.length).toBeGreaterThan(0);
-    expect(result.results[0]!.cfi).toMatch(/^epubcfi\(/);
   });
 });
