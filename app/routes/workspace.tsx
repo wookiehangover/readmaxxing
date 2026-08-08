@@ -1,4 +1,4 @@
-import { useEffect, type FunctionComponent } from "react";
+import { useEffect, useRef, type FunctionComponent } from "react";
 import { DockviewReact, type DockviewTheme, type IDockviewPanelProps } from "dockview-react";
 import { useOutletContext } from "react-router";
 import type { AppFrameOutletContext } from "~/routes/app-frame";
@@ -27,8 +27,10 @@ const dockviewTheme: DockviewTheme = {
 
 export default function WorkspaceRoute() {
   const { onDockviewReady, onDockviewDispose } = useOutletContext<AppFrameOutletContext>();
+  const onDockviewDisposeRef = useRef(onDockviewDispose);
+  onDockviewDisposeRef.current = onDockviewDispose;
 
-  useEffect(() => onDockviewDispose, [onDockviewDispose]);
+  useEffect(() => () => onDockviewDisposeRef.current(), []);
 
   return (
     <DockviewReact
