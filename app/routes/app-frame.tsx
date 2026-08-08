@@ -111,12 +111,16 @@ export async function clientLoader() {
 
 clientLoader.hydrate = true as const;
 
-export function HydrateFallback() {
+function WorkspaceLoadingOverlay() {
   return (
     <div className="fixed inset-0 z-50 flex h-dvh items-center justify-center">
       <p className="text-muted-foreground">Loading workspace…</p>
     </div>
   );
+}
+
+export function HydrateFallback() {
+  return <WorkspaceLoadingOverlay />;
 }
 
 export default function AppFrame({ loaderData }: Route.ComponentProps) {
@@ -481,7 +485,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
 
   return (
     <>
-      {loaderData.demoBook && isWorkspaceRoute && !workspaceReady && <HydrateFallback />}
+      {loaderData.demoBook && isWorkspaceRoute && !workspaceReady && <WorkspaceLoadingOverlay />}
       <DropZone onBookAdded={handleBookAdded}>
         <div
           className={cn(
