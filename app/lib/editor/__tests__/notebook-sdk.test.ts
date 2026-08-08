@@ -10,6 +10,10 @@ function p(text: string): JSONContent {
   return { type: "paragraph", content: [{ type: "text", text }] };
 }
 
+function emptyParagraph(): JSONContent {
+  return { type: "paragraph" };
+}
+
 function heading(level: number, text: string): JSONContent {
   return {
     type: "heading",
@@ -77,6 +81,13 @@ function codeBlock(text: string): JSONContent {
   };
 }
 
+function highlightReference(highlightId: string, text: string): JSONContent {
+  return {
+    type: "highlightReference",
+    attrs: { highlightId, cfiRange: `epubcfi(${highlightId})`, text },
+  };
+}
+
 let destroyFn: (() => void) | null = null;
 
 afterEach(() => {
@@ -103,6 +114,16 @@ describe("createNotebookSDK", () => {
     it("handles empty doc", () => {
       const { sdk } = setup({ type: "doc", content: [] });
       expect(sdk.getBlocks()).toHaveLength(0);
+    });
+
+    it("uses highlight reference attrs text as block text", () => {
+      const { sdk } = setup(doc(highlightReference("highlight-1", "Highlighted passage")));
+      const block = sdk.getBlocks()[0];
+      expect(block).toMatchObject({
+        type: "highlightReference",
+        text: "Highlighted passage",
+        attrs: { highlightId: "highlight-1", text: "Highlighted passage" },
+      });
     });
   });
 
@@ -132,6 +153,19 @@ describe("createNotebookSDK", () => {
       const results = sdk.find({ type: "heading", text: "Intro" });
       expect(results).toHaveLength(1);
       expect(results[0].text).toBe("Intro");
+    });
+
+    it("finds highlight references by highlighted text and type", () => {
+      const { sdk } = setup(
+        doc(
+          highlightReference("highlight-1", "Alpha highlighted passage"),
+          highlightReference("highlight-2", "Beta highlighted passage"),
+        ),
+      );
+
+      expect(sdk.find("Alpha highlighted")).toHaveLength(1);
+      expect(sdk.find({ text: "Beta highlighted" })[0].attrs?.highlightId).toBe("highlight-2");
+      expect(sdk.find({ type: "highlightReference" })).toHaveLength(2);
     });
   });
 
@@ -177,6 +211,78 @@ describe("createNotebookSDK", () => {
       expect(texts).not.toContain("Remove me");
       expect(texts).toContain("Keep");
       expect(texts).toContain("Also keep");
+    });
+  });
+
+  describe("move", () => {
+    it("moves a highlight reference after a heading and preserves its attrs", () => {
+      const highlight = highlightReference("highlight-1", "Quoted text");
+      const { sdk, getResult } = setup(doc(heading(2, "Section"), p("Middle"), highlight));
+      const source = sdk.find({ type: "highlightReference" })[0];
+      const target = sdk.find({ type: "heading", text: "Section" })[0];
+
+      expect(sdk.move(source, target)).toBe(true);
+      expect(sdk.getBlocks().map((block) => block.text)).toEqual([
+        "Section",
+        "Quoted text",
+        "Middle",
+      ]);
+      expect(getResult().content?.[1]).toEqual(highlight);
+    });
+
+    it("moves a block before its target", () => {
+      const { sdk } = setup(doc(p("First"), heading(2, "Section"), p("Move me")));
+      const source = sdk.find("Move me")[0];
+      const target = sdk.find({ type: "heading", text: "Section" })[0];
+
+      expect(sdk.move(source, target, "before")).toBe(true);
+      expect(sdk.getBlocks().map((block) => block.text)).toEqual(["First", "Move me", "Section"]);
+    });
+
+    it("returns true without mutating when source and target are the same block", () => {
+      const { sdk, getResult } = setup(doc(p("First"), p("Same"), p("Last")));
+      const block = sdk.find("Same")[0];
+      const before = getResult();
+
+      expect(sdk.move(block, block)).toBe(true);
+      expect(getResult()).toEqual(before);
+    });
+
+    it("adjusts the target index when the source precedes the target", () => {
+      const { sdk } = setup(doc(p("Source"), p("Middle"), p("Target"), p("Last")));
+      const source = sdk.find("Source")[0];
+      const target = sdk.find("Target")[0];
+
+      expect(sdk.move(source, target)).toBe(true);
+      expect(sdk.getBlocks().map((block) => block.text)).toEqual([
+        "Middle",
+        "Target",
+        "Source",
+        "Last",
+      ]);
+    });
+
+    it("returns false when the source or target cannot be resolved", () => {
+      const { sdk } = setup(doc(p("Source"), p("Target")));
+      const source = sdk.find("Source")[0];
+      const target = sdk.find("Target")[0];
+      const missingSource = { ...source, text: "Missing source", _generation: -1 };
+      const missingTarget = { ...target, text: "Missing target", _generation: -1 };
+
+      expect(sdk.move(missingSource, target)).toBe(false);
+      expect(sdk.move(source, missingTarget)).toBe(false);
+      expect(sdk.getBlocks().map((block) => block.text)).toEqual(["Source", "Target"]);
+    });
+
+    it("returns false when the source or target is a listItem", () => {
+      const { sdk, getResult } = setup(doc(p("Paragraph"), bulletList("List item")));
+      const paragraph = sdk.find({ type: "paragraph" })[0];
+      const listItem = sdk.find({ type: "listItem" })[0];
+      const before = getResult();
+
+      expect(sdk.move(listItem, paragraph)).toBe(false);
+      expect(sdk.move(paragraph, listItem)).toBe(false);
+      expect(getResult()).toEqual(before);
     });
   });
 
@@ -291,6 +397,45 @@ describe("createNotebookSDK", () => {
       const texts = sdk.getBlocks().map((b) => b.text);
       expect(texts.indexOf("Inserted")).toBe(texts.indexOf("First") + 1);
     });
+
+    it("inserts after a highlight reference before its existing empty paragraph", () => {
+      const { sdk } = setup(
+        doc(highlightReference("highlight-1", "Quoted text"), emptyParagraph()),
+      );
+      const target = sdk.find({ type: "highlightReference" })[0];
+      sdk.insertAfter(target, "Annotation after");
+      expect(sdk.getBlocks().map(({ type, text }) => ({ type, text }))).toEqual([
+        { type: "highlightReference", text: "Quoted text" },
+        { type: "paragraph", text: "Annotation after" },
+        { type: "paragraph", text: "" },
+      ]);
+    });
+
+    it("resolves duplicate-text highlight references by ID across mutations", () => {
+      const { sdk } = setup(
+        doc(
+          highlightReference("highlight-1", "Same quoted text"),
+          highlightReference("highlight-2", "Same quoted text"),
+          highlightReference("highlight-3", "Same quoted text"),
+        ),
+      );
+      let blocks = sdk.refresh();
+      const highlights = blocks.filter((block) => block.type === "highlightReference");
+
+      highlights.forEach((highlight, index) => {
+        sdk.insertAfter(highlight, `Annotation ${index + 1}`);
+        blocks = sdk.refresh();
+      });
+
+      expect(blocks.map((block) => block.text)).toEqual([
+        "Same quoted text",
+        "Annotation 1",
+        "Same quoted text",
+        "Annotation 2",
+        "Same quoted text",
+        "Annotation 3",
+      ]);
+    });
   });
 
   describe("insertBefore", () => {
@@ -300,6 +445,19 @@ describe("createNotebookSDK", () => {
       sdk.insertBefore(target, "Inserted");
       const texts = sdk.getBlocks().map((b) => b.text);
       expect(texts.indexOf("Inserted")).toBe(texts.indexOf("Second") - 1);
+    });
+
+    it("inserts before a highlight reference followed by an existing empty paragraph", () => {
+      const { sdk } = setup(
+        doc(highlightReference("highlight-1", "Quoted text"), emptyParagraph()),
+      );
+      const target = sdk.find({ type: "highlightReference" })[0];
+      sdk.insertBefore(target, "Annotation before");
+      expect(sdk.getBlocks().map(({ type, text }) => ({ type, text }))).toEqual([
+        { type: "paragraph", text: "Annotation before" },
+        { type: "highlightReference", text: "Quoted text" },
+        { type: "paragraph", text: "" },
+      ]);
     });
   });
 

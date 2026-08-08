@@ -112,6 +112,23 @@ describe("parseUploadBody", () => {
 });
 
 describe("book chapter upload persistence", () => {
+  it("stores per-spine segment metadata in the chapters JSON", async () => {
+    const chapters = [
+      {
+        index: 0,
+        title: "Intro",
+        text: "Alpha",
+        segments: [{ spineIndex: 0, href: "intro.xhtml", start: 0, end: 5 }],
+      },
+    ];
+    queryMock.mockResolvedValueOnce({ rows: [bookChaptersRow(chapters, null)] });
+
+    await upsertBookChapters("user-1", "book-1", chapters, EXTRACTED_AT);
+
+    const values = extractValues(queryMock.mock.calls[0][0] as SqlQuery);
+    expect(JSON.parse(values[2] as string)).toEqual(chapters);
+  });
+
   it("chunk-0 replacement stores the current upload id", async () => {
     const chapters = [{ index: 0, title: "Intro" }];
     const client = createClient();

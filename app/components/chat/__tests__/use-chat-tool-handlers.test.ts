@@ -8,12 +8,18 @@ const mockNotebookEditorCallbackMap = { current: new Map<string, NotebookEditorC
 const mockNotebookContentChangeMap = {
   current: new Map<string, (markdown: string) => void>(),
 };
+const mockNotebookCallbackMap = {
+  current: new Map<
+    string,
+    (attrs: { highlightId: string; cfiRange: string; text: string }) => void
+  >(),
+};
 
 vi.mock("~/lib/context/workspace-context", () => ({
   useWorkspace: () => ({
     waitForNavForBook: vi.fn(),
     applyTempHighlightForBook: vi.fn(),
-    notebookCallbackMap: { current: new Map() },
+    notebookCallbackMap: mockNotebookCallbackMap,
     notebookEditorCallbackMap: mockNotebookEditorCallbackMap,
     notebookContentChangeMap: mockNotebookContentChangeMap,
   }),
@@ -31,6 +37,9 @@ vi.mock("~/lib/stores/annotations-store", () => ({
     pipe: vi.fn().mockReturnValue({ __tag: "annotation-effect" }),
   },
 }));
+
+const fuzzySearchEpubForCfi = vi.fn();
+vi.mock("~/lib/epub/epub-search", () => ({ fuzzySearchEpubForCfi }));
 
 // Must import AFTER mocks are set up
 const { useChatToolHandlers } = await import("../use-chat-tool-handlers");
@@ -209,6 +218,63 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
     expect(AppRuntime.runPromise).not.toHaveBeenCalled();
   });
 
+  it("restores and caches the authoritative notebook when a streamed append loses an LWW race", async () => {
+    const setContentSpy = vi.fn();
+    const seedSpy = vi.fn();
+    mockNotebookEditorCallbackMap.current.set(
+      "book-1",
+      makeEditorCallbacks({ setContent: setContentSpy, seedLastContent: seedSpy }),
+    );
+    streamedToolCallIdRef.current.add("tc-conflict");
+
+    const authoritativeContent: JSONContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "newer remote note" }] }],
+    };
+    const authoritativeUpdatedAt = 1_700_000_999_000;
+    const msg: UIMessage = {
+      id: "msg-conflict",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-append_to_notes",
+          toolCallId: "tc-conflict",
+          state: "output-available",
+          input: { text: "optimistic preview" },
+          output: {
+            bookId: "book-1",
+            appended: false,
+            text: "optimistic preview",
+            appendedNodes: [],
+            updatedContent: authoritativeContent,
+            updatedAt: authoritativeUpdatedAt,
+            error: "append_to_notes: server already has a newer notebook; ignoring this edit",
+          },
+        } as unknown as UIMessage["parts"][number],
+      ],
+    };
+
+    const events: CustomEvent[] = [];
+    const listener = (event: Event) => events.push(event as CustomEvent);
+    window.addEventListener("sync:entity-updated", listener);
+
+    try {
+      const onFinish = getOnFinish();
+      onFinish({ message: msg });
+
+      expect(streamedToolCallIdRef.current.has("tc-conflict")).toBe(false);
+      expect(setContentSpy).toHaveBeenCalledWith(authoritativeContent);
+      expect(seedSpy).toHaveBeenCalledWith(authoritativeContent);
+      expect(AppRuntime.runPromise).toHaveBeenCalledTimes(1);
+
+      await waitForMicrotasks();
+      expect(events).toHaveLength(1);
+      expect(events[0].detail).toEqual({ entity: "notebook" });
+    } finally {
+      window.removeEventListener("sync:entity-updated", listener);
+    }
+  });
+
   it("caches updatedContent to IDB and dispatches sync:entity-updated for notebook", async () => {
     const seedSpy = vi.fn();
     mockNotebookEditorCallbackMap.current.set(
@@ -294,6 +360,58 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
     } finally {
       window.removeEventListener("sync:entity-updated", listener);
     }
+  });
+});
+
+describe("useChatToolHandlers – create_highlight", () => {
+  it("preserves a server CFI without running fuzzy EPUB search", async () => {
+    fuzzySearchEpubForCfi.mockClear();
+    const appendHighlight = vi.fn();
+    mockNotebookCallbackMap.current.set("book-1", appendHighlight);
+    const { onFinish } = renderHookSimple(() =>
+      useChatToolHandlers({
+        bookId: "book-1",
+        bookFormat: "epub",
+        bookDataRef: { current: new ArrayBuffer(1) },
+        streamedToolCallIdRef: { current: new Set<string>() },
+      }),
+    );
+    const cfiRange = "epubcfi(/6/2!/4/2,/1:0,/1:7)";
+
+    onFinish({
+      message: {
+        id: "msg-highlight",
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-create_highlight",
+            toolCallId: "tc-highlight",
+            state: "output-available",
+            input: { text: "passage" },
+            output: {
+              bookId: "book-1",
+              created: true,
+              highlight: {
+                id: "highlight-1",
+                bookId: "book-1",
+                text: "passage",
+                cfiRange,
+                createdAt: 1,
+                textAnchor: { chapterIndex: 0, snippet: "passage" },
+              },
+            },
+          } as unknown as UIMessage["parts"][number],
+        ],
+      },
+    });
+    await waitForMicrotasks();
+
+    expect(fuzzySearchEpubForCfi).not.toHaveBeenCalled();
+    expect(appendHighlight).toHaveBeenCalledWith({
+      highlightId: "highlight-1",
+      cfiRange,
+      text: "passage",
+    });
   });
 });
 

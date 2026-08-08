@@ -20,7 +20,11 @@ import { getOrBuildBookIndex, locateTextAnchor, searchBook } from "~/lib/orama-b
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { getBookChaptersForUser } from "~/lib/database/book/book-chapters";
-import { upsertHighlight } from "~/lib/database/annotation/highlight";
+import {
+  getHighlightsByUser,
+  softDeleteHighlight,
+  upsertHighlight,
+} from "~/lib/database/annotation/highlight";
 import {
   getNotebookForUser,
   getNotebookMarkdownForUser,
@@ -28,6 +32,12 @@ import {
 } from "~/lib/database/annotation/notebook";
 import { runEditNotesInSandbox } from "~/lib/editor/notebook-sdk-server";
 import { markdownToTiptapJsonServer } from "~/lib/editor/markdown-to-tiptap-server";
+import { resolveCreateHighlightAnchor } from "~/lib/chat/create-highlight-anchor";
+import {
+  appendHighlightReferenceToContent,
+  getNotebookHighlightIds,
+  listLiveHighlightsForBook,
+} from "~/lib/chat/highlight-tools";
 import type { JSONContent } from "@tiptap/react";
 import {
   getMessagesBySession,
@@ -59,6 +69,7 @@ interface LoadedBook {
   title: string;
   author: string;
   format: string | null;
+  fileBlobUrl: string | null;
   chapters: BookChapter[];
   bookIndex: ReturnType<typeof getOrBuildBookIndex>;
   isPrimary: boolean;
@@ -370,6 +381,7 @@ export async function action({ request }: Route.ActionArgs) {
     title: primaryBook.title ?? "Untitled",
     author: primaryBook.author ?? "Unknown",
     format: primaryBook.format ?? null,
+    fileBlobUrl: primaryBook.fileBlobUrl,
     chapters: primaryChaptersRow.chapters,
     bookIndex: getOrBuildBookIndex(primaryChaptersRow.chapters),
     isPrimary: true,
@@ -401,6 +413,7 @@ export async function action({ request }: Route.ActionArgs) {
       title: secondaryBook.title ?? "Untitled",
       author: secondaryBook.author ?? "Unknown",
       format: secondaryBook.format ?? null,
+      fileBlobUrl: secondaryBook.fileBlobUrl,
       chapters: chaptersRow.chapters,
       bookIndex: getOrBuildBookIndex(chaptersRow.chapters),
       isPrimary: false,
@@ -518,10 +531,9 @@ export async function action({ request }: Route.ActionArgs) {
               };
 
               const now = new Date();
-              let updatedAtMs = now.getTime();
+              let row: Awaited<ReturnType<typeof upsertNotebook>>;
               try {
-                const row = await upsertNotebook(userId, target.bookId, updatedContent, now);
-                if (row) updatedAtMs = row.updatedAt.getTime();
+                row = await upsertNotebook(userId, target.bookId, updatedContent, now);
               } catch (err) {
                 console.error("append_to_notes: failed to persist notebook:", err);
                 return {
@@ -533,13 +545,39 @@ export async function action({ request }: Route.ActionArgs) {
                 };
               }
 
+              if (!row) {
+                let authoritative = existing;
+                try {
+                  authoritative =
+                    (await getNotebookForUser(userId, target.bookId)) ?? authoritative;
+                } catch (err) {
+                  console.error(
+                    "append_to_notes: failed to reload authoritative notebook after conflict:",
+                    err,
+                  );
+                }
+                return {
+                  bookId: target.bookId,
+                  appended: false,
+                  text,
+                  appendedNodes: [],
+                  ...(authoritative
+                    ? {
+                        updatedContent: authoritative.content as JSONContent,
+                        updatedAt: authoritative.updatedAt.getTime(),
+                      }
+                    : {}),
+                  error: "append_to_notes: server already has a newer notebook; ignoring this edit",
+                };
+              }
+
               return {
                 bookId: target.bookId,
                 appended: true,
                 text,
                 appendedNodes,
                 updatedContent,
-                updatedAt: updatedAtMs,
+                updatedAt: row.updatedAt.getTime(),
               };
             },
           }),
@@ -552,20 +590,23 @@ export async function action({ request }: Route.ActionArgs) {
                 .describe(
                   "JavaScript code that uses the `notebook` object to edit notes. Available methods: " +
                     "notebook.getMarkdown() — current notes as markdown; " +
-                    "notebook.getBlocks() — all blocks as structured objects; " +
-                    "notebook.find(query) — locate blocks to edit (accepts a string for plain-text search — links show as their display text, not markdown syntax — or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock'|'listItem', text?: string }); " +
+                    "notebook.getBlocks() — all blocks as structured objects; notebook.refresh() — re-read and return the current block list; getBlocks() and find() always reflect live state, so re-read blocks after any mutation because indexes shift; " +
+                    "notebook.find(query) — locate blocks to edit (accepts a string for plain-text search — links show as their display text, not markdown syntax — or an object { type?: 'heading'|'paragraph'|'bulletList'|'orderedList'|'blockquote'|'codeBlock'|'listItem'|'highlightReference', text?: string }); " +
                     "notebook.setText(block, text) → boolean — PREFERRED for 'change the text of this block'. Preserves heading level, list-item structure, code-block language, etc. Use this to rename headings, fix typos, or reword existing blocks. `text` is inserted verbatim as plain text — do NOT include markdown markers like '#' or '*'; " +
                     "notebook.replace(block, markdown) → boolean — replaces the entire block with newly-parsed markdown. Use when you want to change the block's TYPE (e.g. a paragraph becomes a bulleted list) or insert multiple blocks in place of one; " +
                     "notebook.remove(block) → boolean — delete a single block; " +
+                    "notebook.move(block, target, position?) → boolean — move an existing top-level block before or after another top-level block; defaults to 'after' and does not support listItem; " +
                     "notebook.insertAfter(block, markdown) — insert new content after a block; " +
                     "notebook.insertBefore(block, markdown) — insert new content before a block; " +
                     "notebook.append(markdown) — add new content at the END of the notebook; does NOT touch existing content; " +
                     "notebook.prepend(markdown) — add new content at the START of the notebook; does NOT touch existing content. " +
-                    "`find` returns Block objects with { type, text, level?, index, parentIndex?, depth? }. Use type 'listItem' to target individual list items at ANY nesting level. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). setText(), replace() and remove() return true if the block was found and modified, false otherwise. " +
+                    "`find` returns Block objects with { type, text, level?, index, parentIndex?, depth? }. A highlightReference is a clickable anchor to a highlighted passage; `block.text` is the highlighted text. Find it via find(query) or find({ type: 'highlightReference' }). It is an atomic anchor: use insertAfter/insertBefore to add notes around it, not setText. Use type 'listItem' to target individual list items at ANY nesting level. Each listItem has a `depth` field (0 = top-level, 1 = first sub-level, etc.) and `text` contains only the item's direct content (not nested sub-items). setText(), replace() and remove() return true if the block was found and modified, false otherwise. " +
                     "Example — rename a heading (keeps it a heading): const h = notebook.find({ type: 'heading', text: 'Intro' })[0]; if (h) notebook.setText(h, 'Introduction'); " +
                     "Example — fix a typo in a paragraph: const p = notebook.find('teh quick')[0]; if (p) notebook.setText(p, p.text.replace('teh', 'the')); " +
                     "Example — change a paragraph into a bullet list (structural change): const p = notebook.find('items:')[0]; if (p) notebook.replace(p, '- a\\n- b\\n- c'); " +
                     "Example — remove a block: const b = notebook.find({ text: 'obsolete' })[0]; if (b) notebook.remove(b); " +
+                    "Example — place a note under a highlight: const h = notebook.find({ type: 'highlightReference' })[0]; if (h) notebook.insertAfter(h, 'My annotation'); " +
+                    "Example — move a highlight under a heading: const h = notebook.find({ type: 'highlightReference' })[0]; const section = notebook.find({ type: 'heading', text: 'Key ideas' })[0]; if (h && section) notebook.move(h, section); " +
                     "There is NO whole-document replace method. Do NOT rebuild the entire notebook in a single call — the server will reject scripts that reduce the notebook to near-empty.",
                 ),
             }),
@@ -619,7 +660,7 @@ export async function action({ request }: Route.ActionArgs) {
           }),
           create_highlight: tool({
             description:
-              "Highlight a passage in a book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. The highlight will appear in the epub reader and be saved to the reader's notebook." +
+              "Highlight a passage in a book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. For precise EPUB anchoring, pass the exact passage text with chapterIndex and startOffset from the SAME read_chapter call; endOffset is optional because the tool derives the end from the passage text. The highlight will appear in the epub reader and be saved to the reader's notebook. A fuzzy result means the anchor was reconstructed from text and you should tell the user to highlight manually if precision matters." +
               multiBookToolHint,
             inputSchema: z.object({
               text: z
@@ -629,9 +670,36 @@ export async function action({ request }: Route.ActionArgs) {
                 .string()
                 .optional()
                 .describe("A brief note explaining why this passage is significant"),
+              chapterIndex: z
+                .number()
+                .int()
+                .nonnegative()
+                .optional()
+                .describe("Chapter index from the same read_chapter call as the offsets"),
+              startOffset: z
+                .number()
+                .int()
+                .nonnegative()
+                .optional()
+                .describe("Chapter-relative inclusive start offset from read_chapter"),
+              endOffset: z
+                .number()
+                .int()
+                .positive()
+                .optional()
+                .describe(
+                  "Optional chapter-relative exclusive end; derived from text when omitted",
+                ),
               bookId: bookIdArgSchema,
             }),
-            execute: async ({ text, note, bookId: targetBookId }) => {
+            execute: async ({
+              text,
+              note,
+              chapterIndex,
+              startOffset,
+              endOffset,
+              bookId: targetBookId,
+            }) => {
               const target = resolveTargetBook(targetBookId);
               // PDF is not supported server-side yet — client falls back to
               // its own PDF search + persist path on unsupported responses.
@@ -659,14 +727,23 @@ export async function action({ request }: Route.ActionArgs) {
               const id = generateId();
               const createdAt = new Date();
               const color = "rgba(255, 213, 79, 0.4)";
+              const resolvedAnchor = await resolveCreateHighlightAnchor({
+                chapters: target.chapters,
+                text,
+                textAnchor: anchor,
+                fileBlobUrl: target.fileBlobUrl,
+                chapterIndex,
+                startOffset,
+                endOffset,
+              });
               try {
                 await upsertHighlight(userId, {
                   id,
                   bookId: target.bookId,
-                  cfiRange: null,
+                  cfiRange: resolvedAnchor.cfiRange,
                   text,
                   color,
-                  textAnchor: anchor,
+                  textAnchor: resolvedAnchor.textAnchor,
                   note: note ?? null,
                   createdAt,
                 });
@@ -681,24 +758,115 @@ export async function action({ request }: Route.ActionArgs) {
                 };
               }
 
+              const chapterTitle =
+                target.chapters.find((chapter) => chapter.index === resolvedAnchor.chapterIndex)
+                  ?.title ?? null;
               return {
                 bookId: target.bookId,
                 created: true,
+                matchQuality: resolvedAnchor.matchQuality,
+                chapterIndex: resolvedAnchor.chapterIndex,
+                chapterTitle,
                 highlight: {
                   id,
                   bookId: target.bookId,
                   text,
                   note: note ?? null,
                   color,
-                  textAnchor: anchor,
+                  cfiRange: resolvedAnchor.cfiRange,
+                  textAnchor: resolvedAnchor.textAnchor,
                   createdAt: createdAt.getTime(),
                 },
               };
             },
           }),
+          list_highlights: tool({
+            description:
+              "List all live highlights for a book, including whether each highlight still has a highlightReference block in the notebook JSON." +
+              multiBookToolHint,
+            inputSchema: z.object({ bookId: bookIdArgSchema }),
+            execute: async ({ bookId: targetBookId }) => {
+              const target = resolveTargetBook(targetBookId);
+              const [highlights, notebook] = await Promise.all([
+                getHighlightsByUser(userId),
+                getNotebookForUser(userId, target.bookId),
+              ]);
+              const notebookIds = getNotebookHighlightIds(notebook?.content);
+              return {
+                bookId: target.bookId,
+                highlights: listLiveHighlightsForBook(highlights, target.bookId, notebookIds),
+              };
+            },
+          }),
+          attach_highlight: tool({
+            description:
+              "Re-attach an existing live highlight to its notebook by appending a highlightReference block. Use list_highlights to find a highlight with inNotebook:false. This does not create a new highlight.",
+            inputSchema: z.object({
+              highlightId: z.string().describe("The existing highlight id from list_highlights"),
+            }),
+            execute: async ({ highlightId }) => {
+              const highlights = await getHighlightsByUser(userId);
+              const highlight = highlights.find(
+                (candidate) => candidate.id === highlightId && candidate.deletedAt === null,
+              );
+              if (!highlight) {
+                return { attached: false, reason: "highlight not found or deleted" };
+              }
+
+              const notebook = await getNotebookForUser(userId, highlight.bookId);
+              if (getNotebookHighlightIds(notebook?.content).has(highlightId)) {
+                return { attached: false, alreadyPresent: true };
+              }
+
+              const updatedContent = appendHighlightReferenceToContent(
+                notebook?.content,
+                highlight,
+              );
+              let row: Awaited<ReturnType<typeof upsertNotebook>>;
+              try {
+                row = await upsertNotebook(userId, highlight.bookId, updatedContent, new Date());
+              } catch (err) {
+                console.error("attach_highlight: failed to persist updated notebook:", err);
+                return {
+                  attached: false,
+                  error: err instanceof Error ? err.message : String(err),
+                };
+              }
+
+              if (!row) {
+                console.warn(
+                  "attach_highlight: upsertNotebook returned null (LWW filtered); skipping attachment",
+                );
+                return {
+                  attached: false,
+                  error:
+                    "attach_highlight: server already has a newer notebook; ignoring this edit",
+                };
+              }
+
+              return { attached: true, updatedAt: row.updatedAt.getTime() };
+            },
+          }),
+          delete_highlight: tool({
+            description:
+              "Soft-delete any highlight by id. This does not remove its existing notebook highlightReference block. Known limitation: a stale pending client highlight upload can resurrect the server row before the client pulls the deletion tombstone.",
+            inputSchema: z.object({
+              highlightId: z.string().describe("The highlight id returned by list_highlights"),
+            }),
+            execute: async ({ highlightId }) => {
+              const highlights = await getHighlightsByUser(userId);
+              const highlight = highlights.find((candidate) => candidate.id === highlightId);
+              const notebook = highlight
+                ? await getNotebookForUser(userId, highlight.bookId)
+                : null;
+              const inNotebook = getNotebookHighlightIds(notebook?.content).has(highlightId);
+              const deleted = await softDeleteHighlight(userId, highlightId);
+              return { deleted, inNotebook };
+            },
+          }),
           read_chapter: tool({
             description:
-              "Read the full text of a specific chapter. Use this to understand a chapter's full argument before answering detailed questions about it." +
+              "Read a 15,000-character window of a chapter. Use the returned nextOffset as startOffset to continue reading past the first window." +
               multiBookToolHint,
             inputSchema: z.object({
               chapterIndex: z.number().optional().describe("The 0-based chapter index"),
@@ -706,9 +874,17 @@ export async function action({ request }: Route.ActionArgs) {
                 .string()
                 .optional()
                 .describe("The chapter title to look up (partial match OK)"),
+              startOffset: z
+                .number()
+                .int()
+                .nonnegative()
+                .default(0)
+                .describe(
+                  "The 0-based character offset to start reading from; pass the previous nextOffset to read past the first window",
+                ),
               bookId: bookIdArgSchema,
             }),
-            execute: async ({ chapterIndex, chapterTitle, bookId: targetBookId }) => {
+            execute: async ({ chapterIndex, chapterTitle, startOffset, bookId: targetBookId }) => {
               const target = resolveTargetBook(targetBookId);
               let chapter: BookChapter | undefined;
               if (chapterIndex != null) {
@@ -718,11 +894,14 @@ export async function action({ request }: Route.ActionArgs) {
                 chapter = target.chapters.find((c) => c.title.toLowerCase().includes(lower));
               }
               if (!chapter) return { error: "Chapter not found" };
-              const text =
-                chapter.text.length > 15000
-                  ? chapter.text.slice(0, 15000) + "\n[truncated — chapter continues]"
-                  : chapter.text;
-              return { chapterIndex: chapter.index, title: chapter.title, text };
+              const text = chapter.text.slice(startOffset, startOffset + 15000);
+              const endOffset = startOffset + text.length;
+              return {
+                chapterIndex: chapter.index,
+                title: chapter.title,
+                text,
+                ...(endOffset < chapter.text.length ? { nextOffset: endOffset } : {}),
+              };
             },
           }),
           search_standard_ebooks: tool({

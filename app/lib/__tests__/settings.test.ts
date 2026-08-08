@@ -331,6 +331,12 @@ describe("resolveTheme", () => {
     expect(resolveTheme("dark")).toBe("dark");
   });
 
+  it("returns 'light' when matchMedia is unavailable", () => {
+    vi.stubGlobal("matchMedia", undefined);
+    expect(resolveTheme("system")).toBe("light");
+    vi.unstubAllGlobals();
+  });
+
   it("returns 'dark' when theme is 'system' and prefers-color-scheme is dark", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: query === "(prefers-color-scheme: dark)",

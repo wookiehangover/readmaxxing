@@ -91,8 +91,13 @@ export async function runEditNotesInSandbox(
   ensureServerDom();
 
   // Dynamic import so the TipTap / DOM work only runs when a tool call hits us.
-  const { createNotebookSDK } = await import("./notebook-sdk");
-  const { sdk, getResult, destroy } = createNotebookSDK(content);
+  const [{ createNotebookSDK }, { markdownToTiptapJsonServer }] = await Promise.all([
+    import("./notebook-sdk"),
+    import("./markdown-to-tiptap-server"),
+  ]);
+  const { sdk, getResult, destroy } = createNotebookSDK(content, {
+    parseMarkdown: markdownToTiptapJsonServer,
+  });
   try {
     const script = new vm.Script(`(function(notebook){\n${code}\n})(notebook)`);
     const ctx = vm.createContext({
