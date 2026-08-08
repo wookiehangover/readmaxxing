@@ -18,6 +18,7 @@ import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useResolvedTheme, useSettings } from "~/lib/settings";
 import type { PdfLayout, ReaderLayout, Settings, TextAlign } from "~/lib/settings";
 import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
+import { SpeedreadPopout } from "~/components/speedread-popout";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
 import { useEffectQuery } from "~/hooks/use-effect-query";
@@ -41,6 +42,7 @@ import type {
   SuccessorBookAdapter,
   SuccessorRenditionAdapter,
 } from "~/lib/epub/successor-reader-adapter";
+import { tokenizeSpeedreadText } from "~/lib/speedread";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -223,6 +225,8 @@ function WorkspaceBookReaderInner({
 
   const [tocOpen, setTocOpen] = useState(false);
   const [bookmarkVersion, setBookmarkVersion] = useState(0);
+  const [speedreadWords, setSpeedreadWords] = useState<string[]>([]);
+  const [speedreadOpen, setSpeedreadOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -320,6 +324,7 @@ function WorkspaceBookReaderInner({
     currentChapterLabel,
     currentPage,
     totalPages,
+    loadError,
     navigateToTocHref,
     flushPositionSave,
     latestCfiRef,
@@ -655,6 +660,29 @@ function WorkspaceBookReaderInner({
     }
   }, [selectionPopover, saveHighlightFromPopover, book, ws, dismissPopovers, currentPage]);
 
+  const handleExplainThis = useCallback(() => {
+    if (!selectionPopover) return;
+    const quote = selectionPopover.text;
+    if (!quote) return;
+
+    const message = `Explain this passage:\n\n${quote
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n")}`;
+    ws.pendingChatPromptMap.current.set(book.id, message);
+    ws.openChatRef.current?.(book);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("chat:explain", { detail: { bookId: book.id, message } }),
+      );
+    });
+    dismissPopovers();
+    const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
+    contents?.forEach((content: any) => {
+      content.document?.defaultView?.getSelection()?.removeAllRanges();
+    });
+  }, [book, dismissPopovers, selectionPopover, ws.openChatRef, ws.pendingChatPromptMap]);
+
   const handleCopyAsMarkdown = useCallback(async () => {
     if (!selectionPopover) return;
 
@@ -704,6 +732,15 @@ function WorkspaceBookReaderInner({
       .trim();
     if (!text) return;
     navigator.clipboard.writeText(text).catch(console.error);
+  }, []);
+
+  const handleOpenSpeedread = useCallback(() => {
+    const contents = renditionRef.current?.getContents?.() ?? [];
+    const text = contents
+      .map((content: any) => content.document?.body?.innerText ?? "")
+      .join("\n\n");
+    setSpeedreadWords(tokenizeSpeedreadText(text));
+    setSpeedreadOpen(true);
   }, []);
 
   const getCurrentCfi = useCallback(() => {
@@ -805,6 +842,16 @@ function WorkspaceBookReaderInner({
               "px-16 pt-6 pb-2 md:pt-10 md:pb-4": localReaderLayout,
             })}
           />
+          {loadError && (
+            <div
+              className="bg-background absolute inset-0 z-20 flex items-center justify-center p-6 text-center"
+              role="alert"
+            >
+              <p className="text-muted-foreground">
+                Unable to load this book. Check your connection and try again.
+              </p>
+            </div>
+          )}
           {!isScrollMode && (
             <div className="pointer-events-none absolute inset-0 z-[5]">
               {/* Previous page zone: narrow margin on desktop, 25% on mobile */}
@@ -946,6 +993,7 @@ function WorkspaceBookReaderInner({
                 book={book}
                 onDownload={handleDownload}
                 onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+                onOpenSpeedread={handleOpenSpeedread}
                 onBookmarkPage={handleBookmarkPage}
                 isBookmarked={Boolean(currentBookmark)}
               />
@@ -960,11 +1008,20 @@ function WorkspaceBookReaderInner({
               position={selectionPopover.position}
               onCopyAsMarkdown={handleCopyAsMarkdown}
               onAskQuestion={handleAskQuestion}
+              onExplain={handleExplainThis}
               onSave={handleSaveHighlight}
               onDismiss={dismissPopovers}
             />,
             document.body,
           )}
+        {speedreadOpen && (
+          <SpeedreadPopout
+            bookId={book.id}
+            open
+            words={speedreadWords}
+            onClose={() => setSpeedreadOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

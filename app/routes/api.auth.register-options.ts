@@ -25,6 +25,7 @@ export async function loader() {
   const options = await generateRegistrationOptions({
     rpName: RP_NAME,
     rpID: getRpId(),
+    userID: new TextEncoder().encode(user.id),
     userName: user.displayName ?? user.id,
     userDisplayName: user.displayName ?? "",
     excludeCredentials,

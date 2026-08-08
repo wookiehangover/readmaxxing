@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { useNavigate } from "react-router";
 import { Effect } from "effect";
 import type { AddPanelPositionOptions, DockviewApi } from "dockview-react";
 import type { FocusedCluster } from "~/hooks/use-focused-mode";
@@ -21,6 +22,9 @@ export interface UseWorkspacePanelsParams {
   readonly collapsedRef: React.MutableRefObject<boolean>;
   readonly focusedClustersRef: React.MutableRefObject<Map<string, FocusedCluster>>;
   readonly focusedOrderRef: React.MutableRefObject<string[]>;
+  readonly pendingOpenBookRef: React.MutableRefObject<BookMeta | null>;
+  readonly layoutReadyRef: React.MutableRefObject<boolean>;
+  readonly isWorkspaceRouteRef: React.MutableRefObject<boolean>;
   readonly updateSettings: (patch: Partial<Settings>) => void;
 }
 
@@ -32,6 +36,43 @@ export interface UseWorkspacePanelsResult {
   readonly openReadingHistory: (book: BookMeta) => void;
   readonly openStandardEbooks: () => void;
   readonly closeBookPanels: (bookId: string) => void;
+}
+
+interface DeferBookOpenParams {
+  readonly apiRef: React.MutableRefObject<DockviewApi | null>;
+  readonly layoutReadyRef: React.MutableRefObject<boolean>;
+  readonly isWorkspaceRouteRef: React.MutableRefObject<boolean>;
+  readonly pendingOpenBookRef: React.MutableRefObject<BookMeta | null>;
+  readonly navigate: (path: string) => void | Promise<void>;
+}
+
+export function deferBookOpenUntilWorkspaceReady(
+  book: BookMeta,
+  {
+    apiRef,
+    layoutReadyRef,
+    isWorkspaceRouteRef,
+    pendingOpenBookRef,
+    navigate,
+  }: DeferBookOpenParams,
+): boolean {
+  const isWorkspaceRoute = isWorkspaceRouteRef.current;
+  if (isWorkspaceRoute && apiRef.current && layoutReadyRef.current) {
+    pendingOpenBookRef.current = null;
+    return false;
+  }
+
+  pendingOpenBookRef.current = book;
+  if (!isWorkspaceRoute) navigate("/");
+  return true;
+}
+
+export function clearPendingBookOpenOnWorkspaceExit(
+  wasWorkspaceRoute: boolean,
+  isWorkspaceRoute: boolean,
+  pendingOpenBookRef: React.MutableRefObject<BookMeta | null>,
+): void {
+  if (wasWorkspaceRoute && !isWorkspaceRoute) pendingOpenBookRef.current = null;
 }
 
 function findBookPanel(api: DockviewApi, bookId: string) {
@@ -62,12 +103,25 @@ export function useWorkspacePanels({
   collapsedRef,
   focusedClustersRef,
   focusedOrderRef,
+  pendingOpenBookRef,
+  layoutReadyRef,
+  isWorkspaceRouteRef,
   updateSettings,
 }: UseWorkspacePanelsParams): UseWorkspacePanelsResult {
+  const navigate = useNavigate();
   const openBook = useCallback(
     (book: BookMeta) => {
-      const api = apiRef.current;
-      if (!api) return;
+      if (
+        deferBookOpenUntilWorkspaceReady(book, {
+          apiRef,
+          layoutReadyRef,
+          isWorkspaceRouteRef,
+          pendingOpenBookRef,
+          navigate,
+        })
+      ) {
+        return;
+      }
 
       AppRuntime.runPromise(
         WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
@@ -117,7 +171,19 @@ export function useWorkspacePanels({
 
       openPanels();
     },
-    [apiRef, collapsedRef, focusedClustersRef, focusedOrderRef, isMobileRef, updateSettings, ws],
+    [
+      apiRef,
+      collapsedRef,
+      focusedClustersRef,
+      focusedOrderRef,
+      isMobileRef,
+      isWorkspaceRouteRef,
+      layoutReadyRef,
+      navigate,
+      pendingOpenBookRef,
+      updateSettings,
+      ws,
+    ],
   );
 
   const openNotebook = useCallback(
@@ -281,20 +347,8 @@ export function useWorkspacePanels({
   );
 
   const openStandardEbooks = useCallback(() => {
-    const api = apiRef.current;
-    if (!api) return;
-    const existing = api.panels.find((p) => p.id.startsWith("standard-ebooks-"));
-    if (existing) {
-      existing.focus();
-      return;
-    }
-    api.addPanel({
-      id: `standard-ebooks-${crypto.randomUUID().slice(0, 8)}`,
-      component: "standard-ebooks",
-      title: "Standard Ebooks",
-      params: {},
-    });
-  }, [apiRef]);
+    navigate("/standard-ebooks");
+  }, [navigate]);
 
   const closeBookPanels = useCallback(
     (bookId: string) => {

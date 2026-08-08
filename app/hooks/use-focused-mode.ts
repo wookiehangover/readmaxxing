@@ -25,7 +25,7 @@ export interface ClusterBarEntry {
 }
 
 export interface UseFocusedModeParams {
-  /** Current dockview API ref owned by workspace.tsx. */
+  /** Current dockview API ref owned by the shared workspace frame. */
   apiRef: React.MutableRefObject<DockviewApi | null>;
   /** Mobile viewport ref, read during cluster swap for tab/split decisions. */
   isMobileRef: React.MutableRefObject<boolean | undefined>;
@@ -35,6 +35,14 @@ export interface UseFocusedModeParams {
    * changes. Held in `app-ui-settings` (local-only).
    */
   focusedSplitRatioRef: React.MutableRefObject<number>;
+  /** Focused session restored by the shared frame loader. */
+  initialState: FocusedModeInitialState;
+}
+
+export interface FocusedModeInitialState {
+  readonly clusters: Map<string, FocusedCluster>;
+  readonly order: string[];
+  readonly activeBookId: string | null;
 }
 
 export interface UseFocusedModeResult {
@@ -66,10 +74,16 @@ export function useFocusedMode({
   apiRef,
   isMobileRef,
   focusedSplitRatioRef,
+  initialState,
 }: UseFocusedModeParams): UseFocusedModeResult {
   const ws = useWorkspace();
-  const focusedClustersRef = useRef(new Map<string, FocusedCluster>());
-  const focusedOrderRef = useRef<string[]>([]);
+  const focusedClustersRef = useRef(initialState.clusters);
+  const focusedOrderRef = useRef(initialState.order);
+  const initializedRef = useRef(false);
+  if (!initializedRef.current) {
+    ws.activeClusterBookIdRef.current = initialState.activeBookId;
+    initializedRef.current = true;
+  }
   // Last cluster bookId the swap effect acted on. Prevents re-running swap
   // logic for the same activation (which would re-mount panels unnecessarily).
   const lastSwappedRef = useRef<string | null>(null);

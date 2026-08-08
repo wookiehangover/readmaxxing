@@ -1,7 +1,11 @@
 import { type RouteConfig, index, layout, route } from "@react-router/dev/routes";
 
 export default [
-  index("routes/workspace.tsx"),
+  layout("routes/app-frame.tsx", [
+    index("routes/workspace.tsx"),
+    route("library", "routes/workspace-library.tsx"),
+    route("standard-ebooks", "routes/workspace-standard-ebooks.tsx"),
+  ]),
   layout("routes/library.tsx", [route("books/:id/details", "routes/book-details.tsx")]),
   route("login", "routes/login.tsx"),
   route("settings", "routes/settings.tsx"),
@@ -32,6 +36,10 @@ export default [
   route("api/auth/magic-link/consume", "routes/api.auth.magic-link.consume.ts"),
   route("api/auth/logout", "routes/api.auth.logout.ts"),
   route("api/auth/session", "routes/api.auth.session.ts"),
+  route("api/auth/passkeys", "routes/api.auth.passkeys.ts"),
+  route("api/auth/passkeys/register-options", "routes/api.auth.passkeys.register-options.ts"),
+  route("api/auth/passkeys/register-verify", "routes/api.auth.passkeys.register-verify.ts"),
+  route("api/auth/passkeys/:id", "routes/api.auth.passkeys.$id.ts"),
   route("api/sync/push", "routes/api.sync.push.ts"),
   route("api/sync/pull", "routes/api.sync.pull.ts"),
   route("api/sync/files/upload", "routes/api.sync.files.upload.ts"),

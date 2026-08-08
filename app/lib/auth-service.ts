@@ -17,6 +17,15 @@ export interface MagicLinkResponse {
   expiresAt: string;
 }
 
+export interface AuthPasskey {
+  id: string;
+  name: string | null;
+  createdAt: string;
+  deviceType: string | null;
+  backedUp: boolean;
+  lastUsedAt: string | null;
+}
+
 // --- Effect Service ---
 
 export class AuthService extends Context.Tag("AuthService")<
@@ -29,6 +38,10 @@ export class AuthService extends Context.Tag("AuthService")<
     readonly generateMagicLink: () => Effect.Effect<MagicLinkResponse, AuthError>;
     readonly logout: () => Effect.Effect<void, AuthError>;
     readonly getSession: () => Effect.Effect<AuthSession, AuthError>;
+    readonly listPasskeys: () => Effect.Effect<AuthPasskey[], AuthError>;
+    readonly addPasskey: () => Effect.Effect<{ verified: boolean }, AuthError>;
+    readonly renamePasskey: (id: string, name: string | null) => Effect.Effect<void, AuthError>;
+    readonly removePasskey: (id: string) => Effect.Effect<void, AuthError>;
   }
 >() {}
 
@@ -129,5 +142,77 @@ export const AuthServiceLive = Layer.succeed(AuthService, {
         return (await res.json()) as AuthSession;
       },
       catch: (cause) => new AuthError({ operation: "getSession", cause }),
+    }),
+
+  listPasskeys: () =>
+    Effect.tryPromise({
+      try: async () => {
+        const res = await fetch("/api/auth/passkeys");
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? "Failed to list passkeys");
+        }
+        const body = (await res.json()) as { passkeys: AuthPasskey[] };
+        return body.passkeys;
+      },
+      catch: (cause) => new AuthError({ operation: "listPasskeys", cause }),
+    }),
+
+  addPasskey: () =>
+    Effect.tryPromise({
+      try: async () => {
+        const { startRegistration } = await import("@simplewebauthn/browser");
+        const optionsRes = await fetch("/api/auth/passkeys/register-options", { method: "POST" });
+        if (!optionsRes.ok) {
+          const body = await optionsRes.json().catch(() => ({}));
+          throw new Error(body.error ?? "Failed to get registration options");
+        }
+        const { options, challengeId } = await optionsRes.json();
+        if (typeof challengeId !== "string" || !challengeId) {
+          throw new Error("Invalid challenge ID from server");
+        }
+        const registration = await startRegistration({ optionsJSON: options });
+        const verifyRes = await fetch("/api/auth/passkeys/register-verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ challengeId, response: registration }),
+        });
+        if (!verifyRes.ok) {
+          const body = await verifyRes.json().catch(() => ({}));
+          throw new Error(body.error ?? "Registration verification failed");
+        }
+        return (await verifyRes.json()) as { verified: boolean };
+      },
+      catch: (cause) => new AuthError({ operation: "addPasskey", cause }),
+    }),
+
+  renamePasskey: (id: string, name: string | null) =>
+    Effect.tryPromise({
+      try: async () => {
+        const res = await fetch(`/api/auth/passkeys/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? "Failed to rename passkey");
+        }
+      },
+      catch: (cause) => new AuthError({ operation: "renamePasskey", cause }),
+    }),
+
+  removePasskey: (id: string) =>
+    Effect.tryPromise({
+      try: async () => {
+        const res = await fetch(`/api/auth/passkeys/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? "Failed to remove passkey");
+        }
+      },
+      catch: (cause) => new AuthError({ operation: "removePasskey", cause }),
     }),
 });

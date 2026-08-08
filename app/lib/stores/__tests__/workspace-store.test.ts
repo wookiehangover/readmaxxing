@@ -66,6 +66,33 @@ describe("WorkspaceService", () => {
       expect(result!.panels).toEqual({ "panel-2": {} });
     });
 
+    it("clears saved layout and focused state", async () => {
+      const layer = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
+        Effect.runPromise(Effect.provide(e, layer));
+      await run(WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(makeLayout()))));
+      await run(
+        WorkspaceService.pipe(
+          Effect.andThen((s) =>
+            s.saveFocusedState({ order: [], activeBookId: null, clusters: [] }),
+          ),
+        ),
+      );
+
+      await run(
+        WorkspaceService.pipe(
+          Effect.andThen((s) => Effect.all([s.clearLayout(), s.clearFocusedState()])),
+        ),
+      );
+
+      await expect(
+        run(WorkspaceService.pipe(Effect.andThen((s) => s.getLayout()))),
+      ).resolves.toBeNull();
+      await expect(
+        run(WorkspaceService.pipe(Effect.andThen((s) => s.getFocusedState()))),
+      ).resolves.toBeNull();
+    });
+
     it("migrates a legacy focused-mode layout into the single layout slot", async () => {
       const stores = makeTestStores();
       const legacy = makeLayout({ panels: { legacy: {} } } as any);

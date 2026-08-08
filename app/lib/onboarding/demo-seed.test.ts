@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { openPublication, openZipResourceProvider, resolveCfi } from "@readmaxxing/epub-successor";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { del, get, set } from "idb-keyval";
+import { Effect } from "effect";
 import {
   DEFAULT_DEMO_BOOK,
   DEMO_BOOK_ID,
@@ -15,7 +16,9 @@ import {
 } from "~/lib/onboarding/demo-content";
 import { spineIndexFromCfi } from "~/lib/epub/successor-reader-adapter";
 import { isFirstVisit, seedDemo } from "~/lib/onboarding/demo-seed";
+import { AppRuntime } from "~/lib/effect-runtime";
 import type { ChatSession } from "~/lib/stores/chat-store";
+import { WorkspaceService } from "~/lib/stores/workspace-store";
 import {
   getActiveSessionStore,
   getBookDataStore,
@@ -56,6 +59,13 @@ beforeEach(async () => {
     del(DEMO_BOOK_ID, getNotebookStore()),
     del(DEMO_BOOK_ID, getChatSessionStore()),
     del(DEMO_BOOK_ID, getActiveSessionStore()),
+    AppRuntime.runPromise(
+      WorkspaceService.pipe(
+        Effect.andThen((workspace) =>
+          Effect.all([workspace.clearLayout(), workspace.clearFocusedState()]),
+        ),
+      ),
+    ),
   ]);
 
   vi.stubGlobal(
@@ -162,5 +172,34 @@ describe("seedDemo", () => {
     demoFetchOk = false;
     await expect(seedDemo()).rejects.toBeDefined();
     expect(window.localStorage.getItem("demo-onboarding")).toBeNull();
+  });
+
+  it("clears stale workspace state when provisioning the first-visit demo", async () => {
+    await AppRuntime.runPromise(
+      WorkspaceService.pipe(
+        Effect.andThen((workspace) =>
+          Effect.all([
+            workspace.saveLayout({ grid: {}, panels: { stale: {} } } as never),
+            workspace.saveFocusedState({
+              order: ["stale-book"],
+              activeBookId: "stale-book",
+              clusters: [],
+            }),
+          ]),
+        ),
+      ),
+    );
+
+    await seedDemo();
+
+    const [layout, focusedState] = await AppRuntime.runPromise(
+      WorkspaceService.pipe(
+        Effect.andThen((workspace) =>
+          Effect.all([workspace.getLayout(), workspace.getFocusedState()]),
+        ),
+      ),
+    );
+    expect(layout).toBeNull();
+    expect(focusedState).toBeNull();
   });
 });

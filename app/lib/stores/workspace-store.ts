@@ -91,6 +91,7 @@ export class WorkspaceService extends Context.Tag("WorkspaceService")<
       SerializedDockview | null,
       WorkspaceError | DecodeError
     >;
+    readonly clearLayout: () => Effect.Effect<void, WorkspaceError>;
     readonly saveFocusedState: (
       state: FocusedWorkspaceState,
     ) => Effect.Effect<void, WorkspaceError>;
@@ -98,6 +99,7 @@ export class WorkspaceService extends Context.Tag("WorkspaceService")<
       FocusedWorkspaceState | null,
       WorkspaceError | DecodeError
     >;
+    readonly clearFocusedState: () => Effect.Effect<void, WorkspaceError>;
     readonly saveLastOpened: (
       bookId: string,
       timestamp: number,
@@ -142,6 +144,12 @@ export function makeWorkspaceService(stores: WorkspaceServiceStores): WorkspaceS
         catch: (cause) => new WorkspaceError({ operation: "saveLayout", cause }),
       }),
 
+    clearLayout: () =>
+      Effect.tryPromise({
+        try: () => del(LAYOUT_KEY, layoutStore),
+        catch: (cause) => new WorkspaceError({ operation: "clearLayout", cause }),
+      }),
+
     getLayout: () =>
       Effect.gen(function* () {
         yield* migrateLegacyLayout;
@@ -167,6 +175,12 @@ export function makeWorkspaceService(stores: WorkspaceServiceStores): WorkspaceS
       Effect.tryPromise({
         try: () => set(FOCUSED_STATE_KEY, state, layoutStore),
         catch: (cause) => new WorkspaceError({ operation: "saveFocusedState", cause }),
+      }),
+
+    clearFocusedState: () =>
+      Effect.tryPromise({
+        try: () => del(FOCUSED_STATE_KEY, layoutStore),
+        catch: (cause) => new WorkspaceError({ operation: "clearFocusedState", cause }),
       }),
 
     getFocusedState: () =>

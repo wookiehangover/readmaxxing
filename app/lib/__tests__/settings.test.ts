@@ -31,6 +31,7 @@ const defaultSettings: Settings = {
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
   libraryView: "grid",
+  standardEbooksView: "grid",
   pdfLayout: "fit-height",
   colorTheme: "default",
   zenMode: false,
@@ -214,10 +215,16 @@ describe("saveSettings", () => {
   });
 
   it("writes local UI fields to the local bucket without recording a change", () => {
-    saveSettings({ ...defaultSettings, sidebarCollapsed: true, libraryView: "table" });
+    saveSettings({
+      ...defaultSettings,
+      sidebarCollapsed: true,
+      libraryView: "table",
+      standardEbooksView: "table",
+    });
     const local = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(local.sidebarCollapsed).toBe(true);
     expect(local.libraryView).toBe("table");
+    expect(local.standardEbooksView).toBe("table");
     for (const k of SYNCED_SETTINGS_KEYS) {
       expect(local).not.toHaveProperty(k);
     }
@@ -290,6 +297,28 @@ describe("saveSettings", () => {
     expect(syncedRaw).not.toHaveProperty("fontFamily");
     expect(syncedRaw).not.toHaveProperty("fontSize");
     expect(syncedRaw).not.toHaveProperty("lineHeight");
+  });
+});
+
+describe("standardEbooksView", () => {
+  it("defaults to grid independently of libraryView", () => {
+    localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ libraryView: "table" }));
+
+    const settings = getSettings();
+    expect(settings.libraryView).toBe("table");
+    expect(settings.standardEbooksView).toBe("grid");
+  });
+
+  it("persists separately from libraryView", () => {
+    saveSettings({
+      ...defaultSettings,
+      libraryView: "grid",
+      standardEbooksView: "table",
+    });
+
+    const settings = getSettings();
+    expect(settings.libraryView).toBe("grid");
+    expect(settings.standardEbooksView).toBe("table");
   });
 });
 

@@ -9,7 +9,7 @@ const REPORTED_TYPE_ERROR = "Cannot read properties of undefined (reading '0')";
 
 async function resetSignedOutState(page: Page) {
   await page.context().clearCookies();
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
   await page.evaluate(async () => {
     const dbs = await indexedDB.databases();
     await Promise.all(
@@ -31,6 +31,29 @@ async function resetSignedOutState(page: Page) {
     sessionStorage.clear();
   });
 }
+
+test("signed-out first visit does not remain on the workspace loader", async ({ page }) => {
+  const hydrationErrors: string[] = [];
+  page.on("pageerror", (error) => {
+    if (error.message.includes("HydrateFallback")) hydrationErrors.push(error.message);
+  });
+
+  await resetSignedOutState(page);
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByText("Loading workspace…", { exact: true })).toBeHidden({
+    timeout: 15_000,
+  });
+  await expect
+    .poll(
+      async () =>
+        (await page.locator(".dv-dockview").isVisible()) ||
+        (await page.getByRole("button", { name: "Previous page" }).first().isVisible()),
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  expect(hydrationErrors).toEqual([]);
+});
 
 test("signed-out first upload auto-opens readable epub without reported TypeError", async ({
   page,
