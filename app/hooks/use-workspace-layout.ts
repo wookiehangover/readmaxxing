@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Effect } from "effect";
 import type { DockviewApi, DockviewReadyEvent } from "dockview-react";
 import type { FocusedCluster } from "~/hooks/use-focused-mode";
+import { restoreDockviewLayout } from "~/hooks/workspace-layout-restore";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { clampFocusedSplitRatio, type Settings } from "~/lib/settings";
 import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
@@ -36,24 +37,6 @@ export function consumePendingBookOpen(
   if (pendingBook === null) return;
   pendingBookRef.current = null;
   openBook(pendingBook);
-}
-
-/**
- * Remove restored panels whose bookId no longer exists. Runs after a
- * successful `fromJSON` restore — mutating the serialized layout up front
- * would leave dangling panel ids in the grid/views tree and make dockview
- * revert the entire restore.
- */
-function removeOrphanedPanels(api: DockviewApi, existingBookIds: Set<string>): void {
-  // Snapshot before removing — api.panels is recomputed per access.
-  const panels = Array.from(api.panels);
-  for (const panel of panels) {
-    const bookId = (panel.params as Record<string, unknown> | undefined)?.bookId;
-    if (typeof bookId === "string" && !existingBookIds.has(bookId)) {
-      console.log(`[workspace] Removed orphaned panel ${panel.id} for deleted book ${bookId}`);
-      api.removePanel(panel);
-    }
-  }
 }
 
 export interface UseWorkspaceLayoutParams {
@@ -109,6 +92,10 @@ export function useWorkspaceLayout({
   const restoreTokenRef = useRef(0);
   const mountedRef = useRef(true);
   const flushFocusedStateRef = useRef<() => void>(() => {});
+  const onDisposeRef = useRef<() => void>(() => {});
+  const onReadyRef = useRef<(event: DockviewReadyEvent) => void>(() => {});
+  const cleanupContextRef = useRef({ apiRef, ws });
+  cleanupContextRef.current = { apiRef, ws };
   // `onReady` intentionally omits `books` from its deps; read the current book
   // ids through a ref to avoid stale closures.
   const existingBookIdsRef = useRef(new Set<string>());
@@ -217,7 +204,7 @@ export function useWorkspaceLayout({
     }
   }, [apiRef, isMobileRef]);
 
-  const onDispose = useCallback(() => {
+  const handleDispose = useCallback(() => {
     restoreTokenRef.current += 1;
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -240,8 +227,10 @@ export function useWorkspaceLayout({
     layoutReadyRef.current = false;
     setLayoutReady(false);
   }, [apiRef, flushFocusedState, flushLayout, layoutReadyRef, ws]);
+  onDisposeRef.current = handleDispose;
+  const onDispose = useCallback(() => onDisposeRef.current(), []);
 
-  const onReady = useCallback(
+  const handleReady = useCallback(
     (event: DockviewReadyEvent) => {
       onDispose();
       apiRef.current = event.api;
@@ -254,18 +243,20 @@ export function useWorkspaceLayout({
           Effect.catchAll(() => Effect.succeed(null)),
         ),
       )
-        .then((layout) => {
+        .then(async (layout) => {
           if (!mountedRef.current || restoreToken !== restoreTokenRef.current) {
             return;
           }
           const hasFocusedRestore = focusedOrderRef.current.length > 0;
           if (layout && !hasFocusedRestore) {
-            try {
-              event.api.fromJSON(layout);
-              removeOrphanedPanels(event.api, existingBookIdsRef.current);
-            } catch (err) {
-              console.error("Failed to restore dockview layout:", err);
-            }
+            await restoreDockviewLayout(event.api, layout, existingBookIdsRef.current, () =>
+              AppRuntime.runPromise(
+                WorkspaceService.pipe(Effect.andThen((service) => service.clearLayout())),
+              ),
+            );
+          }
+          if (!mountedRef.current || restoreToken !== restoreTokenRef.current) {
+            return;
           }
           consumePendingClusterActivation(
             pendingClusterActivationRef,
@@ -407,6 +398,8 @@ export function useWorkspaceLayout({
       ws,
     ],
   );
+  onReadyRef.current = handleReady;
+  const onReady = useCallback((event: DockviewReadyEvent) => onReadyRef.current(event), []);
 
   useEffect(() => {
     updateFocusedBookGroupChrome();
@@ -458,6 +451,7 @@ export function useWorkspaceLayout({
   useEffect(() => {
     mountedRef.current = true;
     return () => {
+      const { apiRef, ws } = cleanupContextRef.current;
       restoreTokenRef.current += 1;
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
@@ -484,7 +478,7 @@ export function useWorkspaceLayout({
       ws.clustersRef.current.clear();
       ws.activeClusterBookIdRef.current = null;
     };
-  }, [apiRef, ws]);
+  }, []);
 
   return { layoutReady, onReady, onDispose };
 }

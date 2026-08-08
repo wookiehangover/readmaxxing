@@ -4,6 +4,7 @@ import type { BookMeta } from "~/lib/stores/book-store";
 import type { Settings } from "~/lib/settings";
 
 const PANEL_ACTIVATION_DELAY_MS = 300;
+const DEMO_BOOTSTRAP_TIMEOUT_MS = 10_000;
 
 interface UseDemoOnboardingParams {
   readonly demoBook: BookMeta | null;
@@ -27,6 +28,12 @@ export function useDemoOnboarding({
   const workspace = useOptionalWorkspace();
   const [bootstrapReady, setBootstrapReady] = useState(demoBook === null);
   const didBootstrapRef = useRef(false);
+
+  useEffect(() => {
+    if (!demoBook || bootstrapReady) return;
+    const timeout = window.setTimeout(() => setBootstrapReady(true), DEMO_BOOTSTRAP_TIMEOUT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [bootstrapReady, demoBook]);
 
   useEffect(() => {
     if (!demoBook || !layoutReady || didBootstrapRef.current) return;

@@ -330,7 +330,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     openChat,
     openNotebook,
   });
-  const workspaceReady = layoutReady && demoBootstrapReady;
+  const workspaceReady = loaderData.demoBook ? demoBootstrapReady : layoutReady;
   const frameReady = !isWorkspaceRoute || workspaceReady;
 
   const updateBooks = useCallback(
