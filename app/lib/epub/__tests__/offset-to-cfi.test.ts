@@ -45,14 +45,21 @@ async function resolveFixtureCfi(
   cfi: string,
   segment: BookChapterSegment,
 ): Promise<string | null> {
+  return (await resolveFixtureRange(data, cfi, segment))?.toString() ?? null;
+}
+
+async function resolveFixtureRange(
+  data: ArrayBuffer,
+  cfi: string,
+  segment: BookChapterSegment,
+): Promise<Range | null> {
   const provider = await openZipResourceProvider(data);
   try {
     const { publication } = await openPublication(provider);
     if (!publication) throw new Error("Fixture publication did not open");
     const source = await provider.readText(publication.readingOrder[segment.spineIndex]!.href);
     const document = parseEpubServerDocument(source);
-    const range = resolveCfi(cfi, document, sectionMetadata(publication, segment.spineIndex));
-    return range?.toString() ?? null;
+    return resolveCfi(cfi, document, sectionMetadata(publication, segment.spineIndex));
   } finally {
     provider.close();
   }
@@ -99,6 +106,30 @@ describe("offsetToCfi", () => {
 
     expect(cfi).not.toBeNull();
     await expect(resolveFixtureCfi(data, cfi!, segment)).resolves.toBe(serverPassage);
+  });
+
+  it("round-trips exact boundaries across multiple paragraph blocks", async () => {
+    const data = await fixtureData();
+    ensureEpubServerDom();
+    const chapter = (await extractBookChapters(data))[0]!;
+    const passage =
+      "The quick brown fox jumps over the lazy dog. This sentence contains every letter of the alphabet.\nLorem ipsum dolor";
+    const startOffset = chapter.text.indexOf(passage);
+
+    expect(startOffset).toBeGreaterThanOrEqual(0);
+    const cfi = await offsetToCfi({
+      epubSource: data,
+      segments: chapter.segments,
+      startOffset,
+      endOffset: startOffset + passage.length,
+      expectedText: passage,
+    });
+
+    expect(cfi).not.toBeNull();
+    const resolved = await resolveFixtureRange(data, cfi!, chapter.segments![0]!);
+    expect(resolved?.toString()).toBe(passage);
+    expect(resolved?.startContainer.parentElement?.tagName).toBe("P");
+    expect(resolved?.startOffset).toBe(0);
   });
 
   it("round-trips an offset in the second segment of a multi-spine chapter", async () => {

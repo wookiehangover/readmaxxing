@@ -26,6 +26,17 @@ interface TextBoundary {
   offset: number;
 }
 
+interface TextStreamEntry {
+  node: Text;
+  start: number;
+  end: number;
+}
+
+interface TextStream {
+  text: string;
+  entries: TextStreamEntry[];
+}
+
 interface NormalizedTextAlignment {
   text: string;
   rawStarts: number[];
@@ -50,17 +61,39 @@ function segmentsAreValid(segments: readonly BookChapterSegment[]): boolean {
   });
 }
 
-function textBoundaryAtOffset(root: Node, offset: number): TextBoundary | null {
+function createTextStream(root: Node): TextStream {
   const document = root.ownerDocument;
-  if (!document || offset < 0) return null;
+  if (!document) return { text: "", entries: [] };
 
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let remaining = offset;
+  const entries: TextStreamEntry[] = [];
+  let text = "";
   let node = walker.nextNode() as Text | null;
   while (node) {
-    if (remaining <= node.length) return { node, offset: remaining };
-    remaining -= node.length;
+    if (node.length > 0) {
+      const start = text.length;
+      text += node.data;
+      entries.push({ node, start, end: text.length });
+    }
     node = walker.nextNode() as Text | null;
+  }
+  return { text, entries };
+}
+
+function textBoundaryAtOffset(
+  stream: TextStream,
+  offset: number,
+  affinity: "forward" | "backward",
+): TextBoundary | null {
+  if (offset < 0 || offset > stream.text.length) return null;
+
+  for (const [index, entry] of stream.entries.entries()) {
+    if (offset < entry.end) return { node: entry.node, offset: offset - entry.start };
+    if (offset === entry.end) {
+      const next = stream.entries[index + 1];
+      if (affinity === "forward" && next) return { node: next.node, offset: 0 };
+      return { node: entry.node, offset: entry.node.length };
+    }
   }
   return null;
 }
@@ -158,13 +191,14 @@ export async function offsetToCfi(input: OffsetToCfiInput): Promise<string | nul
         const document = await getDocument(segment.spineIndex);
         if (document.getElementsByTagName("parsererror").length > 0 || !document.body) return null;
 
-        const rawText = document.body.textContent ?? "";
+        const textStream = createTextStream(document.body);
+        const rawText = textStream.text;
         const leadingTrim = rawText.length - rawText.trimStart().length;
         const match = locateUniqueWhitespaceMatch(rawText.trim(), expectedText);
         if (!match) return null;
 
-        const start = textBoundaryAtOffset(document.body, leadingTrim + match.start);
-        const end = textBoundaryAtOffset(document.body, leadingTrim + match.end);
+        const start = textBoundaryAtOffset(textStream, leadingTrim + match.start, "forward");
+        const end = textBoundaryAtOffset(textStream, leadingTrim + match.end, "backward");
         if (!start || !end) return null;
 
         const range = document.createRange();
