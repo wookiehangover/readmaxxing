@@ -125,4 +125,35 @@ describe("fixture highlight anchoring", () => {
       MULTI_PARAGRAPH_PASSAGE,
     );
   });
+
+  it("resolves a unique fixture quote without offsets", async () => {
+    const data = await fixtureData();
+    ensureEpubServerDom();
+    const chapter = (await extractBookChapters(data))[0]!;
+    const startOffset = chapter.text.indexOf(PASSAGE);
+    const segment = chapter.segments!.find(
+      (candidate) => candidate.start <= startOffset && startOffset < candidate.end,
+    )!;
+    const resolveFromFixture: typeof offsetToCfi = (input) =>
+      offsetToCfi({ ...input, epubSource: data });
+
+    const result = await resolveCreateHighlightAnchor(
+      {
+        chapters: [chapter],
+        text: PASSAGE,
+        textAnchor: {
+          chapterIndex: chapter.index,
+          snippet: PASSAGE,
+          matchQuality: "fuzzy",
+        },
+        fileBlobUrl: FIXTURE_URL.href,
+        chapterIndex: chapter.index,
+      },
+      resolveFromFixture,
+    );
+
+    expect(result.matchQuality).toBe("exact");
+    expect(result.cfiRange).not.toBeNull();
+    await expect(resolveFixtureCfi(data, result.cfiRange!, segment)).resolves.toBe(PASSAGE);
+  });
 });

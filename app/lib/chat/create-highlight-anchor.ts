@@ -52,24 +52,29 @@ function normalizedCharacters(text: string): NormalizedCharacter[] | null {
     : null;
 }
 
-function findNormalizedRange(text: string, passage: string, startOffset: number): TextRange | null {
+function findNormalizedRanges(text: string, passage: string, startOffset = 0): TextRange[] {
   const needle = normalizeForMatch(passage);
-  if (!needle) return null;
+  if (!needle) return [];
 
   const characters = normalizedCharacters(text.slice(startOffset));
-  if (!characters) return null;
+  if (!characters) return [];
   const normalizedText = characters.map(({ value }) => value).join("");
+  const ranges: TextRange[] = [];
   let matchIndex = normalizedText.indexOf(needle);
   while (matchIndex >= 0) {
     const first = characters[matchIndex];
     const last = characters[matchIndex + needle.length - 1];
     if (first && last) {
       const range = { start: startOffset + first.start, end: startOffset + last.end };
-      if (normalizeForMatch(text.slice(range.start, range.end)) === needle) return range;
+      if (normalizeForMatch(text.slice(range.start, range.end)) === needle) ranges.push(range);
     }
     matchIndex = normalizedText.indexOf(needle, matchIndex + 1);
   }
-  return null;
+  return ranges;
+}
+
+function findNormalizedRange(text: string, passage: string, startOffset: number): TextRange | null {
+  return findNormalizedRanges(text, passage, startOffset)[0] ?? null;
 }
 
 interface ResolveCreateHighlightAnchorInput {
@@ -87,6 +92,13 @@ export interface ResolvedCreateHighlightAnchor {
   matchQuality: "exact" | "fuzzy";
   chapterIndex: number;
   textAnchor: TextAnchor;
+  error?: "ambiguous";
+  candidates?: Array<{
+    chapterIndex: number;
+    startOffset: number;
+    endOffset: number;
+    snippet: string;
+  }>;
 }
 
 export async function resolveCreateHighlightAnchor(
@@ -99,22 +111,56 @@ export async function resolveCreateHighlightAnchor(
     chapterIndex: input.textAnchor.chapterIndex,
     textAnchor: input.textAnchor,
   };
-  const chapter = input.chapters.find(
+  const requestedText = normalizeForMatch(input.text);
+  let chapter = input.chapters.find(
     (candidate) => candidate.index === (input.chapterIndex ?? input.textAnchor.chapterIndex),
   );
-  if (input.startOffset === undefined || !chapter?.segments || !input.fileBlobUrl) {
-    return fallback;
+  let range: TextRange | null = null;
+
+  if (input.startOffset !== undefined && chapter) {
+    const providedEndOffset = input.endOffset;
+    const providedRangeMatches =
+      providedEndOffset !== undefined &&
+      normalizeForMatch(chapter.text.slice(input.startOffset, providedEndOffset)) === requestedText;
+    range = providedRangeMatches
+      ? { start: input.startOffset, end: providedEndOffset }
+      : findNormalizedRange(chapter.text, input.text, input.startOffset);
+  } else if (input.startOffset === undefined) {
+    const hintedChapters = chapter ? [chapter] : [];
+    const findCandidates = (searchChapters: readonly BookChapter[]) =>
+      searchChapters.flatMap((candidateChapter) =>
+        findNormalizedRanges(candidateChapter.text, input.text).map((candidateRange) => ({
+          chapter: candidateChapter,
+          range: candidateRange,
+        })),
+      );
+    const hintedCandidates = findCandidates(hintedChapters);
+    const candidates =
+      input.chapterIndex !== undefined || hintedCandidates.length > 0
+        ? hintedCandidates
+        : findCandidates(input.chapters.filter((candidate) => candidate !== chapter));
+
+    if (candidates.length > 1) {
+      return {
+        ...fallback,
+        error: "ambiguous",
+        candidates: candidates.map(({ chapter: candidateChapter, range: candidateRange }) => ({
+          chapterIndex: candidateChapter.index,
+          startOffset: candidateRange.start,
+          endOffset: candidateRange.end,
+          snippet: candidateChapter.text.slice(candidateRange.start, candidateRange.end),
+        })),
+      };
+    }
+
+    chapter = candidates[0]?.chapter;
+    range = candidates[0]?.range ?? null;
   }
 
-  const requestedText = normalizeForMatch(input.text);
-  const providedRangeMatches =
-    input.endOffset !== undefined &&
-    normalizeForMatch(chapter.text.slice(input.startOffset, input.endOffset)) === requestedText;
-  const range = providedRangeMatches
-    ? { start: input.startOffset, end: input.endOffset as number }
-    : findNormalizedRange(chapter.text, input.text, input.startOffset);
   if (
     !range ||
+    !chapter?.segments ||
+    !input.fileBlobUrl ||
     !requestedText ||
     normalizeForMatch(chapter.text.slice(range.start, range.end)) !== requestedText
   ) {
