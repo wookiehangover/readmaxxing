@@ -5,6 +5,7 @@ import {
   appendHighlightReferenceToContent,
   getNotebookHighlightIds,
   listLiveHighlightsForBook,
+  normalizeCfiRange,
 } from "../highlight-tools";
 
 function highlight(overrides: Partial<HighlightRow> & { id: string }): HighlightRow {
@@ -57,17 +58,12 @@ describe("highlight tool helpers", () => {
     });
   });
 
-  it("creates a document and uses an empty CFI when stored content and CFI are absent", () => {
-    expect(appendHighlightReferenceToContent(null, highlight({ id: "orphan" }))).toEqual({
-      type: "doc",
-      content: [
-        {
-          type: "highlightReference",
-          attrs: { highlightId: "orphan", cfiRange: "", text: "passage" },
-        },
-        { type: "paragraph" },
-      ],
-    });
+  it("refuses to append references without a navigable CFI", () => {
+    expect(appendHighlightReferenceToContent(null, highlight({ id: "missing-cfi" }))).toBeNull();
+    expect(
+      appendHighlightReferenceToContent(null, highlight({ id: "blank-cfi", cfiRange: "   " })),
+    ).toBeNull();
+    expect(normalizeCfiRange("  epubcfi(/6/4)  ")).toBe("epubcfi(/6/4)");
   });
 
   it("signals an already-present highlight without changing or duplicating its reference", () => {

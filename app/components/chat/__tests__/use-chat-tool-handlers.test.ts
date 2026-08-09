@@ -96,11 +96,11 @@ function waitForMicrotasks() {
 }
 
 describe("useChatToolHandlers – append_to_notes (server-authoritative)", () => {
-  let streamedToolCallIdRef: { current: Set<string> };
+  let streamedToolCallIdRef: { current: Map<string, JSONContent> };
   let appendContentSpy: ReturnType<typeof vi.fn<(nodes: JSONContent[]) => void>>;
 
   beforeEach(() => {
-    streamedToolCallIdRef = { current: new Set<string>() };
+    streamedToolCallIdRef = { current: new Map<string, JSONContent>() };
     appendContentSpy = vi.fn();
     mockNotebookEditorCallbackMap.current.clear();
     mockNotebookContentChangeMap.current.clear();
@@ -166,7 +166,7 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
       makeEditorCallbacks({ appendContent: appendContentSpy }),
     );
 
-    streamedToolCallIdRef.current.add("tc-1");
+    streamedToolCallIdRef.current.set("tc-1", { type: "doc", content: [] });
 
     const appendedNodes: JSONContent[] = [
       { type: "paragraph", content: [{ type: "text", text: "noted" }] },
@@ -218,6 +218,40 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
     expect(AppRuntime.runPromise).not.toHaveBeenCalled();
   });
 
+  it("restores pre-preview content when a streamed append fails without a server snapshot", () => {
+    const setContentSpy = vi.fn();
+    mockNotebookEditorCallbackMap.current.set(
+      "book-1",
+      makeEditorCallbacks({ setContent: setContentSpy }),
+    );
+    const originalContent: JSONContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "original" }] }],
+    };
+    streamedToolCallIdRef.current.set("tc-failed", originalContent);
+
+    const msg: UIMessage = {
+      id: "msg-failed",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-append_to_notes",
+          toolCallId: "tc-failed",
+          state: "output-available",
+          input: { text: "optimistic preview" },
+          output: { appended: false, text: "optimistic preview", appendedNodes: [] },
+        } as unknown as UIMessage["parts"][number],
+      ],
+    };
+
+    const onFinish = getOnFinish();
+    onFinish({ message: msg });
+
+    expect(setContentSpy).toHaveBeenCalledWith(originalContent);
+    expect(streamedToolCallIdRef.current.has("tc-failed")).toBe(false);
+    expect(AppRuntime.runPromise).not.toHaveBeenCalled();
+  });
+
   it("restores and caches the authoritative notebook when a streamed append loses an LWW race", async () => {
     const setContentSpy = vi.fn();
     const seedSpy = vi.fn();
@@ -225,7 +259,7 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
       "book-1",
       makeEditorCallbacks({ setContent: setContentSpy, seedLastContent: seedSpy }),
     );
-    streamedToolCallIdRef.current.add("tc-conflict");
+    streamedToolCallIdRef.current.set("tc-conflict", { type: "doc", content: [] });
 
     const authoritativeContent: JSONContent = {
       type: "doc",
@@ -327,7 +361,7 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
       "book-1",
       makeEditorCallbacks({ appendContent: appendContentSpy, seedLastContent: seedSpy }),
     );
-    streamedToolCallIdRef.current.add("tc-1");
+    streamedToolCallIdRef.current.set("tc-1", { type: "doc", content: [] });
 
     const appendedNodes: JSONContent[] = [
       { type: "paragraph", content: [{ type: "text", text: "streamed" }] },
@@ -373,7 +407,7 @@ describe("useChatToolHandlers – create_highlight", () => {
         bookId: "book-1",
         bookFormat: "epub",
         bookDataRef: { current: new ArrayBuffer(1) },
-        streamedToolCallIdRef: { current: new Set<string>() },
+        streamedToolCallIdRef: { current: new Map<string, JSONContent>() },
       }),
     );
     const cfiRange = "epubcfi(/6/2!/4/2,/1:0,/1:7)";
@@ -413,13 +447,60 @@ describe("useChatToolHandlers – create_highlight", () => {
       text: "passage",
     });
   });
+
+  it("does not save or append a highlight when server and client CFI resolution fail", async () => {
+    fuzzySearchEpubForCfi.mockReset();
+    fuzzySearchEpubForCfi.mockResolvedValue([]);
+    const appendHighlight = vi.fn();
+    mockNotebookCallbackMap.current.clear();
+    mockNotebookCallbackMap.current.set("book-1", appendHighlight);
+    (AppRuntime.runPromise as ReturnType<typeof vi.fn>).mockClear();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { onFinish } = renderHookSimple(() =>
+      useChatToolHandlers({
+        bookId: "book-1",
+        bookFormat: "epub",
+        bookDataRef: { current: new ArrayBuffer(1) },
+        streamedToolCallIdRef: { current: new Map<string, JSONContent>() },
+      }),
+    );
+
+    try {
+      onFinish({
+        message: {
+          id: "msg-highlight-failed",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-create_highlight",
+              toolCallId: "tc-highlight-failed",
+              state: "output-available",
+              input: { text: "missing passage" },
+              output: {
+                bookId: "book-1",
+                created: false,
+                error: "exact_match_not_found",
+              },
+            } as unknown as UIMessage["parts"][number],
+          ],
+        },
+      });
+      await waitForMicrotasks();
+
+      expect(fuzzySearchEpubForCfi).toHaveBeenCalled();
+      expect(AppRuntime.runPromise).not.toHaveBeenCalled();
+      expect(appendHighlight).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
-  let streamedToolCallIdRef: { current: Set<string> };
+  let streamedToolCallIdRef: { current: Map<string, JSONContent> };
 
   beforeEach(() => {
-    streamedToolCallIdRef = { current: new Set<string>() };
+    streamedToolCallIdRef = { current: new Map<string, JSONContent>() };
     mockNotebookEditorCallbackMap.current.clear();
     mockNotebookContentChangeMap.current.clear();
     (AppRuntime.runPromise as ReturnType<typeof vi.fn>).mockClear();

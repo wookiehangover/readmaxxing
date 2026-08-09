@@ -37,6 +37,7 @@ import {
   appendHighlightReferenceToContent,
   getNotebookHighlightIds,
   listLiveHighlightsForBook,
+  normalizeCfiRange,
 } from "~/lib/chat/highlight-tools";
 import type { JSONContent } from "@tiptap/react";
 import {
@@ -541,6 +542,12 @@ export async function action({ request }: Route.ActionArgs) {
                   appended: false,
                   text,
                   appendedNodes: [],
+                  ...(existing
+                    ? {
+                        updatedContent: existing.content as JSONContent,
+                        updatedAt: existing.updatedAt.getTime(),
+                      }
+                    : {}),
                   error: err instanceof Error ? err.message : String(err),
                 };
               }
@@ -736,11 +743,23 @@ export async function action({ request }: Route.ActionArgs) {
                 startOffset,
                 endOffset,
               });
+              const cfiRange = normalizeCfiRange(resolvedAnchor.cfiRange);
+              if (!cfiRange) {
+                return {
+                  bookId: target.bookId,
+                  created: false,
+                  matchQuality: resolvedAnchor.matchQuality,
+                  chapterIndex: resolvedAnchor.chapterIndex,
+                  error: "exact_match_not_found",
+                  text,
+                  note: note ?? null,
+                };
+              }
               try {
                 await upsertHighlight(userId, {
                   id,
                   bookId: target.bookId,
-                  cfiRange: resolvedAnchor.cfiRange,
+                  cfiRange,
                   text,
                   color,
                   textAnchor: resolvedAnchor.textAnchor,
@@ -773,7 +792,7 @@ export async function action({ request }: Route.ActionArgs) {
                   text,
                   note: note ?? null,
                   color,
-                  cfiRange: resolvedAnchor.cfiRange,
+                  cfiRange,
                   textAnchor: resolvedAnchor.textAnchor,
                   createdAt: createdAt.getTime(),
                 },
@@ -812,6 +831,9 @@ export async function action({ request }: Route.ActionArgs) {
               if (!highlight) {
                 return { attached: false, reason: "highlight not found or deleted" };
               }
+              if (!normalizeCfiRange(highlight.cfiRange)) {
+                return { attached: false, reason: "highlight has no resolvable CFI" };
+              }
 
               const notebook = await getNotebookForUser(userId, highlight.bookId);
               if (getNotebookHighlightIds(notebook?.content).has(highlightId)) {
@@ -822,6 +844,9 @@ export async function action({ request }: Route.ActionArgs) {
                 notebook?.content,
                 highlight,
               );
+              if (!updatedContent) {
+                return { attached: false, reason: "highlight has no resolvable CFI" };
+              }
               let row: Awaited<ReturnType<typeof upsertNotebook>>;
               try {
                 row = await upsertNotebook(userId, highlight.bookId, updatedContent, new Date());

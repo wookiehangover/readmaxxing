@@ -9,10 +9,19 @@ export interface ListedHighlight {
   inNotebook: boolean;
 }
 
+export function normalizeCfiRange(cfiRange: unknown): string | null {
+  if (typeof cfiRange !== "string") return null;
+  const normalized = cfiRange.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 export function appendHighlightReferenceToContent(
   content: unknown,
   highlight: Pick<HighlightRow, "id" | "cfiRange" | "text">,
-): JSONContent {
+): JSONContent | null {
+  const cfiRange = normalizeCfiRange(highlight.cfiRange);
+  if (!cfiRange) return null;
+
   const doc = content && typeof content === "object" ? (content as JSONContent) : null;
   const existingContent = Array.isArray(doc?.content) ? doc.content : [];
   return {
@@ -23,7 +32,7 @@ export function appendHighlightReferenceToContent(
         type: "highlightReference",
         attrs: {
           highlightId: highlight.id,
-          cfiRange: highlight.cfiRange ?? "",
+          cfiRange,
           text: highlight.text,
         },
       },
