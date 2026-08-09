@@ -33,6 +33,7 @@ import {
 import { runEditNotesInSandbox } from "~/lib/editor/notebook-sdk-server";
 import { markdownToTiptapJsonServer } from "~/lib/editor/markdown-to-tiptap-server";
 import { resolveCreateHighlightAnchor } from "~/lib/chat/create-highlight-anchor";
+import { readChapterWindow } from "~/lib/chat/read-chapter-window";
 import {
   appendHighlightReferenceToContent,
   getNotebookHighlightIds,
@@ -911,7 +912,7 @@ export async function action({ request }: Route.ActionArgs) {
           }),
           read_chapter: tool({
             description:
-              "Read a 15,000-character window of a chapter. Use the returned nextOffset as startOffset to continue reading past the first window." +
+              "Read part of a chapter. Without query, this is a 15,000-character pager; pass nextOffset as startOffset to continue. With query, it returns context around the first normalized match in the selected chapter (default radius 4,000 characters, capped at a 15,000-character window)." +
               multiBookToolHint,
             inputSchema: z.object({
               chapterIndex: z.number().optional().describe("The 0-based chapter index"),
@@ -927,9 +928,29 @@ export async function action({ request }: Route.ActionArgs) {
                 .describe(
                   "The 0-based character offset to start reading from; pass the previous nextOffset to read past the first window",
                 ),
+              query: z
+                .string()
+                .min(1)
+                .optional()
+                .describe("A phrase to find within the selected chapter and read around"),
+              radius: z
+                .number()
+                .int()
+                .nonnegative()
+                .optional()
+                .describe(
+                  "Characters of context on each side of query; defaults to 4,000 and is capped so the returned window is at most 15,000 characters",
+                ),
               bookId: bookIdArgSchema,
             }),
-            execute: async ({ chapterIndex, chapterTitle, startOffset, bookId: targetBookId }) => {
+            execute: async ({
+              chapterIndex,
+              chapterTitle,
+              startOffset,
+              query,
+              radius,
+              bookId: targetBookId,
+            }) => {
               const target = resolveTargetBook(targetBookId);
               let chapter: BookChapter | undefined;
               if (chapterIndex != null) {
@@ -939,13 +960,19 @@ export async function action({ request }: Route.ActionArgs) {
                 chapter = target.chapters.find((c) => c.title.toLowerCase().includes(lower));
               }
               if (!chapter) return { error: "Chapter not found" };
-              const text = chapter.text.slice(startOffset, startOffset + 15000);
-              const endOffset = startOffset + text.length;
+              const window = readChapterWindow(chapter.text, { startOffset, query, radius });
+              if ("error" in window) {
+                return {
+                  chapterIndex: chapter.index,
+                  title: chapter.title,
+                  error: window.error,
+                  query,
+                };
+              }
               return {
                 chapterIndex: chapter.index,
                 title: chapter.title,
-                text,
-                ...(endOffset < chapter.text.length ? { nextOffset: endOffset } : {}),
+                ...window,
               };
             },
           }),
