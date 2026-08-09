@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Effect } from "effect";
-import { Globe, Loader2, Plus, Check, Search, ChevronLeft, ChevronRight } from "lucide-react";
-import { Input } from "~/components/ui/input";
+import { Globe, Loader2, Plus, Check } from "lucide-react";
+import { StandardEbooksToolbar } from "~/components/standard-ebooks-toolbar";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
+import { StandardEbooksTable } from "~/components/workspace/standard-ebooks-table";
+import { useSettings } from "~/lib/settings";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { parseEpubEffect } from "~/lib/epub/epub-service";
@@ -16,13 +18,17 @@ interface StandardEbooksBrowserProps {
 }
 
 export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProps) {
+  const [settings] = useSettings();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchPage, setSearchPage] = useState(1);
+  const [books, setBooks] = useState<SEBook[]>([]);
   const [downloadingUrls, setDownloadingUrls] = useState<Set<string>>(new Set());
   const [addedUrls, setAddedUrls] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Debounce search input
   useEffect(() => {
@@ -52,8 +58,46 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
     [debouncedQuery, searchPage],
   );
 
+  useEffect(() => {
+    setBooks([]);
+    if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+  }, [debouncedQuery]);
+
+  useEffect(() => {
+    if (!searchResult) return;
+
+    setBooks((previousBooks) => {
+      const booksByUrl = new Map(
+        (searchResult.currentPage === 1 ? [] : previousBooks).map((book) => [book.urlPath, book]),
+      );
+      for (const book of searchResult.books) booksByUrl.set(book.urlPath, book);
+      return Array.from(booksByUrl.values());
+    });
+  }, [searchResult]);
+
   const isSearching = debouncedQuery.length > 0;
-  const books = searchResult?.books ?? [];
+  const isInitialLoading = isLoading && books.length === 0;
+  const isLoadingMore = isLoading && books.length > 0;
+  const hasMore =
+    searchResult !== undefined &&
+    searchResult.currentPage === searchPage &&
+    searchResult.currentPage < searchResult.totalPages;
+
+  useEffect(() => {
+    const loadMoreElement = loadMoreRef.current;
+    if (!loadMoreElement || !hasMore || isLoading) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        observer.disconnect();
+        setSearchPage((page) => page + 1);
+      },
+      { root: scrollContainerRef.current, rootMargin: "200px 0px" },
+    );
+    observer.observe(loadMoreElement);
+    return () => observer.disconnect();
+  }, [hasMore, isLoading]);
 
   const handleDownload = useCallback(
     async (seBook: SEBook) => {
@@ -100,66 +144,93 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
     },
     [downloadingUrls, addedUrls, onBookAdded],
   );
+  const isBookDownloading = useCallback(
+    (book: SEBook) => downloadingUrls.has(book.urlPath),
+    [downloadingUrls],
+  );
+  const isBookAdded = useCallback((book: SEBook) => addedUrls.has(book.urlPath), [addedUrls]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="shrink-0 space-y-3 p-4 pb-0">
-        <div>
-          <h2 className="text-lg font-semibold">Browse Standard Ebooks</h2>
-          <p className="text-sm text-muted-foreground">
-            Search and import free, beautifully formatted public domain ebooks.
-          </p>
+      <div className="shrink-0">
+        <div className="flex flex-col gap-3 px-4 pt-4 md:px-6">
+          <div>
+            <h2 className="text-lg font-semibold">Browse Standard Ebooks</h2>
+            <p className="text-sm text-muted-foreground">
+              Search and import free, beautifully formatted public domain ebooks.
+            </p>
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+
+          {loadError && (
+            <p className="text-sm text-destructive">
+              Failed to load books. Check your network connection and try again.
+            </p>
+          )}
         </div>
 
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search Standard Ebooks…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        {loadError && (
-          <p className="text-sm text-destructive">
-            Failed to load books. Check your network connection and try again.
-          </p>
-        )}
+        <StandardEbooksToolbar query={query} onQueryChange={setQuery} />
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
-        {!isSearching && !isLoading && books.length > 0 && (
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
+        {!isSearching && books.length > 0 && (
           <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
             Most Popular
           </p>
         )}
 
-        {isLoading ? (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
+        {isInitialLoading ? (
+          settings.standardEbooksView === "grid" ? (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <SkeletonCard key={i} />
+              ))}
+            </div>
+          ) : (
+            <StandardEbooksTableSkeleton />
+          )
         ) : books.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <p className="text-sm text-muted-foreground">
               {isSearching ? "No books found for this search." : "No books available."}
             </p>
           </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+        ) : settings.standardEbooksView === "grid" ? (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {books.map((book) => (
               <SEBookCard
                 key={book.urlPath}
                 book={book}
-                isDownloading={downloadingUrls.has(book.urlPath)}
-                isAdded={addedUrls.has(book.urlPath)}
+                isDownloading={isBookDownloading(book)}
+                isAdded={isBookAdded(book)}
                 onDownload={handleDownload}
               />
             ))}
+          </div>
+        ) : (
+          <div className="[&>div]:h-auto [&>div]:overflow-visible">
+            <StandardEbooksTable
+              books={books}
+              isDownloading={isBookDownloading}
+              isAdded={isBookAdded}
+              onDownload={handleDownload}
+            />
+          </div>
+        )}
+
+        {(hasMore || isLoadingMore) && (
+          <div
+            ref={loadMoreRef}
+            className="flex h-12 items-center justify-center"
+            aria-live="polite"
+          >
+            {isLoadingMore && (
+              <>
+                <Loader2 className="mr-2 size-4 animate-spin" />
+                <span className="text-sm text-muted-foreground">Loading more books…</span>
+              </>
+            )}
           </div>
         )}
 
@@ -189,32 +260,6 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
           </a>
         </div>
       </div>
-
-      {searchResult && searchResult.totalPages > 1 && (
-        <div className="flex shrink-0 items-center justify-center gap-2 border-t p-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={searchPage <= 1}
-            onClick={() => setSearchPage(searchPage - 1)}
-          >
-            <ChevronLeft className="size-4" />
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {searchResult.currentPage} of {searchResult.totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={searchPage >= searchResult.totalPages}
-            onClick={() => setSearchPage(searchPage + 1)}
-          >
-            Next
-            <ChevronRight className="size-4" />
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
@@ -297,6 +342,19 @@ function SkeletonCard() {
         <Skeleton className="h-3 w-1/2" />
         <Skeleton className="mt-1 h-8 w-full" />
       </div>
+    </div>
+  );
+}
+
+function StandardEbooksTableSkeleton() {
+  return (
+    <div className="flex flex-col overflow-hidden rounded-md border">
+      <Skeleton className="h-10 w-full rounded-none" />
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="border-t p-2">
+          <Skeleton className="h-12 w-full" />
+        </div>
+      ))}
     </div>
   );
 }

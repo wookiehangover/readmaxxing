@@ -13,3 +13,6 @@ test-results/
 .vercel
 .env*.local
 .pnpm-store
+
+data/
+tmp/
