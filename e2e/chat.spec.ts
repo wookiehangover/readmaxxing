@@ -317,9 +317,18 @@ test.describe("Chat (server-authoritative)", () => {
     // that isn't straightforward to locate via CSS), so we assert on the
     // persisted record which confirms the full server+client tool pipeline ran.
     await expect
-      .poll(() => readHighlightFromIdb(page, passage), { timeout: 90_000 })
-      .not.toBeNull();
-
+      .poll(
+        async () => {
+          const row = await readHighlightFromIdb(page, passage);
+          return (
+            typeof row?.cfiRange === "string" &&
+            row.cfiRange.trim().startsWith("epubcfi(") &&
+            row.cfiRange.trim().length > "epubcfi()".length
+          );
+        },
+        { timeout: 90_000 },
+      )
+      .toBe(true);
   });
 
   test("golden path: highlight then annotate inline", async ({ page }) => {
