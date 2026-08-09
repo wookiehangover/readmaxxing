@@ -205,7 +205,7 @@ When the reader asks "What would [thinker] think about this?" or similar questio
 - When the reader asks you to "save this", "note that", or "add to my notes", use append_to_notes for quick additions.
 - When the reader asks to reorganize, restructure, replace sections, delete content, or rewrite their notes, use edit_notes. This gives you a \`notebook\` object with methods like find(), replace(), remove(), insertAfter(), etc. To edit individual list items, use find({ type: "listItem" }) to target them directly instead of rewriting the entire list.
 - When they ask about their notes or want you to reference what they've written, use read_notes first.
-- When you find a passage that is particularly important, beautiful, or relevant to the reader's question, proactively highlight it using create_highlight. Include a brief note explaining why it's significant.
+- When you find a passage that is particularly important, beautiful, or relevant to the reader's question, proactively highlight it using create_highlight. Prefer the verbatim quote with an optional chapterIndex; startOffset is not required. Include a brief note explaining why it's significant. If the quote is ambiguous, retry with a candidate startOffset or a narrower verbatim quote.
 - When the reader asks for recommendations, related reading, or "what else should I read", use BOTH search tools together as described in "Going deeper" below.
 
 ## Going deeper — recommendations and related reading
@@ -667,7 +667,7 @@ export async function action({ request }: Route.ActionArgs) {
           }),
           create_highlight: tool({
             description:
-              "Highlight a passage in a book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. For precise EPUB anchoring, pass the exact passage text with chapterIndex and startOffset from the SAME read_chapter call; endOffset is optional because the tool derives the end from the passage text. The highlight will appear in the epub reader and be saved to the reader's notebook. A fuzzy result means the anchor was reconstructed from text and you should tell the user to highlight manually if precision matters." +
+              "Highlight a passage in a book. Use this proactively when you find text that is particularly important, beautiful, or relevant to the reader's question. Pass the exact verbatim quote; chapterIndex is an optional hint. startOffset and endOffset are optional and should only be used to verify or disambiguate a quote. If the quote is ambiguous, the tool returns candidates that you can retry with a candidate startOffset or a narrower quote. A successful highlight appears in the EPUB reader and is saved to the reader's notebook." +
               multiBookToolHint,
             inputSchema: z.object({
               text: z
@@ -682,20 +682,22 @@ export async function action({ request }: Route.ActionArgs) {
                 .int()
                 .nonnegative()
                 .optional()
-                .describe("Chapter index from the same read_chapter call as the offsets"),
+                .describe("Optional chapter hint for locating the verbatim quote"),
               startOffset: z
                 .number()
                 .int()
                 .nonnegative()
                 .optional()
-                .describe("Chapter-relative inclusive start offset from read_chapter"),
+                .describe(
+                  "Optional chapter-relative start offset to disambiguate or verify the quote",
+                ),
               endOffset: z
                 .number()
                 .int()
                 .positive()
                 .optional()
                 .describe(
-                  "Optional chapter-relative exclusive end; derived from text when omitted",
+                  "Optional chapter-relative exclusive end offset; derived from text when omitted",
                 ),
               bookId: bookIdArgSchema,
             }),
@@ -743,6 +745,24 @@ export async function action({ request }: Route.ActionArgs) {
                 startOffset,
                 endOffset,
               });
+              if (resolvedAnchor.error === "ambiguous") {
+                const candidates = (resolvedAnchor.candidates ?? []).map((candidate) => ({
+                  ...candidate,
+                  chapterTitle:
+                    target.chapters.find((chapter) => chapter.index === candidate.chapterIndex)
+                      ?.title ?? null,
+                }));
+                return {
+                  bookId: target.bookId,
+                  created: false,
+                  error: "ambiguous",
+                  candidates,
+                  matchQuality: resolvedAnchor.matchQuality,
+                  chapterIndex: resolvedAnchor.chapterIndex,
+                  text,
+                  note: note ?? null,
+                };
+              }
               const cfiRange = normalizeCfiRange(resolvedAnchor.cfiRange);
               if (!cfiRange) {
                 return {
