@@ -221,7 +221,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     const cfi = latestCfiRef.current;
     if (!cfi) return;
     savePositionDualKey({
-      panelId: undefined,
+      panelId: configRef.current.panelId,
       bookId,
       cfi,
       localProgression: latestLayoutRef.current.localProgression,

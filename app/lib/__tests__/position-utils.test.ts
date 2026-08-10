@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   resolveStartCfi,
+  resolveStartPosition,
   savePositionDualKey,
   shouldAcceptReadingPosition,
 } from "~/lib/position-utils";
@@ -237,6 +238,29 @@ describe("savePositionDualKey", () => {
     expect(saved.every((s) => s.cfi === cfi)).toBe(true);
   });
 
+  it("mirrors exact restore layout to both keys during a final flush", async () => {
+    const savePosition = vi.fn().mockResolvedValue(undefined);
+
+    await savePositionDualKey({
+      panelId: "panel-2",
+      bookId: "book-2",
+      cfi: "epubcfi(/6/8!/4/2/8:20)",
+      localProgression: 0.62,
+      spineIndex: 3,
+      savePosition,
+    });
+
+    expect(savePosition).toHaveBeenNthCalledWith(1, "book-2", "epubcfi(/6/8!/4/2/8:20)", {
+      localProgression: 0.62,
+      spineIndex: 3,
+    });
+    expect(savePosition).toHaveBeenNthCalledWith(2, "panel-2", "epubcfi(/6/8!/4/2/8:20)", {
+      recordChange: false,
+      localProgression: 0.62,
+      spineIndex: 3,
+    });
+  });
+
   it("can make both book and panel saves local-only", async () => {
     const savePosition = vi
       .fn<(key: string, cfi: string, options?: { recordChange?: boolean }) => Promise<void>>()
@@ -257,5 +281,28 @@ describe("savePositionDualKey", () => {
     expect(savePosition).toHaveBeenNthCalledWith(2, "panel-3", "epubcfi(/6/90)", {
       recordChange: false,
     });
+  });
+});
+
+describe("resolveStartPosition", () => {
+  it("restores the book-level position when a recreated panel has no mirror", async () => {
+    const bookPosition = {
+      cfi: "epubcfi(/6/8!/4/2/8:20)",
+      localProgression: 0.62,
+      spineIndex: 3,
+    };
+    const getPositionRecord = vi.fn(async (key: string) =>
+      key === "book-2" ? bookPosition : null,
+    );
+
+    const result = await resolveStartPosition({
+      latest: null,
+      panelId: "new-panel-2",
+      bookId: "book-2",
+      getPositionRecord,
+    });
+
+    expect(result).toEqual(bookPosition);
+    expect(getPositionRecord.mock.calls).toEqual([["new-panel-2"], ["book-2"]]);
   });
 });
