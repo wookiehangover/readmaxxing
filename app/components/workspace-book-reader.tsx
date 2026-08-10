@@ -475,7 +475,6 @@ function WorkspaceBookReaderInner({
     // change; resizing here would revert the navigation.
     const activeDisposable = panelApi.onDidActiveChange((e) => {
       if (e.isActive) {
-        markLayoutChangeInProgress();
         applyTheme();
       }
     });

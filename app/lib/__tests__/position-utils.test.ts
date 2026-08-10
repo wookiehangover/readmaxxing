@@ -33,6 +33,16 @@ describe("shouldAcceptReadingPosition", () => {
     ).toBe(false);
   });
 
+  it("accepts a small backward scroll during layout settling", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/4!/4/2/8:10)", localProgression: 0.58, spineIndex: 1 },
+        { layoutChangeInProgress: true, navigationInProgress: false },
+      ),
+    ).toBe(true);
+  });
+
   it("rejects a relocation to an earlier spine during layout settling", () => {
     expect(
       shouldAcceptReadingPosition(

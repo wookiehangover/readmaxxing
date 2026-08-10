@@ -16,13 +16,15 @@ export interface PositionAcceptanceContext {
   readonly navigationInProgress: boolean;
 }
 
+const LAYOUT_THRASH_PROGRESSION_REGRESSION = 0.1;
+
 function isSectionStartCfi(cfi: string): boolean {
   return cfi.trim().endsWith("!/4)");
 }
 
 /**
- * Reject a relocation that moves backwards while layout is settling.
- * Explicit navigation is always accepted so intentional backward reading works.
+ * Reject section-start and large backward relocations while layout is settling.
+ * Explicit navigation and small scroll deltas remain accepted.
  */
 export function shouldAcceptReadingPosition(
   current: StoredReadingPosition | null,
@@ -30,6 +32,7 @@ export function shouldAcceptReadingPosition(
   context: PositionAcceptanceContext,
 ): boolean {
   if (!current || context.navigationInProgress || !context.layoutChangeInProgress) return true;
+  if (candidate.cfi !== current.cfi && isSectionStartCfi(candidate.cfi)) return false;
   if (
     current.spineIndex !== undefined &&
     candidate.spineIndex !== undefined &&
@@ -43,7 +46,9 @@ export function shouldAcceptReadingPosition(
     Number.isFinite(current.localProgression) &&
     Number.isFinite(candidate.localProgression)
   ) {
-    return candidate.localProgression >= current.localProgression;
+    return (
+      current.localProgression - candidate.localProgression < LAYOUT_THRASH_PROGRESSION_REGRESSION
+    );
   }
   if (candidate.cfi === current.cfi) return true;
   return !isSectionStartCfi(candidate.cfi);
