@@ -11,6 +11,44 @@ export interface StoredReadingPosition {
   readonly spineIndex?: number;
 }
 
+export interface PositionAcceptanceContext {
+  readonly layoutChangeInProgress: boolean;
+  readonly navigationInProgress: boolean;
+}
+
+function isSectionStartCfi(cfi: string): boolean {
+  return cfi.trim().endsWith("!/4)");
+}
+
+/**
+ * Reject a relocation that moves backwards while layout is settling.
+ * Explicit navigation is always accepted so intentional backward reading works.
+ */
+export function shouldAcceptReadingPosition(
+  current: StoredReadingPosition | null,
+  candidate: StoredReadingPosition,
+  context: PositionAcceptanceContext,
+): boolean {
+  if (!current || context.navigationInProgress || !context.layoutChangeInProgress) return true;
+  if (
+    current.spineIndex !== undefined &&
+    candidate.spineIndex !== undefined &&
+    current.spineIndex !== candidate.spineIndex
+  ) {
+    return candidate.spineIndex > current.spineIndex;
+  }
+  if (
+    current.localProgression !== undefined &&
+    candidate.localProgression !== undefined &&
+    Number.isFinite(current.localProgression) &&
+    Number.isFinite(candidate.localProgression)
+  ) {
+    return candidate.localProgression >= current.localProgression;
+  }
+  if (candidate.cfi === current.cfi) return true;
+  return !isSectionStartCfi(candidate.cfi);
+}
+
 export interface ResolveStartCfiOpts {
   /** In-memory CFI from the current session (highest priority). */
   latestCfi: string | null;

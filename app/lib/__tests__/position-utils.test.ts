@@ -1,5 +1,67 @@
 import { describe, it, expect, vi } from "vitest";
-import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
+import {
+  resolveStartCfi,
+  savePositionDualKey,
+  shouldAcceptReadingPosition,
+} from "~/lib/position-utils";
+
+describe("shouldAcceptReadingPosition", () => {
+  const current = {
+    cfi: "epubcfi(/6/4!/4/2/8:20)",
+    localProgression: 0.62,
+    spineIndex: 1,
+  };
+
+  it("rejects a chapter-start regression during layout settling", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
+        { layoutChangeInProgress: true, navigationInProgress: false },
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a less-far position during layout settling", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/4!/4/2/4:10)", localProgression: 0.3, spineIndex: 1 },
+        { layoutChangeInProgress: true, navigationInProgress: false },
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a relocation to an earlier spine during layout settling", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/2!/4)", localProgression: 0, spineIndex: 0 },
+        { layoutChangeInProgress: true, navigationInProgress: false },
+      ),
+    ).toBe(false);
+  });
+
+  it("accepts intentional backward navigation", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
+        { layoutChangeInProgress: true, navigationInProgress: true },
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts backward reading when no layout change is settling", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/4!/4/2/4:10)", localProgression: 0.3, spineIndex: 1 },
+        { layoutChangeInProgress: false, navigationInProgress: false },
+      ),
+    ).toBe(true);
+  });
+});
 
 describe("resolveStartCfi", () => {
   it("returns latestCfi when provided (skips all DB calls)", async () => {
