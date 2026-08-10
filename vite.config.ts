@@ -11,6 +11,12 @@ function getSiteOrigin() {
   return "";
 }
 
+function isNetworkOnlyDocumentPath(pathname: string) {
+  return ["/settings", "/login"].some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  );
+}
+
 export default defineConfig({
   plugins: [
     tailwindcss(),
@@ -42,6 +48,14 @@ export default defineConfig({
             urlPattern: ({ request, url, sameOrigin }) =>
               sameOrigin &&
               request.mode === "navigate" &&
+              isNetworkOnlyDocumentPath(url.pathname),
+            handler: "NetworkOnly",
+          },
+          {
+            urlPattern: ({ request, url, sameOrigin }) =>
+              sameOrigin &&
+              request.mode === "navigate" &&
+              !isNetworkOnlyDocumentPath(url.pathname) &&
               !url.pathname.startsWith("/api/") &&
               !url.pathname.startsWith("/share/"),
             handler: "NetworkFirst",

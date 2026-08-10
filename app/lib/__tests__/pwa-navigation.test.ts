@@ -19,7 +19,45 @@ function getPwaOptions() {
   return options.workbox;
 }
 
+function matchesRoute(
+  route: NonNullable<ReturnType<typeof getPwaOptions>["runtimeCaching"]>[number],
+  pathname: string,
+  sameOrigin = true,
+) {
+  const urlPattern = route.urlPattern;
+  if (typeof urlPattern !== "function") throw new Error("Route matcher is missing");
+  type MatchOptions = Parameters<typeof urlPattern>[0];
+  return urlPattern({
+    request: { mode: "navigate" } as Request,
+    url: new URL(pathname, "https://readmaxxing.test"),
+    sameOrigin,
+  } as MatchOptions);
+}
+
 describe("PWA document navigation", () => {
+  it("uses NetworkOnly for settings and login before the documents route", () => {
+    const routes = getPwaOptions().runtimeCaching ?? [];
+    const networkOnlyRoute = routes.find(
+      (candidate) => candidate.handler === "NetworkOnly" && !candidate.options?.cacheName,
+    );
+    const documentsRoute = routes.find(
+      (candidate) => candidate.options?.cacheName === "documents",
+    );
+
+    expect(networkOnlyRoute).toBeDefined();
+    expect(documentsRoute).toBeDefined();
+    expect(routes.indexOf(networkOnlyRoute!)).toBeLessThan(routes.indexOf(documentsRoute!));
+
+    for (const pathname of ["/settings", "/settings/profile", "/login", "/login/"]) {
+      expect(matchesRoute(networkOnlyRoute!, pathname)).toBe(true);
+      expect(matchesRoute(documentsRoute!, pathname)).toBe(false);
+    }
+
+    expect(matchesRoute(networkOnlyRoute!, "/settings-other")).toBe(false);
+    expect(matchesRoute(networkOnlyRoute!, "/about")).toBe(false);
+    expect(matchesRoute(networkOnlyRoute!, "https://other.test/settings", false)).toBe(false);
+  });
+
   it("uses the network for /about before falling back to the workspace shell", () => {
     const workbox = getPwaOptions();
     const route = workbox.runtimeCaching?.find(
@@ -34,20 +72,10 @@ describe("PWA document navigation", () => {
       },
     });
 
-    const urlPattern = route?.urlPattern;
-    if (typeof urlPattern !== "function") throw new Error("Document route matcher is missing");
-    type MatchOptions = Parameters<typeof urlPattern>[0];
-    const matches = (pathname: string, sameOrigin = true) =>
-      urlPattern({
-        request: { mode: "navigate" } as Request,
-        url: new URL(pathname, "https://readmaxxing.test"),
-        sameOrigin,
-      } as MatchOptions);
-
-    expect(matches("/about")).toBe(true);
-    expect(matches("/api/chat")).toBe(false);
-    expect(matches("/share/book-id")).toBe(false);
-    expect(matches("https://other.test/about", false)).toBe(false);
+    expect(matchesRoute(route!, "/about")).toBe(true);
+    expect(matchesRoute(route!, "/api/chat")).toBe(false);
+    expect(matchesRoute(route!, "/share/book-id")).toBe(false);
+    expect(matchesRoute(route!, "https://other.test/about", false)).toBe(false);
   });
 
   it("prerenders /about", () => {
