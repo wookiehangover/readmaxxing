@@ -1,5 +1,10 @@
 import { Link } from "react-router";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import type { Route } from "./+types/about";
+
+export function meta(_args: Route.MetaArgs) {
+  return [{ title: "About — Readmaxxing" }];
+}
 
 export default function AboutPage() {
   return (
