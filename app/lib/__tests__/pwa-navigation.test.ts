@@ -40,9 +40,7 @@ describe("PWA document navigation", () => {
     const networkOnlyRoute = routes.find(
       (candidate) => candidate.handler === "NetworkOnly" && !candidate.options?.cacheName,
     );
-    const documentsRoute = routes.find(
-      (candidate) => candidate.options?.cacheName === "documents",
-    );
+    const documentsRoute = routes.find((candidate) => candidate.options?.cacheName === "documents");
 
     expect(networkOnlyRoute).toBeDefined();
     expect(documentsRoute).toBeDefined();
