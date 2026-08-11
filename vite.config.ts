@@ -11,6 +11,12 @@ function getSiteOrigin() {
   return "";
 }
 
+function isNetworkOnlyDocumentPath(pathname: string) {
+  return ["/settings", "/login"].some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  );
+}
+
 export default defineConfig({
   plugins: [
     tailwindcss(),
@@ -36,9 +42,34 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         // revision is stamped post-build by scripts/patch-sw-index-html-revision.mjs
         additionalManifestEntries: [{ url: "/index.html", revision: null }],
-        navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api\//, /^\/share\//],
+        navigateFallback: null,
         runtimeCaching: [
+          {
+            urlPattern: ({ request, url, sameOrigin }) =>
+              sameOrigin &&
+              request.mode === "navigate" &&
+              isNetworkOnlyDocumentPath(url.pathname),
+            handler: "NetworkOnly",
+          },
+          {
+            urlPattern: ({ request, url, sameOrigin }) =>
+              sameOrigin &&
+              request.mode === "navigate" &&
+              !isNetworkOnlyDocumentPath(url.pathname) &&
+              !url.pathname.startsWith("/api/") &&
+              !url.pathname.startsWith("/share/"),
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "documents",
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              // Use the workspace shell only when both network and runtime cache miss.
+              precacheFallback: {
+                fallbackURL: "/index.html",
+              },
+            },
+          },
           {
             urlPattern: ({ url }) =>
               url.pathname === "/api/sync/files/download" &&
