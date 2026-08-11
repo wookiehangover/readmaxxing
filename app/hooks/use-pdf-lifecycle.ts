@@ -109,7 +109,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     const page = latestPageRef.current;
     if (page > 0) {
       savePositionDualKey({
-        panelId: undefined,
+        panelId: configRef.current.panelId,
         bookId,
         cfi: `page:${page}`,
         savePosition: (key, val, options) =>
