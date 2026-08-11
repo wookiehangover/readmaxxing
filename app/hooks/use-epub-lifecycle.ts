@@ -42,9 +42,9 @@ import {
   type TocNavigationTarget,
 } from "~/lib/epub/successor-toc";
 import {
+  getReadingPositionRestoreTarget,
   resolveStartPosition,
   savePositionDualKey,
-  shouldAcceptReadingPosition,
   type StoredReadingPosition,
 } from "~/lib/position-utils";
 import { resolveTheme } from "~/lib/settings";
@@ -324,6 +324,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     let tocData: TocEntry[] = [];
     let positions: readonly PersistentLocator[] = [];
     let publisherPages: PublisherPageMap | null = null;
+    let layoutRestoreInProgress = false;
     registerActiveReader(bookId);
     setHasRestoredPosition(false);
     setLoadError(false);
@@ -349,6 +350,43 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       }).catch((error) => console.error("Failed to save local reading position:", error));
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(flushPositionSave, POSITION_SAVE_DEBOUNCE_MS);
+    };
+
+    const restoreLastGoodPosition = async (
+      position: StoredReadingPosition,
+      candidateSpineIndex: number,
+    ) => {
+      if (!rendition || cancelled || layoutRestoreInProgress) return;
+      layoutRestoreInProgress = true;
+      try {
+        const localProgression = position.localProgression;
+        const navigator = navigatorRef.current;
+        if (
+          navigator &&
+          position.spineIndex === candidateSpineIndex &&
+          localProgression !== undefined &&
+          Number.isFinite(localProgression)
+        ) {
+          suppressPositionSaveRef.current = true;
+          try {
+            navigator.restoreProgression(localProgression);
+            return;
+          } catch {
+            // Fall through to a CFI display if resize settling has not completed.
+          } finally {
+            suppressPositionSaveRef.current = false;
+          }
+        }
+        await displayCfiWithFallback(rendition, position.cfi, { localProgression });
+      } catch (error) {
+        console.warn("Failed to restore EPUB position after layout change", {
+          bookId,
+          cfi: position.cfi,
+          error,
+        });
+      } finally {
+        layoutRestoreInProgress = false;
+      }
     };
 
     const handleRelocation = (relocation: Relocation) => {
@@ -412,20 +450,20 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
             spineIndex: latestLayoutRef.current.spineIndex,
           }
         : null;
-      if (
-        !shouldAcceptReadingPosition(
-          currentPosition,
-          {
-            cfi,
-            localProgression: relocation.localProgression,
-            spineIndex: relocation.spineIndex,
-          },
-          {
-            layoutChangeInProgress: Date.now() < layoutPositionGuardUntilRef.current,
-            navigationInProgress,
-          },
-        )
-      ) {
+      const restoreTarget = getReadingPositionRestoreTarget(
+        currentPosition,
+        {
+          cfi,
+          localProgression: relocation.localProgression,
+          spineIndex: relocation.spineIndex,
+        },
+        {
+          layoutChangeInProgress: Date.now() < layoutPositionGuardUntilRef.current,
+          navigationInProgress,
+        },
+      );
+      if (restoreTarget) {
+        void restoreLastGoodPosition(restoreTarget, relocation.spineIndex);
         return;
       }
       latestCfiRef.current = cfi;

@@ -54,6 +54,16 @@ export function shouldAcceptReadingPosition(
   return !isSectionStartCfi(candidate.cfi);
 }
 
+/** Return the last-good position when a layout relocation needs to be undone. */
+export function getReadingPositionRestoreTarget(
+  current: StoredReadingPosition | null,
+  candidate: StoredReadingPosition,
+  context: PositionAcceptanceContext,
+): StoredReadingPosition | null {
+  if (!current || shouldAcceptReadingPosition(current, candidate, context)) return null;
+  return current;
+}
+
 export interface ResolveStartCfiOpts {
   /** In-memory CFI from the current session (highest priority). */
   latestCfi: string | null;

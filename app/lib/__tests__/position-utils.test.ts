@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  getReadingPositionRestoreTarget,
   resolveStartCfi,
   resolveStartPosition,
   savePositionDualKey,
@@ -71,6 +72,26 @@ describe("shouldAcceptReadingPosition", () => {
         { layoutChangeInProgress: false, navigationInProgress: false },
       ),
     ).toBe(true);
+  });
+
+  it("restores the last-good position after a layout thrash regression", () => {
+    expect(
+      getReadingPositionRestoreTarget(
+        current,
+        { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
+        { layoutChangeInProgress: true, navigationInProgress: false },
+      ),
+    ).toBe(current);
+  });
+
+  it("does not restore over intentional backward navigation", () => {
+    expect(
+      getReadingPositionRestoreTarget(
+        current,
+        { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
+        { layoutChangeInProgress: true, navigationInProgress: true },
+      ),
+    ).toBeNull();
   });
 });
 
