@@ -22,10 +22,7 @@ interface AgentHostEnvironment extends NodeJS.ProcessEnv {
 }
 
 let inProcessApplication: Promise<FlueNodeApplication> | undefined;
-const activeHosts = new Map<
-  string,
-  { host: ReadingAgentHost; stop: () => Promise<void> }
->();
+const activeHosts = new Map<string, { host: ReadingAgentHost; stop: () => Promise<void> }>();
 
 export function getActiveReadingAgentHost(conversationId: string): ReadingAgentHost | undefined {
   return activeHosts.get(conversationId)?.host;
@@ -186,25 +183,9 @@ export async function createReadingAgentHost(
   return managedHost;
 }
 
-export async function stopReadingAgentHost(
-  conversationId: string,
-  env: AgentHostEnvironment = process.env,
-): Promise<boolean> {
+export async function stopReadingAgentHost(conversationId: string): Promise<boolean> {
   const active = activeHosts.get(conversationId);
-  if (active) {
-    await active.stop();
-    return true;
-  }
-  if (!shouldUseVercelReadingAgentHost(env)) return false;
-  try {
-    const sandbox = await Sandbox.get({
-      name: `reading-scribe-${conversationId.slice(0, 32)}`,
-      resume: false,
-      ...accessTokenCredentials(env),
-    });
-    await sandbox.stop();
-    return true;
-  } catch {
-    return false;
-  }
+  if (!active) return false;
+  await active.stop();
+  return true;
 }

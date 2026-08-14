@@ -3,14 +3,18 @@ import {
   claimReadingIngestUnitWithLease,
   completeReadingIngestUnit,
   getCurrentReadingArtifacts,
+  getLiveReadingAgentLease,
   getNextDueReadingIngestUnit,
   listReadingIngestSweepUserIds,
   reclaimExpiredReadingAgentLease,
   releaseReadingIngestUnit,
+  stopReadingIngestUnit,
   type ReadingArtifactRow,
   type ReadingArtifactUpdate,
+  type ReadingAgentStatusLeaseRow,
   type ReadingIngestUnitRow,
 } from "~/lib/database/reading-artifact/reading-artifact";
+import { getActiveReadingAgentHost } from "./agent-host.server";
 import {
   callReadingScribe,
   type ArtifactKind,
@@ -22,6 +26,9 @@ import {
 import { readingConversationId } from "./conversation-id.server";
 
 export { readingConversationId };
+
+export const ORPHANED_READING_AGENT_ERROR =
+  "Reading agent host lost after the app process restarted";
 
 type ReadingAgentCall = (options: {
   conversationId: string;
@@ -62,9 +69,15 @@ interface DispatchDependencies {
 }
 
 interface DrainDependencies {
-  reclaim: typeof reclaimExpiredReadingAgentLease;
+  reclaim: (userId: string) => Promise<unknown>;
   getNextDue: typeof getNextDueReadingIngestUnit;
   dispatch: typeof dispatchReadingIngestUnit;
+}
+
+interface OrphanReclaimDependencies {
+  getLease: typeof getLiveReadingAgentLease;
+  getActiveHost: typeof getActiveReadingAgentHost;
+  stopUnit: typeof stopReadingIngestUnit;
 }
 
 interface SweepDependencies {
@@ -135,8 +148,37 @@ export async function dispatchReadingIngestUnit(
   }
 }
 
+const DEFAULT_ORPHAN_RECLAIM_DEPENDENCIES: OrphanReclaimDependencies = {
+  getLease: getLiveReadingAgentLease,
+  getActiveHost: getActiveReadingAgentHost,
+  stopUnit: stopReadingIngestUnit,
+};
+
+export async function reclaimOrphanedReadingAgentLease(
+  userId: string,
+  options: {
+    lease?: ReadingAgentStatusLeaseRow;
+    dependencies?: Partial<OrphanReclaimDependencies>;
+  } = {},
+): Promise<boolean> {
+  const dependencies = {
+    ...DEFAULT_ORPHAN_RECLAIM_DEPENDENCIES,
+    ...options.dependencies,
+  };
+  const lease = options.lease ?? (await dependencies.getLease(userId));
+  if (!lease) return false;
+  const conversationId = readingConversationId(userId, lease.bookId);
+  if (dependencies.getActiveHost(conversationId)) return false;
+  return dependencies.stopUnit(userId, lease.unitId, ORPHANED_READING_AGENT_ERROR);
+}
+
+export async function reclaimStaleReadingAgentLease(userId: string): Promise<void> {
+  await reclaimExpiredReadingAgentLease(userId);
+  await reclaimOrphanedReadingAgentLease(userId);
+}
+
 const DEFAULT_DRAIN_DEPENDENCIES: DrainDependencies = {
-  reclaim: reclaimExpiredReadingAgentLease,
+  reclaim: reclaimStaleReadingAgentLease,
   getNextDue: getNextDueReadingIngestUnit,
   dispatch: dispatchReadingIngestUnit,
 };

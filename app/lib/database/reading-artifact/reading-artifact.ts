@@ -558,7 +558,11 @@ export async function getReadingIngestUnitForUser(
   return result.rows[0] ?? null;
 }
 
-export async function stopReadingIngestUnit(userId: string, unitId: string): Promise<boolean> {
+export async function stopReadingIngestUnit(
+  userId: string,
+  unitId: string,
+  error = "Stopped from debug",
+): Promise<boolean> {
   const result = await getPool().query<{ id: string }>(sql`
     WITH stopped AS (
       UPDATE readmax.reading_ingest_unit
@@ -566,7 +570,7 @@ export async function stopReadingIngestUnit(userId: string, unitId: string): Pro
           claimed_at = NULL,
           next_attempt_at = NOW(),
           processed_at = NULL,
-          error = 'Stopped from debug'
+          error = ${error}
       WHERE user_id = ${userId}
         AND id = ${unitId}
         AND status = 'processing'

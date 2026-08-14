@@ -11,6 +11,7 @@ import {
 } from "~/lib/reading-agent/conversation";
 import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
 import { getActiveReadingAgentHost } from "~/lib/reading-agent/agent-host.server";
+import { reclaimOrphanedReadingAgentLease } from "~/lib/reading-agent/dispatch.server";
 
 function scopedConversation(
   userId: string,
@@ -41,9 +42,17 @@ export async function loader({ request }: { request: Request }): Promise<Respons
   if (!lease) return Response.json(emptyReadingAgentConversation("absent"));
 
   const conversationId = readingConversationId(session.userId, lease.bookId);
-  const activeHost = getActiveReadingAgentHost(conversationId);
+  let activeHost = getActiveReadingAgentHost(conversationId);
   if (!activeHost) {
-    return Response.json(scopedConversation(session.userId, lease.bookId, "connecting"));
+    const reclaimed = await reclaimOrphanedReadingAgentLease(session.userId, { lease });
+    if (reclaimed) return Response.json(emptyReadingAgentConversation("absent"));
+    activeHost = getActiveReadingAgentHost(conversationId);
+    if (!activeHost) {
+      return Response.json({
+        ...scopedConversation(session.userId, lease.bookId, "error"),
+        error: "Reading agent host was lost after the app restarted. Start or retry the queue.",
+      });
+    }
   }
   if (!process.env.READING_AGENT_SECRET) {
     return Response.json(scopedConversation(session.userId, lease.bookId, "error"));

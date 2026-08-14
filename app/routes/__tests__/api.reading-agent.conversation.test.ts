@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
     history: vi.fn(),
     createFlueClient: vi.fn(),
     activeHost: vi.fn(),
+    reclaimOrphan: vi.fn(),
     FakeFlueApiError,
   };
 });
@@ -33,6 +34,9 @@ vi.mock("@flue/sdk", () => ({
 }));
 vi.mock("~/lib/reading-agent/agent-host.server", () => ({
   getActiveReadingAgentHost: mocks.activeHost,
+}));
+vi.mock("~/lib/reading-agent/dispatch.server", () => ({
+  reclaimOrphanedReadingAgentLease: mocks.reclaimOrphan,
 }));
 
 import { loader } from "~/routes/api.reading-agent.conversation";
@@ -63,6 +67,7 @@ beforeEach(() => {
   mocks.history.mockReset();
   mocks.createFlueClient.mockReset().mockReturnValue({ history: mocks.history });
   mocks.activeHost.mockReset();
+  mocks.reclaimOrphan.mockReset().mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -128,17 +133,31 @@ describe("reading-agent conversation API", () => {
     expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 
-  it("returns connecting while the in-app host starts despite a leftover URL", async () => {
+  it("reclaims an orphan lease and returns absent instead of connecting forever", async () => {
     const response = await loader({ request: request() });
-    const conversationId = readingConversationId("user-1", "book-1");
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      phase: "connecting",
-      conversationId,
-      bookId: "book-1",
+      phase: "absent",
+      conversationId: null,
+      bookId: null,
       messages: [],
     });
-    expect(mocks.activeHost).toHaveBeenCalledWith(conversationId);
+    expect(mocks.reclaimOrphan).toHaveBeenCalledWith("user-1", {
+      lease: expect.objectContaining({ unitId: "unit-1", bookId: "book-1" }),
+    });
+    expect(mocks.createFlueClient).not.toHaveBeenCalled();
+  });
+
+  it("returns a recoverable error when an orphan lease cannot be reclaimed", async () => {
+    mocks.reclaimOrphan.mockResolvedValue(false);
+
+    const response = await loader({ request: request() });
+
+    await expect(response.json()).resolves.toMatchObject({
+      phase: "error",
+      bookId: "book-1",
+      error: expect.stringContaining("Start or retry"),
+    });
     expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 

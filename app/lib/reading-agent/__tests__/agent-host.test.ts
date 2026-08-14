@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldUseVercelReadingAgentHost } from "../agent-host.server";
+import { shouldUseVercelReadingAgentHost, stopReadingAgentHost } from "../agent-host.server";
 
 describe("ReadingScribe app host selection", () => {
   it("uses the in-process host during local development", () => {
@@ -24,5 +24,9 @@ describe("ReadingScribe app host selection", () => {
         VERCEL_TEAM_ID: "team",
       }),
     ).toBe(true);
+  });
+
+  it("does not resume a host that is absent from this app process", async () => {
+    await expect(stopReadingAgentHost("orphan-conversation")).resolves.toBe(false);
   });
 });

@@ -17,13 +17,13 @@ vi.mock("~/lib/database/auth-middleware", () => ({ getSessionFromRequest: mocks.
 vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   getReadingAgentSchemaHealth: mocks.schema,
   getLiveReadingAgentLease: mocks.lease,
-  reclaimExpiredReadingAgentLease: mocks.reclaim,
   stopReadingIngestUnit: mocks.stop,
   retryReadingIngestUnit: mocks.retry,
   resetReadingIngestUnit: mocks.reset,
   getReadingIngestUnitForUser: mocks.getUnit,
 }));
 vi.mock("~/lib/reading-agent/dispatch.server", () => ({
+  reclaimStaleReadingAgentLease: mocks.reclaim,
   scheduleReadingIngestQueue: mocks.schedule,
 }));
 vi.mock("~/lib/reading-agent/agent-host.server", () => ({

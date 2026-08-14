@@ -6,7 +6,9 @@ import type {
 import {
   dispatchReadingIngestUnit,
   drainReadingIngestQueue,
+  ORPHANED_READING_AGENT_ERROR,
   readingConversationId,
+  reclaimOrphanedReadingAgentLease,
   resetLocalReadingIngestSweep,
   shouldStartLocalReadingIngestSweep,
   startLocalReadingIngestSweep,
@@ -72,6 +74,9 @@ const dispatch = vi.fn();
 const listUserIds = vi.fn();
 const reclaim = vi.fn();
 const drain = vi.fn();
+const getLease = vi.fn();
+const getActiveHost = vi.fn();
+const stopUnit = vi.fn();
 const originalReadingAgentUrl = process.env.READING_AGENT_URL;
 
 beforeEach(() => {
@@ -85,6 +90,9 @@ beforeEach(() => {
   listUserIds.mockReset().mockResolvedValue([]);
   reclaim.mockReset().mockResolvedValue(0);
   drain.mockReset().mockResolvedValue(undefined);
+  getLease.mockReset().mockResolvedValue(null);
+  getActiveHost.mockReset().mockReturnValue(undefined);
+  stopUnit.mockReset().mockResolvedValue(true);
   callAgent.mockReset().mockResolvedValue({
     artifacts: {
       outline: { status: "unchanged", body: "", summary: "No outline change." },
@@ -210,6 +218,32 @@ describe("reading ingest dispatch", () => {
     expect(readingConversationId("user-1", "book-1")).not.toBe(
       readingConversationId("user-1", "book-2"),
     );
+  });
+
+  it("reclaims a live lease when its in-app host is missing", async () => {
+    getLease.mockResolvedValue(leased.lease);
+
+    await expect(
+      reclaimOrphanedReadingAgentLease("user-1", {
+        dependencies: { getLease, getActiveHost, stopUnit },
+      }),
+    ).resolves.toBe(true);
+
+    expect(getActiveHost).toHaveBeenCalledWith(readingConversationId("user-1", "book-1"));
+    expect(stopUnit).toHaveBeenCalledWith("user-1", "unit-1", ORPHANED_READING_AGENT_ERROR);
+  });
+
+  it("leaves a live lease running when its in-app host is active", async () => {
+    getLease.mockResolvedValue(leased.lease);
+    getActiveHost.mockReturnValue({ url: "http://reading-agent.local" });
+
+    await expect(
+      reclaimOrphanedReadingAgentLease("user-1", {
+        dependencies: { getLease, getActiveHost, stopUnit },
+      }),
+    ).resolves.toBe(false);
+
+    expect(stopUnit).not.toHaveBeenCalled();
   });
 
   it("does nothing when the queue is empty or a user lease is busy", async () => {

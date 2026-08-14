@@ -219,12 +219,30 @@ describe("reading artifact persistence", () => {
 
     const query = queryMock.mock.calls[0][0] as SqlQuery;
     const text = extractSqlText(query);
-    expect(text).toContain("error = 'Stopped from debug'");
+    expect(text).toContain("error =");
     expect(text).toContain("next_attempt_at = NOW()");
     expect(text).toContain("claimed_at = NULL");
     expect(text).toContain("DELETE FROM readmax.reading_agent_lease");
     expect(text).not.toContain("attempt_count = attempt_count + 1");
-    expect(extractValues(query)).toEqual(["user-1", "unit-1", "user-1", "unit-1"]);
+    expect(extractValues(query)).toEqual([
+      "Stopped from debug",
+      "user-1",
+      "unit-1",
+      "user-1",
+      "unit-1",
+    ]);
+  });
+
+  it("records a caller-provided reason when stopping a processing unit", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [{ id: "unit-1" }] });
+
+    await expect(
+      stopReadingIngestUnit("user-1", "unit-1", "Reading agent host lost"),
+    ).resolves.toBe(true);
+
+    expect(extractValues(queryMock.mock.calls[0][0] as SqlQuery)).toContain(
+      "Reading agent host lost",
+    );
   });
 
   it("retries a user-owned unit immediately without incrementing attempts", async () => {

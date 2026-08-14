@@ -3,13 +3,15 @@ import {
   getLiveReadingAgentLease,
   getReadingAgentSchemaHealth,
   getReadingIngestUnitForUser,
-  reclaimExpiredReadingAgentLease,
   resetReadingIngestUnit,
   retryReadingIngestUnit,
   stopReadingIngestUnit,
 } from "~/lib/database/reading-artifact/reading-artifact";
 import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
-import { scheduleReadingIngestQueue } from "~/lib/reading-agent/dispatch.server";
+import {
+  reclaimStaleReadingAgentLease,
+  scheduleReadingIngestQueue,
+} from "~/lib/reading-agent/dispatch.server";
 import { stopReadingAgentHost } from "~/lib/reading-agent/agent-host.server";
 
 type QueueAction = "start" | "stop" | "retry" | "reset";
@@ -53,7 +55,7 @@ export async function action({ request }: { request: Request }): Promise<Respons
 }
 
 async function startQueue(userId: string): Promise<Response> {
-  await reclaimExpiredReadingAgentLease(userId);
+  await reclaimStaleReadingAgentLease(userId);
   scheduleReadingIngestQueue(userId);
   return Response.json({ ok: true });
 }
@@ -61,7 +63,7 @@ async function startQueue(userId: string): Promise<Response> {
 async function stopQueue(userId: string): Promise<Response> {
   const lease = await getLiveReadingAgentLease(userId);
   if (!lease) {
-    await reclaimExpiredReadingAgentLease(userId);
+    await reclaimStaleReadingAgentLease(userId);
     return Response.json({ ok: true, stopped: false });
   }
 
