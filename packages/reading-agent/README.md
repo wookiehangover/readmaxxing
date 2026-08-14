@@ -12,8 +12,7 @@ pnpm install
 
 Configure the root app's `.env.local` with `READING_AGENT_SECRET` and its existing
 `AI_GATEWAY_API_KEY`. `VERCEL_OIDC_TOKEN` is supported as a Gateway fallback and for production
-Sandbox access. `READING_AGENT_URL` is an optional legacy override for an externally hosted agent;
-leave it unset for the normal one-app setup.
+Sandbox access. `READING_AGENT_URL` is an unused legacy external-host override; leave it unset.
 
 ReadingScribe keeps the Flue model specifier `anthropic/claude-sonnet-4-6`, but its
 Anthropic Messages requests go through `https://ai-gateway.vercel.sh/v1/messages`.
@@ -31,8 +30,9 @@ observes only the current live lease; Postgres artifacts and revisions are the d
 
 ## Develop
 
-Run `pnpm dev` from the repository root. The web app loads ReadingScribe in-process, so no second
-server is required. `pnpm run dev` in this package remains available only for isolated agent work.
+Run `pnpm dev` from the repository root. The web app loads ReadingScribe in-process; do not start
+a second server on `:5174`. `pnpm run dev` in this package remains available only for isolated
+agent work.
 
 ## Deploy
 
