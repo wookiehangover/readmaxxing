@@ -64,6 +64,10 @@ Chat is **server-authoritative**: Postgres (`readmax.chat_session`, `readmax.cha
 - **Server-executed tools** (run inside `/api/chat`, not the browser): `read_notes`, `append_to_notes`, `edit_notes` (sandboxed JS edit script against the notebook SDK), `create_highlight` (upserts by text anchor; client resolves CFI later), `search_book`, `read_chapter`, `search_standard_ebooks`, plus Anthropic `web_search`. Output streams back as SSE message parts; `app/components/chat/use-chat-tool-handlers.ts` watches for `output-available` parts and applies the state change locally — the client never re-runs these tools.
 - **Auth-gated endpoints** (require a passkey session; unauthenticated → 401 with a sign-in CTA): `POST /api/chat`, `POST /api/chat-title`, `GET /api/chat/resume/:sessionId`, `GET /api/chat/messages/:sessionId`.
 
+## Reading artifacts
+
+Outline, character-sheet, and story-so-far artifacts are server-authoritative Postgres data scoped by user and book. Authenticated dwell ingestion uses `POST /api/books/:bookId/artifacts/ingest`; the server verifies the normalized-text SHA-256 fingerprint and deduplicates before any background work. Current heads and newest-first revision history are available from `GET /api/books/:bookId/artifacts` and `GET /api/books/:bookId/artifacts/revisions?kind=outline|characters|wiki`. The Flue sidecar connection is configured with `READING_AGENT_URL` and `READING_AGENT_SECRET`; ingest remains durable when the sidecar is unavailable.
+
 ## Notebooks
 
 Per-book rich-text notes edited with TipTap (`app/components/tiptap-editor.tsx`, `workspace-notebook.tsx`), stored as `JSONContent` in the notebook IDB store and synced LWW as `notebook`. Chat tools (`append_to_notes`, `edit_notes`) write through to IDB and dispatch a sync event; see `NotebookEditorCallbacks.seedLastContent` for the cursor-preservation handshake.

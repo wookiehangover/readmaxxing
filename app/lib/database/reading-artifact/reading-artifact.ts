@@ -112,6 +112,21 @@ export async function insertReadingIngestUnit(data: {
   return result.rows[0] ?? null;
 }
 
+export async function getReadingIngestUnitByFingerprint(
+  userId: string,
+  bookId: string,
+  fingerprint: string,
+): Promise<ReadingIngestUnitRow | null> {
+  const result = await getPool().query<ReadingIngestUnitRow>(sql`
+    SELECT ${INGEST_UNIT_COLUMNS}
+    FROM readmax.reading_ingest_unit
+    WHERE user_id = ${userId}
+      AND book_id = ${bookId}
+      AND fingerprint = ${fingerprint}
+  `);
+  return result.rows[0] ?? null;
+}
+
 export async function insertReadingArtifactRevision(data: {
   userId: string;
   bookId: string;
@@ -161,4 +176,34 @@ export async function upsertCurrentReadingArtifact(data: {
     RETURNING ${ARTIFACT_COLUMNS}
   `);
   return result.rows[0] ?? null;
+}
+
+export async function getCurrentReadingArtifacts(
+  userId: string,
+  bookId: string,
+): Promise<ReadingArtifactRow[]> {
+  const result = await getPool().query<ReadingArtifactRow>(sql`
+    SELECT ${ARTIFACT_COLUMNS}
+    FROM readmax.reading_artifact
+    WHERE user_id = ${userId}
+      AND book_id = ${bookId}
+    ORDER BY kind ASC
+  `);
+  return result.rows;
+}
+
+export async function listReadingArtifactRevisions(data: {
+  userId: string;
+  bookId: string;
+  kind: ReadingArtifactKind;
+}): Promise<ReadingArtifactRevisionRow[]> {
+  const result = await getPool().query<ReadingArtifactRevisionRow>(sql`
+    SELECT ${REVISION_COLUMNS}
+    FROM readmax.reading_artifact_revision
+    WHERE user_id = ${data.userId}
+      AND book_id = ${data.bookId}
+      AND kind = ${data.kind}
+    ORDER BY created_at DESC, id DESC
+  `);
+  return result.rows;
 }
