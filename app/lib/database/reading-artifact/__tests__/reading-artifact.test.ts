@@ -25,9 +25,12 @@ import {
   insertReadingIngestUnit,
   listReadingIngestSweepUserIds,
   listRecentReadingIngestUnits,
+  getReadingIngestUnitForUser,
   readingAgentRetryDelaySeconds,
   reclaimExpiredReadingAgentLease,
+  retryReadingIngestUnit,
   releaseReadingIngestUnit,
+  stopReadingIngestUnit,
   upsertCurrentReadingArtifact,
 } from "../reading-artifact";
 
@@ -205,6 +208,43 @@ describe("reading artifact persistence", () => {
     expect(text).toContain("expires_at <= NOW()");
     expect(text).toContain("live_lease.expires_at > NOW()");
     expect(text).toContain("attempt_count < 8");
+  });
+
+  it("stops a processing unit without incrementing attempts", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [{ id: "unit-1" }] });
+
+    await expect(stopReadingIngestUnit("user-1", "unit-1")).resolves.toBe(true);
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    const text = extractSqlText(query);
+    expect(text).toContain("error = 'Stopped from debug'");
+    expect(text).toContain("next_attempt_at = NOW()");
+    expect(text).toContain("claimed_at = NULL");
+    expect(text).toContain("DELETE FROM readmax.reading_agent_lease");
+    expect(text).not.toContain("attempt_count = attempt_count + 1");
+    expect(extractValues(query)).toEqual(["user-1", "unit-1", "user-1", "unit-1"]);
+  });
+
+  it("retries a user-owned unit immediately without incrementing attempts", async () => {
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{ id: "unit-1", status: "error", lastError: "boom" }],
+      })
+      .mockResolvedValueOnce({ rows: [{ id: "unit-1" }] });
+
+    await expect(getReadingIngestUnitForUser("user-1", "unit-1")).resolves.toMatchObject({
+      id: "unit-1",
+      status: "error",
+    });
+    await expect(retryReadingIngestUnit("user-1", "unit-1")).resolves.toBe(true);
+
+    const lookup = queryMock.mock.calls[0][0] as SqlQuery;
+    const retry = queryMock.mock.calls[1][0] as SqlQuery;
+    expect(extractValues(lookup)).toEqual(["user-1", "unit-1"]);
+    expect(extractSqlText(lookup)).not.toContain("text");
+    expect(extractSqlText(retry)).toContain("error = NULL");
+    expect(extractSqlText(retry)).toContain("next_attempt_at = NOW()");
+    expect(extractSqlText(retry)).not.toContain("attempt_count = attempt_count + 1");
   });
 
   it("reclaims an expired lease and stale processing unit", async () => {

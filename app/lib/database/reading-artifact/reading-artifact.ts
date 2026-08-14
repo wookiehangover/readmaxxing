@@ -55,6 +55,16 @@ export interface ReadingAgentStatusUnitRow {
   lastError: string | null;
 }
 
+export interface ReadingIngestUnitActionRow {
+  id: string;
+  bookId: string;
+  status: ReadingIngestStatus;
+  attemptCount: number;
+  nextAttemptAt: Date;
+  claimedAt: Date | null;
+  lastError: string | null;
+}
+
 export interface ReadingAgentSchemaHealth {
   ok: boolean;
   missingColumns?: string[];
@@ -527,6 +537,73 @@ export async function acquireReadingAgentLease(
     RETURNING ${LEASE_COLUMNS}
   `);
   return result.rows[0] ?? null;
+}
+
+export async function getReadingIngestUnitForUser(
+  userId: string,
+  unitId: string,
+): Promise<ReadingIngestUnitActionRow | null> {
+  const result = await getPool().query<ReadingIngestUnitActionRow>(sql`
+    SELECT id,
+           book_id AS "bookId",
+           status,
+           attempt_count AS "attemptCount",
+           next_attempt_at AS "nextAttemptAt",
+           claimed_at AS "claimedAt",
+           error AS "lastError"
+    FROM readmax.reading_ingest_unit
+    WHERE user_id = ${userId}
+      AND id = ${unitId}
+  `);
+  return result.rows[0] ?? null;
+}
+
+export async function stopReadingIngestUnit(userId: string, unitId: string): Promise<boolean> {
+  const result = await getPool().query<{ id: string }>(sql`
+    WITH stopped AS (
+      UPDATE readmax.reading_ingest_unit
+      SET status = 'pending',
+          claimed_at = NULL,
+          next_attempt_at = NOW(),
+          processed_at = NULL,
+          error = 'Stopped from debug'
+      WHERE user_id = ${userId}
+        AND id = ${unitId}
+        AND status = 'processing'
+      RETURNING id
+    ),
+    released AS (
+      DELETE FROM readmax.reading_agent_lease
+      WHERE user_id = ${userId}
+        AND unit_id = ${unitId}
+    )
+    SELECT id FROM stopped
+  `);
+  return result.rows.length > 0;
+}
+
+export async function retryReadingIngestUnit(userId: string, unitId: string): Promise<boolean> {
+  const result = await getPool().query<{ id: string }>(sql`
+    WITH retried AS (
+      UPDATE readmax.reading_ingest_unit
+      SET status = 'pending',
+          claimed_at = NULL,
+          next_attempt_at = NOW(),
+          processed_at = NULL,
+          error = NULL
+      WHERE user_id = ${userId}
+        AND id = ${unitId}
+        AND status IN ('pending', 'error', 'processing')
+      RETURNING id
+    ),
+    released AS (
+      DELETE FROM readmax.reading_agent_lease
+      WHERE user_id = ${userId}
+        AND unit_id = ${unitId}
+    )
+    SELECT id FROM retried
+  `);
+  return result.rows.length > 0;
 }
 
 export async function releaseReadingAgentLease(userId: string, unitId: string): Promise<boolean> {
