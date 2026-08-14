@@ -9,6 +9,7 @@ export type ReadingAgentUnitStatus = "pending" | "processing" | "done" | "skippe
 
 export interface ReadingAgentStatus {
   hostConfigured: boolean;
+  hostActive: boolean;
   schema: { ok: boolean; missingColumns?: string[] };
   lease: {
     unitId: string;

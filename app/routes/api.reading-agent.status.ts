@@ -6,6 +6,8 @@ import {
   listRecentReadingIngestUnits,
   type ReadingAgentUsageRow,
 } from "~/lib/database/reading-artifact/reading-artifact";
+import { getActiveReadingAgentHost } from "~/lib/reading-agent/agent-host.server";
+import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
 
 export const READING_AGENT_STATUS_TIMEOUT_MS = 3_000;
 
@@ -32,7 +34,14 @@ async function loadStatus(request: Request): Promise<Response> {
   const hostConfigured = Boolean(process.env.READING_AGENT_SECRET);
   const schema = await getReadingAgentSchemaHealth();
   if (!schema.ok) {
-    return Response.json({ hostConfigured, schema, lease: null, units: [], usage: null });
+    return Response.json({
+      hostConfigured,
+      hostActive: false,
+      schema,
+      lease: null,
+      units: [],
+      usage: null,
+    });
   }
 
   const bookId = new URL(request.url).searchParams.get("bookId") || undefined;
@@ -41,7 +50,17 @@ async function loadStatus(request: Request): Promise<Response> {
     listRecentReadingIngestUnits({ userId: session.userId, bookId }),
     getLatestReadingAgentUsage(session.userId),
   ]);
-  return Response.json({ hostConfigured, schema, lease, units, usage: serializeUsage(usage) });
+  const hostActive = Boolean(
+    lease && getActiveReadingAgentHost(readingConversationId(session.userId, lease.bookId)),
+  );
+  return Response.json({
+    hostConfigured,
+    hostActive,
+    schema,
+    lease,
+    units,
+    usage: serializeUsage(usage),
+  });
 }
 
 async function withStatusTimeout<T>(operation: () => Promise<T>): Promise<T> {

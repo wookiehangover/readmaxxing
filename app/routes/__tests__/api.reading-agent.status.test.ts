@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   lease: vi.fn(),
   units: vi.fn(),
   usage: vi.fn(),
+  activeHost: vi.fn(),
 }));
 
 vi.mock("~/lib/database/auth-middleware", () => ({ getSessionFromRequest: mocks.auth }));
@@ -14,6 +15,9 @@ vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   getCurrentReadingAgentLease: mocks.lease,
   listRecentReadingIngestUnits: mocks.units,
   getLatestReadingAgentUsage: mocks.usage,
+}));
+vi.mock("~/lib/reading-agent/agent-host.server", () => ({
+  getActiveReadingAgentHost: mocks.activeHost,
 }));
 
 import { loader, READING_AGENT_STATUS_TIMEOUT_MS } from "~/routes/api.reading-agent.status";
@@ -37,6 +41,7 @@ beforeEach(() => {
   mocks.lease.mockReset().mockResolvedValue(null);
   mocks.units.mockReset().mockResolvedValue([]);
   mocks.usage.mockReset().mockResolvedValue(null);
+  mocks.activeHost.mockReset().mockReturnValue(undefined);
 });
 
 afterEach(() => {
@@ -85,6 +90,7 @@ describe("reading-agent status API", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       hostConfigured: false,
+      hostActive: false,
       schema: { ok: false, missingColumns: ["reading_ingest_unit.next_attempt_at"] },
       lease: null,
       units: [],
@@ -130,11 +136,13 @@ describe("reading-agent status API", () => {
       source: "flue",
       createdAt: new Date("2026-01-01T00:02:00Z"),
     });
+    mocks.activeHost.mockReturnValue({ url: "http://reading-agent.local" });
 
     const response = await loader({ request: request("?bookId=book-1") });
     const body = await response.json();
     expect(response.status).toBe(200);
     expect(body.hostConfigured).toBe(true);
+    expect(body.hostActive).toBe(true);
     expect(body).not.toHaveProperty("hostUrl");
     expect(mocks.units).toHaveBeenCalledWith({ userId: "user-1", bookId: "book-1" });
     expect(body.lease).toMatchObject({ unitId: "unit-1", chapterLabel: "Chapter 1" });
@@ -149,5 +157,23 @@ describe("reading-agent status API", () => {
       source: "flue",
       createdAt: "2026-01-01T00:02:00.000Z",
     });
+  });
+
+  it("reports an unexpired database lease without an in-app host as inactive", async () => {
+    mocks.lease.mockResolvedValue({
+      bookId: "book-orphan",
+      unitId: "unit-orphan",
+      expiresAt: new Date("2099-01-01T00:05:00Z"),
+      chapterLabel: null,
+      locator: "page:14",
+    });
+
+    const response = await loader({ request: request() });
+
+    await expect(response.json()).resolves.toMatchObject({
+      hostActive: false,
+      lease: { unitId: "unit-orphan" },
+    });
+    expect(mocks.activeHost).toHaveBeenCalledOnce();
   });
 });

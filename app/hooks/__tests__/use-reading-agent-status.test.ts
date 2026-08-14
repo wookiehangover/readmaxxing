@@ -9,6 +9,7 @@ import {
 
 const emptyStatus: ReadingAgentStatus = {
   hostConfigured: true,
+  hostActive: false,
   schema: { ok: true },
   lease: null,
   units: [],

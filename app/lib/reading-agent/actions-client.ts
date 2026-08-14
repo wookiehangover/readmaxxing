@@ -4,27 +4,15 @@ export type ReadingAgentQueueAction =
   | { action: "retry"; unitId: string }
   | { action: "reset"; unitId: string };
 
-export function isLiveReadingAgentLease(
-  lease: { expiresAt: string } | null | undefined,
-  now = Date.now(),
-): boolean {
-  if (!lease) return false;
-  const expiresAt = Date.parse(lease.expiresAt);
-  return Number.isFinite(expiresAt) && expiresAt > now;
-}
-
-export function readingAgentActionAvailability(
-  status: {
-    hostConfigured: boolean;
-    schema: { ok: boolean };
-    lease: { expiresAt: string } | null;
-  },
-  now = Date.now(),
-) {
+export function readingAgentActionAvailability(status: {
+  hostConfigured: boolean;
+  hostActive: boolean;
+  schema: { ok: boolean };
+  lease: object | null;
+}) {
   const ready = status.hostConfigured && status.schema.ok;
-  const liveLease = isLiveReadingAgentLease(status.lease, now);
   return {
-    canStart: ready && !liveLease,
+    canStart: ready && !status.hostActive,
     canStop: ready && status.lease !== null,
     canRetry: ready,
     canReset: ready,

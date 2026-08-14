@@ -14,6 +14,7 @@ import ReadingAgentDebugPage, { clientLoader } from "~/routes/debug.reading-agen
 
 const emptyStatus: ReadingAgentStatus = {
   hostConfigured: true,
+  hostActive: false,
   schema: { ok: true },
   lease: null,
   units: [],
@@ -287,6 +288,7 @@ describe("reading-agent debug page", () => {
   it("enables Stop for a live lease and posts stop", async () => {
     respond({
       ...emptyStatus,
+      hostActive: true,
       lease: liveLease,
       units: [processingUnit],
     });
@@ -300,7 +302,17 @@ describe("reading-agent debug page", () => {
     expect(postedActions()).toEqual([{ action: "stop" }]);
   });
 
-  it("enables Start and Stop for an expired leftover lease", async () => {
+  it("enables Start and Stop for an unexpired orphan without an active host", async () => {
+    respond({
+      ...emptyStatus,
+      lease: liveLease,
+    });
+    await renderPage();
+    expect(button("Start")?.disabled).toBe(false);
+    expect(button("Stop")?.disabled).toBe(false);
+  });
+
+  it("keeps Stop enabled for an expired current lease", async () => {
     respond({
       ...emptyStatus,
       lease: { ...liveLease, expiresAt: "2000-01-01T00:00:00.000Z" },
