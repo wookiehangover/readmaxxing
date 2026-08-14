@@ -20,19 +20,54 @@ export function parseReadingScribeResult(value: unknown): ReadingScribeResult {
     if (
       !isRecord(edit) ||
       (edit.status !== "unchanged" && edit.status !== "updated") ||
-      typeof edit.body !== "string" ||
-      typeof edit.summary !== "string" ||
-      edit.summary.trim().length === 0
+      typeof edit.body !== "string"
     ) {
       throw new Error(`ReadingScribe returned an invalid ${kind} edit`);
     }
+    const summary = typeof edit.summary === "string" ? edit.summary.trim() : "";
     result[kind] = {
       status: edit.status,
       body: edit.body,
-      summary: edit.summary.trim().slice(0, 160),
+      summary:
+        summary.slice(0, 160) ||
+        (edit.status === "updated" ? `Updated ${kind}.` : `No ${kind} change.`),
     };
   }
   return result;
+}
+
+function parseJsonReply(text: string): unknown {
+  try {
+    return JSON.parse(text.trim());
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+  }
+
+  for (let start = text.indexOf("{"); start !== -1; start = text.indexOf("{", start + 1)) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < text.length; index += 1) {
+      const character = text[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') inString = false;
+        continue;
+      }
+      if (character === '"') inString = true;
+      else if (character === "{") depth += 1;
+      else if (character === "}" && --depth === 0) {
+        try {
+          return JSON.parse(text.slice(start, index + 1));
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
+          break;
+        }
+      }
+    }
+  }
+  throw new SyntaxError("No valid JSON object found");
 }
 
 export async function callReadingScribe(options: {
@@ -50,7 +85,7 @@ export async function callReadingScribe(options: {
   });
   const reply = await client.read(admission);
   try {
-    return parseReadingScribeResult(JSON.parse(reply.text));
+    return parseReadingScribeResult(parseJsonReply(reply.text));
   } catch (error) {
     if (error instanceof SyntaxError) throw new Error("ReadingScribe reply was not valid JSON");
     throw error;
