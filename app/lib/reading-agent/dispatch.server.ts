@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import {
   claimReadingIngestUnitWithLease,
@@ -20,6 +19,10 @@ import {
   type ReadingScribeUsage,
   readingScribeUsageFromError,
 } from "./flue-client.server";
+import { readingConversationId } from "./conversation-id.server";
+
+export { readingConversationId };
+
 type ReadingAgentCall = (options: {
   url: string;
   secret: string;
@@ -28,10 +31,6 @@ type ReadingAgentCall = (options: {
 }) => Promise<ReadingScribeCallResult>;
 
 const ARTIFACT_KINDS: ArtifactKind[] = ["outline", "characters", "wiki"];
-
-export function readingConversationId(userId: string, bookId: string): string {
-  return createHash("sha256").update(userId).update("\0").update(bookId).digest("hex");
-}
 
 function currentBodies(rows: ReadingArtifactRow[]): Record<ArtifactKind, string> {
   return Object.fromEntries(

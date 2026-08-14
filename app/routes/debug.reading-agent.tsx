@@ -27,6 +27,8 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
+import { ConversationCard } from "~/components/reading-agent/conversation-card";
+import { useReadingAgentConversation } from "~/hooks/use-reading-agent-conversation";
 import {
   type ReadingAgentStatus,
   type ReadingAgentUnitStatus,
@@ -313,6 +315,7 @@ function UnitsCard({ units }: { units: ReadingAgentStatus["units"] }) {
 
 export default function ReadingAgentDebugPage() {
   const { data, error, isLoading, updatedAt } = useReadingAgentStatus();
+  const { data: conversation, error: conversationError } = useReadingAgentConversation();
 
   return (
     <main className="min-h-dvh bg-background px-4 py-6 md:px-8 md:py-10">
@@ -374,6 +377,7 @@ export default function ReadingAgentDebugPage() {
               <LeaseCard lease={data.lease} />
               <UsageCard usage={data.usage} />
             </div>
+            <ConversationCard conversation={conversation} error={conversationError} />
             <UnitsCard units={data.units} />
           </>
         ) : null}

@@ -28,6 +28,7 @@ export default [
   route("api/books/:bookId/artifacts/ingest", "routes/api.books.$bookId.artifacts.ingest.ts"),
   route("api/books/:bookId/artifacts/revisions", "routes/api.books.$bookId.artifacts.revisions.ts"),
   route("api/reading-agent/status", "routes/api.reading-agent.status.ts"),
+  route("api/reading-agent/conversation", "routes/api.reading-agent.conversation.ts"),
   route("api/cron/reading-ingest", "routes/api.cron.reading-ingest.ts"),
   route("api/share", "routes/api.share.ts"),
   route("api/share/:id", "routes/api.share.$id.ts"),

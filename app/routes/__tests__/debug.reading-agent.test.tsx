@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReadingAgentStatus } from "~/hooks/use-reading-agent-status";
+import type { ReadingAgentConversation } from "~/lib/reading-agent/conversation";
 
 const mocks = vi.hoisted(() => ({ session: vi.fn() }));
 vi.mock("~/lib/effect-runtime", () => ({ AppRuntime: { runPromise: mocks.session } }));
@@ -19,12 +20,28 @@ const emptyStatus: ReadingAgentStatus = {
   usage: null,
 };
 
+const emptyConversation: ReadingAgentConversation = {
+  phase: "absent",
+  conversationId: null,
+  bookId: null,
+  messages: [],
+};
+
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 const fetchMock = vi.fn();
 
-function respond(status: ReadingAgentStatus) {
-  fetchMock.mockImplementation(() => Promise.resolve(Response.json(status)));
+function respond(
+  status: ReadingAgentStatus,
+  conversation: ReadingAgentConversation = emptyConversation,
+) {
+  fetchMock.mockImplementation((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes("/api/reading-agent/conversation")) {
+      return Promise.resolve(Response.json(conversation));
+    }
+    return Promise.resolve(Response.json(status));
+  });
 }
 
 async function renderPage() {
@@ -67,6 +84,7 @@ describe("reading-agent debug page", () => {
     await renderPage();
     expect(container!.textContent).toContain("No active lease");
     expect(container!.textContent).toContain("No usage recorded");
+    expect(container!.textContent).toContain("No live conversation");
     expect(container!.textContent).toContain("No recent ingest units");
   });
 
@@ -128,6 +146,40 @@ describe("reading-agent debug page", () => {
     expect(container!.textContent).toContain("42");
   });
 
+  it("renders live reasoning, tool names, and reply text", async () => {
+    respond(emptyStatus, {
+      phase: "live",
+      conversationId: "conversation-1",
+      bookId: "book-1",
+      messages: [
+        {
+          id: "user-1",
+          role: "user",
+          purpose: "user",
+          display: "visible",
+          parts: [],
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          purpose: "assistant",
+          display: "visible",
+          parts: [
+            { type: "reasoning", text: "Need the current wiki.", state: "done" },
+            { type: "dynamic-tool", toolName: "readWiki", state: "output-available" },
+            { type: "text", text: "Updated the wiki with the new scene.", state: "done" },
+          ],
+        },
+      ],
+    });
+    await renderPage();
+    expect(container!.textContent).toContain("Ingest unit submitted");
+    expect(container!.textContent).toContain("Need the current wiki.");
+    expect(container!.textContent).toContain("readWiki");
+    expect(container!.textContent).toContain("Updated the wiki with the new scene.");
+    expect(container!.textContent).not.toContain("Chapter 14 page body");
+  });
+
   it("renders an error unit and its last error", async () => {
     respond({
       ...emptyStatus,
@@ -174,15 +226,20 @@ describe("reading-agent debug page", () => {
     vi.useFakeTimers();
     respond(emptyStatus);
     await renderPage();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     act(() => setVisibility("hidden"));
     await act(async () => vi.advanceTimersByTimeAsync(4_000));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     act(() => setVisibility("visible"));
     await act(async () => {});
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     await act(async () => vi.advanceTimersByTimeAsync(2_000));
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes("/api/reading-agent/conversation"),
+      ),
+    ).toBe(true);
   });
 });
 
