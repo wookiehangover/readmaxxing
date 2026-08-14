@@ -52,7 +52,7 @@ beforeEach(() => {
   mocks.lease.mockReset().mockResolvedValue({
     bookId: "book-1",
     unitId: "unit-1",
-    expiresAt: new Date("2026-08-14T12:10:00Z"),
+    expiresAt: new Date(Date.now() + 5 * 60_000),
     chapterLabel: "Chapter 14",
     locator: "chapter-14.xhtml",
   });
