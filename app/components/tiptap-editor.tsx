@@ -63,7 +63,7 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
       >
         "{text}"
       </blockquote>
-      <div className="absolute top-full right-1 z-10 flex -translate-y-1/2 gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100 group-focus-within/hl:opacity-100">
+      <div className="absolute top-full right-1 z-10 mt-0.5 flex gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100 group-focus-within/hl:opacity-100">
         <button
           type="button"
           onClick={(e) => {
