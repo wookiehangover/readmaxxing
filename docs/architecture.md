@@ -6,7 +6,7 @@ Ebook/PDF reader web app. Users add `.epub`/`.pdf` files (drag-and-drop, file pi
 
 The main route (`app/routes/workspace.tsx`) is a [dockview](https://dockview.dev) multi-panel workspace, not a fixed sidebar/reader split.
 
-- **Panel types** (`app/components/workspace/`): book reader, chat, notebook, bookmarks, reading history, new-tab, Standard Ebooks browser, watermark (empty state).
+- **Panel types** (`app/components/workspace/`): book reader, chat, notebook, bookmarks, outline, reading history, new-tab, Standard Ebooks browser, watermark (empty state).
 - **Book clusters**: a reader panel plus its chat/notebook tabs form a logical "cluster" (`BookCluster` in `app/lib/context/workspace-context.tsx`) so link navigation can resolve which chat/notebook belongs to which book.
 - **Layout**: a single focused layout — one cluster visible at a time, with the book/right-group split controlled by `focusedSplitRatio`. Inactive clusters are unmounted and remounted on activation.
 - Workspace state lives in `app/lib/stores/workspace-store.ts`; layout/panel logic in `app/hooks/use-workspace-*.ts`.

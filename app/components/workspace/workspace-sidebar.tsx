@@ -13,6 +13,7 @@ import {
   Search,
   Notebook,
   Library,
+  ListTree,
   Loader2,
 } from "lucide-react";
 import { LibrarySortControl } from "~/components/library-sort-control";
@@ -97,6 +98,7 @@ export interface WorkspaceSidebarProps {
   onOpenChat: (book: BookMeta) => void;
   onOpenNotebook: (book: BookMeta) => void;
   onOpenBookmarks: (book: BookMeta) => void;
+  onOpenOutline: (book: BookMeta) => void;
   onOpenReadingHistory: (book: BookMeta) => void;
   onFileInput: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
@@ -116,6 +118,7 @@ export function WorkspaceSidebar({
   onOpenChat,
   onOpenNotebook,
   onOpenBookmarks,
+  onOpenOutline,
   onOpenReadingHistory,
   onFileInput,
 }: WorkspaceSidebarProps) {
@@ -356,6 +359,8 @@ export function WorkspaceSidebar({
               const hasChat = api?.panels.some((p) => p.id === `chat-${activeBookId}`) ?? false;
               const hasBookmarks =
                 api?.panels.some((p) => p.id === `bookmarks-${activeBookId}`) ?? false;
+              const hasOutline =
+                api?.panels.some((p) => p.id === `outline-${activeBookId}`) ?? false;
               const hasHistory =
                 api?.panels.some((p) => p.id === `history-${activeBookId}`) ?? false;
               return (
@@ -394,6 +399,14 @@ export function WorkspaceSidebar({
                     icon={Bookmark}
                     active={hasBookmarks}
                     onClick={() => onOpenBookmarks(activeClusterBook)}
+                  />
+                  <WorkspaceSidebarActionButton
+                    collapsed={collapsed}
+                    label="Outline"
+                    srLabel="Open outline"
+                    icon={ListTree}
+                    active={hasOutline}
+                    onClick={() => onOpenOutline(activeClusterBook)}
                   />
                   <WorkspaceSidebarActionButton
                     collapsed={collapsed}

@@ -213,6 +213,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     openNotebook,
     openChat,
     openBookmarks,
+    openOutline,
     openReadingHistory,
     openStandardEbooks,
     closeBookPanels,
@@ -474,6 +475,10 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     },
     onOpenBookmarks: (book: BookMeta) => {
       openBookmarks(book);
+      setMobileOpen(false);
+    },
+    onOpenOutline: (book: BookMeta) => {
+      openOutline(book);
       setMobileOpen(false);
     },
     onOpenReadingHistory: (book: BookMeta) => {

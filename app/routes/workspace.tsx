@@ -5,6 +5,7 @@ import type { AppFrameOutletContext } from "~/routes/app-frame";
 import { BookmarksPanel } from "~/components/workspace/bookmarks-panel";
 import { LeftHeaderActions } from "~/components/workspace/left-header-actions";
 import { NewTabPanel } from "~/components/workspace/new-tab-panel";
+import { OutlinePanel } from "~/components/workspace/outline-panel";
 import { BookReaderPanel, ChatPanel, NotebookPanel } from "~/components/workspace/panel-components";
 import { ReadingHistoryPanel } from "~/components/workspace/reading-history-panel";
 import { StandardEbooksPanel } from "~/components/workspace/standard-ebooks-panel";
@@ -17,6 +18,7 @@ const components: Record<string, FunctionComponent<IDockviewPanelProps<any>>> = 
   "standard-ebooks": StandardEbooksPanel,
   chat: ChatPanel,
   bookmarks: BookmarksPanel,
+  outline: OutlinePanel,
   "reading-history": ReadingHistoryPanel,
 };
 

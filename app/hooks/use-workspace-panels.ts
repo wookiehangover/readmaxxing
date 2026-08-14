@@ -33,6 +33,7 @@ export interface UseWorkspacePanelsResult {
   readonly openNotebook: (book: BookMeta) => void;
   readonly openChat: (book: BookMeta) => void;
   readonly openBookmarks: (book: BookMeta) => void;
+  readonly openOutline: (book: BookMeta) => void;
   readonly openReadingHistory: (book: BookMeta) => void;
   readonly openStandardEbooks: () => void;
   readonly closeBookPanels: (bookId: string) => void;
@@ -346,6 +347,31 @@ export function useWorkspacePanels({
     [apiRef, isMobileRef],
   );
 
+  const openOutline = useCallback(
+    (book: BookMeta) => {
+      const api = apiRef.current;
+      if (!api) return;
+
+      const panelId = `outline-${book.id}`;
+      const existing = api.panels.find((p) => p.id === panelId);
+      if (existing) {
+        existing.focus();
+        return;
+      }
+
+      const position = !isMobileRef.current ? findRightGroupPosition(api, book.id) : undefined;
+      api.addPanel({
+        id: panelId,
+        component: "outline",
+        title: truncateTitle(`Outline: ${book.title}`),
+        params: { bookId: book.id, bookTitle: book.title },
+        renderer: "always",
+        ...(position ? { position } : {}),
+      });
+    },
+    [apiRef, isMobileRef],
+  );
+
   const openStandardEbooks = useCallback(() => {
     navigate("/standard-ebooks");
   }, [navigate]);
@@ -377,6 +403,7 @@ export function useWorkspacePanels({
     openNotebook,
     openChat,
     openBookmarks,
+    openOutline,
     openReadingHistory,
     openStandardEbooks,
     closeBookPanels,
