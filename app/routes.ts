@@ -10,6 +10,7 @@ export default [
   route("login", "routes/login.tsx"),
   route("settings", "routes/settings.tsx"),
   route("about", "routes/about.tsx"),
+  route("debug/reading-agent", "routes/debug.reading-agent.tsx"),
   route("share/:id", "routes/share.$id.tsx"),
   route("api/standard-ebooks/search", "routes/api.standard-ebooks.search.ts"),
   route("api/standard-ebooks/new-releases", "routes/api.standard-ebooks.new-releases.ts"),

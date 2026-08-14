@@ -37,7 +37,7 @@ export default defineConfig({
         // revision is stamped post-build by scripts/patch-sw-index-html-revision.mjs
         additionalManifestEntries: [{ url: "/index.html", revision: null }],
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api\//, /^\/share\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/share\//, /^\/debug\//],
         runtimeCaching: [
           {
             urlPattern: ({ url }) =>
