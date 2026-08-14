@@ -16,6 +16,7 @@ import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 import type { TocEntry } from "~/lib/context/reader-context";
 import { isEditableElement } from "~/lib/dom-utils";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { buildEpubReadingUnit } from "~/lib/epub/epub-reading-unit";
 import { getTypographyCss } from "~/lib/epub/epub-rendering-utils";
 import { getThemeColorCss } from "~/lib/epub/epub-theme-utils";
 import {
@@ -388,22 +389,20 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       setCurrentPage(page);
       setTotalPages(total);
       setCurrentChapterLabel(chapterLabel);
-      if (configRef.current.chatContextMap) {
-        const visibleText = rendition.contentDocument?.body?.textContent?.trim() ?? "";
+      if (configRef.current.chatContextMap && page !== null) {
+        latestReadingUnit = buildEpubReadingUnit({
+          href: relocation.href,
+          page,
+          chapterLabel,
+          document: rendition.contentDocument,
+        });
         configRef.current.chatContextMap.current.set(bookId, {
           currentChapterIndex: logicalChapterIndex(tocData, bookAdapter, relocation.spineIndex),
           currentSpineHref: relocation.href,
-          visibleText,
+          visibleText: latestReadingUnit.text,
         });
-        latestReadingUnit = {
-          unitKind: "epub-spine",
-          locator: relocation.href,
-          chapterLabel: chapterLabel ?? undefined,
-          text: visibleText,
-        };
-        if (!suppressPositionSaveRef.current) {
+        if (!suppressPositionSaveRef.current)
           configRef.current.onReadingUnitChange?.(latestReadingUnit);
-        }
       }
       // During restore, skip both the in-memory and IDB updates. Mounting the
       // spine emits a section-start CFI first; writing that would clobber the
