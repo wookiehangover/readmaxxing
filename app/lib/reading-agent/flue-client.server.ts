@@ -1,4 +1,4 @@
-import { createFlueClient } from "@flue/sdk";
+import { createFlueClient, type PromptUsage } from "@flue/sdk";
 
 export type ArtifactKind = "outline" | "characters" | "wiki";
 export type ReadingScribeResult = Record<
@@ -6,10 +6,87 @@ export type ReadingScribeResult = Record<
   { status: "unchanged" | "updated"; body: string; summary: string }
 >;
 
+export interface ReadingScribeUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  costTotal: number;
+  model: string | null;
+  source: "flue" | "unknown";
+}
+
+export interface ReadingScribeCallResult {
+  artifacts: ReadingScribeResult;
+  usage: ReadingScribeUsage;
+}
+
 const ARTIFACT_KINDS: ArtifactKind[] = ["outline", "characters", "wiki"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isUsageNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isPromptUsage(value: unknown): value is PromptUsage {
+  return (
+    isRecord(value) &&
+    isUsageNumber(value.input) &&
+    isUsageNumber(value.output) &&
+    isUsageNumber(value.cacheRead) &&
+    isUsageNumber(value.cacheWrite) &&
+    isUsageNumber(value.totalTokens) &&
+    isRecord(value.cost) &&
+    isUsageNumber(value.cost.input) &&
+    isUsageNumber(value.cost.output) &&
+    isUsageNumber(value.cost.cacheRead) &&
+    isUsageNumber(value.cost.cacheWrite) &&
+    isUsageNumber(value.cost.total)
+  );
+}
+
+function usageModel(metadata: Record<string, unknown>): string | null {
+  if (typeof metadata.model === "string") return metadata.model;
+  if (!isRecord(metadata.model)) return null;
+  const { provider, id } = metadata.model;
+  return typeof provider === "string" && typeof id === "string" ? `${provider}/${id}` : null;
+}
+
+export function unknownReadingScribeUsage(): ReadingScribeUsage {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    costTotal: 0,
+    model: null,
+    source: "unknown",
+  };
+}
+
+function extractReadingScribeUsage(metadata: unknown): ReadingScribeUsage {
+  if (!isRecord(metadata)) return unknownReadingScribeUsage();
+  const usage = isPromptUsage(metadata.usage)
+    ? metadata.usage
+    : isPromptUsage(metadata)
+      ? metadata
+      : null;
+  if (!usage) return unknownReadingScribeUsage();
+  return {
+    input: usage.input,
+    output: usage.output,
+    cacheRead: usage.cacheRead,
+    cacheWrite: usage.cacheWrite,
+    totalTokens: usage.totalTokens,
+    costTotal: usage.cost.total,
+    model: usageModel(metadata),
+    source: "flue",
+  };
 }
 
 export function parseReadingScribeResult(value: unknown): ReadingScribeResult {
@@ -75,7 +152,7 @@ export async function callReadingScribe(options: {
   secret: string;
   page: string;
   artifacts: Record<ArtifactKind, string>;
-}): Promise<ReadingScribeResult> {
+}): Promise<ReadingScribeCallResult> {
   const client = createFlueClient({ url: options.url, token: options.secret });
   const admission = await client.send({
     message: {
@@ -85,7 +162,10 @@ export async function callReadingScribe(options: {
   });
   const reply = await client.read(admission);
   try {
-    return parseReadingScribeResult(parseJsonReply(reply.text));
+    return {
+      artifacts: parseReadingScribeResult(parseJsonReply(reply.text)),
+      usage: extractReadingScribeUsage(reply.metadata),
+    };
   } catch (error) {
     if (error instanceof SyntaxError) throw new Error("ReadingScribe reply was not valid JSON");
     throw error;

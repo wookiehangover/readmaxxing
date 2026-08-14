@@ -52,6 +52,17 @@ export interface ReadingAgentUsageRow {
   createdAt: Date;
 }
 
+export interface ReadingAgentUsage {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  costTotal: number | string;
+  model?: string | null;
+  source: string;
+}
+
 export interface ReadingArtifactRevisionRow {
   id: string;
   userId: string;
@@ -81,7 +92,12 @@ export interface ReadingArtifactUpdate {
   summary: string;
 }
 
-const READING_AGENT_LEASE_TTL_MS = 5 * 60 * 1000;
+const READING_AGENT_LEASE_TTL_MS = 4 * 60 * 1000;
+const READING_AGENT_MAX_ATTEMPTS = 8;
+
+export function readingAgentRetryDelaySeconds(attempt: number): number {
+  return Math.min(5 * 60, 10 * 2 ** Math.max(0, attempt - 1));
+}
 
 const INGEST_UNIT_COLUMNS = sql`
   id,
@@ -251,11 +267,20 @@ export async function claimReadingIngestUnitWithLease(
 export async function releaseReadingIngestUnit(
   claim: ReadingIngestUnitLease,
   error: string,
+  usage: ReadingAgentUsage,
 ): Promise<void> {
+  const attempt = claim.unit.attemptCount + 1;
+  const status: ReadingIngestStatus = attempt >= READING_AGENT_MAX_ATTEMPTS ? "error" : "pending";
+  const retryDelaySeconds = readingAgentRetryDelaySeconds(attempt);
   await getPool().query(sql`
     WITH released AS (
       UPDATE readmax.reading_ingest_unit
-      SET status = 'pending', claimed_at = NULL, processed_at = NULL, error = ${error}
+      SET status = ${status},
+          attempt_count = attempt_count + 1,
+          claimed_at = NULL,
+          next_attempt_at = NOW() + (${retryDelaySeconds} * INTERVAL '1 second'),
+          processed_at = NULL,
+          error = ${error}
       WHERE id = ${claim.unit.id}
         AND status = 'processing'
         AND EXISTS (
@@ -267,9 +292,17 @@ export async function releaseReadingIngestUnit(
             AND expires_at > NOW()
         )
       RETURNING id
+    ), recorded AS (
+      INSERT INTO readmax.reading_agent_usage (
+        unit_id, input, output, cache_read, cache_write, total_tokens, cost_total, model, source
+      )
+      SELECT id, ${usage.input}, ${usage.output}, ${usage.cacheRead}, ${usage.cacheWrite},
+             ${usage.totalTokens}, ${usage.costTotal}, ${usage.model ?? null}, ${usage.source}
+      FROM released
+      RETURNING unit_id
     )
     DELETE FROM readmax.reading_agent_lease
-    WHERE unit_id IN (SELECT id FROM released)
+    WHERE unit_id IN (SELECT unit_id FROM recorded)
       AND expires_at = ${claim.lease.expiresAt.toISOString()}
   `);
 }
@@ -348,7 +381,9 @@ async function reclaimExpiredReadingAgentWork(client: PoolClient, userId: string
     SET status = CASE WHEN attempt_count + 1 >= 8 THEN 'error' ELSE 'pending' END,
         attempt_count = attempt_count + 1,
         claimed_at = NULL,
-        next_attempt_at = NOW(),
+        next_attempt_at = NOW() + (
+          LEAST(300, 10 * POWER(2, attempt_count)) * INTERVAL '1 second'
+        ),
         processed_at = NULL,
         error = 'Reading agent lease expired'
     WHERE user_id = ${userId}
@@ -370,17 +405,9 @@ async function reclaimExpiredReadingAgentWork(client: PoolClient, userId: string
   return reclaimed.rows.length;
 }
 
-export async function insertReadingAgentUsage(data: {
-  unitId: string;
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  totalTokens: number;
-  costTotal: number | string;
-  model?: string | null;
-  source: string;
-}): Promise<ReadingAgentUsageRow | null> {
+export async function insertReadingAgentUsage(
+  data: ReadingAgentUsage & { unitId: string },
+): Promise<ReadingAgentUsageRow | null> {
   const result = await getPool().query<ReadingAgentUsageRow>(sql`
     INSERT INTO readmax.reading_agent_usage (
       unit_id, input, output, cache_read, cache_write, total_tokens, cost_total, model, source
@@ -438,6 +465,7 @@ async function persistArtifactUpdate(
 export async function completeReadingIngestUnit(
   claim: ReadingIngestUnitLease,
   updates: readonly ReadingArtifactUpdate[],
+  usage: ReadingAgentUsage,
 ): Promise<number> {
   const { unit, lease } = claim;
   const client = await getPool().connect();
@@ -467,6 +495,16 @@ export async function completeReadingIngestUnit(
     for (const update of updates) {
       if (await persistArtifactUpdate(client, unit, update)) revisionCount += 1;
     }
+
+    await client.query(sql`
+      INSERT INTO readmax.reading_agent_usage (
+        unit_id, input, output, cache_read, cache_write, total_tokens, cost_total, model, source
+      )
+      VALUES (
+        ${unit.id}, ${usage.input}, ${usage.output}, ${usage.cacheRead}, ${usage.cacheWrite},
+        ${usage.totalTokens}, ${usage.costTotal}, ${usage.model ?? null}, ${usage.source}
+      )
+    `);
 
     await client.query(sql`
       UPDATE readmax.reading_ingest_unit

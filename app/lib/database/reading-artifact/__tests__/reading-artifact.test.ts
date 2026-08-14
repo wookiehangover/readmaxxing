@@ -19,6 +19,7 @@ import {
   insertReadingAgentUsage,
   insertReadingArtifactRevision,
   insertReadingIngestUnit,
+  readingAgentRetryDelaySeconds,
   reclaimExpiredReadingAgentLease,
   releaseReadingIngestUnit,
   upsertCurrentReadingArtifact,
@@ -36,6 +37,17 @@ function extractSqlText(query: SqlQuery): string {
 function extractValues(query: SqlQuery): unknown[] {
   return query._items.filter((item) => item.type === "VALUE").map((item) => item.value);
 }
+
+const unknownUsage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  costTotal: 0,
+  model: null,
+  source: "unknown",
+};
 
 beforeEach(() => {
   queryMock.mockReset();
@@ -120,12 +132,21 @@ describe("reading artifact persistence", () => {
     const reclaim = clientQueryMock.mock.calls[2][0] as SqlQuery;
     expect(extractSqlText(reclaim)).toContain("attempt_count = attempt_count + 1");
     expect(extractSqlText(reclaim)).toContain("claimed_at <= NOW()");
+    expect(extractSqlText(reclaim)).toContain("LEAST(300, 10 * POWER(2, attempt_count))");
+  });
+
+  it("calculates exponential retry backoff capped at five minutes", () => {
+    expect(readingAgentRetryDelaySeconds(1)).toBe(10);
+    expect(readingAgentRetryDelaySeconds(2)).toBe(20);
+    expect(readingAgentRetryDelaySeconds(5)).toBe(160);
+    expect(readingAgentRetryDelaySeconds(6)).toBe(300);
+    expect(readingAgentRetryDelaySeconds(8)).toBe(300);
   });
 
   it("releases a failed unit and its lease together", async () => {
     queryMock.mockResolvedValueOnce({ rows: [] });
     const claim = {
-      unit: { id: "unit-1" },
+      unit: { id: "unit-1", attemptCount: 0 },
       lease: {
         userId: "user-1",
         unitId: "unit-1",
@@ -138,12 +159,38 @@ describe("reading artifact persistence", () => {
       releaseReadingIngestUnit(
         claim as Parameters<typeof releaseReadingIngestUnit>[0],
         "Flue unavailable",
+        unknownUsage,
       ),
     ).resolves.toBeUndefined();
 
     const query = queryMock.mock.calls[0][0] as SqlQuery;
     expect(extractSqlText(query)).toContain("WITH released AS");
+    expect(extractSqlText(query)).toContain("attempt_count = attempt_count + 1");
+    expect(extractSqlText(query)).toContain("INSERT INTO readmax.reading_agent_usage");
     expect(extractSqlText(query)).toContain("DELETE FROM readmax.reading_agent_lease");
+    expect(extractValues(query).slice(0, 2)).toEqual(["pending", 10]);
+  });
+
+  it("marks the eighth failed attempt terminal", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+    const claim = {
+      unit: { id: "unit-1", attemptCount: 7 },
+      lease: {
+        userId: "user-1",
+        unitId: "unit-1",
+        bookId: "book-1",
+        expiresAt: new Date("2026-01-01T00:05:00Z"),
+      },
+    };
+
+    await releaseReadingIngestUnit(
+      claim as Parameters<typeof releaseReadingIngestUnit>[0],
+      "Still unavailable",
+      unknownUsage,
+    );
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    expect(extractValues(query).slice(0, 2)).toEqual(["error", 300]);
   });
 
   it("inserts per-unit token usage", async () => {
@@ -244,6 +291,7 @@ describe("reading artifact persistence", () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
 
     const unit = {
@@ -275,9 +323,11 @@ describe("reading artifact persistence", () => {
     };
 
     await expect(
-      completeReadingIngestUnit(lease, [
-        { kind: "wiki", content: "New story", summary: "Added the scene" },
-      ]),
+      completeReadingIngestUnit(
+        lease,
+        [{ kind: "wiki", content: "New story", summary: "Added the scene" }],
+        unknownUsage,
+      ),
     ).resolves.toBe(1);
 
     const revision = clientQueryMock.mock.calls[3][0] as SqlQuery;
@@ -285,9 +335,11 @@ describe("reading artifact persistence", () => {
     expect(extractSqlText(revision)).toContain("'agent'");
     expect(extractValues(revision)).toContain("revision-1");
     expect(extractValues(revision)).toContain("fingerprint-1");
-    const leaseDelete = clientQueryMock.mock.calls[6][0] as SqlQuery;
+    const usage = clientQueryMock.mock.calls[5][0] as SqlQuery;
+    expect(extractSqlText(usage)).toContain("INSERT INTO readmax.reading_agent_usage");
+    const leaseDelete = clientQueryMock.mock.calls[7][0] as SqlQuery;
     expect(extractSqlText(leaseDelete)).toContain("DELETE FROM readmax.reading_agent_lease");
-    expect(clientQueryMock).toHaveBeenNthCalledWith(8, "COMMIT");
+    expect(clientQueryMock).toHaveBeenNthCalledWith(9, "COMMIT");
     expect(releaseMock).toHaveBeenCalledOnce();
   });
 });

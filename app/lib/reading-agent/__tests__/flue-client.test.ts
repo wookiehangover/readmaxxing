@@ -13,6 +13,17 @@ const result = {
   characters: { status: "unchanged", body: "", summary: "No character change." },
   wiki: { status: "updated", body: "Expanded story.", summary: "Added the new scene." },
 };
+const unknownUsage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  costTotal: 0,
+  model: null,
+  source: "unknown",
+};
+const callResult = { artifacts: result, usage: unknownUsage };
 
 beforeEach(() => {
   createFlueClient.mockClear();
@@ -29,7 +40,7 @@ describe("ReadingScribe Flue client", () => {
         page: "New page text.",
         artifacts: { outline: "", characters: "", wiki: "Existing story." },
       }),
-    ).resolves.toEqual(result);
+    ).resolves.toEqual(callResult);
 
     expect(createFlueClient).toHaveBeenCalledWith({
       url: "http://localhost:5174/agents/reading-scribe/conversation-1",
@@ -57,7 +68,7 @@ describe("ReadingScribe Flue client", () => {
         page: "Page",
         artifacts: { outline: "", characters: "", wiki: "" },
       }),
-    ).resolves.toEqual(result);
+    ).resolves.toEqual(callResult);
   });
 
   it("defaults summaries omitted from a fenced JSON reply", async () => {
@@ -78,9 +89,12 @@ describe("ReadingScribe Flue client", () => {
         artifacts: { outline: "", characters: "", wiki: "" },
       }),
     ).resolves.toEqual({
-      outline: { ...withoutSummaries.outline, summary: "Updated outline." },
-      characters: { ...withoutSummaries.characters, summary: "No characters change." },
-      wiki: { ...withoutSummaries.wiki, summary: "Updated wiki." },
+      artifacts: {
+        outline: { ...withoutSummaries.outline, summary: "Updated outline." },
+        characters: { ...withoutSummaries.characters, summary: "No characters change." },
+        wiki: { ...withoutSummaries.wiki, summary: "Updated wiki." },
+      },
+      usage: unknownUsage,
     });
   });
 
@@ -94,7 +108,45 @@ describe("ReadingScribe Flue client", () => {
         page: "Page",
         artifacts: { outline: "", characters: "", wiki: "" },
       }),
-    ).resolves.toEqual(result);
+    ).resolves.toEqual(callResult);
+  });
+
+  it("extracts PromptUsage from reply metadata", async () => {
+    read.mockResolvedValue({
+      text: JSON.stringify(result),
+      metadata: {
+        usage: {
+          input: 100,
+          output: 20,
+          cacheRead: 5,
+          cacheWrite: 2,
+          totalTokens: 127,
+          cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 },
+        },
+        model: { provider: "anthropic", id: "claude-sonnet-4-6" },
+      },
+    });
+
+    await expect(
+      callReadingScribe({
+        url: "http://localhost/agent/id",
+        secret: "test-secret",
+        page: "Page",
+        artifacts: { outline: "", characters: "", wiki: "" },
+      }),
+    ).resolves.toEqual({
+      artifacts: result,
+      usage: {
+        input: 100,
+        output: 20,
+        cacheRead: 5,
+        cacheWrite: 2,
+        totalTokens: 127,
+        costTotal: 0.003,
+        model: "anthropic/claude-sonnet-4-6",
+        source: "flue",
+      },
+    });
   });
 
   it("rejects an invalid structured reply", async () => {

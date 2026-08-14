@@ -12,14 +12,16 @@ import {
 import {
   callReadingScribe,
   type ArtifactKind,
+  type ReadingScribeCallResult,
   type ReadingScribeResult,
+  unknownReadingScribeUsage,
 } from "./flue-client.server";
 type ReadingAgentCall = (options: {
   url: string;
   secret: string;
   page: string;
   artifacts: Record<ArtifactKind, string>;
-}) => Promise<ReadingScribeResult>;
+}) => Promise<ReadingScribeCallResult>;
 
 const ARTIFACT_KINDS: ArtifactKind[] = ["outline", "characters", "wiki"];
 
@@ -96,13 +98,15 @@ export async function dispatchReadingIngestUnit(
       page: claimed.text,
       artifacts: current,
     });
-    await dependencies.complete(claim, changedUpdates(result, current));
+    await dependencies.complete(claim, changedUpdates(result.artifacts, current), result.usage);
     return "done";
   } catch (error) {
     const message = errorMessage(error);
-    await dependencies.release(claim, message).catch((releaseError) => {
-      console.error("[reading-agent] Failed to release ingest unit for retry:", releaseError);
-    });
+    await dependencies
+      .release(claim, message, unknownReadingScribeUsage())
+      .catch((releaseError) => {
+        console.error("[reading-agent] Failed to release ingest unit for retry:", releaseError);
+      });
     console.error(`[reading-agent] Ingest unit ${claimed.id} failed:`, message);
     return "failed";
   }

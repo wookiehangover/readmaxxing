@@ -55,9 +55,21 @@ beforeEach(() => {
   getCurrent.mockReset().mockResolvedValue([wiki]);
   release.mockReset().mockResolvedValue(undefined);
   callAgent.mockReset().mockResolvedValue({
-    outline: { status: "unchanged", body: "", summary: "No outline change." },
-    characters: { status: "unchanged", body: "", summary: "No character change." },
-    wiki: { status: "updated", body: "Expanded story.", summary: "Added the new scene." },
+    artifacts: {
+      outline: { status: "unchanged", body: "", summary: "No outline change." },
+      characters: { status: "unchanged", body: "", summary: "No character change." },
+      wiki: { status: "updated", body: "Expanded story.", summary: "Added the new scene." },
+    },
+    usage: {
+      input: 100,
+      output: 20,
+      cacheRead: 5,
+      cacheWrite: 0,
+      totalTokens: 125,
+      costTotal: 0.001,
+      model: "anthropic/claude-sonnet-4-6",
+      source: "flue",
+    },
   });
 });
 
@@ -71,9 +83,11 @@ describe("reading ingest dispatch", () => {
   it("persists only a changed wiki edit and completes the unit", async () => {
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("done");
 
-    expect(complete).toHaveBeenCalledWith(leased, [
-      { kind: "wiki", content: "Expanded story.", summary: "Added the new scene." },
-    ]);
+    expect(complete).toHaveBeenCalledWith(
+      leased,
+      [{ kind: "wiki", content: "Expanded story.", summary: "Added the new scene." }],
+      expect.objectContaining({ totalTokens: 125, source: "flue" }),
+    );
     expect(release).not.toHaveBeenCalled();
     expect(callAgent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -89,7 +103,16 @@ describe("reading ingest dispatch", () => {
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("failed");
 
     expect(complete).not.toHaveBeenCalled();
-    expect(release).toHaveBeenCalledWith(leased, "Flue unavailable");
+    expect(release).toHaveBeenCalledWith(leased, "Flue unavailable", {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      costTotal: 0,
+      model: null,
+      source: "unknown",
+    });
   });
 
   it("does not dispatch when the user already has a lease", async () => {
