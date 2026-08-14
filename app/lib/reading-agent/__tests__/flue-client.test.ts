@@ -6,7 +6,7 @@ const createFlueClient = vi.hoisted(() => vi.fn(() => ({ send, read })));
 
 vi.mock("@flue/sdk", () => ({ createFlueClient }));
 
-import { callReadingScribe } from "../flue-client.server";
+import { callReadingScribe, readingScribeUsageFromError } from "../flue-client.server";
 
 const result = {
   outline: { status: "unchanged", body: "", summary: "No outline change." },
@@ -159,5 +159,41 @@ describe("ReadingScribe Flue client", () => {
         artifacts: { outline: "", characters: "", wiki: "" },
       }),
     ).rejects.toThrow("ReadingScribe reply was not valid JSON");
+  });
+
+  it("preserves metadata usage when the structured reply is invalid", async () => {
+    read.mockResolvedValue({
+      text: "not json",
+      metadata: {
+        usage: {
+          input: 100,
+          output: 20,
+          cacheRead: 5,
+          cacheWrite: 2,
+          totalTokens: 127,
+          cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 },
+        },
+        model: { provider: "anthropic", id: "claude-sonnet-4-6" },
+      },
+    });
+
+    const error = await callReadingScribe({
+      url: "http://localhost/agent/id",
+      secret: "test-secret",
+      page: "Page",
+      artifacts: { outline: "", characters: "", wiki: "" },
+    }).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(readingScribeUsageFromError(error)).toEqual({
+      input: 100,
+      output: 20,
+      cacheRead: 5,
+      cacheWrite: 2,
+      totalTokens: 127,
+      costTotal: 0.003,
+      model: "anthropic/claude-sonnet-4-6",
+      source: "flue",
+    });
   });
 });

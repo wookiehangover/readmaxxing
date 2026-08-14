@@ -9,6 +9,7 @@ import {
   readingConversationId,
   sweepReadingIngestQueues,
 } from "../dispatch.server";
+import { ReadingScribeCallError } from "../flue-client.server";
 
 const unit: ReadingIngestUnitRow = {
   id: "unit-1",
@@ -47,6 +48,16 @@ const wiki: ReadingArtifactRow = {
   revisionId: "revision-1",
   updatedAt: new Date("2026-01-01T00:00:00Z"),
 };
+const flueUsage = {
+  input: 100,
+  output: 20,
+  cacheRead: 5,
+  cacheWrite: 0,
+  totalTokens: 125,
+  costTotal: 0.001,
+  model: "anthropic/claude-sonnet-4-6",
+  source: "flue" as const,
+};
 
 const claimLease = vi.fn();
 const complete = vi.fn();
@@ -75,16 +86,7 @@ beforeEach(() => {
       characters: { status: "unchanged", body: "", summary: "No character change." },
       wiki: { status: "updated", body: "Expanded story.", summary: "Added the new scene." },
     },
-    usage: {
-      input: 100,
-      output: 20,
-      cacheRead: 5,
-      cacheWrite: 0,
-      totalTokens: 125,
-      costTotal: 0.001,
-      model: "anthropic/claude-sonnet-4-6",
-      source: "flue",
-    },
+    usage: flueUsage,
   });
 });
 
@@ -128,6 +130,32 @@ describe("reading ingest dispatch", () => {
       model: null,
       source: "unknown",
     });
+  });
+
+  it("does not duplicate usage when a settled call loses its lease fence", async () => {
+    complete.mockResolvedValue(null);
+
+    await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("failed");
+
+    expect(complete).toHaveBeenCalledOnce();
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it("passes preserved usage from an invalid reply to failure settlement", async () => {
+    callAgent.mockRejectedValue(new ReadingScribeCallError("Invalid reply", flueUsage));
+
+    await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("failed");
+
+    expect(release).toHaveBeenCalledWith(leased, "Invalid reply", flueUsage);
+  });
+
+  it("does not record usage when Flue was never called", async () => {
+    getCurrent.mockRejectedValue(new Error("Artifact read failed"));
+
+    await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("failed");
+
+    expect(callAgent).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledWith(leased, "Artifact read failed", undefined);
   });
 
   it("does not dispatch when the user already has a lease", async () => {

@@ -186,6 +186,55 @@ describe("reading artifact persistence", () => {
     expect(extractValues(query).slice(0, 2)).toEqual(["pending", 10]);
   });
 
+  it("records failed-call usage independently of an expired lease fence", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+    const claim = {
+      unit: { id: "unit-1", attemptCount: 0 },
+      lease: {
+        userId: "user-1",
+        unitId: "unit-1",
+        bookId: "book-1",
+        expiresAt: new Date("2026-01-01T00:05:00Z"),
+      },
+    };
+
+    await releaseReadingIngestUnit(
+      claim as Parameters<typeof releaseReadingIngestUnit>[0],
+      "Invalid reply",
+      unknownUsage,
+    );
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    const text = extractSqlText(query);
+    const usageInsert = text.slice(
+      text.indexOf("INSERT INTO readmax.reading_agent_usage"),
+      text.indexOf("RETURNING unit_id"),
+    );
+    expect(usageInsert).not.toContain("FROM released");
+    expect(extractValues(query)).toContain(true);
+  });
+
+  it("skips usage recording when failure happens before the remote call", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+    const claim = {
+      unit: { id: "unit-1", attemptCount: 0 },
+      lease: {
+        userId: "user-1",
+        unitId: "unit-1",
+        bookId: "book-1",
+        expiresAt: new Date("2026-01-01T00:05:00Z"),
+      },
+    };
+
+    await releaseReadingIngestUnit(
+      claim as Parameters<typeof releaseReadingIngestUnit>[0],
+      "Artifact read failed",
+    );
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    expect(extractValues(query)).toContain(false);
+  });
+
   it("marks the eighth failed attempt terminal", async () => {
     queryMock.mockResolvedValueOnce({ rows: [] });
     const claim = {
@@ -355,6 +404,42 @@ describe("reading artifact persistence", () => {
     const leaseDelete = clientQueryMock.mock.calls[7][0] as SqlQuery;
     expect(extractSqlText(leaseDelete)).toContain("DELETE FROM readmax.reading_agent_lease");
     expect(clientQueryMock).toHaveBeenNthCalledWith(9, "COMMIT");
+    expect(releaseMock).toHaveBeenCalledOnce();
+  });
+
+  it("records usage without applying artifacts when the completion fence is stale", async () => {
+    clientQueryMock
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+    const claim = {
+      unit: {
+        id: "unit-1",
+        userId: "user-1",
+        bookId: "book-1",
+        fingerprint: "fingerprint-1",
+      },
+      lease: {
+        userId: "user-1",
+        unitId: "unit-1",
+        bookId: "book-1",
+        expiresAt: new Date("2026-01-01T00:05:00Z"),
+      },
+    };
+
+    await expect(
+      completeReadingIngestUnit(
+        claim as Parameters<typeof completeReadingIngestUnit>[0],
+        [{ kind: "wiki", content: "Stale story", summary: "Must not apply" }],
+        unknownUsage,
+      ),
+    ).resolves.toBeNull();
+
+    const usage = clientQueryMock.mock.calls[2][0] as SqlQuery;
+    expect(extractSqlText(usage)).toContain("INSERT INTO readmax.reading_agent_usage");
+    expect(clientQueryMock).toHaveBeenCalledTimes(4);
+    expect(clientQueryMock).toHaveBeenNthCalledWith(4, "COMMIT");
     expect(releaseMock).toHaveBeenCalledOnce();
   });
 });

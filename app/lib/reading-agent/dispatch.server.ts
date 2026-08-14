@@ -17,7 +17,8 @@ import {
   type ArtifactKind,
   type ReadingScribeCallResult,
   type ReadingScribeResult,
-  unknownReadingScribeUsage,
+  type ReadingScribeUsage,
+  readingScribeUsageFromError,
 } from "./flue-client.server";
 type ReadingAgentCall = (options: {
   url: string;
@@ -103,24 +104,35 @@ export async function dispatchReadingIngestUnit(
   const claim = await dependencies.claimLease(unit.id);
   if (!claim) return "already-leased";
   const claimed = claim.unit;
+  let calledAgent = false;
+  let settledUsage: ReadingScribeUsage | undefined;
 
   try {
     const current = currentBodies(await dependencies.getCurrent(claimed.userId, claimed.bookId));
+    calledAgent = true;
     const result = await dependencies.callAgent({
       url: `${agentUrl.replace(/\/+$/, "")}/${readingConversationId(claimed.userId, claimed.bookId)}`,
       secret: agentSecret,
       page: claimed.text,
       artifacts: current,
     });
-    await dependencies.complete(claim, changedUpdates(result.artifacts, current), result.usage);
+    settledUsage = result.usage;
+    const completed = await dependencies.complete(
+      claim,
+      changedUpdates(result.artifacts, current),
+      result.usage,
+    );
+    if (completed === null) {
+      console.error(`[reading-agent] Ingest unit ${claimed.id} settled after its lease expired.`);
+      return "failed";
+    }
     return "done";
   } catch (error) {
     const message = errorMessage(error);
-    await dependencies
-      .release(claim, message, unknownReadingScribeUsage())
-      .catch((releaseError) => {
-        console.error("[reading-agent] Failed to release ingest unit for retry:", releaseError);
-      });
+    const usage = calledAgent ? (settledUsage ?? readingScribeUsageFromError(error)) : undefined;
+    await dependencies.release(claim, message, usage).catch((releaseError) => {
+      console.error("[reading-agent] Failed to release ingest unit for retry:", releaseError);
+    });
     console.error(`[reading-agent] Ingest unit ${claimed.id} failed:`, message);
     return "failed";
   }

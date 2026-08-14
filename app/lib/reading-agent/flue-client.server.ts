@@ -22,6 +22,17 @@ export interface ReadingScribeCallResult {
   usage: ReadingScribeUsage;
 }
 
+export class ReadingScribeCallError extends Error {
+  constructor(
+    message: string,
+    readonly usage: ReadingScribeUsage,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "ReadingScribeCallError";
+  }
+}
+
 const ARTIFACT_KINDS: ArtifactKind[] = ["outline", "characters", "wiki"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,6 +78,10 @@ export function unknownReadingScribeUsage(): ReadingScribeUsage {
     model: null,
     source: "unknown",
   };
+}
+
+export function readingScribeUsageFromError(error: unknown): ReadingScribeUsage {
+  return error instanceof ReadingScribeCallError ? error.usage : unknownReadingScribeUsage();
 }
 
 function extractReadingScribeUsage(metadata: unknown): ReadingScribeUsage {
@@ -161,13 +176,19 @@ export async function callReadingScribe(options: {
     },
   });
   const reply = await client.read(admission);
+  const usage = extractReadingScribeUsage(reply.metadata);
   try {
     return {
       artifacts: parseReadingScribeResult(parseJsonReply(reply.text)),
-      usage: extractReadingScribeUsage(reply.metadata),
+      usage,
     };
   } catch (error) {
-    if (error instanceof SyntaxError) throw new Error("ReadingScribe reply was not valid JSON");
-    throw error;
+    const message =
+      error instanceof SyntaxError
+        ? "ReadingScribe reply was not valid JSON"
+        : error instanceof Error
+          ? error.message
+          : "ReadingScribe returned an invalid result";
+    throw new ReadingScribeCallError(message, usage, { cause: error });
   }
 }
