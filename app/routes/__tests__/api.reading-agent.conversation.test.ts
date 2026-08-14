@@ -24,7 +24,7 @@ const mocks = vi.hoisted(() => {
 vi.mock("~/lib/database/auth-middleware", () => ({ getSessionFromRequest: mocks.auth }));
 vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   getReadingAgentSchemaHealth: mocks.schema,
-  getCurrentReadingAgentLease: mocks.lease,
+  getLiveReadingAgentLease: mocks.lease,
 }));
 vi.mock("@flue/sdk", () => ({
   createFlueClient: mocks.createFlueClient,
@@ -52,7 +52,7 @@ beforeEach(() => {
   mocks.lease.mockReset().mockResolvedValue({
     bookId: "book-1",
     unitId: "unit-1",
-    expiresAt: new Date("2026-01-01T00:05:00Z"),
+    expiresAt: new Date("2026-08-14T12:10:00Z"),
     chapterLabel: "Chapter 14",
     locator: "chapter-14.xhtml",
   });
@@ -106,6 +106,20 @@ describe("reading-agent conversation API", () => {
     const idle = await loader({ request: request() });
     expect(idle.status).toBe(200);
     await expect(idle.json()).resolves.toMatchObject({ phase: "absent", conversationId: null });
+    expect(mocks.createFlueClient).not.toHaveBeenCalled();
+  });
+
+  it("returns an absent payload when the live lease has expired", async () => {
+    mocks.lease.mockResolvedValue(null);
+    const response = await loader({ request: request() });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      phase: "absent",
+      conversationId: null,
+      bookId: null,
+      messages: [],
+    });
+    expect(mocks.lease).toHaveBeenCalledWith("user-1");
     expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 

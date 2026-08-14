@@ -1,7 +1,7 @@
 import { createFlueClient, FlueApiError } from "@flue/sdk";
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import {
-  getCurrentReadingAgentLease,
+  getLiveReadingAgentLease,
   getReadingAgentSchemaHealth,
 } from "~/lib/database/reading-artifact/reading-artifact";
 import {
@@ -43,7 +43,7 @@ export async function loader({ request }: { request: Request }): Promise<Respons
   const schema = await getReadingAgentSchemaHealth();
   if (!schema.ok) return Response.json(emptyReadingAgentConversation("absent"));
 
-  const lease = await getCurrentReadingAgentLease(session.userId);
+  const lease = await getLiveReadingAgentLease(session.userId);
   if (!lease) return Response.json(emptyReadingAgentConversation("absent"));
 
   const agentUrl = process.env.READING_AGENT_URL!;

@@ -280,6 +280,24 @@ export async function getCurrentReadingAgentLease(
   return result.rows[0] ?? null;
 }
 
+export async function getLiveReadingAgentLease(
+  userId: string,
+): Promise<ReadingAgentStatusLeaseRow | null> {
+  const result = await getPool().query<ReadingAgentStatusLeaseRow>(sql`
+    SELECT lease.unit_id AS "unitId",
+           lease.book_id AS "bookId",
+           lease.expires_at AS "expiresAt",
+           unit.chapter_label AS "chapterLabel",
+           unit.locator
+    FROM readmax.reading_agent_lease AS lease
+    JOIN readmax.reading_ingest_unit AS unit ON unit.id = lease.unit_id
+    WHERE lease.user_id = ${userId}
+      AND lease.expires_at > NOW()
+    LIMIT 1
+  `);
+  return result.rows[0] ?? null;
+}
+
 export async function listRecentReadingIngestUnits(data: {
   userId: string;
   bookId?: string;

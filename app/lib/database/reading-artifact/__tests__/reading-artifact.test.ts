@@ -16,6 +16,7 @@ import {
   claimReadingIngestUnitWithLease,
   completeReadingIngestUnit,
   getCurrentReadingAgentLease,
+  getLiveReadingAgentLease,
   getLatestReadingAgentUsage,
   getNextDueReadingIngestUnit,
   getReadingAgentSchemaHealth,
@@ -108,6 +109,25 @@ describe("reading artifact persistence", () => {
     expect(extractSqlText(unitsQuery)).not.toContain("text AS");
     expect(extractSqlText(unitsQuery)).not.toContain("text,");
     expect(extractValues(usageQuery)).toEqual(["user-1"]);
+  });
+
+  it("reads a live lease only when it has not expired", async () => {
+    const lease = { unitId: "unit-1", bookId: "book-1" };
+    queryMock
+      .mockResolvedValueOnce({ rows: [lease] })
+      .mockResolvedValueOnce({ rows: [lease] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(getLiveReadingAgentLease("user-1")).resolves.toBe(lease);
+    await expect(getCurrentReadingAgentLease("user-1")).resolves.toBe(lease);
+    await expect(getLiveReadingAgentLease("user-1")).resolves.toBeNull();
+
+    const liveQuery = queryMock.mock.calls[0][0] as SqlQuery;
+    const currentQuery = queryMock.mock.calls[1][0] as SqlQuery;
+    expect(extractSqlText(liveQuery)).toContain("expires_at > NOW()");
+    expect(extractValues(liveQuery)).toEqual(["user-1"]);
+    expect(extractSqlText(currentQuery)).not.toContain("expires_at > NOW()");
+    expect(extractValues(currentQuery)).toEqual(["user-1"]);
   });
 
   it("claims only one of two pending units for the same user", async () => {

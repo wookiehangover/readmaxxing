@@ -180,6 +180,33 @@ describe("reading-agent debug page", () => {
     expect(container!.textContent).not.toContain("Chapter 14 page body");
   });
 
+  it("renders the connecting conversation state", async () => {
+    respond(emptyStatus, {
+      phase: "connecting",
+      conversationId: "conversation-1",
+      bookId: "book-1",
+      messages: [],
+    });
+    await renderPage();
+    expect(container!.textContent).toContain("connecting");
+    expect(container!.textContent).toContain("No live conversation");
+    expect(container!.textContent).toContain(
+      "The current lease is waiting for the sidecar conversation.",
+    );
+  });
+
+  it("renders a conversation request error", async () => {
+    respond(emptyStatus, {
+      phase: "error",
+      conversationId: "conversation-1",
+      bookId: "book-1",
+      messages: [],
+    });
+    await renderPage();
+    expect(container!.textContent).toContain("error");
+    expect(container!.textContent).toContain("Unable to load the live conversation.");
+  });
+
   it("renders an error unit and its last error", async () => {
     respond({
       ...emptyStatus,
