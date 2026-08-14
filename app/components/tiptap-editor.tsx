@@ -55,7 +55,7 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
   }, [highlightId, cfiRange, editor, deleteNode]);
 
   return (
-    <NodeViewWrapper className="group/hl my-2">
+    <NodeViewWrapper className="group/hl relative my-2">
       <blockquote
         onClick={handleNavigate}
         className="my-0 cursor-pointer border-0 bg-foreground/[0.04] px-3 py-2 text-sm italic text-muted-foreground transition-colors hover:bg-muted/70"
@@ -63,7 +63,7 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
       >
         "{text}"
       </blockquote>
-      <div className="mt-0.5 flex h-5 justify-end gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100 group-focus-within/hl:opacity-100">
+      <div className="absolute top-full right-1 z-10 flex -translate-y-1/2 gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100 group-focus-within/hl:opacity-100">
         <button
           type="button"
           onClick={(e) => {
