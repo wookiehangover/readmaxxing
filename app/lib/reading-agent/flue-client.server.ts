@@ -164,8 +164,7 @@ function parseJsonReply(text: string): unknown {
 }
 
 interface ReadingScribeCallOptions {
-  url?: string;
-  conversationId?: string;
+  conversationId: string;
   secret: string;
   page: string;
   artifacts: Record<ArtifactKind, string>;
@@ -174,19 +173,17 @@ interface ReadingScribeCallOptions {
 export async function callReadingScribe(
   options: ReadingScribeCallOptions,
 ): Promise<ReadingScribeCallResult> {
-  if (!options.url && !options.conversationId) {
+  if (!options.conversationId) {
     throw new Error("ReadingScribe conversation id is required for the in-app host");
   }
-  const host = options.url
-    ? undefined
-    : await createReadingAgentHost(options.conversationId!, options.secret);
+  const host = await createReadingAgentHost(options.conversationId, options.secret);
   try {
     const client = createFlueClient({
-      url: options.url ?? host!.url,
+      url: host.url,
       token: options.secret,
-      ...(host?.fetch ? { fetch: host.fetch } : {}),
+      ...(host.fetch ? { fetch: host.fetch } : {}),
     });
-    host?.registerAbort(() => client.abort());
+    host.registerAbort(() => client.abort());
     const admission = await client.send({
       message: {
         kind: "user",
@@ -210,6 +207,6 @@ export async function callReadingScribe(
       throw new ReadingScribeCallError(message, usage, { cause: error });
     }
   } finally {
-    await host?.dispose();
+    await host.dispose();
   }
 }

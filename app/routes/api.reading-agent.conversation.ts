@@ -41,18 +41,17 @@ export async function loader({ request }: { request: Request }): Promise<Respons
   if (!lease) return Response.json(emptyReadingAgentConversation("absent"));
 
   const conversationId = readingConversationId(session.userId, lease.bookId);
-  const agentUrl = process.env.READING_AGENT_URL;
-  const activeHost = agentUrl ? undefined : getActiveReadingAgentHost(conversationId);
-  if (!agentUrl && !activeHost) {
+  const activeHost = getActiveReadingAgentHost(conversationId);
+  if (!activeHost) {
     return Response.json(scopedConversation(session.userId, lease.bookId, "connecting"));
   }
   if (!process.env.READING_AGENT_SECRET) {
     return Response.json(scopedConversation(session.userId, lease.bookId, "error"));
   }
   const client = createFlueClient({
-    url: agentUrl ? `${agentUrl.replace(/\/+$/, "")}/${conversationId}` : activeHost!.url,
+    url: activeHost.url,
     token: process.env.READING_AGENT_SECRET,
-    ...(activeHost?.fetch ? { fetch: activeHost.fetch } : {}),
+    ...(activeHost.fetch ? { fetch: activeHost.fetch } : {}),
   });
 
   try {

@@ -49,7 +49,7 @@ function request(): Request {
 
 beforeEach(() => {
   process.env.DATABASE_URL = "postgres://configured";
-  process.env.READING_AGENT_URL = "https://sidecar.example/agents/reading-scribe";
+  process.env.READING_AGENT_URL = "http://localhost:5174/agents/reading-scribe";
   process.env.READING_AGENT_SECRET = "sidecar-secret";
   mocks.auth.mockReset().mockResolvedValue({ userId: "user-1" });
   mocks.schema.mockReset().mockResolvedValue({ ok: true });
@@ -82,8 +82,7 @@ describe("reading-agent conversation API", () => {
     expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 
-  it("returns an absent payload without a legacy URL when there is no live lease", async () => {
-    delete process.env.READING_AGENT_URL;
+  it("returns an absent payload when there is no live lease", async () => {
     mocks.lease.mockResolvedValue(null);
     const response = await loader({ request: request() });
     expect(response.status).toBe(200);
@@ -129,8 +128,7 @@ describe("reading-agent conversation API", () => {
     expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 
-  it("returns connecting without a legacy URL while the in-app host is starting", async () => {
-    delete process.env.READING_AGENT_URL;
+  it("returns connecting while the in-app host starts despite a leftover URL", async () => {
     const response = await loader({ request: request() });
     const conversationId = readingConversationId("user-1", "book-1");
     expect(response.status).toBe(200);
@@ -145,7 +143,6 @@ describe("reading-agent conversation API", () => {
   });
 
   it("returns connecting when an active host does not have the conversation yet", async () => {
-    delete process.env.READING_AGENT_URL;
     mocks.activeHost.mockReturnValue({
       url: "http://reading-agent.local/agents/reading-scribe/conversation",
     });
@@ -155,18 +152,7 @@ describe("reading-agent conversation API", () => {
     await expect(response.json()).resolves.toMatchObject({ phase: "connecting", bookId: "book-1" });
   });
 
-  it("uses the legacy URL when configured", async () => {
-    mocks.history.mockRejectedValue(new mocks.FakeFlueApiError(404, { error: "missing" }));
-    await loader({ request: request() });
-    const conversationId = readingConversationId("user-1", "book-1");
-    expect(mocks.createFlueClient).toHaveBeenCalledWith({
-      url: `https://sidecar.example/agents/reading-scribe/${conversationId}`,
-      token: "sidecar-secret",
-    });
-  });
-
-  it("returns a sanitized live conversation and never the page body or secret", async () => {
-    delete process.env.READING_AGENT_URL;
+  it("uses the active host despite a leftover URL and sanitizes the conversation", async () => {
     const hostFetch = vi.fn();
     mocks.activeHost.mockReturnValue({
       url: "http://reading-agent.local/agents/reading-scribe/conversation",

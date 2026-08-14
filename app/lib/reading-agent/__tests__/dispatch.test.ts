@@ -72,8 +72,10 @@ const dispatch = vi.fn();
 const listUserIds = vi.fn();
 const reclaim = vi.fn();
 const drain = vi.fn();
+const originalReadingAgentUrl = process.env.READING_AGENT_URL;
 
 beforeEach(() => {
+  process.env.READING_AGENT_URL = "http://localhost:5174/agents/reading-scribe";
   claimLease.mockReset().mockResolvedValue(leased);
   complete.mockReset().mockResolvedValue(1);
   getCurrent.mockReset().mockResolvedValue([wiki]);
@@ -93,8 +95,12 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  if (originalReadingAgentUrl == null) delete process.env.READING_AGENT_URL;
+  else process.env.READING_AGENT_URL = originalReadingAgentUrl;
+});
+
 const options = () => ({
-  agentUrl: "http://localhost:5174/agents/reading-scribe",
   agentSecret: "test-secret",
   dependencies: { claimLease, complete, getCurrent, release, callAgent },
 });
@@ -169,10 +175,9 @@ describe("reading ingest dispatch", () => {
     expect(callAgent).not.toHaveBeenCalled();
   });
 
-  it("dispatches through the in-app host when the remote URL is not configured", async () => {
+  it("dispatches through the in-app host when a leftover remote URL is configured", async () => {
     await expect(
       dispatchReadingIngestUnit(unit, {
-        agentUrl: "",
         agentSecret: "test-secret",
         dependencies: options().dependencies,
       }),
@@ -180,17 +185,16 @@ describe("reading ingest dispatch", () => {
 
     expect(callAgent).toHaveBeenCalledWith(
       expect.objectContaining({
-        url: undefined,
         conversationId: readingConversationId("user-1", "book-1"),
       }),
     );
+    expect(callAgent.mock.calls[0]?.[0]).not.toHaveProperty("url");
     expect(complete).toHaveBeenCalledOnce();
   });
 
   it("leaves the unit pending when the agent secret is not configured", async () => {
     await expect(
       dispatchReadingIngestUnit(unit, {
-        agentUrl: "",
         agentSecret: "",
         dependencies: options().dependencies,
       }),
@@ -211,7 +215,6 @@ describe("reading ingest dispatch", () => {
   it("does nothing when the queue is empty or a user lease is busy", async () => {
     await expect(
       drainReadingIngestQueue("user-1", {
-        agentUrl: "http://localhost:5174/agents/reading-scribe",
         agentSecret: "test-secret",
         dependencies: { reclaim, getNextDue, dispatch },
       }),
@@ -226,7 +229,6 @@ describe("reading ingest dispatch", () => {
     getNextDue.mockResolvedValue(unit);
 
     await drainReadingIngestQueue("user-1", {
-      agentUrl: "http://localhost:5174/agents/reading-scribe",
       agentSecret: "test-secret",
       maxUnits: 1,
       dependencies: { reclaim, getNextDue, dispatch },
@@ -256,7 +258,6 @@ describe("reading ingest dispatch", () => {
       .mockResolvedValueOnce("done");
 
     const drain = drainReadingIngestQueue("user-1", {
-      agentUrl: "http://localhost:5174/agents/reading-scribe",
       agentSecret: "test-secret",
       dependencies: { reclaim, getNextDue, dispatch },
     });
@@ -278,7 +279,6 @@ describe("reading ingest dispatch", () => {
     getNextDue.mockResolvedValue(unit);
 
     await drainReadingIngestQueue("user-1", {
-      agentUrl: "http://localhost:5174/agents/reading-scribe",
       agentSecret: "test-secret",
       maxUnits: 1,
       dependencies: { reclaim, getNextDue, dispatch },
@@ -293,7 +293,6 @@ describe("reading ingest dispatch", () => {
 
     await expect(
       sweepReadingIngestQueues({
-        agentUrl: "http://localhost:5174/agents/reading-scribe",
         agentSecret: "test-secret",
         dependencies: { listUserIds, reclaim, drain },
       }),
@@ -304,11 +303,10 @@ describe("reading ingest dispatch", () => {
     expect(reclaim.mock.invocationCallOrder.at(-1)).toBeLessThan(drain.mock.invocationCallOrder[0]);
   });
 
-  it("drains the queue without a remote agent URL", async () => {
+  it("drains the queue without propagating a leftover remote URL", async () => {
     getNextDue.mockResolvedValueOnce(unit).mockResolvedValueOnce(null);
 
     await drainReadingIngestQueue("user-1", {
-      agentUrl: "",
       agentSecret: "test-secret",
       dependencies: { reclaim, getNextDue, dispatch },
     });
@@ -316,16 +314,15 @@ describe("reading ingest dispatch", () => {
     expect(reclaim).toHaveBeenCalledWith("user-1");
     expect(dispatch).toHaveBeenCalledWith(
       unit,
-      expect.objectContaining({ agentUrl: "", agentSecret: "test-secret" }),
+      expect.objectContaining({ agentSecret: "test-secret" }),
     );
   });
 
-  it("sweeps the database without a remote agent URL", async () => {
+  it("sweeps the database without propagating a leftover remote URL", async () => {
     listUserIds.mockResolvedValue(["user-1"]);
 
     await expect(
       sweepReadingIngestQueues({
-        agentUrl: "",
         agentSecret: "test-secret",
         dependencies: { listUserIds, reclaim, drain },
       }),
@@ -334,7 +331,7 @@ describe("reading ingest dispatch", () => {
     expect(reclaim).toHaveBeenCalledWith("user-1");
     expect(drain).toHaveBeenCalledWith(
       "user-1",
-      expect.objectContaining({ agentUrl: "", agentSecret: "test-secret", maxUnits: 1 }),
+      expect.objectContaining({ agentSecret: "test-secret", maxUnits: 1 }),
     );
   });
 });
@@ -345,7 +342,6 @@ describe("local reading ingest sweep", () => {
     nodeEnv: "development",
     vitest: undefined,
     databaseUrl: "postgres://configured",
-    agentUrl: "http://localhost:5174/agents/reading-scribe",
     agentSecret: "test-secret",
   };
 

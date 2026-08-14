@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const send = vi.hoisted(() => vi.fn());
 const read = vi.hoisted(() => vi.fn());
@@ -36,8 +36,10 @@ const unknownUsage = {
   source: "unknown",
 };
 const callResult = { artifacts: result, usage: unknownUsage };
+const originalReadingAgentUrl = process.env.READING_AGENT_URL;
 
 beforeEach(() => {
+  process.env.READING_AGENT_URL = "http://localhost:5174/agents/reading-scribe";
   createFlueClient.mockClear();
   createReadingAgentHost.mockClear();
   disposeHost.mockReset().mockResolvedValue(undefined);
@@ -46,11 +48,16 @@ beforeEach(() => {
   read.mockReset().mockResolvedValue({ text: JSON.stringify(result) });
 });
 
+afterEach(() => {
+  if (originalReadingAgentUrl == null) delete process.env.READING_AGENT_URL;
+  else process.env.READING_AGENT_URL = originalReadingAgentUrl;
+});
+
 describe("ReadingScribe Flue client", () => {
-  it("accepts a bare JSON reply and uses the durable SDK round trip", async () => {
+  it("accepts a bare JSON reply through the in-app host despite a leftover URL", async () => {
     await expect(
       callReadingScribe({
-        url: "http://localhost:5174/agents/reading-scribe/conversation-1",
+        conversationId: "conversation-1",
         secret: "test-secret",
         page: "New page text.",
         artifacts: { outline: "", characters: "", wiki: "Existing story." },
@@ -58,8 +65,9 @@ describe("ReadingScribe Flue client", () => {
     ).resolves.toEqual(callResult);
 
     expect(createFlueClient).toHaveBeenCalledWith({
-      url: "http://localhost:5174/agents/reading-scribe/conversation-1",
+      url: "http://reading-agent.local/agents/reading-scribe/conversation-1",
       token: "test-secret",
+      fetch: hostFetch,
     });
     expect(send).toHaveBeenCalledWith({
       message: {
@@ -97,7 +105,7 @@ describe("ReadingScribe Flue client", () => {
 
     await expect(
       callReadingScribe({
-        url: "http://localhost/agent/id",
+        conversationId: "conversation-1",
         secret: "test-secret",
         page: "Page",
         artifacts: { outline: "", characters: "", wiki: "" },
@@ -117,7 +125,7 @@ describe("ReadingScribe Flue client", () => {
 
     await expect(
       callReadingScribe({
-        url: "http://localhost/agent/id",
+        conversationId: "conversation-1",
         secret: "test-secret",
         page: "Page",
         artifacts: { outline: "", characters: "", wiki: "" },
@@ -137,7 +145,7 @@ describe("ReadingScribe Flue client", () => {
 
     await expect(
       callReadingScribe({
-        url: "http://localhost/agent/id",
+        conversationId: "conversation-1",
         secret: "test-secret",
         page: "Page",
         artifacts: { outline: "", characters: "", wiki: "" },
@@ -163,7 +171,7 @@ describe("ReadingScribe Flue client", () => {
 
     await expect(
       callReadingScribe({
-        url: "http://localhost/agent/id",
+        conversationId: "conversation-1",
         secret: "test-secret",
         page: "Page",
         artifacts: { outline: "", characters: "", wiki: "" },
@@ -187,7 +195,7 @@ describe("ReadingScribe Flue client", () => {
     read.mockResolvedValue({ text: "not json" });
     await expect(
       callReadingScribe({
-        url: "http://localhost/agent/id",
+        conversationId: "conversation-1",
         secret: "test-secret",
         page: "Page",
         artifacts: { outline: "", characters: "", wiki: "" },
@@ -212,7 +220,7 @@ describe("ReadingScribe Flue client", () => {
     });
 
     const error = await callReadingScribe({
-      url: "http://localhost/agent/id",
+      conversationId: "conversation-1",
       secret: "test-secret",
       page: "Page",
       artifacts: { outline: "", characters: "", wiki: "" },

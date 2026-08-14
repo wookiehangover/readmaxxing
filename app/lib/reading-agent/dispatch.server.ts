@@ -24,7 +24,6 @@ import { readingConversationId } from "./conversation-id.server";
 export { readingConversationId };
 
 type ReadingAgentCall = (options: {
-  url?: string;
   conversationId: string;
   secret: string;
   page: string;
@@ -85,12 +84,10 @@ const DEFAULT_DEPENDENCIES: DispatchDependencies = {
 export async function dispatchReadingIngestUnit(
   unit: ReadingIngestUnitRow,
   options: {
-    agentUrl?: string;
     agentSecret?: string;
     dependencies?: Partial<DispatchDependencies>;
   } = {},
 ): Promise<"not-configured" | "already-leased" | "done" | "failed"> {
-  const agentUrl = options.agentUrl ?? process.env.READING_AGENT_URL;
   const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
   if (!agentSecret) {
     if (process.env.NODE_ENV !== "production") {
@@ -111,7 +108,6 @@ export async function dispatchReadingIngestUnit(
     calledAgent = true;
     const conversationId = readingConversationId(claimed.userId, claimed.bookId);
     const result = await dependencies.callAgent({
-      url: agentUrl ? `${agentUrl.replace(/\/+$/, "")}/${conversationId}` : undefined,
       conversationId,
       secret: agentSecret,
       page: claimed.text,
@@ -148,13 +144,11 @@ const DEFAULT_DRAIN_DEPENDENCIES: DrainDependencies = {
 export async function drainReadingIngestQueue(
   userId: string,
   options: {
-    agentUrl?: string;
     agentSecret?: string;
     maxUnits?: number;
     dependencies?: Partial<DrainDependencies>;
   } = {},
 ): Promise<void> {
-  const agentUrl = options.agentUrl ?? process.env.READING_AGENT_URL;
   const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
   if (!agentSecret) return;
 
@@ -166,7 +160,7 @@ export async function drainReadingIngestQueue(
     const unit = await dependencies.getNextDue(userId);
     if (!unit) return;
 
-    const result = await dependencies.dispatch(unit, { agentUrl, agentSecret });
+    const result = await dependencies.dispatch(unit, { agentSecret });
     if (result === "already-leased" || result === "not-configured") return;
   }
 }
@@ -179,12 +173,10 @@ const DEFAULT_SWEEP_DEPENDENCIES: SweepDependencies = {
 
 export async function sweepReadingIngestQueues(
   options: {
-    agentUrl?: string;
     agentSecret?: string;
     dependencies?: Partial<SweepDependencies>;
   } = {},
 ): Promise<number> {
-  const agentUrl = options.agentUrl ?? process.env.READING_AGENT_URL;
   const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
   if (!agentSecret) return 0;
 
@@ -192,7 +184,7 @@ export async function sweepReadingIngestQueues(
   const userIds = await dependencies.listUserIds();
   await Promise.all(userIds.map((userId) => dependencies.reclaim(userId)));
   await Promise.all(
-    userIds.map((userId) => dependencies.drain(userId, { agentUrl, agentSecret, maxUnits: 1 })),
+    userIds.map((userId) => dependencies.drain(userId, { agentSecret, maxUnits: 1 })),
   );
   return userIds.length;
 }

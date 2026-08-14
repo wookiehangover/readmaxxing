@@ -10,9 +10,7 @@ const mocks = vi.hoisted(() => ({
   reset: vi.fn(),
   getUnit: vi.fn(),
   schedule: vi.fn(),
-  abort: vi.fn(),
   stopHost: vi.fn(),
-  createFlueClient: vi.fn(),
 }));
 
 vi.mock("~/lib/database/auth-middleware", () => ({ getSessionFromRequest: mocks.auth }));
@@ -30,9 +28,6 @@ vi.mock("~/lib/reading-agent/dispatch.server", () => ({
 }));
 vi.mock("~/lib/reading-agent/agent-host.server", () => ({
   stopReadingAgentHost: mocks.stopHost,
-}));
-vi.mock("@flue/sdk", () => ({
-  createFlueClient: mocks.createFlueClient,
 }));
 
 import { action } from "~/routes/api.reading-agent.actions";
@@ -53,7 +48,7 @@ function request(body: unknown): Request {
 
 beforeEach(() => {
   process.env.DATABASE_URL = "postgres://configured";
-  process.env.READING_AGENT_URL = "https://example.com/agents/reading-scribe";
+  process.env.READING_AGENT_URL = "http://localhost:5174/agents/reading-scribe";
   process.env.READING_AGENT_SECRET = "secret";
   mocks.auth.mockReset().mockResolvedValue({ userId: "user-1" });
   mocks.schema.mockReset().mockResolvedValue({ ok: true });
@@ -64,9 +59,7 @@ beforeEach(() => {
   mocks.reset.mockReset().mockResolvedValue(true);
   mocks.getUnit.mockReset().mockResolvedValue(null);
   mocks.schedule.mockReset();
-  mocks.abort.mockReset().mockResolvedValue({ aborted: true });
   mocks.stopHost.mockReset().mockResolvedValue(false);
-  mocks.createFlueClient.mockReset().mockReturnValue({ abort: mocks.abort });
 });
 
 afterEach(() => {
@@ -117,7 +110,8 @@ describe("reading-agent actions API", () => {
     expect(mocks.schedule).toHaveBeenCalledWith("user-1");
   });
 
-  it("stops a live lease without incrementing attempts", async () => {
+  it("stops the in-app host despite a leftover URL without incrementing attempts", async () => {
+    mocks.stopHost.mockResolvedValue(true);
     mocks.lease.mockResolvedValue({
       unitId: "unit-1",
       bookId: "book-1",
@@ -133,32 +127,16 @@ describe("reading-agent actions API", () => {
       stopped: true,
       unitId: "unit-1",
     });
-    expect(mocks.abort).toHaveBeenCalledOnce();
+    expect(mocks.stopHost).toHaveBeenCalledOnce();
     expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-1");
     expect(mocks.reclaim).not.toHaveBeenCalled();
-  });
-
-  it("stops the in-app host without calling the legacy remote client", async () => {
-    delete process.env.READING_AGENT_URL;
-    mocks.stopHost.mockResolvedValue(true);
-    mocks.lease.mockResolvedValue({
-      unitId: "unit-1",
-      bookId: "book-1",
-      expiresAt: new Date("2026-01-01T00:05:00Z"),
-    });
-
-    const response = await action({ request: request({ action: "stop" }) });
-    expect(response.status).toBe(200);
-    expect(mocks.stopHost).toHaveBeenCalledOnce();
-    expect(mocks.createFlueClient).not.toHaveBeenCalled();
-    expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-1");
   });
 
   it("returns stopped:false when there is no live lease", async () => {
     const response = await action({ request: request({ action: "stop" }) });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true, stopped: false });
-    expect(mocks.abort).not.toHaveBeenCalled();
+    expect(mocks.stopHost).not.toHaveBeenCalled();
     expect(mocks.stop).not.toHaveBeenCalled();
     expect(mocks.reclaim).toHaveBeenCalledWith("user-1");
   });
@@ -218,11 +196,11 @@ describe("reading-agent actions API", () => {
       chapterLabel: "Chapter 1",
       locator: "chapter-1.xhtml",
     });
-    mocks.abort.mockRejectedValue(new Error("sidecar unavailable"));
+    mocks.stopHost.mockResolvedValue(true);
 
     const response = await action({ request: request({ action: "retry", unitId: "unit-1" }) });
     expect(response.status).toBe(200);
-    expect(mocks.abort).toHaveBeenCalledOnce();
+    expect(mocks.stopHost).toHaveBeenCalledOnce();
     expect(mocks.retry).toHaveBeenCalledWith("user-1", "unit-1");
     expect(mocks.schedule).toHaveBeenCalledWith("user-1");
   });
@@ -267,6 +245,7 @@ describe("reading-agent actions API", () => {
   });
 
   it("stops a processing unit before resetting it", async () => {
+    mocks.stopHost.mockResolvedValue(true);
     mocks.getUnit.mockResolvedValue({
       id: "unit-1",
       bookId: "book-1",
@@ -286,7 +265,7 @@ describe("reading-agent actions API", () => {
 
     const response = await action({ request: request({ action: "reset", unitId: "unit-1" }) });
     expect(response.status).toBe(200);
-    expect(mocks.abort).toHaveBeenCalledOnce();
+    expect(mocks.stopHost).toHaveBeenCalledOnce();
     expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-1");
     expect(mocks.reset).toHaveBeenCalledWith("user-1", "unit-1");
     expect(mocks.stop.mock.invocationCallOrder[0]).toBeLessThan(

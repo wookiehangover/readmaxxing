@@ -1,4 +1,3 @@
-import { createFlueClient } from "@flue/sdk";
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import {
   getLiveReadingAgentLease,
@@ -108,21 +107,7 @@ async function resetUnit(userId: string, unitId: string): Promise<Response> {
 
 async function abortConversation(userId: string, bookId: string): Promise<void> {
   const conversationId = readingConversationId(userId, bookId);
-  if (await stopReadingAgentHost(conversationId)) return;
-
-  const agentUrl = process.env.READING_AGENT_URL;
-  const secret = process.env.READING_AGENT_SECRET;
-  if (!agentUrl || !secret) return;
-
-  try {
-    const client = createFlueClient({
-      url: `${agentUrl.replace(/\/+$/, "")}/${conversationId}`,
-      token: secret,
-    });
-    await client.abort();
-  } catch (error) {
-    console.error("[reading-agent] Failed to abort Flue conversation:", error);
-  }
+  await stopReadingAgentHost(conversationId);
 }
 
 async function parseActionPayload(
