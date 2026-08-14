@@ -4,6 +4,7 @@ import {
   claimReadingIngestUnitWithLease,
   completeReadingIngestUnit,
   getCurrentReadingArtifacts,
+  getNextDueReadingIngestUnit,
   releaseReadingIngestUnit,
   type ReadingArtifactRow,
   type ReadingArtifactUpdate,
@@ -56,6 +57,11 @@ interface DispatchDependencies {
   getCurrent: typeof getCurrentReadingArtifacts;
   release: typeof releaseReadingIngestUnit;
   callAgent: ReadingAgentCall;
+}
+
+interface DrainDependencies {
+  getNextDue: typeof getNextDueReadingIngestUnit;
+  dispatch: typeof dispatchReadingIngestUnit;
 }
 
 const DEFAULT_DEPENDENCIES: DispatchDependencies = {
@@ -112,8 +118,35 @@ export async function dispatchReadingIngestUnit(
   }
 }
 
-export function scheduleReadingIngestUnit(unit: ReadingIngestUnitRow): void {
-  const job = dispatchReadingIngestUnit(unit);
+const DEFAULT_DRAIN_DEPENDENCIES: DrainDependencies = {
+  getNextDue: getNextDueReadingIngestUnit,
+  dispatch: dispatchReadingIngestUnit,
+};
+
+export async function drainReadingIngestQueue(
+  userId: string,
+  options: {
+    agentUrl?: string;
+    agentSecret?: string;
+    dependencies?: Partial<DrainDependencies>;
+  } = {},
+): Promise<void> {
+  const agentUrl = options.agentUrl ?? process.env.READING_AGENT_URL;
+  const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
+  if (!agentUrl || !agentSecret) return;
+
+  const dependencies = { ...DEFAULT_DRAIN_DEPENDENCIES, ...options.dependencies };
+  while (true) {
+    const unit = await dependencies.getNextDue(userId);
+    if (!unit) return;
+
+    const result = await dependencies.dispatch(unit, { agentUrl, agentSecret });
+    if (result === "already-leased" || result === "not-configured") return;
+  }
+}
+
+export function scheduleReadingIngestQueue(userId: string): void {
+  const job = drainReadingIngestQueue(userId);
   try {
     waitUntil(job);
   } catch (error) {

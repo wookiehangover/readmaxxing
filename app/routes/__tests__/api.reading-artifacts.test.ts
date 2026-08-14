@@ -16,7 +16,7 @@ vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
 }));
 
 vi.mock("~/lib/reading-agent/dispatch.server", () => ({
-  scheduleReadingIngestUnit: vi.fn(),
+  scheduleReadingIngestQueue: vi.fn(),
 }));
 
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
@@ -27,7 +27,7 @@ import {
   insertReadingIngestUnit,
   listReadingArtifactRevisions,
 } from "~/lib/database/reading-artifact/reading-artifact";
-import { scheduleReadingIngestUnit } from "~/lib/reading-agent/dispatch.server";
+import { scheduleReadingIngestQueue } from "~/lib/reading-agent/dispatch.server";
 import { loader as artifactsLoader } from "~/routes/api.books.$bookId.artifacts";
 import {
   action as ingestAction,
@@ -42,7 +42,7 @@ const artifactsMock = getCurrentReadingArtifacts as ReturnType<typeof vi.fn>;
 const existingUnitMock = getReadingIngestUnitByFingerprint as ReturnType<typeof vi.fn>;
 const insertUnitMock = insertReadingIngestUnit as ReturnType<typeof vi.fn>;
 const revisionsMock = listReadingArtifactRevisions as ReturnType<typeof vi.fn>;
-const scheduleMock = scheduleReadingIngestUnit as ReturnType<typeof vi.fn>;
+const scheduleMock = scheduleReadingIngestQueue as ReturnType<typeof vi.fn>;
 const originalDatabaseUrl = process.env.DATABASE_URL;
 
 const text = "This is enough normalized reading text to ingest.";
@@ -168,7 +168,7 @@ describe("reading artifact ingest API", () => {
       deduplicated: false,
       unit: { id: "unit-1", fingerprint, status: "pending" },
     });
-    expect(scheduleMock).toHaveBeenCalledWith(unit);
+    expect(scheduleMock).toHaveBeenCalledWith("user-1");
   });
 
   it("returns the existing unit without creating another pending row", async () => {
@@ -186,7 +186,20 @@ describe("reading artifact ingest API", () => {
     });
     expect(insertUnitMock).toHaveBeenCalledTimes(1);
     expect(existingUnitMock).toHaveBeenCalledWith("user-1", "book-1", fingerprint);
-    expect(scheduleMock).toHaveBeenCalledWith(unit);
+    expect(scheduleMock).toHaveBeenCalledWith("user-1");
+  });
+
+  it("drains the user queue when an existing completed fingerprint is posted", async () => {
+    insertUnitMock.mockResolvedValue(null);
+    existingUnitMock.mockResolvedValue({ ...unit, status: "done" });
+
+    const response = await ingestAction({
+      request: makeIngestRequest(),
+      params: { bookId: "book-1" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(scheduleMock).toHaveBeenCalledWith("user-1");
   });
 });
 
