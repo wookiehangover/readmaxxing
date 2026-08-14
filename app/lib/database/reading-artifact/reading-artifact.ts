@@ -33,6 +33,33 @@ export interface ReadingAgentLeaseRow {
   expiresAt: Date;
 }
 
+export interface ReadingAgentStatusLeaseRow {
+  unitId: string;
+  bookId: string;
+  expiresAt: Date;
+  chapterLabel: string | null;
+  locator: string;
+}
+
+export interface ReadingAgentStatusUnitRow {
+  unitId: string;
+  bookId: string;
+  chapterLabel: string | null;
+  locator: string;
+  unitKind: ReadingUnitKind;
+  status: ReadingIngestStatus;
+  attemptCount: number;
+  nextAttemptAt: Date;
+  claimedAt: Date | null;
+  lastSeenAt: Date;
+  lastError: string | null;
+}
+
+export interface ReadingAgentSchemaHealth {
+  ok: boolean;
+  missingColumns?: string[];
+}
+
 export interface ReadingIngestUnitLease {
   unit: ReadingIngestUnitRow;
   lease: ReadingAgentLeaseRow;
@@ -94,6 +121,23 @@ export interface ReadingArtifactUpdate {
 
 const READING_AGENT_LEASE_TTL_MS = 4 * 60 * 1000;
 const READING_AGENT_MAX_ATTEMPTS = 8;
+const READING_AGENT_SCHEMA_COLUMNS = {
+  reading_ingest_unit: ["attempt_count", "claimed_at", "next_attempt_at"],
+  reading_agent_lease: ["user_id", "unit_id", "book_id", "expires_at"],
+  reading_agent_usage: [
+    "id",
+    "unit_id",
+    "input",
+    "output",
+    "cache_read",
+    "cache_write",
+    "total_tokens",
+    "cost_total",
+    "model",
+    "source",
+    "created_at",
+  ],
+} as const;
 
 export function readingAgentRetryDelaySeconds(attempt: number): number {
   return Math.min(5 * 60, 10 * 2 ** Math.max(0, attempt - 1));
@@ -201,6 +245,87 @@ export async function getReadingIngestUnitByFingerprint(
     WHERE user_id = ${userId}
       AND book_id = ${bookId}
       AND fingerprint = ${fingerprint}
+  `);
+  return result.rows[0] ?? null;
+}
+
+export async function getReadingAgentSchemaHealth(): Promise<ReadingAgentSchemaHealth> {
+  const result = await getPool().query<{ tableName: string; columnName: string }>(sql`
+    SELECT table_name AS "tableName", column_name AS "columnName"
+    FROM information_schema.columns
+    WHERE table_schema = 'readmax'
+      AND table_name IN ('reading_ingest_unit', 'reading_agent_lease', 'reading_agent_usage')
+  `);
+  const present = new Set(result.rows.map((row) => `${row.tableName}.${row.columnName}`));
+  const missingColumns = Object.entries(READING_AGENT_SCHEMA_COLUMNS)
+    .flatMap(([table, columns]) => columns.map((column) => `${table}.${column}`))
+    .filter((column) => !present.has(column));
+  return missingColumns.length > 0 ? { ok: false, missingColumns } : { ok: true };
+}
+
+export async function getCurrentReadingAgentLease(
+  userId: string,
+): Promise<ReadingAgentStatusLeaseRow | null> {
+  const result = await getPool().query<ReadingAgentStatusLeaseRow>(sql`
+    SELECT lease.unit_id AS "unitId",
+           lease.book_id AS "bookId",
+           lease.expires_at AS "expiresAt",
+           unit.chapter_label AS "chapterLabel",
+           unit.locator
+    FROM readmax.reading_agent_lease AS lease
+    JOIN readmax.reading_ingest_unit AS unit ON unit.id = lease.unit_id
+    WHERE lease.user_id = ${userId}
+    LIMIT 1
+  `);
+  return result.rows[0] ?? null;
+}
+
+export async function listRecentReadingIngestUnits(data: {
+  userId: string;
+  bookId?: string;
+}): Promise<ReadingAgentStatusUnitRow[]> {
+  const bookId = data.bookId ?? null;
+  const result = await getPool().query<ReadingAgentStatusUnitRow>(sql`
+    SELECT id AS "unitId",
+           book_id AS "bookId",
+           chapter_label AS "chapterLabel",
+           locator,
+           unit_kind AS "unitKind",
+           status,
+           attempt_count AS "attemptCount",
+           next_attempt_at AS "nextAttemptAt",
+           claimed_at AS "claimedAt",
+           last_seen_at AS "lastSeenAt",
+           error AS "lastError"
+    FROM readmax.reading_ingest_unit
+    WHERE user_id = ${data.userId}
+      AND (${bookId}::text IS NULL OR book_id = ${bookId})
+    ORDER BY last_seen_at DESC, id DESC
+    LIMIT 50
+  `);
+  return result.rows;
+}
+
+export async function getLatestReadingAgentUsage(
+  userId: string,
+): Promise<ReadingAgentUsageRow | null> {
+  const result = await getPool().query<ReadingAgentUsageRow>(sql`
+    SELECT usage.id,
+           usage.unit_id AS "unitId",
+           usage.input,
+           usage.output,
+           usage.cache_read AS "cacheRead",
+           usage.cache_write AS "cacheWrite",
+           usage.total_tokens AS "totalTokens",
+           usage.cost_total AS "costTotal",
+           usage.model,
+           usage.source,
+           usage.created_at AS "createdAt"
+    FROM readmax.reading_agent_usage AS usage
+    JOIN readmax.reading_ingest_unit AS unit ON unit.id = usage.unit_id
+    WHERE unit.user_id = ${userId}
+    ORDER BY usage.created_at DESC, usage.id DESC
+    LIMIT 1
   `);
   return result.rows[0] ?? null;
 }

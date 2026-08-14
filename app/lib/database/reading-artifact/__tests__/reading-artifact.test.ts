@@ -15,11 +15,15 @@ import {
   acquireReadingAgentLease,
   claimReadingIngestUnitWithLease,
   completeReadingIngestUnit,
+  getCurrentReadingAgentLease,
+  getLatestReadingAgentUsage,
   getNextDueReadingIngestUnit,
+  getReadingAgentSchemaHealth,
   insertReadingAgentUsage,
   insertReadingArtifactRevision,
   insertReadingIngestUnit,
   listReadingIngestSweepUserIds,
+  listRecentReadingIngestUnits,
   readingAgentRetryDelaySeconds,
   reclaimExpiredReadingAgentLease,
   releaseReadingIngestUnit,
@@ -58,6 +62,54 @@ beforeEach(() => {
 });
 
 describe("reading artifact persistence", () => {
+  it("reports missing reading-agent queue schema columns", async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [
+        { tableName: "reading_ingest_unit", columnName: "attempt_count" },
+        { tableName: "reading_ingest_unit", columnName: "claimed_at" },
+      ],
+    });
+
+    await expect(getReadingAgentSchemaHealth()).resolves.toMatchObject({
+      ok: false,
+      missingColumns: expect.arrayContaining([
+        "reading_ingest_unit.next_attempt_at",
+        "reading_agent_lease.user_id",
+        "reading_agent_usage.id",
+      ]),
+    });
+    expect(extractSqlText(queryMock.mock.calls[0][0] as SqlQuery)).toContain(
+      "information_schema.columns",
+    );
+  });
+
+  it("reads user-scoped status data without selecting ingest text", async () => {
+    const lease = { userId: "user-1", unitId: "unit-1", bookId: "book-1" };
+    const unit = { unitId: "unit-1", bookId: "book-1", status: "pending" };
+    const usage = { id: "usage-1", unitId: "unit-1", totalTokens: 42 };
+    queryMock
+      .mockResolvedValueOnce({ rows: [lease] })
+      .mockResolvedValueOnce({ rows: [unit] })
+      .mockResolvedValueOnce({ rows: [usage] });
+
+    await expect(getCurrentReadingAgentLease("user-1")).resolves.toBe(lease);
+    await expect(
+      listRecentReadingIngestUnits({ userId: "user-1", bookId: "book-1" }),
+    ).resolves.toEqual([unit]);
+    await expect(getLatestReadingAgentUsage("user-1")).resolves.toBe(usage);
+
+    const leaseQuery = queryMock.mock.calls[0][0] as SqlQuery;
+    const unitsQuery = queryMock.mock.calls[1][0] as SqlQuery;
+    const usageQuery = queryMock.mock.calls[2][0] as SqlQuery;
+    expect(extractValues(leaseQuery)).toEqual(["user-1"]);
+    expect(extractValues(unitsQuery)).toEqual(["user-1", "book-1", "book-1"]);
+    expect(extractSqlText(unitsQuery)).toContain("ORDER BY last_seen_at DESC");
+    expect(extractSqlText(unitsQuery)).toContain("LIMIT 50");
+    expect(extractSqlText(unitsQuery)).not.toContain("text AS");
+    expect(extractSqlText(unitsQuery)).not.toContain("text,");
+    expect(extractValues(usageQuery)).toEqual(["user-1"]);
+  });
+
   it("claims only one of two pending units for the same user", async () => {
     const leaseExpiresAt = new Date("2026-01-01T00:05:00Z");
     clientQueryMock
