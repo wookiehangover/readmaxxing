@@ -33,6 +33,11 @@ export interface ReadingAgentLeaseRow {
   expiresAt: Date;
 }
 
+export interface ReadingIngestUnitLease {
+  unit: ReadingIngestUnitRow;
+  lease: ReadingAgentLeaseRow;
+}
+
 export interface ReadingAgentUsageRow {
   id: string;
   unitId: string;
@@ -75,6 +80,8 @@ export interface ReadingArtifactUpdate {
   content: string;
   summary: string;
 }
+
+const READING_AGENT_LEASE_TTL_MS = 5 * 60 * 1000;
 
 const INGEST_UNIT_COLUMNS = sql`
   id,
@@ -182,25 +189,88 @@ export async function getReadingIngestUnitByFingerprint(
   return result.rows[0] ?? null;
 }
 
-export async function claimReadingIngestUnit(id: string): Promise<ReadingIngestUnitRow | null> {
-  const result = await getPool().query<ReadingIngestUnitRow>(sql`
-    UPDATE readmax.reading_ingest_unit
-    SET status = 'processing', claimed_at = NOW(), error = NULL
-    WHERE id = ${id}
-      AND status IN ('pending', 'error')
-      AND attempt_count < 8
-      AND next_attempt_at <= NOW()
-    RETURNING ${INGEST_UNIT_COLUMNS}
-  `);
-  return result.rows[0] ?? null;
+export async function claimReadingIngestUnitWithLease(
+  id: string,
+): Promise<ReadingIngestUnitLease | null> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const candidate = await client.query<{ userId: string }>(sql`
+      SELECT user_id AS "userId"
+      FROM readmax.reading_ingest_unit
+      WHERE id = ${id}
+      FOR UPDATE
+    `);
+    const userId = candidate.rows[0]?.userId;
+    if (!userId) {
+      await client.query("COMMIT");
+      return null;
+    }
+
+    await reclaimExpiredReadingAgentWork(client, userId);
+    const result = await client.query<ReadingIngestUnitRow & { leaseExpiresAt: Date }>(sql`
+      WITH lease AS (
+        INSERT INTO readmax.reading_agent_lease (user_id, unit_id, book_id, expires_at)
+        SELECT user_id, id, book_id,
+               NOW() + (${READING_AGENT_LEASE_TTL_MS} * INTERVAL '1 millisecond')
+        FROM readmax.reading_ingest_unit
+        WHERE id = ${id}
+          AND status IN ('pending', 'error')
+          AND attempt_count < 8
+          AND next_attempt_at <= NOW()
+        ON CONFLICT DO NOTHING
+        RETURNING unit_id, expires_at
+      )
+      UPDATE readmax.reading_ingest_unit AS unit
+      SET status = 'processing', claimed_at = NOW(), error = NULL
+      FROM lease
+      WHERE unit.id = lease.unit_id
+      RETURNING ${INGEST_UNIT_COLUMNS}, lease.expires_at AS "leaseExpiresAt"
+    `);
+    await client.query("COMMIT");
+    const claimed = result.rows[0];
+    if (!claimed) return null;
+    const { leaseExpiresAt, ...unit } = claimed;
+    return {
+      unit,
+      lease: {
+        userId: unit.userId,
+        unitId: unit.id,
+        bookId: unit.bookId,
+        expiresAt: leaseExpiresAt,
+      },
+    };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(console.error);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
-export async function releaseReadingIngestUnit(id: string, error: string): Promise<void> {
+export async function releaseReadingIngestUnit(
+  claim: ReadingIngestUnitLease,
+  error: string,
+): Promise<void> {
   await getPool().query(sql`
-    UPDATE readmax.reading_ingest_unit
-    SET status = 'pending', claimed_at = NULL, processed_at = NULL, error = ${error}
-    WHERE id = ${id}
-      AND status = 'processing'
+    WITH released AS (
+      UPDATE readmax.reading_ingest_unit
+      SET status = 'pending', claimed_at = NULL, processed_at = NULL, error = ${error}
+      WHERE id = ${claim.unit.id}
+        AND status = 'processing'
+        AND EXISTS (
+          SELECT 1
+          FROM readmax.reading_agent_lease
+          WHERE user_id = ${claim.lease.userId}
+            AND unit_id = ${claim.lease.unitId}
+            AND expires_at = ${claim.lease.expiresAt.toISOString()}
+            AND expires_at > NOW()
+        )
+      RETURNING id
+    )
+    DELETE FROM readmax.reading_agent_lease
+    WHERE unit_id IN (SELECT id FROM released)
+      AND expires_at = ${claim.lease.expiresAt.toISOString()}
   `);
 }
 
@@ -214,6 +284,12 @@ export async function getNextDueReadingIngestUnit(
       AND status IN ('pending', 'error')
       AND attempt_count < 8
       AND next_attempt_at <= NOW()
+      AND NOT EXISTS (
+        SELECT 1
+        FROM readmax.reading_agent_lease
+        WHERE user_id = ${userId}
+          AND expires_at > NOW()
+      )
     ORDER BY next_attempt_at ASC, first_seen_at ASC, id ASC
     LIMIT 1
   `);
@@ -248,34 +324,50 @@ export async function reclaimExpiredReadingAgentLease(userId: string): Promise<n
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const expired = await client.query<{ unitId: string }>(sql`
-      DELETE FROM readmax.reading_agent_lease
-      WHERE user_id = ${userId}
-        AND expires_at <= NOW()
-      RETURNING unit_id AS "unitId"
-    `);
-    const unitIds = expired.rows.map((row) => row.unitId);
-    if (unitIds.length > 0) {
-      await client.query(sql`
-        UPDATE readmax.reading_ingest_unit
-        SET status = CASE WHEN attempt_count + 1 >= 8 THEN 'error' ELSE 'pending' END,
-            attempt_count = attempt_count + 1,
-            claimed_at = NULL,
-            next_attempt_at = NOW(),
-            processed_at = NULL,
-            error = 'Reading agent lease expired'
-        WHERE id = ANY(${unitIds}::uuid[])
-          AND status = 'processing'
-      `);
-    }
+    const reclaimed = await reclaimExpiredReadingAgentWork(client, userId);
     await client.query("COMMIT");
-    return unitIds.length;
+    return reclaimed;
   } catch (error) {
     await client.query("ROLLBACK").catch(console.error);
     throw error;
   } finally {
     client.release();
   }
+}
+
+async function reclaimExpiredReadingAgentWork(client: PoolClient, userId: string): Promise<number> {
+  const expired = await client.query<{ unitId: string }>(sql`
+    DELETE FROM readmax.reading_agent_lease
+    WHERE user_id = ${userId}
+      AND expires_at <= NOW()
+    RETURNING unit_id AS "unitId"
+  `);
+  const expiredUnitIds = expired.rows.map((row) => row.unitId);
+  const reclaimed = await client.query<{ id: string }>(sql`
+    UPDATE readmax.reading_ingest_unit AS unit
+    SET status = CASE WHEN attempt_count + 1 >= 8 THEN 'error' ELSE 'pending' END,
+        attempt_count = attempt_count + 1,
+        claimed_at = NULL,
+        next_attempt_at = NOW(),
+        processed_at = NULL,
+        error = 'Reading agent lease expired'
+    WHERE user_id = ${userId}
+      AND status = 'processing'
+      AND (
+        id = ANY(${expiredUnitIds}::uuid[])
+        OR (
+          claimed_at <= NOW() - (${READING_AGENT_LEASE_TTL_MS} * INTERVAL '1 millisecond')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM readmax.reading_agent_lease AS lease
+            WHERE lease.unit_id = unit.id
+              AND lease.expires_at > NOW()
+          )
+        )
+      )
+    RETURNING id
+  `);
+  return reclaimed.rows.length;
 }
 
 export async function insertReadingAgentUsage(data: {
@@ -344,9 +436,10 @@ async function persistArtifactUpdate(
 }
 
 export async function completeReadingIngestUnit(
-  unit: ReadingIngestUnitRow,
+  claim: ReadingIngestUnitLease,
   updates: readonly ReadingArtifactUpdate[],
 ): Promise<number> {
+  const { unit, lease } = claim;
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -358,6 +451,14 @@ export async function completeReadingIngestUnit(
         AND book_id = ${unit.bookId}
         AND fingerprint = ${unit.fingerprint}
         AND status = 'processing'
+        AND EXISTS (
+          SELECT 1
+          FROM readmax.reading_agent_lease
+          WHERE user_id = ${lease.userId}
+            AND unit_id = ${lease.unitId}
+            AND expires_at = ${lease.expiresAt.toISOString()}
+            AND expires_at > NOW()
+        )
       FOR UPDATE
     `);
     if (!locked.rows[0]) throw new Error(`Ingest unit ${unit.id} is not processing`);
@@ -371,6 +472,12 @@ export async function completeReadingIngestUnit(
       UPDATE readmax.reading_ingest_unit
       SET status = 'done', claimed_at = NULL, processed_at = NOW(), error = NULL
       WHERE id = ${unit.id}
+    `);
+    await client.query(sql`
+      DELETE FROM readmax.reading_agent_lease
+      WHERE user_id = ${lease.userId}
+        AND unit_id = ${lease.unitId}
+        AND expires_at = ${lease.expiresAt.toISOString()}
     `);
     await client.query("COMMIT");
     return revisionCount;

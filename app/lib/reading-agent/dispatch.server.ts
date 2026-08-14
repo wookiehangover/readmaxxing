@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import {
-  claimReadingIngestUnit,
+  claimReadingIngestUnitWithLease,
   completeReadingIngestUnit,
   getCurrentReadingArtifacts,
   releaseReadingIngestUnit,
@@ -49,7 +49,7 @@ function errorMessage(error: unknown): string {
 }
 
 interface DispatchDependencies {
-  claim: typeof claimReadingIngestUnit;
+  claimLease: typeof claimReadingIngestUnitWithLease;
   complete: typeof completeReadingIngestUnit;
   getCurrent: typeof getCurrentReadingArtifacts;
   release: typeof releaseReadingIngestUnit;
@@ -57,7 +57,7 @@ interface DispatchDependencies {
 }
 
 const DEFAULT_DEPENDENCIES: DispatchDependencies = {
-  claim: claimReadingIngestUnit,
+  claimLease: claimReadingIngestUnitWithLease,
   complete: completeReadingIngestUnit,
   getCurrent: getCurrentReadingArtifacts,
   release: releaseReadingIngestUnit,
@@ -71,7 +71,7 @@ export async function dispatchReadingIngestUnit(
     agentSecret?: string;
     dependencies?: Partial<DispatchDependencies>;
   } = {},
-): Promise<"not-configured" | "already-claimed" | "done" | "failed"> {
+): Promise<"not-configured" | "already-leased" | "done" | "failed"> {
   const agentUrl = options.agentUrl ?? process.env.READING_AGENT_URL;
   const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
   if (!agentUrl || !agentSecret) {
@@ -84,8 +84,9 @@ export async function dispatchReadingIngestUnit(
   }
 
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
-  const claimed = await dependencies.claim(unit.id);
-  if (!claimed) return "already-claimed";
+  const claim = await dependencies.claimLease(unit.id);
+  if (!claim) return "already-leased";
+  const claimed = claim.unit;
 
   try {
     const current = currentBodies(await dependencies.getCurrent(claimed.userId, claimed.bookId));
@@ -95,11 +96,11 @@ export async function dispatchReadingIngestUnit(
       page: claimed.text,
       artifacts: current,
     });
-    await dependencies.complete(claimed, changedUpdates(result, current));
+    await dependencies.complete(claim, changedUpdates(result, current));
     return "done";
   } catch (error) {
     const message = errorMessage(error);
-    await dependencies.release(claimed.id, message).catch((releaseError) => {
+    await dependencies.release(claim, message).catch((releaseError) => {
       console.error("[reading-agent] Failed to release ingest unit for retry:", releaseError);
     });
     console.error(`[reading-agent] Ingest unit ${claimed.id} failed:`, message);

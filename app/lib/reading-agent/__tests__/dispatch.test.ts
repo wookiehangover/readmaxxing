@@ -25,6 +25,15 @@ const unit: ReadingIngestUnitRow = {
 };
 
 const claimed = { ...unit, status: "processing" as const };
+const leased = {
+  unit: claimed,
+  lease: {
+    userId: "user-1",
+    unitId: "unit-1",
+    bookId: "book-1",
+    expiresAt: new Date("2026-01-01T00:05:00Z"),
+  },
+};
 const wiki: ReadingArtifactRow = {
   userId: "user-1",
   bookId: "book-1",
@@ -34,14 +43,14 @@ const wiki: ReadingArtifactRow = {
   updatedAt: new Date("2026-01-01T00:00:00Z"),
 };
 
-const claim = vi.fn();
+const claimLease = vi.fn();
 const complete = vi.fn();
 const getCurrent = vi.fn();
 const release = vi.fn();
 const callAgent = vi.fn();
 
 beforeEach(() => {
-  claim.mockReset().mockResolvedValue(claimed);
+  claimLease.mockReset().mockResolvedValue(leased);
   complete.mockReset().mockResolvedValue(1);
   getCurrent.mockReset().mockResolvedValue([wiki]);
   release.mockReset().mockResolvedValue(undefined);
@@ -55,14 +64,14 @@ beforeEach(() => {
 const options = () => ({
   agentUrl: "http://localhost:5174/agents/reading-scribe",
   agentSecret: "test-secret",
-  dependencies: { claim, complete, getCurrent, release, callAgent },
+  dependencies: { claimLease, complete, getCurrent, release, callAgent },
 });
 
 describe("reading ingest dispatch", () => {
   it("persists only a changed wiki edit and completes the unit", async () => {
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("done");
 
-    expect(complete).toHaveBeenCalledWith(claimed, [
+    expect(complete).toHaveBeenCalledWith(leased, [
       { kind: "wiki", content: "Expanded story.", summary: "Added the new scene." },
     ]);
     expect(release).not.toHaveBeenCalled();
@@ -80,7 +89,15 @@ describe("reading ingest dispatch", () => {
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("failed");
 
     expect(complete).not.toHaveBeenCalled();
-    expect(release).toHaveBeenCalledWith("unit-1", "Flue unavailable");
+    expect(release).toHaveBeenCalledWith(leased, "Flue unavailable");
+  });
+
+  it("does not dispatch when the user already has a lease", async () => {
+    claimLease.mockResolvedValue(null);
+
+    await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("already-leased");
+
+    expect(callAgent).not.toHaveBeenCalled();
   });
 
   it("leaves the unit pending when the sidecar is not configured", async () => {
@@ -92,7 +109,7 @@ describe("reading ingest dispatch", () => {
       }),
     ).resolves.toBe("not-configured");
 
-    expect(claim).not.toHaveBeenCalled();
+    expect(claimLease).not.toHaveBeenCalled();
     expect(complete).not.toHaveBeenCalled();
   });
 
