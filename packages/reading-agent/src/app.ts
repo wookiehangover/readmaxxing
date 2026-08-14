@@ -1,6 +1,6 @@
 import { createAgentRouter } from "@flue/runtime/routing";
 import { Hono } from "hono";
-import { ReadingScribe } from "./agents/reading-scribe.ts";
+import { ReadingScribe } from "./agents/reading-scribe";
 
 const app = new Hono();
 
