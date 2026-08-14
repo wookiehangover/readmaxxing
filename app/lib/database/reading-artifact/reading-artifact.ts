@@ -129,7 +129,7 @@ export interface ReadingArtifactUpdate {
   summary: string;
 }
 
-const READING_AGENT_LEASE_TTL_MS = 4 * 60 * 1000;
+const READING_AGENT_LEASE_TTL_MS = 15 * 60 * 1000;
 const READING_AGENT_MAX_ATTEMPTS = 8;
 const READING_AGENT_SCHEMA_COLUMNS = {
   reading_ingest_unit: ["attempt_count", "claimed_at", "next_attempt_at"],
@@ -602,6 +602,29 @@ export async function retryReadingIngestUnit(userId: string, unitId: string): Pr
         AND unit_id = ${unitId}
     )
     SELECT id FROM retried
+  `);
+  return result.rows.length > 0;
+}
+
+export async function resetReadingIngestUnit(userId: string, unitId: string): Promise<boolean> {
+  const result = await getPool().query<{ id: string }>(sql`
+    WITH reset_unit AS (
+      UPDATE readmax.reading_ingest_unit
+      SET status = 'pending',
+          attempt_count = 0,
+          error = NULL,
+          claimed_at = NULL,
+          next_attempt_at = NOW()
+      WHERE user_id = ${userId}
+        AND id = ${unitId}
+        AND status IN ('pending', 'error', 'processing')
+      RETURNING id
+    ), released AS (
+      DELETE FROM readmax.reading_agent_lease
+      WHERE user_id = ${userId}
+        AND unit_id = ${unitId}
+    )
+    SELECT id FROM reset_unit
   `);
   return result.rows.length > 0;
 }

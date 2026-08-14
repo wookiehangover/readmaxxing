@@ -28,6 +28,7 @@ import {
   getReadingIngestUnitForUser,
   readingAgentRetryDelaySeconds,
   reclaimExpiredReadingAgentLease,
+  resetReadingIngestUnit,
   retryReadingIngestUnit,
   releaseReadingIngestUnit,
   stopReadingIngestUnit,
@@ -165,6 +166,7 @@ describe("reading artifact persistence", () => {
     const firstClaim = clientQueryMock.mock.calls[4][0] as SqlQuery;
     const secondClaim = clientQueryMock.mock.calls[10][0] as SqlQuery;
     expect(extractSqlText(firstClaim)).toContain("INSERT INTO readmax.reading_agent_lease");
+    expect(extractValues(firstClaim)).toContain(15 * 60 * 1000);
     expect(extractSqlText(firstClaim)).toContain("ON CONFLICT DO NOTHING");
     expect(extractSqlText(secondClaim)).toContain("INSERT INTO readmax.reading_agent_lease");
   });
@@ -174,10 +176,10 @@ describe("reading artifact persistence", () => {
     queryMock.mockResolvedValueOnce({ rows: [lease] }).mockResolvedValueOnce({ rows: [] });
 
     await expect(
-      acquireReadingAgentLease("unit-1", new Date("2026-01-01T00:04:00Z")),
+      acquireReadingAgentLease("unit-1", new Date("2026-01-01T00:15:00Z")),
     ).resolves.toBe(lease);
     await expect(
-      acquireReadingAgentLease("unit-2", new Date("2026-01-01T00:04:00Z")),
+      acquireReadingAgentLease("unit-2", new Date("2026-01-01T00:15:00Z")),
     ).resolves.toBeNull();
 
     const query = queryMock.mock.calls[1][0] as SqlQuery;
@@ -245,6 +247,27 @@ describe("reading artifact persistence", () => {
     expect(extractSqlText(retry)).toContain("error = NULL");
     expect(extractSqlText(retry)).toContain("next_attempt_at = NOW()");
     expect(extractSqlText(retry)).not.toContain("attempt_count = attempt_count + 1");
+  });
+
+  it("resets an 8/8 user-owned unit to attempt 0 so it is due and claimable", async () => {
+    const resetUnit = { id: "unit-1", status: "pending", attemptCount: 0 };
+    queryMock
+      .mockResolvedValueOnce({ rows: [{ id: "unit-1" }] })
+      .mockResolvedValueOnce({ rows: [resetUnit] });
+
+    await expect(resetReadingIngestUnit("user-1", "unit-1")).resolves.toBe(true);
+    await expect(getNextDueReadingIngestUnit("user-1")).resolves.toBe(resetUnit);
+
+    const reset = queryMock.mock.calls[0][0] as SqlQuery;
+    const due = queryMock.mock.calls[1][0] as SqlQuery;
+    const resetText = extractSqlText(reset);
+    expect(resetText).toContain("status = 'pending'");
+    expect(resetText).toContain("attempt_count = 0");
+    expect(resetText).toContain("error = NULL");
+    expect(resetText).toContain("claimed_at = NULL");
+    expect(resetText).toContain("next_attempt_at = NOW()");
+    expect(extractValues(reset)).toEqual(["user-1", "unit-1", "user-1", "unit-1"]);
+    expect(extractSqlText(due)).toContain("attempt_count < 8");
   });
 
   it("reclaims an expired lease and stale processing unit", async () => {
