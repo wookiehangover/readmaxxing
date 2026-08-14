@@ -10,6 +10,7 @@ import {
   type ReadingAgentConversation,
 } from "~/lib/reading-agent/conversation";
 import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
+import { getActiveReadingAgentHost } from "~/lib/reading-agent/agent-host.server";
 
 function scopedConversation(
   userId: string,
@@ -33,24 +34,25 @@ export async function loader({ request }: { request: Request }): Promise<Respons
   const session = await getSessionFromRequest(request);
   if (!session) return Response.json({ error: "auth_required" }, { status: 401 });
 
-  const sidecarConfigured = Boolean(
-    process.env.READING_AGENT_URL && process.env.READING_AGENT_SECRET,
-  );
-  if (!sidecarConfigured) {
-    return Response.json(emptyReadingAgentConversation("absent"));
-  }
-
   const schema = await getReadingAgentSchemaHealth();
   if (!schema.ok) return Response.json(emptyReadingAgentConversation("absent"));
 
   const lease = await getLiveReadingAgentLease(session.userId);
   if (!lease) return Response.json(emptyReadingAgentConversation("absent"));
 
-  const agentUrl = process.env.READING_AGENT_URL!;
   const conversationId = readingConversationId(session.userId, lease.bookId);
+  const agentUrl = process.env.READING_AGENT_URL;
+  const activeHost = agentUrl ? undefined : getActiveReadingAgentHost(conversationId);
+  if (!agentUrl && !activeHost) {
+    return Response.json(scopedConversation(session.userId, lease.bookId, "connecting"));
+  }
+  if (!process.env.READING_AGENT_SECRET) {
+    return Response.json(scopedConversation(session.userId, lease.bookId, "error"));
+  }
   const client = createFlueClient({
-    url: `${agentUrl.replace(/\/+$/, "")}/${conversationId}`,
+    url: agentUrl ? `${agentUrl.replace(/\/+$/, "")}/${conversationId}` : activeHost!.url,
     token: process.env.READING_AGENT_SECRET,
+    ...(activeHost?.fetch ? { fetch: activeHost.fetch } : {}),
   });
 
   try {

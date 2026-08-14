@@ -22,7 +22,14 @@ interface AgentHostEnvironment extends NodeJS.ProcessEnv {
 }
 
 let inProcessApplication: Promise<FlueNodeApplication> | undefined;
-const activeHostStops = new Map<string, () => Promise<void>>();
+const activeHosts = new Map<
+  string,
+  { host: ReadingAgentHost; stop: () => Promise<void> }
+>();
+
+export function getActiveReadingAgentHost(conversationId: string): ReadingAgentHost | undefined {
+  return activeHosts.get(conversationId)?.host;
+}
 
 function accessTokenCredentials(env: AgentHostEnvironment) {
   const token = env.VERCEL_TOKEN;
@@ -165,14 +172,17 @@ export async function createReadingAgentHost(
     async dispose() {
       if (disposed) return;
       disposed = true;
-      activeHostStops.delete(conversationId);
+      if (activeHosts.get(conversationId)?.host === managedHost) {
+        activeHosts.delete(conversationId);
+      }
       await host.dispose();
     },
   };
-  activeHostStops.set(conversationId, async () => {
+  const stop = async () => {
     await abort().catch(() => undefined);
     await managedHost.dispose();
-  });
+  };
+  activeHosts.set(conversationId, { host: managedHost, stop });
   return managedHost;
 }
 
@@ -180,9 +190,9 @@ export async function stopReadingAgentHost(
   conversationId: string,
   env: AgentHostEnvironment = process.env,
 ): Promise<boolean> {
-  const stop = activeHostStops.get(conversationId);
-  if (stop) {
-    await stop();
+  const active = activeHosts.get(conversationId);
+  if (active) {
+    await active.stop();
     return true;
   }
   if (!shouldUseVercelReadingAgentHost(env)) return false;

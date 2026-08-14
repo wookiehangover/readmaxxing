@@ -107,7 +107,7 @@ export function ConversationCard({
               <EmptyTitle>No live conversation</EmptyTitle>
               <EmptyDescription>
                 {conversation.phase === "connecting"
-                  ? "The current lease is waiting for the sidecar conversation."
+                  ? "The current lease is waiting for the agent host conversation."
                   : "A processing lease will stream reasoning and replies here."}
               </EmptyDescription>
             </EmptyHeader>

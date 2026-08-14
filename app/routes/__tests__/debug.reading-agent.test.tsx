@@ -13,7 +13,7 @@ import ReadingAgentDebugPage, { clientLoader } from "~/routes/debug.reading-agen
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const emptyStatus: ReadingAgentStatus = {
-  sidecarConfigured: true,
+  hostConfigured: true,
   schema: { ok: true },
   lease: null,
   units: [],
@@ -31,17 +31,77 @@ let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 const fetchMock = vi.fn();
 
+const liveLease: NonNullable<ReadingAgentStatus["lease"]> = {
+  unitId: "unit-1",
+  bookId: "book-1",
+  chapterLabel: "Chapter 14",
+  locator: "chapter-14.xhtml",
+  expiresAt: "2099-01-01T00:00:00.000Z",
+};
+
+const pendingUnit: ReadingAgentStatus["units"][number] = {
+  unitId: "unit-0",
+  bookId: "book-2",
+  chapterLabel: null,
+  locator: "page:3",
+  unitKind: "pdf-page",
+  status: "pending",
+  attemptCount: 0,
+  nextAttemptAt: "2026-08-14T12:01:00.000Z",
+  claimedAt: null,
+  lastSeenAt: "2026-08-14T11:59:00.000Z",
+  lastError: null,
+};
+
+const processingUnit: ReadingAgentStatus["units"][number] = {
+  unitId: "unit-1",
+  bookId: "book-1",
+  chapterLabel: "Chapter 14",
+  locator: "chapter-14.xhtml",
+  unitKind: "epub-spine",
+  status: "processing",
+  attemptCount: 1,
+  nextAttemptAt: "2026-08-14T12:00:00.000Z",
+  claimedAt: "2026-08-14T12:00:00.000Z",
+  lastSeenAt: "2026-08-14T12:00:00.000Z",
+  lastError: null,
+};
+
 function respond(
   status: ReadingAgentStatus,
   conversation: ReadingAgentConversation = emptyConversation,
+  options?: { action?: (body: unknown) => Promise<Response> | Response },
 ) {
-  fetchMock.mockImplementation((input: RequestInfo | URL) => {
+  fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.includes("/api/reading-agent/actions")) {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+      return Promise.resolve(options?.action?.(body) ?? Response.json({ ok: true }));
+    }
     if (url.includes("/api/reading-agent/conversation")) {
       return Promise.resolve(Response.json(conversation));
     }
     return Promise.resolve(Response.json(status));
   });
+}
+
+function button(label: string) {
+  return Array.from(container!.querySelectorAll("button")).find(
+    (node) => node.textContent === label,
+  );
+}
+
+function postedActions() {
+  return fetchMock.mock.calls
+    .filter(([input, init]) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : String(input);
+      return (
+        url.includes("/api/reading-agent/actions") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    })
+    .map(([, init]) => JSON.parse(String((init as RequestInit).body)));
 }
 
 async function renderPage() {
@@ -86,46 +146,15 @@ describe("reading-agent debug page", () => {
     expect(container!.textContent).toContain("No usage recorded");
     expect(container!.textContent).toContain("No live conversation");
     expect(container!.textContent).toContain("No recent ingest units");
+    expect(container!.textContent).toContain("Agent host");
+    expect(container!.textContent).not.toContain("Not configured");
   });
 
   it("renders a processing lease and unit", async () => {
     respond({
       ...emptyStatus,
-      lease: {
-        unitId: "unit-1",
-        bookId: "book-1",
-        chapterLabel: "Chapter 14",
-        locator: "chapter-14.xhtml",
-        expiresAt: "2026-08-14T12:04:00.000Z",
-      },
-      units: [
-        {
-          unitId: "unit-1",
-          bookId: "book-1",
-          chapterLabel: "Chapter 14",
-          locator: "chapter-14.xhtml",
-          unitKind: "epub-spine",
-          status: "processing",
-          attemptCount: 1,
-          nextAttemptAt: "2026-08-14T12:00:00.000Z",
-          claimedAt: "2026-08-14T12:00:00.000Z",
-          lastSeenAt: "2026-08-14T12:00:00.000Z",
-          lastError: null,
-        },
-        {
-          unitId: "unit-0",
-          bookId: "book-2",
-          chapterLabel: null,
-          locator: "page:3",
-          unitKind: "pdf-page",
-          status: "pending",
-          attemptCount: 0,
-          nextAttemptAt: "2026-08-14T12:01:00.000Z",
-          claimedAt: null,
-          lastSeenAt: "2026-08-14T11:59:00.000Z",
-          lastError: null,
-        },
-      ],
+      lease: liveLease,
+      units: [processingUnit, pendingUnit],
       usage: {
         input: 30,
         output: 12,
@@ -191,7 +220,7 @@ describe("reading-agent debug page", () => {
     expect(container!.textContent).toContain("connecting");
     expect(container!.textContent).toContain("No live conversation");
     expect(container!.textContent).toContain(
-      "The current lease is waiting for the sidecar conversation.",
+      "The current lease is waiting for the agent host conversation.",
     );
   });
 
@@ -240,6 +269,121 @@ describe("reading-agent debug page", () => {
     expect(container!.textContent).toContain("Schema unhealthy");
     expect(container!.textContent).toContain("reading_ingest_unit.next_attempt_at");
     expect(container!.textContent).not.toContain("No recent ingest units");
+    expect(button("Start")?.disabled).toBe(true);
+    expect(button("Stop")).toBeUndefined();
+    expect(button("Retry")).toBeUndefined();
+  });
+
+  it("enables Start when idle and posts start", async () => {
+    respond(emptyStatus);
+    await renderPage();
+    const start = button("Start");
+    expect(start?.disabled).toBe(false);
+    expect(button("Stop")?.disabled).toBe(true);
+    await act(async () => start?.click());
+    expect(postedActions()).toEqual([{ action: "start" }]);
+  });
+
+  it("enables Stop for a live lease and posts stop", async () => {
+    respond({
+      ...emptyStatus,
+      lease: liveLease,
+      units: [processingUnit],
+    });
+    await renderPage();
+    const stop = button("Stop");
+    expect(button("Start")?.disabled).toBe(true);
+    expect(stop?.disabled).toBe(false);
+    expect(button("Retry")).toBeUndefined();
+    await act(async () => stop?.click());
+    expect(postedActions()).toEqual([{ action: "stop" }]);
+  });
+
+  it("shows Retry on pending and error rows and posts retry", async () => {
+    respond({
+      ...emptyStatus,
+      units: [
+        pendingUnit,
+        { ...processingUnit, unitId: "unit-done", status: "done" },
+        {
+          ...pendingUnit,
+          unitId: "unit-2",
+          status: "error",
+          lastError: "Gateway unavailable",
+        },
+      ],
+    });
+    await renderPage();
+    const retries = Array.from(container!.querySelectorAll("button")).filter(
+      (node) => node.textContent === "Retry",
+    );
+    expect(retries).toHaveLength(2);
+    expect(retries.every((node) => !node.disabled)).toBe(true);
+    await act(async () => retries[0]?.click());
+    expect(postedActions()).toEqual([{ action: "retry", unitId: "unit-0" }]);
+  });
+
+  it("shows Reset on pending and error rows, including attempt 8, and posts reset", async () => {
+    respond({
+      ...emptyStatus,
+      units: [
+        { ...pendingUnit, attemptCount: 8 },
+        { ...processingUnit, unitId: "unit-done", status: "done" },
+        {
+          ...pendingUnit,
+          unitId: "unit-2",
+          status: "error",
+          attemptCount: 8,
+          lastError: "Gateway unavailable",
+        },
+      ],
+    });
+    await renderPage();
+    const resets = Array.from(container!.querySelectorAll("button")).filter(
+      (node) => node.textContent === "Reset",
+    );
+    expect(resets).toHaveLength(2);
+    expect(resets.every((node) => !node.disabled)).toBe(true);
+    await act(async () => resets[0]?.click());
+    expect(postedActions()).toEqual([{ action: "reset", unitId: "unit-0" }]);
+  });
+
+  it("disables Start and Stop when the agent host is not configured", async () => {
+    respond({
+      ...emptyStatus,
+      hostConfigured: false,
+      lease: liveLease,
+      units: [processingUnit, pendingUnit],
+    });
+    await renderPage();
+    expect(button("Start")?.disabled).toBe(true);
+    expect(button("Stop")?.disabled).toBe(true);
+    expect(button("Retry")?.disabled).toBe(true);
+    expect(button("Reset")?.disabled).toBe(true);
+  });
+
+  it("disables buttons while an action request is in flight and shows POST errors", async () => {
+    let resolveAction: ((value: Response) => void) | undefined;
+    respond({ ...emptyStatus, units: [pendingUnit] }, emptyConversation, {
+      action: () =>
+        new Promise((resolve) => {
+          resolveAction = resolve;
+        }),
+    });
+    await renderPage();
+    const reset = button("Reset");
+    expect(reset?.disabled).toBe(false);
+    act(() => reset?.click());
+    await act(async () => {});
+    expect(button("Start")?.disabled).toBe(true);
+    expect(button("Stop")?.disabled).toBe(true);
+    expect(button("Retry")?.disabled).toBe(true);
+    expect(button("Reset")?.disabled).toBe(true);
+    resolveAction?.(Response.json({ error: "agent_not_configured" }, { status: 409 }));
+    await act(async () => {});
+    expect(container!.textContent).toContain("Action failed");
+    expect(container!.textContent).toContain("Agent host is not configured.");
+    expect(button("Start")?.disabled).toBe(false);
   });
 
   it("renders a request error", async () => {

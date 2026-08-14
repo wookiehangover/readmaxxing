@@ -1,8 +1,10 @@
 import { Effect } from "effect";
 import { Activity, ArrowLeft, CircleAlert, Clock3, Database, Inbox, Server } from "lucide-react";
+import { useCallback } from "react";
 import { Link, redirect } from "react-router";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
 import {
   Card,
   CardAction,
@@ -28,6 +30,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { ConversationCard } from "~/components/reading-agent/conversation-card";
+import { useReadingAgentActions } from "~/hooks/use-reading-agent-actions";
 import { useReadingAgentConversation } from "~/hooks/use-reading-agent-conversation";
 import {
   type ReadingAgentStatus,
@@ -36,6 +39,7 @@ import {
 } from "~/hooks/use-reading-agent-status";
 import { AuthService } from "~/lib/auth-service";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { readingAgentActionAvailability } from "~/lib/reading-agent/actions-client";
 import { cn } from "~/lib/utils";
 
 export function meta() {
@@ -97,19 +101,19 @@ function HealthCards({ status }: { status: ReadingAgentStatus }) {
     <div className="grid gap-4 md:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle>Sidecar</CardTitle>
-          <CardDescription>Flue connection configuration</CardDescription>
+          <CardTitle>Agent host</CardTitle>
+          <CardDescription>Flue runtime configuration</CardDescription>
           <CardAction>
-            <Badge variant={status.sidecarConfigured ? "default" : "destructive"}>
-              {status.sidecarConfigured ? "Configured" : "Not configured"}
+            <Badge variant={status.hostConfigured ? "default" : "destructive"}>
+              {status.hostConfigured ? "Configured" : "Not configured"}
             </Badge>
           </CardAction>
         </CardHeader>
         <CardContent className="flex items-center gap-3 text-muted-foreground">
           <Server className="size-5" aria-hidden="true" />
-          {status.sidecarConfigured
+          {status.hostConfigured
             ? "Agent dispatch is available."
-            : "Jobs can queue, but the sidecar cannot be started."}
+            : "Jobs can queue, but the agent host cannot be started."}
         </CardContent>
       </Card>
 
@@ -134,17 +138,34 @@ function HealthCards({ status }: { status: ReadingAgentStatus }) {
   );
 }
 
-function LeaseCard({ lease }: { lease: ReadingAgentStatus["lease"] }) {
+function LeaseCard({
+  lease,
+  canStop,
+  pending,
+  onStop,
+}: {
+  lease: ReadingAgentStatus["lease"];
+  canStop: boolean;
+  pending: boolean;
+  onStop: () => void;
+}) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Current lease</CardTitle>
         <CardDescription>The one ReadingScribe job allowed to run for this user</CardDescription>
-        {lease && (
-          <CardAction>
-            <Badge>Processing</Badge>
-          </CardAction>
-        )}
+        <CardAction className="flex items-center gap-2">
+          {lease ? <Badge>Processing</Badge> : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            disabled={!canStop || pending}
+            onClick={onStop}
+          >
+            Stop
+          </Button>
+        </CardAction>
       </CardHeader>
       <CardContent>
         {lease ? (
@@ -240,7 +261,21 @@ function UsageCard({ usage }: { usage: ReadingAgentStatus["usage"] }) {
   );
 }
 
-function UnitsCard({ units }: { units: ReadingAgentStatus["units"] }) {
+function UnitsCard({
+  units,
+  canRetry,
+  canReset,
+  pending,
+  onRetry,
+  onReset,
+}: {
+  units: ReadingAgentStatus["units"];
+  canRetry: boolean;
+  canReset: boolean;
+  pending: boolean;
+  onRetry: (unitId: string) => void;
+  onReset: (unitId: string) => void;
+}) {
   return (
     <Card>
       <CardHeader>
@@ -269,42 +304,70 @@ function UnitsCard({ units }: { units: ReadingAgentStatus["units"] }) {
                 <TableHead>Attempts</TableHead>
                 <TableHead>Next retry</TableHead>
                 <TableHead>Last error</TableHead>
+                <TableHead className="w-40"> </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {units.map((unit) => (
-                <TableRow
-                  key={unit.unitId}
-                  className={cn({
-                    "bg-destructive/5": unit.status === "error",
-                    "bg-primary/5": unit.status === "processing",
-                  })}
-                >
-                  <TableCell>
-                    <Badge variant={statusVariant(unit.status)}>{unit.status}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-mono text-xs">{unit.bookId}</div>
-                    <div className="mt-1 max-w-80 whitespace-normal">
-                      {unit.chapterLabel || unit.locator}
-                    </div>
-                    {unit.chapterLabel && (
-                      <div className="mt-1 max-w-80 font-mono text-xs whitespace-normal text-muted-foreground">
-                        {unit.locator}
-                      </div>
-                    )}
-                  </TableCell>
-                  <TableCell>{unit.attemptCount}</TableCell>
-                  <TableCell>{formatDate(unit.nextAttemptAt)}</TableCell>
-                  <TableCell
-                    className={cn("max-w-96 whitespace-normal", {
-                      "text-destructive": Boolean(unit.lastError),
+              {units.map((unit) => {
+                const retryable = unit.status === "pending" || unit.status === "error";
+                return (
+                  <TableRow
+                    key={unit.unitId}
+                    className={cn({
+                      "bg-destructive/5": unit.status === "error",
+                      "bg-primary/5": unit.status === "processing",
                     })}
                   >
-                    {unit.lastError || "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
+                    <TableCell>
+                      <Badge variant={statusVariant(unit.status)}>{unit.status}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-mono text-xs">{unit.bookId}</div>
+                      <div className="mt-1 max-w-80 whitespace-normal">
+                        {unit.chapterLabel || unit.locator}
+                      </div>
+                      {unit.chapterLabel && (
+                        <div className="mt-1 max-w-80 font-mono text-xs whitespace-normal text-muted-foreground">
+                          {unit.locator}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>{unit.attemptCount}</TableCell>
+                    <TableCell>{formatDate(unit.nextAttemptAt)}</TableCell>
+                    <TableCell
+                      className={cn("max-w-96 whitespace-normal", {
+                        "text-destructive": Boolean(unit.lastError),
+                      })}
+                    >
+                      {unit.lastError || "—"}
+                    </TableCell>
+                    <TableCell>
+                      {retryable ? (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            disabled={!canRetry || pending}
+                            onClick={() => onRetry(unit.unitId)}
+                          >
+                            Retry
+                          </Button>
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="secondary"
+                            disabled={!canReset || pending}
+                            onClick={() => onReset(unit.unitId)}
+                          >
+                            Reset
+                          </Button>
+                        </div>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         )}
@@ -314,8 +377,26 @@ function UnitsCard({ units }: { units: ReadingAgentStatus["units"] }) {
 }
 
 export default function ReadingAgentDebugPage() {
-  const { data, error, isLoading, updatedAt } = useReadingAgentStatus();
-  const { data: conversation, error: conversationError } = useReadingAgentConversation();
+  const { data, error, isLoading, updatedAt, refetch: refetchStatus } = useReadingAgentStatus();
+  const {
+    data: conversation,
+    error: conversationError,
+    refetch: refetchConversation,
+  } = useReadingAgentConversation();
+  const refresh = useCallback(async () => {
+    await Promise.all([refetchStatus(), refetchConversation()]);
+  }, [refetchConversation, refetchStatus]);
+  const {
+    pending,
+    error: actionError,
+    start,
+    stop,
+    retry,
+    reset,
+  } = useReadingAgentActions(refresh);
+  const availability = data
+    ? readingAgentActionAvailability(data)
+    : { canStart: false, canStop: false, canRetry: false, canReset: false };
 
   return (
     <main className="min-h-dvh bg-background px-4 py-6 md:px-8 md:py-10">
@@ -334,9 +415,21 @@ export default function ReadingAgentDebugPage() {
                 Live queue health for the signed-in reader.
               </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {updatedAt ? `Updated ${formatDate(updatedAt.toISOString())}` : "Waiting for status…"}
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                size="sm"
+                disabled={!availability.canStart || pending}
+                onClick={start}
+              >
+                Start
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {updatedAt
+                  ? `Updated ${formatDate(updatedAt.toISOString())}`
+                  : "Waiting for status…"}
+              </p>
+            </div>
           </div>
         </header>
 
@@ -347,15 +440,22 @@ export default function ReadingAgentDebugPage() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
+        {actionError && (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertTitle>Action failed</AlertTitle>
+            <AlertDescription>{actionError}</AlertDescription>
+          </Alert>
+        )}
         {isLoading && !data ? <LoadingCards /> : null}
         {data ? <HealthCards status={data} /> : null}
 
-        {data && !data.sidecarConfigured && (
+        {data && !data.hostConfigured && (
           <Alert variant="destructive">
             <Server />
-            <AlertTitle>Sidecar is not configured</AlertTitle>
+            <AlertTitle>Agent host is not configured</AlertTitle>
             <AlertDescription>
-              Set both reading-agent connection values before queued jobs can run.
+              Set READING_AGENT_SECRET before queued jobs can run.
             </AlertDescription>
           </Alert>
         )}
@@ -374,11 +474,23 @@ export default function ReadingAgentDebugPage() {
         {data?.schema.ok ? (
           <>
             <div className="grid gap-4 lg:grid-cols-2">
-              <LeaseCard lease={data.lease} />
+              <LeaseCard
+                lease={data.lease}
+                canStop={availability.canStop}
+                pending={pending}
+                onStop={stop}
+              />
               <UsageCard usage={data.usage} />
             </div>
             <ConversationCard conversation={conversation} error={conversationError} />
-            <UnitsCard units={data.units} />
+            <UnitsCard
+              units={data.units}
+              canRetry={availability.canRetry}
+              canReset={availability.canReset}
+              pending={pending}
+              onRetry={retry}
+              onReset={reset}
+            />
           </>
         ) : null}
       </div>

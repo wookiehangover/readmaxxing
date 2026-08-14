@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
     lease: vi.fn(),
     history: vi.fn(),
     createFlueClient: vi.fn(),
+    activeHost: vi.fn(),
     FakeFlueApiError,
   };
 });
@@ -29,6 +30,9 @@ vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
 vi.mock("@flue/sdk", () => ({
   createFlueClient: mocks.createFlueClient,
   FlueApiError: mocks.FakeFlueApiError,
+}));
+vi.mock("~/lib/reading-agent/agent-host.server", () => ({
+  getActiveReadingAgentHost: mocks.activeHost,
 }));
 
 import { loader } from "~/routes/api.reading-agent.conversation";
@@ -58,6 +62,7 @@ beforeEach(() => {
   });
   mocks.history.mockReset();
   mocks.createFlueClient.mockReset().mockReturnValue({ history: mocks.history });
+  mocks.activeHost.mockReset();
 });
 
 afterEach(() => {
@@ -77,9 +82,9 @@ describe("reading-agent conversation API", () => {
     expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 
-  it("returns an absent payload when sidecar env is missing", async () => {
+  it("returns an absent payload without a legacy URL when there is no live lease", async () => {
     delete process.env.READING_AGENT_URL;
-    delete process.env.READING_AGENT_SECRET;
+    mocks.lease.mockResolvedValue(null);
     const response = await loader({ request: request() });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
@@ -89,6 +94,7 @@ describe("reading-agent conversation API", () => {
       messages: [],
     });
     expect(mocks.createFlueClient).not.toHaveBeenCalled();
+    expect(mocks.activeHost).not.toHaveBeenCalled();
   });
 
   it("returns an absent payload when schema or lease is missing", async () => {
@@ -123,8 +129,8 @@ describe("reading-agent conversation API", () => {
     expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 
-  it("returns connecting when the lease conversation is not on the sidecar yet", async () => {
-    mocks.history.mockRejectedValue(new mocks.FakeFlueApiError(404, { error: "missing" }));
+  it("returns connecting without a legacy URL while the in-app host is starting", async () => {
+    delete process.env.READING_AGENT_URL;
     const response = await loader({ request: request() });
     const conversationId = readingConversationId("user-1", "book-1");
     expect(response.status).toBe(200);
@@ -134,6 +140,25 @@ describe("reading-agent conversation API", () => {
       bookId: "book-1",
       messages: [],
     });
+    expect(mocks.activeHost).toHaveBeenCalledWith(conversationId);
+    expect(mocks.createFlueClient).not.toHaveBeenCalled();
+  });
+
+  it("returns connecting when an active host does not have the conversation yet", async () => {
+    delete process.env.READING_AGENT_URL;
+    mocks.activeHost.mockReturnValue({
+      url: "http://reading-agent.local/agents/reading-scribe/conversation",
+    });
+    mocks.history.mockRejectedValue(new mocks.FakeFlueApiError(404, { error: "missing" }));
+    const response = await loader({ request: request() });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ phase: "connecting", bookId: "book-1" });
+  });
+
+  it("uses the legacy URL when configured", async () => {
+    mocks.history.mockRejectedValue(new mocks.FakeFlueApiError(404, { error: "missing" }));
+    await loader({ request: request() });
+    const conversationId = readingConversationId("user-1", "book-1");
     expect(mocks.createFlueClient).toHaveBeenCalledWith({
       url: `https://sidecar.example/agents/reading-scribe/${conversationId}`,
       token: "sidecar-secret",
@@ -141,6 +166,12 @@ describe("reading-agent conversation API", () => {
   });
 
   it("returns a sanitized live conversation and never the page body or secret", async () => {
+    delete process.env.READING_AGENT_URL;
+    const hostFetch = vi.fn();
+    mocks.activeHost.mockReturnValue({
+      url: "http://reading-agent.local/agents/reading-scribe/conversation",
+      fetch: hostFetch,
+    });
     mocks.history.mockResolvedValue({
       messages: [
         {
@@ -190,5 +221,10 @@ describe("reading-agent conversation API", () => {
         ],
       },
     ]);
+    expect(mocks.createFlueClient).toHaveBeenCalledWith({
+      url: "http://reading-agent.local/agents/reading-scribe/conversation",
+      token: "sidecar-secret",
+      fetch: hostFetch,
+    });
   });
 });

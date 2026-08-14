@@ -16,7 +16,7 @@ vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   getLatestReadingAgentUsage: mocks.usage,
 }));
 
-import { loader } from "~/routes/api.reading-agent.status";
+import { loader, READING_AGENT_STATUS_TIMEOUT_MS } from "~/routes/api.reading-agent.status";
 
 const originalEnv = {
   databaseUrl: process.env.DATABASE_URL,
@@ -40,6 +40,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   if (originalEnv.databaseUrl == null) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = originalEnv.databaseUrl;
   if (originalEnv.readingAgentUrl == null) delete process.env.READING_AGENT_URL;
@@ -63,6 +64,18 @@ describe("reading-agent status API", () => {
     expect(mocks.schema).not.toHaveBeenCalled();
   });
 
+  it("returns 504 when a signed-in status database call does not finish", async () => {
+    vi.useFakeTimers();
+    mocks.units.mockReturnValue(new Promise(() => {}));
+
+    const responsePromise = loader({ request: request() });
+    await vi.advanceTimersByTimeAsync(READING_AGENT_STATUS_TIMEOUT_MS);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(504);
+    await expect(response.json()).resolves.toEqual({ error: "status_timeout" });
+  });
+
   it("returns schema health without reading missing queue tables", async () => {
     mocks.schema.mockResolvedValue({
       ok: false,
@@ -71,7 +84,7 @@ describe("reading-agent status API", () => {
     const response = await loader({ request: request() });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      sidecarConfigured: false,
+      hostConfigured: false,
       schema: { ok: false, missingColumns: ["reading_ingest_unit.next_attempt_at"] },
       lease: null,
       units: [],
@@ -82,8 +95,7 @@ describe("reading-agent status API", () => {
     expect(mocks.usage).not.toHaveBeenCalled();
   });
 
-  it("returns configured sidecar, lease, filtered text-free units, and latest usage", async () => {
-    process.env.READING_AGENT_URL = "https://user:password@example.com/agent";
+  it("returns configured in-app host, lease, filtered text-free units, and usage", async () => {
     process.env.READING_AGENT_SECRET = "secret";
     mocks.lease.mockResolvedValue({
       bookId: "book-1",
@@ -122,8 +134,8 @@ describe("reading-agent status API", () => {
     const response = await loader({ request: request("?bookId=book-1") });
     const body = await response.json();
     expect(response.status).toBe(200);
-    expect(body.sidecarConfigured).toBe(true);
-    expect(body).not.toHaveProperty("sidecarUrl");
+    expect(body.hostConfigured).toBe(true);
+    expect(body).not.toHaveProperty("hostUrl");
     expect(mocks.units).toHaveBeenCalledWith({ userId: "user-1", bookId: "book-1" });
     expect(body.lease).toMatchObject({ unitId: "unit-1", chapterLabel: "Chapter 1" });
     expect(body.units[0]).not.toHaveProperty("text");

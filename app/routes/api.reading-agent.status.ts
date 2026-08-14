@@ -7,6 +7,10 @@ import {
   type ReadingAgentUsageRow,
 } from "~/lib/database/reading-artifact/reading-artifact";
 
+export const READING_AGENT_STATUS_TIMEOUT_MS = 3_000;
+
+class ReadingAgentStatusTimeoutError extends Error {}
+
 function serializeUsage(usage: ReadingAgentUsageRow | null) {
   if (!usage) return null;
   return {
@@ -21,20 +25,14 @@ function serializeUsage(usage: ReadingAgentUsageRow | null) {
   };
 }
 
-export async function loader({ request }: { request: Request }): Promise<Response> {
-  if (!process.env.DATABASE_URL) {
-    return Response.json({ error: "Sync not configured" }, { status: 503 });
-  }
-
+async function loadStatus(request: Request): Promise<Response> {
   const session = await getSessionFromRequest(request);
   if (!session) return Response.json({ error: "auth_required" }, { status: 401 });
 
-  const sidecarConfigured = Boolean(
-    process.env.READING_AGENT_URL && process.env.READING_AGENT_SECRET,
-  );
+  const hostConfigured = Boolean(process.env.READING_AGENT_SECRET);
   const schema = await getReadingAgentSchemaHealth();
   if (!schema.ok) {
-    return Response.json({ sidecarConfigured, schema, lease: null, units: [], usage: null });
+    return Response.json({ hostConfigured, schema, lease: null, units: [], usage: null });
   }
 
   const bookId = new URL(request.url).searchParams.get("bookId") || undefined;
@@ -43,5 +41,37 @@ export async function loader({ request }: { request: Request }): Promise<Respons
     listRecentReadingIngestUnits({ userId: session.userId, bookId }),
     getLatestReadingAgentUsage(session.userId),
   ]);
-  return Response.json({ sidecarConfigured, schema, lease, units, usage: serializeUsage(usage) });
+  return Response.json({ hostConfigured, schema, lease, units, usage: serializeUsage(usage) });
+}
+
+async function withStatusTimeout<T>(operation: () => Promise<T>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new ReadingAgentStatusTimeoutError()),
+          READING_AGENT_STATUS_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+export async function loader({ request }: { request: Request }): Promise<Response> {
+  if (!process.env.DATABASE_URL) {
+    return Response.json({ error: "Sync not configured" }, { status: 503 });
+  }
+
+  try {
+    return await withStatusTimeout(() => loadStatus(request));
+  } catch (error) {
+    if (error instanceof ReadingAgentStatusTimeoutError) {
+      return Response.json({ error: "status_timeout" }, { status: 504 });
+    }
+    throw error;
+  }
 }

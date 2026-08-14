@@ -66,7 +66,7 @@ Chat is **server-authoritative**: Postgres (`readmax.chat_session`, `readmax.cha
 
 ## Reading artifacts
 
-Outline, character-sheet, and story-so-far artifacts are server-authoritative Postgres data scoped by user and book. Authenticated dwell ingestion uses `POST /api/books/:bookId/artifacts/ingest`; the server verifies the normalized-text SHA-256 fingerprint and deduplicates before any background work. Current heads and newest-first revision history are available from `GET /api/books/:bookId/artifacts` and `GET /api/books/:bookId/artifacts/revisions?kind=outline|characters|wiki`. The Flue sidecar connection is configured with `READING_AGENT_URL` and `READING_AGENT_SECRET`; ingest remains durable when the sidecar is unavailable.
+Outline, character-sheet, and story-so-far artifacts are server-authoritative Postgres data scoped by user and book. Authenticated dwell ingestion uses `POST /api/books/:bookId/artifacts/ingest`; the server verifies the normalized-text SHA-256 fingerprint and deduplicates before any background work. Current heads and newest-first revision history are available from `GET /api/books/:bookId/artifacts` and `GET /api/books/:bookId/artifacts/revisions?kind=outline|characters|wiki`. The web app hosts ReadingScribe in-process during local development and in a Vercel Sandbox in production, authenticated by `READING_AGENT_SECRET`; `READING_AGENT_URL` is only an optional legacy override for an external host. Postgres queue rows, artifacts, and revisions remain durable when the live agent host is unavailable, while the debug conversation is scoped to the current lease.
 
 ## Notebooks
 

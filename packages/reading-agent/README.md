@@ -1,6 +1,8 @@
 # reading-agent
 
-A [Flue](https://flueframework.com) agent project.
+A [Flue](https://flueframework.com) agent project hosted by the Readmaxxing web app.
+Local development runs it in-process; production launches it in a Vercel Sandbox. It is not a
+second production deployment.
 
 ## Setup
 
@@ -8,13 +10,14 @@ A [Flue](https://flueframework.com) agent project.
 pnpm install
 ```
 
-Copy the root app's existing `AI_GATEWAY_API_KEY` into this package's `.env`, then add
-`READING_AGENT_SECRET`. Use the same reading-agent secret in the web app's `.env.local`.
-`VERCEL_OIDC_TOKEN` is supported as a fallback when the Gateway API key is absent.
+Configure the root app's `.env.local` with `READING_AGENT_SECRET` and its existing
+`AI_GATEWAY_API_KEY`. `VERCEL_OIDC_TOKEN` is supported as a Gateway fallback and for production
+Sandbox access. `READING_AGENT_URL` is an optional legacy override for an externally hosted agent;
+leave it unset for the normal one-app setup.
 
 ReadingScribe keeps the Flue model specifier `anthropic/claude-sonnet-4-6`, but its
 Anthropic Messages requests go through `https://ai-gateway.vercel.sh/v1/messages`.
-The sidecar still boots without Gateway credentials; model calls log/fail for retry without
+The agent host still boots without Gateway credentials; model calls log/fail for retry without
 breaking reader ingest.
 
 ## Talk to your agent
@@ -23,22 +26,18 @@ breaking reader ingest.
 pnpm exec flue run src/agents/reading-scribe.ts --message "Summarize what I have read."
 ```
 
-Conversations are durable — pass `--id <id>` to continue one.
+Standalone CLI conversations can be continued with `--id <id>`. In the web app, the debug page
+observes only the current live lease; Postgres artifacts and revisions are the durable record.
 
 ## Develop
 
-```sh
-pnpm run dev -- --port 5174
-```
-
-The ReadingScribe agent is served at `http://localhost:5174/agents/reading-scribe` — see `src/app.ts` for the route map and an authenticated example request.
+Run `pnpm dev` from the repository root. The web app loads ReadingScribe in-process, so no second
+server is required. `pnpm run dev` in this package remains available only for isolated agent work.
 
 ## Deploy
 
-```sh
-pnpm run build
-node dist/server.mjs
-```
+Build and deploy the root web app. Its build includes the agent modules and launches them in a
+Vercel Sandbox in production; do not deploy this package as a separate service.
 
 ## Learn more
 
