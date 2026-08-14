@@ -151,7 +151,7 @@ export function pageIndexFromPositions(
   return first + 1;
 }
 
-function sectionMetadata(publication: Publication, spineIndex: number): SectionMetadata {
+export function sectionMetadata(publication: Publication, spineIndex: number): SectionMetadata {
   const link = publication.readingOrder[spineIndex]!;
   return {
     href: link.href,

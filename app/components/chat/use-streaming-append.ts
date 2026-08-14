@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { UIMessage } from "@ai-sdk/react";
+import type { JSONContent } from "@tiptap/react";
 import type { NotebookEditorCallbacks } from "~/lib/context/workspace-context";
 import { markdownToTiptapJson } from "~/lib/editor/markdown-to-tiptap";
 import { getToolInfo } from "./chat-utils";
@@ -8,9 +9,9 @@ import { getToolInfo } from "./chat-utils";
  * Watches chat messages for `append_to_notes` tool invocations in `input-streaming`
  * state and pushes partial content to the notebook editor in real-time.
  *
- * Each toolCallId that this hook has finalized into the editor is added to
- * `streamedToolCallIdRef` so the onFinish handler can skip re-applying the
- * authoritative server output for the same tool call.
+ * Each toolCallId that this hook has finalized into the editor is mapped to
+ * its pre-preview content so onFinish can skip duplicate appends or roll back
+ * a preview when persistence fails.
  */
 export function useStreamingAppend({
   messages,
@@ -23,13 +24,14 @@ export function useStreamingAppend({
   bookId: string;
   status: string;
   notebookEditorCallbackMap: React.MutableRefObject<Map<string, NotebookEditorCallbacks>>;
-  /** Shared ref — toolCallIds whose streaming preview has been finalized. */
-  streamedToolCallIdRef: React.MutableRefObject<Set<string>>;
+  /** Shared ref — finalized preview toolCallIds and their pre-preview content. */
+  streamedToolCallIdRef: React.MutableRefObject<Map<string, JSONContent>>;
 }) {
   // Track whether we are currently streaming and the baseline node count
   const streamingRef = useRef<{
     toolCallId: string;
     baseNodeCount: number;
+    originalContent: JSONContent;
     lastText: string;
   } | null>(null);
 
@@ -80,7 +82,10 @@ export function useStreamingAppend({
       const newNodes = parsed.content ?? [];
       editorCallbacks.replaceContentFrom(streamingRef.current.baseNodeCount, newNodes);
 
-      streamedToolCallIdRef.current.add(completedPart.toolCallId);
+      streamedToolCallIdRef.current.set(
+        completedPart.toolCallId,
+        streamingRef.current.originalContent,
+      );
       streamingRef.current = null;
       return;
     }
@@ -92,6 +97,7 @@ export function useStreamingAppend({
         streamingRef.current = {
           toolCallId: streamingPart.toolCallId,
           baseNodeCount: editorCallbacks.getTopLevelNodeCount(),
+          originalContent: editorCallbacks.getContent(),
           lastText: "",
         };
       }

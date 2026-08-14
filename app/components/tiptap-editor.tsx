@@ -55,38 +55,38 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
   }, [highlightId, cfiRange, editor, deleteNode]);
 
   return (
-    <NodeViewWrapper>
+    <NodeViewWrapper className="group/hl relative my-2">
       <blockquote
         onClick={handleNavigate}
-        className="group/hl relative my-2 cursor-pointer rounded border-l-4 border-amber-400 bg-amber-50 px-3 py-2 pr-16 text-sm italic text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/50 dark:text-amber-200 dark:hover:bg-amber-950/80"
+        className="my-0 cursor-pointer border-0 bg-foreground/[0.04] px-3 py-2 text-sm italic text-muted-foreground transition-colors hover:bg-muted/70"
         title="Click to navigate to this highlight"
       >
         "{text}"
-        <span className="absolute top-1/2 right-2 flex -translate-y-1/2 gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleNavigate();
-            }}
-            className="rounded p-1 text-amber-700 hover:bg-amber-200 dark:text-amber-300 dark:hover:bg-amber-800"
-            title="Navigate to highlight"
-          >
-            <Navigation className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDelete();
-            }}
-            className="rounded p-1 text-amber-700 hover:bg-red-100 hover:text-red-600 dark:text-amber-300 dark:hover:bg-red-900 dark:hover:text-red-400"
-            title="Delete highlight"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
-        </span>
       </blockquote>
+      <div className="absolute top-full right-1 z-10 mt-0.5 flex gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100 group-focus-within/hl:opacity-100">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleNavigate();
+          }}
+          className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title="Navigate to highlight"
+        >
+          <Navigation className="size-3" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDelete();
+          }}
+          className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title="Delete highlight"
+        >
+          <Trash2 className="size-3" />
+        </button>
+      </div>
     </NodeViewWrapper>
   );
 }
@@ -170,7 +170,10 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       },
       setContent(content: JSONContent) {
         if (!editor) return;
-        editor.commands.setContent(content);
+        // Programmatic content always comes from an authoritative server/sync
+        // snapshot. Do not emit onUpdate, which would enqueue a newer local
+        // autosave and could overwrite a subsequent remote change.
+        editor.commands.setContent(content, { emitUpdate: false });
       },
       getContent() {
         if (!editor) return { type: "doc", content: [] };

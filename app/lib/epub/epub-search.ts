@@ -27,6 +27,8 @@ export function normalizeSearchText(text: string): string {
     .replace(/\u2014/g, "--") // em dash → double hyphen
     .replace(/\u2013/g, "-") // en dash → hyphen
     .replace(/\u2026/g, "...") // ellipsis char → three dots
+    .replace(/[\u00A0\u202F]/g, " ") // non-breaking spaces → regular space
+    .replace(/[\u200B-\u200D\uFEFF]/g, "") // strip zero-width characters
     .replace(/\s+/g, " ") // collapse whitespace
     .trim();
 }

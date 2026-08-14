@@ -344,7 +344,7 @@ export function useSettings(): [Settings, (update: Partial<Settings>) => void] {
  */
 export function resolveTheme(theme: Theme): "light" | "dark" {
   if (theme !== "system") return theme;
-  if (typeof window === "undefined") return "light";
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 

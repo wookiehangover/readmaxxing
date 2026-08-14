@@ -5,9 +5,38 @@ import { Effect } from "effect";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { BookService } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { useWorkspace } from "~/lib/context/workspace-context";
+import { useWorkspace, type NotebookEditorCallbacks } from "~/lib/context/workspace-context";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
+import { normalizeCfiRange } from "~/lib/chat/highlight-tools";
 import { getToolInfo } from "./chat-utils";
+
+function cacheNotebookSnapshot(
+  bookId: string,
+  content: JSONContent,
+  updatedAt: number,
+  editorCallbacks?: NotebookEditorCallbacks,
+): void {
+  editorCallbacks?.seedLastContent(content);
+  AppRuntime.runPromise(
+    AnnotationService.pipe(
+      Effect.andThen((svc) =>
+        svc.cacheNotebook({
+          bookId,
+          content,
+          updatedAt,
+        }),
+      ),
+    ),
+  )
+    .then(() => {
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
+        );
+      });
+    })
+    .catch(console.error);
+}
 
 interface UseChatToolHandlersOptions {
   bookId: string;
@@ -15,10 +44,10 @@ interface UseChatToolHandlersOptions {
   bookDataRef: React.RefObject<ArrayBuffer | null>;
   /**
    * Populated by useStreamingAppend with toolCallIds whose content was already
-   * inserted into the live editor via the input-streaming preview. onFinish
-   * uses this to avoid double-appending the authoritative server output.
+   * inserted into the live editor and their pre-preview content. onFinish uses
+   * this to avoid duplicates and roll back failed optimistic previews.
    */
-  streamedToolCallIdRef?: React.MutableRefObject<Set<string>>;
+  streamedToolCallIdRef?: React.MutableRefObject<Map<string, JSONContent>>;
 }
 
 export function useChatToolHandlers({
@@ -81,19 +110,45 @@ export function useChatToolHandlers({
         const toolCallId = (part as any).toolCallId as string | undefined;
 
         // Always consume the streaming-preview marker for this toolCallId so
-        // the Set doesn't grow unbounded across messages — even when the
+        // the Map doesn't grow unbounded across messages — even when the
         // server output indicates nothing was appended.
-        const streamingPreviewed =
-          !!toolCallId && !!streamedToolCallIdRef?.current.delete(toolCallId);
+        const previewSnapshot = toolCallId
+          ? streamedToolCallIdRef?.current.get(toolCallId)
+          : undefined;
+        const streamingPreviewed = previewSnapshot !== undefined;
+        if (toolCallId) streamedToolCallIdRef?.current.delete(toolCallId);
 
         // Route to the book named in the tool output (multi-book chat). Falls
         // back to the bound (primary) bookId for back-compat when absent.
         const targetBookId = output?.bookId ?? bookId;
-        if (!output?.appended || !targetBookId) continue;
-        const appendedNodes = Array.isArray(output.appendedNodes) ? output.appendedNodes : [];
-        if (appendedNodes.length === 0) continue;
+        if (!output || !targetBookId) continue;
 
         const editorCbs = notebookEditorCallbackMap.current.get(targetBookId);
+        const authoritativeSnapshot =
+          output.updatedContent && typeof output.updatedAt === "number"
+            ? { content: output.updatedContent, updatedAt: output.updatedAt }
+            : null;
+
+        if (!output.appended) {
+          // The streamed preview already mutated the open editor. Restore the
+          // authoritative server snapshot when available, otherwise roll back
+          // to the content captured before the preview began.
+          if (authoritativeSnapshot) {
+            editorCbs?.setContent(authoritativeSnapshot.content);
+            cacheNotebookSnapshot(
+              targetBookId,
+              authoritativeSnapshot.content,
+              authoritativeSnapshot.updatedAt,
+              editorCbs,
+            );
+          } else if (previewSnapshot) {
+            editorCbs?.setContent(previewSnapshot);
+          }
+          continue;
+        }
+
+        const appendedNodes = Array.isArray(output.appendedNodes) ? output.appendedNodes : [];
+        if (appendedNodes.length === 0) continue;
 
         // Editor update: if the streaming preview already inserted these nodes
         // during input-streaming, skip — re-applying would duplicate.
@@ -103,29 +158,13 @@ export function useChatToolHandlers({
 
         // Write-through to IndexedDB is independent of editor state — even if
         // the editor isn't open we still want IDB to reflect the new notes.
-        if (output.updatedContent && typeof output.updatedAt === "number") {
-          const nextContent = output.updatedContent;
-          const nextUpdatedAt = output.updatedAt;
-          editorCbs?.seedLastContent(nextContent);
-          AppRuntime.runPromise(
-            AnnotationService.pipe(
-              Effect.andThen((svc) =>
-                svc.cacheNotebook({
-                  bookId: targetBookId,
-                  content: nextContent,
-                  updatedAt: nextUpdatedAt,
-                }),
-              ),
-            ),
-          )
-            .then(() => {
-              queueMicrotask(() => {
-                window.dispatchEvent(
-                  new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-                );
-              });
-            })
-            .catch(console.error);
+        if (authoritativeSnapshot) {
+          cacheNotebookSnapshot(
+            targetBookId,
+            authoritativeSnapshot.content,
+            authoritativeSnapshot.updatedAt,
+            editorCbs,
+          );
         }
       }
 
@@ -217,6 +256,7 @@ export function useChatToolHandlers({
                 text: string;
                 note?: string | null;
                 color?: string;
+                cfiRange?: string | null;
                 createdAt: number;
                 textAnchor: { chapterIndex: number; snippet: string; offset?: number };
               };
@@ -308,17 +348,25 @@ export function useChatToolHandlers({
               }
             } else {
               // Epub path
-              const { fuzzySearchEpubForCfi } = await import("~/lib/epub/epub-search");
-              // Prefer the server's text-anchor snippet when present — the
-              // server already located the best chapter, so searching for the
-              // snippet first improves the odds of a clean match.
-              const snippet = serverHighlight?.textAnchor.snippet ?? highlightText;
-              let results = await fuzzySearchEpubForCfi(data.slice(0), snippet);
-              if (results.length === 0 && snippet !== highlightText) {
-                results = await fuzzySearchEpubForCfi(data.slice(0), highlightText);
+              let cfiRange = normalizeCfiRange(serverHighlight?.cfiRange) ?? "";
+              if (!cfiRange) {
+                const { fuzzySearchEpubForCfi } = await import("~/lib/epub/epub-search");
+                // Prefer the server's text-anchor snippet when present — the
+                // server already located the best chapter, so searching for the
+                // snippet first improves the odds of a clean match.
+                const snippet = serverHighlight?.textAnchor.snippet ?? highlightText;
+                let results = await fuzzySearchEpubForCfi(data.slice(0), snippet);
+                if (results.length === 0 && snippet !== highlightText) {
+                  results = await fuzzySearchEpubForCfi(data.slice(0), highlightText);
+                }
+                cfiRange = normalizeCfiRange(results[0]?.cfi) ?? "";
               }
 
-              const cfiRange = results[0]?.cfi ?? "";
+              if (!cfiRange) {
+                console.warn("create_highlight: no CFI resolved for:", highlightText.slice(0, 60));
+                return;
+              }
+
               const highlight = {
                 id: serverHighlight?.id ?? crypto.randomUUID(),
                 bookId: targetBookId,
@@ -329,10 +377,6 @@ export function useChatToolHandlers({
                 ...(serverHighlight?.textAnchor ? { textAnchor: serverHighlight.textAnchor } : {}),
                 ...(serverHighlight?.note ? { note: serverHighlight.note } : {}),
               };
-
-              if (cfiRange === "") {
-                console.warn("create_highlight: no CFI resolved for:", highlightText.slice(0, 60));
-              }
 
               await AppRuntime.runPromise(
                 Effect.gen(function* () {
