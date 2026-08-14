@@ -294,9 +294,20 @@ describe("reading-agent debug page", () => {
     const stop = button("Stop");
     expect(button("Start")?.disabled).toBe(true);
     expect(stop?.disabled).toBe(false);
-    expect(button("Retry")).toBeUndefined();
+    expect(button("Retry")?.disabled).toBe(false);
+    expect(button("Reset")?.disabled).toBe(false);
     await act(async () => stop?.click());
     expect(postedActions()).toEqual([{ action: "stop" }]);
+  });
+
+  it("enables Start and Stop for an expired leftover lease", async () => {
+    respond({
+      ...emptyStatus,
+      lease: { ...liveLease, expiresAt: "2000-01-01T00:00:00.000Z" },
+    });
+    await renderPage();
+    expect(button("Start")?.disabled).toBe(false);
+    expect(button("Stop")?.disabled).toBe(false);
   });
 
   it("shows Retry on pending and error rows and posts retry", async () => {

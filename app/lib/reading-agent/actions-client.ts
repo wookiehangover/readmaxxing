@@ -25,7 +25,7 @@ export function readingAgentActionAvailability(
   const liveLease = isLiveReadingAgentLease(status.lease, now);
   return {
     canStart: ready && !liveLease,
-    canStop: ready && liveLease,
+    canStop: ready && status.lease !== null,
     canRetry: ready,
     canReset: ready,
   };

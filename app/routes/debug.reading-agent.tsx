@@ -309,7 +309,7 @@ function UnitsCard({
             </TableHeader>
             <TableBody>
               {units.map((unit) => {
-                const retryable = unit.status === "pending" || unit.status === "error";
+                const retryable = unit.status !== "done" && unit.status !== "skipped";
                 return (
                   <TableRow
                     key={unit.unitId}

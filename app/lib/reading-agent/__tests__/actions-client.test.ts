@@ -56,6 +56,19 @@ describe("reading agent action client", () => {
     ).toEqual({ canStart: false, canStop: false, canRetry: false, canReset: false });
   });
 
+  it("allows Start and Stop for an expired leftover lease", () => {
+    expect(
+      readingAgentActionAvailability(
+        {
+          hostConfigured: true,
+          schema: { ok: true },
+          lease: { expiresAt: "2026-08-14T11:59:59.000Z" },
+        },
+        Date.parse("2026-08-14T12:00:00.000Z"),
+      ),
+    ).toEqual({ canStart: true, canStop: true, canRetry: true, canReset: true });
+  });
+
   it("posts start and surfaces host errors", async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ ok: true }));
     await postReadingAgentAction({ action: "start" });
