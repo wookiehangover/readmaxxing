@@ -2,6 +2,7 @@ import { createAgentRouter } from "@flue/runtime/routing";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
 import { ReadingScribe } from "./agents/reading-scribe";
+import "./providers/vercel-ai-gateway";
 
 const app = new Hono();
 

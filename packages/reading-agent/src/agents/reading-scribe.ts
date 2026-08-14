@@ -1,6 +1,7 @@
 "use agent";
 import { useModel, useSandbox, useTool } from "@flue/runtime";
 import { READING_SCRIBE_PROMPT } from "../artifacts/prompt";
+import "../providers/vercel-ai-gateway";
 import { readingSandbox } from "../sandboxes/reading-sandbox";
 import { updateReadingArtifacts } from "../tools/update-reading-artifacts";
 
