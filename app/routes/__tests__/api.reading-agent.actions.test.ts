@@ -7,9 +7,11 @@ const mocks = vi.hoisted(() => ({
   reclaim: vi.fn(),
   stop: vi.fn(),
   retry: vi.fn(),
+  reset: vi.fn(),
   getUnit: vi.fn(),
   schedule: vi.fn(),
   abort: vi.fn(),
+  stopHost: vi.fn(),
   createFlueClient: vi.fn(),
 }));
 
@@ -20,10 +22,14 @@ vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   reclaimExpiredReadingAgentLease: mocks.reclaim,
   stopReadingIngestUnit: mocks.stop,
   retryReadingIngestUnit: mocks.retry,
+  resetReadingIngestUnit: mocks.reset,
   getReadingIngestUnitForUser: mocks.getUnit,
 }));
 vi.mock("~/lib/reading-agent/dispatch.server", () => ({
   scheduleReadingIngestQueue: mocks.schedule,
+}));
+vi.mock("~/lib/reading-agent/agent-host.server", () => ({
+  stopReadingAgentHost: mocks.stopHost,
 }));
 vi.mock("@flue/sdk", () => ({
   createFlueClient: mocks.createFlueClient,
@@ -55,9 +61,11 @@ beforeEach(() => {
   mocks.reclaim.mockReset().mockResolvedValue(0);
   mocks.stop.mockReset().mockResolvedValue(true);
   mocks.retry.mockReset().mockResolvedValue(true);
+  mocks.reset.mockReset().mockResolvedValue(true);
   mocks.getUnit.mockReset().mockResolvedValue(null);
   mocks.schedule.mockReset();
   mocks.abort.mockReset().mockResolvedValue({ aborted: true });
+  mocks.stopHost.mockReset().mockResolvedValue(false);
   mocks.createFlueClient.mockReset().mockReturnValue({ abort: mocks.abort });
 });
 
@@ -80,7 +88,9 @@ describe("reading-agent actions API", () => {
 
   it("returns 401 for an unauthenticated request", async () => {
     mocks.auth.mockResolvedValue(null);
-    const response = await action({ request: request({ action: "start" }) });
+    const response = await action({
+      request: request({ action: "reset", unitId: "unit-1" }),
+    });
     expect(response.status).toBe(401);
     expect(mocks.schema).not.toHaveBeenCalled();
   });
@@ -98,6 +108,13 @@ describe("reading-agent actions API", () => {
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({ error: "schema_stale" });
     expect(mocks.schedule).not.toHaveBeenCalled();
+  });
+
+  it("starts without a remote sidecar URL", async () => {
+    delete process.env.READING_AGENT_URL;
+    const response = await action({ request: request({ action: "start" }) });
+    expect(response.status).toBe(200);
+    expect(mocks.schedule).toHaveBeenCalledWith("user-1");
   });
 
   it("stops a live lease without incrementing attempts", async () => {
@@ -119,6 +136,22 @@ describe("reading-agent actions API", () => {
     expect(mocks.abort).toHaveBeenCalledOnce();
     expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-1");
     expect(mocks.reclaim).not.toHaveBeenCalled();
+  });
+
+  it("stops the in-app host without calling the legacy remote client", async () => {
+    delete process.env.READING_AGENT_URL;
+    mocks.stopHost.mockResolvedValue(true);
+    mocks.lease.mockResolvedValue({
+      unitId: "unit-1",
+      bookId: "book-1",
+      expiresAt: new Date("2026-01-01T00:05:00Z"),
+    });
+
+    const response = await action({ request: request({ action: "stop" }) });
+    expect(response.status).toBe(200);
+    expect(mocks.stopHost).toHaveBeenCalledOnce();
+    expect(mocks.createFlueClient).not.toHaveBeenCalled();
+    expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-1");
   });
 
   it("returns stopped:false when there is no live lease", async () => {
@@ -208,5 +241,73 @@ describe("reading-agent actions API", () => {
     const response = await action({ request: request({ action: "retry", unitId: "unit-1" }) });
     expect(response.status).toBe(409);
     expect(mocks.retry).not.toHaveBeenCalled();
+  });
+
+  it("resets an 8/8 pending unit and schedules a drain", async () => {
+    mocks.getUnit.mockResolvedValue({
+      id: "unit-1",
+      bookId: "book-1",
+      status: "pending",
+      attemptCount: 8,
+      nextAttemptAt: new Date("2026-01-01T00:00:00Z"),
+      claimedAt: null,
+      lastError: "Maximum attempts reached",
+    });
+
+    const response = await action({ request: request({ action: "reset", unitId: "unit-1" }) });
+    expect(response.status).toBe(200);
+    expect(mocks.reset).toHaveBeenCalledWith("user-1", "unit-1");
+    expect(mocks.schedule).toHaveBeenCalledWith("user-1");
+  });
+
+  it("returns 404 when resetting another user's unit", async () => {
+    const response = await action({ request: request({ action: "reset", unitId: "unit-2" }) });
+    expect(response.status).toBe(404);
+    expect(mocks.reset).not.toHaveBeenCalled();
+  });
+
+  it("stops a processing unit before resetting it", async () => {
+    mocks.getUnit.mockResolvedValue({
+      id: "unit-1",
+      bookId: "book-1",
+      status: "processing",
+      attemptCount: 8,
+      nextAttemptAt: new Date("2026-01-01T00:00:00Z"),
+      claimedAt: new Date("2026-01-01T00:01:00Z"),
+      lastError: null,
+    });
+    mocks.lease.mockResolvedValue({
+      unitId: "unit-1",
+      bookId: "book-1",
+      expiresAt: new Date("2026-01-01T00:05:00Z"),
+      chapterLabel: "Chapter 1",
+      locator: "chapter-1.xhtml",
+    });
+
+    const response = await action({ request: request({ action: "reset", unitId: "unit-1" }) });
+    expect(response.status).toBe(200);
+    expect(mocks.abort).toHaveBeenCalledOnce();
+    expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-1");
+    expect(mocks.reset).toHaveBeenCalledWith("user-1", "unit-1");
+    expect(mocks.stop.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.reset.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("returns 409 when resetting a done unit", async () => {
+    mocks.getUnit.mockResolvedValue({
+      id: "unit-1",
+      bookId: "book-1",
+      status: "done",
+      attemptCount: 8,
+      nextAttemptAt: new Date("2026-01-01T00:00:00Z"),
+      claimedAt: null,
+      lastError: null,
+    });
+
+    const response = await action({ request: request({ action: "reset", unitId: "unit-1" }) });
+    expect(response.status).toBe(409);
+    expect(mocks.reset).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
   });
 });

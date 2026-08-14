@@ -5,13 +5,15 @@ import {
   getReadingAgentSchemaHealth,
   getReadingIngestUnitForUser,
   reclaimExpiredReadingAgentLease,
+  resetReadingIngestUnit,
   retryReadingIngestUnit,
   stopReadingIngestUnit,
 } from "~/lib/database/reading-artifact/reading-artifact";
 import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
 import { scheduleReadingIngestQueue } from "~/lib/reading-agent/dispatch.server";
+import { stopReadingAgentHost } from "~/lib/reading-agent/agent-host.server";
 
-type QueueAction = "start" | "stop" | "retry";
+type QueueAction = "start" | "stop" | "retry" | "reset";
 
 export async function action({ request }: { request: Request }): Promise<Response> {
   if (request.method !== "POST") {
@@ -24,11 +26,8 @@ export async function action({ request }: { request: Request }): Promise<Respons
   const session = await getSessionFromRequest(request);
   if (!session) return Response.json({ error: "auth_required" }, { status: 401 });
 
-  const sidecarConfigured = Boolean(
-    process.env.READING_AGENT_URL && process.env.READING_AGENT_SECRET,
-  );
-  if (!sidecarConfigured) {
-    return Response.json({ error: "sidecar_not_configured" }, { status: 409 });
+  if (!process.env.READING_AGENT_SECRET) {
+    return Response.json({ error: "agent_not_configured" }, { status: 409 });
   }
 
   const schema = await getReadingAgentSchemaHealth();
@@ -49,6 +48,8 @@ export async function action({ request }: { request: Request }): Promise<Respons
       return stopQueue(session.userId);
     case "retry":
       return retryUnit(session.userId, payload.unitId);
+    case "reset":
+      return resetUnit(session.userId, payload.unitId);
   }
 }
 
@@ -87,14 +88,35 @@ async function retryUnit(userId: string, unitId: string): Promise<Response> {
   return Response.json({ ok: true, unitId: unit.id });
 }
 
+async function resetUnit(userId: string, unitId: string): Promise<Response> {
+  const unit = await getReadingIngestUnitForUser(userId, unitId);
+  if (!unit) return Response.json({ error: "not_found" }, { status: 404 });
+  if (unit.status === "done" || unit.status === "skipped") {
+    return Response.json({ error: "not_resettable", status: unit.status }, { status: 409 });
+  }
+
+  if (unit.status === "processing") {
+    const lease = await getLiveReadingAgentLease(userId);
+    if (lease?.unitId === unit.id) await abortConversation(userId, lease.bookId);
+    await stopReadingIngestUnit(userId, unit.id);
+  }
+
+  await resetReadingIngestUnit(userId, unit.id);
+  scheduleReadingIngestQueue(userId);
+  return Response.json({ ok: true, unitId: unit.id });
+}
+
 async function abortConversation(userId: string, bookId: string): Promise<void> {
+  const conversationId = readingConversationId(userId, bookId);
+  if (await stopReadingAgentHost(conversationId)) return;
+
   const agentUrl = process.env.READING_AGENT_URL;
   const secret = process.env.READING_AGENT_SECRET;
   if (!agentUrl || !secret) return;
 
   try {
     const client = createFlueClient({
-      url: `${agentUrl.replace(/\/+$/, "")}/${readingConversationId(userId, bookId)}`,
+      url: `${agentUrl.replace(/\/+$/, "")}/${conversationId}`,
       token: secret,
     });
     await client.abort();
@@ -105,7 +127,9 @@ async function abortConversation(userId: string, bookId: string): Promise<void> 
 
 async function parseActionPayload(
   request: Request,
-): Promise<{ action: "start" | "stop" } | { action: "retry"; unitId: string } | { error: string }> {
+): Promise<
+  { action: "start" | "stop" } | { action: "retry" | "reset"; unitId: string } | { error: string }
+> {
   let body: unknown;
   try {
     body = await request.json();
@@ -113,11 +137,11 @@ async function parseActionPayload(
     return { error: "invalid_json" };
   }
   if (!isRecord(body) || !isQueueAction(body.action)) return { error: "invalid_action" };
-  if (body.action !== "retry") return { action: body.action };
+  if (body.action === "start" || body.action === "stop") return { action: body.action };
   if (typeof body.unitId !== "string" || body.unitId.trim() === "") {
     return { error: "unit_id_required" };
   }
-  return { action: "retry", unitId: body.unitId };
+  return { action: body.action, unitId: body.unitId };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -125,5 +149,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isQueueAction(value: unknown): value is QueueAction {
-  return value === "start" || value === "stop" || value === "retry";
+  return value === "start" || value === "stop" || value === "retry" || value === "reset";
 }

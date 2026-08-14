@@ -24,7 +24,8 @@ import { readingConversationId } from "./conversation-id.server";
 export { readingConversationId };
 
 type ReadingAgentCall = (options: {
-  url: string;
+  url?: string;
+  conversationId: string;
   secret: string;
   page: string;
   artifacts: Record<ArtifactKind, string>;
@@ -91,11 +92,9 @@ export async function dispatchReadingIngestUnit(
 ): Promise<"not-configured" | "already-leased" | "done" | "failed"> {
   const agentUrl = options.agentUrl ?? process.env.READING_AGENT_URL;
   const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
-  if (!agentUrl || !agentSecret) {
+  if (!agentSecret) {
     if (process.env.NODE_ENV !== "production") {
-      console.warn(
-        "[reading-agent] READING_AGENT_URL and READING_AGENT_SECRET are required; ingest remains pending.",
-      );
+      console.warn("[reading-agent] READING_AGENT_SECRET is required; ingest remains pending.");
     }
     return "not-configured";
   }
@@ -110,8 +109,10 @@ export async function dispatchReadingIngestUnit(
   try {
     const current = currentBodies(await dependencies.getCurrent(claimed.userId, claimed.bookId));
     calledAgent = true;
+    const conversationId = readingConversationId(claimed.userId, claimed.bookId);
     const result = await dependencies.callAgent({
-      url: `${agentUrl.replace(/\/+$/, "")}/${readingConversationId(claimed.userId, claimed.bookId)}`,
+      url: agentUrl ? `${agentUrl.replace(/\/+$/, "")}/${conversationId}` : undefined,
+      conversationId,
       secret: agentSecret,
       page: claimed.text,
       artifacts: current,
@@ -155,7 +156,7 @@ export async function drainReadingIngestQueue(
 ): Promise<void> {
   const agentUrl = options.agentUrl ?? process.env.READING_AGENT_URL;
   const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
-  if (!agentUrl || !agentSecret) return;
+  if (!agentSecret) return;
 
   const dependencies = { ...DEFAULT_DRAIN_DEPENDENCIES, ...options.dependencies };
   await dependencies.reclaim(userId);
@@ -185,7 +186,7 @@ export async function sweepReadingIngestQueues(
 ): Promise<number> {
   const agentUrl = options.agentUrl ?? process.env.READING_AGENT_URL;
   const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
-  if (!agentUrl || !agentSecret) return 0;
+  if (!agentSecret) return 0;
 
   const dependencies = { ...DEFAULT_SWEEP_DEPENDENCIES, ...options.dependencies };
   const userIds = await dependencies.listUserIds();
@@ -230,7 +231,6 @@ export function shouldStartLocalReadingIngestSweep(
     nodeEnv?: string;
     vitest?: string;
     databaseUrl?: string;
-    agentUrl?: string;
     agentSecret?: string;
   } = {},
 ): boolean {
@@ -238,9 +238,8 @@ export function shouldStartLocalReadingIngestSweep(
   const nodeEnv = env.nodeEnv ?? process.env.NODE_ENV;
   const vitest = "vitest" in env ? env.vitest : process.env.VITEST;
   const databaseUrl = env.databaseUrl ?? process.env.DATABASE_URL;
-  const agentUrl = env.agentUrl ?? process.env.READING_AGENT_URL;
   const agentSecret = env.agentSecret ?? process.env.READING_AGENT_SECRET;
-  return Boolean(isDev && nodeEnv !== "test" && !vitest && databaseUrl && agentUrl && agentSecret);
+  return Boolean(isDev && nodeEnv !== "test" && !vitest && databaseUrl && agentSecret);
 }
 
 export function resetLocalReadingIngestSweep(): void {

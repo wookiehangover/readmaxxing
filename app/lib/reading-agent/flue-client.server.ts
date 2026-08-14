@@ -1,4 +1,5 @@
 import { createFlueClient, type PromptUsage } from "@flue/sdk";
+import { createReadingAgentHost } from "./agent-host.server";
 
 export type ArtifactKind = "outline" | "characters" | "wiki";
 export type ReadingScribeResult = Record<
@@ -162,33 +163,53 @@ function parseJsonReply(text: string): unknown {
   throw new SyntaxError("No valid JSON object found");
 }
 
-export async function callReadingScribe(options: {
-  url: string;
+interface ReadingScribeCallOptions {
+  url?: string;
+  conversationId?: string;
   secret: string;
   page: string;
   artifacts: Record<ArtifactKind, string>;
-}): Promise<ReadingScribeCallResult> {
-  const client = createFlueClient({ url: options.url, token: options.secret });
-  const admission = await client.send({
-    message: {
-      kind: "user",
-      body: JSON.stringify({ page: options.page, artifacts: options.artifacts }),
-    },
-  });
-  const reply = await client.read(admission);
-  const usage = extractReadingScribeUsage(reply.metadata);
+}
+
+export async function callReadingScribe(
+  options: ReadingScribeCallOptions,
+): Promise<ReadingScribeCallResult> {
+  if (!options.url && !options.conversationId) {
+    throw new Error("ReadingScribe conversation id is required for the in-app host");
+  }
+  const host = options.url
+    ? undefined
+    : await createReadingAgentHost(options.conversationId!, options.secret);
   try {
-    return {
-      artifacts: parseReadingScribeResult(parseJsonReply(reply.text)),
-      usage,
-    };
-  } catch (error) {
-    const message =
-      error instanceof SyntaxError
-        ? "ReadingScribe reply was not valid JSON"
-        : error instanceof Error
-          ? error.message
-          : "ReadingScribe returned an invalid result";
-    throw new ReadingScribeCallError(message, usage, { cause: error });
+    const client = createFlueClient({
+      url: options.url ?? host!.url,
+      token: options.secret,
+      ...(host?.fetch ? { fetch: host.fetch } : {}),
+    });
+    host?.registerAbort(() => client.abort());
+    const admission = await client.send({
+      message: {
+        kind: "user",
+        body: JSON.stringify({ page: options.page, artifacts: options.artifacts }),
+      },
+    });
+    const reply = await client.read(admission);
+    const usage = extractReadingScribeUsage(reply.metadata);
+    try {
+      return {
+        artifacts: parseReadingScribeResult(parseJsonReply(reply.text)),
+        usage,
+      };
+    } catch (error) {
+      const message =
+        error instanceof SyntaxError
+          ? "ReadingScribe reply was not valid JSON"
+          : error instanceof Error
+            ? error.message
+            : "ReadingScribe returned an invalid result";
+      throw new ReadingScribeCallError(message, usage, { cause: error });
+    }
+  } finally {
+    await host?.dispose();
   }
 }

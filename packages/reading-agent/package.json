@@ -1,7 +1,13 @@
 {
-  "name": "reading-agent",
+  "name": "@readmaxxing/reading-agent",
   "private": true,
   "type": "module",
+  "exports": {
+    "./app": {
+      "types": "./app.d.ts",
+      "import": "./dist/app.mjs"
+    }
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",

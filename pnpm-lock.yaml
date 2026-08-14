@@ -41,6 +41,9 @@ importers:
       '@readmaxxing/epub-successor':
         specifier: workspace:*
         version: link:packages/epub-successor
+      '@readmaxxing/reading-agent':
+        specifier: workspace:*
+        version: link:packages/reading-agent
       '@shadcn/helpers':
         specifier: ^0.1.0
         version: 0.1.0(ai@7.0.22(zod@4.4.3))
@@ -77,6 +80,9 @@ importers:
       '@vercel/functions':
         specifier: ^3.7.5
         version: 3.7.5(@aws-sdk/credential-provider-web-identity@3.972.74)(ws@8.21.0)
+      '@vercel/sandbox':
+        specifier: ^2.9.2
+        version: 2.9.2
       ai:
         specifier: ^7.0.22
         version: 7.0.22(zod@4.4.3)

@@ -3,8 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const send = vi.hoisted(() => vi.fn());
 const read = vi.hoisted(() => vi.fn());
 const createFlueClient = vi.hoisted(() => vi.fn(() => ({ send, read })));
+const hostFetch = vi.hoisted(() => vi.fn());
+const disposeHost = vi.hoisted(() => vi.fn());
+const registerAbort = vi.hoisted(() => vi.fn());
+const createReadingAgentHost = vi.hoisted(() =>
+  vi.fn(async () => ({
+    url: "http://reading-agent.local/agents/reading-scribe/conversation-1",
+    fetch: hostFetch,
+    registerAbort,
+    dispose: disposeHost,
+  })),
+);
 
 vi.mock("@flue/sdk", () => ({ createFlueClient }));
+vi.mock("../agent-host.server", () => ({ createReadingAgentHost }));
 
 import { callReadingScribe, readingScribeUsageFromError } from "../flue-client.server";
 
@@ -27,6 +39,9 @@ const callResult = { artifacts: result, usage: unknownUsage };
 
 beforeEach(() => {
   createFlueClient.mockClear();
+  createReadingAgentHost.mockClear();
+  disposeHost.mockReset().mockResolvedValue(undefined);
+  registerAbort.mockReset();
   send.mockReset().mockResolvedValue({ submissionId: "submission-1" });
   read.mockReset().mockResolvedValue({ text: JSON.stringify(result) });
 });
@@ -56,6 +71,25 @@ describe("ReadingScribe Flue client", () => {
       },
     });
     expect(read).toHaveBeenCalledWith({ submissionId: "submission-1" });
+  });
+
+  it("starts and disposes an in-app host when no remote URL is configured", async () => {
+    await expect(
+      callReadingScribe({
+        conversationId: "conversation-1",
+        secret: "test-secret",
+        page: "New page text.",
+        artifacts: { outline: "", characters: "", wiki: "Existing story." },
+      }),
+    ).resolves.toEqual(callResult);
+
+    expect(createReadingAgentHost).toHaveBeenCalledWith("conversation-1", "test-secret");
+    expect(createFlueClient).toHaveBeenCalledWith({
+      url: "http://reading-agent.local/agents/reading-scribe/conversation-1",
+      token: "test-secret",
+      fetch: hostFetch,
+    });
+    expect(disposeHost).toHaveBeenCalledOnce();
   });
 
   it("accepts a JSON reply in a markdown fence", async () => {

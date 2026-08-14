@@ -169,7 +169,25 @@ describe("reading ingest dispatch", () => {
     expect(callAgent).not.toHaveBeenCalled();
   });
 
-  it("leaves the unit pending when the sidecar is not configured", async () => {
+  it("dispatches through the in-app host when the remote URL is not configured", async () => {
+    await expect(
+      dispatchReadingIngestUnit(unit, {
+        agentUrl: "",
+        agentSecret: "test-secret",
+        dependencies: options().dependencies,
+      }),
+    ).resolves.toBe("done");
+
+    expect(callAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: undefined,
+        conversationId: readingConversationId("user-1", "book-1"),
+      }),
+    );
+    expect(complete).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the unit pending when the agent secret is not configured", async () => {
     await expect(
       dispatchReadingIngestUnit(unit, {
         agentUrl: "",
@@ -179,7 +197,6 @@ describe("reading ingest dispatch", () => {
     ).resolves.toBe("not-configured");
 
     expect(claimLease).not.toHaveBeenCalled();
-    expect(complete).not.toHaveBeenCalled();
   });
 
   it("uses a stable, opaque conversation id per user and book", () => {
@@ -287,30 +304,38 @@ describe("reading ingest dispatch", () => {
     expect(reclaim.mock.invocationCallOrder.at(-1)).toBeLessThan(drain.mock.invocationCallOrder[0]);
   });
 
-  it("does not inspect or dispatch the queue without agent configuration", async () => {
+  it("drains the queue without a remote agent URL", async () => {
+    getNextDue.mockResolvedValueOnce(unit).mockResolvedValueOnce(null);
+
     await drainReadingIngestQueue("user-1", {
       agentUrl: "",
-      agentSecret: "",
+      agentSecret: "test-secret",
       dependencies: { reclaim, getNextDue, dispatch },
     });
 
-    expect(reclaim).not.toHaveBeenCalled();
-    expect(getNextDue).not.toHaveBeenCalled();
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(reclaim).toHaveBeenCalledWith("user-1");
+    expect(dispatch).toHaveBeenCalledWith(
+      unit,
+      expect.objectContaining({ agentUrl: "", agentSecret: "test-secret" }),
+    );
   });
 
-  it("does not sweep the database without agent configuration", async () => {
+  it("sweeps the database without a remote agent URL", async () => {
+    listUserIds.mockResolvedValue(["user-1"]);
+
     await expect(
       sweepReadingIngestQueues({
         agentUrl: "",
-        agentSecret: "",
+        agentSecret: "test-secret",
         dependencies: { listUserIds, reclaim, drain },
       }),
-    ).resolves.toBe(0);
+    ).resolves.toBe(1);
 
-    expect(listUserIds).not.toHaveBeenCalled();
-    expect(reclaim).not.toHaveBeenCalled();
-    expect(drain).not.toHaveBeenCalled();
+    expect(reclaim).toHaveBeenCalledWith("user-1");
+    expect(drain).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({ agentUrl: "", agentSecret: "test-secret", maxUnits: 1 }),
+    );
   });
 });
 
@@ -328,12 +353,11 @@ describe("local reading ingest sweep", () => {
     resetLocalReadingIngestSweep();
   });
 
-  it("does not start without a local sidecar, database, or outside development", () => {
+  it("does not start without a database or secret, or outside development", () => {
     expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, isDev: false })).toBe(false);
     expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, nodeEnv: "test" })).toBe(false);
     expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, vitest: "true" })).toBe(false);
     expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, databaseUrl: "" })).toBe(false);
-    expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, agentUrl: "" })).toBe(false);
     expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, agentSecret: "" })).toBe(false);
     expect(shouldStartLocalReadingIngestSweep(readyEnv)).toBe(true);
   });
