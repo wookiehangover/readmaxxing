@@ -4,6 +4,7 @@ import { useAuth } from "~/lib/context/auth-context";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 
 export const READER_DWELL_MS = 10_000;
+const READER_DWELL_RETRY_DELAYS_MS = [250, 500, 1_000] as const;
 
 export interface ReadingDwellUnit {
   unitKind: "epub-spine" | "pdf-page";
@@ -21,10 +22,37 @@ interface UseReaderDwellOptions {
 }
 
 const sentFingerprints = new Set<string>();
+const inFlightFingerprints = new Set<string>();
 
 async function computeFingerprint(parts: readonly string[]): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(parts.join("")));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function postDwellUnit(url: string, body: string): Promise<boolean> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+      if (response.ok) return true;
+
+      const canRetry = response.status >= 500 && attempt < READER_DWELL_RETRY_DELAYS_MS.length;
+      if (!canRetry) {
+        console.error(`Failed to ingest reader dwell unit: HTTP ${response.status}`);
+        return false;
+      }
+    } catch (error) {
+      if (attempt >= READER_DWELL_RETRY_DELAYS_MS.length) {
+        console.error("Failed to ingest reader dwell unit:", error);
+        return false;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, READER_DWELL_RETRY_DELAYS_MS[attempt]));
+  }
 }
 
 export function useReaderDwell({
@@ -69,23 +97,30 @@ export function useReaderDwell({
     };
 
     const send = () => {
-      if (!fingerprint || sentFingerprints.has(fingerprint)) return;
-      sentFingerprints.add(fingerprint);
-      void fetch(`/api/books/${encodeURIComponent(bookId)}/artifacts/ingest`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fingerprint,
+      if (
+        !fingerprint ||
+        sentFingerprints.has(fingerprint) ||
+        inFlightFingerprints.has(fingerprint)
+      ) {
+        return;
+      }
+
+      const sendingFingerprint = fingerprint;
+      inFlightFingerprints.add(sendingFingerprint);
+      void postDwellUnit(
+        `/api/books/${encodeURIComponent(bookId)}/artifacts/ingest`,
+        JSON.stringify({
+          fingerprint: sendingFingerprint,
           unitKind,
           locator,
           chapterLabel,
           text,
         }),
-      })
-        .then((response) => {
-          if (!response.ok) throw new Error(`Ingest returned ${response.status}`);
+      )
+        .then((wasSent) => {
+          if (wasSent) sentFingerprints.add(sendingFingerprint);
         })
-        .catch((error) => console.error("Failed to ingest reader dwell unit:", error));
+        .finally(() => inFlightFingerprints.delete(sendingFingerprint));
     };
 
     const resume = () => {

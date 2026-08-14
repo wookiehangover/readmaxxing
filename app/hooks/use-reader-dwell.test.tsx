@@ -49,6 +49,11 @@ async function advance(milliseconds: number) {
   await act(async () => vi.advanceTimersByTimeAsync(milliseconds));
 }
 
+function unmount(root: Root) {
+  act(() => root.unmount());
+  roots = roots.filter((candidate) => candidate !== root);
+}
+
 beforeEach(() => {
   testNumber += 1;
   vi.useFakeTimers();
@@ -70,6 +75,7 @@ beforeEach(() => {
   mocks.auth.user = { id: `reader-${testNumber}` };
   mocks.workspace.activeClusterBookIdRef.current = null;
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+  vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -78,6 +84,7 @@ afterEach(() => {
   document.body.innerHTML = "";
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("useReaderDwell", () => {
@@ -146,11 +153,96 @@ describe("useReaderDwell", () => {
 
     await advance(READER_DWELL_MS);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    act(() => first.root.unmount());
-    roots = roots.filter((root) => root !== first.root);
+    unmount(first.root);
 
     await render(unit);
     await advance(READER_DWELL_MS);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries network failures, then leaves the fingerprint unsent for a later dwell", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Network unavailable"));
+    const unit: ReadingDwellUnit = {
+      unitKind: "pdf-page",
+      locator: "page:11",
+      text: "A page whose ingest request cannot reach the server",
+    };
+    const first = await render(unit);
+
+    await advance(READER_DWELL_MS);
+    await act(async () => vi.runAllTimersAsync());
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    unmount(first.root);
+
+    fetchMock.mockResolvedValue(new Response(null, { status: 202 }));
+    const second = await render(unit);
+    await advance(READER_DWELL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    unmount(second.root);
+
+    await render(unit);
+    await advance(READER_DWELL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
+  it("retries 5xx responses and caches the fingerprint only after success", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 502 }))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }));
+    const unit: ReadingDwellUnit = {
+      unitKind: "epub-spine",
+      locator: "chapter-retry.xhtml",
+      text: "Chapter text that succeeds after temporary server failures",
+    };
+    const first = await render(unit);
+
+    await advance(READER_DWELL_MS);
+    await act(async () => vi.runAllTimersAsync());
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    unmount(first.root);
+
+    await render(unit);
+    await advance(READER_DWELL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not loop on non-authentication 4xx responses", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 400 }));
+    await render({
+      unitKind: "pdf-page",
+      locator: "page:12",
+      text: "A malformed dwell unit is rejected by the server",
+    });
+
+    await advance(READER_DWELL_MS);
+    await act(async () => vi.runAllTimersAsync());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a 401 unsent until authentication changes", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }));
+    const unit: ReadingDwellUnit = {
+      unitKind: "epub-spine",
+      locator: "chapter-auth.xhtml",
+      text: "Chapter text sent again after signing back in",
+    };
+    const { rerender } = await render(unit);
+
+    await advance(READER_DWELL_MS);
+    await act(async () => vi.runAllTimersAsync());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const user = mocks.auth.user;
+    mocks.auth.isAuthenticated = false;
+    mocks.auth.user = null;
+    await rerender(unit);
+    mocks.auth.isAuthenticated = true;
+    mocks.auth.user = user;
+    await rerender(unit);
+    await advance(READER_DWELL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
