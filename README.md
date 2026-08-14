@@ -72,7 +72,8 @@ pnpm --filter reading-agent dev -- --port 5174
 ```
 
 If `READING_AGENT_URL` is unset or the sidecar is unavailable, reading requests still succeed
-and pending ingest units can be retried.
+and pending ingest units can be retried. In `pnpm dev`, a 60s local sweep reclaims expired
+leases and retries due units so ingest does not wait for the Vercel cron.
 
 The app works fully offline without environment variables. Sync, cloud storage, and production chat resume require Postgres, WebAuthn config, Vercel Blob, and Redis — see [Environment variables](#environment-variables).
 

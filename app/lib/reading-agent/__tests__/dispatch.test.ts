@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ReadingArtifactRow,
   ReadingIngestUnitRow,
@@ -7,6 +7,9 @@ import {
   dispatchReadingIngestUnit,
   drainReadingIngestQueue,
   readingConversationId,
+  resetLocalReadingIngestSweep,
+  shouldStartLocalReadingIngestSweep,
+  startLocalReadingIngestSweep,
   sweepReadingIngestQueues,
 } from "../dispatch.server";
 import { ReadingScribeCallError } from "../flue-client.server";
@@ -193,12 +196,30 @@ describe("reading ingest dispatch", () => {
       drainReadingIngestQueue("user-1", {
         agentUrl: "http://localhost:5174/agents/reading-scribe",
         agentSecret: "test-secret",
-        dependencies: { getNextDue, dispatch },
+        dependencies: { reclaim, getNextDue, dispatch },
       }),
     ).resolves.toBeUndefined();
 
+    expect(reclaim).toHaveBeenCalledWith("user-1");
     expect(getNextDue).toHaveBeenCalledWith("user-1");
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("reclaims expired leases before inspecting the due queue", async () => {
+    getNextDue.mockResolvedValue(unit);
+
+    await drainReadingIngestQueue("user-1", {
+      agentUrl: "http://localhost:5174/agents/reading-scribe",
+      agentSecret: "test-secret",
+      maxUnits: 1,
+      dependencies: { reclaim, getNextDue, dispatch },
+    });
+
+    expect(reclaim).toHaveBeenCalledWith("user-1");
+    expect(getNextDue).toHaveBeenCalledWith("user-1");
+    expect(reclaim.mock.invocationCallOrder[0]).toBeLessThan(
+      getNextDue.mock.invocationCallOrder[0],
+    );
   });
 
   it("starts the next due unit only after the current dispatch settles", async () => {
@@ -220,7 +241,7 @@ describe("reading ingest dispatch", () => {
     const drain = drainReadingIngestQueue("user-1", {
       agentUrl: "http://localhost:5174/agents/reading-scribe",
       agentSecret: "test-secret",
-      dependencies: { getNextDue, dispatch },
+      dependencies: { reclaim, getNextDue, dispatch },
     });
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1));
     expect(getNextDue).toHaveBeenCalledTimes(1);
@@ -243,7 +264,7 @@ describe("reading ingest dispatch", () => {
       agentUrl: "http://localhost:5174/agents/reading-scribe",
       agentSecret: "test-secret",
       maxUnits: 1,
-      dependencies: { getNextDue, dispatch },
+      dependencies: { reclaim, getNextDue, dispatch },
     });
 
     expect(getNextDue).toHaveBeenCalledTimes(1);
@@ -270,9 +291,10 @@ describe("reading ingest dispatch", () => {
     await drainReadingIngestQueue("user-1", {
       agentUrl: "",
       agentSecret: "",
-      dependencies: { getNextDue, dispatch },
+      dependencies: { reclaim, getNextDue, dispatch },
     });
 
+    expect(reclaim).not.toHaveBeenCalled();
     expect(getNextDue).not.toHaveBeenCalled();
     expect(dispatch).not.toHaveBeenCalled();
   });
@@ -289,5 +311,41 @@ describe("reading ingest dispatch", () => {
     expect(listUserIds).not.toHaveBeenCalled();
     expect(reclaim).not.toHaveBeenCalled();
     expect(drain).not.toHaveBeenCalled();
+  });
+});
+
+describe("local reading ingest sweep", () => {
+  const readyEnv = {
+    isDev: true,
+    nodeEnv: "development",
+    vitest: undefined,
+    databaseUrl: "postgres://configured",
+    agentUrl: "http://localhost:5174/agents/reading-scribe",
+    agentSecret: "test-secret",
+  };
+
+  afterEach(() => {
+    resetLocalReadingIngestSweep();
+  });
+
+  it("does not start without a local sidecar, database, or outside development", () => {
+    expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, isDev: false })).toBe(false);
+    expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, nodeEnv: "test" })).toBe(false);
+    expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, vitest: "true" })).toBe(false);
+    expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, databaseUrl: "" })).toBe(false);
+    expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, agentUrl: "" })).toBe(false);
+    expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, agentSecret: "" })).toBe(false);
+    expect(shouldStartLocalReadingIngestSweep(readyEnv)).toBe(true);
+  });
+
+  it("starts once, sweeps immediately, and uses a 60s interval", () => {
+    const sweep = vi.fn().mockResolvedValue(1);
+    const setIntervalFn = vi.fn().mockReturnValue({ unref: vi.fn() });
+
+    expect(startLocalReadingIngestSweep({ env: readyEnv, sweep, setIntervalFn })).toBe(true);
+    expect(startLocalReadingIngestSweep({ env: readyEnv, sweep, setIntervalFn })).toBe(false);
+
+    expect(sweep).toHaveBeenCalledOnce();
+    expect(setIntervalFn).toHaveBeenCalledWith(expect.any(Function), 60_000);
   });
 });

@@ -23,6 +23,14 @@ import { useSync, SyncContext } from "~/lib/sync/use-sync";
 import { COLOR_THEMES } from "~/lib/color-themes";
 import { setSWRegistration } from "~/lib/sw-registry";
 
+export async function loader() {
+  if (import.meta.env.DEV) {
+    const { startLocalReadingIngestSweep } = await import("~/lib/reading-agent/dispatch.server");
+    startLocalReadingIngestSweep();
+  }
+  return null;
+}
+
 // Build a minimal JSON blob of non-default theme CSS variables for the FOUC script.
 // This is serialized at build/SSR time and embedded in the inline script.
 const colorThemeVarsJson = JSON.stringify(

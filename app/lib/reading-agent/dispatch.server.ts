@@ -63,6 +63,7 @@ interface DispatchDependencies {
 }
 
 interface DrainDependencies {
+  reclaim: typeof reclaimExpiredReadingAgentLease;
   getNextDue: typeof getNextDueReadingIngestUnit;
   dispatch: typeof dispatchReadingIngestUnit;
 }
@@ -139,6 +140,7 @@ export async function dispatchReadingIngestUnit(
 }
 
 const DEFAULT_DRAIN_DEPENDENCIES: DrainDependencies = {
+  reclaim: reclaimExpiredReadingAgentLease,
   getNextDue: getNextDueReadingIngestUnit,
   dispatch: dispatchReadingIngestUnit,
 };
@@ -157,6 +159,8 @@ export async function drainReadingIngestQueue(
   if (!agentUrl || !agentSecret) return;
 
   const dependencies = { ...DEFAULT_DRAIN_DEPENDENCIES, ...options.dependencies };
+  await dependencies.reclaim(userId);
+
   const maxUnits = options.maxUnits ?? Number.POSITIVE_INFINITY;
   for (let started = 0; started < maxUnits; started += 1) {
     const unit = await dependencies.getNextDue(userId);
@@ -203,4 +207,73 @@ export function scheduleReadingIngestQueue(userId: string): void {
       console.error("[reading-agent] Background ingest failed:", jobError);
     });
   }
+}
+
+const LOCAL_READING_INGEST_SWEEP_MS = 60_000;
+const localSweepGuardKey = Symbol.for("readmaxxing.localReadingIngestSweep");
+
+interface LocalSweepGuard {
+  started: boolean;
+  interval?: ReturnType<typeof setInterval>;
+}
+
+function getLocalSweepGuard(): LocalSweepGuard {
+  const globalRef = globalThis as typeof globalThis & {
+    [localSweepGuardKey]?: LocalSweepGuard;
+  };
+  globalRef[localSweepGuardKey] ??= { started: false };
+  return globalRef[localSweepGuardKey];
+}
+
+export function shouldStartLocalReadingIngestSweep(
+  env: {
+    isDev?: boolean;
+    nodeEnv?: string;
+    vitest?: string;
+    databaseUrl?: string;
+    agentUrl?: string;
+    agentSecret?: string;
+  } = {},
+): boolean {
+  const isDev = env.isDev ?? import.meta.env.DEV;
+  const nodeEnv = env.nodeEnv ?? process.env.NODE_ENV;
+  const vitest = "vitest" in env ? env.vitest : process.env.VITEST;
+  const databaseUrl = env.databaseUrl ?? process.env.DATABASE_URL;
+  const agentUrl = env.agentUrl ?? process.env.READING_AGENT_URL;
+  const agentSecret = env.agentSecret ?? process.env.READING_AGENT_SECRET;
+  return Boolean(isDev && nodeEnv !== "test" && !vitest && databaseUrl && agentUrl && agentSecret);
+}
+
+export function resetLocalReadingIngestSweep(): void {
+  const guard = getLocalSweepGuard();
+  if (guard.interval) clearInterval(guard.interval);
+  guard.started = false;
+  guard.interval = undefined;
+}
+
+export function startLocalReadingIngestSweep(
+  options: {
+    env?: Parameters<typeof shouldStartLocalReadingIngestSweep>[0];
+    sweep?: () => Promise<number>;
+    setIntervalFn?: typeof setInterval;
+  } = {},
+): boolean {
+  if (!shouldStartLocalReadingIngestSweep(options.env)) return false;
+
+  const guard = getLocalSweepGuard();
+  if (guard.started) return false;
+  guard.started = true;
+
+  const sweep = options.sweep ?? sweepReadingIngestQueues;
+  const schedule = options.setIntervalFn ?? setInterval;
+  console.info("[reading-agent] Local ingest sweep started (every 60s).");
+  const run = () => {
+    void sweep().catch((error) => {
+      console.error("[reading-agent] Local ingest sweep failed:", error);
+    });
+  };
+  run();
+  guard.interval = schedule(run, LOCAL_READING_INGEST_SWEEP_MS);
+  guard.interval.unref?.();
+  return true;
 }
