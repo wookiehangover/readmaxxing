@@ -8,7 +8,8 @@ A [Flue](https://flueframework.com) agent project.
 pnpm install
 ```
 
-Then add a model provider API key to `.env` (any [provider Pi supports](https://pi.dev/docs/latest/providers#api-keys)).
+Then add a model provider API key and `READING_AGENT_SECRET` to `.env`. Use the same
+secret in the web app's `.env.local`.
 
 ## Talk to your agent
 
@@ -21,10 +22,10 @@ Conversations are durable — pass `--id <id>` to continue one.
 ## Develop
 
 ```sh
-pnpm run dev
+pnpm run dev -- --port 5174
 ```
 
-The ReadingScribe agent is served at `http://localhost:5173/agents/reading-scribe` — see `src/app.ts` for the route map and an example request.
+The ReadingScribe agent is served at `http://localhost:5174/agents/reading-scribe` — see `src/app.ts` for the route map and an authenticated example request.
 
 ## Deploy
 

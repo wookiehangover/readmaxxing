@@ -7,6 +7,7 @@ import {
   type ReadingIngestUnitRow,
   type ReadingUnitKind,
 } from "~/lib/database/reading-artifact/reading-artifact";
+import { scheduleReadingIngestUnit } from "~/lib/reading-agent/dispatch.server";
 
 const MIN_READING_TEXT_LENGTH = 20;
 const FINGERPRINT_PATTERN = /^[a-f0-9]{64}$/;
@@ -130,6 +131,7 @@ export async function action({
     ...payload,
   });
   if (inserted) {
+    scheduleReadingIngestUnit(inserted);
     return Response.json({ deduplicated: false, unit: serializeUnit(inserted) }, { status: 202 });
   }
 
@@ -140,6 +142,9 @@ export async function action({
   );
   if (!existing) {
     return Response.json({ error: "Ingest unit conflict could not be resolved" }, { status: 409 });
+  }
+  if (existing.status === "pending" || existing.status === "error") {
+    scheduleReadingIngestUnit(existing);
   }
   return Response.json({ deduplicated: true, unit: serializeUnit(existing) });
 }

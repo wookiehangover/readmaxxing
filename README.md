@@ -55,6 +55,25 @@ pnpm run dev
 
 Open [http://localhost:5173](http://localhost:5173) and drop an `.epub` or `.pdf` file to get started.
 
+### Reading agent sidecar
+
+To process reading artifacts locally, set matching `READING_AGENT_SECRET` values in
+`.env.local` and `packages/reading-agent/.env`, then set:
+
+```sh
+READING_AGENT_URL=http://localhost:5174/agents/reading-scribe
+```
+
+Run the web app and sidecar in separate terminals:
+
+```sh
+pnpm dev
+pnpm --filter reading-agent dev -- --port 5174
+```
+
+If `READING_AGENT_URL` is unset or the sidecar is unavailable, reading requests still succeed
+and pending ingest units can be retried.
+
 The app works fully offline without environment variables. Sync, cloud storage, and production chat resume require Postgres, WebAuthn config, Vercel Blob, and Redis — see [Environment variables](#environment-variables).
 
 ## Environment variables
@@ -72,6 +91,7 @@ All environment variables are optional for offline reading. Sync and related fea
 - `WEBAUTHN_RP_ORIGIN` — WebAuthn origin URL (e.g. `http://localhost:5173` for dev)
 - `BLOB_READ_WRITE_TOKEN` — Vercel Blob storage token
 - `REDIS_URL` — Redis for resumable AI chat streaming (Vercel KV, Upstash, or any Redis-compatible service). Required in production; in development the chat panel works without it but mid-stream reconnect is disabled.
+- `READING_AGENT_URL` / `READING_AGENT_SECRET` — optional ReadingScribe sidecar mount URL and shared bearer secret.
 
 ## Database setup
 

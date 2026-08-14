@@ -17,6 +17,7 @@
     "@ai-sdk/gateway": "^4.0.16",
     "@ai-sdk/react": "^4.0.23",
     "@base-ui/react": "^1.6.0",
+    "@flue/sdk": "^2.0.3",
     "@fontsource-variable/geist": "^5.2.9",
     "@orama/orama": "^3.1.18",
     "@react-router/node": "^8",

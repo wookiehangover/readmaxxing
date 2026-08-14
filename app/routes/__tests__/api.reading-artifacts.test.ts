@@ -15,6 +15,10 @@ vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   listReadingArtifactRevisions: vi.fn(),
 }));
 
+vi.mock("~/lib/reading-agent/dispatch.server", () => ({
+  scheduleReadingIngestUnit: vi.fn(),
+}));
+
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import {
@@ -23,6 +27,7 @@ import {
   insertReadingIngestUnit,
   listReadingArtifactRevisions,
 } from "~/lib/database/reading-artifact/reading-artifact";
+import { scheduleReadingIngestUnit } from "~/lib/reading-agent/dispatch.server";
 import { loader as artifactsLoader } from "~/routes/api.books.$bookId.artifacts";
 import {
   action as ingestAction,
@@ -37,6 +42,7 @@ const artifactsMock = getCurrentReadingArtifacts as ReturnType<typeof vi.fn>;
 const existingUnitMock = getReadingIngestUnitByFingerprint as ReturnType<typeof vi.fn>;
 const insertUnitMock = insertReadingIngestUnit as ReturnType<typeof vi.fn>;
 const revisionsMock = listReadingArtifactRevisions as ReturnType<typeof vi.fn>;
+const scheduleMock = scheduleReadingIngestUnit as ReturnType<typeof vi.fn>;
 const originalDatabaseUrl = process.env.DATABASE_URL;
 
 const text = "This is enough normalized reading text to ingest.";
@@ -88,6 +94,7 @@ beforeEach(() => {
   existingUnitMock.mockReset().mockResolvedValue(unit);
   insertUnitMock.mockReset().mockResolvedValue(unit);
   revisionsMock.mockReset().mockResolvedValue([]);
+  scheduleMock.mockReset();
 });
 
 afterEach(() => {
@@ -161,6 +168,7 @@ describe("reading artifact ingest API", () => {
       deduplicated: false,
       unit: { id: "unit-1", fingerprint, status: "pending" },
     });
+    expect(scheduleMock).toHaveBeenCalledWith(unit);
   });
 
   it("returns the existing unit without creating another pending row", async () => {
@@ -178,6 +186,7 @@ describe("reading artifact ingest API", () => {
     });
     expect(insertUnitMock).toHaveBeenCalledTimes(1);
     expect(existingUnitMock).toHaveBeenCalledWith("user-1", "book-1", fingerprint);
+    expect(scheduleMock).toHaveBeenCalledWith(unit);
   });
 });
 

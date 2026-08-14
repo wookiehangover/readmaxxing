@@ -23,6 +23,9 @@ importers:
       '@base-ui/react':
         specifier: ^1.6.0
         version: 1.6.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@flue/sdk':
+        specifier: ^2.0.3
+        version: 2.0.3
       '@fontsource-variable/geist':
         specifier: ^5.2.9
         version: 5.2.9
@@ -1204,6 +1207,11 @@ packages:
     resolution: {integrity: sha512-6+xRpZaWuHXEqnhBjae+VmQI9Uaqw5Uzu/ScpO+W7ww9Zp3lHSNBoNjFcUxhrCyc7pRGQzyDjhKzloqrPHERiQ==}
     hasBin: true
 
+  '@durable-streams/client@0.2.6':
+    resolution: {integrity: sha512-uHKKbWpsKLhFMeGjG0PgM6LXE3oEIi7FHKlJZkmYGxcqd4Yjjd/QEvnQnDzteRP4Av1uJVM8qjTL7kfKsgeS/w==}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
+
   '@earendil-works/pi-agent-core@0.83.0':
     resolution: {integrity: sha512-RorGp9OH5l3ElpuC5a5ZQ2eWcchZGXflXRzVGkV99y3y6tT+LLNyxoYIdVKvTKWEObwhExeQbTH0fI2tE4iX4g==}
     engines: {node: '>=22.19.0'}
@@ -1408,6 +1416,9 @@ packages:
     resolution: {integrity: sha512-RfWyZG9x2hlDb1264XTESX42tzzG3AA8er3XjaTIxIMh28pTD91zKd9Jh6PFXKeTkZegLsGiJKDxmiCddlyeug==}
     engines: {node: '>=22.19.0'}
 
+  '@flue/sdk@2.0.3':
+    resolution: {integrity: sha512-ZD5HZGeVxWu0/G6KYrpOh1RGGBpvk/i9QojWMykNzVrH0w4g3nTPdZN9kY4JvYh/+aRtqTrwb3c1Tb3hUm8BIg==}
+
   '@flue/vite@2.0.3':
     resolution: {integrity: sha512-Klrl+vFzp+z9sYQ+yc7k/yxGrjWMvjoeKtzEZ+wgYwzLfai1sR9iYlMrpLg2ORTH8KqZ+kHvKR0Y2l8wHIvSIA==}
     engines: {node: '>=22.19.0'}
@@ -1510,6 +1521,9 @@ packages:
 
   '@mermaid-js/parser@1.1.0':
     resolution: {integrity: sha512-gxK9ZX2+Fex5zu8LhRQoMeMPEHbc73UKZ0FQ54YrQtUxE1VVhMwzeNtKRPAu5aXks4FasbMe4xB4bWrmq6Jlxw==}
+
+  '@microsoft/fetch-event-source@2.0.1':
+    resolution: {integrity: sha512-W6CLUJ2eBMw3Rec70qrsEW0jOm/3twwJv21mrmj2yORiaVmVYGS4sSS5yUwvQc1ZlDLYGPnClVWmUUMagKNsfA==}
 
   '@mistralai/mistralai@2.2.6':
     resolution: {integrity: sha512-W8pX7zHxjJvMIpw8JMxeJEleapXX0Q9NPszdNzqkM3MIEoIGPObdodujj+WHteXEvGfaP/AMwlNyRfEzSY6dQQ==}
@@ -8044,6 +8058,11 @@ snapshots:
       which: 4.0.0
       yocto-spinner: 1.1.0
 
+  '@durable-streams/client@0.2.6':
+    dependencies:
+      '@microsoft/fetch-event-source': 2.0.1
+      fastq: 1.20.1
+
   '@earendil-works/pi-agent-core@0.83.0(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@earendil-works/pi-ai': 0.83.0(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(ws@8.21.0)(zod@4.4.3)
@@ -8264,6 +8283,10 @@ snapshots:
       - ws
       - zod
 
+  '@flue/sdk@2.0.3':
+    dependencies:
+      '@durable-streams/client': 0.2.6
+
   '@flue/vite@2.0.3(@ai-sdk/react@4.0.23(react@19.2.7)(zod@4.4.3))(@babel/core@7.29.7)(@babel/runtime@7.29.7)(@cloudflare/workers-types@5.20260814.1)(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(@modelcontextprotocol/server@2.0.0)(ai@7.0.22(zod@4.4.3))(hono@4.12.15)(react@19.2.7)(rolldown@1.1.5)(typescript@7.0.2)(vite@8.1.4(@types/node@22.19.19)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@flue/runtime': 2.0.3(@modelcontextprotocol/sdk@1.29.0(@cfworker/json-schema@4.1.1)(zod@4.4.3))(typescript@7.0.2)(ws@8.21.0)(zod@4.4.3)
@@ -8395,6 +8418,8 @@ snapshots:
   '@mermaid-js/parser@1.1.0':
     dependencies:
       langium: 4.2.2
+
+  '@microsoft/fetch-event-source@2.0.1': {}
 
   '@mistralai/mistralai@2.2.6(@opentelemetry/api@1.9.0)':
     dependencies:
