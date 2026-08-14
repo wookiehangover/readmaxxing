@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("~/lib/database/auth-middleware", () => ({ getSessionFromRequest: mocks.auth }));
 vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   getReadingAgentSchemaHealth: mocks.schema,
-  getLiveReadingAgentLease: mocks.lease,
+  getCurrentReadingAgentLease: mocks.lease,
   stopReadingIngestUnit: mocks.stop,
   retryReadingIngestUnit: mocks.retry,
   resetReadingIngestUnit: mocks.reset,
@@ -132,7 +132,29 @@ describe("reading-agent actions API", () => {
     expect(mocks.reclaim).not.toHaveBeenCalled();
   });
 
-  it("returns stopped:false when there is no live lease", async () => {
+  it("stops an active in-app host from an expired current lease", async () => {
+    mocks.stopHost.mockResolvedValue(true);
+    mocks.lease.mockResolvedValue({
+      unitId: "unit-expired",
+      bookId: "book-expired",
+      expiresAt: new Date(0),
+      chapterLabel: "Chapter 14",
+      locator: "chapter-14.xhtml",
+    });
+
+    const response = await action({ request: request({ action: "stop" }) });
+
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      stopped: true,
+      unitId: "unit-expired",
+    });
+    expect(mocks.stopHost).toHaveBeenCalledOnce();
+    expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-expired");
+    expect(mocks.reclaim).not.toHaveBeenCalled();
+  });
+
+  it("returns stopped:false when there is no current lease", async () => {
     const response = await action({ request: request({ action: "stop" }) });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true, stopped: false });
@@ -179,7 +201,7 @@ describe("reading-agent actions API", () => {
     expect(mocks.retry).not.toHaveBeenCalled();
   });
 
-  it("stops then retries a processing unit without incrementing attempts", async () => {
+  it("aborts a host from an expired current lease before retrying a processing unit", async () => {
     mocks.getUnit.mockResolvedValue({
       id: "unit-1",
       bookId: "book-1",
@@ -192,7 +214,7 @@ describe("reading-agent actions API", () => {
     mocks.lease.mockResolvedValue({
       unitId: "unit-1",
       bookId: "book-1",
-      expiresAt: new Date("2026-01-01T00:05:00Z"),
+      expiresAt: new Date(0),
       chapterLabel: "Chapter 1",
       locator: "chapter-1.xhtml",
     });
@@ -244,7 +266,7 @@ describe("reading-agent actions API", () => {
     expect(mocks.reset).not.toHaveBeenCalled();
   });
 
-  it("stops a processing unit before resetting it", async () => {
+  it("aborts a host from an expired current lease before resetting a processing unit", async () => {
     mocks.stopHost.mockResolvedValue(true);
     mocks.getUnit.mockResolvedValue({
       id: "unit-1",
@@ -258,7 +280,7 @@ describe("reading-agent actions API", () => {
     mocks.lease.mockResolvedValue({
       unitId: "unit-1",
       bookId: "book-1",
-      expiresAt: new Date("2026-01-01T00:05:00Z"),
+      expiresAt: new Date(0),
       chapterLabel: "Chapter 1",
       locator: "chapter-1.xhtml",
     });

@@ -1,6 +1,6 @@
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import {
-  getLiveReadingAgentLease,
+  getCurrentReadingAgentLease,
   getReadingAgentSchemaHealth,
   getReadingIngestUnitForUser,
   resetReadingIngestUnit,
@@ -61,7 +61,7 @@ async function startQueue(userId: string): Promise<Response> {
 }
 
 async function stopQueue(userId: string): Promise<Response> {
-  const lease = await getLiveReadingAgentLease(userId);
+  const lease = await getCurrentReadingAgentLease(userId);
   if (!lease) {
     await reclaimStaleReadingAgentLease(userId);
     return Response.json({ ok: true, stopped: false });
@@ -80,7 +80,7 @@ async function retryUnit(userId: string, unitId: string): Promise<Response> {
   }
 
   if (unit.status === "processing") {
-    const lease = await getLiveReadingAgentLease(userId);
+    const lease = await getCurrentReadingAgentLease(userId);
     if (lease?.unitId === unit.id) await abortConversation(userId, lease.bookId);
   }
 
@@ -97,7 +97,7 @@ async function resetUnit(userId: string, unitId: string): Promise<Response> {
   }
 
   if (unit.status === "processing") {
-    const lease = await getLiveReadingAgentLease(userId);
+    const lease = await getCurrentReadingAgentLease(userId);
     if (lease?.unitId === unit.id) await abortConversation(userId, lease.bookId);
     await stopReadingIngestUnit(userId, unit.id);
   }
