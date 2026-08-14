@@ -19,6 +19,7 @@ import {
   insertReadingAgentUsage,
   insertReadingArtifactRevision,
   insertReadingIngestUnit,
+  listReadingIngestSweepUserIds,
   readingAgentRetryDelaySeconds,
   reclaimExpiredReadingAgentLease,
   releaseReadingIngestUnit,
@@ -118,6 +119,20 @@ describe("reading artifact persistence", () => {
     expect(extractSqlText(query)).toContain("attempt_count < 8");
     expect(extractSqlText(query)).toContain("NOT EXISTS");
     expect(extractValues(query)).toContain("user-1");
+  });
+
+  it("sweeps only due or stale users without a live lease", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [{ userId: "user-1" }] });
+
+    await expect(listReadingIngestSweepUserIds()).resolves.toEqual(["user-1"]);
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    const text = extractSqlText(query);
+    expect(text).toContain("next_attempt_at <= NOW()");
+    expect(text).toContain("claimed_at <= NOW()");
+    expect(text).toContain("expires_at <= NOW()");
+    expect(text).toContain("live_lease.expires_at > NOW()");
+    expect(text).toContain("attempt_count < 8");
   });
 
   it("reclaims an expired lease and stale processing unit", async () => {

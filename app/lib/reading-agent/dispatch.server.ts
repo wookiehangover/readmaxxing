@@ -5,6 +5,8 @@ import {
   completeReadingIngestUnit,
   getCurrentReadingArtifacts,
   getNextDueReadingIngestUnit,
+  listReadingIngestSweepUserIds,
+  reclaimExpiredReadingAgentLease,
   releaseReadingIngestUnit,
   type ReadingArtifactRow,
   type ReadingArtifactUpdate,
@@ -62,6 +64,12 @@ interface DispatchDependencies {
 interface DrainDependencies {
   getNextDue: typeof getNextDueReadingIngestUnit;
   dispatch: typeof dispatchReadingIngestUnit;
+}
+
+interface SweepDependencies {
+  listUserIds: typeof listReadingIngestSweepUserIds;
+  reclaim: typeof reclaimExpiredReadingAgentLease;
+  drain: typeof drainReadingIngestQueue;
 }
 
 const DEFAULT_DEPENDENCIES: DispatchDependencies = {
@@ -128,6 +136,7 @@ export async function drainReadingIngestQueue(
   options: {
     agentUrl?: string;
     agentSecret?: string;
+    maxUnits?: number;
     dependencies?: Partial<DrainDependencies>;
   } = {},
 ): Promise<void> {
@@ -136,13 +145,40 @@ export async function drainReadingIngestQueue(
   if (!agentUrl || !agentSecret) return;
 
   const dependencies = { ...DEFAULT_DRAIN_DEPENDENCIES, ...options.dependencies };
-  while (true) {
+  const maxUnits = options.maxUnits ?? Number.POSITIVE_INFINITY;
+  for (let started = 0; started < maxUnits; started += 1) {
     const unit = await dependencies.getNextDue(userId);
     if (!unit) return;
 
     const result = await dependencies.dispatch(unit, { agentUrl, agentSecret });
     if (result === "already-leased" || result === "not-configured") return;
   }
+}
+
+const DEFAULT_SWEEP_DEPENDENCIES: SweepDependencies = {
+  listUserIds: listReadingIngestSweepUserIds,
+  reclaim: reclaimExpiredReadingAgentLease,
+  drain: drainReadingIngestQueue,
+};
+
+export async function sweepReadingIngestQueues(
+  options: {
+    agentUrl?: string;
+    agentSecret?: string;
+    dependencies?: Partial<SweepDependencies>;
+  } = {},
+): Promise<number> {
+  const agentUrl = options.agentUrl ?? process.env.READING_AGENT_URL;
+  const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
+  if (!agentUrl || !agentSecret) return 0;
+
+  const dependencies = { ...DEFAULT_SWEEP_DEPENDENCIES, ...options.dependencies };
+  const userIds = await dependencies.listUserIds();
+  await Promise.all(userIds.map((userId) => dependencies.reclaim(userId)));
+  await Promise.all(
+    userIds.map((userId) => dependencies.drain(userId, { agentUrl, agentSecret, maxUnits: 1 })),
+  );
+  return userIds.length;
 }
 
 export function scheduleReadingIngestQueue(userId: string): void {

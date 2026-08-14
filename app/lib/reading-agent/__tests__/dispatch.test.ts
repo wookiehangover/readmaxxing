@@ -7,6 +7,7 @@ import {
   dispatchReadingIngestUnit,
   drainReadingIngestQueue,
   readingConversationId,
+  sweepReadingIngestQueues,
 } from "../dispatch.server";
 
 const unit: ReadingIngestUnitRow = {
@@ -54,6 +55,9 @@ const release = vi.fn();
 const callAgent = vi.fn();
 const getNextDue = vi.fn();
 const dispatch = vi.fn();
+const listUserIds = vi.fn();
+const reclaim = vi.fn();
+const drain = vi.fn();
 
 beforeEach(() => {
   claimLease.mockReset().mockResolvedValue(leased);
@@ -62,6 +66,9 @@ beforeEach(() => {
   release.mockReset().mockResolvedValue(undefined);
   getNextDue.mockReset().mockResolvedValue(null);
   dispatch.mockReset().mockResolvedValue("done");
+  listUserIds.mockReset().mockResolvedValue([]);
+  reclaim.mockReset().mockResolvedValue(0);
+  drain.mockReset().mockResolvedValue(undefined);
   callAgent.mockReset().mockResolvedValue({
     artifacts: {
       outline: { status: "unchanged", body: "", summary: "No outline change." },
@@ -201,6 +208,36 @@ describe("reading ingest dispatch", () => {
     expect(getNextDue).toHaveBeenCalledTimes(3);
   });
 
+  it("limits a cron drain to one due unit", async () => {
+    getNextDue.mockResolvedValue(unit);
+
+    await drainReadingIngestQueue("user-1", {
+      agentUrl: "http://localhost:5174/agents/reading-scribe",
+      agentSecret: "test-secret",
+      maxUnits: 1,
+      dependencies: { getNextDue, dispatch },
+    });
+
+    expect(getNextDue).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("reclaims each eligible user before starting one due unit", async () => {
+    listUserIds.mockResolvedValue(["user-1", "user-2"]);
+
+    await expect(
+      sweepReadingIngestQueues({
+        agentUrl: "http://localhost:5174/agents/reading-scribe",
+        agentSecret: "test-secret",
+        dependencies: { listUserIds, reclaim, drain },
+      }),
+    ).resolves.toBe(2);
+
+    expect(reclaim).toHaveBeenCalledTimes(2);
+    expect(drain).toHaveBeenCalledWith("user-1", expect.objectContaining({ maxUnits: 1 }));
+    expect(reclaim.mock.invocationCallOrder.at(-1)).toBeLessThan(drain.mock.invocationCallOrder[0]);
+  });
+
   it("does not inspect or dispatch the queue without agent configuration", async () => {
     await drainReadingIngestQueue("user-1", {
       agentUrl: "",
@@ -210,5 +247,19 @@ describe("reading ingest dispatch", () => {
 
     expect(getNextDue).not.toHaveBeenCalled();
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("does not sweep the database without agent configuration", async () => {
+    await expect(
+      sweepReadingIngestQueues({
+        agentUrl: "",
+        agentSecret: "",
+        dependencies: { listUserIds, reclaim, drain },
+      }),
+    ).resolves.toBe(0);
+
+    expect(listUserIds).not.toHaveBeenCalled();
+    expect(reclaim).not.toHaveBeenCalled();
+    expect(drain).not.toHaveBeenCalled();
   });
 });

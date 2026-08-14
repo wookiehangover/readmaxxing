@@ -329,6 +329,36 @@ export async function getNextDueReadingIngestUnit(
   return result.rows[0] ?? null;
 }
 
+export async function listReadingIngestSweepUserIds(): Promise<string[]> {
+  const result = await getPool().query<{ userId: string }>(sql`
+    SELECT DISTINCT candidate.user_id AS "userId"
+    FROM (
+      SELECT user_id
+      FROM readmax.reading_ingest_unit
+      WHERE status IN ('pending', 'error')
+        AND attempt_count < 8
+        AND next_attempt_at <= NOW()
+      UNION
+      SELECT user_id
+      FROM readmax.reading_ingest_unit
+      WHERE status = 'processing'
+        AND claimed_at <= NOW() - (${READING_AGENT_LEASE_TTL_MS} * INTERVAL '1 millisecond')
+      UNION
+      SELECT user_id
+      FROM readmax.reading_agent_lease
+      WHERE expires_at <= NOW()
+    ) AS candidate
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM readmax.reading_agent_lease AS live_lease
+      WHERE live_lease.user_id = candidate.user_id
+        AND live_lease.expires_at > NOW()
+    )
+    ORDER BY candidate.user_id
+  `);
+  return result.rows.map((row) => row.userId);
+}
+
 export async function acquireReadingAgentLease(
   unitId: string,
   expiresAt: Date,
