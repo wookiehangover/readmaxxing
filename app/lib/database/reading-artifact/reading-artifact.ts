@@ -19,8 +19,32 @@ export interface ReadingIngestUnitRow {
   status: ReadingIngestStatus;
   firstSeenAt: Date;
   lastSeenAt: Date;
+  attemptCount: number;
+  claimedAt: Date | null;
+  nextAttemptAt: Date;
   processedAt: Date | null;
   error: string | null;
+}
+
+export interface ReadingAgentLeaseRow {
+  userId: string;
+  unitId: string;
+  bookId: string;
+  expiresAt: Date;
+}
+
+export interface ReadingAgentUsageRow {
+  id: string;
+  unitId: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  costTotal: string;
+  model: string | null;
+  source: string;
+  createdAt: Date;
 }
 
 export interface ReadingArtifactRevisionRow {
@@ -64,8 +88,32 @@ const INGEST_UNIT_COLUMNS = sql`
   status,
   first_seen_at AS "firstSeenAt",
   last_seen_at AS "lastSeenAt",
+  attempt_count AS "attemptCount",
+  claimed_at AS "claimedAt",
+  next_attempt_at AS "nextAttemptAt",
   processed_at AS "processedAt",
   error
+`;
+
+const LEASE_COLUMNS = sql`
+  user_id AS "userId",
+  unit_id AS "unitId",
+  book_id AS "bookId",
+  expires_at AS "expiresAt"
+`;
+
+const USAGE_COLUMNS = sql`
+  id,
+  unit_id AS "unitId",
+  input,
+  output,
+  cache_read AS "cacheRead",
+  cache_write AS "cacheWrite",
+  total_tokens AS "totalTokens",
+  cost_total AS "costTotal",
+  model,
+  source,
+  created_at AS "createdAt"
 `;
 
 const REVISION_COLUMNS = sql`
@@ -137,9 +185,11 @@ export async function getReadingIngestUnitByFingerprint(
 export async function claimReadingIngestUnit(id: string): Promise<ReadingIngestUnitRow | null> {
   const result = await getPool().query<ReadingIngestUnitRow>(sql`
     UPDATE readmax.reading_ingest_unit
-    SET status = 'processing', error = NULL
+    SET status = 'processing', claimed_at = NOW(), error = NULL
     WHERE id = ${id}
       AND status IN ('pending', 'error')
+      AND attempt_count < 8
+      AND next_attempt_at <= NOW()
     RETURNING ${INGEST_UNIT_COLUMNS}
   `);
   return result.rows[0] ?? null;
@@ -148,10 +198,108 @@ export async function claimReadingIngestUnit(id: string): Promise<ReadingIngestU
 export async function releaseReadingIngestUnit(id: string, error: string): Promise<void> {
   await getPool().query(sql`
     UPDATE readmax.reading_ingest_unit
-    SET status = 'pending', processed_at = NULL, error = ${error}
+    SET status = 'pending', claimed_at = NULL, processed_at = NULL, error = ${error}
     WHERE id = ${id}
       AND status = 'processing'
   `);
+}
+
+export async function getNextDueReadingIngestUnit(
+  userId: string,
+): Promise<ReadingIngestUnitRow | null> {
+  const result = await getPool().query<ReadingIngestUnitRow>(sql`
+    SELECT ${INGEST_UNIT_COLUMNS}
+    FROM readmax.reading_ingest_unit
+    WHERE user_id = ${userId}
+      AND status IN ('pending', 'error')
+      AND attempt_count < 8
+      AND next_attempt_at <= NOW()
+    ORDER BY next_attempt_at ASC, first_seen_at ASC, id ASC
+    LIMIT 1
+  `);
+  return result.rows[0] ?? null;
+}
+
+export async function acquireReadingAgentLease(
+  unitId: string,
+  expiresAt: Date,
+): Promise<ReadingAgentLeaseRow | null> {
+  const result = await getPool().query<ReadingAgentLeaseRow>(sql`
+    INSERT INTO readmax.reading_agent_lease (user_id, unit_id, book_id, expires_at)
+    SELECT user_id, id, book_id, ${expiresAt.toISOString()}
+    FROM readmax.reading_ingest_unit
+    WHERE id = ${unitId}
+    ON CONFLICT DO NOTHING
+    RETURNING ${LEASE_COLUMNS}
+  `);
+  return result.rows[0] ?? null;
+}
+
+export async function releaseReadingAgentLease(userId: string, unitId: string): Promise<boolean> {
+  const result = await getPool().query(sql`
+    DELETE FROM readmax.reading_agent_lease
+    WHERE user_id = ${userId}
+      AND unit_id = ${unitId}
+  `);
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function reclaimExpiredReadingAgentLease(userId: string): Promise<number> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const expired = await client.query<{ unitId: string }>(sql`
+      DELETE FROM readmax.reading_agent_lease
+      WHERE user_id = ${userId}
+        AND expires_at <= NOW()
+      RETURNING unit_id AS "unitId"
+    `);
+    const unitIds = expired.rows.map((row) => row.unitId);
+    if (unitIds.length > 0) {
+      await client.query(sql`
+        UPDATE readmax.reading_ingest_unit
+        SET status = CASE WHEN attempt_count + 1 >= 8 THEN 'error' ELSE 'pending' END,
+            attempt_count = attempt_count + 1,
+            claimed_at = NULL,
+            next_attempt_at = NOW(),
+            processed_at = NULL,
+            error = 'Reading agent lease expired'
+        WHERE id = ANY(${unitIds}::uuid[])
+          AND status = 'processing'
+      `);
+    }
+    await client.query("COMMIT");
+    return unitIds.length;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(console.error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function insertReadingAgentUsage(data: {
+  unitId: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  costTotal: number | string;
+  model?: string | null;
+  source: string;
+}): Promise<ReadingAgentUsageRow | null> {
+  const result = await getPool().query<ReadingAgentUsageRow>(sql`
+    INSERT INTO readmax.reading_agent_usage (
+      unit_id, input, output, cache_read, cache_write, total_tokens, cost_total, model, source
+    )
+    VALUES (
+      ${data.unitId}, ${data.input}, ${data.output}, ${data.cacheRead}, ${data.cacheWrite},
+      ${data.totalTokens}, ${data.costTotal}, ${data.model ?? null}, ${data.source}
+    )
+    RETURNING ${USAGE_COLUMNS}
+  `);
+  return result.rows[0] ?? null;
 }
 
 async function persistArtifactUpdate(
@@ -221,7 +369,7 @@ export async function completeReadingIngestUnit(
 
     await client.query(sql`
       UPDATE readmax.reading_ingest_unit
-      SET status = 'done', processed_at = NOW(), error = NULL
+      SET status = 'done', claimed_at = NULL, processed_at = NOW(), error = NULL
       WHERE id = ${unit.id}
     `);
     await client.query("COMMIT");

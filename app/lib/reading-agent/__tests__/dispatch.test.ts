@@ -17,6 +17,9 @@ const unit: ReadingIngestUnitRow = {
   status: "pending",
   firstSeenAt: new Date("2026-01-01T00:00:00Z"),
   lastSeenAt: new Date("2026-01-01T00:00:00Z"),
+  attemptCount: 0,
+  claimedAt: null,
+  nextAttemptAt: new Date("2026-01-01T00:00:00Z"),
   processedAt: null,
   error: null,
 };

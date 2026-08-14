@@ -12,8 +12,11 @@ vi.mock("../../pool", () => ({
 }));
 
 import {
+  acquireReadingAgentLease,
   claimReadingIngestUnit,
   completeReadingIngestUnit,
+  getNextDueReadingIngestUnit,
+  insertReadingAgentUsage,
   insertReadingArtifactRevision,
   insertReadingIngestUnit,
   upsertCurrentReadingArtifact,
@@ -47,6 +50,65 @@ describe("reading artifact persistence", () => {
 
     const query = queryMock.mock.calls[0][0] as SqlQuery;
     expect(extractSqlText(query)).toContain("status IN ('pending', 'error')");
+  });
+
+  it("returns null when a user already has an agent lease", async () => {
+    const lease = { userId: "user-1", unitId: "unit-1" };
+    queryMock.mockResolvedValueOnce({ rows: [lease] }).mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      acquireReadingAgentLease("unit-1", new Date("2026-01-01T00:04:00Z")),
+    ).resolves.toBe(lease);
+    await expect(
+      acquireReadingAgentLease("unit-2", new Date("2026-01-01T00:04:00Z")),
+    ).resolves.toBeNull();
+
+    const query = queryMock.mock.calls[1][0] as SqlQuery;
+    expect(extractSqlText(query)).toContain("ON CONFLICT DO NOTHING");
+  });
+
+  it("selects the oldest due retryable unit for a user", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+
+    await expect(getNextDueReadingIngestUnit("user-1")).resolves.toBeNull();
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    expect(extractSqlText(query)).toContain("next_attempt_at <= NOW()");
+    expect(extractSqlText(query)).toContain("attempt_count < 8");
+    expect(extractValues(query)).toContain("user-1");
+  });
+
+  it("inserts per-unit token usage", async () => {
+    const usage = { id: "usage-1", unitId: "unit-1", source: "unknown" };
+    queryMock.mockResolvedValueOnce({ rows: [usage] });
+
+    await expect(
+      insertReadingAgentUsage({
+        unitId: "unit-1",
+        input: 10,
+        output: 20,
+        cacheRead: 3,
+        cacheWrite: 4,
+        totalTokens: 37,
+        costTotal: "0.00120000",
+        model: "test-model",
+        source: "unknown",
+      }),
+    ).resolves.toBe(usage);
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    expect(extractSqlText(query)).toContain("INSERT INTO readmax.reading_agent_usage");
+    expect(extractValues(query)).toEqual([
+      "unit-1",
+      10,
+      20,
+      3,
+      4,
+      37,
+      "0.00120000",
+      "test-model",
+      "unknown",
+    ]);
   });
 
   it("returns null instead of failing when an ingest fingerprint conflicts", async () => {
@@ -127,6 +189,9 @@ describe("reading artifact persistence", () => {
       status: "processing" as const,
       firstSeenAt: new Date(),
       lastSeenAt: new Date(),
+      attemptCount: 0,
+      claimedAt: new Date(),
+      nextAttemptAt: new Date(),
       processedAt: null,
       error: null,
     };

@@ -41,6 +41,7 @@ done
 | 012 | `012-bug-report-admin.sql`                     | Add `bug_report.notes` for triage.                                                                                                    | Safe to re-run.                     |
 | 013 | `013-magic-links.sql`                          | Add `readmax.magic_link` for timeboxed login links.                                                                                   | Safe to re-run.                     |
 | 015 | `015-reading-artifacts.sql`                    | Add deduplicated ingest units, current reading artifacts, and wiki-style artifact revisions.                                          | Safe to re-run.                     |
+| 016 | `016-reading-ingest-queue.sql`                 | Add due/retry fields, one per-user ReadingScribe lease, and per-unit token usage records.                                             | Apply after 015; safe to re-run.    |
 
 ### Deploy checklist (chat-sync branch → main)
 
