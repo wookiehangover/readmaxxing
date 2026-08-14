@@ -35,6 +35,7 @@ export interface UsePdfLifecycleReturn {
   currentPage: number;
   totalPages: number;
   bookProgress: number;
+  hasRestoredPosition: boolean;
   goToPage: (page: number) => void;
   goNext: () => void;
   goPrev: () => void;
@@ -418,6 +419,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     currentPage,
     totalPages,
     bookProgress,
+    hasRestoredPosition,
     goToPage,
     goNext,
     goPrev,

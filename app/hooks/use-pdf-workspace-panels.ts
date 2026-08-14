@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -6,6 +6,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import type { DockviewPanelApi } from "dockview-react";
+import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell";
 
 type SavedHighlight = { id: string; cfiRange: string; text: string };
 
@@ -13,6 +14,7 @@ interface UsePdfWorkspacePanelsOptions {
   book: BookMeta;
   panelApi?: DockviewPanelApi;
   currentPage: number;
+  hasRestoredPosition: boolean;
   selectionText?: string;
   pdfDocRef?: React.RefObject<any>;
   saveHighlightFromPopover: () => Promise<SavedHighlight | null>;
@@ -26,6 +28,7 @@ export function usePdfWorkspacePanels({
   book,
   panelApi,
   currentPage,
+  hasRestoredPosition,
   selectionText,
   pdfDocRef,
   saveHighlightFromPopover,
@@ -44,6 +47,13 @@ export function usePdfWorkspacePanels({
     tempHighlightMap,
     highlightDeleteMap,
   } = ws;
+  const [readingDwellUnit, setReadingDwellUnit] = useState<ReadingDwellUnit | null>(null);
+  useReaderDwell({
+    bookId: book.id,
+    unit: readingDwellUnit,
+    panelApi,
+    enabled: hasRestoredPosition,
+  });
 
   // Register navigation callback for PDF (accepts "page:N" format or page number string)
   const goToPageRef = useRef<(page: number) => void>(() => {});
@@ -210,7 +220,8 @@ export function usePdfWorkspacePanels({
   }, [book.id, pdfDocRef]);
 
   useEffect(() => {
-    if (currentPage < 1) return;
+    setReadingDwellUnit(null);
+    if (currentPage < 1 || !hasRestoredPosition) return;
 
     let cancelled = false;
     const doc = pdfDocRef?.current;
@@ -224,6 +235,11 @@ export function usePdfWorkspacePanels({
             currentChapterIndex: currentPage - 1,
             currentSpineHref: `page:${currentPage}`,
             visibleText: text,
+          });
+          setReadingDwellUnit({
+            unitKind: "pdf-page",
+            locator: `page:${currentPage}`,
+            text,
           });
         })
         .catch(console.error);
@@ -239,6 +255,11 @@ export function usePdfWorkspacePanels({
             currentSpineHref: `page:${currentPage}`,
             visibleText: text,
           });
+          setReadingDwellUnit({
+            unitKind: "pdf-page",
+            locator: `page:${currentPage}`,
+            text,
+          });
         })
         .catch(console.error);
     }
@@ -246,7 +267,7 @@ export function usePdfWorkspacePanels({
     return () => {
       cancelled = true;
     };
-  }, [book.id, currentPage, chatContextMap, pdfDocRef]);
+  }, [book.id, currentPage, chatContextMap, hasRestoredPosition, pdfDocRef]);
 
   // Clean up chatContextMap on unmount
   useEffect(() => {

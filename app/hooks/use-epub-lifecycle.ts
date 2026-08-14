@@ -46,6 +46,7 @@ import {
   savePositionDualKey,
   type StoredReadingPosition,
 } from "~/lib/position-utils";
+import type { ReadingDwellUnit } from "~/hooks/use-reader-dwell";
 import { resolveTheme } from "~/lib/settings";
 import type { ReaderLayout, TextAlign, Theme } from "~/lib/settings";
 import { BookService } from "~/lib/stores/book-store";
@@ -100,6 +101,7 @@ export interface UseEpubLifecycleConfig {
   enabled?: boolean;
   panelId?: string;
   chatContextMap?: React.MutableRefObject<Map<string, ChatContextEntry>>;
+  onReadingUnitChange?: (unit: ReadingDwellUnit | null) => void;
   onRenditionReady?: (navigateToCfi: (cfi: string) => void) => void;
   onTocExtracted?: (toc: TocEntry[]) => void;
   onCleanupToc?: () => void;
@@ -203,6 +205,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
 
   const markNavigationInProgress = useCallback(() => {
     navigationInProgressRef.current = true;
+    configRef.current.onReadingUnitChange?.(null);
     if (navigationTimeoutRef.current) clearTimeout(navigationTimeoutRef.current);
     navigationTimeoutRef.current = setTimeout(clearNavigationInProgress, 3000);
   }, [clearNavigationInProgress]);
@@ -313,6 +316,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     let provider: ZipResourceProvider | null = null;
     let rendition: SuccessorRenditionAdapter | null = null;
     let bookAdapter: ReaderBookLike | null = null;
+    let latestReadingUnit: ReadingDwellUnit | null = null;
     let tocData: TocEntry[] = [];
     let positions: readonly PersistentLocator[] = [];
     let publisherPages: PublisherPageMap | null = null;
@@ -391,6 +395,15 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           currentSpineHref: relocation.href,
           visibleText,
         });
+        latestReadingUnit = {
+          unitKind: "epub-spine",
+          locator: relocation.href,
+          chapterLabel: chapterLabel ?? undefined,
+          text: visibleText,
+        };
+        if (!suppressPositionSaveRef.current) {
+          configRef.current.onReadingUnitChange?.(latestReadingUnit);
+        }
       }
       // During restore, skip both the in-memory and IDB updates. Mounting the
       // spine emits a section-start CFI first; writing that would clobber the
@@ -526,6 +539,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       }
       if (cancelled) return;
       setHasRestoredPosition(true);
+      configRef.current.onReadingUnitChange?.(latestReadingUnit);
       await configRef.current.loadAndApplyHighlights(rendition);
       configRef.current.registerSelectionHandler(rendition);
       configRef.current.onRenditionReady?.(navigateToCfi);
@@ -563,6 +577,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       setToc([]);
       setHasRestoredPosition(false);
       setCurrentChapterLabel(null);
+      configRef.current.onReadingUnitChange?.(null);
       configRef.current.onCleanupToc?.();
       rendition?.destroy();
       provider?.close();

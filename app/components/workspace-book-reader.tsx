@@ -43,6 +43,7 @@ import type {
   SuccessorRenditionAdapter,
 } from "~/lib/epub/successor-reader-adapter";
 import { tokenizeSpeedreadText } from "~/lib/speedread";
+import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -227,6 +228,7 @@ function WorkspaceBookReaderInner({
   const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const [speedreadWords, setSpeedreadWords] = useState<string[]>([]);
   const [speedreadOpen, setSpeedreadOpen] = useState(false);
+  const [readingDwellUnit, setReadingDwellUnit] = useState<ReadingDwellUnit | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -344,6 +346,7 @@ function WorkspaceBookReaderInner({
     enabled: hasBeenVisible,
     panelId: panelApi?.id,
     chatContextMap,
+    onReadingUnitChange: setReadingDwellUnit,
     onRenditionReady,
     onTocExtracted: (tocData) => {
       const id = panelApi?.id ?? book.id;
@@ -361,6 +364,8 @@ function WorkspaceBookReaderInner({
     bookRef,
     renditionRef,
   });
+
+  useReaderDwell({ bookId: book.id, unit: readingDwellUnit, panelApi });
 
   const bookmarkSyncVersion = useSyncListener(["bookmark"]);
   const { data: bookmarks } = useEffectQuery(
