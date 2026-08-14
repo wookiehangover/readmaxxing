@@ -27,6 +27,8 @@ export type {
   NavigatorPreferences,
   Relocation,
 } from "./navigator/navigator";
+export { visibleViewportText } from "./navigator/visible-text";
+export type { VisibleViewportGeometry } from "./navigator/visible-text";
 export {
   generateEphemeralPositions,
   locatorFromRange,
