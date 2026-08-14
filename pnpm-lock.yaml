@@ -237,6 +237,9 @@ importers:
       hono:
         specifier: ^4.7.0
         version: 4.12.15
+      valibot:
+        specifier: ^1.4.2
+        version: 1.4.2(typescript@7.0.2)
     devDependencies:
       '@flue/cli':
         specifier: ^2.0.3

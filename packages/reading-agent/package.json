@@ -11,7 +11,8 @@
   "dependencies": {
     "@flue/runtime": "^2.0.3",
     "@vercel/sandbox": "^2.9.2",
-    "hono": "^4.7.0"
+    "hono": "^4.7.0",
+    "valibot": "^1.4.2"
   },
   "devDependencies": {
     "@flue/cli": "^2.0.3",
