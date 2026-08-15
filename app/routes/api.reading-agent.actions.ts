@@ -16,6 +16,8 @@ import { stopReadingAgentHost } from "~/lib/reading-agent/agent-host.server";
 
 type QueueAction = "start" | "stop" | "retry" | "reset";
 
+export const READING_AGENT_ABORT_TIMEOUT_MS = 1_000;
+
 export async function action({ request }: { request: Request }): Promise<Response> {
   if (request.method !== "POST") {
     return Response.json({ error: "method_not_allowed" }, { status: 405 });
@@ -97,19 +99,35 @@ async function resetUnit(userId: string, unitId: string): Promise<Response> {
   }
 
   if (unit.status === "processing") {
-    const lease = await getCurrentReadingAgentLease(userId);
-    if (lease?.unitId === unit.id) await abortConversation(userId, lease.bookId);
-    await stopReadingIngestUnit(userId, unit.id);
+    await abortConversation(userId, unit.bookId, READING_AGENT_ABORT_TIMEOUT_MS);
   }
 
   await resetReadingIngestUnit(userId, unit.id);
-  scheduleReadingIngestQueue(userId);
   return Response.json({ ok: true, unitId: unit.id });
 }
 
-async function abortConversation(userId: string, bookId: string): Promise<void> {
+async function abortConversation(
+  userId: string,
+  bookId: string,
+  timeoutMs?: number,
+): Promise<void> {
   const conversationId = readingConversationId(userId, bookId);
-  await stopReadingAgentHost(conversationId);
+  const stop = stopReadingAgentHost(conversationId);
+  if (timeoutMs === undefined) {
+    await stop;
+    return;
+  }
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      stop,
+      new Promise<void>((resolve) => {
+        timeout = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function parseActionPayload(

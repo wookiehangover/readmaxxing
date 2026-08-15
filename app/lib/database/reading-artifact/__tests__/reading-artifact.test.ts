@@ -267,25 +267,25 @@ describe("reading artifact persistence", () => {
     expect(extractSqlText(retry)).not.toContain("attempt_count = attempt_count + 1");
   });
 
-  it("resets an 8/8 user-owned unit to attempt 0 so it is due and claimable", async () => {
-    const resetUnit = { id: "unit-1", status: "pending", attemptCount: 0 };
-    queryMock
-      .mockResolvedValueOnce({ rows: [{ id: "unit-1" }] })
-      .mockResolvedValueOnce({ rows: [resetUnit] });
+  it("resets an 8/8 user-owned unit by skipping it and releasing its lease", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [{ id: "unit-1" }] });
 
     await expect(resetReadingIngestUnit("user-1", "unit-1")).resolves.toBe(true);
-    await expect(getNextDueReadingIngestUnit("user-1")).resolves.toBe(resetUnit);
 
     const reset = queryMock.mock.calls[0][0] as SqlQuery;
-    const due = queryMock.mock.calls[1][0] as SqlQuery;
     const resetText = extractSqlText(reset);
-    expect(resetText).toContain("status = 'pending'");
+    expect(resetText).toContain("status = 'skipped'");
     expect(resetText).toContain("attempt_count = 0");
     expect(resetText).toContain("error = NULL");
     expect(resetText).toContain("claimed_at = NULL");
-    expect(resetText).toContain("next_attempt_at = NOW()");
+    expect(resetText).toContain("DELETE FROM readmax.reading_agent_lease");
     expect(extractValues(reset)).toEqual(["user-1", "unit-1", "user-1", "unit-1"]);
-    expect(extractSqlText(due)).toContain("attempt_count < 8");
+  });
+
+  it("reports when reset does not update a unit", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+
+    await expect(resetReadingIngestUnit("user-1", "unit-1")).resolves.toBe(false);
   });
 
   it("reclaims an expired lease and stale processing unit", async () => {

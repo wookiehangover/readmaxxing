@@ -614,7 +614,7 @@ export async function resetReadingIngestUnit(userId: string, unitId: string): Pr
   const result = await getPool().query<{ id: string }>(sql`
     WITH reset_unit AS (
       UPDATE readmax.reading_ingest_unit
-      SET status = 'pending',
+      SET status = 'skipped',
           attempt_count = 0,
           error = NULL,
           claimed_at = NULL,

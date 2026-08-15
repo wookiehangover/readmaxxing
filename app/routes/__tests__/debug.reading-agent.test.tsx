@@ -346,12 +346,14 @@ describe("reading-agent debug page", () => {
     expect(postedActions()).toEqual([{ action: "retry", unitId: "unit-0" }]);
   });
 
-  it("shows Reset on pending and error rows, including attempt 8, and posts reset", async () => {
+  it("shows Reset on pending, error, and processing rows but not settled rows", async () => {
     respond({
       ...emptyStatus,
       units: [
         { ...pendingUnit, attemptCount: 8 },
         { ...processingUnit, unitId: "unit-done", status: "done" },
+        { ...processingUnit, unitId: "unit-skipped", status: "skipped" },
+        processingUnit,
         {
           ...pendingUnit,
           unitId: "unit-2",
@@ -365,7 +367,7 @@ describe("reading-agent debug page", () => {
     const resets = Array.from(container!.querySelectorAll("button")).filter(
       (node) => node.textContent === "Reset",
     );
-    expect(resets).toHaveLength(2);
+    expect(resets).toHaveLength(3);
     expect(resets.every((node) => !node.disabled)).toBe(true);
     await act(async () => resets[0]?.click());
     expect(postedActions()).toEqual([{ action: "reset", unitId: "unit-0" }]);

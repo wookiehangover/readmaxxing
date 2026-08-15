@@ -30,7 +30,7 @@ vi.mock("~/lib/reading-agent/agent-host.server", () => ({
   stopReadingAgentHost: mocks.stopHost,
 }));
 
-import { action } from "~/routes/api.reading-agent.actions";
+import { action, READING_AGENT_ABORT_TIMEOUT_MS } from "~/routes/api.reading-agent.actions";
 
 const originalEnv = {
   databaseUrl: process.env.DATABASE_URL,
@@ -243,7 +243,7 @@ describe("reading-agent actions API", () => {
     expect(mocks.retry).not.toHaveBeenCalled();
   });
 
-  it("resets an 8/8 pending unit and schedules a drain", async () => {
+  it("resets an 8/8 pending unit without scheduling a drain", async () => {
     mocks.getUnit.mockResolvedValue({
       id: "unit-1",
       bookId: "book-1",
@@ -257,7 +257,7 @@ describe("reading-agent actions API", () => {
     const response = await action({ request: request({ action: "reset", unitId: "unit-1" }) });
     expect(response.status).toBe(200);
     expect(mocks.reset).toHaveBeenCalledWith("user-1", "unit-1");
-    expect(mocks.schedule).toHaveBeenCalledWith("user-1");
+    expect(mocks.schedule).not.toHaveBeenCalled();
   });
 
   it("returns 404 when resetting another user's unit", async () => {
@@ -266,7 +266,7 @@ describe("reading-agent actions API", () => {
     expect(mocks.reset).not.toHaveBeenCalled();
   });
 
-  it("aborts a host from an expired current lease before resetting a processing unit", async () => {
+  it("aborts the host before resetting a processing unit", async () => {
     mocks.stopHost.mockResolvedValue(true);
     mocks.getUnit.mockResolvedValue({
       id: "unit-1",
@@ -277,29 +277,50 @@ describe("reading-agent actions API", () => {
       claimedAt: new Date("2026-01-01T00:01:00Z"),
       lastError: null,
     });
-    mocks.lease.mockResolvedValue({
-      unitId: "unit-1",
-      bookId: "book-1",
-      expiresAt: new Date(0),
-      chapterLabel: "Chapter 1",
-      locator: "chapter-1.xhtml",
-    });
-
     const response = await action({ request: request({ action: "reset", unitId: "unit-1" }) });
     expect(response.status).toBe(200);
     expect(mocks.stopHost).toHaveBeenCalledOnce();
-    expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-1");
     expect(mocks.reset).toHaveBeenCalledWith("user-1", "unit-1");
-    expect(mocks.stop.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mocks.stopHost.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.reset.mock.invocationCallOrder[0]!,
     );
+    expect(mocks.stop).not.toHaveBeenCalled();
+    expect(mocks.schedule).not.toHaveBeenCalled();
   });
 
-  it("returns 409 when resetting a done unit", async () => {
+  it("bounds a slow host abort before skipping a processing unit", async () => {
+    vi.useFakeTimers();
+    mocks.stopHost.mockReturnValue(new Promise(() => {}));
     mocks.getUnit.mockResolvedValue({
       id: "unit-1",
       bookId: "book-1",
-      status: "done",
+      status: "processing",
+      attemptCount: 8,
+      nextAttemptAt: new Date("2026-01-01T00:00:00Z"),
+      claimedAt: new Date("2026-01-01T00:01:00Z"),
+      lastError: null,
+    });
+
+    try {
+      const responsePromise = action({
+        request: request({ action: "reset", unitId: "unit-1" }),
+      });
+      await vi.advanceTimersByTimeAsync(READING_AGENT_ABORT_TIMEOUT_MS);
+      const response = await responsePromise;
+
+      expect(response.status).toBe(200);
+      expect(mocks.reset).toHaveBeenCalledWith("user-1", "unit-1");
+      expect(mocks.schedule).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["done", "skipped"] as const)("returns 409 when resetting a %s unit", async (status) => {
+    mocks.getUnit.mockResolvedValue({
+      id: "unit-1",
+      bookId: "book-1",
+      status,
       attemptCount: 8,
       nextAttemptAt: new Date("2026-01-01T00:00:00Z"),
       claimedAt: null,
