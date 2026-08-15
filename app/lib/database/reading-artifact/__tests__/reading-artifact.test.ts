@@ -186,15 +186,19 @@ describe("reading artifact persistence", () => {
     expect(extractSqlText(query)).toContain("ON CONFLICT DO NOTHING");
   });
 
-  it("selects the oldest due retryable unit for a user", async () => {
+  it("selects due viewport pages before older spine units", async () => {
     queryMock.mockResolvedValueOnce({ rows: [] });
 
     await expect(getNextDueReadingIngestUnit("user-1")).resolves.toBeNull();
 
     const query = queryMock.mock.calls[0][0] as SqlQuery;
-    expect(extractSqlText(query)).toContain("next_attempt_at <= NOW()");
-    expect(extractSqlText(query)).toContain("attempt_count < 8");
-    expect(extractSqlText(query)).toContain("NOT EXISTS");
+    const text = extractSqlText(query);
+    expect(text).toContain("next_attempt_at <= NOW()");
+    expect(text).toContain("attempt_count < 8");
+    expect(text).toContain("NOT EXISTS");
+    expect(text).toContain("locator LIKE '%#page=%'");
+    expect(text).toContain("locator LIKE 'page:%'");
+    expect(text.indexOf("WHEN locator LIKE")).toBeLessThan(text.indexOf("next_attempt_at ASC"));
     expect(extractValues(query)).toContain("user-1");
   });
 

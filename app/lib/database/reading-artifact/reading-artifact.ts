@@ -488,7 +488,13 @@ export async function getNextDueReadingIngestUnit(
         WHERE user_id = ${userId}
           AND expires_at > NOW()
       )
-    ORDER BY next_attempt_at ASC, first_seen_at ASC, id ASC
+    ORDER BY CASE
+               WHEN locator LIKE '%#page=%' OR locator LIKE 'page:%' THEN 0
+               ELSE 1
+             END ASC,
+             next_attempt_at ASC,
+             first_seen_at ASC,
+             id ASC
     LIMIT 1
   `);
   return result.rows[0] ?? null;
