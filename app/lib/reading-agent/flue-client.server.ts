@@ -35,6 +35,7 @@ export class ReadingScribeCallError extends Error {
 }
 
 const ARTIFACT_KINDS: ArtifactKind[] = ["outline", "characters", "wiki"];
+const TOOL_OUTPUT_NOT_FOUND = Symbol("tool-output-not-found");
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -163,6 +164,25 @@ function parseJsonReply(text: string): unknown {
   throw new SyntaxError("No valid JSON object found");
 }
 
+function lastReadingArtifactsToolOutput(messages: unknown): unknown | typeof TOOL_OUTPUT_NOT_FOUND {
+  if (!Array.isArray(messages)) return TOOL_OUTPUT_NOT_FOUND;
+  let output: unknown | typeof TOOL_OUTPUT_NOT_FOUND = TOOL_OUTPUT_NOT_FOUND;
+  for (const message of messages) {
+    if (!isRecord(message) || !Array.isArray(message.parts)) continue;
+    for (const part of message.parts) {
+      if (
+        isRecord(part) &&
+        part.type === "dynamic-tool" &&
+        part.toolName === "update_reading_artifacts" &&
+        part.state === "output-available"
+      ) {
+        output = part.output;
+      }
+    }
+  }
+  return output;
+}
+
 interface ReadingScribeCallOptions {
   conversationId: string;
   secret: string;
@@ -192,9 +212,15 @@ export async function callReadingScribe(
     });
     const reply = await client.read(admission);
     const usage = extractReadingScribeUsage(reply.metadata);
+    const toolOutput = await client
+      .history()
+      .then(({ messages }) => lastReadingArtifactsToolOutput(messages))
+      .catch(() => TOOL_OUTPUT_NOT_FOUND);
     try {
       return {
-        artifacts: parseReadingScribeResult(parseJsonReply(reply.text)),
+        artifacts: parseReadingScribeResult(
+          toolOutput === TOOL_OUTPUT_NOT_FOUND ? parseJsonReply(reply.text) : toolOutput,
+        ),
         usage,
       };
     } catch (error) {

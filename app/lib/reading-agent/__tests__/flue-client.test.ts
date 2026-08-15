@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const send = vi.hoisted(() => vi.fn());
 const read = vi.hoisted(() => vi.fn());
-const createFlueClient = vi.hoisted(() => vi.fn(() => ({ send, read })));
+const history = vi.hoisted(() => vi.fn());
+const createFlueClient = vi.hoisted(() => vi.fn(() => ({ send, read, history })));
 const hostFetch = vi.hoisted(() => vi.fn());
 const disposeHost = vi.hoisted(() => vi.fn());
 const registerAbort = vi.hoisted(() => vi.fn());
@@ -46,6 +47,7 @@ beforeEach(() => {
   registerAbort.mockReset();
   send.mockReset().mockResolvedValue({ submissionId: "submission-1" });
   read.mockReset().mockResolvedValue({ text: JSON.stringify(result) });
+  history.mockReset().mockResolvedValue({ messages: [] });
 });
 
 afterEach(() => {
@@ -153,6 +155,36 @@ describe("ReadingScribe Flue client", () => {
     ).resolves.toEqual(callResult);
   });
 
+  it.each(["Artifacts updated.", ""])(
+    "accepts tool output when assistant text is %j",
+    async (text) => {
+      read.mockResolvedValue({ text });
+      history.mockResolvedValue({
+        messages: [
+          {
+            parts: [
+              {
+                type: "dynamic-tool",
+                toolName: "update_reading_artifacts",
+                state: "output-available",
+                output: result,
+              },
+            ],
+          },
+        ],
+      });
+
+      await expect(
+        callReadingScribe({
+          conversationId: "conversation-1",
+          secret: "test-secret",
+          page: "Page",
+          artifacts: { outline: "", characters: "", wiki: "" },
+        }),
+      ).resolves.toEqual(callResult);
+    },
+  );
+
   it("extracts PromptUsage from reply metadata", async () => {
     read.mockResolvedValue({
       text: JSON.stringify(result),
@@ -217,6 +249,20 @@ describe("ReadingScribe Flue client", () => {
         },
         model: { provider: "anthropic", id: "claude-sonnet-4-6" },
       },
+    });
+    history.mockResolvedValue({
+      messages: [
+        {
+          parts: [
+            {
+              type: "dynamic-tool",
+              toolName: "update_reading_artifacts",
+              state: "output-available",
+              output: { outline: null },
+            },
+          ],
+        },
+      ],
     });
 
     const error = await callReadingScribe({
