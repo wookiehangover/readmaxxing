@@ -19,7 +19,12 @@ export const VERCEL_AI_GATEWAY_V1_BASE_URL = `${VERCEL_AI_GATEWAY_BASE_URL}/v1`;
 
 const GATEWAY_MODEL_IDS = {
   anthropic: { "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6" },
-  openai: { "gpt-5.5": "openai/gpt-5.5" },
+  openai: {
+    "gpt-5.5": "openai/gpt-5.5",
+    "gpt-5.6-luna": "openai/gpt-5.6-luna",
+    "gpt-5.6-terra": "openai/gpt-5.6-terra",
+    "gpt-5.6-sol": "openai/gpt-5.6-sol",
+  },
   xai: { "grok-4.5": "xai/grok-4.5" },
   google: { "gemini-2.5-flash": "google/gemini-2.5-flash" },
 } as const;

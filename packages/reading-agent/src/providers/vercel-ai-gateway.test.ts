@@ -49,27 +49,43 @@ describe("Vercel AI Gateway provider", () => {
     [
       "anthropic",
       anthropicGatewayProvider,
-      "claude-sonnet-4-6",
-      "anthropic/claude-sonnet-4.6",
+      ["claude-sonnet-4-6"],
+      ["anthropic/claude-sonnet-4.6"],
       VERCEL_AI_GATEWAY_BASE_URL,
     ],
-    ["openai", openaiGatewayProvider, "gpt-5.5", "openai/gpt-5.5", VERCEL_AI_GATEWAY_V1_BASE_URL],
-    ["xai", xaiGatewayProvider, "grok-4.5", "xai/grok-4.5", VERCEL_AI_GATEWAY_V1_BASE_URL],
+    [
+      "openai",
+      openaiGatewayProvider,
+      ["gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"],
+      [
+        "openai/gpt-5.5",
+        "openai/gpt-5.6-luna",
+        "openai/gpt-5.6-sol",
+        "openai/gpt-5.6-terra",
+      ],
+      VERCEL_AI_GATEWAY_V1_BASE_URL,
+    ],
+    ["xai", xaiGatewayProvider, ["grok-4.5"], ["xai/grok-4.5"], VERCEL_AI_GATEWAY_V1_BASE_URL],
     [
       "google",
       googleGatewayProvider,
-      "gemini-2.5-flash",
-      "google/gemini-2.5-flash",
+      ["gemini-2.5-flash"],
+      ["google/gemini-2.5-flash"],
       VERCEL_AI_GATEWAY_BASE_URL,
     ],
   ] as const)(
-    "registers only %s's allowlisted Gateway model",
-    (providerId: GatewayProviderId, provider, modelId, gatewayModelId, baseUrl) => {
-      expect(provider.getModels().map(({ id }) => id)).toEqual([modelId]);
-      const model = provider.getModels()[0];
-      expect(model.baseUrl).toBe(baseUrl);
-      expect(toGatewayModel(providerId, model)).toMatchObject({ id: gatewayModelId, baseUrl });
-      expect(resolveModel(`${providerId}/${modelId}`)).toBe(model);
+    "registers only %s's allowlisted Gateway models",
+    (providerId: GatewayProviderId, provider, modelIds, gatewayModelIds, baseUrl) => {
+      const models = provider.getModels();
+      expect(models.map(({ id }) => id)).toEqual(modelIds);
+      models.forEach((model, index) => {
+        expect(model.baseUrl).toBe(baseUrl);
+        expect(toGatewayModel(providerId, model)).toMatchObject({
+          id: gatewayModelIds[index],
+          baseUrl,
+        });
+        expect(resolveModel(`${providerId}/${model.id}`)).toBe(model);
+      });
     },
   );
 
@@ -82,6 +98,7 @@ describe("Vercel AI Gateway provider", () => {
   it.each([
     "anthropic/claude-opus-4-6",
     "openai/gpt-5.5-pro",
+    "openai/gpt-5.6",
     "xai/grok-4.3",
     "google/gemini-2.5-pro",
     "unknown/model",
