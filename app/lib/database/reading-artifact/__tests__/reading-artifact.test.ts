@@ -338,11 +338,15 @@ describe("reading artifact persistence", () => {
     ).resolves.toBeUndefined();
 
     const query = queryMock.mock.calls[0][0] as SqlQuery;
-    expect(extractSqlText(query)).toContain("WITH released AS");
-    expect(extractSqlText(query)).toContain("attempt_count = attempt_count + 1");
-    expect(extractSqlText(query)).toContain("INSERT INTO readmax.reading_agent_usage");
-    expect(extractSqlText(query)).toContain("DELETE FROM readmax.reading_agent_lease");
+    const text = extractSqlText(query);
+    expect(text).toContain("WITH released AS");
+    expect(text).toContain("attempt_count = attempt_count + 1");
+    expect(text).toContain("INSERT INTO readmax.reading_agent_usage");
+    expect(text).toContain("DELETE FROM readmax.reading_agent_lease");
+    expect(text).toContain("expires_at > NOW()");
+    expect(text).not.toContain("expires_at =");
     expect(extractValues(query).slice(0, 2)).toEqual(["pending", 10]);
+    expect(extractValues(query)).not.toContain(claim.lease.expiresAt.toISOString());
   });
 
   it("records failed-call usage independently of an expired lease fence", async () => {
@@ -545,7 +549,7 @@ describe("reading artifact persistence", () => {
     expect(extractSqlText(query)).toContain("ON CONFLICT (user_id, book_id, kind) DO UPDATE");
   });
 
-  it("atomically creates a revision, advances its head, and completes the unit", async () => {
+  it("atomically creates a revision, advances its head, and completes a live unit", async () => {
     clientQueryMock
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: "unit-1" }] })
@@ -602,11 +606,46 @@ describe("reading artifact persistence", () => {
     expect(extractSqlText(usage)).toContain("INSERT INTO readmax.reading_agent_usage");
     const leaseDelete = clientQueryMock.mock.calls[7][0] as SqlQuery;
     expect(extractSqlText(leaseDelete)).toContain("DELETE FROM readmax.reading_agent_lease");
+    const fence = clientQueryMock.mock.calls[1][0] as SqlQuery;
+    expect(extractSqlText(fence)).toContain("expires_at > NOW()");
     expect(clientQueryMock).toHaveBeenNthCalledWith(9, "COMMIT");
     expect(releaseMock).toHaveBeenCalledOnce();
   });
 
-  it("records usage without applying artifacts when the completion fence is stale", async () => {
+  it("completes despite millisecond versus microsecond lease precision", async () => {
+    clientQueryMock
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: "unit-1" }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+    const expiresAt = new Date("2026-01-01T00:05:00.123Z");
+    const claim = {
+      unit: {
+        id: "unit-1",
+        userId: "user-1",
+        bookId: "book-1",
+        fingerprint: "fingerprint-1",
+      },
+      lease: { userId: "user-1", unitId: "unit-1", bookId: "book-1", expiresAt },
+    };
+
+    await expect(
+      completeReadingIngestUnit(
+        claim as Parameters<typeof completeReadingIngestUnit>[0],
+        [],
+        unknownUsage,
+      ),
+    ).resolves.toBe(0);
+
+    const fence = clientQueryMock.mock.calls[1][0] as SqlQuery;
+    expect(extractSqlText(fence)).toContain("expires_at > NOW()");
+    expect(extractSqlText(fence)).not.toContain("expires_at =");
+    expect(extractValues(fence)).not.toContain(expiresAt.toISOString());
+  });
+
+  it("records usage without applying artifacts when the lease is stale or expired", async () => {
     clientQueryMock
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
@@ -637,6 +676,9 @@ describe("reading artifact persistence", () => {
 
     const usage = clientQueryMock.mock.calls[2][0] as SqlQuery;
     expect(extractSqlText(usage)).toContain("INSERT INTO readmax.reading_agent_usage");
+    const fence = clientQueryMock.mock.calls[1][0] as SqlQuery;
+    expect(extractSqlText(fence)).toContain("status = 'processing'");
+    expect(extractSqlText(fence)).toContain("expires_at > NOW()");
     expect(clientQueryMock).toHaveBeenCalledTimes(4);
     expect(clientQueryMock).toHaveBeenNthCalledWith(4, "COMMIT");
     expect(releaseMock).toHaveBeenCalledOnce();

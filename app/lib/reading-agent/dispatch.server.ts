@@ -137,7 +137,12 @@ export async function dispatchReadingIngestUnit(
       result.usage,
     );
     if (completed === null) {
-      console.error(`[reading-agent] Ingest unit ${claimed.id} settled after its lease expired.`);
+      await dependencies
+        .release(claim, "Reading agent completion lease is no longer live")
+        .catch((releaseError) => {
+          console.error("[reading-agent] Failed to clean up unsettled ingest unit:", releaseError);
+        });
+      console.error(`[reading-agent] Ingest unit ${claimed.id} settled without a live lease.`);
       return "failed";
     }
     return "done";

@@ -169,13 +169,19 @@ describe("reading ingest dispatch", () => {
     );
   });
 
-  it("does not duplicate usage when a settled call loses its lease fence", async () => {
+  it("cleans up without duplicating usage when a settled call loses its lease fence", async () => {
     complete.mockResolvedValue(null);
 
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("failed");
 
     expect(complete).toHaveBeenCalledOnce();
-    expect(release).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledWith(
+      leased,
+      "Reading agent completion lease is no longer live",
+    );
+    expect(release.mock.invocationCallOrder[0]).toBeLessThan(
+      disposeHost.mock.invocationCallOrder[0],
+    );
   });
 
   it("passes preserved usage from an invalid reply to failure settlement", async () => {

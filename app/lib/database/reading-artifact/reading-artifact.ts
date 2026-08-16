@@ -494,7 +494,6 @@ export async function releaseReadingIngestUnit(
           FROM readmax.reading_agent_lease
           WHERE user_id = ${claim.lease.userId}
             AND unit_id = ${claim.lease.unitId}
-            AND expires_at = ${claim.lease.expiresAt.toISOString()}
             AND expires_at > NOW()
         )
       RETURNING id
@@ -510,8 +509,8 @@ export async function releaseReadingIngestUnit(
       RETURNING unit_id
     )
     DELETE FROM readmax.reading_agent_lease
-    WHERE unit_id IN (SELECT id FROM released)
-      AND expires_at = ${claim.lease.expiresAt.toISOString()}
+    WHERE user_id = ${claim.lease.userId}
+      AND unit_id IN (SELECT id FROM released)
   `);
 }
 
@@ -838,7 +837,6 @@ export async function completeReadingIngestUnit(
           FROM readmax.reading_agent_lease
           WHERE user_id = ${lease.userId}
             AND unit_id = ${lease.unitId}
-            AND expires_at = ${lease.expiresAt.toISOString()}
             AND expires_at > NOW()
         )
       FOR UPDATE
@@ -865,7 +863,6 @@ export async function completeReadingIngestUnit(
       DELETE FROM readmax.reading_agent_lease
       WHERE user_id = ${lease.userId}
         AND unit_id = ${lease.unitId}
-        AND expires_at = ${lease.expiresAt.toISOString()}
     `);
     await client.query("COMMIT");
     return revisionCount;
