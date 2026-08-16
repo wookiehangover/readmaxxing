@@ -10,6 +10,7 @@ import {
   toGatewayModel,
   toGatewayAnthropicModel,
   VERCEL_AI_GATEWAY_BASE_URL,
+  VERCEL_AI_GATEWAY_V1_BASE_URL,
   xaiGatewayProvider,
 } from "./vercel-ai-gateway";
 
@@ -45,17 +46,29 @@ describe("Vercel AI Gateway provider", () => {
   });
 
   it.each([
-    ["anthropic", anthropicGatewayProvider, "claude-sonnet-4-6", "anthropic/claude-sonnet-4.6"],
-    ["openai", openaiGatewayProvider, "gpt-5.5", "openai/gpt-5.5"],
-    ["xai", xaiGatewayProvider, "grok-4.5", "xai/grok-4.5"],
-    ["google", googleGatewayProvider, "gemini-2.5-flash", "google/gemini-2.5-flash"],
+    [
+      "anthropic",
+      anthropicGatewayProvider,
+      "claude-sonnet-4-6",
+      "anthropic/claude-sonnet-4.6",
+      VERCEL_AI_GATEWAY_BASE_URL,
+    ],
+    ["openai", openaiGatewayProvider, "gpt-5.5", "openai/gpt-5.5", VERCEL_AI_GATEWAY_V1_BASE_URL],
+    ["xai", xaiGatewayProvider, "grok-4.5", "xai/grok-4.5", VERCEL_AI_GATEWAY_V1_BASE_URL],
+    [
+      "google",
+      googleGatewayProvider,
+      "gemini-2.5-flash",
+      "google/gemini-2.5-flash",
+      VERCEL_AI_GATEWAY_BASE_URL,
+    ],
   ] as const)(
     "registers only %s's allowlisted Gateway model",
-    (providerId: GatewayProviderId, provider, modelId, gatewayModelId) => {
+    (providerId: GatewayProviderId, provider, modelId, gatewayModelId, baseUrl) => {
       expect(provider.getModels().map(({ id }) => id)).toEqual([modelId]);
       const model = provider.getModels()[0];
-      expect(model.baseUrl).toBe(VERCEL_AI_GATEWAY_BASE_URL);
-      expect(toGatewayModel(providerId, model).id).toBe(gatewayModelId);
+      expect(model.baseUrl).toBe(baseUrl);
+      expect(toGatewayModel(providerId, model)).toMatchObject({ id: gatewayModelId, baseUrl });
       expect(resolveModel(`${providerId}/${modelId}`)).toBe(model);
     },
   );

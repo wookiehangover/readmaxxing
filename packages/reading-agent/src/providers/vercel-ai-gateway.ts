@@ -15,6 +15,7 @@ import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { xaiProvider } from "@earendil-works/pi-ai/providers/xai";
 
 export const VERCEL_AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh";
+export const VERCEL_AI_GATEWAY_V1_BASE_URL = `${VERCEL_AI_GATEWAY_BASE_URL}/v1`;
 
 const GATEWAY_MODEL_IDS = {
   anthropic: { "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6" },
@@ -43,6 +44,12 @@ export const gatewayAuth: ApiKeyAuth = {
 
 export const gatewayAnthropicAuth = gatewayAuth;
 
+function gatewayBaseUrl(providerId: GatewayProviderId): string {
+  return providerId === "openai" || providerId === "xai"
+    ? VERCEL_AI_GATEWAY_V1_BASE_URL
+    : VERCEL_AI_GATEWAY_BASE_URL;
+}
+
 export function toGatewayModel(providerId: GatewayProviderId, model: Model<Api>): Model<Api> {
   const modelId = (GATEWAY_MODEL_IDS[providerId] as Readonly<Record<string, string>>)[model.id];
   if (!modelId) {
@@ -51,7 +58,7 @@ export function toGatewayModel(providerId: GatewayProviderId, model: Model<Api>)
   return {
     ...model,
     id: modelId,
-    baseUrl: VERCEL_AI_GATEWAY_BASE_URL,
+    baseUrl: gatewayBaseUrl(providerId),
   };
 }
 
@@ -71,7 +78,7 @@ function gatewayApi(providerId: GatewayProviderId, api: ProviderStreams): Provid
 function gatewayModels(providerId: GatewayProviderId, models: readonly Model<Api>[]): Model<Api>[] {
   return models
     .filter((model) => Object.hasOwn(GATEWAY_MODEL_IDS[providerId], model.id))
-    .map((model) => ({ ...model, baseUrl: VERCEL_AI_GATEWAY_BASE_URL }));
+    .map((model) => ({ ...model, baseUrl: gatewayBaseUrl(providerId) }));
 }
 
 export const anthropicGatewayProvider = createProvider({
@@ -86,7 +93,7 @@ export const anthropicGatewayProvider = createProvider({
 export const openaiGatewayProvider = createProvider({
   id: "openai",
   name: "OpenAI via Vercel AI Gateway",
-  baseUrl: VERCEL_AI_GATEWAY_BASE_URL,
+  baseUrl: VERCEL_AI_GATEWAY_V1_BASE_URL,
   auth: { apiKey: gatewayAuth },
   models: gatewayModels("openai", openaiProvider().getModels()),
   api: gatewayApi("openai", openAIResponsesApi()),
@@ -95,7 +102,7 @@ export const openaiGatewayProvider = createProvider({
 export const xaiGatewayProvider = createProvider({
   id: "xai",
   name: "xAI via Vercel AI Gateway",
-  baseUrl: VERCEL_AI_GATEWAY_BASE_URL,
+  baseUrl: VERCEL_AI_GATEWAY_V1_BASE_URL,
   auth: { apiKey: gatewayAuth },
   models: gatewayModels("xai", xaiProvider().getModels()),
   api: gatewayApi("xai", openAIResponsesApi()),
