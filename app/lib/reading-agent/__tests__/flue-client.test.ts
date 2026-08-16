@@ -19,7 +19,11 @@ const createReadingAgentHost = vi.hoisted(() =>
 vi.mock("@flue/sdk", () => ({ createFlueClient }));
 vi.mock("../agent-host.server", () => ({ createReadingAgentHost }));
 
-import { callReadingScribe, readingScribeUsageFromError } from "../flue-client.server";
+import {
+  callReadingScribe,
+  ReadingScribeCallError,
+  readingScribeUsageFromError,
+} from "../flue-client.server";
 
 const result = {
   outline: { status: "unchanged", body: "", summary: "No outline change." },
@@ -155,35 +159,36 @@ describe("ReadingScribe Flue client", () => {
     ).resolves.toEqual(callResult);
   });
 
-  it.each(["Artifacts updated.", ""])(
-    "accepts tool output when assistant text is %j",
-    async (text) => {
-      read.mockResolvedValue({ text });
-      history.mockResolvedValue({
-        messages: [
-          {
-            parts: [
-              {
-                type: "dynamic-tool",
-                toolName: "update_reading_artifacts",
-                state: "output-available",
-                output: result,
-              },
-            ],
-          },
-        ],
-      });
+  it.each([
+    ["bare", result],
+    ["wrapped", { output: result }],
+    ["multiply wrapped", { output: { output: result } }],
+  ])("accepts %s tool output", async (_shape, output) => {
+    read.mockResolvedValue({ text: "Artifacts updated." });
+    history.mockResolvedValue({
+      messages: [
+        {
+          parts: [
+            {
+              type: "dynamic-tool",
+              toolName: "update_reading_artifacts",
+              state: "output-available",
+              output,
+            },
+          ],
+        },
+      ],
+    });
 
-      await expect(
-        callReadingScribe({
-          conversationId: "conversation-1",
-          secret: "test-secret",
-          page: "Page",
-          artifacts: { outline: "", characters: "", wiki: "" },
-        }),
-      ).resolves.toEqual(callResult);
-    },
-  );
+    await expect(
+      callReadingScribe({
+        conversationId: "conversation-1",
+        secret: "test-secret",
+        page: "Page",
+        artifacts: { outline: "", characters: "", wiki: "" },
+      }),
+    ).resolves.toEqual(callResult);
+  });
 
   it("extracts PromptUsage from reply metadata", async () => {
     read.mockResolvedValue({
@@ -258,7 +263,7 @@ describe("ReadingScribe Flue client", () => {
               type: "dynamic-tool",
               toolName: "update_reading_artifacts",
               state: "output-available",
-              output: { outline: null },
+              output: { output: { output: { outline: null } } },
             },
           ],
         },
@@ -272,7 +277,7 @@ describe("ReadingScribe Flue client", () => {
       artifacts: { outline: "", characters: "", wiki: "" },
     }).catch((cause: unknown) => cause);
 
-    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(ReadingScribeCallError);
     expect(readingScribeUsageFromError(error)).toEqual({
       input: 100,
       output: 20,

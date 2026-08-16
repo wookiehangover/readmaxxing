@@ -107,6 +107,7 @@ function extractReadingScribeUsage(metadata: unknown): ReadingScribeUsage {
 }
 
 export function parseReadingScribeResult(value: unknown): ReadingScribeResult {
+  while (isRecord(value) && "output" in value) value = value.output;
   if (!isRecord(value)) throw new Error("ReadingScribe returned a non-object result");
   const result = {} as ReadingScribeResult;
   for (const kind of ARTIFACT_KINDS) {
