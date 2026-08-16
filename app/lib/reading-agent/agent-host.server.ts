@@ -23,9 +23,14 @@ interface AgentHostEnvironment extends NodeJS.ProcessEnv {
 
 let inProcessApplication: Promise<FlueNodeApplication> | undefined;
 const activeHosts = new Map<string, { host: ReadingAgentHost; stop: () => Promise<void> }>();
+const creatingHosts = new Map<string, Promise<ReadingAgentHost>>();
 
 export function getActiveReadingAgentHost(conversationId: string): ReadingAgentHost | undefined {
   return activeHosts.get(conversationId)?.host;
+}
+
+export function hasActiveReadingAgentHost(conversationId: string): boolean {
+  return activeHosts.has(conversationId) || creatingHosts.has(conversationId);
 }
 
 function accessTokenCredentials(env: AgentHostEnvironment) {
@@ -156,31 +161,51 @@ export async function createReadingAgentHost(
   secret: string,
   env: AgentHostEnvironment = process.env,
 ): Promise<ReadingAgentHost> {
-  const host = shouldUseVercelReadingAgentHost(env)
-    ? await createVercelHost(conversationId, secret, env)
-    : await createInProcessHost(conversationId);
-  let abort = async (): Promise<unknown> => undefined;
-  let disposed = false;
-  const managedHost: ReadingAgentHost = {
-    ...host,
-    registerAbort(nextAbort) {
-      abort = nextAbort;
-    },
-    async dispose() {
-      if (disposed) return;
-      disposed = true;
-      if (activeHosts.get(conversationId)?.host === managedHost) {
-        activeHosts.delete(conversationId);
-      }
-      await host.dispose();
-    },
-  };
-  const stop = async () => {
-    await abort().catch(() => undefined);
-    await managedHost.dispose();
-  };
-  activeHosts.set(conversationId, { host: managedHost, stop });
-  return managedHost;
+  const active = activeHosts.get(conversationId);
+  if (active) return active.host;
+  const creating = creatingHosts.get(conversationId);
+  if (creating) return creating;
+
+  const creation = (async () => {
+    const host = shouldUseVercelReadingAgentHost(env)
+      ? await createVercelHost(conversationId, secret, env)
+      : await createInProcessHost(conversationId);
+    let abort = async (): Promise<unknown> => undefined;
+    let disposed = false;
+    const managedHost: ReadingAgentHost = {
+      ...host,
+      registerAbort(nextAbort) {
+        abort = nextAbort;
+      },
+      async dispose() {
+        if (disposed) return;
+        disposed = true;
+        if (activeHosts.get(conversationId)?.host === managedHost) {
+          activeHosts.delete(conversationId);
+        }
+        await host.dispose();
+      },
+    };
+    const stop = async () => {
+      await abort().catch(() => undefined);
+      await managedHost.dispose();
+    };
+    activeHosts.set(conversationId, { host: managedHost, stop });
+    return managedHost;
+  })();
+  creatingHosts.set(conversationId, creation);
+  try {
+    return await creation;
+  } finally {
+    if (creatingHosts.get(conversationId) === creation) creatingHosts.delete(conversationId);
+  }
+}
+
+export async function disposeReadingAgentHost(conversationId: string): Promise<boolean> {
+  const active = activeHosts.get(conversationId);
+  if (!active) return false;
+  await active.host.dispose();
+  return true;
 }
 
 export async function stopReadingAgentHost(conversationId: string): Promise<boolean> {

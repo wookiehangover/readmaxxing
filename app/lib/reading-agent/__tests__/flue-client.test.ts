@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const send = vi.hoisted(() => vi.fn());
 const read = vi.hoisted(() => vi.fn());
 const history = vi.hoisted(() => vi.fn());
-const createFlueClient = vi.hoisted(() => vi.fn(() => ({ send, read, history })));
+const abort = vi.hoisted(() => vi.fn());
+const createFlueClient = vi.hoisted(() => vi.fn(() => ({ send, read, history, abort })));
 const hostFetch = vi.hoisted(() => vi.fn());
 const disposeHost = vi.hoisted(() => vi.fn());
 const registerAbort = vi.hoisted(() => vi.fn());
@@ -21,6 +22,7 @@ vi.mock("../agent-host.server", () => ({ createReadingAgentHost }));
 
 import {
   callReadingScribe,
+  READING_SCRIBE_READ_TIMEOUT_MS,
   ReadingScribeCallError,
   readingScribeUsageFromError,
 } from "../flue-client.server";
@@ -49,6 +51,7 @@ beforeEach(() => {
   createReadingAgentHost.mockClear();
   disposeHost.mockReset().mockResolvedValue(undefined);
   registerAbort.mockReset();
+  abort.mockReset().mockResolvedValue(undefined);
   send.mockReset().mockResolvedValue({ submissionId: "submission-1" });
   read.mockReset().mockResolvedValue({ text: JSON.stringify(result) });
   history.mockReset().mockResolvedValue({ messages: [] });
@@ -104,6 +107,44 @@ describe("ReadingScribe Flue client", () => {
       fetch: hostFetch,
     });
     expect(disposeHost).toHaveBeenCalledOnce();
+  });
+
+  it("retains the in-app host while dispatch settles the lease", async () => {
+    await expect(
+      callReadingScribe({
+        conversationId: "conversation-1",
+        secret: "test-secret",
+        page: "New page text.",
+        artifacts: { outline: "", characters: "", wiki: "Existing story." },
+        retainHost: true,
+      }),
+    ).resolves.toEqual(callResult);
+
+    expect(disposeHost).not.toHaveBeenCalled();
+  });
+
+  it("aborts and rejects a read that exceeds the bounded stream timeout", async () => {
+    vi.useFakeTimers();
+    read.mockReturnValue(new Promise(() => {}));
+    try {
+      const call = callReadingScribe({
+        conversationId: "conversation-1",
+        secret: "test-secret",
+        page: "Page",
+        artifacts: { outline: "", characters: "", wiki: "" },
+      });
+      const rejection = expect(call).rejects.toThrow(
+        `ReadingScribe stream timed out after ${READING_SCRIBE_READ_TIMEOUT_MS}ms`,
+      );
+
+      await vi.advanceTimersByTimeAsync(READING_SCRIBE_READ_TIMEOUT_MS);
+      await rejection;
+
+      expect(abort).toHaveBeenCalledOnce();
+      expect(disposeHost).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("accepts a JSON reply in a markdown fence", async () => {

@@ -14,7 +14,7 @@ import {
   type ReadingAgentStatusLeaseRow,
   type ReadingIngestUnitRow,
 } from "~/lib/database/reading-artifact/reading-artifact";
-import { getActiveReadingAgentHost } from "./agent-host.server";
+import { disposeReadingAgentHost, hasActiveReadingAgentHost } from "./agent-host.server";
 import {
   callReadingScribe,
   type ArtifactKind,
@@ -35,6 +35,7 @@ type ReadingAgentCall = (options: {
   secret: string;
   page: string;
   artifacts: Record<ArtifactKind, string>;
+  retainHost?: boolean;
 }) => Promise<ReadingScribeCallResult>;
 
 const ARTIFACT_KINDS: ArtifactKind[] = ["outline", "characters", "wiki"];
@@ -66,6 +67,7 @@ interface DispatchDependencies {
   getCurrent: typeof getCurrentReadingArtifacts;
   release: typeof releaseReadingIngestUnit;
   callAgent: ReadingAgentCall;
+  disposeHost: typeof disposeReadingAgentHost;
 }
 
 interface DrainDependencies {
@@ -76,7 +78,7 @@ interface DrainDependencies {
 
 interface OrphanReclaimDependencies {
   getLease: typeof getLiveReadingAgentLease;
-  getActiveHost: typeof getActiveReadingAgentHost;
+  getActiveHost: typeof hasActiveReadingAgentHost;
   stopUnit: typeof stopReadingIngestUnit;
 }
 
@@ -92,6 +94,7 @@ const DEFAULT_DEPENDENCIES: DispatchDependencies = {
   getCurrent: getCurrentReadingArtifacts,
   release: releaseReadingIngestUnit,
   callAgent: callReadingScribe,
+  disposeHost: disposeReadingAgentHost,
 };
 
 export async function dispatchReadingIngestUnit(
@@ -113,18 +116,19 @@ export async function dispatchReadingIngestUnit(
   const claim = await dependencies.claimLease(unit.id);
   if (!claim) return "already-leased";
   const claimed = claim.unit;
+  const conversationId = readingConversationId(claimed.userId, claimed.bookId);
   let calledAgent = false;
   let settledUsage: ReadingScribeUsage | undefined;
 
   try {
     const current = currentBodies(await dependencies.getCurrent(claimed.userId, claimed.bookId));
     calledAgent = true;
-    const conversationId = readingConversationId(claimed.userId, claimed.bookId);
     const result = await dependencies.callAgent({
       conversationId,
       secret: agentSecret,
       page: claimed.text,
       artifacts: current,
+      retainHost: true,
     });
     settledUsage = result.usage;
     const completed = await dependencies.complete(
@@ -145,12 +149,16 @@ export async function dispatchReadingIngestUnit(
     });
     console.error(`[reading-agent] Ingest unit ${claimed.id} failed:`, message);
     return "failed";
+  } finally {
+    await dependencies.disposeHost(conversationId).catch((disposeError) => {
+      console.error("[reading-agent] Failed to dispose settled agent host:", disposeError);
+    });
   }
 }
 
 const DEFAULT_ORPHAN_RECLAIM_DEPENDENCIES: OrphanReclaimDependencies = {
   getLease: getLiveReadingAgentLease,
-  getActiveHost: getActiveReadingAgentHost,
+  getActiveHost: hasActiveReadingAgentHost,
   stopUnit: stopReadingIngestUnit,
 };
 

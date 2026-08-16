@@ -36,6 +36,7 @@ export class ReadingScribeCallError extends Error {
 
 const ARTIFACT_KINDS: ArtifactKind[] = ["outline", "characters", "wiki"];
 const TOOL_OUTPUT_NOT_FOUND = Symbol("tool-output-not-found");
+export const READING_SCRIBE_READ_TIMEOUT_MS = 5 * 60_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -189,6 +190,33 @@ interface ReadingScribeCallOptions {
   secret: string;
   page: string;
   artifacts: Record<ArtifactKind, string>;
+  retainHost?: boolean;
+}
+
+async function readWithTimeout<T>(read: Promise<T>, abort: () => Promise<unknown>): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      read,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          try {
+            void abort().catch(() => undefined);
+          } catch {
+            // The timeout must still release the ingest lease when abort fails synchronously.
+          }
+          reject(
+            new ReadingScribeCallError(
+              `ReadingScribe stream timed out after ${READING_SCRIBE_READ_TIMEOUT_MS}ms`,
+              unknownReadingScribeUsage(),
+            ),
+          );
+        }, READING_SCRIBE_READ_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 export async function callReadingScribe(
@@ -211,7 +239,7 @@ export async function callReadingScribe(
         body: JSON.stringify({ page: options.page, artifacts: options.artifacts }),
       },
     });
-    const reply = await client.read(admission);
+    const reply = await readWithTimeout(client.read(admission), () => client.abort());
     const usage = extractReadingScribeUsage(reply.metadata);
     const toolOutput = await client
       .history()
@@ -234,6 +262,6 @@ export async function callReadingScribe(
       throw new ReadingScribeCallError(message, usage, { cause: error });
     }
   } finally {
-    await host.dispose();
+    if (!options.retainHost) await host.dispose();
   }
 }

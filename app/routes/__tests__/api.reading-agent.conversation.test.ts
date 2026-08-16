@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
     history: vi.fn(),
     createFlueClient: vi.fn(),
     activeHost: vi.fn(),
+    hasActiveHost: vi.fn(),
     reclaimOrphan: vi.fn(),
     FakeFlueApiError,
   };
@@ -34,6 +35,7 @@ vi.mock("@flue/sdk", () => ({
 }));
 vi.mock("~/lib/reading-agent/agent-host.server", () => ({
   getActiveReadingAgentHost: mocks.activeHost,
+  hasActiveReadingAgentHost: mocks.hasActiveHost,
 }));
 vi.mock("~/lib/reading-agent/dispatch.server", () => ({
   reclaimOrphanedReadingAgentLease: mocks.reclaimOrphan,
@@ -67,6 +69,7 @@ beforeEach(() => {
   mocks.history.mockReset();
   mocks.createFlueClient.mockReset().mockReturnValue({ history: mocks.history });
   mocks.activeHost.mockReset();
+  mocks.hasActiveHost.mockReset().mockReturnValue(false);
   mocks.reclaimOrphan.mockReset().mockResolvedValue(true);
 });
 
@@ -158,6 +161,19 @@ describe("reading-agent conversation API", () => {
       bookId: "book-1",
       error: expect.stringContaining("Start or retry"),
     });
+    expect(mocks.createFlueClient).not.toHaveBeenCalled();
+  });
+
+  it("does not reclaim a lease while its host is still starting", async () => {
+    mocks.hasActiveHost.mockReturnValue(true);
+
+    const response = await loader({ request: request() });
+
+    await expect(response.json()).resolves.toMatchObject({
+      phase: "connecting",
+      bookId: "book-1",
+    });
+    expect(mocks.reclaimOrphan).not.toHaveBeenCalled();
     expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 

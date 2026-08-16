@@ -77,6 +77,7 @@ const drain = vi.fn();
 const getLease = vi.fn();
 const getActiveHost = vi.fn();
 const stopUnit = vi.fn();
+const disposeHost = vi.fn();
 const originalReadingAgentUrl = process.env.READING_AGENT_URL;
 
 beforeEach(() => {
@@ -91,8 +92,9 @@ beforeEach(() => {
   reclaim.mockReset().mockResolvedValue(0);
   drain.mockReset().mockResolvedValue(undefined);
   getLease.mockReset().mockResolvedValue(null);
-  getActiveHost.mockReset().mockReturnValue(undefined);
+  getActiveHost.mockReset().mockReturnValue(false);
   stopUnit.mockReset().mockResolvedValue(true);
+  disposeHost.mockReset().mockResolvedValue(true);
   callAgent.mockReset().mockResolvedValue({
     artifacts: {
       outline: { status: "unchanged", body: "", summary: "No outline change." },
@@ -110,7 +112,7 @@ afterEach(() => {
 
 const options = () => ({
   agentSecret: "test-secret",
-  dependencies: { claimLease, complete, getCurrent, release, callAgent },
+  dependencies: { claimLease, complete, getCurrent, release, callAgent, disposeHost },
 });
 
 describe("reading ingest dispatch", () => {
@@ -127,7 +129,22 @@ describe("reading ingest dispatch", () => {
       expect.objectContaining({
         secret: "test-secret",
         artifacts: { outline: "", characters: "", wiki: "Existing story." },
+        retainHost: true,
       }),
+    );
+  });
+
+  it("keeps the host registered until the unit lease is completed", async () => {
+    complete.mockImplementation(async () => {
+      expect(disposeHost).not.toHaveBeenCalled();
+      return 1;
+    });
+
+    await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("done");
+
+    expect(disposeHost).toHaveBeenCalledWith(readingConversationId("user-1", "book-1"));
+    expect(complete.mock.invocationCallOrder[0]).toBeLessThan(
+      disposeHost.mock.invocationCallOrder[0],
     );
   });
 
@@ -147,6 +164,9 @@ describe("reading ingest dispatch", () => {
       model: null,
       source: "unknown",
     });
+    expect(release.mock.invocationCallOrder[0]).toBeLessThan(
+      disposeHost.mock.invocationCallOrder[0],
+    );
   });
 
   it("does not duplicate usage when a settled call loses its lease fence", async () => {
@@ -235,7 +255,7 @@ describe("reading ingest dispatch", () => {
 
   it("leaves a live lease running when its in-app host is active", async () => {
     getLease.mockResolvedValue(leased.lease);
-    getActiveHost.mockReturnValue({ url: "http://reading-agent.local" });
+    getActiveHost.mockReturnValue(true);
 
     await expect(
       reclaimOrphanedReadingAgentLease("user-1", {

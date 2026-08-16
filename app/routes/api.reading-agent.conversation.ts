@@ -10,7 +10,10 @@ import {
   type ReadingAgentConversation,
 } from "~/lib/reading-agent/conversation";
 import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
-import { getActiveReadingAgentHost } from "~/lib/reading-agent/agent-host.server";
+import {
+  getActiveReadingAgentHost,
+  hasActiveReadingAgentHost,
+} from "~/lib/reading-agent/agent-host.server";
 import { reclaimOrphanedReadingAgentLease } from "~/lib/reading-agent/dispatch.server";
 
 function scopedConversation(
@@ -44,6 +47,9 @@ export async function loader({ request }: { request: Request }): Promise<Respons
   const conversationId = readingConversationId(session.userId, lease.bookId);
   let activeHost = getActiveReadingAgentHost(conversationId);
   if (!activeHost) {
+    if (hasActiveReadingAgentHost(conversationId)) {
+      return Response.json(scopedConversation(session.userId, lease.bookId, "connecting"));
+    }
     const reclaimed = await reclaimOrphanedReadingAgentLease(session.userId, { lease });
     if (reclaimed) return Response.json(emptyReadingAgentConversation("absent"));
     activeHost = getActiveReadingAgentHost(conversationId);
