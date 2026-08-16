@@ -234,6 +234,20 @@ describe("reading-agent debug API", () => {
     expect(mocks.units).toHaveBeenCalledWith({ userId: "user-1" });
   });
 
+  it("sets a model without triggering a queue action", async () => {
+    const response = await action({
+      request: postRequest({ model: "google/gemini-2.5-flash" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.setSelectedModel).toHaveBeenCalledWith("google/gemini-2.5-flash");
+    expect(mocks.parseAction).not.toHaveBeenCalled();
+    expect(mocks.executeAction).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      selectedModel: "google/gemini-2.5-flash",
+    });
+  });
+
   it("rejects an invalid model without running an action or changing selection", async () => {
     const response = await action({
       request: postRequest({ action: "start", model: "unknown/model" }),

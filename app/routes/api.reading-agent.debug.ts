@@ -127,6 +127,14 @@ export async function action({ request }: { request: Request }): Promise<Respons
   } catch {
     return Response.json({ error: "invalid_json" }, { status: 400 });
   }
+  if (isRecord(body) && body.action === undefined && body.model !== undefined) {
+    if (!isDebugReadingAgentModel(body.model)) {
+      return Response.json({ error: "invalid_model" }, { status: 400 });
+    }
+    setSelectedDebugModel(body.model);
+    return loadSnapshot(request, access.userId, access.schema);
+  }
+
   const payload = parseReadingAgentActionPayload(body);
   if ("error" in payload) return Response.json({ error: payload.error }, { status: 400 });
 
