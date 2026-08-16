@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as v from "valibot";
+import { ARTIFACT_UPDATE_PROMPT } from "./prompt";
 import {
   ReadingScribeResultSchema,
   mergeReadingScribeResult,
@@ -9,7 +10,10 @@ import {
 } from "./result";
 
 const current: CurrentArtifacts = {
-  outline: "- Alice enters the garden.",
+  outline: `# Reached events
+## The garden
+- Alice enters the garden.
+  - She finds a locked door.`,
   characters: "## Alice\n- A curious visitor.",
   wiki: "Alice has entered a strange garden.",
 };
@@ -19,6 +23,15 @@ function unchanged(body: string): ReadingScribeResult["outline"] {
 }
 
 describe("ReadingScribe result", () => {
+  it("requires a hierarchical, cumulative outline bounded by facts read so far", () => {
+    expect(ARTIFACT_UPDATE_PROMPT).toContain("nested Markdown headings and/or\nindented lists");
+    expect(ARTIFACT_UPDATE_PROMPT).toContain("Never flatten the tree");
+    expect(ARTIFACT_UPDATE_PROMPT).toContain("replace the whole outline");
+    expect(ARTIFACT_UPDATE_PROMPT).toContain("current artifacts are the complete factual boundary");
+    expect(ARTIFACT_UPDATE_PROMPT).toContain("Do not use later-book");
+    expect(ARTIFACT_UPDATE_PROMPT).toContain("invent people");
+  });
+
   it("keeps explicit no-ops and exposes only materially updated kinds", () => {
     const result = mergeReadingScribeResult(current, {
       outline: unchanged("A model rewrite that must be ignored."),

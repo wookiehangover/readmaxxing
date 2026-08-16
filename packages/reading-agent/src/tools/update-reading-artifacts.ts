@@ -16,7 +16,7 @@ const UpdateReadingArtifactsInput = v.object({
 export const updateReadingArtifacts = defineTool({
   name: "update_reading_artifacts",
   description:
-    "Update outline, characters, and story-so-far from exactly one newly read page and the current artifact bodies. Call once for every ingest message.",
+    "Grow the nested outline, characters, and story-so-far using only one newly read page and the cumulative current artifacts. Preserve existing facts and hierarchy unless the page explicitly corrects them. Call once for every ingest message.",
   input: UpdateReadingArtifactsInput,
   output: ReadingScribeResultSchema,
   harness: true,
