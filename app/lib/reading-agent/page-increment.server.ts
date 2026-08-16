@@ -76,6 +76,7 @@ export async function callPageIncrement(options: {
     schema: PageIncrementSchema,
     schemaName: "reading_page_increment",
     maxOutputTokens: 512,
+    maxRetries: 0,
     abortSignal: AbortSignal.timeout(PAGE_INCREMENT_TIMEOUT_MS),
     instructions:
       "Create an incremental reading outline from the current page. Return zero to three short, factual bullets containing only concrete new information from the page. Do not interpret, editorialize, speculate, or repeat an existing bullet. Return an empty bullets array when the page adds nothing. Do not add Markdown prefixes.",
