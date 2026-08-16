@@ -13,54 +13,49 @@ afterEach(() => {
 });
 
 describe("reading agent action client", () => {
-  it("disables actions when the agent host or schema is unavailable", () => {
+  it("disables actions when the Gateway or schema is unavailable", () => {
     const lease = { expiresAt: "2099-01-01T00:00:00.000Z" };
     expect(
       readingAgentActionAvailability({
-        hostConfigured: true,
-        hostActive: false,
+        gatewayConfigured: true,
         schema: { ok: true },
         lease: null,
       }),
     ).toEqual({ canStart: true, canStop: false, canRetry: true, canReset: true });
     expect(
       readingAgentActionAvailability({
-        hostConfigured: true,
-        hostActive: true,
+        gatewayConfigured: true,
         schema: { ok: true },
         lease,
       }),
     ).toEqual({ canStart: false, canStop: true, canRetry: true, canReset: true });
     expect(
       readingAgentActionAvailability({
-        hostConfigured: false,
-        hostActive: true,
+        gatewayConfigured: false,
         schema: { ok: true },
         lease,
       }),
     ).toEqual({ canStart: false, canStop: false, canRetry: false, canReset: false });
     expect(
       readingAgentActionAvailability({
-        hostConfigured: true,
-        hostActive: true,
+        gatewayConfigured: true,
         schema: { ok: false },
         lease,
       }),
     ).toEqual({ canStart: false, canStop: false, canRetry: false, canReset: false });
   });
 
-  it("allows Start and Stop for an unexpired orphan lease without an active host", () => {
+  it("allows Stop but not Start for a current one-shot lease", () => {
     expect(
       readingAgentActionAvailability({
-        hostConfigured: true,
-        hostActive: false,
+        gatewayConfigured: true,
         schema: { ok: true },
         lease: { expiresAt: "2099-01-01T00:00:00.000Z" },
       }),
-    ).toEqual({ canStart: true, canStop: true, canRetry: true, canReset: true });
+    ).toEqual({ canStart: false, canStop: true, canRetry: true, canReset: true });
   });
 
-  it("posts start and surfaces host errors", async () => {
+  it("posts start and surfaces Gateway errors", async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ ok: true }));
     await postReadingAgentAction({ action: "start" });
     expect(fetchMock).toHaveBeenCalledWith("/api/reading-agent/actions", {
@@ -71,10 +66,10 @@ describe("reading agent action client", () => {
     });
 
     fetchMock.mockResolvedValueOnce(
-      Response.json({ error: "agent_not_configured" }, { status: 409 }),
+      Response.json({ error: "gateway_not_configured" }, { status: 409 }),
     );
     await expect(postReadingAgentAction({ action: "stop" })).rejects.toThrow(
-      "Agent host is not configured.",
+      "AI Gateway is not configured.",
     );
   });
 
@@ -84,6 +79,15 @@ describe("reading agent action client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/reading-agent/actions",
       expect.objectContaining({ body: JSON.stringify({ action: "reset", unitId: "unit-1" }) }),
+    );
+  });
+
+  it("posts the user-scoped clear action to the debug endpoint", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ ok: true }));
+    await postReadingAgentAction({ action: "clear" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/reading-agent/debug",
+      expect.objectContaining({ body: JSON.stringify({ action: "clear" }) }),
     );
   });
 });

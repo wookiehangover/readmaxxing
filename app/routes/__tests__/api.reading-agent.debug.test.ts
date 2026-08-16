@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -7,8 +6,8 @@ const mocks = vi.hoisted(() => ({
   lease: vi.fn(),
   units: vi.fn(),
   usage: vi.fn(),
+  increment: vi.fn(),
   activeHost: vi.fn(),
-  history: vi.fn(),
   clear: vi.fn(),
   createFlueClient: vi.fn(),
   selectedModel: "anthropic/claude-sonnet-4-6",
@@ -26,6 +25,7 @@ vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   getCurrentReadingAgentLease: mocks.lease,
   listRecentReadingIngestUnits: mocks.units,
   getLatestReadingAgentUsage: mocks.usage,
+  getLatestReadingPageIncrementRevision: mocks.increment,
 }));
 vi.mock("~/lib/reading-agent/agent-host.server", () => ({
   getActiveReadingAgentHost: mocks.activeHost,
@@ -45,7 +45,8 @@ import { action, loader } from "~/routes/api.reading-agent.debug";
 
 const originalEnv = {
   databaseUrl: process.env.DATABASE_URL,
-  readingAgentSecret: process.env.READING_AGENT_SECRET,
+  gatewayApiKey: process.env.AI_GATEWAY_API_KEY,
+  oidcToken: process.env.VERCEL_OIDC_TOKEN,
 };
 
 function getRequest(): Request {
@@ -62,16 +63,17 @@ function postRequest(body: unknown): Request {
 
 beforeEach(() => {
   process.env.DATABASE_URL = "postgres://configured";
-  process.env.READING_AGENT_SECRET = "sidecar-secret";
+  process.env.AI_GATEWAY_API_KEY = "gateway-key";
+  delete process.env.VERCEL_OIDC_TOKEN;
   mocks.auth.mockReset().mockResolvedValue({ userId: "user-1" });
   mocks.schema.mockReset().mockResolvedValue({ ok: true });
   mocks.lease.mockReset().mockResolvedValue(null);
   mocks.units.mockReset().mockResolvedValue([]);
   mocks.usage.mockReset().mockResolvedValue(null);
+  mocks.increment.mockReset().mockResolvedValue(null);
   mocks.activeHost.mockReset().mockReturnValue(undefined);
-  mocks.history.mockReset().mockResolvedValue({ messages: [] });
   mocks.clear.mockReset().mockResolvedValue(undefined);
-  mocks.createFlueClient.mockReset().mockReturnValue({ history: mocks.history });
+  mocks.createFlueClient.mockReset();
   mocks.selectedModel = "anthropic/claude-sonnet-4-6";
   mocks.getSelectedModel.mockReset().mockImplementation(() => mocks.selectedModel);
   mocks.isDebugModel
@@ -101,8 +103,10 @@ beforeEach(() => {
 afterEach(() => {
   if (originalEnv.databaseUrl == null) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = originalEnv.databaseUrl;
-  if (originalEnv.readingAgentSecret == null) delete process.env.READING_AGENT_SECRET;
-  else process.env.READING_AGENT_SECRET = originalEnv.readingAgentSecret;
+  if (originalEnv.gatewayApiKey == null) delete process.env.AI_GATEWAY_API_KEY;
+  else process.env.AI_GATEWAY_API_KEY = originalEnv.gatewayApiKey;
+  if (originalEnv.oidcToken == null) delete process.env.VERCEL_OIDC_TOKEN;
+  else process.env.VERCEL_OIDC_TOKEN = originalEnv.oidcToken;
 });
 
 describe("reading-agent debug API", () => {
@@ -115,6 +119,7 @@ describe("reading-agent debug API", () => {
     await expect(response.json()).resolves.toEqual({ error: "auth_required" });
     expect(mocks.schema).not.toHaveBeenCalled();
     expect(mocks.activeHost).not.toHaveBeenCalled();
+    expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 
   it("does not clear stored data for an unsigned request", async () => {
@@ -126,27 +131,31 @@ describe("reading-agent debug API", () => {
     expect(mocks.clear).not.toHaveBeenCalled();
   });
 
-  it("returns structured 409 responses for missing host config or schema", async () => {
-    delete process.env.READING_AGENT_SECRET;
+  it("reports Gateway readiness and stale schema without reading queue tables", async () => {
+    delete process.env.AI_GATEWAY_API_KEY;
     const unconfigured = await loader({ request: getRequest() });
-    expect(unconfigured.status).toBe(409);
-    await expect(unconfigured.json()).resolves.toEqual({ error: "agent_not_configured" });
-    expect(mocks.schema).not.toHaveBeenCalled();
+    expect(unconfigured.status).toBe(200);
+    await expect(unconfigured.json()).resolves.toMatchObject({ gatewayConfigured: false });
+    mocks.lease.mockClear();
 
-    process.env.READING_AGENT_SECRET = "sidecar-secret";
+    process.env.VERCEL_OIDC_TOKEN = "oidc-token";
     mocks.schema.mockResolvedValue({ ok: false, missingColumns: ["reading_agent_lease.unit_id"] });
     const stale = await loader({ request: getRequest() });
-    expect(stale.status).toBe(409);
+    expect(stale.status).toBe(200);
     await expect(stale.json()).resolves.toEqual({
-      error: "schema_stale",
+      gatewayConfigured: true,
       schema: { ok: false, missingColumns: ["reading_agent_lease.unit_id"] },
-      missingColumns: ["reading_agent_lease.unit_id"],
+      selectedModel: "anthropic/claude-sonnet-4-6",
+      lease: null,
+      units: [],
+      usage: null,
+      latestIncrement: null,
+      lastError: null,
     });
     expect(mocks.lease).not.toHaveBeenCalled();
   });
 
-  it("returns status, usage, selected model, last error, and sanitized live history", async () => {
-    const hostFetch = vi.fn();
+  it("returns status, usage, selected model, last error, and the latest page increment", async () => {
     mocks.lease.mockResolvedValue({
       unitId: "unit-1",
       bookId: "book-1",
@@ -167,27 +176,12 @@ describe("reading-agent debug API", () => {
       source: "provider",
       createdAt: new Date("2026-08-16T06:00:00Z"),
     });
-    mocks.activeHost.mockReturnValue({
-      url: "http://reading-agent.local/unit-1",
-      fetch: hostFetch,
-    });
-    mocks.history.mockResolvedValue({
-      messages: [
-        {
-          id: "user-1",
-          role: "user",
-          purpose: "user",
-          display: "visible",
-          parts: [{ type: "text", text: "private page text", state: "done" }],
-        },
-        {
-          id: "assistant-1",
-          role: "assistant",
-          purpose: "assistant",
-          display: "visible",
-          parts: [{ type: "text", text: "Updated artifacts", state: "done" }],
-        },
-      ],
+    mocks.increment.mockResolvedValue({
+      chapterLabel: "Chapter 1",
+      previousContent: "## Chapter 1\n- The traveler leaves home.",
+      content:
+        "## Chapter 1\n- The traveler leaves home.\n- A storm closes the mountain pass.\n- The innkeeper offers shelter.",
+      createdAt: new Date("2026-08-16T06:00:01Z"),
     });
 
     const response = await loader({ request: getRequest() });
@@ -195,32 +189,19 @@ describe("reading-agent debug API", () => {
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
-      hostConfigured: true,
-      hostActive: true,
+      gatewayConfigured: true,
       schema: { ok: true },
       selectedModel: "anthropic/claude-sonnet-4-6",
       lastError: "Previous attempt failed",
       usage: { model: "openai/gpt-5.5", totalTokens: 18 },
     });
-    expect(body.conversationTail).toEqual([
-      { id: "user-1", role: "user", purpose: "user", display: "visible", parts: [] },
-      {
-        id: "assistant-1",
-        role: "assistant",
-        purpose: "assistant",
-        display: "visible",
-        parts: [{ type: "text", text: "Updated artifacts", state: "done" }],
-      },
-    ]);
-    expect(JSON.stringify(body)).not.toContain("private page text");
-    expect(mocks.activeHost).toHaveBeenCalledWith(
-      readingConversationId("user-1", "book-1", "unit-1"),
-    );
-    expect(mocks.createFlueClient).toHaveBeenCalledWith({
-      url: "http://reading-agent.local/unit-1",
-      token: "sidecar-secret",
-      fetch: hostFetch,
+    expect(body.latestIncrement).toEqual({
+      chapterLabel: "Chapter 1",
+      bullets: ["A storm closes the mountain pass.", "The innkeeper offers shelter."],
+      createdAt: "2026-08-16T06:00:01.000Z",
     });
+    expect(mocks.activeHost).not.toHaveBeenCalled();
+    expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 
   it("sets an optional model, runs the shared action, and returns a fresh snapshot", async () => {
@@ -240,7 +221,7 @@ describe("reading-agent debug API", () => {
       mocks.executeAction.mock.invocationCallOrder[0]!,
     );
     await expect(response.json()).resolves.toMatchObject({
-      hostConfigured: true,
+      gatewayConfigured: true,
       selectedModel: "xai/grok-4.5",
     });
     expect(mocks.units).toHaveBeenCalledWith({ userId: "user-1" });
@@ -257,6 +238,7 @@ describe("reading-agent debug API", () => {
       lease: null,
       units: [],
       usage: null,
+      latestIncrement: null,
     });
   });
 
@@ -288,6 +270,16 @@ describe("reading-agent debug API", () => {
     await expect(snapshot.json()).resolves.toMatchObject({
       selectedModel: "anthropic/claude-sonnet-4-6",
     });
+  });
+
+  it("does not run queue actions without Gateway credentials", async () => {
+    delete process.env.AI_GATEWAY_API_KEY;
+
+    const response = await action({ request: postRequest({ action: "start" }) });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: "gateway_not_configured" });
+    expect(mocks.executeAction).not.toHaveBeenCalled();
   });
 
   it("preserves shared action errors instead of returning a misleading snapshot", async () => {

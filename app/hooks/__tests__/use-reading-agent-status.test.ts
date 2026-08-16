@@ -8,12 +8,14 @@ import {
 } from "~/hooks/use-reading-agent-status";
 
 const emptyStatus: ReadingAgentStatus = {
-  hostConfigured: true,
-  hostActive: false,
+  gatewayConfigured: true,
   schema: { ok: true },
   lease: null,
   units: [],
   usage: null,
+  latestIncrement: null,
+  selectedModel: "anthropic/claude-sonnet-4-6",
+  lastError: null,
 };
 
 function Probe({

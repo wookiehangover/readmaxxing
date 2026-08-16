@@ -8,8 +8,7 @@ const STATUS_TIMEOUT_MESSAGE = "Status request timed out. Retrying automatically
 export type ReadingAgentUnitStatus = "pending" | "processing" | "done" | "skipped" | "error";
 
 export interface ReadingAgentStatus {
-  hostConfigured: boolean;
-  hostActive: boolean;
+  gatewayConfigured: boolean;
   schema: { ok: boolean; missingColumns?: string[] };
   lease: {
     unitId: string;
@@ -41,10 +40,17 @@ export interface ReadingAgentStatus {
     source: string;
     createdAt: string;
   } | null;
+  latestIncrement: {
+    chapterLabel: string;
+    bullets: string[];
+    createdAt: string;
+  } | null;
+  selectedModel: string;
+  lastError: string | null;
 }
 
 async function fetchReadingAgentStatus(signal: AbortSignal): Promise<ReadingAgentStatus> {
-  const response = await fetch("/api/reading-agent/status", { signal });
+  const response = await fetch("/api/reading-agent/debug", { signal });
   if (!response.ok) {
     throw new Error(
       response.status === 401

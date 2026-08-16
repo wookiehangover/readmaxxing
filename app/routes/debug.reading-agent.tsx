@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { Activity, ArrowLeft, CircleAlert, Clock3, Database, Inbox, Server } from "lucide-react";
-import { useCallback } from "react";
 import { Link, redirect } from "react-router";
+import { LastIncrementCard } from "~/components/reading-agent/last-increment-card";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -29,10 +29,8 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { ConversationCard } from "~/components/reading-agent/conversation-card";
 import { DebugModelPicker } from "~/components/reading-agent/debug-model-picker";
 import { useReadingAgentActions } from "~/hooks/use-reading-agent-actions";
-import { useReadingAgentConversation } from "~/hooks/use-reading-agent-conversation";
 import {
   type ReadingAgentStatus,
   type ReadingAgentUnitStatus,
@@ -103,18 +101,18 @@ function HealthCards({ status }: { status: ReadingAgentStatus }) {
       <Card>
         <CardHeader>
           <CardTitle>Agent host</CardTitle>
-          <CardDescription>Flue runtime configuration</CardDescription>
+          <CardDescription>Vercel AI Gateway readiness</CardDescription>
           <CardAction>
-            <Badge variant={status.hostConfigured ? "default" : "destructive"}>
-              {status.hostConfigured ? "Configured" : "Not configured"}
+            <Badge variant={status.gatewayConfigured ? "default" : "destructive"}>
+              {status.gatewayConfigured ? "Configured" : "Not configured"}
             </Badge>
           </CardAction>
         </CardHeader>
         <CardContent className="flex items-center gap-3 text-muted-foreground">
           <Server className="size-5" aria-hidden="true" />
-          {status.hostConfigured
-            ? "Agent dispatch is available."
-            : "Jobs can queue, but the agent host cannot be started."}
+          {status.gatewayConfigured
+            ? "One-shot page ingest can call the AI Gateway."
+            : "Set an AI Gateway API key or provide Vercel OIDC credentials."}
         </CardContent>
       </Card>
 
@@ -380,21 +378,14 @@ function UnitsCard({
 export default function ReadingAgentDebugPage() {
   const { data, error, isLoading, updatedAt, refetch: refetchStatus } = useReadingAgentStatus();
   const {
-    data: conversation,
-    error: conversationError,
-    refetch: refetchConversation,
-  } = useReadingAgentConversation();
-  const refresh = useCallback(async () => {
-    await Promise.all([refetchStatus(), refetchConversation()]);
-  }, [refetchConversation, refetchStatus]);
-  const {
     pending,
     error: actionError,
     start,
     stop,
     retry,
     reset,
-  } = useReadingAgentActions(refresh);
+    clear,
+  } = useReadingAgentActions(refetchStatus);
   const availability = data
     ? readingAgentActionAvailability(data)
     : { canStart: false, canStop: false, canRetry: false, canReset: false };
@@ -417,6 +408,9 @@ export default function ReadingAgentDebugPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
+              <Button type="button" size="sm" variant="outline" disabled={pending} onClick={clear}>
+                Clear all
+              </Button>
               <Button
                 type="button"
                 size="sm"
@@ -452,12 +446,12 @@ export default function ReadingAgentDebugPage() {
         {data ? <HealthCards status={data} /> : null}
         <DebugModelPicker />
 
-        {data && !data.hostConfigured && (
+        {data && !data.gatewayConfigured && (
           <Alert variant="destructive">
             <Server />
-            <AlertTitle>Agent host is not configured</AlertTitle>
+            <AlertTitle>AI Gateway is not configured</AlertTitle>
             <AlertDescription>
-              Set READING_AGENT_SECRET before queued jobs can run.
+              Set AI_GATEWAY_API_KEY or provide VERCEL_OIDC_TOKEN before queued jobs can run.
             </AlertDescription>
           </Alert>
         )}
@@ -484,7 +478,7 @@ export default function ReadingAgentDebugPage() {
               />
               <UsageCard usage={data.usage} />
             </div>
-            <ConversationCard conversation={conversation} error={conversationError} />
+            <LastIncrementCard increment={data.latestIncrement} />
             <UnitsCard
               units={data.units}
               canRetry={availability.canRetry}

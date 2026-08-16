@@ -2,17 +2,17 @@ export type ReadingAgentQueueAction =
   | { action: "start" }
   | { action: "stop" }
   | { action: "retry"; unitId: string }
-  | { action: "reset"; unitId: string };
+  | { action: "reset"; unitId: string }
+  | { action: "clear" };
 
 export function readingAgentActionAvailability(status: {
-  hostConfigured: boolean;
-  hostActive: boolean;
+  gatewayConfigured: boolean;
   schema: { ok: boolean };
   lease: object | null;
 }) {
-  const ready = status.hostConfigured && status.schema.ok;
+  const ready = status.gatewayConfigured && status.schema.ok;
   return {
-    canStart: ready && !status.hostActive,
+    canStart: ready && status.lease === null,
     canStop: ready && status.lease !== null,
     canRetry: ready,
     canReset: ready,
@@ -28,8 +28,8 @@ function actionErrorMessage(status: number, body: unknown): string {
   if (status === 401 || error === "auth_required") {
     return "Authentication required. Reload to sign in.";
   }
-  if (error === "agent_not_configured" || error === "sidecar_not_configured") {
-    return "Agent host is not configured.";
+  if (error === "gateway_not_configured") {
+    return "AI Gateway is not configured.";
   }
   if (error === "schema_stale") return "Queue schema is stale.";
   if (error === "not_found") return "Unit not found.";
@@ -41,12 +41,15 @@ function actionErrorMessage(status: number, body: unknown): string {
 export async function postReadingAgentAction(payload: ReadingAgentQueueAction): Promise<void> {
   let response: Response;
   try {
-    response = await fetch("/api/reading-agent/actions", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    response = await fetch(
+      payload.action === "clear" ? "/api/reading-agent/debug" : "/api/reading-agent/actions",
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
   } catch (cause) {
     throw new Error(cause instanceof Error ? cause.message : "Failed to run reading-agent action.");
   }

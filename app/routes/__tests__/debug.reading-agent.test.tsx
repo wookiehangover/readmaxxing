@@ -3,7 +3,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReadingAgentStatus } from "~/hooks/use-reading-agent-status";
-import type { ReadingAgentConversation } from "~/lib/reading-agent/conversation";
 
 const mocks = vi.hoisted(() => ({ session: vi.fn() }));
 vi.mock("~/lib/effect-runtime", () => ({ AppRuntime: { runPromise: mocks.session } }));
@@ -13,19 +12,14 @@ import ReadingAgentDebugPage, { clientLoader } from "~/routes/debug.reading-agen
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const emptyStatus: ReadingAgentStatus = {
-  hostConfigured: true,
-  hostActive: false,
+  gatewayConfigured: true,
   schema: { ok: true },
   lease: null,
   units: [],
   usage: null,
-};
-
-const emptyConversation: ReadingAgentConversation = {
-  phase: "absent",
-  conversationId: null,
-  bookId: null,
-  messages: [],
+  latestIncrement: null,
+  selectedModel: "anthropic/claude-sonnet-4-6",
+  lastError: null,
 };
 
 let root: Root | undefined;
@@ -70,7 +64,6 @@ const processingUnit: ReadingAgentStatus["units"][number] = {
 
 function respond(
   status: ReadingAgentStatus,
-  conversation: ReadingAgentConversation = emptyConversation,
   options?: { action?: (body: unknown) => Promise<Response> | Response },
 ) {
   fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -79,16 +72,12 @@ function respond(
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
       return Promise.resolve(options?.action?.(body) ?? Response.json({ ok: true }));
     }
-    if (url.includes("/api/reading-agent/conversation")) {
-      return Promise.resolve(Response.json(conversation));
-    }
     if (url.includes("/api/reading-agent/debug")) {
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
       return Promise.resolve(
         Response.json({
           ...status,
           selectedModel: body?.model ?? "anthropic/claude-sonnet-4-6",
-          conversationTail: null,
           lastError: null,
         }),
       );
@@ -127,6 +116,20 @@ function postedDebugModels() {
       );
     })
     .map(([, init]) => JSON.parse(String((init as RequestInit).body)));
+}
+
+function postedDebugActions() {
+  return fetchMock.mock.calls
+    .filter(([input, init]) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : String(input);
+      return (
+        url.includes("/api/reading-agent/debug") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    })
+    .map(([, init]) => JSON.parse(String((init as RequestInit).body)))
+    .filter((body) => body.action);
 }
 
 async function renderPage() {
@@ -169,7 +172,7 @@ describe("reading-agent debug page", () => {
     await renderPage();
     expect(container!.textContent).toContain("No active lease");
     expect(container!.textContent).toContain("No usage recorded");
-    expect(container!.textContent).toContain("No live conversation");
+    expect(container!.textContent).toContain("No page increment yet");
     expect(container!.textContent).toContain("No recent ingest units");
     expect(container!.textContent).toContain("Agent host");
     expect(container!.textContent).toContain("anthropic/claude-sonnet-4-6");
@@ -193,6 +196,15 @@ describe("reading-agent debug page", () => {
     expect(postedActions()).toEqual([]);
   });
 
+  it("posts the user-scoped clear-all action", async () => {
+    respond(emptyStatus);
+    await renderPage();
+
+    await act(async () => button("Clear all")?.click());
+
+    expect(postedDebugActions()).toEqual([{ action: "clear" }]);
+  });
+
   it("renders a processing lease and unit", async () => {
     respond({
       ...emptyStatus,
@@ -205,7 +217,7 @@ describe("reading-agent debug page", () => {
         cacheWrite: 0,
         totalTokens: 42,
         model: "test-model",
-        source: "flue",
+        source: "ai-sdk",
         createdAt: "2026-08-14T12:00:30.000Z",
       },
     });
@@ -218,65 +230,21 @@ describe("reading-agent debug page", () => {
     expect(container!.textContent).toContain("42");
   });
 
-  it("renders live reasoning, tool names, and reply text", async () => {
-    respond(emptyStatus, {
-      phase: "live",
-      conversationId: "conversation-1",
-      bookId: "book-1",
-      messages: [
-        {
-          id: "user-1",
-          role: "user",
-          purpose: "user",
-          display: "visible",
-          parts: [],
-        },
-        {
-          id: "assistant-1",
-          role: "assistant",
-          purpose: "assistant",
-          display: "visible",
-          parts: [
-            { type: "reasoning", text: "Need the current wiki.", state: "done" },
-            { type: "dynamic-tool", toolName: "readWiki", state: "output-available" },
-            { type: "text", text: "Updated the wiki with the new scene.", state: "done" },
-          ],
-        },
-      ],
+  it("renders the latest one-shot page increment", async () => {
+    respond({
+      ...emptyStatus,
+      latestIncrement: {
+        chapterLabel: "Chapter 14",
+        bullets: ["The traveler crosses the pass.", "A storm begins."],
+        createdAt: "2026-08-14T12:00:00.000Z",
+      },
     });
     await renderPage();
-    expect(container!.textContent).toContain("Ingest unit submitted");
-    expect(container!.textContent).toContain("Need the current wiki.");
-    expect(container!.textContent).toContain("readWiki");
-    expect(container!.textContent).toContain("Updated the wiki with the new scene.");
-    expect(container!.textContent).not.toContain("Chapter 14 page body");
-  });
-
-  it("renders the connecting conversation state", async () => {
-    respond(emptyStatus, {
-      phase: "connecting",
-      conversationId: "conversation-1",
-      bookId: "book-1",
-      messages: [],
-    });
-    await renderPage();
-    expect(container!.textContent).toContain("connecting");
-    expect(container!.textContent).toContain("No live conversation");
-    expect(container!.textContent).toContain(
-      "The current lease is waiting for the agent host conversation.",
-    );
-  });
-
-  it("renders a conversation request error", async () => {
-    respond(emptyStatus, {
-      phase: "error",
-      conversationId: "conversation-1",
-      bookId: "book-1",
-      messages: [],
-    });
-    await renderPage();
-    expect(container!.textContent).toContain("error");
-    expect(container!.textContent).toContain("Unable to load the live conversation.");
+    expect(container!.textContent).toContain("Latest page increment");
+    expect(container!.textContent).toContain("Chapter 14");
+    expect(container!.textContent).toContain("The traveler crosses the pass.");
+    expect(container!.textContent).toContain("A storm begins.");
+    expect(container!.textContent).not.toContain("Live conversation");
   });
 
   it("renders an error unit and its last error", async () => {
@@ -330,7 +298,6 @@ describe("reading-agent debug page", () => {
   it("enables Stop for a live lease and posts stop", async () => {
     respond({
       ...emptyStatus,
-      hostActive: true,
       lease: liveLease,
       units: [processingUnit],
     });
@@ -344,13 +311,13 @@ describe("reading-agent debug page", () => {
     expect(postedActions()).toEqual([{ action: "stop" }]);
   });
 
-  it("enables Start and Stop for an unexpired orphan without an active host", async () => {
+  it("keeps Start disabled while a one-shot lease is active", async () => {
     respond({
       ...emptyStatus,
       lease: liveLease,
     });
     await renderPage();
-    expect(button("Start")?.disabled).toBe(false);
+    expect(button("Start")?.disabled).toBe(true);
     expect(button("Stop")?.disabled).toBe(false);
   });
 
@@ -360,7 +327,7 @@ describe("reading-agent debug page", () => {
       lease: { ...liveLease, expiresAt: "2000-01-01T00:00:00.000Z" },
     });
     await renderPage();
-    expect(button("Start")?.disabled).toBe(false);
+    expect(button("Start")?.disabled).toBe(true);
     expect(button("Stop")?.disabled).toBe(false);
   });
 
@@ -415,10 +382,10 @@ describe("reading-agent debug page", () => {
     expect(postedActions()).toEqual([{ action: "reset", unitId: "unit-0" }]);
   });
 
-  it("disables Start and Stop when the agent host is not configured", async () => {
+  it("disables Start, Stop, and Retry when the Gateway is not configured", async () => {
     respond({
       ...emptyStatus,
-      hostConfigured: false,
+      gatewayConfigured: false,
       lease: liveLease,
       units: [processingUnit, pendingUnit],
     });
@@ -431,12 +398,15 @@ describe("reading-agent debug page", () => {
 
   it("disables buttons while an action request is in flight and shows POST errors", async () => {
     let resolveAction: ((value: Response) => void) | undefined;
-    respond({ ...emptyStatus, units: [pendingUnit] }, emptyConversation, {
-      action: () =>
-        new Promise((resolve) => {
-          resolveAction = resolve;
-        }),
-    });
+    respond(
+      { ...emptyStatus, units: [pendingUnit] },
+      {
+        action: () =>
+          new Promise((resolve) => {
+            resolveAction = resolve;
+          }),
+      },
+    );
     await renderPage();
     const reset = button("Reset");
     expect(reset?.disabled).toBe(false);
@@ -446,10 +416,10 @@ describe("reading-agent debug page", () => {
     expect(button("Stop")?.disabled).toBe(true);
     expect(button("Retry")?.disabled).toBe(true);
     expect(button("Reset")?.disabled).toBe(true);
-    resolveAction?.(Response.json({ error: "agent_not_configured" }, { status: 409 }));
+    resolveAction?.(Response.json({ error: "gateway_not_configured" }, { status: 409 }));
     await act(async () => {});
     expect(container!.textContent).toContain("Action failed");
-    expect(container!.textContent).toContain("Agent host is not configured.");
+    expect(container!.textContent).toContain("AI Gateway is not configured.");
     expect(button("Start")?.disabled).toBe(false);
   });
 
@@ -464,20 +434,20 @@ describe("reading-agent debug page", () => {
     vi.useFakeTimers();
     respond(emptyStatus);
     await renderPage();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     act(() => setVisibility("hidden"));
     await act(async () => vi.advanceTimersByTimeAsync(4_000));
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     act(() => setVisibility("visible"));
     await act(async () => {});
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     await act(async () => vi.advanceTimersByTimeAsync(2_000));
-    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(
       fetchMock.mock.calls.some(([input]) =>
         String(input).includes("/api/reading-agent/conversation"),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 

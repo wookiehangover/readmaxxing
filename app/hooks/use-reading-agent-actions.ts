@@ -35,5 +35,6 @@ export function useReadingAgentActions(refresh: () => void | Promise<void>) {
     stop: useCallback(() => run({ action: "stop" }), [run]),
     retry: useCallback((unitId: string) => run({ action: "retry", unitId }), [run]),
     reset: useCallback((unitId: string) => run({ action: "reset", unitId }), [run]),
+    clear: useCallback(() => run({ action: "clear" }), [run]),
   };
 }

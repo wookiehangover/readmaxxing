@@ -33,8 +33,8 @@ export async function action({ request }: { request: Request }): Promise<Respons
   const session = await getSessionFromRequest(request);
   if (!session) return Response.json({ error: "auth_required" }, { status: 401 });
 
-  if (!process.env.READING_AGENT_SECRET) {
-    return Response.json({ error: "agent_not_configured" }, { status: 409 });
+  if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) {
+    return Response.json({ error: "gateway_not_configured" }, { status: 409 });
   }
 
   const schema = await getReadingAgentSchemaHealth();

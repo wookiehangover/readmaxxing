@@ -37,6 +37,8 @@ const originalEnv = {
   databaseUrl: process.env.DATABASE_URL,
   readingAgentUrl: process.env.READING_AGENT_URL,
   readingAgentSecret: process.env.READING_AGENT_SECRET,
+  gatewayApiKey: process.env.AI_GATEWAY_API_KEY,
+  oidcToken: process.env.VERCEL_OIDC_TOKEN,
 };
 
 function request(body: unknown): Request {
@@ -51,6 +53,8 @@ beforeEach(() => {
   process.env.DATABASE_URL = "postgres://configured";
   process.env.READING_AGENT_URL = "http://localhost:5174/agents/reading-scribe";
   process.env.READING_AGENT_SECRET = "secret";
+  process.env.AI_GATEWAY_API_KEY = "gateway-key";
+  delete process.env.VERCEL_OIDC_TOKEN;
   mocks.auth.mockReset().mockResolvedValue({ userId: "user-1" });
   mocks.schema.mockReset().mockResolvedValue({ ok: true });
   mocks.lease.mockReset().mockResolvedValue(null);
@@ -70,6 +74,10 @@ afterEach(() => {
   else process.env.READING_AGENT_URL = originalEnv.readingAgentUrl;
   if (originalEnv.readingAgentSecret == null) delete process.env.READING_AGENT_SECRET;
   else process.env.READING_AGENT_SECRET = originalEnv.readingAgentSecret;
+  if (originalEnv.gatewayApiKey == null) delete process.env.AI_GATEWAY_API_KEY;
+  else process.env.AI_GATEWAY_API_KEY = originalEnv.gatewayApiKey;
+  if (originalEnv.oidcToken == null) delete process.env.VERCEL_OIDC_TOKEN;
+  else process.env.VERCEL_OIDC_TOKEN = originalEnv.oidcToken;
 });
 
 describe("reading-agent actions API", () => {
@@ -89,11 +97,11 @@ describe("reading-agent actions API", () => {
     expect(mocks.schema).not.toHaveBeenCalled();
   });
 
-  it("returns 409 when the sidecar or schema is unavailable", async () => {
-    delete process.env.READING_AGENT_SECRET;
+  it("returns 409 when the Gateway or schema is unavailable", async () => {
+    delete process.env.AI_GATEWAY_API_KEY;
     expect((await action({ request: request({ action: "start" }) })).status).toBe(409);
 
-    process.env.READING_AGENT_SECRET = "secret";
+    process.env.VERCEL_OIDC_TOKEN = "oidc-token";
     mocks.schema.mockResolvedValue({
       ok: false,
       missingColumns: ["reading_ingest_unit.next_attempt_at"],

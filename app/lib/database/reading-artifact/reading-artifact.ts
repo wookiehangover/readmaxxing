@@ -114,6 +114,13 @@ export interface ReadingArtifactRevisionRow {
   createdAt: Date;
 }
 
+export interface ReadingPageIncrementRevisionRow {
+  chapterLabel: string | null;
+  content: string;
+  previousContent: string | null;
+  createdAt: Date;
+}
+
 export interface ReadingArtifactRow {
   userId: string;
   bookId: string;
@@ -396,6 +403,27 @@ export async function getLatestReadingAgentUsage(
     JOIN readmax.reading_ingest_unit AS unit ON unit.id = usage.unit_id
     WHERE unit.user_id = ${userId}
     ORDER BY usage.created_at DESC, usage.id DESC
+    LIMIT 1
+  `);
+  return result.rows[0] ?? null;
+}
+
+export async function getLatestReadingPageIncrementRevision(
+  userId: string,
+): Promise<ReadingPageIncrementRevisionRow | null> {
+  const result = await getPool().query<ReadingPageIncrementRevisionRow>(sql`
+    SELECT unit.chapter_label AS "chapterLabel",
+           revision.content,
+           previous.content AS "previousContent",
+           revision.created_at AS "createdAt"
+    FROM readmax.reading_artifact_revision AS revision
+    JOIN readmax.reading_ingest_unit AS unit ON unit.id = revision.source_unit_id
+    LEFT JOIN readmax.reading_artifact_revision AS previous
+      ON previous.id = revision.previous_revision_id
+    WHERE revision.user_id = ${userId}
+      AND revision.kind = 'outline'
+      AND revision.actor = 'agent'
+    ORDER BY revision.created_at DESC, revision.id DESC
     LIMIT 1
   `);
   return result.rows[0] ?? null;
