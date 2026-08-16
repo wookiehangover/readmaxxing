@@ -249,6 +249,62 @@ describe("useReaderDwell", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("keeps an EPUB 404 retry alive across viewport text and chapter label jitter", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }));
+    const locator = "chapter-settling.xhtml#page=1";
+    const { rerender } = await render({
+      unitKind: "epub-spine",
+      locator,
+      chapterLabel: "Provisional chapter",
+      text: "Chapter text before the viewport settles",
+    });
+
+    await advance(READER_DWELL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await rerender({
+      unitKind: "epub-spine",
+      locator,
+      chapterLabel: "Final chapter label",
+      text: "Chapter text after the viewport settles and adds more words",
+    });
+    await advance(999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await advance(READER_DWELL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("aborts an EPUB 404 retry when the locator changes", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
+    const { rerender } = await render({
+      unitKind: "epub-spine",
+      locator: "chapter-before-navigation.xhtml",
+      text: "Chapter text before navigating to another locator",
+    });
+
+    await advance(READER_DWELL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await rerender({
+      unitKind: "epub-spine",
+      locator: "chapter-after-navigation.xhtml",
+      text: "Chapter text after navigating to another locator",
+    });
+    await advance(1_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await advance(READER_DWELL_MS - 1_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string).locator).toBe(
+      "chapter-after-navigation.xhtml",
+    );
+  });
+
   it("stops retrying an EPUB 404 after leaving the page", async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
     const first = await render({

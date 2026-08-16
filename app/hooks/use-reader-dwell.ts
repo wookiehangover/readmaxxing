@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { DockviewPanelApi } from "dockview-react";
 import { useAuth } from "~/lib/context/auth-context";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
@@ -109,9 +109,12 @@ export function useReaderDwell({
   const text = unit?.text.normalize("NFC").trim() ?? "";
   const locator = unit?.locator.trim() ?? "";
   const chapterLabel = unit?.chapterLabel?.trim() || undefined;
+  const hasText = Boolean(text);
+  const latestContentRef = useRef({ chapterLabel, text });
+  latestContentRef.current = { chapterLabel, text };
 
   useEffect(() => {
-    if (!enabled || !isAuthenticated || !userId || !unitKind || !locator || !text) return;
+    if (!enabled || !isAuthenticated || !userId || !unitKind || !locator || !hasText) return;
 
     let cancelled = false;
     let fingerprint: string | null = null;
@@ -147,6 +150,7 @@ export function useReaderDwell({
       }
 
       const sendingFingerprint = fingerprint;
+      const content = latestContentRef.current;
       inFlightFingerprints.add(sendingFingerprint);
       void postDwellUnit(
         `/api/books/${encodeURIComponent(bookId)}/artifacts/ingest`,
@@ -154,8 +158,8 @@ export function useReaderDwell({
           fingerprint: sendingFingerprint,
           unitKind,
           locator,
-          chapterLabel,
-          text,
+          chapterLabel: content.chapterLabel,
+          text: content.text,
         }),
         { retryNotFound: unitKind === "epub-spine", signal: controller.signal },
       )
@@ -218,13 +222,12 @@ export function useReaderDwell({
     };
   }, [
     bookId,
-    chapterLabel,
     dwellMs,
     enabled,
+    hasText,
     isAuthenticated,
     locator,
     panelApi,
-    text,
     unitKind,
     userId,
     workspace,
