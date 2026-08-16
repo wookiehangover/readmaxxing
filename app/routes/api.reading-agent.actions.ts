@@ -16,6 +16,10 @@ import { stopReadingAgentHost } from "~/lib/reading-agent/agent-host.server";
 
 type QueueAction = "start" | "stop" | "retry" | "reset";
 
+export type ReadingAgentActionPayload =
+  | { action: "start" | "stop" }
+  | { action: "retry" | "reset"; unitId: string };
+
 export const READING_AGENT_ABORT_TIMEOUT_MS = 1_000;
 
 export async function action({ request }: { request: Request }): Promise<Response> {
@@ -44,15 +48,22 @@ export async function action({ request }: { request: Request }): Promise<Respons
   const payload = await parseActionPayload(request);
   if ("error" in payload) return Response.json({ error: payload.error }, { status: 400 });
 
+  return executeReadingAgentAction(session.userId, payload);
+}
+
+export async function executeReadingAgentAction(
+  userId: string,
+  payload: ReadingAgentActionPayload,
+): Promise<Response> {
   switch (payload.action) {
     case "start":
-      return startQueue(session.userId);
+      return startQueue(userId);
     case "stop":
-      return stopQueue(session.userId);
+      return stopQueue(userId);
     case "retry":
-      return retryUnit(session.userId, payload.unitId);
+      return retryUnit(userId, payload.unitId);
     case "reset":
-      return resetUnit(session.userId, payload.unitId);
+      return resetUnit(userId, payload.unitId);
   }
 }
 
@@ -135,15 +146,19 @@ async function abortConversation(
 
 async function parseActionPayload(
   request: Request,
-): Promise<
-  { action: "start" | "stop" } | { action: "retry" | "reset"; unitId: string } | { error: string }
-> {
+): Promise<ReadingAgentActionPayload | { error: string }> {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
     return { error: "invalid_json" };
   }
+  return parseReadingAgentActionPayload(body);
+}
+
+export function parseReadingAgentActionPayload(
+  body: unknown,
+): ReadingAgentActionPayload | { error: string } {
   if (!isRecord(body) || !isQueueAction(body.action)) return { error: "invalid_action" };
   if (body.action === "start" || body.action === "stop") return { action: body.action };
   if (typeof body.unitId !== "string" || body.unitId.trim() === "") {

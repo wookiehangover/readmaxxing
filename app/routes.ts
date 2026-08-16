@@ -30,6 +30,7 @@ export default [
   route("api/reading-agent/status", "routes/api.reading-agent.status.ts"),
   route("api/reading-agent/conversation", "routes/api.reading-agent.conversation.ts"),
   route("api/reading-agent/actions", "routes/api.reading-agent.actions.ts"),
+  route("api/reading-agent/debug", "routes/api.reading-agent.debug.ts"),
   route("api/cron/reading-ingest", "routes/api.cron.reading-ingest.ts"),
   route("api/share", "routes/api.share.ts"),
   route("api/share/:id", "routes/api.share.$id.ts"),
