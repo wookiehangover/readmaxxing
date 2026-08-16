@@ -226,6 +226,59 @@ describe("useReaderDwell", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("retries an EPUB 404 until the synced book accepts the dwell", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }));
+    const unit: ReadingDwellUnit = {
+      unitKind: "epub-spine",
+      locator: "chapter-new-book.xhtml",
+      text: "Chapter text for an EPUB that has not synced yet",
+    };
+    const first = await render(unit);
+
+    await advance(READER_DWELL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await advance(2_000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    unmount(first.root);
+
+    await render(unit);
+    await advance(READER_DWELL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops retrying an EPUB 404 after leaving the page", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
+    const first = await render({
+      unitKind: "epub-spine",
+      locator: "chapter-left-before-sync.xhtml",
+      text: "Chapter text for a new EPUB that the reader leaves",
+    });
+
+    await advance(READER_DWELL_MS);
+    await advance(1_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    unmount(first.root);
+
+    await advance(5_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a PDF 404", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
+    await render({
+      unitKind: "pdf-page",
+      locator: "page:404",
+      text: "PDF page text whose missing book remains non-retriable",
+    });
+
+    await advance(READER_DWELL_MS);
+    await act(async () => vi.runAllTimersAsync());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("does not loop on non-authentication 4xx responses", async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 400 }));
     await render({

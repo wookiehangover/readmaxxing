@@ -5,6 +5,7 @@ import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 
 export const READER_DWELL_MS = 10_000;
 const READER_DWELL_RETRY_DELAYS_MS = [250, 500, 1_000] as const;
+const READER_DWELL_NOT_FOUND_RETRY_DELAY_MS = 1_000;
 
 export interface ReadingDwellUnit {
   unitKind: "epub-spine" | "pdf-page";
@@ -32,30 +33,66 @@ async function computeFingerprint(parts: readonly string[]): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function postDwellUnit(url: string, body: string): Promise<boolean> {
-  for (let attempt = 0; ; attempt += 1) {
+function waitForRetry(delayMs: number, signal: AbortSignal): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve(false);
+      return;
+    }
+
+    const finish = (shouldRetry: boolean) => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", handleAbort);
+      resolve(shouldRetry);
+    };
+    const handleAbort = () => finish(false);
+    const timeout = setTimeout(() => finish(true), delayMs);
+    signal.addEventListener("abort", handleAbort, { once: true });
+  });
+}
+
+async function postDwellUnit(
+  url: string,
+  body: string,
+  options: { retryNotFound: boolean; signal: AbortSignal },
+): Promise<boolean> {
+  let transientAttempt = 0;
+  while (!options.signal.aborted) {
+    let retryDelayMs: number;
     try {
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
+        signal: options.signal,
       });
       if (response.ok) return true;
 
-      const canRetry = response.status >= 500 && attempt < READER_DWELL_RETRY_DELAYS_MS.length;
-      if (!canRetry) {
-        console.error(`Failed to ingest reader dwell unit: HTTP ${response.status}`);
-        return false;
+      if (response.status === 404 && options.retryNotFound) {
+        retryDelayMs = READER_DWELL_NOT_FOUND_RETRY_DELAY_MS;
+      } else {
+        const canRetry =
+          response.status >= 500 && transientAttempt < READER_DWELL_RETRY_DELAYS_MS.length;
+        if (!canRetry) {
+          console.error(`Failed to ingest reader dwell unit: HTTP ${response.status}`);
+          return false;
+        }
+        retryDelayMs = READER_DWELL_RETRY_DELAYS_MS[transientAttempt];
+        transientAttempt += 1;
       }
     } catch (error) {
-      if (attempt >= READER_DWELL_RETRY_DELAYS_MS.length) {
+      if (options.signal.aborted) return false;
+      if (transientAttempt >= READER_DWELL_RETRY_DELAYS_MS.length) {
         console.error("Failed to ingest reader dwell unit:", error);
         return false;
       }
+      retryDelayMs = READER_DWELL_RETRY_DELAYS_MS[transientAttempt];
+      transientAttempt += 1;
     }
 
-    await new Promise((resolve) => setTimeout(resolve, READER_DWELL_RETRY_DELAYS_MS[attempt]));
+    if (!(await waitForRetry(retryDelayMs, options.signal))) return false;
   }
+  return false;
 }
 
 export function useReaderDwell({
@@ -82,6 +119,7 @@ export function useReaderDwell({
     let remainingMs = dwellMs;
     let startedAt = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    const controller = new AbortController();
 
     const isEligible = () => {
       const activeBookId = workspace?.activeClusterBookIdRef.current;
@@ -119,6 +157,7 @@ export function useReaderDwell({
           chapterLabel,
           text,
         }),
+        { retryNotFound: unitKind === "epub-spine", signal: controller.signal },
       )
         .then((wasSent) => {
           if (wasSent) sentFingerprints.add(sendingFingerprint);
@@ -171,6 +210,7 @@ export function useReaderDwell({
 
     return () => {
       cancelled = true;
+      controller.abort();
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       panelVisibility?.dispose();
