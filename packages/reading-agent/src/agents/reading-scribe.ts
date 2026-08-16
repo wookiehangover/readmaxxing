@@ -9,6 +9,9 @@ const DEFAULT_MODEL = "anthropic/claude-sonnet-4-6";
 const MODELS = new Set([
   DEFAULT_MODEL,
   "openai/gpt-5.5",
+  "openai/gpt-5.6-luna",
+  "openai/gpt-5.6-terra",
+  "openai/gpt-5.6-sol",
   "xai/grok-4.5",
   "google/gemini-2.5-flash",
 ]);
