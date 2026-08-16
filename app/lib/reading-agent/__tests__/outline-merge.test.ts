@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { mergeOutlineMarkdown } from "../outline-merge";
+import { getOutlineChapterBullets, mergeOutlineMarkdown } from "../outline-merge";
+
+describe("getOutlineChapterBullets", () => {
+  it("returns only bullets from the matching chapter", () => {
+    const outline = "## One\n- First event.\n- Second event.\n\n## Two\n- Later event.";
+    expect(getOutlineChapterBullets(outline, "One")).toEqual(["First event.", "Second event."]);
+    expect(getOutlineChapterBullets(outline, "Missing")).toEqual([]);
+  });
+});
 
 describe("mergeOutlineMarkdown", () => {
   it("creates a chapter section in an empty document", () => {

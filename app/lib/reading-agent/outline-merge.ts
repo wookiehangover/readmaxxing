@@ -43,6 +43,14 @@ function existingBullets(markdown: string, section: ChapterSection | null): Set<
   );
 }
 
+export function getOutlineChapterBullets(
+  markdown: string,
+  chapterLabel: string | null | undefined,
+): string[] {
+  const section = findChapter(markdown, normalizeChapterLabel(chapterLabel));
+  return [...existingBullets(markdown, section)];
+}
+
 function newBullets(bullets: readonly string[], seen: Set<string>): string[] {
   const additions: string[] = [];
   for (const candidate of bullets) {

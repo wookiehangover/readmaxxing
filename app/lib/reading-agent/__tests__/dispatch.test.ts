@@ -15,7 +15,6 @@ import {
   sweepReadingIngestQueues,
 } from "../dispatch.server";
 import { DEFAULT_DEBUG_READING_AGENT_MODEL, setSelectedDebugModel } from "../debug-model.server";
-import { ReadingScribeCallError } from "../flue-client.server";
 
 const unit: ReadingIngestUnitRow = {
   id: "unit-1",
@@ -46,30 +45,36 @@ const leased = {
     expiresAt: new Date("2026-01-01T00:05:00Z"),
   },
 };
-const wiki: ReadingArtifactRow = {
+const outline: ReadingArtifactRow = {
   userId: "user-1",
   bookId: "book-1",
-  kind: "wiki",
-  content: "Existing story.",
+  kind: "outline",
+  content: "## Chapter 1\n- Existing event.\n\n## Chapter 2\n- Later event.",
   revisionId: "revision-1",
   updatedAt: new Date("2026-01-01T00:00:00Z"),
 };
-const flueUsage = {
+const characters: ReadingArtifactRow = {
+  ...outline,
+  kind: "characters",
+  content: "Existing cast.",
+};
+const wiki: ReadingArtifactRow = { ...outline, kind: "wiki", content: "Existing story." };
+const aiSdkUsage = {
   input: 100,
   output: 20,
   cacheRead: 5,
   cacheWrite: 0,
   totalTokens: 125,
-  costTotal: 0.001,
-  model: "anthropic/claude-sonnet-4-6",
-  source: "flue" as const,
+  costTotal: 0,
+  model: "openai/gpt-5.5",
+  source: "ai-sdk" as const,
 };
 
 const claimLease = vi.fn();
 const complete = vi.fn();
 const getCurrent = vi.fn();
 const release = vi.fn();
-const callAgent = vi.fn();
+const callIncrement = vi.fn();
 const getNextDue = vi.fn();
 const dispatch = vi.fn();
 const listUserIds = vi.fn();
@@ -78,15 +83,12 @@ const drain = vi.fn();
 const getLease = vi.fn();
 const getActiveHost = vi.fn();
 const stopUnit = vi.fn();
-const disposeHost = vi.fn();
-const originalReadingAgentUrl = process.env.READING_AGENT_URL;
 
 beforeEach(() => {
   setSelectedDebugModel(DEFAULT_DEBUG_READING_AGENT_MODEL);
-  process.env.READING_AGENT_URL = "http://localhost:5174/agents/reading-scribe";
   claimLease.mockReset().mockResolvedValue(leased);
   complete.mockReset().mockResolvedValue(1);
-  getCurrent.mockReset().mockResolvedValue([wiki]);
+  getCurrent.mockReset().mockResolvedValue([outline, characters, wiki]);
   release.mockReset().mockResolvedValue(undefined);
   getNextDue.mockReset().mockResolvedValue(null);
   dispatch.mockReset().mockResolvedValue("done");
@@ -96,81 +98,69 @@ beforeEach(() => {
   getLease.mockReset().mockResolvedValue(null);
   getActiveHost.mockReset().mockReturnValue(false);
   stopUnit.mockReset().mockResolvedValue(true);
-  disposeHost.mockReset().mockResolvedValue(true);
-  callAgent.mockReset().mockResolvedValue({
-    artifacts: {
-      outline: { status: "unchanged", body: "", summary: "No outline change." },
-      characters: { status: "unchanged", body: "", summary: "No character change." },
-      wiki: { status: "updated", body: "Expanded story.", summary: "Added the new scene." },
-    },
-    usage: flueUsage,
+  callIncrement.mockReset().mockResolvedValue({
+    bullets: ["New event."],
+    usage: aiSdkUsage,
   });
 });
 
 afterEach(() => {
-  if (originalReadingAgentUrl == null) delete process.env.READING_AGENT_URL;
-  else process.env.READING_AGENT_URL = originalReadingAgentUrl;
+  setSelectedDebugModel(DEFAULT_DEBUG_READING_AGENT_MODEL);
 });
 
 const options = () => ({
-  agentSecret: "test-secret",
-  dependencies: { claimLease, complete, getCurrent, release, callAgent, disposeHost },
+  dependencies: { claimLease, complete, getCurrent, release, callIncrement },
 });
 
 describe("reading ingest dispatch", () => {
-  it("persists only a changed wiki edit and completes the unit", async () => {
+  it("merges the page bullets into the outline and persists only the outline", async () => {
     setSelectedDebugModel("openai/gpt-5.5");
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("done");
 
     expect(complete).toHaveBeenCalledWith(
       leased,
-      [{ kind: "wiki", content: "Expanded story.", summary: "Added the new scene." }],
-      expect.objectContaining({ totalTokens: 125, source: "flue" }),
+      [
+        {
+          kind: "outline",
+          content: "## Chapter 1\n- Existing event.\n- New event.\n\n## Chapter 2\n- Later event.",
+          summary: "Added this page's outline increment.",
+        },
+      ],
+      expect.objectContaining({ totalTokens: 125, source: "ai-sdk" }),
     );
     expect(release).not.toHaveBeenCalled();
-    expect(callAgent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        secret: "test-secret",
-        model: "openai/gpt-5.5",
-        artifacts: { outline: "", characters: "", wiki: "Existing story." },
-        retainHost: true,
-      }),
-    );
+    expect(callIncrement).toHaveBeenCalledWith({
+      model: "openai/gpt-5.5",
+      page: "A newly read chapter page.",
+      chapterLabel: "Chapter 1",
+      existingBullets: ["Existing event."],
+    });
   });
 
-  it("keeps the host registered until the unit lease is completed", async () => {
-    complete.mockImplementation(async () => {
-      expect(disposeHost).not.toHaveBeenCalled();
-      return 1;
-    });
+  it("completes without writing an artifact when the page adds no bullets", async () => {
+    callIncrement.mockResolvedValue({ bullets: [], usage: aiSdkUsage });
 
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("done");
 
-    expect(disposeHost).toHaveBeenCalledWith(readingConversationId("user-1", "book-1", "unit-1"));
-    expect(complete.mock.invocationCallOrder[0]).toBeLessThan(
-      disposeHost.mock.invocationCallOrder[0],
-    );
+    expect(complete).toHaveBeenCalledWith(leased, [], aiSdkUsage);
   });
 
-  it("releases a failed Flue call for retry without marking the unit done", async () => {
-    callAgent.mockRejectedValue(new Error("Flue unavailable"));
+  it("releases a failed Gateway call for retry without marking the unit done", async () => {
+    callIncrement.mockRejectedValue(new Error("Gateway unavailable"));
 
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("failed");
 
     expect(complete).not.toHaveBeenCalled();
-    expect(release).toHaveBeenCalledWith(leased, "Flue unavailable", {
+    expect(release).toHaveBeenCalledWith(leased, "Gateway unavailable", {
       input: 0,
       output: 0,
       cacheRead: 0,
       cacheWrite: 0,
       totalTokens: 0,
       costTotal: 0,
-      model: null,
-      source: "unknown",
+      model: DEFAULT_DEBUG_READING_AGENT_MODEL,
+      source: "ai-sdk",
     });
-    expect(release.mock.invocationCallOrder[0]).toBeLessThan(
-      disposeHost.mock.invocationCallOrder[0],
-    );
   });
 
   it("cleans up without duplicating usage when a settled call loses its lease fence", async () => {
@@ -183,25 +173,14 @@ describe("reading ingest dispatch", () => {
       leased,
       "Reading agent completion lease is no longer live",
     );
-    expect(release.mock.invocationCallOrder[0]).toBeLessThan(
-      disposeHost.mock.invocationCallOrder[0],
-    );
   });
 
-  it("passes preserved usage from an invalid reply to failure settlement", async () => {
-    callAgent.mockRejectedValue(new ReadingScribeCallError("Invalid reply", flueUsage));
-
-    await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("failed");
-
-    expect(release).toHaveBeenCalledWith(leased, "Invalid reply", flueUsage);
-  });
-
-  it("does not record usage when Flue was never called", async () => {
+  it("does not record usage when the Gateway client was never called", async () => {
     getCurrent.mockRejectedValue(new Error("Artifact read failed"));
 
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("failed");
 
-    expect(callAgent).not.toHaveBeenCalled();
+    expect(callIncrement).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledWith(leased, "Artifact read failed", undefined);
   });
 
@@ -210,35 +189,17 @@ describe("reading ingest dispatch", () => {
 
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("already-leased");
 
-    expect(callAgent).not.toHaveBeenCalled();
+    expect(callIncrement).not.toHaveBeenCalled();
   });
 
-  it("dispatches through the in-app host when a leftover remote URL is configured", async () => {
-    await expect(
-      dispatchReadingIngestUnit(unit, {
-        agentSecret: "test-secret",
-        dependencies: options().dependencies,
-      }),
-    ).resolves.toBe("done");
+  it("does not pass Flue host, secret, conversation, or artifact inputs", async () => {
+    await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("done");
 
-    expect(callAgent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        conversationId: readingConversationId("user-1", "book-1", "unit-1"),
-      }),
-    );
-    expect(callAgent.mock.calls[0]?.[0]).not.toHaveProperty("url");
+    const call = callIncrement.mock.calls[0]?.[0];
+    expect(call).not.toHaveProperty("secret");
+    expect(call).not.toHaveProperty("conversationId");
+    expect(call).not.toHaveProperty("artifacts");
     expect(complete).toHaveBeenCalledOnce();
-  });
-
-  it("leaves the unit pending when the agent secret is not configured", async () => {
-    await expect(
-      dispatchReadingIngestUnit(unit, {
-        agentSecret: "",
-        dependencies: options().dependencies,
-      }),
-    ).resolves.toBe("not-configured");
-
-    expect(claimLease).not.toHaveBeenCalled();
   });
 
   it("uses a stable, opaque conversation id per ingest unit", () => {
@@ -282,7 +243,6 @@ describe("reading ingest dispatch", () => {
   it("does nothing when the queue is empty or a user lease is busy", async () => {
     await expect(
       drainReadingIngestQueue("user-1", {
-        agentSecret: "test-secret",
         dependencies: { reclaim, getNextDue, dispatch },
       }),
     ).resolves.toBeUndefined();
@@ -296,7 +256,6 @@ describe("reading ingest dispatch", () => {
     getNextDue.mockResolvedValue(unit);
 
     await drainReadingIngestQueue("user-1", {
-      agentSecret: "test-secret",
       maxUnits: 1,
       dependencies: { reclaim, getNextDue, dispatch },
     });
@@ -325,7 +284,6 @@ describe("reading ingest dispatch", () => {
       .mockResolvedValueOnce("done");
 
     const drain = drainReadingIngestQueue("user-1", {
-      agentSecret: "test-secret",
       dependencies: { reclaim, getNextDue, dispatch },
     });
     await vi.waitFor(() => expect(dispatch).toHaveBeenCalledTimes(1));
@@ -334,11 +292,7 @@ describe("reading ingest dispatch", () => {
     settleFirst?.();
     await drain;
 
-    expect(dispatch).toHaveBeenNthCalledWith(
-      2,
-      second,
-      expect.objectContaining({ agentSecret: "test-secret" }),
-    );
+    expect(dispatch).toHaveBeenNthCalledWith(2, second);
     expect(getNextDue).toHaveBeenCalledTimes(3);
   });
 
@@ -346,7 +300,6 @@ describe("reading ingest dispatch", () => {
     getNextDue.mockResolvedValue(unit);
 
     await drainReadingIngestQueue("user-1", {
-      agentSecret: "test-secret",
       maxUnits: 1,
       dependencies: { reclaim, getNextDue, dispatch },
     });
@@ -360,7 +313,6 @@ describe("reading ingest dispatch", () => {
 
     await expect(
       sweepReadingIngestQueues({
-        agentSecret: "test-secret",
         dependencies: { listUserIds, reclaim, drain },
       }),
     ).resolves.toBe(2);
@@ -374,15 +326,11 @@ describe("reading ingest dispatch", () => {
     getNextDue.mockResolvedValueOnce(unit).mockResolvedValueOnce(null);
 
     await drainReadingIngestQueue("user-1", {
-      agentSecret: "test-secret",
       dependencies: { reclaim, getNextDue, dispatch },
     });
 
     expect(reclaim).toHaveBeenCalledWith("user-1");
-    expect(dispatch).toHaveBeenCalledWith(
-      unit,
-      expect.objectContaining({ agentSecret: "test-secret" }),
-    );
+    expect(dispatch).toHaveBeenCalledWith(unit);
   });
 
   it("sweeps the database without propagating a leftover remote URL", async () => {
@@ -390,16 +338,12 @@ describe("reading ingest dispatch", () => {
 
     await expect(
       sweepReadingIngestQueues({
-        agentSecret: "test-secret",
         dependencies: { listUserIds, reclaim, drain },
       }),
     ).resolves.toBe(1);
 
     expect(reclaim).toHaveBeenCalledWith("user-1");
-    expect(drain).toHaveBeenCalledWith(
-      "user-1",
-      expect.objectContaining({ agentSecret: "test-secret", maxUnits: 1 }),
-    );
+    expect(drain).toHaveBeenCalledWith("user-1", expect.objectContaining({ maxUnits: 1 }));
   });
 });
 
@@ -409,19 +353,19 @@ describe("local reading ingest sweep", () => {
     nodeEnv: "development",
     vitest: undefined,
     databaseUrl: "postgres://configured",
-    agentSecret: "test-secret",
+    gatewayApiKey: "gateway-key",
   };
 
   afterEach(() => {
     resetLocalReadingIngestSweep();
   });
 
-  it("does not start without a database or secret, or outside development", () => {
+  it("does not start without a database or Gateway credential, or outside development", () => {
     expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, isDev: false })).toBe(false);
     expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, nodeEnv: "test" })).toBe(false);
     expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, vitest: "true" })).toBe(false);
     expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, databaseUrl: "" })).toBe(false);
-    expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, agentSecret: "" })).toBe(false);
+    expect(shouldStartLocalReadingIngestSweep({ ...readyEnv, gatewayApiKey: "" })).toBe(false);
     expect(shouldStartLocalReadingIngestSweep(readyEnv)).toBe(true);
   });
 

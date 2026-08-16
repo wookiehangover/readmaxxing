@@ -11,56 +11,43 @@ import {
   stopReadingIngestUnit,
   type ReadingArtifactRow,
   type ReadingArtifactUpdate,
+  type ReadingAgentUsage,
   type ReadingAgentStatusLeaseRow,
   type ReadingIngestUnitRow,
 } from "~/lib/database/reading-artifact/reading-artifact";
-import { disposeReadingAgentHost, hasActiveReadingAgentHost } from "./agent-host.server";
-import {
-  callReadingScribe,
-  type ArtifactKind,
-  type ReadingScribeCallResult,
-  type ReadingScribeResult,
-  type ReadingScribeUsage,
-  readingScribeUsageFromError,
-} from "./flue-client.server";
+import { hasActiveReadingAgentHost } from "./agent-host.server";
 import { readingConversationId } from "./conversation-id.server";
 import { getSelectedDebugModel, type DebugReadingAgentModel } from "./debug-model.server";
+import { getOutlineChapterBullets, mergeOutlineMarkdown } from "./outline-merge";
+import {
+  callPageIncrement,
+  pageIncrementUsageFromError,
+  type PageIncrementCallResult,
+} from "./page-increment.server";
 
 export { readingConversationId };
 
 export const ORPHANED_READING_AGENT_ERROR =
   "Reading agent host lost after the app process restarted";
 
-type ReadingAgentCall = (options: {
-  conversationId: string;
-  secret: string;
+type PageIncrementCall = (options: {
   model: DebugReadingAgentModel;
   page: string;
-  artifacts: Record<ArtifactKind, string>;
-  retainHost?: boolean;
-}) => Promise<ReadingScribeCallResult>;
+  chapterLabel: string | null;
+  existingBullets: readonly string[];
+}) => Promise<PageIncrementCallResult>;
 
-const ARTIFACT_KINDS: ArtifactKind[] = ["outline", "characters", "wiki"];
-
-function currentBodies(rows: ReadingArtifactRow[]): Record<ArtifactKind, string> {
-  return Object.fromEntries(
-    ARTIFACT_KINDS.map((kind) => [kind, rows.find((row) => row.kind === kind)?.content ?? ""]),
-  ) as Record<ArtifactKind, string>;
+function currentOutline(rows: ReadingArtifactRow[]): string {
+  return rows.find((row) => row.kind === "outline")?.content ?? "";
 }
 
-function changedUpdates(
-  result: ReadingScribeResult,
-  current: Record<ArtifactKind, string>,
-): ReadingArtifactUpdate[] {
-  return ARTIFACT_KINDS.flatMap((kind) => {
-    const edit = result[kind];
-    if (edit.status !== "updated" || edit.body === current[kind]) return [];
-    return [{ kind, content: edit.body, summary: edit.summary }];
-  });
+function outlineUpdate(current: string, merged: string): ReadingArtifactUpdate[] {
+  if (merged === current) return [];
+  return [{ kind: "outline", content: merged, summary: "Added this page's outline increment." }];
 }
 
 function errorMessage(error: unknown): string {
-  return (error instanceof Error ? error.message : "Unknown ReadingScribe error").slice(0, 1000);
+  return (error instanceof Error ? error.message : "Unknown page increment error").slice(0, 1000);
 }
 
 interface DispatchDependencies {
@@ -68,8 +55,7 @@ interface DispatchDependencies {
   complete: typeof completeReadingIngestUnit;
   getCurrent: typeof getCurrentReadingArtifacts;
   release: typeof releaseReadingIngestUnit;
-  callAgent: ReadingAgentCall;
-  disposeHost: typeof disposeReadingAgentHost;
+  callIncrement: PageIncrementCall;
 }
 
 interface DrainDependencies {
@@ -95,48 +81,37 @@ const DEFAULT_DEPENDENCIES: DispatchDependencies = {
   complete: completeReadingIngestUnit,
   getCurrent: getCurrentReadingArtifacts,
   release: releaseReadingIngestUnit,
-  callAgent: callReadingScribe,
-  disposeHost: disposeReadingAgentHost,
+  callIncrement: callPageIncrement,
 };
 
 export async function dispatchReadingIngestUnit(
   unit: ReadingIngestUnitRow,
   options: {
-    agentSecret?: string;
     dependencies?: Partial<DispatchDependencies>;
   } = {},
-): Promise<"not-configured" | "already-leased" | "done" | "failed"> {
-  const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
-  if (!agentSecret) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("[reading-agent] READING_AGENT_SECRET is required; ingest remains pending.");
-    }
-    return "not-configured";
-  }
-
+): Promise<"already-leased" | "done" | "failed"> {
   const dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
   const claim = await dependencies.claimLease(unit.id);
   if (!claim) return "already-leased";
   const claimed = claim.unit;
-  const conversationId = readingConversationId(claimed.userId, claimed.bookId, claimed.id);
-  let calledAgent = false;
-  let settledUsage: ReadingScribeUsage | undefined;
+  const model = getSelectedDebugModel();
+  let calledIncrement = false;
+  let settledUsage: ReadingAgentUsage | undefined;
 
   try {
-    const current = currentBodies(await dependencies.getCurrent(claimed.userId, claimed.bookId));
-    calledAgent = true;
-    const result = await dependencies.callAgent({
-      conversationId,
-      secret: agentSecret,
-      model: getSelectedDebugModel(),
+    const current = currentOutline(await dependencies.getCurrent(claimed.userId, claimed.bookId));
+    calledIncrement = true;
+    const result = await dependencies.callIncrement({
+      model,
       page: claimed.text,
-      artifacts: current,
-      retainHost: true,
+      chapterLabel: claimed.chapterLabel,
+      existingBullets: getOutlineChapterBullets(current, claimed.chapterLabel),
     });
     settledUsage = result.usage;
+    const merged = mergeOutlineMarkdown(current, claimed.chapterLabel, result.bullets);
     const completed = await dependencies.complete(
       claim,
-      changedUpdates(result.artifacts, current),
+      outlineUpdate(current, merged),
       result.usage,
     );
     if (completed === null) {
@@ -151,16 +126,14 @@ export async function dispatchReadingIngestUnit(
     return "done";
   } catch (error) {
     const message = errorMessage(error);
-    const usage = calledAgent ? (settledUsage ?? readingScribeUsageFromError(error)) : undefined;
+    const usage = calledIncrement
+      ? (settledUsage ?? pageIncrementUsageFromError(error, model))
+      : undefined;
     await dependencies.release(claim, message, usage).catch((releaseError) => {
       console.error("[reading-agent] Failed to release ingest unit for retry:", releaseError);
     });
     console.error(`[reading-agent] Ingest unit ${claimed.id} failed:`, message);
     return "failed";
-  } finally {
-    await dependencies.disposeHost(conversationId).catch((disposeError) => {
-      console.error("[reading-agent] Failed to dispose settled agent host:", disposeError);
-    });
   }
 }
 
@@ -190,7 +163,6 @@ export async function reclaimOrphanedReadingAgentLease(
 
 export async function reclaimStaleReadingAgentLease(userId: string): Promise<void> {
   await reclaimExpiredReadingAgentLease(userId);
-  await reclaimOrphanedReadingAgentLease(userId);
 }
 
 const DEFAULT_DRAIN_DEPENDENCIES: DrainDependencies = {
@@ -202,14 +174,10 @@ const DEFAULT_DRAIN_DEPENDENCIES: DrainDependencies = {
 export async function drainReadingIngestQueue(
   userId: string,
   options: {
-    agentSecret?: string;
     maxUnits?: number;
     dependencies?: Partial<DrainDependencies>;
   } = {},
 ): Promise<void> {
-  const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
-  if (!agentSecret) return;
-
   const dependencies = { ...DEFAULT_DRAIN_DEPENDENCIES, ...options.dependencies };
   await dependencies.reclaim(userId);
 
@@ -218,8 +186,8 @@ export async function drainReadingIngestQueue(
     const unit = await dependencies.getNextDue(userId);
     if (!unit) return;
 
-    const result = await dependencies.dispatch(unit, { agentSecret });
-    if (result === "already-leased" || result === "not-configured") return;
+    const result = await dependencies.dispatch(unit);
+    if (result === "already-leased") return;
   }
 }
 
@@ -231,19 +199,13 @@ const DEFAULT_SWEEP_DEPENDENCIES: SweepDependencies = {
 
 export async function sweepReadingIngestQueues(
   options: {
-    agentSecret?: string;
     dependencies?: Partial<SweepDependencies>;
   } = {},
 ): Promise<number> {
-  const agentSecret = options.agentSecret ?? process.env.READING_AGENT_SECRET;
-  if (!agentSecret) return 0;
-
   const dependencies = { ...DEFAULT_SWEEP_DEPENDENCIES, ...options.dependencies };
   const userIds = await dependencies.listUserIds();
   await Promise.all(userIds.map((userId) => dependencies.reclaim(userId)));
-  await Promise.all(
-    userIds.map((userId) => dependencies.drain(userId, { agentSecret, maxUnits: 1 })),
-  );
+  await Promise.all(userIds.map((userId) => dependencies.drain(userId, { maxUnits: 1 })));
   return userIds.length;
 }
 
@@ -281,15 +243,15 @@ export function shouldStartLocalReadingIngestSweep(
     nodeEnv?: string;
     vitest?: string;
     databaseUrl?: string;
-    agentSecret?: string;
+    gatewayApiKey?: string;
   } = {},
 ): boolean {
   const isDev = env.isDev ?? import.meta.env.DEV;
   const nodeEnv = env.nodeEnv ?? process.env.NODE_ENV;
   const vitest = "vitest" in env ? env.vitest : process.env.VITEST;
   const databaseUrl = env.databaseUrl ?? process.env.DATABASE_URL;
-  const agentSecret = env.agentSecret ?? process.env.READING_AGENT_SECRET;
-  return Boolean(isDev && nodeEnv !== "test" && !vitest && databaseUrl && agentSecret);
+  const gatewayApiKey = env.gatewayApiKey ?? process.env.AI_GATEWAY_API_KEY;
+  return Boolean(isDev && nodeEnv !== "test" && !vitest && databaseUrl && gatewayApiKey);
 }
 
 export function resetLocalReadingIngestSweep(): void {
