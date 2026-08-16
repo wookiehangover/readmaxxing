@@ -19,12 +19,13 @@ import { reclaimOrphanedReadingAgentLease } from "~/lib/reading-agent/dispatch.s
 function scopedConversation(
   userId: string,
   bookId: string,
+  unitId: string,
   phase: ReadingAgentConversation["phase"],
   messages: ReadingAgentConversation["messages"] = [],
 ): ReadingAgentConversation {
   return {
     phase,
-    conversationId: readingConversationId(userId, bookId),
+    conversationId: readingConversationId(userId, bookId, unitId),
     bookId,
     messages,
   };
@@ -44,24 +45,26 @@ export async function loader({ request }: { request: Request }): Promise<Respons
   const lease = await getLiveReadingAgentLease(session.userId);
   if (!lease) return Response.json(emptyReadingAgentConversation("absent"));
 
-  const conversationId = readingConversationId(session.userId, lease.bookId);
+  const conversationId = readingConversationId(session.userId, lease.bookId, lease.unitId);
   let activeHost = getActiveReadingAgentHost(conversationId);
   if (!activeHost) {
     if (hasActiveReadingAgentHost(conversationId)) {
-      return Response.json(scopedConversation(session.userId, lease.bookId, "connecting"));
+      return Response.json(
+        scopedConversation(session.userId, lease.bookId, lease.unitId, "connecting"),
+      );
     }
     const reclaimed = await reclaimOrphanedReadingAgentLease(session.userId, { lease });
     if (reclaimed) return Response.json(emptyReadingAgentConversation("absent"));
     activeHost = getActiveReadingAgentHost(conversationId);
     if (!activeHost) {
       return Response.json({
-        ...scopedConversation(session.userId, lease.bookId, "error"),
+        ...scopedConversation(session.userId, lease.bookId, lease.unitId, "error"),
         error: "Reading agent host was lost after the app restarted. Start or retry the queue.",
       });
     }
   }
   if (!process.env.READING_AGENT_SECRET) {
-    return Response.json(scopedConversation(session.userId, lease.bookId, "error"));
+    return Response.json(scopedConversation(session.userId, lease.bookId, lease.unitId, "error"));
   }
   const client = createFlueClient({
     url: activeHost.url,
@@ -75,6 +78,7 @@ export async function loader({ request }: { request: Request }): Promise<Respons
       scopedConversation(
         session.userId,
         lease.bookId,
+        lease.unitId,
         "live",
         sanitizeConversationMessages(snapshot.messages),
       ),
@@ -82,8 +86,10 @@ export async function loader({ request }: { request: Request }): Promise<Respons
   } catch (error) {
     if (request.signal.aborted) throw error;
     if (error instanceof FlueApiError && error.status === 404) {
-      return Response.json(scopedConversation(session.userId, lease.bookId, "connecting"));
+      return Response.json(
+        scopedConversation(session.userId, lease.bookId, lease.unitId, "connecting"),
+      );
     }
-    return Response.json(scopedConversation(session.userId, lease.bookId, "error"));
+    return Response.json(scopedConversation(session.userId, lease.bookId, lease.unitId, "error"));
   }
 }

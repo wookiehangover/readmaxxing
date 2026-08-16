@@ -142,7 +142,7 @@ describe("reading ingest dispatch", () => {
 
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("done");
 
-    expect(disposeHost).toHaveBeenCalledWith(readingConversationId("user-1", "book-1"));
+    expect(disposeHost).toHaveBeenCalledWith(readingConversationId("user-1", "book-1", "unit-1"));
     expect(complete.mock.invocationCallOrder[0]).toBeLessThan(
       disposeHost.mock.invocationCallOrder[0],
     );
@@ -219,7 +219,7 @@ describe("reading ingest dispatch", () => {
 
     expect(callAgent).toHaveBeenCalledWith(
       expect.objectContaining({
-        conversationId: readingConversationId("user-1", "book-1"),
+        conversationId: readingConversationId("user-1", "book-1", "unit-1"),
       }),
     );
     expect(callAgent.mock.calls[0]?.[0]).not.toHaveProperty("url");
@@ -237,12 +237,15 @@ describe("reading ingest dispatch", () => {
     expect(claimLease).not.toHaveBeenCalled();
   });
 
-  it("uses a stable, opaque conversation id per user and book", () => {
-    expect(readingConversationId("user-1", "book-1")).toBe(
-      readingConversationId("user-1", "book-1"),
+  it("uses a stable, opaque conversation id per ingest unit", () => {
+    expect(readingConversationId("user-1", "book-1", "unit-1")).toBe(
+      readingConversationId("user-1", "book-1", "unit-1"),
     );
-    expect(readingConversationId("user-1", "book-1")).not.toBe(
-      readingConversationId("user-1", "book-2"),
+    expect(readingConversationId("user-1", "book-1", "unit-1")).not.toBe(
+      readingConversationId("user-1", "book-1", "unit-2"),
+    );
+    expect(readingConversationId("user-1", "book-1", "unit-1")).not.toBe(
+      readingConversationId("user-1", "book-2", "unit-1"),
     );
   });
 
@@ -255,7 +258,7 @@ describe("reading ingest dispatch", () => {
       }),
     ).resolves.toBe(true);
 
-    expect(getActiveHost).toHaveBeenCalledWith(readingConversationId("user-1", "book-1"));
+    expect(getActiveHost).toHaveBeenCalledWith(readingConversationId("user-1", "book-1", "unit-1"));
     expect(stopUnit).toHaveBeenCalledWith("user-1", "unit-1", ORPHANED_READING_AGENT_ERROR);
   });
 

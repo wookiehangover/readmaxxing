@@ -69,7 +69,7 @@ async function stopQueue(userId: string): Promise<Response> {
     return Response.json({ ok: true, stopped: false });
   }
 
-  await abortConversation(userId, lease.bookId);
+  await abortConversation(userId, lease.bookId, lease.unitId);
   await stopReadingIngestUnit(userId, lease.unitId);
   return Response.json({ ok: true, stopped: true, unitId: lease.unitId });
 }
@@ -83,7 +83,9 @@ async function retryUnit(userId: string, unitId: string): Promise<Response> {
 
   if (unit.status === "processing") {
     const lease = await getCurrentReadingAgentLease(userId);
-    if (lease?.unitId === unit.id) await abortConversation(userId, lease.bookId);
+    if (lease?.unitId === unit.id) {
+      await abortConversation(userId, lease.bookId, lease.unitId);
+    }
   }
 
   await retryReadingIngestUnit(userId, unit.id);
@@ -99,7 +101,7 @@ async function resetUnit(userId: string, unitId: string): Promise<Response> {
   }
 
   if (unit.status === "processing") {
-    await abortConversation(userId, unit.bookId, READING_AGENT_ABORT_TIMEOUT_MS);
+    await abortConversation(userId, unit.bookId, unit.id, READING_AGENT_ABORT_TIMEOUT_MS);
   }
 
   await resetReadingIngestUnit(userId, unit.id);
@@ -109,9 +111,10 @@ async function resetUnit(userId: string, unitId: string): Promise<Response> {
 async function abortConversation(
   userId: string,
   bookId: string,
+  unitId: string,
   timeoutMs?: number,
 ): Promise<void> {
-  const conversationId = readingConversationId(userId, bookId);
+  const conversationId = readingConversationId(userId, bookId, unitId);
   const stop = stopReadingAgentHost(conversationId);
   if (timeoutMs === undefined) {
     await stop;

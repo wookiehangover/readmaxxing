@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -143,6 +144,9 @@ describe("reading-agent status API", () => {
     expect(response.status).toBe(200);
     expect(body.hostConfigured).toBe(true);
     expect(body.hostActive).toBe(true);
+    expect(mocks.activeHost).toHaveBeenCalledWith(
+      readingConversationId("user-1", "book-1", "unit-1"),
+    );
     expect(body).not.toHaveProperty("hostUrl");
     expect(mocks.units).toHaveBeenCalledWith({ userId: "user-1", bookId: "book-1" });
     expect(body.lease).toMatchObject({ unitId: "unit-1", chapterLabel: "Chapter 1" });

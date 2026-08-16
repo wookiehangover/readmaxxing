@@ -51,7 +51,8 @@ async function loadStatus(request: Request): Promise<Response> {
     getLatestReadingAgentUsage(session.userId),
   ]);
   const hostActive = Boolean(
-    lease && getActiveReadingAgentHost(readingConversationId(session.userId, lease.bookId)),
+    lease &&
+    getActiveReadingAgentHost(readingConversationId(session.userId, lease.bookId, lease.unitId)),
   );
   return Response.json({
     hostConfigured,

@@ -151,6 +151,29 @@ describe("reading-agent conversation API", () => {
     expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 
+  it("never attaches to a host for a different ingest unit", async () => {
+    const otherConversationId = readingConversationId("user-1", "book-1", "unit-2");
+    mocks.lease.mockResolvedValue({
+      bookId: "book-1",
+      unitId: "unit-2",
+      expiresAt: new Date(Date.now() + 15 * 60_000),
+      chapterLabel: "Chapter 14",
+      locator: "chapter-14.xhtml#page=2",
+    });
+    mocks.activeHost.mockImplementation((conversationId: string) =>
+      conversationId === readingConversationId("user-1", "book-1", "unit-1")
+        ? { url: "http://reading-agent.local/agents/reading-scribe/unit-1" }
+        : undefined,
+    );
+
+    const response = await loader({ request: request() });
+
+    await expect(response.json()).resolves.toMatchObject({ phase: "absent" });
+    expect(mocks.activeHost).toHaveBeenCalledWith(otherConversationId);
+    expect(mocks.createFlueClient).not.toHaveBeenCalled();
+    expect(mocks.history).not.toHaveBeenCalled();
+  });
+
   it("returns a recoverable error when an orphan lease cannot be reclaimed", async () => {
     mocks.reclaimOrphan.mockResolvedValue(false);
 
@@ -225,7 +248,10 @@ describe("reading-agent conversation API", () => {
     const body = await response.json();
     expect(response.status).toBe(200);
     expect(body.phase).toBe("live");
-    expect(body.conversationId).toBe(readingConversationId("user-1", "book-1"));
+    expect(body.conversationId).toBe(readingConversationId("user-1", "book-1", "unit-1"));
+    expect(mocks.activeHost).toHaveBeenCalledWith(
+      readingConversationId("user-1", "book-1", "unit-1"),
+    );
     expect(JSON.stringify(body)).not.toContain("Chapter 14 page body");
     expect(JSON.stringify(body)).not.toContain("sidecar-secret");
     expect(body.messages).toEqual([

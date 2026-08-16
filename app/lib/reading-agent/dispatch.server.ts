@@ -116,7 +116,7 @@ export async function dispatchReadingIngestUnit(
   const claim = await dependencies.claimLease(unit.id);
   if (!claim) return "already-leased";
   const claimed = claim.unit;
-  const conversationId = readingConversationId(claimed.userId, claimed.bookId);
+  const conversationId = readingConversationId(claimed.userId, claimed.bookId, claimed.id);
   let calledAgent = false;
   let settledUsage: ReadingScribeUsage | undefined;
 
@@ -180,7 +180,7 @@ export async function reclaimOrphanedReadingAgentLease(
   };
   const lease = options.lease ?? (await dependencies.getLease(userId));
   if (!lease) return false;
-  const conversationId = readingConversationId(userId, lease.bookId);
+  const conversationId = readingConversationId(userId, lease.bookId, lease.unitId);
   if (dependencies.getActiveHost(conversationId)) return false;
   return dependencies.stopUnit(userId, lease.unitId, ORPHANED_READING_AGENT_ERROR);
 }

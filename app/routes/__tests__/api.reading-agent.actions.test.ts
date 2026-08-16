@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -127,7 +128,9 @@ describe("reading-agent actions API", () => {
       stopped: true,
       unitId: "unit-1",
     });
-    expect(mocks.stopHost).toHaveBeenCalledOnce();
+    expect(mocks.stopHost).toHaveBeenCalledWith(
+      readingConversationId("user-1", "book-1", "unit-1"),
+    );
     expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-1");
     expect(mocks.reclaim).not.toHaveBeenCalled();
   });
@@ -149,7 +152,9 @@ describe("reading-agent actions API", () => {
       stopped: true,
       unitId: "unit-expired",
     });
-    expect(mocks.stopHost).toHaveBeenCalledOnce();
+    expect(mocks.stopHost).toHaveBeenCalledWith(
+      readingConversationId("user-1", "book-expired", "unit-expired"),
+    );
     expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-expired");
     expect(mocks.reclaim).not.toHaveBeenCalled();
   });
@@ -222,7 +227,9 @@ describe("reading-agent actions API", () => {
 
     const response = await action({ request: request({ action: "retry", unitId: "unit-1" }) });
     expect(response.status).toBe(200);
-    expect(mocks.stopHost).toHaveBeenCalledOnce();
+    expect(mocks.stopHost).toHaveBeenCalledWith(
+      readingConversationId("user-1", "book-1", "unit-1"),
+    );
     expect(mocks.retry).toHaveBeenCalledWith("user-1", "unit-1");
     expect(mocks.schedule).toHaveBeenCalledWith("user-1");
   });
@@ -279,7 +286,9 @@ describe("reading-agent actions API", () => {
     });
     const response = await action({ request: request({ action: "reset", unitId: "unit-1" }) });
     expect(response.status).toBe(200);
-    expect(mocks.stopHost).toHaveBeenCalledOnce();
+    expect(mocks.stopHost).toHaveBeenCalledWith(
+      readingConversationId("user-1", "book-1", "unit-1"),
+    );
     expect(mocks.reset).toHaveBeenCalledWith("user-1", "unit-1");
     expect(mocks.stopHost.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.reset.mock.invocationCallOrder[0]!,
