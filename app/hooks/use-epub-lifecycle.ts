@@ -43,6 +43,7 @@ import {
   type TocNavigationTarget,
 } from "~/lib/epub/successor-toc";
 import {
+  getReadingPositionRestoreTarget,
   resolveStartPosition,
   savePositionDualKey,
   type StoredReadingPosition,
@@ -60,6 +61,7 @@ export { resolveTocNavigationTarget } from "~/lib/epub/successor-toc";
 export type { TocNavigationTarget } from "~/lib/epub/successor-toc";
 
 const POSITION_SAVE_DEBOUNCE_MS = 1000;
+const LAYOUT_POSITION_GUARD_MS = 4000;
 
 interface CfiDisplayTarget {
   display(
@@ -119,6 +121,7 @@ export interface UseEpubLifecycleReturn {
   loadError: boolean;
   navigationInProgressRef: React.MutableRefObject<boolean>;
   markNavigationInProgress: () => void;
+  markLayoutChangeInProgress: () => void;
   toc: TocEntry[];
   currentChapterLabel: string | null;
   bookProgress: number;
@@ -188,6 +191,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   const navigationInProgressRef = useRef(false);
   const navigationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressPositionSaveRef = useRef(false);
+  const layoutPositionGuardUntilRef = useRef(0);
   const warnedBrokenTocBookIdsRef = useRef(new Set<string>());
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [currentChapterLabel, setCurrentChapterLabel] = useState<string | null>(null);
@@ -211,13 +215,17 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     navigationTimeoutRef.current = setTimeout(clearNavigationInProgress, 3000);
   }, [clearNavigationInProgress]);
 
+  const markLayoutChangeInProgress = useCallback(() => {
+    layoutPositionGuardUntilRef.current = Date.now() + LAYOUT_POSITION_GUARD_MS;
+  }, []);
+
   const flushPositionSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = null;
     const cfi = latestCfiRef.current;
     if (!cfi) return;
     savePositionDualKey({
-      panelId: undefined,
+      panelId: configRef.current.panelId,
       bookId,
       cfi,
       localProgression: latestLayoutRef.current.localProgression,
@@ -321,6 +329,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     let tocData: TocEntry[] = [];
     let positions: readonly PersistentLocator[] = [];
     let publisherPages: PublisherPageMap | null = null;
+    let layoutRestoreInProgress = false;
     registerActiveReader(bookId);
     setHasRestoredPosition(false);
     setLoadError(false);
@@ -348,9 +357,47 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       saveTimerRef.current = setTimeout(flushPositionSave, POSITION_SAVE_DEBOUNCE_MS);
     };
 
+    const restoreLastGoodPosition = async (
+      position: StoredReadingPosition,
+      candidateSpineIndex: number,
+    ) => {
+      if (!rendition || cancelled || layoutRestoreInProgress) return;
+      layoutRestoreInProgress = true;
+      try {
+        const localProgression = position.localProgression;
+        const navigator = navigatorRef.current;
+        if (
+          navigator &&
+          position.spineIndex === candidateSpineIndex &&
+          localProgression !== undefined &&
+          Number.isFinite(localProgression)
+        ) {
+          suppressPositionSaveRef.current = true;
+          try {
+            navigator.restoreProgression(localProgression);
+            return;
+          } catch {
+            // Fall through to a CFI display if resize settling has not completed.
+          } finally {
+            suppressPositionSaveRef.current = false;
+          }
+        }
+        await displayCfiWithFallback(rendition, position.cfi, { localProgression });
+      } catch (error) {
+        console.warn("Failed to restore EPUB position after layout change", {
+          bookId,
+          cfi: position.cfi,
+          error,
+        });
+      } finally {
+        layoutRestoreInProgress = false;
+      }
+    };
+
     const handleRelocation = (relocation: Relocation) => {
       if (!rendition || !bookAdapter || cancelled) return;
       configRef.current.onRelocated?.();
+      const navigationInProgress = navigationInProgressRef.current;
       clearNavigationInProgress();
       // Prefer the adapter location (set on the same relocation event). Fall back to a
       // spine-only CFI so page UI still updates if the adapter has not stamped location yet.
@@ -408,6 +455,29 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       // spine emits a section-start CFI first; writing that would clobber the
       // real position and reopen at chapter start on the next refresh.
       if (suppressPositionSaveRef.current) return;
+      const currentPosition = latestCfiRef.current
+        ? {
+            cfi: latestCfiRef.current,
+            localProgression: latestLayoutRef.current.localProgression,
+            spineIndex: latestLayoutRef.current.spineIndex,
+          }
+        : null;
+      const restoreTarget = getReadingPositionRestoreTarget(
+        currentPosition,
+        {
+          cfi,
+          localProgression: relocation.localProgression,
+          spineIndex: relocation.spineIndex,
+        },
+        {
+          layoutChangeInProgress: Date.now() < layoutPositionGuardUntilRef.current,
+          navigationInProgress,
+        },
+      );
+      if (restoreTarget) {
+        void restoreLastGoodPosition(restoreTarget, relocation.spineIndex);
+        return;
+      }
       latestCfiRef.current = cfi;
       saveRelocation(cfi, relocation);
       AppRuntime.runPromise(
@@ -601,6 +671,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   useEffect(() => {
     const navigator = navigatorRef.current;
     if (!navigator) return;
+    markLayoutChangeInProgress();
     void navigator
       .setPreferences(readerPreferences(config))
       .catch((error) => console.error("Failed to update reader preferences", error));
@@ -611,6 +682,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     config.readerLayout,
     config.textAlign,
     config.theme,
+    markLayoutChangeInProgress,
   ]);
 
   return {
@@ -619,6 +691,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     loadError,
     navigationInProgressRef,
     markNavigationInProgress,
+    markLayoutChangeInProgress,
     toc,
     currentChapterLabel,
     bookProgress,

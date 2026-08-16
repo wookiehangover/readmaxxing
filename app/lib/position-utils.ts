@@ -11,6 +11,59 @@ export interface StoredReadingPosition {
   readonly spineIndex?: number;
 }
 
+export interface PositionAcceptanceContext {
+  readonly layoutChangeInProgress: boolean;
+  readonly navigationInProgress: boolean;
+}
+
+const LAYOUT_THRASH_PROGRESSION_REGRESSION = 0.1;
+
+function isSectionStartCfi(cfi: string): boolean {
+  return cfi.trim().endsWith("!/4)");
+}
+
+/**
+ * Reject section-start and large backward relocations while layout is settling.
+ * Explicit navigation and small scroll deltas remain accepted.
+ */
+export function shouldAcceptReadingPosition(
+  current: StoredReadingPosition | null,
+  candidate: StoredReadingPosition,
+  context: PositionAcceptanceContext,
+): boolean {
+  if (!current || context.navigationInProgress || !context.layoutChangeInProgress) return true;
+  if (candidate.cfi !== current.cfi && isSectionStartCfi(candidate.cfi)) return false;
+  if (
+    current.spineIndex !== undefined &&
+    candidate.spineIndex !== undefined &&
+    current.spineIndex !== candidate.spineIndex
+  ) {
+    return candidate.spineIndex > current.spineIndex;
+  }
+  if (
+    current.localProgression !== undefined &&
+    candidate.localProgression !== undefined &&
+    Number.isFinite(current.localProgression) &&
+    Number.isFinite(candidate.localProgression)
+  ) {
+    return (
+      current.localProgression - candidate.localProgression < LAYOUT_THRASH_PROGRESSION_REGRESSION
+    );
+  }
+  if (candidate.cfi === current.cfi) return true;
+  return !isSectionStartCfi(candidate.cfi);
+}
+
+/** Return the last-good position when a layout relocation needs to be undone. */
+export function getReadingPositionRestoreTarget(
+  current: StoredReadingPosition | null,
+  candidate: StoredReadingPosition,
+  context: PositionAcceptanceContext,
+): StoredReadingPosition | null {
+  if (!current || shouldAcceptReadingPosition(current, candidate, context)) return null;
+  return current;
+}
+
 export interface ResolveStartCfiOpts {
   /** In-memory CFI from the current session (highest priority). */
   latestCfi: string | null;

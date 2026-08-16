@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
+import type { Route } from "./+types/settings";
 import { AccountSection } from "~/components/settings/account-section";
 import { AppearanceSection } from "~/components/settings/appearance-section";
 import { BugReportsSection } from "~/components/settings/bug-reports-section";
@@ -9,6 +10,10 @@ import { ReadingSection } from "~/components/settings/reading-section";
 import { SettingsFooter } from "~/components/settings/settings-footer";
 import { UpdatesSection } from "~/components/settings/updates-section";
 import { cn } from "~/lib/utils";
+
+export function meta(_args: Route.MetaArgs) {
+  return [{ title: "Settings — Readmaxxing" }];
+}
 
 export async function clientLoader() {
   return {};

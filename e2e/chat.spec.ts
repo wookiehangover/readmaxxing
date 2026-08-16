@@ -126,6 +126,106 @@ async function sendChatMessage(page: Page, text: string) {
   await input.press("Enter");
 }
 
+async function readHighlightFromIdb(page: Page, text: string) {
+  return page.evaluate(
+    (expectedText) =>
+      new Promise<{ id: string; text: string; cfiRange: string } | null>((resolve) => {
+        const open = indexedDB.open("ebook-reader-highlights");
+        open.onsuccess = () => {
+          const db = open.result;
+          const req = db.transaction("highlights", "readonly").objectStore("highlights").getAll();
+          req.onsuccess = () => {
+            const rows = req.result as Array<{ id: string; text: string; cfiRange: string }>;
+            db.close();
+            resolve(rows.find((row) => row.text === expectedText) ?? null);
+          };
+          req.onerror = () => resolve(null);
+        };
+        open.onerror = () => resolve(null);
+      }),
+    text,
+  );
+}
+
+async function expectImmediateHighlightMarkers(
+  page: Page,
+  pairs: Array<{ highlightText: string; marker: string }>,
+) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((expected) => {
+          const children = Array.from(document.querySelectorAll(".ProseMirror > *"));
+          const selector = ".node-highlightReference, [data-highlight-reference]";
+          const indexes = expected.map(({ highlightText }) =>
+            children.findIndex(
+              (node) => node.matches(selector) && node.textContent?.includes(highlightText),
+            ),
+          );
+          return indexes.every(
+            (index, position) =>
+              index >= 0 &&
+              (position === 0 || index > indexes[position - 1]) &&
+              children[index + 1]?.textContent?.includes(expected[position].marker),
+          );
+        }, pairs),
+      { timeout: 90_000, intervals: [500, 1000, 2000] },
+    )
+    .toBe(true);
+}
+
+async function mountNotebookAndReturnToChat(page: Page) {
+  await page.getByRole("button", { name: "Open Notebook" }).first().click();
+  const notebookTab = page.locator(".dv-default-tab", { hasText: "Notes:" });
+  await expect(notebookTab.first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".ProseMirror")).toBeVisible({ timeout: 15_000 });
+  await page.locator(".dv-default-tab", { hasText: "Discuss:" }).first().click();
+  await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeVisible({
+    timeout: 10_000,
+  });
+  return notebookTab;
+}
+
+async function seedNotebook(page: Page, content: Array<Record<string, unknown>>) {
+  const bookId = await readFirstBookIdFromIdb(page);
+  const timestamp = Date.now();
+  const changeId = `e2e-notebook-${timestamp}`;
+  const result = await page.evaluate(
+    async ({ bookId: id, changeId: idOfChange, timestamp: updatedAt, content: nodes }) => {
+      const response = await fetch("/api/sync/push", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          changes: [
+            {
+              id: idOfChange,
+              entity: "notebook",
+              entityId: id,
+              operation: "put",
+              data: { bookId: id, content: { type: "doc", content: nodes }, updatedAt },
+              timestamp: updatedAt,
+              synced: false,
+            },
+          ],
+        }),
+      });
+      const text = await response.text();
+      let accepted = false;
+      try {
+        const body = JSON.parse(text) as { accepted?: Array<{ id: string }> };
+        accepted = body.accepted?.some((entry) => entry.id === idOfChange) ?? false;
+      } catch {
+        // The assertions below report the HTTP response if it was not JSON.
+      }
+      return { ok: response.ok, status: response.status, accepted, text: text.slice(0, 200) };
+    },
+    { bookId, changeId, timestamp, content },
+  );
+  expect(result.ok, `notebook seed failed: ${result.status} ${result.text}`).toBe(true);
+  expect(result.accepted, `notebook seed was not accepted: ${result.text}`).toBe(true);
+}
+
 test.describe("Chat (server-authoritative)", () => {
   test.setTimeout(180_000);
 
@@ -218,32 +318,177 @@ test.describe("Chat (server-authoritative)", () => {
     // persisted record which confirms the full server+client tool pipeline ran.
     await expect
       .poll(
-        async () =>
-          await page.evaluate(
-            () =>
-              new Promise<number>((resolve) => {
-                const open = indexedDB.open("ebook-reader-highlights");
+        async () => {
+          const row = await readHighlightFromIdb(page, passage);
+          return (
+            typeof row?.cfiRange === "string" &&
+            row.cfiRange.trim().startsWith("epubcfi(") &&
+            row.cfiRange.trim().length > "epubcfi()".length
+          );
+        },
+        { timeout: 90_000 },
+      )
+      .toBe(true);
+  });
+
+  test("golden path: highlight then annotate inline", async ({ page }) => {
+    const notebookTab = await mountNotebookAndReturnToChat(page);
+    const passage = "The quick brown fox jumps over the lazy dog.";
+    await sendChatMessage(
+      page,
+      `Make exactly these two tool calls in order: first call read_chapter once with {"chapterIndex":0}, then call create_highlight once with these verified exact arguments: {"text":"${passage}","chapterIndex":0,"startOffset":146}. Do not change the arguments or call any other tools.`,
+    );
+    await expect(page.locator(ASSISTANT_BUBBLE).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeEnabled({
+      timeout: 90_000,
+    });
+
+    await expect
+      .poll(
+        async () => {
+          const row = await readHighlightFromIdb(page, passage);
+          return (
+            row?.text === passage &&
+            typeof row.cfiRange === "string" &&
+            row.cfiRange.trim().startsWith("epubcfi(") &&
+            row.cfiRange.trim().length > "epubcfi()".length
+          );
+        },
+        { timeout: 90_000 },
+      )
+      .toBe(true);
+    const highlight = await readHighlightFromIdb(page, passage);
+    expect(highlight).not.toBeNull();
+
+    await notebookTab.first().click();
+    const reference = page.locator(".node-highlightReference, [data-highlight-reference]", {
+      hasText: passage,
+    });
+    await expect(reference.first()).toBeVisible({ timeout: 90_000 });
+    const bookId = await readFirstBookIdFromIdb(page);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            ({ id, attrs }) =>
+              new Promise<boolean>((resolve) => {
+                const open = indexedDB.open("ebook-reader-notebooks");
                 open.onsuccess = () => {
                   const db = open.result;
-                  const tx = db.transaction("highlights", "readonly");
-                  const store = tx.objectStore("highlights");
-                  const req = store.getAll();
+                  const req = db
+                    .transaction("notebooks", "readonly")
+                    .objectStore("notebooks")
+                    .get(id);
                   req.onsuccess = () => {
-                    const rows = (req.result as Array<{ text?: string }>) ?? [];
+                    const nodes = (req.result?.content?.content ?? []) as Array<{
+                      type?: string;
+                      attrs?: { highlightId?: string; cfiRange?: string; text?: string };
+                    }>;
                     db.close();
-                    resolve(rows.filter((r) => (r.text ?? "").includes("quick brown fox")).length);
+                    resolve(
+                      nodes.some(
+                        (node) =>
+                          node.type === "highlightReference" &&
+                          node.attrs?.highlightId === attrs.id &&
+                          node.attrs?.cfiRange === attrs.cfiRange &&
+                          node.attrs?.text === attrs.text,
+                      ),
+                    );
                   };
-                  req.onerror = () => {
-                    db.close();
-                    resolve(0);
-                  };
+                  req.onerror = () => resolve(false);
                 };
-                open.onerror = () => resolve(0);
+                open.onerror = () => resolve(false);
               }),
+            { id: bookId, attrs: highlight! },
           ),
         { timeout: 90_000, intervals: [500, 1000, 2000] },
       )
-      .toBeGreaterThan(0);
+      .toBe(true);
+
+    await page.locator(".dv-default-tab", { hasText: "Discuss:" }).first().click();
+    const marker = `E2E-GOLDEN-${Date.now()}`;
+    await sendChatMessage(
+      page,
+      `Call edit_notes exactly once with this exact code argument: const highlight = notebook.find({ type: "highlightReference", text: "quick brown fox" })[0]; if (highlight) notebook.insertAfter(highlight, "${marker}"); Do not call any other tool.`,
+    );
+    await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeEnabled({
+      timeout: 90_000,
+    });
+    await notebookTab.first().click();
+    await expectImmediateHighlightMarkers(page, [{ highlightText: passage, marker }]);
+  });
+
+  test("edit_notes places an annotation inline after a highlight reference", async ({ page }) => {
+    const notebookTab = await mountNotebookAndReturnToChat(page);
+    await seedNotebook(page, [
+      { type: "paragraph", content: [{ type: "text", text: "Intro note" }] },
+      {
+        type: "highlightReference",
+        attrs: {
+          highlightId: `e2e-hl-${Date.now()}`,
+          cfiRange: "epubcfi(/6/2!/4/2)",
+          text: "The quick brown fox",
+        },
+      },
+      { type: "paragraph" },
+    ]);
+
+    const marker = "E2E-INLINE-" + Date.now();
+    await sendChatMessage(
+      page,
+      `Call the edit_notes tool exactly once with this exact code argument: const highlight = notebook.find({ type: "highlightReference" })[0]; if (highlight) notebook.insertAfter(highlight, "${marker}"); Do not use any other tools, and do not use append or prepend.`,
+    );
+    await expect(page.locator(ASSISTANT_BUBBLE).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeEnabled({
+      timeout: 90_000,
+    });
+
+    await notebookTab.first().click();
+    await expectImmediateHighlightMarkers(page, [{ highlightText: "The quick brown fox", marker }]);
+  });
+
+  test("two-highlight edit_notes placement does not cross-wire", async ({ page }) => {
+    const notebookTab = await mountNotebookAndReturnToChat(page);
+    const suffix = Date.now();
+    const firstText = `FIRST-HIGHLIGHT-${suffix}`;
+    const secondText = `SECOND-HIGHLIGHT-${suffix}`;
+    await seedNotebook(page, [
+      { type: "paragraph", content: [{ type: "text", text: "Two highlight fixture" }] },
+      {
+        type: "highlightReference",
+        attrs: {
+          highlightId: `e2e-hl-a-${suffix}`,
+          cfiRange: "epubcfi(/6/2!/4/2,/1:0,/1:10)",
+          text: firstText,
+        },
+      },
+      { type: "paragraph" },
+      {
+        type: "highlightReference",
+        attrs: {
+          highlightId: `e2e-hl-b-${suffix}`,
+          cfiRange: "epubcfi(/6/4!/4/2,/1:0,/1:11)",
+          text: secondText,
+        },
+      },
+      { type: "paragraph" },
+    ]);
+
+    const markerA = `MARKER-A-${suffix}`;
+    const markerB = `MARKER-B-${suffix}`;
+    await sendChatMessage(
+      page,
+      `Call edit_notes exactly once with this exact code argument: const highlights = notebook.find({ type: "highlightReference" }); const first = highlights.find((block) => block.text.includes("${firstText}")); const second = highlights.find((block) => block.text.includes("${secondText}")); if (first && second) { notebook.insertAfter(first, "${markerA}"); notebook.insertAfter(second, "${markerB}"); } Do not call any other tool.`,
+    );
+    await expect(page.locator(ASSISTANT_BUBBLE).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeEnabled({
+      timeout: 90_000,
+    });
+    await notebookTab.first().click();
+    await expectImmediateHighlightMarkers(page, [
+      { highlightText: firstText, marker: markerA },
+      { highlightText: secondText, marker: markerB },
+    ]);
   });
 
   test("resumes the stream after a mid-stream reload", async ({ page }) => {

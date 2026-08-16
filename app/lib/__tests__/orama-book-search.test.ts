@@ -4,6 +4,7 @@ import {
   searchBook,
   getOrBuildBookIndex,
   clearBookIndexCache,
+  locateTextAnchor,
 } from "~/lib/orama-book-search";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
 
@@ -183,6 +184,60 @@ describe("searchBook — edge cases", () => {
     const longQuery = "xyzzy foobaz quuxwaldo plughthud";
     const results = searchBook(db, longQuery);
     expect(results).toEqual([]);
+  });
+});
+
+describe("locateTextAnchor", () => {
+  it("selects the chapter containing the exact passage instead of the BM25 top hit", () => {
+    const passage =
+      "So we beat on, boats against the current, borne back ceaselessly into the past.";
+    const chapters: BookChapter[] = [
+      makeChapter({
+        index: 0,
+        title: "Earlier Vocabulary",
+        text: "So boats beat on against current the borne back into past ceaselessly we.",
+      }),
+      makeChapter({
+        index: 8,
+        title: "The Exact Ending",
+        text: `${"distant shoreline ".repeat(300)}${passage}`,
+      }),
+    ];
+    const db = buildBookIndex(chapters);
+
+    expect(searchBook(db, passage, 1)[0]?.chapterIndex).toBe(0);
+    expect(locateTextAnchor(chapters, db, passage)).toMatchObject({
+      chapterIndex: 8,
+      matchQuality: "exact",
+    });
+  });
+
+  it("matches passages across non-breaking and zero-width characters", () => {
+    const chapters = [
+      makeChapter({
+        index: 2,
+        text: "They stood\u00a0together\uFEFF—unafraid of what followed.",
+      }),
+    ];
+    const passage = "They stood together—unafraid of what followed.";
+    const db = buildBookIndex(chapters);
+
+    expect(locateTextAnchor(chapters, db, passage)).toMatchObject({
+      chapterIndex: 2,
+      offset: 0,
+      matchQuality: "exact",
+    });
+  });
+
+  it("marks BM25-only matches as fuzzy without an offset", () => {
+    const chapters = [makeChapter({ index: 0, text: "Philosophy has shaped human thought." })];
+    const db = buildBookIndex(chapters);
+
+    expect(locateTextAnchor(chapters, db, "Philsophy has shaped human thought.")).toEqual({
+      chapterIndex: 0,
+      snippet: "Philsophy has shaped human thought.",
+      matchQuality: "fuzzy",
+    });
   });
 });
 

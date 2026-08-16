@@ -332,6 +332,7 @@ function WorkspaceBookReaderInner({
     latestCfiRef,
     navigationInProgressRef,
     markNavigationInProgress,
+    markLayoutChangeInProgress,
   } = useEpubLifecycle({
     bookId: book.id,
     containerRef,
@@ -465,6 +466,7 @@ function WorkspaceBookReaderInner({
 
     const visDisposable = panelApi.onDidVisibilityChange((e) => {
       if (e.isVisible) {
+        markLayoutChangeInProgress();
         applyTheme();
         // Panel may have resized while hidden; force one settle without remount.
         requestAnimationFrame(() => resizeIfNeeded(true));
@@ -477,7 +479,9 @@ function WorkspaceBookReaderInner({
     // restore. Clicking inside the epub to turn a page also triggers an active
     // change; resizing here would revert the navigation.
     const activeDisposable = panelApi.onDidActiveChange((e) => {
-      if (e.isActive) applyTheme();
+      if (e.isActive) {
+        applyTheme();
+      }
     });
 
     // Resize only when the panel size actually changes (divider drag, new pane).
@@ -486,6 +490,7 @@ function WorkspaceBookReaderInner({
     let resizeRafId: number | null = null;
     const dimensionsDisposable = panelApi.onDidDimensionsChange(() => {
       if (!renditionRef.current) return;
+      markLayoutChangeInProgress();
       if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
       resizeRafId = requestAnimationFrame(() => {
         resizeRafId = null;
@@ -499,7 +504,7 @@ function WorkspaceBookReaderInner({
       dimensionsDisposable.dispose();
       if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
     };
-  }, [panelApi, resolvedTheme, flushPositionSave]);
+  }, [panelApi, resolvedTheme, flushPositionSave, markLayoutChangeInProgress]);
 
   const handlePrev = useCallback(() => {
     const rendition = renditionRef.current;

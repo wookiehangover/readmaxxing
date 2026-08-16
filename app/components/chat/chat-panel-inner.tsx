@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
+import type { JSONContent } from "@tiptap/react";
 import { Effect } from "effect";
 import { Plus } from "lucide-react";
 import { Button } from "~/components/ui/button";
@@ -187,7 +188,7 @@ export function ChatPanelInner({
   }, [activeSessionId, bookId, demoChat, getBookContext]);
 
   const messagesRef = useRef<UIMessage[]>(initialMessages);
-  const streamedToolCallIdRef = useRef<Set<string>>(new Set());
+  const streamedToolCallIdRef = useRef<Map<string, JSONContent>>(new Map());
   const { onToolCall, onFinish: onToolFinish } = useChatToolHandlers({
     bookId,
     bookFormat,
