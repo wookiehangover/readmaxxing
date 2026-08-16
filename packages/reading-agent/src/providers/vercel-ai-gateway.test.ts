@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { AuthContext } from "@earendil-works/pi-ai";
+import { resolveModel } from "@flue/runtime/internal";
 import {
   anthropicGatewayProvider,
+  type GatewayProviderId,
   gatewayAnthropicAuth,
+  googleGatewayProvider,
+  openaiGatewayProvider,
+  toGatewayModel,
   toGatewayAnthropicModel,
   VERCEL_AI_GATEWAY_BASE_URL,
+  xaiGatewayProvider,
 } from "./vercel-ai-gateway";
 
 function authContext(env: Record<string, string | undefined>): AuthContext {
@@ -38,10 +44,35 @@ describe("Vercel AI Gateway provider", () => {
     await expect(gatewayAnthropicAuth.resolve({ ctx: authContext({}) })).resolves.toBeUndefined();
   });
 
-  it("registers Anthropic's catalog and maps ReadingScribe's model for Gateway", () => {
-    expect(anthropicGatewayProvider.id).toBe("anthropic");
-    const model = anthropicGatewayProvider.getModels().find(({ id }) => id === "claude-sonnet-4-6");
-    expect(model?.baseUrl).toBe(VERCEL_AI_GATEWAY_BASE_URL);
-    expect(model && toGatewayAnthropicModel(model).id).toBe("anthropic/claude-sonnet-4.6");
+  it.each([
+    ["anthropic", anthropicGatewayProvider, "claude-sonnet-4-6", "anthropic/claude-sonnet-4.6"],
+    ["openai", openaiGatewayProvider, "gpt-5.5", "openai/gpt-5.5"],
+    ["xai", xaiGatewayProvider, "grok-4.5", "xai/grok-4.5"],
+    ["google", googleGatewayProvider, "gemini-2.5-flash", "google/gemini-2.5-flash"],
+  ] as const)(
+    "registers only %s's allowlisted Gateway model",
+    (providerId: GatewayProviderId, provider, modelId, gatewayModelId) => {
+      expect(provider.getModels().map(({ id }) => id)).toEqual([modelId]);
+      const model = provider.getModels()[0];
+      expect(model.baseUrl).toBe(VERCEL_AI_GATEWAY_BASE_URL);
+      expect(toGatewayModel(providerId, model).id).toBe(gatewayModelId);
+      expect(resolveModel(`${providerId}/${modelId}`)).toBe(model);
+    },
+  );
+
+  it("preserves the Anthropic compatibility mapping", () => {
+    expect(toGatewayAnthropicModel(anthropicGatewayProvider.getModels()[0]).id).toBe(
+      "anthropic/claude-sonnet-4.6",
+    );
+  });
+
+  it.each([
+    "anthropic/claude-opus-4-6",
+    "openai/gpt-5.5-pro",
+    "xai/grok-4.3",
+    "google/gemini-2.5-pro",
+    "unknown/model",
+  ])("rejects unknown or disallowed model %s", (model) => {
+    expect(() => resolveModel(model)).toThrow();
   });
 });
