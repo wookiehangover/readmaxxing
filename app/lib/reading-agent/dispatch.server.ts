@@ -24,6 +24,7 @@ import {
   readingScribeUsageFromError,
 } from "./flue-client.server";
 import { readingConversationId } from "./conversation-id.server";
+import { getSelectedDebugModel, type DebugReadingAgentModel } from "./debug-model.server";
 
 export { readingConversationId };
 
@@ -33,6 +34,7 @@ export const ORPHANED_READING_AGENT_ERROR =
 type ReadingAgentCall = (options: {
   conversationId: string;
   secret: string;
+  model: DebugReadingAgentModel;
   page: string;
   artifacts: Record<ArtifactKind, string>;
   retainHost?: boolean;
@@ -126,6 +128,7 @@ export async function dispatchReadingIngestUnit(
     const result = await dependencies.callAgent({
       conversationId,
       secret: agentSecret,
+      model: getSelectedDebugModel(),
       page: claimed.text,
       artifacts: current,
       retainHost: true,

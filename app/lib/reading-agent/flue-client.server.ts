@@ -1,5 +1,6 @@
 import { createFlueClient, type PromptUsage } from "@flue/sdk";
 import { createReadingAgentHost } from "./agent-host.server";
+import type { DebugReadingAgentModel } from "./debug-model";
 
 export type ArtifactKind = "outline" | "characters" | "wiki";
 export type ReadingScribeResult = Record<
@@ -188,6 +189,7 @@ function lastReadingArtifactsToolOutput(messages: unknown): unknown | typeof TOO
 interface ReadingScribeCallOptions {
   conversationId: string;
   secret: string;
+  model: DebugReadingAgentModel;
   page: string;
   artifacts: Record<ArtifactKind, string>;
   retainHost?: boolean;
@@ -236,7 +238,11 @@ export async function callReadingScribe(
     const admission = await client.send({
       message: {
         kind: "user",
-        body: JSON.stringify({ page: options.page, artifacts: options.artifacts }),
+        body: JSON.stringify({
+          model: options.model,
+          page: options.page,
+          artifacts: options.artifacts,
+        }),
       },
     });
     const reply = await readWithTimeout(client.read(admission), () => client.abort());

@@ -21,11 +21,17 @@ vi.mock("@flue/sdk", () => ({ createFlueClient }));
 vi.mock("../agent-host.server", () => ({ createReadingAgentHost }));
 
 import {
-  callReadingScribe,
+  callReadingScribe as callReadingScribeWithModel,
   READING_SCRIBE_READ_TIMEOUT_MS,
   ReadingScribeCallError,
   readingScribeUsageFromError,
 } from "../flue-client.server";
+
+type CallOptions = Parameters<typeof callReadingScribeWithModel>[0];
+
+function callReadingScribe(options: Omit<CallOptions, "model"> & { model?: CallOptions["model"] }) {
+  return callReadingScribeWithModel({ model: "anthropic/claude-sonnet-4-6", ...options });
+}
 
 const result = {
   outline: { status: "unchanged", body: "", summary: "No outline change." },
@@ -68,6 +74,7 @@ describe("ReadingScribe Flue client", () => {
       callReadingScribe({
         conversationId: "conversation-1",
         secret: "test-secret",
+        model: "openai/gpt-5.5",
         page: "New page text.",
         artifacts: { outline: "", characters: "", wiki: "Existing story." },
       }),
@@ -82,6 +89,7 @@ describe("ReadingScribe Flue client", () => {
       message: {
         kind: "user",
         body: JSON.stringify({
+          model: "openai/gpt-5.5",
           page: "New page text.",
           artifacts: { outline: "", characters: "", wiki: "Existing story." },
         }),

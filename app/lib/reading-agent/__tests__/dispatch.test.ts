@@ -14,6 +14,7 @@ import {
   startLocalReadingIngestSweep,
   sweepReadingIngestQueues,
 } from "../dispatch.server";
+import { DEFAULT_DEBUG_READING_AGENT_MODEL, setSelectedDebugModel } from "../debug-model.server";
 import { ReadingScribeCallError } from "../flue-client.server";
 
 const unit: ReadingIngestUnitRow = {
@@ -81,6 +82,7 @@ const disposeHost = vi.fn();
 const originalReadingAgentUrl = process.env.READING_AGENT_URL;
 
 beforeEach(() => {
+  setSelectedDebugModel(DEFAULT_DEBUG_READING_AGENT_MODEL);
   process.env.READING_AGENT_URL = "http://localhost:5174/agents/reading-scribe";
   claimLease.mockReset().mockResolvedValue(leased);
   complete.mockReset().mockResolvedValue(1);
@@ -117,6 +119,7 @@ const options = () => ({
 
 describe("reading ingest dispatch", () => {
   it("persists only a changed wiki edit and completes the unit", async () => {
+    setSelectedDebugModel("openai/gpt-5.5");
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("done");
 
     expect(complete).toHaveBeenCalledWith(
@@ -128,6 +131,7 @@ describe("reading ingest dispatch", () => {
     expect(callAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         secret: "test-secret",
+        model: "openai/gpt-5.5",
         artifacts: { outline: "", characters: "", wiki: "Existing story." },
         retainHost: true,
       }),

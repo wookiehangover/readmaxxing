@@ -82,6 +82,17 @@ function respond(
     if (url.includes("/api/reading-agent/conversation")) {
       return Promise.resolve(Response.json(conversation));
     }
+    if (url.includes("/api/reading-agent/debug")) {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+      return Promise.resolve(
+        Response.json({
+          ...status,
+          selectedModel: body?.model ?? "anthropic/claude-sonnet-4-6",
+          conversationTail: null,
+          lastError: null,
+        }),
+      );
+    }
     return Promise.resolve(Response.json(status));
   });
 }
@@ -99,6 +110,19 @@ function postedActions() {
         typeof input === "string" ? input : input instanceof URL ? input.href : String(input);
       return (
         url.includes("/api/reading-agent/actions") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      );
+    })
+    .map(([, init]) => JSON.parse(String((init as RequestInit).body)));
+}
+
+function postedDebugModels() {
+  return fetchMock.mock.calls
+    .filter(([input, init]) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.href : String(input);
+      return (
+        url.includes("/api/reading-agent/debug") &&
         (init as RequestInit | undefined)?.method === "POST"
       );
     })
@@ -148,7 +172,25 @@ describe("reading-agent debug page", () => {
     expect(container!.textContent).toContain("No live conversation");
     expect(container!.textContent).toContain("No recent ingest units");
     expect(container!.textContent).toContain("Agent host");
+    expect(container!.textContent).toContain("anthropic/claude-sonnet-4-6");
     expect(container!.textContent).not.toContain("Not configured");
+  });
+
+  it("stores the selected debug model without starting the queue", async () => {
+    respond(emptyStatus);
+    await renderPage();
+    const trigger = container!.querySelector<HTMLButtonElement>('[aria-label="Next ingest model"]');
+    expect(trigger?.disabled).toBe(false);
+
+    await act(async () => trigger?.click());
+    const option = Array.from(
+      document.body.querySelectorAll<HTMLElement>("[data-slot=select-item]"),
+    ).find((item) => item.textContent === "openai/gpt-5.5");
+    expect(option).toBeDefined();
+    await act(async () => option?.click());
+
+    expect(postedDebugModels()).toEqual([{ model: "openai/gpt-5.5" }]);
+    expect(postedActions()).toEqual([]);
   });
 
   it("renders a processing lease and unit", async () => {
@@ -422,15 +464,15 @@ describe("reading-agent debug page", () => {
     vi.useFakeTimers();
     respond(emptyStatus);
     await renderPage();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     act(() => setVisibility("hidden"));
     await act(async () => vi.advanceTimersByTimeAsync(4_000));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     act(() => setVisibility("visible"));
     await act(async () => {});
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     await act(async () => vi.advanceTimersByTimeAsync(2_000));
-    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock).toHaveBeenCalledTimes(7);
     expect(
       fetchMock.mock.calls.some(([input]) =>
         String(input).includes("/api/reading-agent/conversation"),

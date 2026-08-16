@@ -30,6 +30,7 @@ import {
   TableRow,
 } from "~/components/ui/table";
 import { ConversationCard } from "~/components/reading-agent/conversation-card";
+import { DebugModelPicker } from "~/components/reading-agent/debug-model-picker";
 import { useReadingAgentActions } from "~/hooks/use-reading-agent-actions";
 import { useReadingAgentConversation } from "~/hooks/use-reading-agent-conversation";
 import {
@@ -449,6 +450,7 @@ export default function ReadingAgentDebugPage() {
         )}
         {isLoading && !data ? <LoadingCards /> : null}
         {data ? <HealthCards status={data} /> : null}
+        <DebugModelPicker />
 
         {data && !data.hostConfigured && (
           <Alert variant="destructive">
