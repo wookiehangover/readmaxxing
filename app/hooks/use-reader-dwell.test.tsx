@@ -160,6 +160,25 @@ describe("useReaderDwell", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("does not repost the same locator when viewport text jitters", async () => {
+    const first = await render({
+      unitKind: "epub-spine",
+      locator: "chapter-1.xhtml#page=3",
+      text: "Visible chapter text before viewport jitter",
+    });
+    await advance(READER_DWELL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    unmount(first.root);
+
+    await render({
+      unitKind: "epub-spine",
+      locator: "chapter-1.xhtml#page=3",
+      text: "Visible chapter text after viewport jitter adds a word",
+    });
+    await advance(READER_DWELL_MS);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("retries network failures, then leaves the fingerprint unsent for a later dwell", async () => {
     fetchMock.mockRejectedValue(new TypeError("Network unavailable"));
     const unit: ReadingDwellUnit = {

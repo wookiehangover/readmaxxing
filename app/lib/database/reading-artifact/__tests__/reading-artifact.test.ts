@@ -20,6 +20,7 @@ import {
   getLatestReadingAgentUsage,
   getNextDueReadingIngestUnit,
   getReadingAgentSchemaHealth,
+  getReadingIngestUnitByLocator,
   insertReadingAgentUsage,
   insertReadingArtifactRevision,
   insertReadingIngestUnit,
@@ -28,6 +29,7 @@ import {
   getReadingIngestUnitForUser,
   readingAgentRetryDelaySeconds,
   reclaimExpiredReadingAgentLease,
+  refreshReadingIngestUnit,
   resetReadingIngestUnit,
   retryReadingIngestUnit,
   releaseReadingIngestUnit,
@@ -465,6 +467,46 @@ describe("reading artifact persistence", () => {
     expect(extractSqlText(query)).toContain(
       "ON CONFLICT (user_id, book_id, fingerprint) DO NOTHING",
     );
+  });
+
+  it("finds an existing locator and prefers a completed unit", async () => {
+    const unit = { id: "unit-1", status: "done" };
+    queryMock.mockResolvedValueOnce({ rows: [unit] });
+
+    await expect(
+      getReadingIngestUnitByLocator("user-1", "book-1", "chapter.xhtml#page=2"),
+    ).resolves.toBe(unit);
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    expect(extractValues(query)).toEqual(["user-1", "book-1", "chapter.xhtml#page=2"]);
+    expect(extractSqlText(query)).toContain("WHEN 'done' THEN 0");
+    expect(extractSqlText(query)).toContain("LIMIT 1");
+  });
+
+  it("refreshes text only while an existing locator is pending or errored", async () => {
+    const unit = { id: "unit-1", status: "pending", text: "Jittered page text" };
+    queryMock.mockResolvedValueOnce({ rows: [unit] });
+
+    await expect(
+      refreshReadingIngestUnit({
+        userId: "user-1",
+        bookId: "book-1",
+        unitId: "unit-1",
+        chapterLabel: "Chapter 1",
+        text: "Jittered page text",
+      }),
+    ).resolves.toBe(unit);
+
+    const query = queryMock.mock.calls[0][0] as SqlQuery;
+    expect(extractSqlText(query)).toContain("status IN ('pending', 'error')");
+    expect(extractSqlText(query)).toContain("last_seen_at = NOW()");
+    expect(extractValues(query)).toEqual([
+      "Jittered page text",
+      "Chapter 1",
+      "unit-1",
+      "user-1",
+      "book-1",
+    ]);
   });
 
   it("returns an inserted artifact revision", async () => {

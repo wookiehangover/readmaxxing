@@ -10,9 +10,10 @@ vi.mock("~/lib/database/book/book", () => ({
 
 vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   getCurrentReadingArtifacts: vi.fn(),
-  getReadingIngestUnitByFingerprint: vi.fn(),
+  getReadingIngestUnitByLocator: vi.fn(),
   insertReadingIngestUnit: vi.fn(),
   listReadingArtifactRevisions: vi.fn(),
+  refreshReadingIngestUnit: vi.fn(),
 }));
 
 vi.mock("~/lib/reading-agent/dispatch.server", () => ({
@@ -23,9 +24,10 @@ import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import {
   getCurrentReadingArtifacts,
-  getReadingIngestUnitByFingerprint,
+  getReadingIngestUnitByLocator,
   insertReadingIngestUnit,
   listReadingArtifactRevisions,
+  refreshReadingIngestUnit,
 } from "~/lib/database/reading-artifact/reading-artifact";
 import { scheduleReadingIngestQueue } from "~/lib/reading-agent/dispatch.server";
 import { loader as artifactsLoader } from "~/routes/api.books.$bookId.artifacts";
@@ -39,9 +41,10 @@ import { loader as revisionsLoader } from "~/routes/api.books.$bookId.artifacts.
 const authMock = getSessionFromRequest as ReturnType<typeof vi.fn>;
 const bookMock = getBookByIdForUser as ReturnType<typeof vi.fn>;
 const artifactsMock = getCurrentReadingArtifacts as ReturnType<typeof vi.fn>;
-const existingUnitMock = getReadingIngestUnitByFingerprint as ReturnType<typeof vi.fn>;
+const existingUnitMock = getReadingIngestUnitByLocator as ReturnType<typeof vi.fn>;
 const insertUnitMock = insertReadingIngestUnit as ReturnType<typeof vi.fn>;
 const revisionsMock = listReadingArtifactRevisions as ReturnType<typeof vi.fn>;
+const refreshUnitMock = refreshReadingIngestUnit as ReturnType<typeof vi.fn>;
 const scheduleMock = scheduleReadingIngestQueue as ReturnType<typeof vi.fn>;
 const originalDatabaseUrl = process.env.DATABASE_URL;
 
@@ -49,9 +52,7 @@ const text = "This is enough normalized reading text to ingest.";
 const fingerprint = computeReadingFingerprint({
   userId: "user-1",
   bookId: "book-1",
-  unitKind: "epub-spine",
   locator: "text/chapter-1.xhtml",
-  text,
 });
 
 const ingestBody = {
@@ -91,9 +92,10 @@ beforeEach(() => {
   authMock.mockReset().mockResolvedValue({ userId: "user-1" });
   bookMock.mockReset().mockResolvedValue({ id: "book-1", userId: "user-1" });
   artifactsMock.mockReset().mockResolvedValue([]);
-  existingUnitMock.mockReset().mockResolvedValue(unit);
+  existingUnitMock.mockReset().mockResolvedValue(null);
   insertUnitMock.mockReset().mockResolvedValue(unit);
   revisionsMock.mockReset().mockResolvedValue([]);
+  refreshUnitMock.mockReset().mockResolvedValue(unit);
   scheduleMock.mockReset();
 });
 
@@ -122,27 +124,25 @@ describe("reading artifact ingest API", () => {
     });
   });
 
-  it("normalizes Unicode text when computing the fingerprint", () => {
-    const decomposed = "  Cafe\u0301 has enough text for this reading unit.  ";
-    const composed = "Café has enough text for this reading unit.";
+  it("uses the locator rather than viewport text as page identity", () => {
+    const first = computeReadingFingerprint({
+      userId: "user-1",
+      bookId: "book-1",
+      locator: "chapter.xhtml#page=2",
+    });
+    const sameLocator = computeReadingFingerprint({
+      userId: "user-1",
+      bookId: "book-1",
+      locator: "chapter.xhtml#page=2",
+    });
+    const nextLocator = computeReadingFingerprint({
+      userId: "user-1",
+      bookId: "book-1",
+      locator: "chapter.xhtml#page=3",
+    });
 
-    expect(
-      computeReadingFingerprint({
-        userId: "user-1",
-        bookId: "book-1",
-        unitKind: "epub-spine",
-        locator: "chapter.xhtml",
-        text: decomposed,
-      }),
-    ).toBe(
-      computeReadingFingerprint({
-        userId: "user-1",
-        bookId: "book-1",
-        unitKind: "epub-spine",
-        locator: "chapter.xhtml",
-        text: composed,
-      }),
-    );
+    expect(first).toBe(sameLocator);
+    expect(first).not.toBe(nextLocator);
   });
 
   it("returns 404 when the book is not owned by the session user", async () => {
@@ -171,8 +171,27 @@ describe("reading artifact ingest API", () => {
     expect(scheduleMock).toHaveBeenCalledWith("user-1");
   });
 
+  it("inserts a different locator as a distinct unit", async () => {
+    const locator = "text/chapter-1.xhtml#page=2";
+    const nextFingerprint = computeReadingFingerprint({
+      userId: "user-1",
+      bookId: "book-1",
+      locator,
+    });
+
+    const response = await ingestAction({
+      request: makeIngestRequest({ ...ingestBody, fingerprint: nextFingerprint, locator }),
+      params: { bookId: "book-1" },
+    });
+
+    expect(response.status).toBe(202);
+    expect(insertUnitMock).toHaveBeenCalledWith(
+      expect.objectContaining({ fingerprint: nextFingerprint, locator }),
+    );
+  });
+
   it("returns the existing unit without creating another pending row", async () => {
-    insertUnitMock.mockResolvedValue(null);
+    existingUnitMock.mockResolvedValue(unit);
 
     const response = await ingestAction({
       request: makeIngestRequest(),
@@ -184,22 +203,31 @@ describe("reading artifact ingest API", () => {
       deduplicated: true,
       unit: { id: "unit-1", fingerprint, status: "pending" },
     });
-    expect(insertUnitMock).toHaveBeenCalledTimes(1);
-    expect(existingUnitMock).toHaveBeenCalledWith("user-1", "book-1", fingerprint);
+    expect(insertUnitMock).not.toHaveBeenCalled();
+    expect(existingUnitMock).toHaveBeenCalledWith("user-1", "book-1", "text/chapter-1.xhtml");
+    expect(refreshUnitMock).toHaveBeenCalledWith({
+      userId: "user-1",
+      bookId: "book-1",
+      unitId: "unit-1",
+      chapterLabel: "Chapter 1",
+      text,
+    });
     expect(scheduleMock).toHaveBeenCalledWith("user-1");
   });
 
-  it("drains the user queue when an existing completed fingerprint is posted", async () => {
-    insertUnitMock.mockResolvedValue(null);
+  it("does not reschedule an existing completed locator", async () => {
     existingUnitMock.mockResolvedValue({ ...unit, status: "done" });
+    const jitteredText = `${text} One extra edge word.`;
 
     const response = await ingestAction({
-      request: makeIngestRequest(),
+      request: makeIngestRequest({ ...ingestBody, text: jitteredText }),
       params: { bookId: "book-1" },
     });
 
     expect(response.status).toBe(200);
-    expect(scheduleMock).toHaveBeenCalledWith("user-1");
+    expect(insertUnitMock).not.toHaveBeenCalled();
+    expect(refreshUnitMock).not.toHaveBeenCalled();
+    expect(scheduleMock).not.toHaveBeenCalled();
   });
 });
 

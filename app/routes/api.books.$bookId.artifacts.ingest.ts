@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import {
-  getReadingIngestUnitByFingerprint,
+  getReadingIngestUnitByLocator,
   insertReadingIngestUnit,
+  refreshReadingIngestUnit,
   type ReadingIngestUnitRow,
   type ReadingUnitKind,
 } from "~/lib/database/reading-artifact/reading-artifact";
@@ -31,16 +32,10 @@ export function normalizeReadingText(text: string): string {
 export function computeReadingFingerprint(data: {
   userId: string;
   bookId: string;
-  unitKind: ReadingUnitKind;
   locator: string;
-  text: string;
 }): string {
   return createHash("sha256")
-    .update(data.userId)
-    .update(data.bookId)
-    .update(data.unitKind)
-    .update(data.locator)
-    .update(normalizeReadingText(data.text))
+    .update(JSON.stringify([data.userId, data.bookId, data.locator.trim()]))
     .digest("hex");
 }
 
@@ -117,12 +112,32 @@ export async function action({
   const expectedFingerprint = computeReadingFingerprint({
     userId: session.userId,
     bookId: params.bookId,
-    unitKind: payload.unitKind,
     locator: payload.locator,
-    text: payload.text,
   });
   if (payload.fingerprint !== expectedFingerprint) {
     return Response.json({ error: "fingerprint does not match payload" }, { status: 400 });
+  }
+
+  const existing = await getReadingIngestUnitByLocator(
+    session.userId,
+    params.bookId,
+    payload.locator,
+  );
+  if (existing) {
+    const refreshed =
+      existing.status === "pending" || existing.status === "error"
+        ? await refreshReadingIngestUnit({
+            userId: session.userId,
+            bookId: params.bookId,
+            unitId: existing.id,
+            chapterLabel: payload.chapterLabel,
+            text: payload.text,
+          })
+        : null;
+    if (existing.status === "pending" || existing.status === "error") {
+      scheduleReadingIngestQueue(session.userId);
+    }
+    return Response.json({ deduplicated: true, unit: serializeUnit(refreshed ?? existing) });
   }
 
   const inserted = await insertReadingIngestUnit({
@@ -135,14 +150,12 @@ export async function action({
     return Response.json({ deduplicated: false, unit: serializeUnit(inserted) }, { status: 202 });
   }
 
-  const existing = await getReadingIngestUnitByFingerprint(
-    session.userId,
-    params.bookId,
-    payload.fingerprint,
-  );
-  if (!existing) {
+  const raced = await getReadingIngestUnitByLocator(session.userId, params.bookId, payload.locator);
+  if (!raced) {
     return Response.json({ error: "Ingest unit conflict could not be resolved" }, { status: 409 });
   }
-  scheduleReadingIngestQueue(session.userId);
-  return Response.json({ deduplicated: true, unit: serializeUnit(existing) });
+  if (raced.status === "pending" || raced.status === "error") {
+    scheduleReadingIngestQueue(session.userId);
+  }
+  return Response.json({ deduplicated: true, unit: serializeUnit(raced) });
 }

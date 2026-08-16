@@ -259,6 +259,49 @@ export async function getReadingIngestUnitByFingerprint(
   return result.rows[0] ?? null;
 }
 
+export async function getReadingIngestUnitByLocator(
+  userId: string,
+  bookId: string,
+  locator: string,
+): Promise<ReadingIngestUnitRow | null> {
+  const result = await getPool().query<ReadingIngestUnitRow>(sql`
+    SELECT ${INGEST_UNIT_COLUMNS}
+    FROM readmax.reading_ingest_unit
+    WHERE user_id = ${userId}
+      AND book_id = ${bookId}
+      AND locator = ${locator}
+    ORDER BY CASE status
+               WHEN 'done' THEN 0
+               WHEN 'processing' THEN 1
+               ELSE 2
+             END,
+             first_seen_at ASC
+    LIMIT 1
+  `);
+  return result.rows[0] ?? null;
+}
+
+export async function refreshReadingIngestUnit(data: {
+  userId: string;
+  bookId: string;
+  unitId: string;
+  chapterLabel?: string | null;
+  text: string;
+}): Promise<ReadingIngestUnitRow | null> {
+  const result = await getPool().query<ReadingIngestUnitRow>(sql`
+    UPDATE readmax.reading_ingest_unit
+    SET text = ${data.text},
+        chapter_label = COALESCE(${data.chapterLabel ?? null}, chapter_label),
+        last_seen_at = NOW()
+    WHERE id = ${data.unitId}
+      AND user_id = ${data.userId}
+      AND book_id = ${data.bookId}
+      AND status IN ('pending', 'error')
+    RETURNING ${INGEST_UNIT_COLUMNS}
+  `);
+  return result.rows[0] ?? null;
+}
+
 export async function getReadingAgentSchemaHealth(): Promise<ReadingAgentSchemaHealth> {
   const result = await getPool().query<{ tableName: string; columnName: string }>(sql`
     SELECT table_name AS "tableName", column_name AS "columnName"

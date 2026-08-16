@@ -25,7 +25,10 @@ const sentFingerprints = new Set<string>();
 const inFlightFingerprints = new Set<string>();
 
 async function computeFingerprint(parts: readonly string[]): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(parts.join("")));
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify(parts)),
+  );
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -158,7 +161,7 @@ export function useReaderDwell({
     });
     const unsubscribeClusters = workspace?.subscribeClusterChanges(syncTimer);
 
-    void computeFingerprint([userId, bookId, unitKind, locator, text])
+    void computeFingerprint([userId, bookId, locator])
       .then((value) => {
         if (cancelled) return;
         fingerprint = value;
