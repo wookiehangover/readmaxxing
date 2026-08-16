@@ -14,6 +14,7 @@ vi.mock("../../pool", () => ({
 import {
   acquireReadingAgentLease,
   claimReadingIngestUnitWithLease,
+  clearReadingArtifactsAndIngestForUser,
   completeReadingIngestUnit,
   getCurrentReadingAgentLease,
   getLiveReadingAgentLease,
@@ -292,6 +293,31 @@ describe("reading artifact persistence", () => {
     queryMock.mockResolvedValueOnce({ rows: [] });
 
     await expect(resetReadingIngestUnit("user-1", "unit-1")).resolves.toBe(false);
+  });
+
+  it("clears only one user's artifacts, revisions, usage, leases, and ingest units", async () => {
+    clientQueryMock.mockResolvedValue({ rows: [] });
+
+    await expect(clearReadingArtifactsAndIngestForUser("user-1")).resolves.toBeUndefined();
+
+    expect(clientQueryMock).toHaveBeenNthCalledWith(1, "BEGIN");
+    const deletes = clientQueryMock.mock.calls.slice(1, 6).map(([query]) => query as SqlQuery);
+    expect(deletes.map(extractSqlText)).toEqual([
+      expect.stringContaining("DELETE FROM readmax.reading_artifact"),
+      expect.stringContaining("DELETE FROM readmax.reading_artifact_revision"),
+      expect.stringContaining("DELETE FROM readmax.reading_agent_usage"),
+      expect.stringContaining("DELETE FROM readmax.reading_agent_lease"),
+      expect.stringContaining("DELETE FROM readmax.reading_ingest_unit"),
+    ]);
+    expect(deletes.map(extractValues)).toEqual([
+      ["user-1"],
+      ["user-1"],
+      ["user-1"],
+      ["user-1"],
+      ["user-1"],
+    ]);
+    expect(clientQueryMock).toHaveBeenNthCalledWith(7, "COMMIT");
+    expect(releaseMock).toHaveBeenCalledOnce();
   });
 
   it("reclaims an expired lease and stale processing unit", async () => {

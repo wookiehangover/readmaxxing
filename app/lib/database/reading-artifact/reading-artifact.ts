@@ -681,6 +681,43 @@ export async function resetReadingIngestUnit(userId: string, unitId: string): Pr
   return result.rows.length > 0;
 }
 
+export async function clearReadingArtifactsAndIngestForUser(userId: string): Promise<void> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(sql`
+      DELETE FROM readmax.reading_artifact
+      WHERE user_id = ${userId}
+    `);
+    await client.query(sql`
+      DELETE FROM readmax.reading_artifact_revision
+      WHERE user_id = ${userId}
+    `);
+    await client.query(sql`
+      DELETE FROM readmax.reading_agent_usage
+      WHERE unit_id IN (
+        SELECT id
+        FROM readmax.reading_ingest_unit
+        WHERE user_id = ${userId}
+      )
+    `);
+    await client.query(sql`
+      DELETE FROM readmax.reading_agent_lease
+      WHERE user_id = ${userId}
+    `);
+    await client.query(sql`
+      DELETE FROM readmax.reading_ingest_unit
+      WHERE user_id = ${userId}
+    `);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(console.error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function releaseReadingAgentLease(userId: string, unitId: string): Promise<boolean> {
   const result = await getPool().query(sql`
     DELETE FROM readmax.reading_agent_lease

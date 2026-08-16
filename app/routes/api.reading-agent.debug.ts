@@ -1,6 +1,7 @@
 import { createFlueClient } from "@flue/sdk";
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import {
+  clearReadingArtifactsAndIngestForUser,
   getCurrentReadingAgentLease,
   getLatestReadingAgentUsage,
   getReadingAgentSchemaHealth,
@@ -126,6 +127,10 @@ export async function action({ request }: { request: Request }): Promise<Respons
     body = await request.json();
   } catch {
     return Response.json({ error: "invalid_json" }, { status: 400 });
+  }
+  if (isRecord(body) && body.action === "clear") {
+    await clearReadingArtifactsAndIngestForUser(access.userId);
+    return loadSnapshot(request, access.userId, access.schema);
   }
   if (isRecord(body) && body.action === undefined && body.model !== undefined) {
     if (!isDebugReadingAgentModel(body.model)) {

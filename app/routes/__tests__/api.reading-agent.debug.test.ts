@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   usage: vi.fn(),
   activeHost: vi.fn(),
   history: vi.fn(),
+  clear: vi.fn(),
   createFlueClient: vi.fn(),
   selectedModel: "anthropic/claude-sonnet-4-6",
   getSelectedModel: vi.fn(),
@@ -20,6 +21,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("~/lib/database/auth-middleware", () => ({ getSessionFromRequest: mocks.auth }));
 vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
+  clearReadingArtifactsAndIngestForUser: mocks.clear,
   getReadingAgentSchemaHealth: mocks.schema,
   getCurrentReadingAgentLease: mocks.lease,
   listRecentReadingIngestUnits: mocks.units,
@@ -68,6 +70,7 @@ beforeEach(() => {
   mocks.usage.mockReset().mockResolvedValue(null);
   mocks.activeHost.mockReset().mockReturnValue(undefined);
   mocks.history.mockReset().mockResolvedValue({ messages: [] });
+  mocks.clear.mockReset().mockResolvedValue(undefined);
   mocks.createFlueClient.mockReset().mockReturnValue({ history: mocks.history });
   mocks.selectedModel = "anthropic/claude-sonnet-4-6";
   mocks.getSelectedModel.mockReset().mockImplementation(() => mocks.selectedModel);
@@ -112,6 +115,15 @@ describe("reading-agent debug API", () => {
     await expect(response.json()).resolves.toEqual({ error: "auth_required" });
     expect(mocks.schema).not.toHaveBeenCalled();
     expect(mocks.activeHost).not.toHaveBeenCalled();
+  });
+
+  it("does not clear stored data for an unsigned request", async () => {
+    mocks.auth.mockResolvedValue(null);
+
+    const response = await action({ request: postRequest({ action: "clear" }) });
+
+    expect(response.status).toBe(401);
+    expect(mocks.clear).not.toHaveBeenCalled();
   });
 
   it("returns structured 409 responses for missing host config or schema", async () => {
@@ -232,6 +244,20 @@ describe("reading-agent debug API", () => {
       selectedModel: "xai/grok-4.5",
     });
     expect(mocks.units).toHaveBeenCalledWith({ userId: "user-1" });
+  });
+
+  it("clears only the authenticated user's stored artifacts and ingest history", async () => {
+    const response = await action({ request: postRequest({ action: "clear" }) });
+
+    expect(response.status).toBe(200);
+    expect(mocks.clear).toHaveBeenCalledWith("user-1");
+    expect(mocks.parseAction).not.toHaveBeenCalled();
+    expect(mocks.executeAction).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      lease: null,
+      units: [],
+      usage: null,
+    });
   });
 
   it("sets a model without triggering a queue action", async () => {
