@@ -1,12 +1,19 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { JSONContent } from "@tiptap/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ListTree } from "lucide-react";
-import { Streamdown } from "streamdown";
+import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
-import { fetchReadingArtifacts, ReadingArtifactsError } from "~/lib/reading-agent/artifacts-client";
+import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
+import {
+  fetchReadingArtifacts,
+  ReadingArtifactsError,
+  saveReadingOutline,
+} from "~/lib/reading-agent/artifacts-client";
 
 export const OUTLINE_POLL_MS = 15_000;
+export const OUTLINE_SAVE_MS = 1_000;
 
 interface OutlinePanelParams {
   readonly bookId: string;
@@ -41,6 +48,57 @@ export function OutlinePanel({ params, api }: IDockviewPanelProps<OutlinePanelPa
   const { bookId, bookTitle } = params;
   const [state, setState] = useState<OutlineState>({ status: "loading", content: null });
   const [refreshKey, setRefreshKey] = useState(0);
+  const editorRef = useRef<TiptapEditorHandle | null>(null);
+  const dirtyContentRef = useRef<string | null>(null);
+  const appliedContentRef = useRef<string | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const clearSaveTimer = useCallback(() => {
+    if (!saveTimerRef.current) return;
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
+  }, []);
+
+  const flushSave = useCallback(() => {
+    clearSaveTimer();
+    const queuedSave = saveQueueRef.current
+      .then(async () => {
+        const content = dirtyContentRef.current;
+        if (content === null) return;
+        const response = await saveReadingOutline(bookId, content);
+        appliedContentRef.current = response.artifact.content;
+        if (dirtyContentRef.current === content) dirtyContentRef.current = null;
+      })
+      .catch((error) => {
+        console.error("Failed to save outline:", error);
+      });
+    saveQueueRef.current = queuedSave;
+    return queuedSave;
+  }, [bookId, clearSaveTimer]);
+
+  const handleUpdate = useCallback(
+    (content: JSONContent) => {
+      dirtyContentRef.current = tiptapJsonToMarkdown(content);
+      clearSaveTimer();
+      saveTimerRef.current = setTimeout(() => {
+        void flushSave();
+      }, OUTLINE_SAVE_MS);
+    },
+    [clearSaveTimer, flushSave],
+  );
+
+  const applyRemoteContent = useCallback((content: string | null | undefined) => {
+    if (dirtyContentRef.current !== null) return;
+    const next = outlineFromContent(content);
+    if (appliedContentRef.current === next.content) {
+      setState((current) => (current.status === "loading" ? next : current));
+      return;
+    }
+    appliedContentRef.current = next.content;
+    setState(next);
+    if (next.status === "ready" && next.content) editorRef.current?.setContent(next.content);
+  }, []);
 
   const retry = useCallback(() => {
     setState({ status: "loading", content: null });
@@ -71,7 +129,7 @@ export function OutlinePanel({ params, api }: IDockviewPanelProps<OutlinePanelPa
       try {
         const response = await fetchReadingArtifacts(bookId, { signal: controller.signal });
         if (cancelled) return;
-        setState(outlineFromContent(response.artifacts.outline?.content));
+        applyRemoteContent(response.artifacts.outline?.content);
       } catch (error) {
         if (cancelled || isAbortError(error)) return;
         setState((current) => (silent && current.status === "ready" ? current : errorState(error)));
@@ -118,7 +176,13 @@ export function OutlinePanel({ params, api }: IDockviewPanelProps<OutlinePanelPa
       window.removeEventListener("focus", handleFocus);
       panelVisibility?.dispose();
     };
-  }, [api, bookId, refreshKey]);
+  }, [api, applyRemoteContent, bookId, refreshKey]);
+
+  useEffect(() => {
+    return () => {
+      void flushSave();
+    };
+  }, [flushSave]);
 
   return (
     <div className="flex h-full flex-col bg-card">
@@ -156,9 +220,12 @@ export function OutlinePanel({ params, api }: IDockviewPanelProps<OutlinePanelPa
             </p>
           </div>
         ) : (
-          <div className="typeset p-4 [--typeset-flow:0.75em] [--typeset-leading:1.6] [--typeset-size:0.875rem]">
-            <Streamdown>{state.content ?? ""}</Streamdown>
-          </div>
+          <TiptapEditor
+            ref={editorRef}
+            content={state.content ?? ""}
+            onUpdate={handleUpdate}
+            onBlur={() => void flushSave()}
+          />
         )}
       </ScrollArea>
     </div>

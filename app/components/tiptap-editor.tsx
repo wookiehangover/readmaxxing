@@ -8,11 +8,14 @@ import {
   HighlightReference,
   type HighlightReferenceAttrs,
 } from "~/lib/editor/tiptap-highlight-node";
+import { OutlineIncrement } from "~/lib/editor/tiptap-outline-node";
+
+export type TiptapEditorContent = JSONContent | string;
 
 export interface TiptapEditorHandle {
   appendHighlightReference: (attrs: HighlightReferenceAttrs) => void;
   appendContent: (nodes: JSONContent[]) => void;
-  setContent: (content: JSONContent) => void;
+  setContent: (content: TiptapEditorContent) => void;
   getContent: () => JSONContent;
   /** Returns the current number of top-level nodes in the document. */
   getTopLevelNodeCount: () => number;
@@ -24,8 +27,9 @@ export interface TiptapEditorHandle {
 }
 
 interface TiptapEditorProps {
-  content?: JSONContent;
+  content?: TiptapEditorContent;
   onUpdate?: (content: JSONContent) => void;
+  onBlur?: () => void;
   onNavigateToHighlight?: (cfi: string) => void | Promise<void>;
   onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
   /** Fires once the underlying Tiptap editor instance is created and ready. */
@@ -92,11 +96,13 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
 }
 
 export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(function TiptapEditor(
-  { content, onUpdate, onNavigateToHighlight, onDeleteHighlight, onReady },
+  { content, onUpdate, onBlur, onNavigateToHighlight, onDeleteHighlight, onReady },
   ref,
 ) {
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
+  const onBlurRef = useRef(onBlur);
+  onBlurRef.current = onBlur;
 
   const editor = useEditor({
     extensions: [
@@ -108,6 +114,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       HighlightReference.configure({
         component: HighlightReferenceView,
       }),
+      OutlineIncrement,
     ],
     content: content || {
       type: "doc",
@@ -115,6 +122,9 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     },
     onUpdate: ({ editor }) => {
       onUpdateRef.current?.(editor.getJSON());
+    },
+    onBlur: () => {
+      onBlurRef.current?.();
     },
     immediatelyRender: true,
   });
@@ -168,7 +178,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
         const endPos = editor.state.doc.content.size;
         editor.chain().focus().insertContentAt(endPos, nodes).run();
       },
-      setContent(content: JSONContent) {
+      setContent(content: TiptapEditorContent) {
         if (!editor) return;
         // Programmatic content always comes from an authoritative server/sync
         // snapshot. Do not emit onUpdate, which would enqueue a newer local

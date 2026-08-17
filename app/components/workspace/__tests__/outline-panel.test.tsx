@@ -1,24 +1,57 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { IDockviewPanelProps } from "dockview-react";
+import type { JSONContent } from "@tiptap/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OutlinePanel, OUTLINE_POLL_MS } from "../outline-panel";
+import { OutlinePanel, OUTLINE_POLL_MS, OUTLINE_SAVE_MS } from "../outline-panel";
 import { ReadingArtifactsError } from "~/lib/reading-agent/artifacts-client";
 
-const fetchReadingArtifacts = vi.hoisted(() => vi.fn());
+const mocks = vi.hoisted(() => ({
+  fetchReadingArtifacts: vi.fn(),
+  saveReadingOutline: vi.fn(),
+  setContent: vi.fn(),
+  editorProps: null as null | {
+    content?: string;
+    onUpdate?: (content: JSONContent) => void;
+    onBlur?: () => void;
+  },
+}));
 
 vi.mock("~/lib/reading-agent/artifacts-client", async () => {
   const actual = await vi.importActual<typeof import("~/lib/reading-agent/artifacts-client")>(
     "~/lib/reading-agent/artifacts-client",
   );
-  return { ...actual, fetchReadingArtifacts };
+  return {
+    ...actual,
+    fetchReadingArtifacts: mocks.fetchReadingArtifacts,
+    saveReadingOutline: mocks.saveReadingOutline,
+  };
 });
 
-vi.mock("streamdown", () => ({
-  Streamdown: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="outline-markdown">{children}</div>
-  ),
-}));
+vi.mock("~/components/tiptap-editor", async () => {
+  const ReactModule = await vi.importActual<typeof import("react")>("react");
+  return {
+    TiptapEditor: ReactModule.forwardRef(function MockTiptapEditor(
+      props: NonNullable<typeof mocks.editorProps>,
+      ref: React.ForwardedRef<unknown>,
+    ) {
+      mocks.editorProps = props;
+      ReactModule.useImperativeHandle(ref, () => ({
+        appendHighlightReference() {},
+        appendContent() {},
+        setContent: mocks.setContent,
+        getContent: () => ({ type: "doc", content: [] }),
+        getTopLevelNodeCount: () => 0,
+        replaceContentFrom() {},
+      }));
+      return (
+        <div data-testid="outline-editor" onBlur={props.onBlur}>
+          {props.content}
+        </div>
+      );
+    }),
+  };
+});
 
 vi.mock("~/components/ui/scroll-area", () => ({
   ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -56,7 +89,18 @@ function renderPanel() {
 }
 
 beforeEach(() => {
-  fetchReadingArtifacts.mockReset();
+  mocks.fetchReadingArtifacts.mockReset();
+  mocks.saveReadingOutline.mockReset();
+  mocks.setContent.mockReset();
+  mocks.editorProps = null;
+  mocks.saveReadingOutline.mockImplementation(async (bookId: string, content: string) => ({
+    bookId,
+    artifact: {
+      content,
+      revisionId: "revision-user",
+      updatedAt: "2026-01-01T00:00:01.000Z",
+    },
+  }));
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
 });
 
@@ -69,18 +113,18 @@ afterEach(() => {
 });
 
 describe("OutlinePanel", () => {
-  it("renders outline markdown after a successful fetch", async () => {
-    fetchReadingArtifacts.mockResolvedValue(outline);
+  it("mounts an editable outline after a successful fetch", async () => {
+    mocks.fetchReadingArtifacts.mockResolvedValue(outline);
     renderPanel();
     expect(container!.textContent).toContain("Loading outline…");
     await act(async () => {});
-    expect(container!.querySelector("[data-testid='outline-markdown']")?.textContent).toBe(
+    expect(container!.querySelector("[data-testid='outline-editor']")?.textContent).toBe(
       "# Chapter 1\n\nSiddhartha leaves home.",
     );
   });
 
   it("shows a sign-in prompt on 401", async () => {
-    fetchReadingArtifacts.mockRejectedValue(
+    mocks.fetchReadingArtifacts.mockRejectedValue(
       new ReadingArtifactsError("auth_required", 401, "Authentication required"),
     );
     renderPanel();
@@ -90,7 +134,7 @@ describe("OutlinePanel", () => {
   });
 
   it("shows a keep-reading empty state when the outline is missing", async () => {
-    fetchReadingArtifacts.mockResolvedValue({
+    mocks.fetchReadingArtifacts.mockResolvedValue({
       bookId: "book-1",
       artifacts: { outline: null, characters: null, wiki: null },
     });
@@ -101,7 +145,7 @@ describe("OutlinePanel", () => {
   });
 
   it("retries a failed fetch from the error state", async () => {
-    fetchReadingArtifacts
+    mocks.fetchReadingArtifacts
       .mockRejectedValueOnce(new ReadingArtifactsError("request_failed", 500, "Failed"))
       .mockResolvedValueOnce(outline);
     renderPanel();
@@ -111,18 +155,106 @@ describe("OutlinePanel", () => {
       container!.querySelector("button")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await act(async () => {});
-    expect(container!.querySelector("[data-testid='outline-markdown']")?.textContent).toContain(
+    expect(container!.querySelector("[data-testid='outline-editor']")?.textContent).toContain(
       "Siddhartha leaves home.",
     );
   });
 
   it("polls while visible without remounting", async () => {
     vi.useFakeTimers();
-    fetchReadingArtifacts.mockResolvedValue(outline);
+    mocks.fetchReadingArtifacts.mockResolvedValue(outline);
     renderPanel();
     await act(async () => {});
-    expect(fetchReadingArtifacts).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchReadingArtifacts).toHaveBeenCalledTimes(1);
     await act(async () => vi.advanceTimersByTimeAsync(OUTLINE_POLL_MS));
-    expect(fetchReadingArtifacts).toHaveBeenCalledTimes(2);
+    expect(mocks.fetchReadingArtifacts).toHaveBeenCalledTimes(2);
+  });
+
+  it("saves edited markdown after the notebook idle cadence", async () => {
+    vi.useFakeTimers();
+    mocks.fetchReadingArtifacts.mockResolvedValue(outline);
+    renderPanel();
+    await act(async () => {});
+
+    const edited: JSONContent = {
+      type: "doc",
+      content: [
+        { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Chapter 1" }] },
+        {
+          type: "outlineIncrement",
+          attrs: { locator: "chapter.xhtml?x=1&y=2", page: "12" },
+          content: [
+            {
+              type: "bulletList",
+              content: [
+                {
+                  type: "listItem",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "New fact." }] }],
+                },
+              ],
+            },
+          ],
+        },
+        { type: "paragraph", content: [{ type: "text", text: "User note." }] },
+      ],
+    };
+    act(() => mocks.editorProps!.onUpdate!(edited));
+    await act(async () => vi.advanceTimersByTimeAsync(OUTLINE_SAVE_MS));
+
+    expect(mocks.saveReadingOutline).toHaveBeenCalledWith(
+      "book-1",
+      '## Chapter 1\n\n<div data-outline-increment="" data-locator="chapter.xhtml?x=1&amp;y=2" data-page="12">\n\n- New fact.\n\n</div>\n\nUser note.',
+    );
+  });
+
+  it("flushes an edit on blur", async () => {
+    mocks.fetchReadingArtifacts.mockResolvedValue(outline);
+    renderPanel();
+    await act(async () => {});
+    act(() =>
+      mocks.editorProps!.onUpdate!({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Blurred edit" }] }],
+      }),
+    );
+
+    await act(async () => {
+      container!
+        .querySelector("[data-testid='outline-editor']")!
+        .dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(mocks.saveReadingOutline).toHaveBeenCalledWith("book-1", "Blurred edit");
+  });
+
+  it("does not overwrite dirty edits with a remote append", async () => {
+    const appended = {
+      ...outline,
+      artifacts: {
+        ...outline.artifacts,
+        outline: {
+          ...outline.artifacts.outline,
+          content: "# Chapter 1\n\nSiddhartha leaves home.\n\n- A new dwell fact.",
+          revisionId: "revision-2",
+        },
+      },
+    };
+    mocks.fetchReadingArtifacts.mockResolvedValueOnce(outline).mockResolvedValue(appended);
+    renderPanel();
+    await act(async () => {});
+    act(() =>
+      mocks.editorProps!.onUpdate!({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Unsaved edit" }] }],
+      }),
+    );
+
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(mocks.setContent).not.toHaveBeenCalled();
+
+    await act(async () => mocks.editorProps!.onBlur!());
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(mocks.setContent).toHaveBeenCalledWith(
+      "# Chapter 1\n\nSiddhartha leaves home.\n\n- A new dwell fact.",
+    );
   });
 });
