@@ -1,4 +1,4 @@
-import React, { act, createContext, useContext } from "react";
+import React, { act, createContext, useContext, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Settings } from "~/lib/settings";
@@ -11,6 +11,20 @@ vi.mock("react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("~/lib/context/auth-context", () => ({ useAuth: () => auth }));
 vi.mock("~/lib/editor/export-notebook-markdown", () => ({ exportNotebookMarkdown }));
 vi.mock("~/components/share-dialog", () => ({ ShareDialog: () => null }));
+vi.mock("~/components/chat/chat-book-selector", () => ({
+  ChatBookSelectorMenu: () => <div>Books in this chat</div>,
+}));
+vi.mock("~/components/chat/chat-session-menu", () => ({
+  ChatRecentSessionsMenu: ({
+    onSwitchSession,
+  }: {
+    onSwitchSession: (sessionId: string) => void;
+  }) => (
+    <div role="menuitem" onClick={() => onSwitchSession("session-2")}>
+      Session Two
+    </div>
+  ),
+}));
 vi.mock("~/components/book-list", () => ({
   TocList: ({
     entries,
@@ -59,6 +73,11 @@ vi.mock("~/components/ui/dropdown-menu", () => {
 });
 
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
+import {
+  ReadingChatMenuProvider,
+  useReadingChatMenuRegistration,
+  type ReadingChatMenuActions,
+} from "~/lib/context/reading-chat-menu-context";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -82,27 +101,50 @@ const settings = {
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
-function renderMenu() {
+function RegisterChatActions({ actions }: { actions: ReadingChatMenuActions }) {
+  const register = useReadingChatMenuRegistration();
+  useEffect(() => register?.(actions), [actions, register]);
+  return null;
+}
+
+function renderMenu({ withChatActions = false }: { withChatActions?: boolean } = {}) {
   const onUpdateSettings = vi.fn();
   const onNavigateToToc = vi.fn();
+  const onNewSession = vi.fn();
+  const onSwitchSession = vi.fn();
+  const chatActions: ReadingChatMenuActions = {
+    bookId: "book-1",
+    activeSessionId: "session-1",
+    onNewSession,
+    onSwitchSession,
+    bookSelection: {
+      openBooks: [],
+      selectedBookIds: ["book-1"],
+      ownBookId: "book-1",
+      onToggleBook: vi.fn(),
+    },
+  };
   container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
   act(() =>
     root?.render(
-      <ReaderSettingsMenu
-        settings={settings}
-        onUpdateSettings={onUpdateSettings}
-        book={{ id: "book-1", title: "Book", author: "Author", coverImage: null, format: "epub" }}
-        onDownload={vi.fn()}
-        onBookmarkPage={vi.fn()}
-        onCopyPageAsMarkdown={vi.fn()}
-        onOpenSpeedread={vi.fn()}
-        toc={[{ label: "Chapter One", href: "chapter-1.xhtml" }]}
-        onNavigateToToc={onNavigateToToc}
-      />,
+      <ReadingChatMenuProvider>
+        {withChatActions ? <RegisterChatActions actions={chatActions} /> : null}
+        <ReaderSettingsMenu
+          settings={settings}
+          onUpdateSettings={onUpdateSettings}
+          book={{ id: "book-1", title: "Book", author: "Author", coverImage: null, format: "epub" }}
+          onDownload={vi.fn()}
+          onBookmarkPage={vi.fn()}
+          onCopyPageAsMarkdown={vi.fn()}
+          onOpenSpeedread={vi.fn()}
+          toc={[{ label: "Chapter One", href: "chapter-1.xhtml" }]}
+          onNavigateToToc={onNavigateToToc}
+        />
+      </ReadingChatMenuProvider>,
     ),
   );
-  return { container, onUpdateSettings, onNavigateToToc };
+  return { container, onUpdateSettings, onNavigateToToc, onNewSession, onSwitchSession };
 }
 
 beforeEach(() => {
@@ -178,5 +220,24 @@ describe("ReaderSettingsMenu", () => {
     act(() => chapter?.click());
 
     expect(rendered.onNavigateToToc).toHaveBeenCalledWith("chapter-1.xhtml");
+  });
+
+  it("keeps chat actions in a separate final group and switches recent sessions", () => {
+    const rendered = renderMenu({ withChatActions: true });
+    const items = Array.from(rendered.container.querySelectorAll<HTMLElement>("[role='menuitem']"));
+    const details = items.find((item) => item.textContent?.includes("Details"));
+    const recentSession = items.find((item) => item.textContent?.includes("Session Two"));
+    const newChat = items.find((item) => item.textContent?.includes("New chat"));
+
+    expect(rendered.container.textContent).toContain("Recent");
+    expect(rendered.container.textContent).toContain("Books in this chat");
+    expect(newChat?.parentElement).not.toBe(details?.parentElement);
+    expect(newChat?.parentElement?.previousElementSibling?.getAttribute("role")).toBe("separator");
+    expect(newChat?.parentElement?.lastElementChild).toBe(newChat);
+
+    act(() => recentSession?.click());
+    act(() => newChat?.click());
+    expect(rendered.onSwitchSession).toHaveBeenCalledWith("session-2");
+    expect(rendered.onNewSession).toHaveBeenCalledOnce();
   });
 });

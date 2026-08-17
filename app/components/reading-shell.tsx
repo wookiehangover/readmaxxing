@@ -3,6 +3,7 @@ import { ReadingRail } from "~/components/reading-shell/reading-rail";
 import { ReadingSplit } from "~/components/reading-shell/reading-split";
 import { WorkspaceBookReader } from "~/components/workspace-book-reader";
 import { WorkspacePdfReader } from "~/components/workspace-pdf-reader";
+import { ReadingChatMenuProvider } from "~/lib/context/reading-chat-menu-context";
 import { useWorkspace } from "~/lib/context/workspace-context";
 
 export function ReadingShell() {
@@ -26,5 +27,9 @@ export function ReadingShell() {
     </div>
   );
 
-  return <ReadingSplit book={bookSurface} rail={<ReadingRail />} />;
+  return (
+    <ReadingChatMenuProvider>
+      <ReadingSplit book={bookSurface} rail={<ReadingRail />} />
+    </ReadingChatMenuProvider>
+  );
 }

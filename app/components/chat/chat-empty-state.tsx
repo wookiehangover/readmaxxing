@@ -143,7 +143,7 @@ export function ChatEmptyState({
   }, []);
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-2">
+    <div className="flex flex-1 flex-col gap-6 px-2">
       <p className="max-w-sm w-full text-sm text-muted-foreground">
         Discuss <TitleList titles={bookTitles} />
       </p>

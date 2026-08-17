@@ -28,7 +28,6 @@ function GatedChatInputWithDialog({
   return (
     <>
       <ChatInput
-        bookTitle="The Great Gatsby"
         textareaRef={textareaRef}
         inputRef={{ current: "" }}
         isLoading={false}
@@ -84,7 +83,6 @@ describe("ChatInput", () => {
     act(() => {
       root.render(
         <ChatInput
-          bookTitle="The Great Gatsby"
           textareaRef={textareaRef}
           inputRef={inputRef}
           isLoading={false}
@@ -126,7 +124,6 @@ describe("ChatInput", () => {
     act(() => {
       root.render(
         <ChatInput
-          bookTitle="The Great Gatsby"
           textareaRef={textareaRef}
           inputRef={inputRef}
           isLoading={false}
@@ -158,7 +155,6 @@ describe("ChatInput", () => {
     act(() => {
       root.render(
         <ChatInput
-          bookTitle="The Great Gatsby"
           textareaRef={textareaRef}
           inputRef={inputRef}
           isLoading={false}
@@ -169,6 +165,7 @@ describe("ChatInput", () => {
     });
 
     const textarea = textareaRef.current!;
+    expect(textarea.placeholder).toBe("Ask about this book...");
     act(() => changeTextarea(textarea, "Normal message"));
     expect(inputRef.current).toBe("Normal message");
 

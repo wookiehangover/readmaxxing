@@ -14,6 +14,7 @@ import {
   Type,
   ClipboardCopyIcon,
   FileText,
+  History,
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -38,6 +39,9 @@ import type { TocEntry } from "~/lib/context/reader-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/settings";
 import { exportNotebookMarkdown } from "~/lib/editor/export-notebook-markdown";
+import { useReadingChatMenuActions } from "~/lib/context/reading-chat-menu-context";
+import { ChatBookSelectorMenu } from "~/components/chat/chat-book-selector";
+import { ChatRecentSessionsMenu } from "~/components/chat/chat-session-menu";
 import { Button } from "./ui/button";
 
 interface ReaderFormattingMenuProps {
@@ -373,6 +377,8 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
   const navigate = useNavigate();
   const book = props.book;
   const { isAuthenticated, shareOpen, setShareOpen, handleShare } = useReaderActionState(book);
+  const registeredChatActions = useReadingChatMenuActions();
+  const chatActions = registeredChatActions?.bookId === book?.id ? registeredChatActions : null;
 
   return (
     <>
@@ -439,6 +445,32 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
                 >
                   <Download className="size-4" />
                   Export as Markdown
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </>
+          ) : null}
+          {chatActions ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <History />
+                    Recent
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-64 text-xs">
+                    <ChatRecentSessionsMenu
+                      bookId={chatActions.bookId}
+                      activeSessionId={chatActions.activeSessionId}
+                      onSwitchSession={chatActions.onSwitchSession}
+                      onNewSession={chatActions.onNewSession}
+                    />
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <ChatBookSelectorMenu {...chatActions.bookSelection} />
+                <DropdownMenuItem onClick={chatActions.onNewSession}>
+                  <Plus />
+                  New chat
                 </DropdownMenuItem>
               </DropdownMenuGroup>
             </>

@@ -63,7 +63,6 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const [bookFormat, setBookFormat] = useState<string>();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [sessionTitle, setSessionTitle] = useState("");
   const [sessionKey, setSessionKey] = useState(0);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [pendingChatIntent, setPendingChatIntent] = useState<ChatIntent>({ type: "none" });
@@ -97,7 +96,6 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         .then((session) => {
           if (!scope.active || scope.bookId !== chatBookId) return false;
           setActiveSessionId(session.id);
-          setSessionTitle(session.title);
           setInitialMessages([]);
           setSessionKey((key) => key + 1);
           setExplainPrompt(message);
@@ -193,18 +191,12 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         if (cancelled) return;
         if (activeId) {
           setActiveSessionId(activeId);
-          const session = await AppRuntime.runPromise(
-            ChatService.pipe(Effect.andThen((service) => service.getSession(activeId, chatBookId))),
-          );
-          if (cancelled) return;
-          if (session) setSessionTitle(session.title);
         } else if (isAuthenticated) {
           const session = await AppRuntime.runPromise(
             ChatService.pipe(Effect.andThen((service) => service.createSession(chatBookId))),
           );
           if (cancelled) return;
           setActiveSessionId(session.id);
-          setSessionTitle(session.title);
         }
 
         let chapters: BookChapter[] = [];
@@ -287,21 +279,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     };
   }, [chatBookId, activeSessionId, isAuthenticated]);
 
-  const sessionSyncVersion = useSyncListener(["chat_session"]);
   const messageSyncVersion = useSyncListener(["chat_message"]);
-
-  useEffect(() => {
-    if (sessionSyncVersion === 0 || !activeSessionId) return;
-    AppRuntime.runPromise(
-      ChatService.pipe(
-        Effect.andThen((service) => service.getSession(activeSessionId, chatBookId)),
-      ),
-    )
-      .then((session) => {
-        if (session) setSessionTitle(session.title);
-      })
-      .catch(console.error);
-  }, [chatBookId, activeSessionId, sessionSyncVersion]);
 
   useEffect(() => {
     if (messageSyncVersion === 0 || !activeSessionId) return;
@@ -338,7 +316,6 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       );
       if (!session) return;
       setActiveSessionId(sessionId);
-      setSessionTitle(session.title);
       setInitialMessages(toUIMessages(session.messages));
       setSessionKey((key) => key + 1);
     },
@@ -350,7 +327,6 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       ChatService.pipe(Effect.andThen((service) => service.createSession(chatBookId))),
     );
     setActiveSessionId(session.id);
-    setSessionTitle(session.title);
     setInitialMessages([]);
     setSessionKey((key) => key + 1);
   }, [chatBookId]);
@@ -478,10 +454,8 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         textareaRef={textareaRef}
         inputRef={inputRef}
         activeSessionId={activeSessionId}
-        sessionTitle={sessionTitle}
         onSwitchSession={handleSwitchSession}
         onNewSession={handleNewSession}
-        onSessionTitleChange={setSessionTitle}
         onRegisterSetMessages={(setMessages) => {
           setChatMessagesRef.current = setMessages;
         }}
