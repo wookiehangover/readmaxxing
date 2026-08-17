@@ -392,7 +392,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
   if (!isAuthenticated && !isLoggedOutDemoBook) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
+      <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-center text-muted-foreground">
           Sign in to chat with <span className="italic">{bookTitle}</span>
         </p>
@@ -413,7 +413,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
   if (adoptionError) {
     return (
-      <div className="flex h-full items-center justify-center px-4">
+      <div className="flex h-full items-center justify-center">
         <p className="text-center text-muted-foreground">{adoptionError}</p>
       </div>
     );
@@ -429,7 +429,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
   if (!isAuthenticated && !isLoggedOutDemoSession) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
+      <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-center text-muted-foreground">
           Sign in to chat with <span className="italic">{bookTitle}</span>
         </p>

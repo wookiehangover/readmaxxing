@@ -36,7 +36,7 @@ export function SuggestedPrompts({
 }) {
   if (prompts.length === 0) return null;
   return (
-    <div className="mt-6 flex flex-col flex-wrap gap-2.5 px-5 pb-2">
+    <div className="mt-6 flex flex-col flex-wrap gap-2.5 pb-2">
       {prompts.map((prompt) => (
         <button
           key={prompt}
@@ -85,7 +85,7 @@ export function ChatEmptyState({
 
   return (
     <div className="flex flex-1 flex-col">
-      <div className="flex w-full max-w-sm flex-col gap-4">
+      <div className="flex w-full flex-col gap-4">
         {categories.map((category) => (
           <div
             key={category.label}

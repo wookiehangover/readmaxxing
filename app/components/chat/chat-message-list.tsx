@@ -45,7 +45,7 @@ export function ChatMessageList({
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
       <MessageScroller className="flex-1">
         <MessageScrollerViewport
-          className={cn("relative px-4 py-3", {
+          className={cn("relative py-3", {
             "scroll-fog-bottom": messages.length > 0,
           })}
         >

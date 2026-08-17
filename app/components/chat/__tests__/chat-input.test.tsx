@@ -166,10 +166,12 @@ describe("ChatInput", () => {
 
     const textarea = textareaRef.current!;
     expect(textarea.placeholder).toBe("Ask about this book...");
+    const form = container.querySelector("form")!;
+    expect(form.classList.contains("px-4")).toBe(false);
+    expect(form.classList.contains("py-3")).toBe(true);
     act(() => changeTextarea(textarea, "Normal message"));
     expect(inputRef.current).toBe("Normal message");
 
-    const form = container.querySelector("form")!;
     act(() => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     expect(onSubmit).toHaveBeenCalledOnce();
     act(() => root.unmount());

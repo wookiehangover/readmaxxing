@@ -84,7 +84,7 @@ export function ChatInput({
   );
 
   return (
-    <form onSubmit={handleSubmit} className="px-4 py-3">
+    <form onSubmit={handleSubmit} className="py-3">
       {highlightPreview ? (
         <div className="mb-2 flex">
           <Attachment size="xs" className="max-w-[200px] rounded-full border-0 bg-muted">
