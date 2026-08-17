@@ -8,7 +8,7 @@ import { WorkspaceNotebookPanel } from "~/components/workspace/panel-components"
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { cn } from "~/lib/utils";
 
-const tabs = ["Notes", "Chat", "Outline", "Review"] as const;
+const tabs = ["Notes", "Discuss", "Outline", "Review"] as const;
 type ReadingRailTab = (typeof tabs)[number];
 
 export function ReadingRail() {
@@ -41,7 +41,7 @@ export function ReadingRail() {
               className={cn(
                 "relative h-7 shrink-0 bg-transparent p-0 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                 {
-                  "text-foreground after:absolute after:bottom-0 after:left-1/2 after:h-px after:w-3 after:-translate-x-1/2 after:bg-foreground":
+                  "text-foreground after:absolute after:bottom-0 after:left-0 after:h-px after:w-3 after:bg-foreground":
                     activeTab === tab,
                 },
               )}
@@ -70,7 +70,7 @@ export function ReadingRail() {
           <Tabs.Panel value="Notes" className="min-h-0 flex-1 overflow-hidden outline-none">
             <WorkspaceNotebookPanel bookId={book.id} bookTitle={book.title} chromeless />
           </Tabs.Panel>
-          <Tabs.Panel value="Chat" className="min-h-0 flex-1 overflow-hidden outline-none">
+          <Tabs.Panel value="Discuss" className="min-h-0 flex-1 overflow-hidden outline-none">
             <ChatPanel bookId={book.id} bookTitle={book.title} />
           </Tabs.Panel>
           <Tabs.Panel value="Outline" className="min-h-0 flex-1 overflow-hidden outline-none">

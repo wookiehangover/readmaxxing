@@ -77,17 +77,28 @@ afterEach(() => {
 });
 
 describe("ReadingRail", () => {
-  it("switches Notes, Chat, and Outline in place", () => {
+  it("switches Notes, Discuss, and Outline in place", () => {
     const container = renderRail();
     expect(
       container.querySelector("[data-testid='notes-panel']")?.getAttribute("data-chromeless"),
     ).toBe("true");
 
-    clickTab(container, "Chat");
+    clickTab(container, "Discuss");
     expect(container.querySelector("[data-testid='chat-panel']")).not.toBeNull();
 
     clickTab(container, "Outline");
     expect(container.querySelector("[data-testid='outline-panel']")).not.toBeNull();
+  });
+
+  it("left-aligns the active underline with the tab label", () => {
+    const container = renderRail();
+    const notesTab = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent === "Notes",
+    );
+
+    expect(notesTab?.className).toContain("after:left-0");
+    expect(notesTab?.className).not.toContain("after:left-1/2");
+    expect(notesTab?.className).not.toContain("after:-translate-x-1/2");
   });
 
   it("shows the Review empty stub", () => {
