@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { LibraryToolbar } from "~/components/workspace/library-toolbar";
+import { LibraryHeaderControls } from "~/components/workspace/library-frame";
 import { LibraryTable } from "~/components/workspace/library-table";
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
@@ -291,12 +292,14 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
         </div>
       ) : (
         <>
-          <LibraryToolbar
-            query={searchQuery}
-            onQueryChange={setSearchQuery}
-            sortBy={librarySortBy}
-            onSortByChange={handleLibrarySortByChange}
-          />
+          <LibraryHeaderControls>
+            <LibraryToolbar
+              query={searchQuery}
+              onQueryChange={setSearchQuery}
+              sortBy={librarySortBy}
+              onSortByChange={handleLibrarySortByChange}
+            />
+          </LibraryHeaderControls>
           {!hasMatches ? (
             <div className="flex flex-1 items-center justify-center p-6">
               <p className="text-sm text-muted-foreground">No matching books</p>

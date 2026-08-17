@@ -5,6 +5,7 @@ import { StandardEbooksToolbar } from "~/components/standard-ebooks-toolbar";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { StandardEbooksTable } from "~/components/workspace/standard-ebooks-table";
+import { LibraryHeaderControls } from "~/components/workspace/library-frame";
 import { useSettings } from "~/lib/settings";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
@@ -170,7 +171,9 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
           )}
         </div>
 
-        <StandardEbooksToolbar query={query} onQueryChange={setQuery} />
+        <LibraryHeaderControls>
+          <StandardEbooksToolbar query={query} onQueryChange={setQuery} />
+        </LibraryHeaderControls>
       </div>
 
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">

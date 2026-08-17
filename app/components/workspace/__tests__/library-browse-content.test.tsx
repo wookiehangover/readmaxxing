@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +9,7 @@ vi.mock("~/hooks/use-effect-query", () => ({
 }));
 
 import { LibraryBrowseContent } from "~/components/workspace/library-browse-content";
+import { LibraryFrame } from "~/components/workspace/library-frame";
 import { useWorkspace, WorkspaceProvider } from "~/lib/context/workspace-context";
 
 const book: BookMeta = {
@@ -35,10 +36,10 @@ afterEach(() => {
   root = undefined;
 });
 
-function renderLibrary(onOpenBook = vi.fn()) {
+function renderLibrary(onOpenBook = vi.fn(), books: BookMeta[] = [book]) {
   function Harness() {
     const workspace = useWorkspace();
-    workspace.booksRef.current = [book];
+    workspace.booksRef.current = books;
     return <LibraryBrowseContent onOpenBook={onOpenBook} />;
   }
 
@@ -46,7 +47,9 @@ function renderLibrary(onOpenBook = vi.fn()) {
     root!.render(
       <MemoryRouter>
         <WorkspaceProvider>
-          <Harness />
+          <LibraryFrame fileInputRef={createRef<HTMLInputElement>()} onFileInput={vi.fn()}>
+            <Harness />
+          </LibraryFrame>
         </WorkspaceProvider>
       </MemoryRouter>,
     );
@@ -82,7 +85,11 @@ describe("LibraryBrowseContent", () => {
     const search = container!.querySelector<HTMLInputElement>('[aria-label="Search books"]')!;
     const toolbar = search.parentElement!.parentElement!;
     const controls = toolbar.children[1]!;
+    const header = container!.querySelector("header")!;
 
+    expect(header.contains(toolbar)).toBe(true);
+    expect(toolbar.className).not.toContain("pt-4");
+    expect(toolbar.className).not.toContain("pb-2");
     expect(toolbar.className).not.toContain("justify-between");
     expect(toolbar.children[0]!.contains(search)).toBe(true);
     expect(controls.querySelector('[aria-label^="Sort library by"]')).not.toBeNull();
@@ -92,5 +99,13 @@ describe("LibraryBrowseContent", () => {
       container!.querySelector<HTMLButtonElement>('[aria-label="Open Test Book"]')!.click(),
     );
     expect(onOpenBook).toHaveBeenCalledWith(book);
+  });
+
+  it("leaves the header without a control cluster when the library is empty", () => {
+    renderLibrary(vi.fn(), []);
+
+    const header = container!.querySelector("header")!;
+    expect(header.querySelector('[aria-label="Search books"]')).toBeNull();
+    expect(header.querySelector('nav[aria-label="Library navigation"]')).not.toBeNull();
   });
 });

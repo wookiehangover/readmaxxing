@@ -1,5 +1,6 @@
-import { act } from "react";
+import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const queryResult = vi.hoisted(() => ({
@@ -29,7 +30,14 @@ vi.mock("~/hooks/use-effect-query", () => ({
   useEffectQuery: () => queryResult,
 }));
 
+vi.mock("~/components/bug-report-dialog", () => ({
+  BugReportDialog: () => null,
+}));
+
 import { StandardEbooksBrowser } from "~/components/standard-ebooks-browser";
+import { LibraryFrame } from "~/components/workspace/library-frame";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLDivElement | undefined;
 let root: Root | undefined;
@@ -50,7 +58,13 @@ afterEach(() => {
 describe("StandardEbooksBrowser", () => {
   it("keeps loaded books when switching from the library-style grid to the table", async () => {
     await act(async () => {
-      root!.render(<StandardEbooksBrowser onBookAdded={vi.fn()} />);
+      root!.render(
+        <MemoryRouter>
+          <LibraryFrame fileInputRef={createRef<HTMLInputElement>()} onFileInput={vi.fn()}>
+            <StandardEbooksBrowser onBookAdded={vi.fn()} />
+          </LibraryFrame>
+        </MemoryRouter>,
+      );
     });
 
     const grid = container!.querySelector<HTMLElement>(".grid");
@@ -67,6 +81,9 @@ describe("StandardEbooksBrowser", () => {
       '[aria-label="Search Standard Ebooks"]',
     )!;
     const toolbar = search.parentElement!.parentElement!;
+    expect(container!.querySelector("header")?.contains(toolbar)).toBe(true);
+    expect(toolbar.className).not.toContain("pt-4");
+    expect(toolbar.className).not.toContain("pb-2");
     expect(toolbar.className).not.toContain("justify-between");
     expect(toolbar.children[0]!.contains(search)).toBe(true);
     expect(toolbar.children[1]!.querySelector('[aria-label="Grid view"]')).not.toBeNull();

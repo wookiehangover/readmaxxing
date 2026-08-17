@@ -34,13 +34,13 @@ vi.mock("~/components/bug-report-dialog", () => ({
   ),
 }));
 
-import { LibraryFrame } from "~/components/workspace/library-frame";
+import { LibraryFrame, LibraryHeaderControls } from "~/components/workspace/library-frame";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let root: Root | null = null;
 
-function renderFrame(pathname: string) {
+function renderFrame(pathname: string, children: React.ReactNode = <div>Browse body</div>) {
   const container = document.body.appendChild(document.createElement("div"));
   const fileInputRef = createRef<HTMLInputElement>();
   root = createRoot(container);
@@ -48,7 +48,7 @@ function renderFrame(pathname: string) {
     root?.render(
       <MemoryRouter initialEntries={[pathname]}>
         <LibraryFrame fileInputRef={fileInputRef} onFileInput={vi.fn()}>
-          <div>Browse body</div>
+          {children}
         </LibraryFrame>
       </MemoryRouter>,
     );
@@ -80,12 +80,29 @@ describe("LibraryFrame", () => {
 
     expect(nav.style.width).toBe(expectedWidth);
     expect(nav.className).toContain("px-6");
-    expect(nav.className).toContain("py-5");
+    expect(nav.parentElement?.className).toContain("py-5");
     expect(linkGroup.className).toContain("flex-1");
     expect(linkGroup.contains(links.item(links.length - 1))).toBe(true);
     expect(linkGroup.contains(nav.querySelector('button[title="More library actions"]'))).toBe(
       false,
     );
+  });
+
+  it("renders page controls to the left of the rail-width navigation", () => {
+    const { container } = renderFrame(
+      "/library",
+      <LibraryHeaderControls>
+        <div data-testid="page-controls">Controls</div>
+      </LibraryHeaderControls>,
+    );
+    const header = container.querySelector("header")!;
+    const controls = container.querySelector('[data-testid="page-controls"]')!;
+    const slot = container.querySelector('[data-slot="library-header-controls"]')!;
+    const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
+
+    expect(slot.contains(controls)).toBe(true);
+    expect(header.children[0]).toBe(slot);
+    expect(header.children[1]).toBe(nav);
   });
 
   it.each([
