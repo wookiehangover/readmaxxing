@@ -1,29 +1,11 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
-import { Button } from "~/components/ui/button";
-import {
-  ChevronLeft,
-  ChevronRight,
-  MessageCircle,
-  Notebook,
-  Search,
-  TableOfContents,
-} from "lucide-react";
-import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
-import { TocList } from "~/components/book-list";
 import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
-import {
-  ReaderActionsMenu,
-  ReaderFormattingMenu,
-  ReaderSettingsMenu,
-} from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
-import { SearchBar } from "~/components/search-bar";
 import { useEffectQuery } from "~/hooks/use-effect-query";
-import { cn } from "~/lib/utils";
 import { AppRuntime } from "~/lib/effect-runtime";
 import type { DockviewPanelApi } from "dockview-react";
 import { useIsMobile } from "~/hooks/use-mobile";
@@ -36,6 +18,7 @@ import { usePdfWorkspacePanels } from "~/hooks/use-pdf-workspace-panels";
 import type { PanelTypographyParams } from "~/components/workspace-book-reader";
 import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 import { useSyncListener } from "~/hooks/use-sync-listener";
+import { PdfReaderView } from "~/components/workspace-pdf-reader/pdf-reader-view";
 
 interface WorkspacePdfReaderProps {
   bookId: string;
@@ -413,176 +396,40 @@ function WorkspacePdfReaderInner({
       tabIndex={0}
       onPointerDown={handlePanelPointerDown}
     >
-      <div className="relative flex-1 overflow-hidden">
-        {!panelApi && (
-          <div className="absolute top-2 left-2 z-20">
-            <ReaderSettingsMenu
-              settings={localSettings}
-              onUpdateSettings={handleUpdateSettings}
-              isPdf
-              book={book}
-              onDownload={handleDownload}
-              onBookmarkPage={handleBookmarkPage}
-              isBookmarked={Boolean(currentBookmark)}
-            />
-          </div>
-        )}
-        {searchOpen && (
-          <div className="absolute top-0 right-0 left-0 z-10">
-            <SearchBar
-              query={searchQuery}
-              onQueryChange={handleSearchQueryChange}
-              resultCount={searchResultCount}
-              currentIndex={searchIndex}
-              onNext={searchNext}
-              onPrev={searchPrev}
-              onClose={handleSearchClose}
-            />
-          </div>
-        )}
-        <div
-          ref={containerRef}
-          className="absolute inset-0 overflow-auto"
-          data-testid="pdf-container"
-        />
-        {!isScrollMode && (
-          <div className="pointer-events-none absolute inset-0 z-[5]">
-            <button
-              type="button"
-              aria-label="Previous page"
-              className="pointer-events-auto absolute top-0 left-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
-              onPointerUp={goPrev}
-            />
-            {isMobile && (
-              <button
-                type="button"
-                aria-label="Toggle toolbar"
-                className="pointer-events-auto absolute top-0 left-1/4 h-full w-1/2 appearance-none border-none bg-transparent p-0"
-                onPointerUp={toggleToolbar}
-              />
-            )}
-            <button
-              type="button"
-              aria-label="Next page"
-              className="pointer-events-auto absolute top-0 right-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
-              onPointerUp={goNext}
-            />
-          </div>
-        )}
-      </div>
-      <div
-        className={cn(
-          "relative flex items-center justify-center px-2 h-10 transition-all duration-300 ease-in-out",
-          {
-            "max-h-0 overflow-hidden border-t-0 opacity-0": isMobile && !toolbarVisible,
-            "max-h-20 opacity-100": !isMobile || toolbarVisible,
-          },
-        )}
-      >
-        <div className="absolute left-2 flex items-center gap-1.5">
-          {totalPages > 0 ? (
-            <span className="text-muted-foreground text-xs tabular-nums">
-              {currentPage} / {totalPages}
-            </span>
-          ) : (
-            <span className="text-muted-foreground text-xs tabular-nums">
-              {Math.round(bookProgress)}%
-            </span>
-          )}
-        </div>
-        {!isScrollMode && (
-          <div className="hidden items-center gap-4 md:flex">
-            <Button variant="ghost" size="icon" onClick={goPrev} data-testid="pdf-prev">
-              <ChevronLeft className="size-4" />
-              <span className="sr-only">Previous page</span>
-            </Button>
-            <Button variant="ghost" size="icon" onClick={goNext} data-testid="pdf-next">
-              <ChevronRight className="size-4" />
-              <span className="sr-only">Next page</span>
-            </Button>
-          </div>
-        )}
-        <div className="absolute right-2 flex items-center gap-1">
-          {isMobile && (
-            <>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => (searchOpen ? handleSearchClose() : handleSearchOpen())}
-                title="Search in book (Cmd+F)"
-                data-testid="pdf-search-btn"
-              >
-                <Search className="size-4" />
-                <span className="sr-only">Search in book</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleOpenNotebook}
-                title="Open Notebook"
-              >
-                <Notebook className="size-4" />
-                <span className="sr-only">Open Notebook</span>
-              </Button>
-              <Button variant="ghost" size="icon" onClick={handleOpenChat} title="Open Chat">
-                <MessageCircle className="size-4" />
-                <span className="sr-only">Open Chat</span>
-              </Button>
-            </>
-          )}
-          {toc.length > 0 && (
-            <Popover open={tocOpen} onOpenChange={setTocOpen}>
-              <PopoverTrigger
-                render={<Button variant="ghost" size="icon" title="Table of Contents" />}
-              >
-                <TableOfContents className="size-4" />
-                <span className="sr-only">Table of Contents</span>
-              </PopoverTrigger>
-              <PopoverContent
-                side="top"
-                align="end"
-                sideOffset={8}
-                className="max-h-80 w-64 overflow-y-auto p-1.5"
-              >
-                <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                  Table of Contents
-                </p>
-                <ul>
-                  <TocList
-                    entries={toc}
-                    onNavigate={(href) => {
-                      try {
-                        const dest = JSON.parse(href);
-                        if (typeof dest === "number") {
-                          goToPage(dest + 1);
-                        }
-                      } catch {
-                        // ignore
-                      }
-                      setTocOpen(false);
-                    }}
-                  />
-                </ul>
-              </PopoverContent>
-            </Popover>
-          )}
-          {panelApi && (
-            <>
-              <ReaderFormattingMenu
-                settings={localSettings}
-                onUpdateSettings={handleUpdateSettings}
-                isPdf
-              />
-              <ReaderActionsMenu
-                book={book}
-                onDownload={handleDownload}
-                onBookmarkPage={handleBookmarkPage}
-                isBookmarked={Boolean(currentBookmark)}
-              />
-            </>
-          )}
-        </div>
-      </div>
+      <PdfReaderView
+        panelApi={panelApi}
+        containerRef={containerRef}
+        localSettings={localSettings}
+        onUpdateSettings={handleUpdateSettings}
+        book={book}
+        onDownload={handleDownload}
+        onBookmarkPage={handleBookmarkPage}
+        isBookmarked={Boolean(currentBookmark)}
+        searchOpen={searchOpen}
+        searchQuery={searchQuery}
+        searchResultCount={searchResultCount}
+        searchIndex={searchIndex}
+        searchNext={searchNext}
+        searchPrev={searchPrev}
+        onSearchOpen={handleSearchOpen}
+        onSearchClose={handleSearchClose}
+        onSearchQueryChange={handleSearchQueryChange}
+        isScrollMode={isScrollMode}
+        isMobile={Boolean(isMobile)}
+        toggleToolbar={toggleToolbar}
+        goPrev={goPrev}
+        goNext={goNext}
+        toolbarVisible={toolbarVisible}
+        totalPages={totalPages}
+        currentPage={currentPage}
+        bookProgress={bookProgress}
+        onOpenNotebook={handleOpenNotebook}
+        onOpenChat={handleOpenChat}
+        toc={toc}
+        tocOpen={tocOpen}
+        setTocOpen={setTocOpen}
+        goToPage={goToPage}
+      />
       {/* Portal popovers to document.body to escape dockview's CSS transforms */}
       {selectionPopover &&
         createPortal(
