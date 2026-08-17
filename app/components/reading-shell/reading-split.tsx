@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
   type ReactNode,
 } from "react";
@@ -116,6 +117,13 @@ export function ReadingSplit({ book, rail }: { book: ReactNode; rail: ReactNode 
     updateRailWidth(nextWidth);
   };
 
+  const handleDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dragRef.current = null;
+    setIsDragging(false);
+    updateRailWidth(DEFAULT_RAIL_WIDTH);
+  };
+
   const isDividerVisible = isHovered || isFocused || isDragging;
 
   return (
@@ -149,6 +157,7 @@ export function ReadingSplit({ book, rail }: { book: ReactNode; rail: ReactNode 
           onPointerMove={handlePointerMove}
           onPointerUp={finishDragging}
           onPointerCancel={finishDragging}
+          onDoubleClick={handleDoubleClick}
           onKeyDown={handleKeyDown}
         >
           <span

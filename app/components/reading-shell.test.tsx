@@ -152,6 +152,32 @@ describe("ReadingShell", () => {
     expect(window.sessionStorage.getItem("reading-rail-width")).toBe("484");
   });
 
+  it("resets the rail width on double-click and persists the default", () => {
+    renderShell();
+    setShellWidth(1200);
+    const divider = document.body.querySelector<HTMLElement>("[role='separator']")!;
+    const rail = document.body.querySelector<HTMLElement>("[aria-label='Reading rail']")!;
+
+    dispatchPointer(divider, "pointerdown", 800);
+    dispatchPointer(divider, "pointermove", 700);
+    act(() => divider.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+
+    expect(rail.style.width).toBe("384px");
+    expect(window.sessionStorage.getItem("reading-rail-width")).toBe("384");
+  });
+
+  it("clamps the double-click reset when the viewport cannot fit the default", () => {
+    renderShell();
+    setShellWidth(960);
+    const divider = document.body.querySelector<HTMLElement>("[role='separator']")!;
+    const rail = document.body.querySelector<HTMLElement>("[aria-label='Reading rail']")!;
+
+    act(() => divider.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+
+    expect(rail.style.width).toBe("320px");
+    expect(window.sessionStorage.getItem("reading-rail-width")).toBe("320");
+  });
+
   it("restores the rail width saved in the current session", () => {
     window.sessionStorage.setItem("reading-rail-width", "352");
     renderShell();
