@@ -1,8 +1,11 @@
 import { useState, useSyncExternalStore } from "react";
 import { Tabs } from "@base-ui/react/tabs";
+import { TocList } from "~/components/book-list";
 import { ChatPanel } from "~/components/chat/chat-panel";
 import { READING_RAIL_MENU_ID } from "~/components/reading-shell/reading-rail-menu-portal";
+import { Button } from "~/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "~/components/ui/empty";
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "~/components/ui/popover";
 import { WorkspaceOutlinePanel } from "~/components/workspace/outline-panel";
 import { WorkspaceNotebookPanel } from "~/components/workspace/panel-components";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -24,7 +27,12 @@ export function ReadingRail() {
     () => null,
   );
   const [activeTab, setActiveTab] = useState<ReadingRailTab>("Notes");
+  const [tocOpen, setTocOpen] = useState(false);
   const book = workspace.booksRef.current.find((candidate) => candidate.id === activeBookId);
+  const toc = activeBookId ? workspace.findTocForBook(activeBookId) : undefined;
+  const navigateToToc = activeBookId ? workspace.findTocNavigationForBook(activeBookId) : undefined;
+  const chapterLabel = location?.chapterLabel;
+  const hasTocShortcut = Boolean(chapterLabel && toc?.length && navigateToToc);
 
   return (
     <Tabs.Root
@@ -55,8 +63,47 @@ export function ReadingRail() {
 
       <div className="min-h-12 py-3 text-xs">
         <p className="truncate text-foreground">
-          {book?.title}
-          {location?.chapterLabel ? ` · ${location.chapterLabel}` : null}
+          <span>{book?.title}</span>
+          {chapterLabel ? (
+            <>
+              {" · "}
+              {hasTocShortcut && toc && navigateToToc ? (
+                <Popover open={tocOpen} onOpenChange={setTocOpen}>
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        className="h-auto rounded-sm p-0 text-xs font-normal hover:bg-transparent hover:underline"
+                        aria-label={`Open table of contents, current chapter ${chapterLabel}`}
+                      />
+                    }
+                  >
+                    {chapterLabel}
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="start"
+                    sideOffset={8}
+                    className="max-h-80 w-64 overflow-y-auto p-1.5"
+                  >
+                    <PopoverTitle className="px-2 py-1 text-xs text-muted-foreground">
+                      Table of Contents
+                    </PopoverTitle>
+                    <ul>
+                      <TocList
+                        entries={toc}
+                        onNavigate={(href) => {
+                          navigateToToc(href);
+                          setTocOpen(false);
+                        }}
+                      />
+                    </ul>
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                chapterLabel
+              )}
+            </>
+          ) : null}
         </p>
         {location && location.currentPage !== null && location.totalPages !== null ? (
           <p className="text-muted-foreground tabular-nums">

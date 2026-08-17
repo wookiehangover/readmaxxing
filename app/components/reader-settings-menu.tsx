@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   Bookmark,
   BookmarkCheck,
@@ -36,6 +36,7 @@ import {
 } from "~/components/ui/dropdown-menu";
 import { useAuth } from "~/lib/context/auth-context";
 import type { TocEntry } from "~/lib/context/reader-context";
+import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/settings";
 import { exportNotebookMarkdown } from "~/lib/editor/export-notebook-markdown";
@@ -376,9 +377,21 @@ export function ReaderActionsMenu(props: ReaderActionsMenuProps) {
 export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
   const navigate = useNavigate();
   const book = props.book;
+  const bookId = book?.id;
+  const workspace = useOptionalWorkspace();
   const { isAuthenticated, shareOpen, setShareOpen, handleShare } = useReaderActionState(book);
   const registeredChatActions = useReadingChatMenuActions();
   const chatActions = registeredChatActions?.bookId === book?.id ? registeredChatActions : null;
+
+  useEffect(() => {
+    if (!workspace || !bookId || !props.onNavigateToToc) return;
+    const onNavigateToToc = props.onNavigateToToc;
+    workspace.tocNavigationMap.current.set(bookId, onNavigateToToc);
+    return () => {
+      if (workspace.tocNavigationMap.current.get(bookId) === onNavigateToToc)
+        workspace.tocNavigationMap.current.delete(bookId);
+    };
+  }, [bookId, props.onNavigateToToc, workspace]);
 
   return (
     <>

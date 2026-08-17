@@ -43,6 +43,8 @@ export interface WorkspaceContextValue {
   navigationMap: React.MutableRefObject<Map<string, (cfi: string) => void>>;
   /** panelId -> TOC entries */
   tocMap: React.MutableRefObject<Map<string, TocEntry[]>>;
+  /** bookId -> TOC navigation callback */
+  tocNavigationMap: React.MutableRefObject<Map<string, (href: string) => void>>;
   /** bookId -> appendHighlightReference callback */
   notebookCallbackMap: React.MutableRefObject<
     Map<string, (attrs: { highlightId: string; cfiRange: string; text: string }) => void>
@@ -76,6 +78,8 @@ export interface WorkspaceContextValue {
   openStandardEbooksRef: React.MutableRefObject<(() => void) | null>;
   /** Find the navigation callback for a book by scanning dockview panels */
   findNavForBook: (bookId: string) => ((cfi: string) => void) | undefined;
+  /** Find the callback used by the reader's table of contents */
+  findTocNavigationForBook: (bookId: string) => ((href: string) => void) | undefined;
   /** Like findNavForBook but retries with short delays if the callback isn't registered yet */
   waitForNavForBook: (bookId: string) => Promise<((cfi: string) => void) | undefined>;
   /** Callback ref for when a book is added (calls setBooks in workspace.tsx) */
@@ -154,6 +158,7 @@ export function useOptionalWorkspace(): WorkspaceContextValue | null {
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const navigationMap = useRef(new Map<string, (cfi: string) => void>());
   const tocMap = useRef(new Map<string, TocEntry[]>());
+  const tocNavigationMap = useRef(new Map<string, (href: string) => void>());
   const notebookCallbackMap = useRef(
     new Map<string, (attrs: { highlightId: string; cfiRange: string; text: string }) => void>(),
   );
@@ -362,10 +367,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return undefined;
   }, []);
 
+  const findTocNavigationForBook = useCallback(
+    (bookId: string) => tocNavigationMap.current.get(bookId),
+    [],
+  );
+
   const value: WorkspaceContextValue = useMemo(
     () => ({
       navigationMap,
       tocMap,
+      tocNavigationMap,
       notebookCallbackMap,
       tocChangeListener,
       booksChangeListener,
@@ -384,6 +395,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       pendingHighlightPillMap,
       pendingChatPromptMap,
       findNavForBook,
+      findTocNavigationForBook,
       waitForNavForBook,
       findTocForBook,
       tempHighlightMap,

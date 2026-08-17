@@ -8,6 +8,9 @@ const readingLocation = {
   totalPages: 1164,
 };
 
+const tocEntries = [{ label: "Chapter One", href: "chapter-1.xhtml" }];
+const navigateToToc = vi.hoisted(() => vi.fn());
+
 const workspace = vi.hoisted(() => ({
   activeClusterBookIdRef: { current: "book-1" as string | null },
   booksRef: {
@@ -24,6 +27,8 @@ const workspace = vi.hoisted(() => ({
   subscribeClusterChanges: () => () => {},
   subscribeReadingLocations: () => () => {},
   getReadingLocation: () => readingLocation,
+  findTocForBook: () => tocEntries,
+  findTocNavigationForBook: () => navigateToToc,
 }));
 
 vi.mock("~/lib/context/workspace-context", () => ({ useWorkspace: () => workspace }));
@@ -68,6 +73,11 @@ beforeEach(() => {
   readingLocation.chapterLabel = "Part III, Chapter VII";
   readingLocation.currentPage = 283;
   readingLocation.totalPages = 1164;
+  tocEntries.splice(0, tocEntries.length, {
+    label: "Chapter One",
+    href: "chapter-1.xhtml",
+  });
+  navigateToToc.mockReset();
 });
 
 afterEach(() => {
@@ -112,6 +122,58 @@ describe("ReadingRail", () => {
     expect(container.textContent).toContain("The Power Broker · Part III, Chapter VII");
     expect(container.textContent).toContain("283 / 1164");
     expect(container.querySelector("#reading-rail-menu")).not.toBeNull();
+  });
+
+  it("opens the table of contents from the chapter label and navigates", () => {
+    const container = renderRail();
+    const chapter = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Part III, Chapter VII",
+    );
+
+    expect(chapter?.getAttribute("aria-label")).toContain("Open table of contents");
+    act(() => chapter?.click());
+    const entry = Array.from(document.body.querySelectorAll("button")).find(
+      (button) => button.textContent === "Chapter One",
+    );
+    expect(entry).not.toBeUndefined();
+
+    act(() => entry?.click());
+    expect(navigateToToc).toHaveBeenCalledWith("chapter-1.xhtml");
+    expect(chapter?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("does not make the book title a table of contents control", () => {
+    const container = renderRail();
+    const title = Array.from(container.querySelectorAll("span")).find(
+      (span) => span.textContent === "The Power Broker",
+    );
+    const titleButton = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("The Power Broker"),
+    );
+
+    act(() => title?.click());
+    expect(titleButton).toBeUndefined();
+    expect(document.body.querySelector("[data-slot='popover-content']")).toBeNull();
+  });
+
+  it("does not render a chapter control without a chapter label or table of contents", () => {
+    tocEntries.splice(0);
+    const withoutToc = renderRail();
+    expect(withoutToc.textContent).toContain("Part III, Chapter VII");
+    expect(
+      Array.from(withoutToc.querySelectorAll("button")).find(
+        (button) => button.textContent === "Part III, Chapter VII",
+      ),
+    ).toBeUndefined();
+
+    act(() => root?.unmount());
+    root = null;
+    document.body.innerHTML = "";
+    tocEntries.push({ label: "Chapter One", href: "chapter-1.xhtml" });
+    readingLocation.chapterLabel = "";
+    const withoutChapter = renderRail();
+    expect(withoutChapter.textContent).not.toContain("Chapter VII");
+    expect(withoutChapter.querySelector("[aria-label^='Open table of contents']")).toBeNull();
   });
 
   it("shows a PDF bookmark title in the rail metadata", () => {
