@@ -2,17 +2,12 @@ import React, { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/components/ui/message-scroller", () => ({
-  MessageScrollerProvider: ({ children }: React.PropsWithChildren) => <>{children}</>,
-  MessageScroller: (props: React.ComponentProps<"div">) => <div {...props} />,
-  MessageScrollerViewport: (props: React.ComponentProps<"div">) => (
-    <div data-testid="viewport" {...props} />
+vi.mock("~/components/ui/scroll-area", () => ({
+  ScrollArea: ({ children, ...props }: React.ComponentProps<"div">) => (
+    <div data-testid="scroll-area" {...props}>
+      <div data-testid="viewport">{children}</div>
+    </div>
   ),
-  MessageScrollerContent: (props: React.ComponentProps<"div">) => (
-    <div data-testid="content" {...props} />
-  ),
-  MessageScrollerItem: (props: React.ComponentProps<"div">) => <div {...props} />,
-  MessageScrollerButton: () => null,
 }));
 vi.mock("~/components/ui/marker", () => ({
   Marker: (props: React.ComponentProps<"div">) => <div {...props} />,
@@ -37,7 +32,7 @@ afterEach(() => {
 });
 
 describe("ChatMessageList", () => {
-  it("keeps the viewport flush while content owns the right inset", () => {
+  it("uses ScrollArea while content owns the right inset", () => {
     const container = document.body.appendChild(document.createElement("div"));
     root = createRoot(container);
     act(() =>
@@ -55,11 +50,13 @@ describe("ChatMessageList", () => {
       ),
     );
 
+    const scrollArea = container.querySelector("[data-testid='scroll-area']")!;
     const viewport = container.querySelector("[data-testid='viewport']")!;
-    const content = container.querySelector("[data-testid='content']")!;
-    expect(viewport.classList.contains("px-4")).toBe(false);
+    const content = viewport.firstElementChild!;
+    expect(scrollArea.classList.contains("min-h-0")).toBe(true);
+    expect(scrollArea.classList.contains("flex-1")).toBe(true);
+    expect(scrollArea.classList.contains("pr-6")).toBe(false);
     expect(viewport.classList.contains("pr-6")).toBe(false);
-    expect(viewport.classList.contains("py-3")).toBe(true);
     expect(content.classList.contains("pr-6")).toBe(true);
     expect(content.classList.contains("pl-6")).toBe(false);
   });
