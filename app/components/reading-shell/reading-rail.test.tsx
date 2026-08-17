@@ -118,9 +118,11 @@ describe("ReadingRail", () => {
     expect(indicator?.className).toContain("transition-[left]");
     expect(indicator?.className).toContain("motion-reduce:transition-none");
     expect(indicator?.className).not.toContain("left-1/2");
-    expect(Array.from(tabList?.querySelectorAll("button") ?? [])).toSatisfyAll(
-      (tab) => !tab.className.includes("after:"),
-    );
+    expect(
+      Array.from(tabList?.querySelectorAll("button") ?? []).every(
+        (tab) => !tab.className.includes("after:"),
+      ),
+    ).toBe(true);
   });
 
   it("shows the Review empty stub", () => {

@@ -41,7 +41,10 @@ export function ReadingRail() {
       onValueChange={(value) => setActiveTab(value as ReadingRailTab)}
     >
       <div className="flex items-start gap-3">
-        <Tabs.List aria-label="Reading tools" className="flex min-w-0 flex-1 items-center gap-5">
+        <Tabs.List
+          aria-label="Reading tools"
+          className="relative flex min-w-0 flex-1 items-center gap-5"
+        >
           {tabs.map((tab) => (
             <Tabs.Tab
               key={tab}
