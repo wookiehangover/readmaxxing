@@ -17,6 +17,7 @@ export interface ReadingDwellUnit {
 interface UseReaderDwellOptions {
   bookId: string;
   unit: ReadingDwellUnit | null;
+  displayPage?: number | null;
   panelApi?: DockviewPanelApi;
   enabled?: boolean;
   dwellMs?: number;
@@ -98,6 +99,7 @@ async function postDwellUnit(
 export function useReaderDwell({
   bookId,
   unit,
+  displayPage,
   panelApi,
   enabled = true,
   dwellMs = READER_DWELL_MS,
@@ -110,8 +112,8 @@ export function useReaderDwell({
   const locator = unit?.locator.trim() ?? "";
   const chapterLabel = unit?.chapterLabel?.trim() || undefined;
   const hasText = Boolean(text);
-  const latestContentRef = useRef({ chapterLabel, text });
-  latestContentRef.current = { chapterLabel, text };
+  const latestContentRef = useRef({ chapterLabel, displayPage, text });
+  latestContentRef.current = { chapterLabel, displayPage, text };
 
   useEffect(() => {
     if (!enabled || !isAuthenticated || !userId || !unitKind || !locator || !hasText) return;
@@ -159,6 +161,7 @@ export function useReaderDwell({
           unitKind,
           locator,
           chapterLabel: content.chapterLabel,
+          displayPage: content.displayPage ?? undefined,
           text: content.text,
         }),
         { retryNotFound: unitKind === "epub-spine", signal: controller.signal },

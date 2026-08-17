@@ -28,13 +28,17 @@ function setVisibility(value: DocumentVisibilityState) {
   document.dispatchEvent(new Event("visibilitychange"));
 }
 
-async function render(unit: ReadingDwellUnit, bookId = `book-${testNumber}`) {
+async function render(
+  unit: ReadingDwellUnit,
+  bookId = `book-${testNumber}`,
+  displayPage?: number | null,
+) {
   const container = document.body.appendChild(document.createElement("div"));
   const root = createRoot(container);
   roots.push(root);
 
   function Harness({ currentUnit }: { currentUnit: ReadingDwellUnit }) {
-    useReaderDwell({ bookId, unit: currentUnit });
+    useReaderDwell({ bookId, unit: currentUnit, displayPage });
     return null;
   }
 
@@ -100,6 +104,25 @@ describe("useReaderDwell", () => {
 
     await advance(READER_DWELL_MS);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("includes the EPUB display page in the dwell payload", async () => {
+    await render(
+      {
+        unitKind: "epub-spine",
+        locator: "chapter-1.xhtml#page=12",
+        text: "Visible chapter text with a publisher page label",
+      },
+      `book-${testNumber}`,
+      12,
+    );
+
+    await advance(READER_DWELL_MS);
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string)).toMatchObject({
+      locator: "chapter-1.xhtml#page=12",
+      displayPage: 12,
+    });
   });
 
   it("does not count hidden time toward dwell", async () => {

@@ -11,47 +11,84 @@ describe("getOutlineChapterBullets", () => {
 
 describe("mergeOutlineMarkdown", () => {
   it("creates a chapter section in an empty document", () => {
-    expect(mergeOutlineMarkdown("", "One: The Question", ["The traveler leaves home."])).toBe(
-      "## One: The Question\n- The traveler leaves home.",
+    expect(
+      mergeOutlineMarkdown("", "One: The Question", ["The traveler leaves home."], {
+        locator: "chapter-1.xhtml#page=12",
+        displayPage: 12,
+      }),
+    ).toBe(
+      '## One: The Question\n\n<div data-outline-increment="" data-locator="chapter-1.xhtml#page=12" data-page="12">\n\n- The traveler leaves home.\n\n</div>',
     );
   });
 
-  it("appends bullets to the matching chapter heading", () => {
+  it("appends a complete increment block to the matching chapter heading", () => {
     const current = "## One\n- First event.";
-    expect(mergeOutlineMarkdown(current, "One", ["Second event.", "Third event."])).toBe(
-      "## One\n- First event.\n- Second event.\n- Third event.",
+    expect(
+      mergeOutlineMarkdown(current, "One", ["Second event.", "Third event."], {
+        locator: 'chapter-1.xhtml?mode=wide&name="One"',
+        displayPage: 13,
+      }),
+    ).toBe(
+      '## One\n- First event.\n\n<div data-outline-increment="" data-locator="chapter-1.xhtml?mode=wide&amp;name=&quot;One&quot;" data-page="13">\n\n- Second event.\n- Third event.\n\n</div>',
     );
   });
 
   it("adds an unknown chapter at the end", () => {
     const current = "## One\n- First event.";
-    expect(mergeOutlineMarkdown(current, "Two", ["A later event."])).toBe(
-      "## One\n- First event.\n\n## Two\n- A later event.",
+    expect(
+      mergeOutlineMarkdown(current, "Two", ["A later event."], {
+        locator: "chapter-2.xhtml#page=20",
+        displayPage: 20,
+      }),
+    ).toBe(
+      '## One\n- First event.\n\n## Two\n\n<div data-outline-increment="" data-locator="chapter-2.xhtml#page=20" data-page="20">\n\n- A later event.\n\n</div>',
     );
   });
 
-  it("deduplicates within a chapter rather than across chapters", () => {
+  it("does not suppress an increment because user text already contains its bullet", () => {
     const current = "## One\n- A shared event.\n\n## Two\n- Existing event.";
-    expect(mergeOutlineMarkdown(current, "Two", ["A shared event."])).toBe(
-      "## One\n- A shared event.\n\n## Two\n- Existing event.\n- A shared event.",
+    expect(
+      mergeOutlineMarkdown(current, "Two", ["A shared event."], {
+        locator: "chapter-2.xhtml#page=21",
+      }),
+    ).toBe(
+      '## One\n- A shared event.\n\n## Two\n- Existing event.\n\n<div data-outline-increment="" data-locator="chapter-2.xhtml#page=21">\n\n- A shared event.\n\n</div>',
     );
+  });
+
+  it("keeps the increment when the display page is missing", () => {
+    const merged = mergeOutlineMarkdown("", "One", ["An event without a page label."], {
+      locator: "chapter-1.xhtml#page=unknown",
+    });
+
+    expect(merged).toContain('data-locator="chapter-1.xhtml#page=unknown"');
+    expect(merged).not.toContain("data-page=");
+    expect(merged).toContain("- An event without a page label.");
   });
 
   it("leaves other chapter text byte-for-byte unchanged", () => {
     const current = "## One\n- First event.\n\n## Two\n- Existing later event.\n";
-    const merged = mergeOutlineMarkdown(current, "One", ["Another first-chapter event."]);
+    const merged = mergeOutlineMarkdown(current, "One", ["Another first-chapter event."], {
+      locator: "chapter-1.xhtml#page=2",
+      displayPage: 2,
+    });
     expect(merged.slice(merged.indexOf("## Two"))).toBe("## Two\n- Existing later event.\n");
   });
 
-  it("ignores empty and duplicate bullets", () => {
+  it("ignores empty bullets", () => {
     const current = "## One\n- First event.";
-    expect(mergeOutlineMarkdown(current, "One", ["", "First event.", "  "])).toBe(current);
-    expect(mergeOutlineMarkdown("", "One", ["Repeated.", "Repeated."])).toBe("## One\n- Repeated.");
+    expect(mergeOutlineMarkdown(current, "One", ["", "  "], { locator: "chapter-1.xhtml" })).toBe(
+      current,
+    );
   });
 
   it("uses Untitled for a blank chapter label", () => {
-    expect(mergeOutlineMarkdown("", "  ", ["An unlabelled event."])).toBe(
-      "## Untitled\n- An unlabelled event.",
+    expect(
+      mergeOutlineMarkdown("", "  ", ["An unlabelled event."], {
+        locator: "frontmatter.xhtml#page=1",
+      }),
+    ).toBe(
+      '## Untitled\n\n<div data-outline-increment="" data-locator="frontmatter.xhtml#page=1">\n\n- An unlabelled event.\n\n</div>',
     );
   });
 });

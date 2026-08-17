@@ -188,6 +188,9 @@ describe("reading artifact ingest API", () => {
     });
 
     expect(response.status).toBe(202);
+    expect(insertUnitMock).toHaveBeenCalledWith(
+      expect.objectContaining({ locator: "text/chapter-1.xhtml", displayPage: 12 }),
+    );
     await expect(response.json()).resolves.toMatchObject({
       deduplicated: false,
       unit: { id: "unit-1", fingerprint, status: "pending" },

@@ -18,6 +18,7 @@ interface IngestPayload {
   unitKind: ReadingUnitKind;
   locator: string;
   chapterLabel?: string;
+  displayPage?: number;
   text: string;
 }
 
@@ -59,12 +60,19 @@ export function parseIngestPayload(value: unknown): IngestPayload | { error: str
   if (value.chapterLabel !== undefined && typeof value.chapterLabel !== "string") {
     return { error: "chapterLabel must be a string when provided" };
   }
+  if (
+    value.displayPage !== undefined &&
+    (!Number.isSafeInteger(value.displayPage) || (value.displayPage as number) < 1)
+  ) {
+    return { error: "displayPage must be a positive integer when provided" };
+  }
 
   return {
     fingerprint: value.fingerprint,
     unitKind: value.unitKind,
     locator: value.locator.trim(),
     chapterLabel: value.chapterLabel?.trim() || undefined,
+    displayPage: value.displayPage as number | undefined,
     text,
   };
 }
@@ -131,6 +139,7 @@ export async function action({
             bookId: params.bookId,
             unitId: existing.id,
             chapterLabel: payload.chapterLabel,
+            displayPage: payload.displayPage,
             text: payload.text,
           })
         : null;

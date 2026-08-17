@@ -8,6 +8,11 @@ interface ChapterSection {
   readonly end: number;
 }
 
+export interface OutlineIncrementMetadata {
+  readonly locator: string;
+  readonly displayPage?: number | null;
+}
+
 function normalizeChapterLabel(chapterLabel: string | null | undefined): string {
   return chapterLabel?.trim().replace(/\s+/g, " ") || UNTITLED_CHAPTER;
 }
@@ -51,15 +56,27 @@ export function getOutlineChapterBullets(
   return [...existingBullets(markdown, section)];
 }
 
-function newBullets(bullets: readonly string[], seen: Set<string>): string[] {
-  const additions: string[] = [];
-  for (const candidate of bullets) {
-    const bullet = normalizeBullet(candidate);
-    if (!bullet || seen.has(bullet)) continue;
-    seen.add(bullet);
-    additions.push(bullet);
-  }
-  return additions;
+function normalizedBullets(bullets: readonly string[]): string[] {
+  return bullets.map(normalizeBullet).filter(Boolean);
+}
+
+function escapeAttribute(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function incrementMarkdown(
+  bullets: readonly string[],
+  metadata: OutlineIncrementMetadata,
+  eol: string,
+): string {
+  const pageAttribute = metadata.displayPage == null ? "" : ` data-page="${metadata.displayPage}"`;
+  const opening = `<div data-outline-increment="" data-locator="${escapeAttribute(metadata.locator)}"${pageAttribute}>`;
+  const bulletMarkdown = bullets.map((bullet) => `- ${bullet}`).join(eol);
+  return `${opening}${eol}${eol}${bulletMarkdown}${eol}${eol}</div>`;
 }
 
 function appendSection(markdown: string, sectionMarkdown: string, eol: string): string {
@@ -73,18 +90,19 @@ export function mergeOutlineMarkdown(
   currentMarkdown: string,
   chapterLabel: string | null | undefined,
   bullets: readonly string[],
+  metadata: OutlineIncrementMetadata,
 ): string {
   const label = normalizeChapterLabel(chapterLabel);
   const section = findChapter(currentMarkdown, label);
-  const additions = newBullets(bullets, existingBullets(currentMarkdown, section));
+  const additions = normalizedBullets(bullets);
 
   if (additions.length === 0) return currentMarkdown;
 
   const eol = currentMarkdown.includes("\r\n") ? "\r\n" : "\n";
-  const bulletMarkdown = additions.map((bullet) => `- ${bullet}`).join(eol);
+  const increment = incrementMarkdown(additions, metadata, eol);
   if (!section) {
-    return appendSection(currentMarkdown, `## ${label}${eol}${bulletMarkdown}`, eol);
+    return appendSection(currentMarkdown, `## ${label}${eol}${eol}${increment}`, eol);
   }
 
-  return `${currentMarkdown.slice(0, section.bodyEnd)}${eol}${bulletMarkdown}${currentMarkdown.slice(section.bodyEnd)}`;
+  return `${currentMarkdown.slice(0, section.bodyEnd)}${eol}${eol}${increment}${currentMarkdown.slice(section.bodyEnd)}`;
 }

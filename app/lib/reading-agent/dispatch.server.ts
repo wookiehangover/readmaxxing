@@ -108,7 +108,10 @@ export async function dispatchReadingIngestUnit(
       existingBullets: getOutlineChapterBullets(current, claimed.chapterLabel),
     });
     settledUsage = result.usage;
-    const merged = mergeOutlineMarkdown(current, claimed.chapterLabel, result.bullets);
+    const merged = mergeOutlineMarkdown(current, claimed.chapterLabel, result.bullets, {
+      locator: claimed.locator,
+      displayPage: claimed.displayPage,
+    });
     const completed = await dependencies.complete(
       claim,
       outlineUpdate(current, merged),

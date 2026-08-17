@@ -22,8 +22,9 @@ const unit: ReadingIngestUnitRow = {
   bookId: "book-1",
   fingerprint: "fingerprint-1",
   unitKind: "epub-spine",
-  locator: "chapter.xhtml",
+  locator: "chapter.xhtml#page=12",
   chapterLabel: "Chapter 1",
+  displayPage: 12,
   text: "A newly read chapter page.",
   status: "pending",
   firstSeenAt: new Date("2026-01-01T00:00:00Z"),
@@ -122,7 +123,8 @@ describe("reading ingest dispatch", () => {
       [
         {
           kind: "outline",
-          content: "## Chapter 1\n- Existing event.\n- New event.\n\n## Chapter 2\n- Later event.",
+          content:
+            '## Chapter 1\n- Existing event.\n\n<div data-outline-increment="" data-locator="chapter.xhtml#page=12" data-page="12">\n\n- New event.\n\n</div>\n\n## Chapter 2\n- Later event.',
           summary: "Added this page's outline increment.",
         },
       ],
