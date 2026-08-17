@@ -8,6 +8,7 @@ CREATE TABLE readmax.reading_ingest_unit (
     unit_kind TEXT NOT NULL CHECK (unit_kind IN ('epub-spine', 'pdf-page')),
     locator TEXT NOT NULL,
     chapter_label TEXT,
+    display_page INTEGER CHECK (display_page > 0),
     text TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'processing', 'done', 'skipped', 'error')),
@@ -63,8 +64,8 @@ CREATE TABLE readmax.reading_artifact_revision (
     content TEXT NOT NULL,
     previous_revision_id UUID REFERENCES readmax.reading_artifact_revision(id),
     actor TEXT NOT NULL CHECK (actor IN ('agent', 'user')),
-    source_unit_id UUID NOT NULL REFERENCES readmax.reading_ingest_unit(id),
-    source_fingerprint TEXT NOT NULL,
+    source_unit_id UUID REFERENCES readmax.reading_ingest_unit(id),
+    source_fingerprint TEXT,
     summary TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

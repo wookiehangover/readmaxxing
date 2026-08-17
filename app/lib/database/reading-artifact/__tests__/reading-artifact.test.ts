@@ -28,6 +28,7 @@ import {
   listReadingIngestSweepUserIds,
   listRecentReadingIngestUnits,
   getReadingIngestUnitForUser,
+  persistReadingArtifactRevision,
   readingAgentRetryDelaySeconds,
   reclaimExpiredReadingAgentLease,
   refreshReadingIngestUnit,
@@ -489,6 +490,7 @@ describe("reading artifact persistence", () => {
         fingerprint: "fingerprint-1",
         unitKind: "epub-spine",
         locator: "text/chapter-1.xhtml",
+        displayPage: 12,
         text: "Chapter text",
       }),
     ).resolves.toBeNull();
@@ -523,6 +525,7 @@ describe("reading artifact persistence", () => {
         bookId: "book-1",
         unitId: "unit-1",
         chapterLabel: "Chapter 1",
+        displayPage: 12,
         text: "Jittered page text",
       }),
     ).resolves.toBe(unit);
@@ -533,6 +536,7 @@ describe("reading artifact persistence", () => {
     expect(extractValues(query)).toEqual([
       "Jittered page text",
       "Chapter 1",
+      12,
       "unit-1",
       "user-1",
       "book-1",
@@ -555,6 +559,54 @@ describe("reading artifact persistence", () => {
         summary: "Added chapter one",
       }),
     ).resolves.toBe(revision);
+  });
+
+  it("atomically persists a user revision and advances the current head", async () => {
+    const current = {
+      userId: "user-1",
+      bookId: "book-1",
+      kind: "outline",
+      content: "Old outline",
+      revisionId: "revision-1",
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+    };
+    const saved = { ...current, content: "Edited outline", revisionId: "revision-2" };
+    clientQueryMock
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [current] })
+      .mockResolvedValueOnce({ rows: [{ id: "revision-2" }] })
+      .mockResolvedValueOnce({ rows: [saved] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      persistReadingArtifactRevision({
+        userId: "user-1",
+        bookId: "book-1",
+        kind: "outline",
+        content: "Edited outline",
+        actor: "user",
+        sourceUnitId: null,
+        sourceFingerprint: null,
+        summary: "User edited outline",
+      }),
+    ).resolves.toBe(saved);
+
+    const revision = clientQueryMock.mock.calls[2][0] as SqlQuery;
+    expect(extractValues(revision)).toEqual([
+      "user-1",
+      "book-1",
+      "outline",
+      "Edited outline",
+      "revision-1",
+      "user",
+      null,
+      null,
+      "User edited outline",
+    ]);
+    const head = clientQueryMock.mock.calls[3][0] as SqlQuery;
+    expect(extractSqlText(head)).toContain("ON CONFLICT (user_id, book_id, kind) DO UPDATE");
+    expect(clientQueryMock).toHaveBeenNthCalledWith(5, "COMMIT");
+    expect(releaseMock).toHaveBeenCalledOnce();
   });
 
   it("upserts the current artifact head", async () => {
@@ -595,6 +647,7 @@ describe("reading artifact persistence", () => {
       unitKind: "epub-spine" as const,
       locator: "chapter.xhtml",
       chapterLabel: null,
+      displayPage: null,
       text: "New page",
       status: "processing" as const,
       firstSeenAt: new Date(),

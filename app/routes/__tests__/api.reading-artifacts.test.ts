@@ -13,6 +13,7 @@ vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   getReadingIngestUnitByLocator: vi.fn(),
   insertReadingIngestUnit: vi.fn(),
   listReadingArtifactRevisions: vi.fn(),
+  persistReadingArtifactRevision: vi.fn(),
   refreshReadingIngestUnit: vi.fn(),
 }));
 
@@ -27,10 +28,14 @@ import {
   getReadingIngestUnitByLocator,
   insertReadingIngestUnit,
   listReadingArtifactRevisions,
+  persistReadingArtifactRevision,
   refreshReadingIngestUnit,
 } from "~/lib/database/reading-artifact/reading-artifact";
 import { scheduleReadingIngestQueue } from "~/lib/reading-agent/dispatch.server";
-import { loader as artifactsLoader } from "~/routes/api.books.$bookId.artifacts";
+import {
+  action as artifactsAction,
+  loader as artifactsLoader,
+} from "~/routes/api.books.$bookId.artifacts";
 import {
   action as ingestAction,
   computeReadingFingerprint,
@@ -44,6 +49,7 @@ const artifactsMock = getCurrentReadingArtifacts as ReturnType<typeof vi.fn>;
 const existingUnitMock = getReadingIngestUnitByLocator as ReturnType<typeof vi.fn>;
 const insertUnitMock = insertReadingIngestUnit as ReturnType<typeof vi.fn>;
 const revisionsMock = listReadingArtifactRevisions as ReturnType<typeof vi.fn>;
+const persistArtifactMock = persistReadingArtifactRevision as ReturnType<typeof vi.fn>;
 const refreshUnitMock = refreshReadingIngestUnit as ReturnType<typeof vi.fn>;
 const scheduleMock = scheduleReadingIngestQueue as ReturnType<typeof vi.fn>;
 const originalDatabaseUrl = process.env.DATABASE_URL;
@@ -60,6 +66,7 @@ const ingestBody = {
   unitKind: "epub-spine",
   locator: "text/chapter-1.xhtml",
   chapterLabel: "Chapter 1",
+  displayPage: 12,
   text,
 };
 
@@ -71,6 +78,7 @@ const unit = {
   unitKind: "epub-spine",
   locator: "text/chapter-1.xhtml",
   chapterLabel: "Chapter 1",
+  displayPage: 12,
   text,
   status: "pending",
   firstSeenAt: new Date("2026-01-01T00:00:00Z"),
@@ -87,6 +95,14 @@ function makeIngestRequest(body: unknown = ingestBody): Request {
   });
 }
 
+function makeOutlineSaveRequest(method: "PUT" | "PATCH", body: unknown = { content: "Edited" }) {
+  return new Request("http://localhost/api/books/book-1/artifacts", {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 beforeEach(() => {
   process.env.DATABASE_URL = "postgres://example";
   authMock.mockReset().mockResolvedValue({ userId: "user-1" });
@@ -95,6 +111,14 @@ beforeEach(() => {
   existingUnitMock.mockReset().mockResolvedValue(null);
   insertUnitMock.mockReset().mockResolvedValue(unit);
   revisionsMock.mockReset().mockResolvedValue([]);
+  persistArtifactMock.mockReset().mockResolvedValue({
+    userId: "user-1",
+    bookId: "book-1",
+    kind: "outline",
+    content: "Edited",
+    revisionId: "revision-2",
+    updatedAt: new Date("2026-01-02T00:00:00Z"),
+  });
   refreshUnitMock.mockReset().mockResolvedValue(unit);
   scheduleMock.mockReset();
 });
@@ -210,6 +234,7 @@ describe("reading artifact ingest API", () => {
       bookId: "book-1",
       unitId: "unit-1",
       chapterLabel: "Chapter 1",
+      displayPage: 12,
       text,
     });
     expect(scheduleMock).toHaveBeenCalledWith("user-1");
@@ -263,4 +288,60 @@ describe("reading artifact read APIs", () => {
       kind: "wiki",
     });
   });
+});
+
+describe("reading outline save API", () => {
+  it("does not save when unauthenticated", async () => {
+    authMock.mockResolvedValue(null);
+
+    const response = await artifactsAction({
+      request: makeOutlineSaveRequest("PUT"),
+      params: { bookId: "book-1" },
+    });
+
+    expect(response.status).toBe(401);
+    expect(bookMock).not.toHaveBeenCalled();
+    expect(persistArtifactMock).not.toHaveBeenCalled();
+  });
+
+  it("does not save an invalid payload", async () => {
+    const response = await artifactsAction({
+      request: makeOutlineSaveRequest("PATCH", { content: 42 }),
+      params: { bookId: "book-1" },
+    });
+
+    expect(response.status).toBe(400);
+    expect(persistArtifactMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["PUT", "PATCH"] as const)(
+    "saves %s content as the user artifact head",
+    async (method) => {
+      const response = await artifactsAction({
+        request: makeOutlineSaveRequest(method),
+        params: { bookId: "book-1" },
+      });
+
+      expect(response.status).toBe(200);
+      expect(persistArtifactMock).toHaveBeenCalledWith({
+        userId: "user-1",
+        bookId: "book-1",
+        kind: "outline",
+        content: "Edited",
+        actor: "user",
+        sourceUnitId: null,
+        sourceFingerprint: null,
+        summary: "User edited outline",
+      });
+      expect(scheduleMock).not.toHaveBeenCalled();
+      await expect(response.json()).resolves.toEqual({
+        bookId: "book-1",
+        artifact: {
+          content: "Edited",
+          revisionId: "revision-2",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        },
+      });
+    },
+  );
 });

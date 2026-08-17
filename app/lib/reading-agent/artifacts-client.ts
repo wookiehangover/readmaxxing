@@ -11,8 +11,14 @@ export interface ReadingArtifactsResponse {
   readonly artifacts: Record<ReadingArtifactKind, ReadingArtifactHead | null>;
 }
 
+export interface ReadingOutlineSaveResponse {
+  readonly bookId: string;
+  readonly artifact: ReadingArtifactHead;
+}
+
 export type ReadingArtifactsErrorCode =
   | "auth_required"
+  | "invalid_request"
   | "not_found"
   | "unavailable"
   | "invalid_response"
@@ -74,6 +80,17 @@ export function parseReadingArtifactsResponse(value: unknown): ReadingArtifactsR
   return { bookId: value.bookId, artifacts };
 }
 
+export function parseReadingOutlineSaveResponse(value: unknown): ReadingOutlineSaveResponse {
+  if (!isRecord(value) || typeof value.bookId !== "string") {
+    throw new ReadingArtifactsError("invalid_response", 200, "Invalid outline save response");
+  }
+  const artifact = parseArtifactHead(value.artifact, "outline");
+  if (!artifact) {
+    throw new ReadingArtifactsError("invalid_response", 200, "Missing saved outline artifact");
+  }
+  return { bookId: value.bookId, artifact };
+}
+
 export async function fetchReadingArtifacts(
   bookId: string,
   init?: RequestInit,
@@ -118,4 +135,60 @@ export async function fetchReadingArtifacts(
     );
   }
   return parseReadingArtifactsResponse(body);
+}
+
+export async function saveReadingOutline(
+  bookId: string,
+  content: string,
+  init?: RequestInit,
+): Promise<ReadingOutlineSaveResponse> {
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+
+  let response: Response;
+  try {
+    response = await fetch(`/api/books/${encodeURIComponent(bookId)}/artifacts`, {
+      ...init,
+      method: "PUT",
+      credentials: "include",
+      headers,
+      body: JSON.stringify({ content }),
+    });
+  } catch (cause) {
+    if (isAbortError(cause)) throw cause;
+    throw new ReadingArtifactsError("request_failed", 0, "Failed to save outline", cause);
+  }
+
+  if (response.status === 400) {
+    throw new ReadingArtifactsError("invalid_request", 400, "Invalid outline content");
+  }
+  if (response.status === 401) {
+    throw new ReadingArtifactsError("auth_required", 401, "Authentication required");
+  }
+  if (response.status === 404) {
+    throw new ReadingArtifactsError("not_found", 404, "Book not found");
+  }
+  if (response.status === 503) {
+    throw new ReadingArtifactsError("unavailable", 503, "Sync not configured");
+  }
+  if (!response.ok) {
+    throw new ReadingArtifactsError(
+      "request_failed",
+      response.status,
+      `Failed to save outline (${response.status})`,
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (cause) {
+    throw new ReadingArtifactsError(
+      "invalid_response",
+      response.status,
+      "Invalid outline save response",
+      cause,
+    );
+  }
+  return parseReadingOutlineSaveResponse(body);
 }

@@ -3,6 +3,7 @@ import {
   fetchReadingArtifacts,
   parseReadingArtifactsResponse,
   ReadingArtifactsError,
+  saveReadingOutline,
 } from "../artifacts-client";
 
 const outline = {
@@ -99,6 +100,41 @@ describe("fetchReadingArtifacts", () => {
     await expect(fetchReadingArtifacts("book-1")).rejects.toMatchObject({
       code: "request_failed",
       status: 0,
+    });
+  });
+});
+
+describe("saveReadingOutline", () => {
+  it("puts outline content with credentials and returns the saved head", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ bookId: "book-1", artifact: outline }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(saveReadingOutline("book 1", outline.content)).resolves.toEqual({
+      bookId: "book-1",
+      artifact: outline,
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/books/book%201/artifacts");
+    expect(init).toMatchObject({
+      method: "PUT",
+      credentials: "include",
+      body: JSON.stringify({ content: outline.content }),
+    });
+    expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
+  });
+
+  it("maps a rejected payload without returning a saved head", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: "invalid" }), { status: 400 }),
+    );
+
+    await expect(saveReadingOutline("book-1", outline.content)).rejects.toMatchObject({
+      code: "invalid_request",
+      status: 400,
     });
   });
 });

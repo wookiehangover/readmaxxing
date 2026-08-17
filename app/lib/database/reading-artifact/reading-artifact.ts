@@ -15,6 +15,7 @@ export interface ReadingIngestUnitRow {
   unitKind: ReadingUnitKind;
   locator: string;
   chapterLabel: string | null;
+  displayPage: number | null;
   text: string;
   status: ReadingIngestStatus;
   firstSeenAt: Date;
@@ -108,8 +109,8 @@ export interface ReadingArtifactRevisionRow {
   content: string;
   previousRevisionId: string | null;
   actor: ReadingArtifactActor;
-  sourceUnitId: string;
-  sourceFingerprint: string;
+  sourceUnitId: string | null;
+  sourceFingerprint: string | null;
   summary: string;
   createdAt: Date;
 }
@@ -139,7 +140,7 @@ export interface ReadingArtifactUpdate {
 const READING_AGENT_LEASE_TTL_MS = 15 * 60 * 1000;
 const READING_AGENT_MAX_ATTEMPTS = 8;
 const READING_AGENT_SCHEMA_COLUMNS = {
-  reading_ingest_unit: ["attempt_count", "claimed_at", "next_attempt_at"],
+  reading_ingest_unit: ["attempt_count", "claimed_at", "display_page", "next_attempt_at"],
   reading_agent_lease: ["user_id", "unit_id", "book_id", "expires_at"],
   reading_agent_usage: [
     "id",
@@ -168,6 +169,7 @@ const INGEST_UNIT_COLUMNS = sql`
   unit_kind AS "unitKind",
   locator,
   chapter_label AS "chapterLabel",
+  display_page AS "displayPage",
   text,
   status,
   first_seen_at AS "firstSeenAt",
@@ -230,11 +232,12 @@ export async function insertReadingIngestUnit(data: {
   unitKind: ReadingUnitKind;
   locator: string;
   chapterLabel?: string | null;
+  displayPage?: number | null;
   text: string;
 }): Promise<ReadingIngestUnitRow | null> {
   const result = await getPool().query<ReadingIngestUnitRow>(sql`
     INSERT INTO readmax.reading_ingest_unit (
-      user_id, book_id, fingerprint, unit_kind, locator, chapter_label, text
+      user_id, book_id, fingerprint, unit_kind, locator, chapter_label, display_page, text
     )
     VALUES (
       ${data.userId},
@@ -243,6 +246,7 @@ export async function insertReadingIngestUnit(data: {
       ${data.unitKind},
       ${data.locator},
       ${data.chapterLabel ?? null},
+      ${data.displayPage ?? null},
       ${data.text}
     )
     ON CONFLICT (user_id, book_id, fingerprint) DO NOTHING
@@ -293,12 +297,14 @@ export async function refreshReadingIngestUnit(data: {
   bookId: string;
   unitId: string;
   chapterLabel?: string | null;
+  displayPage?: number | null;
   text: string;
 }): Promise<ReadingIngestUnitRow | null> {
   const result = await getPool().query<ReadingIngestUnitRow>(sql`
     UPDATE readmax.reading_ingest_unit
     SET text = ${data.text},
         chapter_label = COALESCE(${data.chapterLabel ?? null}, chapter_label),
+        display_page = COALESCE(${data.displayPage ?? null}, display_page),
         last_seen_at = NOW()
     WHERE id = ${data.unitId}
       AND user_id = ${data.userId}
@@ -946,8 +952,8 @@ export async function insertReadingArtifactRevision(data: {
   content: string;
   previousRevisionId?: string | null;
   actor: ReadingArtifactActor;
-  sourceUnitId: string;
-  sourceFingerprint: string;
+  sourceUnitId?: string | null;
+  sourceFingerprint?: string | null;
   summary: string;
 }): Promise<ReadingArtifactRevisionRow | null> {
   const result = await getPool().query<ReadingArtifactRevisionRow>(sql`
@@ -962,13 +968,77 @@ export async function insertReadingArtifactRevision(data: {
       ${data.content},
       ${data.previousRevisionId ?? null},
       ${data.actor},
-      ${data.sourceUnitId},
-      ${data.sourceFingerprint},
+      ${data.sourceUnitId ?? null},
+      ${data.sourceFingerprint ?? null},
       ${data.summary}
     )
     RETURNING ${REVISION_COLUMNS}
   `);
   return result.rows[0] ?? null;
+}
+
+export async function persistReadingArtifactRevision(data: {
+  userId: string;
+  bookId: string;
+  kind: ReadingArtifactKind;
+  content: string;
+  actor: ReadingArtifactActor;
+  sourceUnitId?: string | null;
+  sourceFingerprint?: string | null;
+  summary: string;
+}): Promise<ReadingArtifactRow> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const current = await client.query<ReadingArtifactRow>(sql`
+      SELECT ${ARTIFACT_COLUMNS}
+      FROM readmax.reading_artifact
+      WHERE user_id = ${data.userId}
+        AND book_id = ${data.bookId}
+        AND kind = ${data.kind}
+      FOR UPDATE
+    `);
+    const head = current.rows[0];
+    if (head?.content === data.content) {
+      await client.query("COMMIT");
+      return head;
+    }
+
+    const revision = await client.query<{ id: string }>(sql`
+      INSERT INTO readmax.reading_artifact_revision (
+        user_id, book_id, kind, content, previous_revision_id, actor,
+        source_unit_id, source_fingerprint, summary
+      )
+      VALUES (
+        ${data.userId}, ${data.bookId}, ${data.kind}, ${data.content},
+        ${head?.revisionId ?? null}, ${data.actor}, ${data.sourceUnitId ?? null},
+        ${data.sourceFingerprint ?? null}, ${data.summary}
+      )
+      RETURNING id
+    `);
+    const revisionId = revision.rows[0]?.id;
+    if (!revisionId) throw new Error(`Failed to create ${data.kind} artifact revision`);
+
+    const saved = await client.query<ReadingArtifactRow>(sql`
+      INSERT INTO readmax.reading_artifact (user_id, book_id, kind, content, revision_id)
+      VALUES (${data.userId}, ${data.bookId}, ${data.kind}, ${data.content}, ${revisionId})
+      ON CONFLICT (user_id, book_id, kind) DO UPDATE
+        SET content = EXCLUDED.content,
+            revision_id = EXCLUDED.revision_id,
+            updated_at = NOW()
+      RETURNING ${ARTIFACT_COLUMNS}
+    `);
+    const artifact = saved.rows[0];
+    if (!artifact) throw new Error(`Failed to update ${data.kind} artifact head`);
+
+    await client.query("COMMIT");
+    return artifact;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(console.error);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function upsertCurrentReadingArtifact(data: {
