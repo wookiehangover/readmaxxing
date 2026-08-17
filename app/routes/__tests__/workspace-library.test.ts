@@ -1,7 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
-import { openBookInWorkspace } from "~/routes/workspace-library";
+import React, { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { WorkspaceContextValue } from "~/lib/context/workspace-context";
+
+const routeMocks = vi.hoisted(() => ({
+  workspace: { openBookRef: { current: null } },
+}));
+
+vi.mock("~/lib/context/workspace-context", () => ({
+  useWorkspace: () => routeMocks.workspace,
+}));
+vi.mock("~/components/workspace/library-browse-content", () => ({
+  LibraryBrowseContent: () => "Existing library page",
+}));
+
+import WorkspaceLibraryRoute, { openBookInWorkspace } from "~/routes/workspace-library";
 
 const book: BookMeta = {
   id: "book-1",
@@ -10,6 +24,21 @@ const book: BookMeta = {
   coverImage: null,
   format: "epub",
 };
+
+afterEach(() => {
+  document.body.innerHTML = "";
+});
+
+describe("WorkspaceLibraryRoute", () => {
+  it("keeps mounting the existing library browse page", () => {
+    const root = createRoot(document.body.appendChild(document.createElement("div")));
+
+    act(() => root.render(React.createElement(WorkspaceLibraryRoute)));
+
+    expect(document.body.textContent).toContain("Existing library page");
+    act(() => root.unmount());
+  });
+});
 
 describe("openBookInWorkspace", () => {
   it("immediately hands a local book to the pending-safe workspace handler", () => {

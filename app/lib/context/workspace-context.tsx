@@ -217,6 +217,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const findNavForBook = useCallback((bookId: string): ((cfi: string) => void) | undefined => {
+    const direct = navigationMap.current.get(bookId);
+    if (direct) return direct;
     const api = dockviewApi.current;
     if (!api) return undefined;
     for (const panel of api.panels) {
@@ -232,6 +234,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const applyTempHighlightForBook = useCallback((bookId: string, cfi: string): void => {
+    const direct = tempHighlightMap.current.get(bookId);
+    if (direct) {
+      direct(cfi);
+      return;
+    }
     const api = dockviewApi.current;
     if (!api) return;
     for (const panel of api.panels) {
@@ -249,6 +256,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeHighlightAnnotationForBook = useCallback((bookId: string, cfiRange: string): void => {
+    const direct = highlightDeleteMap.current.get(bookId);
+    if (direct) {
+      direct(cfiRange);
+      return;
+    }
     const api = dockviewApi.current;
     if (!api) return;
     for (const panel of api.panels) {
@@ -298,6 +310,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const findTocForBook = useCallback((bookId: string): TocEntry[] | undefined => {
+    const direct = tocMap.current.get(bookId);
+    if (direct && direct.length > 0) return direct;
     const api = dockviewApi.current;
     if (!api) return undefined;
     for (const panel of api.panels) {

@@ -33,13 +33,11 @@ function renderWorkspacePanels(api: DockviewApi): UseWorkspacePanelsResult {
     apiRef: { current: api },
     ws: {} as UseWorkspacePanelsParams["ws"],
     isMobileRef: { current: false },
-    collapsedRef: { current: false },
     focusedClustersRef: { current: new Map() },
     focusedOrderRef: { current: [] },
     pendingOpenBookRef: { current: null },
     layoutReadyRef: { current: true },
     isWorkspaceRouteRef: { current: true },
-    updateSettings: vi.fn(),
   } satisfies UseWorkspacePanelsParams;
 
   function Harness() {
@@ -111,7 +109,6 @@ describe("deferBookOpenUntilWorkspaceReady", () => {
     });
 
     const deferred = deferBookOpenUntilWorkspaceReady(book, {
-      apiRef: { current: null },
       layoutReadyRef: { current: false },
       isWorkspaceRouteRef: { current: false },
       pendingOpenBookRef: pending,
@@ -128,7 +125,6 @@ describe("deferBookOpenUntilWorkspaceReady", () => {
     const navigate = vi.fn();
 
     const deferred = deferBookOpenUntilWorkspaceReady(book, {
-      apiRef: { current: {} as DockviewApi },
       layoutReadyRef: { current: false },
       isWorkspaceRouteRef: { current: true },
       pendingOpenBookRef: pending,
@@ -140,14 +136,13 @@ describe("deferBookOpenUntilWorkspaceReady", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("uses current route readiness and takes the immediate-open path", () => {
+  it("takes the immediate-open path without a dockview instance", () => {
     const pending = { current: book as BookMeta | null };
     const isWorkspaceRouteRef = { current: false };
     isWorkspaceRouteRef.current = true;
     const navigate = vi.fn();
 
     const deferred = deferBookOpenUntilWorkspaceReady(book, {
-      apiRef: { current: {} as DockviewApi },
       layoutReadyRef: { current: true },
       isWorkspaceRouteRef,
       pendingOpenBookRef: pending,

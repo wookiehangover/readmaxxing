@@ -6,12 +6,9 @@ import type { FocusedCluster } from "~/hooks/use-focused-mode";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import type { BookMeta } from "~/lib/stores/book-store";
-import type { Settings } from "~/lib/settings";
 import { truncateTitle } from "~/lib/workspace-utils";
 import type { useWorkspace } from "~/lib/context/workspace-context";
 import { AnnotationService } from "~/lib/stores/annotations-store";
-
-const SIDEBAR_TRANSITION_MS = 270;
 
 type WorkspaceContext = ReturnType<typeof useWorkspace>;
 
@@ -19,13 +16,11 @@ export interface UseWorkspacePanelsParams {
   readonly apiRef: React.MutableRefObject<DockviewApi | null>;
   readonly ws: WorkspaceContext;
   readonly isMobileRef: React.MutableRefObject<boolean | undefined>;
-  readonly collapsedRef: React.MutableRefObject<boolean>;
   readonly focusedClustersRef: React.MutableRefObject<Map<string, FocusedCluster>>;
   readonly focusedOrderRef: React.MutableRefObject<string[]>;
   readonly pendingOpenBookRef: React.MutableRefObject<BookMeta | null>;
   readonly layoutReadyRef: React.MutableRefObject<boolean>;
   readonly isWorkspaceRouteRef: React.MutableRefObject<boolean>;
-  readonly updateSettings: (patch: Partial<Settings>) => void;
 }
 
 export interface UseWorkspacePanelsResult {
@@ -40,7 +35,6 @@ export interface UseWorkspacePanelsResult {
 }
 
 interface DeferBookOpenParams {
-  readonly apiRef: React.MutableRefObject<DockviewApi | null>;
   readonly layoutReadyRef: React.MutableRefObject<boolean>;
   readonly isWorkspaceRouteRef: React.MutableRefObject<boolean>;
   readonly pendingOpenBookRef: React.MutableRefObject<BookMeta | null>;
@@ -49,16 +43,10 @@ interface DeferBookOpenParams {
 
 export function deferBookOpenUntilWorkspaceReady(
   book: BookMeta,
-  {
-    apiRef,
-    layoutReadyRef,
-    isWorkspaceRouteRef,
-    pendingOpenBookRef,
-    navigate,
-  }: DeferBookOpenParams,
+  { layoutReadyRef, isWorkspaceRouteRef, pendingOpenBookRef, navigate }: DeferBookOpenParams,
 ): boolean {
   const isWorkspaceRoute = isWorkspaceRouteRef.current;
-  if (isWorkspaceRoute && apiRef.current && layoutReadyRef.current) {
+  if (isWorkspaceRoute && layoutReadyRef.current) {
     pendingOpenBookRef.current = null;
     return false;
   }
@@ -101,20 +89,17 @@ export function useWorkspacePanels({
   apiRef,
   ws,
   isMobileRef,
-  collapsedRef,
   focusedClustersRef,
   focusedOrderRef,
   pendingOpenBookRef,
   layoutReadyRef,
   isWorkspaceRouteRef,
-  updateSettings,
 }: UseWorkspacePanelsParams): UseWorkspacePanelsResult {
   const navigate = useNavigate();
   const openBook = useCallback(
     (book: BookMeta) => {
       if (
         deferBookOpenUntilWorkspaceReady(book, {
-          apiRef,
           layoutReadyRef,
           isWorkspaceRouteRef,
           pendingOpenBookRef,
@@ -127,9 +112,6 @@ export function useWorkspacePanels({
       AppRuntime.runPromise(
         WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
       ).catch(console.error);
-
-      const isFirstCluster = focusedClustersRef.current.size === 0;
-      const shouldAutoCollapse = isFirstCluster && !isMobileRef.current && !collapsedRef.current;
 
       const openPanels = () => {
         if (!focusedClustersRef.current.has(book.id)) {
@@ -164,17 +146,10 @@ export function useWorkspacePanels({
           });
       };
 
-      if (shouldAutoCollapse) {
-        updateSettings({ sidebarCollapsed: true });
-        window.setTimeout(openPanels, SIDEBAR_TRANSITION_MS);
-        return;
-      }
-
       openPanels();
     },
     [
       apiRef,
-      collapsedRef,
       focusedClustersRef,
       focusedOrderRef,
       isMobileRef,
@@ -182,7 +157,6 @@ export function useWorkspacePanels({
       layoutReadyRef,
       navigate,
       pendingOpenBookRef,
-      updateSettings,
       ws,
     ],
   );

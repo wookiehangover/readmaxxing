@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DockviewApi, DockviewReadyEvent } from "dockview-react";
+import type { DockviewApi } from "dockview-react";
 import { Effect } from "effect";
 import { PanelLeft, X } from "lucide-react";
 import { Outlet, useLocation, useNavigate } from "react-router";
@@ -26,7 +26,7 @@ import {
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useOpenBookChapterUploads } from "~/hooks/use-open-book-chapter-uploads";
 import { useSyncListener } from "~/hooks/use-sync-listener";
-import { useWorkspaceLayout } from "~/hooks/use-workspace-layout";
+import { consumePendingBookOpen, useWorkspaceLayout } from "~/hooks/use-workspace-layout";
 import {
   clearPendingBookOpenOnWorkspaceExit,
   useWorkspacePanels,
@@ -36,24 +36,11 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { ensureLocalThenOpen } from "~/lib/library-book-open";
 import { hasDemoOnboardingState, isFirstVisit, seedDemo } from "~/lib/onboarding/demo-seed";
-import { clampFocusedSplitRatio, type ReaderLayout, useSettings } from "~/lib/settings";
+import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { BookService, bookNeedsDownload, type BookMeta } from "~/lib/stores/book-store";
 import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 import { cn } from "~/lib/utils";
 import { sortBooks } from "~/lib/workspace-utils";
-
-const SIDEBAR_TRANSITION_MS = 270;
-
-type ZenPreState = {
-  readonly sidebarCollapsed: boolean;
-  readonly readerLayout: ReaderLayout;
-  readonly dockviewJson: ReturnType<DockviewApi["toJSON"]> | undefined;
-};
-
-export interface AppFrameOutletContext {
-  readonly onDockviewReady: (event: DockviewReadyEvent) => void;
-  readonly onDockviewDispose: () => void;
-}
 
 function createInitialFocusedState(
   books: BookMeta[],
@@ -142,13 +129,6 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
   const zenMode = settings.zenMode;
-  const frameZenMode = isWorkspaceRoute && zenMode;
-  const collapsedRef = useRef(collapsed);
-  collapsedRef.current = collapsed;
-  const readerLayoutRef = useRef(settings.readerLayout);
-  readerLayoutRef.current = settings.readerLayout;
-  const prevZenModeRef = useRef(zenMode);
-  const zenPreStateRef = useRef<ZenPreState | null>(null);
   const sortBy = settings.workspaceSortBy;
   const apiRef = useRef<DockviewApi | null>(null);
   const pendingClusterActivationRef = useRef<string | null>(null);
@@ -221,16 +201,14 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     apiRef,
     ws,
     isMobileRef,
-    collapsedRef,
     focusedClustersRef,
     focusedOrderRef,
     pendingOpenBookRef,
     layoutReadyRef,
     isWorkspaceRouteRef,
-    updateSettings,
   });
 
-  const { layoutReady, onReady, onDispose } = useWorkspaceLayout({
+  const { layoutReady } = useWorkspaceLayout({
     apiRef,
     ws,
     books,
@@ -262,8 +240,11 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   }, [isWorkspaceRoute, location.pathname]);
 
   useEffect(() => {
-    ws.booksRef.current = books;
-  }, [books, ws]);
+    layoutReadyRef.current = isWorkspaceRoute;
+    if (isWorkspaceRoute) consumePendingBookOpen(pendingOpenBookRef, openBook);
+  }, [isWorkspaceRoute, openBook]);
+
+  ws.booksRef.current = books;
 
   useEffect(() => {
     ws.openBookIdsRef.current = openBookIds;
@@ -279,59 +260,16 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
 
   useWorkspaceShortcuts({ apiRef, collapsed, zenMode, updateSettings });
 
-  useEffect(() => {
-    const previousZenMode = prevZenModeRef.current;
-    if (previousZenMode === zenMode) return;
-    prevZenModeRef.current = zenMode;
-
-    if (zenMode) {
-      const api = apiRef.current;
-      zenPreStateRef.current = {
-        sidebarCollapsed: collapsedRef.current,
-        readerLayout: readerLayoutRef.current,
-        dockviewJson: api?.toJSON(),
-      };
-      if (api) {
-        for (const panel of Array.from(api.panels)) {
-          if (!panel.id.startsWith("book-")) api.removePanel(panel);
-        }
-      }
-      updateSettings({ sidebarCollapsed: true, readerLayout: "spread" });
-      setTimeout(
-        () => queueMicrotask(() => window.dispatchEvent(new Event("resize"))),
-        SIDEBAR_TRANSITION_MS,
-      );
-      return;
-    }
-
-    const previous = zenPreStateRef.current;
-    if (!previous) return;
-    updateSettings({
-      sidebarCollapsed: previous.sidebarCollapsed,
-      readerLayout: previous.readerLayout,
-      zenMode: false,
-    });
-    if (previous.dockviewJson) {
-      try {
-        apiRef.current?.fromJSON(previous.dockviewJson);
-      } catch (error) {
-        console.error("Failed to restore zen mode dockview layout:", error);
-      }
-    }
-    queueMicrotask(() => window.dispatchEvent(new Event("resize")));
-    zenPreStateRef.current = null;
-  }, [zenMode, updateSettings]);
-
   const demoBootstrapReady = useDemoOnboarding({
     demoBook: loaderData.demoBook,
-    layoutReady,
+    layoutReady: isWorkspaceRoute || layoutReady,
     sidebarCollapsed: collapsed,
     updateSettings,
     openBook,
     openChat,
     openNotebook,
   });
-  const workspaceReady = loaderData.demoBook ? demoBootstrapReady : layoutReady;
+  const workspaceReady = loaderData.demoBook ? demoBootstrapReady : isWorkspaceRoute || layoutReady;
   const frameReady = !isWorkspaceRoute || workspaceReady;
 
   const updateBooks = useCallback(
@@ -496,13 +434,10 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
           className={cn(
             "flex h-dvh",
             frameReady ? "animate-in fade-in-0 duration-300" : "opacity-0",
-            {
-              "zen-mode": frameZenMode,
-            },
           )}
         >
-          {isMobile !== true && !frameZenMode && <WorkspaceSidebar {...sidebarProps} />}
-          {isMobile === true && !frameZenMode && (
+          {!isWorkspaceRoute && isMobile !== true && <WorkspaceSidebar {...sidebarProps} />}
+          {!isWorkspaceRoute && isMobile === true && (
             <>
               <button
                 type="button"
@@ -527,7 +462,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
             </>
           )}
           <div className="flex min-w-0 flex-1 flex-col">
-            {!frameZenMode && (
+            {!isWorkspaceRoute && (
               <ClusterBar
                 demoActive={loaderData.demoActive}
                 getEntries={getClusterEntries}
@@ -538,14 +473,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
               />
             )}
             <div className="min-h-0 flex-1">
-              <Outlet
-                context={
-                  {
-                    onDockviewReady: onReady,
-                    onDockviewDispose: onDispose,
-                  } satisfies AppFrameOutletContext
-                }
-              />
+              <Outlet />
             </div>
           </div>
         </div>
