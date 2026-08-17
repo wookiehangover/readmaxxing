@@ -43,7 +43,11 @@ vi.mock("~/components/chat/chat-panel", () => ({
   ChatPanel: () => <div data-testid="chat-panel">Chat panel</div>,
 }));
 vi.mock("~/components/workspace/outline-panel", () => ({
-  WorkspaceOutlinePanel: () => <div data-testid="outline-panel">Outline panel</div>,
+  WorkspaceOutlinePanel: ({ chromeless }: { chromeless?: boolean }) => (
+    <div data-testid="outline-panel" data-chromeless={chromeless}>
+      Outline panel
+    </div>
+  ),
 }));
 
 import { ReadingRail } from "~/components/reading-shell/reading-rail";
@@ -97,18 +101,26 @@ describe("ReadingRail", () => {
     expect(container.querySelector("[data-testid='chat-panel']")).not.toBeNull();
 
     clickTab(container, "Outline");
-    expect(container.querySelector("[data-testid='outline-panel']")).not.toBeNull();
+    expect(
+      container.querySelector("[data-testid='outline-panel']")?.getAttribute("data-chromeless"),
+    ).toBe("true");
   });
 
-  it("left-aligns the active underline with the tab label", () => {
+  it("uses one sliding underline left-aligned with the active tab label", () => {
     const container = renderRail();
-    const notesTab = Array.from(container.querySelectorAll("button")).find(
-      (candidate) => candidate.textContent === "Notes",
-    );
+    const tabList = container.querySelector("[aria-label='Reading tools']");
+    const indicators = tabList?.querySelectorAll("[data-testid='rail-tab-indicator']");
+    const indicator = indicators?.item(0);
 
-    expect(notesTab?.className).toContain("after:left-0");
-    expect(notesTab?.className).not.toContain("after:left-1/2");
-    expect(notesTab?.className).not.toContain("after:-translate-x-1/2");
+    expect(indicators).toHaveLength(1);
+    expect(indicator?.className).toContain("left-[var(--active-tab-left)]");
+    expect(indicator?.className).toContain("w-3");
+    expect(indicator?.className).toContain("transition-[left]");
+    expect(indicator?.className).toContain("motion-reduce:transition-none");
+    expect(indicator?.className).not.toContain("left-1/2");
+    expect(Array.from(tabList?.querySelectorAll("button") ?? [])).toSatisfyAll(
+      (tab) => !tab.className.includes("after:"),
+    );
   });
 
   it("shows the Review empty stub", () => {

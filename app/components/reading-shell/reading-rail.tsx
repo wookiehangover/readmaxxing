@@ -49,14 +49,17 @@ export function ReadingRail() {
               className={cn(
                 "relative h-7 shrink-0 bg-transparent p-0 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                 {
-                  "text-foreground after:absolute after:bottom-0 after:left-0 after:h-px after:w-3 after:bg-foreground":
-                    activeTab === tab,
+                  "text-foreground": activeTab === tab,
                 },
               )}
             >
               {tab}
             </Tabs.Tab>
           ))}
+          <Tabs.Indicator
+            data-testid="rail-tab-indicator"
+            className="absolute bottom-0 left-[var(--active-tab-left)] h-px w-3 bg-foreground transition-[left] duration-200 ease-out motion-reduce:transition-none"
+          />
         </Tabs.List>
         <div id={READING_RAIL_MENU_ID} className="flex min-h-7 shrink-0 items-center" />
       </div>
@@ -121,7 +124,7 @@ export function ReadingRail() {
             <ChatPanel bookId={book.id} bookTitle={book.title} />
           </Tabs.Panel>
           <Tabs.Panel value="Outline" className="min-h-0 flex-1 overflow-hidden outline-none">
-            <WorkspaceOutlinePanel bookId={book.id} bookTitle={book.title} />
+            <WorkspaceOutlinePanel bookId={book.id} bookTitle={book.title} chromeless />
           </Tabs.Panel>
           <Tabs.Panel value="Review" className="min-h-0 flex-1 overflow-hidden outline-none">
             <Empty className="h-full">

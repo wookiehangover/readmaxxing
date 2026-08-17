@@ -12,6 +12,7 @@ import {
   ReadingArtifactsError,
   saveReadingOutline,
 } from "~/lib/reading-agent/artifacts-client";
+import { cn } from "~/lib/utils";
 
 export const OUTLINE_POLL_MS = 15_000;
 export const OUTLINE_SAVE_MS = 1_000;
@@ -53,7 +54,11 @@ export function WorkspaceOutlinePanel({
   bookId,
   bookTitle,
   api,
-}: OutlinePanelParams & { api?: IDockviewPanelProps<OutlinePanelParams>["api"] }) {
+  chromeless = false,
+}: OutlinePanelParams & {
+  api?: IDockviewPanelProps<OutlinePanelParams>["api"];
+  chromeless?: boolean;
+}) {
   const { dockviewApi, navigateInCluster } = useWorkspace();
   const [state, setState] = useState<OutlineState>({ status: "loading", content: null });
   const [refreshKey, setRefreshKey] = useState(0);
@@ -204,18 +209,24 @@ export function WorkspaceOutlinePanel({
   }, [flushSave]);
 
   return (
-    <div className="flex h-full flex-col bg-card">
-      <div className="border-b px-4 py-3">
-        <h2 className="truncate text-sm font-semibold">Outline</h2>
-        <p className="truncate text-xs text-muted-foreground">{bookTitle}</p>
-      </div>
+    <div className={cn("flex h-full flex-col", { "bg-card": !chromeless })}>
+      {!chromeless && (
+        <div className="border-b px-4 py-3">
+          <h2 className="truncate text-sm font-semibold">Outline</h2>
+          <p className="truncate text-xs text-muted-foreground">{bookTitle}</p>
+        </div>
+      )}
       <ScrollArea className="min-h-0 flex-1">
         {state.status === "loading" ? (
-          <div className="flex h-full items-center justify-center p-6">
+          <div className={cn("flex h-full items-center justify-center", { "p-6": !chromeless })}>
             <p className="text-sm text-muted-foreground">Loading outline…</p>
           </div>
         ) : state.status === "auth" ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+          <div
+            className={cn("flex h-full flex-col items-center justify-center gap-4 text-center", {
+              "p-6": !chromeless,
+            })}
+          >
             <p className="text-sm text-muted-foreground">
               Sign in to view the outline for <span className="italic">{bookTitle}</span>
             </p>
@@ -224,14 +235,22 @@ export function WorkspaceOutlinePanel({
             </Button>
           </div>
         ) : state.status === "error" ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+          <div
+            className={cn("flex h-full flex-col items-center justify-center gap-3 text-center", {
+              "p-6": !chromeless,
+            })}
+          >
             <p className="text-sm text-muted-foreground">Unable to load the outline.</p>
             <Button type="button" variant="outline" size="sm" onClick={retry}>
               Retry
             </Button>
           </div>
         ) : state.status === "empty" ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+          <div
+            className={cn("flex h-full flex-col items-center justify-center gap-3 text-center", {
+              "p-6": !chromeless,
+            })}
+          >
             <ListTree className="size-8 text-muted-foreground" />
             <p className="text-sm font-medium">No outline yet</p>
             <p className="text-xs text-muted-foreground">
@@ -242,6 +261,7 @@ export function WorkspaceOutlinePanel({
           <TiptapEditor
             ref={editorRef}
             content={state.content ?? ""}
+            compact={chromeless}
             onUpdate={handleUpdate}
             onBlur={() => void flushSave()}
             onNavigateToOutlineIncrement={handleNavigateToCfi}

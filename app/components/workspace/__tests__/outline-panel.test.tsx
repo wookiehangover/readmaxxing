@@ -3,7 +3,12 @@ import { createRoot, type Root } from "react-dom/client";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { JSONContent } from "@tiptap/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OutlinePanel, OUTLINE_POLL_MS, OUTLINE_SAVE_MS } from "../outline-panel";
+import {
+  OutlinePanel,
+  OUTLINE_POLL_MS,
+  OUTLINE_SAVE_MS,
+  WorkspaceOutlinePanel,
+} from "../outline-panel";
 import { ReadingArtifactsError } from "~/lib/reading-agent/artifacts-client";
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   focusBookPanel: vi.fn(),
   editorProps: null as null | {
     content?: string;
+    compact?: boolean;
     onUpdate?: (content: JSONContent) => void;
     onBlur?: () => void;
     onNavigateToOutlineIncrement?: (locator: string) => void | Promise<void>;
@@ -89,9 +95,15 @@ const outline = {
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 
-function renderPanel() {
+function renderPanel(chromeless = false) {
   container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
+  if (chromeless) {
+    act(() =>
+      root!.render(<WorkspaceOutlinePanel bookId="book-1" bookTitle="Siddhartha" chromeless />),
+    );
+    return;
+  }
   const props = {
     params: { bookId: "book-1", bookTitle: "Siddhartha" },
     api: {
@@ -130,6 +142,25 @@ afterEach(() => {
 });
 
 describe("OutlinePanel", () => {
+  it("removes the header, card surface, and panel padding in chromeless mode", async () => {
+    mocks.fetchReadingArtifacts.mockResolvedValue({
+      bookId: "book-1",
+      artifacts: { outline: null, characters: null, wiki: null },
+    });
+    renderPanel(true);
+
+    expect(container!.textContent).toContain("Loading outline…");
+    expect(container!.querySelector("h2")).toBeNull();
+    expect(container!.firstElementChild?.className).not.toContain("bg-card");
+    expect(container!.textContent).not.toContain("Siddhartha");
+    await act(async () => {});
+
+    const emptyState = Array.from(container!.querySelectorAll("p")).find(
+      (element) => element.textContent === "No outline yet",
+    )?.parentElement;
+    expect(emptyState?.className).not.toContain("p-6");
+  });
+
   it("mounts an editable outline after a successful fetch", async () => {
     mocks.fetchReadingArtifacts.mockResolvedValue(outline);
     renderPanel();
@@ -140,9 +171,20 @@ describe("OutlinePanel", () => {
     );
   });
 
+  it("uses compact editor spacing in chromeless mode", async () => {
+    mocks.fetchReadingArtifacts.mockResolvedValue(outline);
+    renderPanel(true);
+    await act(async () => {});
+
+    expect(mocks.editorProps?.compact).toBe(true);
+    expect(container!.querySelector("[data-testid='outline-editor']")?.textContent).toContain(
+      "Siddhartha leaves home.",
+    );
+  });
+
   it("navigates to a linked increment and focuses the book panel", async () => {
     mocks.fetchReadingArtifacts.mockResolvedValue(outline);
-    renderPanel();
+    renderPanel(true);
     await act(async () => {});
 
     await act(async () => {
@@ -157,7 +199,7 @@ describe("OutlinePanel", () => {
     mocks.fetchReadingArtifacts.mockRejectedValue(
       new ReadingArtifactsError("auth_required", 401, "Authentication required"),
     );
-    renderPanel();
+    renderPanel(true);
     await act(async () => {});
     expect(container!.textContent).toContain("Sign in to view the outline for");
     expect(container!.querySelector("a")?.getAttribute("href")).toBe("/login");
@@ -168,7 +210,7 @@ describe("OutlinePanel", () => {
       bookId: "book-1",
       artifacts: { outline: null, characters: null, wiki: null },
     });
-    renderPanel();
+    renderPanel(true);
     await act(async () => {});
     expect(container!.textContent).toContain("No outline yet");
     expect(container!.textContent).toContain("Keep reading");
@@ -178,7 +220,7 @@ describe("OutlinePanel", () => {
     mocks.fetchReadingArtifacts
       .mockRejectedValueOnce(new ReadingArtifactsError("request_failed", 500, "Failed"))
       .mockResolvedValueOnce(outline);
-    renderPanel();
+    renderPanel(true);
     await act(async () => {});
     expect(container!.textContent).toContain("Unable to load the outline.");
     await act(async () => {
