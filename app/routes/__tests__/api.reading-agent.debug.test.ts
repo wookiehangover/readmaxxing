@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   activeHost: vi.fn(),
   clear: vi.fn(),
   createFlueClient: vi.fn(),
-  selectedModel: "anthropic/claude-sonnet-4-6",
+  selectedModel: "openai/gpt-5.6-terra",
   getSelectedModel: vi.fn(),
   isDebugModel: vi.fn(),
   setSelectedModel: vi.fn(),
@@ -74,7 +74,7 @@ beforeEach(() => {
   mocks.activeHost.mockReset().mockReturnValue(undefined);
   mocks.clear.mockReset().mockResolvedValue(undefined);
   mocks.createFlueClient.mockReset();
-  mocks.selectedModel = "anthropic/claude-sonnet-4-6";
+  mocks.selectedModel = "openai/gpt-5.6-terra";
   mocks.getSelectedModel.mockReset().mockImplementation(() => mocks.selectedModel);
   mocks.isDebugModel
     .mockReset()
@@ -82,6 +82,7 @@ beforeEach(() => {
       [
         "anthropic/claude-sonnet-4-6",
         "openai/gpt-5.5",
+        "openai/gpt-5.6-terra",
         "xai/grok-4.5",
         "google/gemini-2.5-flash",
       ].includes(String(value)),
@@ -145,7 +146,7 @@ describe("reading-agent debug API", () => {
     await expect(stale.json()).resolves.toEqual({
       gatewayConfigured: true,
       schema: { ok: false, missingColumns: ["reading_agent_lease.unit_id"] },
-      selectedModel: "anthropic/claude-sonnet-4-6",
+      selectedModel: "openai/gpt-5.6-terra",
       lease: null,
       units: [],
       usage: null,
@@ -191,7 +192,7 @@ describe("reading-agent debug API", () => {
     expect(body).toMatchObject({
       gatewayConfigured: true,
       schema: { ok: true },
-      selectedModel: "anthropic/claude-sonnet-4-6",
+      selectedModel: "openai/gpt-5.6-terra",
       lastError: "Previous attempt failed",
       usage: { model: "openai/gpt-5.5", totalTokens: 18 },
     });
@@ -268,7 +269,7 @@ describe("reading-agent debug API", () => {
 
     const snapshot = await loader({ request: getRequest() });
     await expect(snapshot.json()).resolves.toMatchObject({
-      selectedModel: "anthropic/claude-sonnet-4-6",
+      selectedModel: "openai/gpt-5.6-terra",
     });
   });
 

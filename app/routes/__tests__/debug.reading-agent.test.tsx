@@ -18,7 +18,7 @@ const emptyStatus: ReadingAgentStatus = {
   units: [],
   usage: null,
   latestIncrement: null,
-  selectedModel: "anthropic/claude-sonnet-4-6",
+  selectedModel: "openai/gpt-5.6-terra",
   lastError: null,
 };
 
@@ -77,7 +77,7 @@ function respond(
       return Promise.resolve(
         Response.json({
           ...status,
-          selectedModel: body?.model ?? "anthropic/claude-sonnet-4-6",
+          selectedModel: body?.model ?? "openai/gpt-5.6-terra",
           lastError: null,
         }),
       );
@@ -175,7 +175,7 @@ describe("reading-agent debug page", () => {
     expect(container!.textContent).toContain("No page increment yet");
     expect(container!.textContent).toContain("No recent ingest units");
     expect(container!.textContent).toContain("Agent host");
-    expect(container!.textContent).toContain("anthropic/claude-sonnet-4-6");
+    expect(container!.textContent).toContain("openai/gpt-5.6-terra");
     expect(container!.textContent).not.toContain("Not configured");
   });
 

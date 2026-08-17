@@ -14,8 +14,8 @@ Configure the root app's `.env.local` with `READING_AGENT_SECRET` and its existi
 `AI_GATEWAY_API_KEY`. `VERCEL_OIDC_TOKEN` is supported as a Gateway fallback and for production
 Sandbox access. `READING_AGENT_URL` is an unused legacy external-host override; leave it unset.
 
-ReadingScribe keeps the Flue model specifier `anthropic/claude-sonnet-4-6`, but its
-Anthropic Messages requests go through `https://ai-gateway.vercel.sh/v1/messages`.
+ReadingScribe defaults to the Flue model specifier `openai/gpt-5.6-terra`, and its model requests
+go through Vercel AI Gateway.
 The agent host still boots without Gateway credentials; model calls log/fail for retry without
 breaking reader ingest.
 

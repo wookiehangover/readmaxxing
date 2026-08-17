@@ -11,8 +11,9 @@ afterEach(() => {
 });
 
 describe("reading-agent debug model", () => {
-  it("defaults to Claude Sonnet and accepts every allowlisted model", () => {
-    expect(getSelectedDebugModel()).toBe(DEFAULT_DEBUG_READING_AGENT_MODEL);
+  it("defaults to GPT-5.6 Terra and accepts every allowlisted model", () => {
+    expect(DEFAULT_DEBUG_READING_AGENT_MODEL).toBe("openai/gpt-5.6-terra");
+    expect(getSelectedDebugModel()).toBe("openai/gpt-5.6-terra");
     for (const model of DEBUG_READING_AGENT_MODELS) {
       expect(setSelectedDebugModel(model)).toBe(model);
       expect(getSelectedDebugModel()).toBe(model);

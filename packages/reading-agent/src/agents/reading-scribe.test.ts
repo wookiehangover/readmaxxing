@@ -35,7 +35,7 @@ describe("ReadingScribe delivery model", () => {
     },
   );
 
-  it("falls back to Claude Sonnet for an unknown model", () => {
+  it("falls back to GPT-5.6 Terra for an unknown model", () => {
     mocks.delivery.mockReturnValue({
       kind: "user",
       body: JSON.stringify({ model: "openai/not-allowed" }),
@@ -43,6 +43,14 @@ describe("ReadingScribe delivery model", () => {
 
     ReadingScribe();
 
-    expect(mocks.model).toHaveBeenCalledWith("anthropic/claude-sonnet-4-6");
+    expect(mocks.model).toHaveBeenCalledWith("openai/gpt-5.6-terra");
+  });
+
+  it("falls back to GPT-5.6 Terra when the delivery omits a model", () => {
+    mocks.delivery.mockReturnValue({ kind: "user", body: JSON.stringify({ page: "Page" }) });
+
+    ReadingScribe();
+
+    expect(mocks.model).toHaveBeenCalledWith("openai/gpt-5.6-terra");
   });
 });

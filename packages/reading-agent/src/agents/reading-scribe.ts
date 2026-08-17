@@ -5,7 +5,7 @@ import "../providers/vercel-ai-gateway";
 import { readingSandbox } from "../sandboxes/reading-sandbox";
 import { updateReadingArtifacts } from "../tools/update-reading-artifacts";
 
-const DEFAULT_MODEL = "anthropic/claude-sonnet-4-6";
+const DEFAULT_MODEL = "openai/gpt-5.6-terra";
 const MODELS = new Set([
   DEFAULT_MODEL,
   "openai/gpt-5.5",

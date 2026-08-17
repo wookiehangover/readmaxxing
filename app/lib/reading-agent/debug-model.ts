@@ -10,8 +10,7 @@ export const DEBUG_READING_AGENT_MODELS = [
 
 export type DebugReadingAgentModel = (typeof DEBUG_READING_AGENT_MODELS)[number];
 
-export const DEFAULT_DEBUG_READING_AGENT_MODEL: DebugReadingAgentModel =
-  "anthropic/claude-sonnet-4-6";
+export const DEFAULT_DEBUG_READING_AGENT_MODEL: DebugReadingAgentModel = "openai/gpt-5.6-terra";
 
 export function isDebugReadingAgentModel(value: unknown): value is DebugReadingAgentModel {
   return DEBUG_READING_AGENT_MODELS.some((model) => model === value);
