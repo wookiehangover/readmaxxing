@@ -54,7 +54,7 @@ function OutlineIncrementView({ node, editor }: ReactNodeViewProps) {
   }, [editor, locator]);
 
   return (
-    <NodeViewWrapper className="relative my-2">
+    <NodeViewWrapper className="relative my-2 pl-7">
       {locator && page ? (
         <button
           type="button"
