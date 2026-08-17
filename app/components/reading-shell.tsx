@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { ReadingRail } from "~/components/reading-shell/reading-rail";
 import { WorkspaceBookReader } from "~/components/workspace-book-reader";
 import { WorkspacePdfReader } from "~/components/workspace-pdf-reader";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -14,7 +15,7 @@ export function ReadingShell() {
 
   return (
     <div className="flex h-full min-h-0 bg-background" data-testid="reading-shell">
-      <main className="min-w-0 flex-1" aria-label="Book surface">
+      <main className="min-w-0 flex-1 outline-none" aria-label="Book surface" tabIndex={-1}>
         {book ? (
           book.format === "pdf" ? (
             <WorkspacePdfReader bookId={book.id} />
@@ -28,9 +29,11 @@ export function ReadingShell() {
         )}
       </main>
       <aside
-        className="hidden w-80 shrink-0 border-l border-border bg-background md:block"
+        className="hidden w-96 shrink-0 border-l border-border bg-background md:block"
         aria-label="Reading rail"
-      />
+      >
+        <ReadingRail />
+      </aside>
     </div>
   );
 }

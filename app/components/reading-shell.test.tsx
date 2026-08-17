@@ -11,6 +11,9 @@ vi.mock("~/components/workspace-pdf-reader", () => ({
     <div data-testid="pdf-reader">{bookId}</div>
   ),
 }));
+vi.mock("~/components/reading-shell/reading-rail", () => ({
+  ReadingRail: () => <div data-testid="reading-rail">Rail</div>,
+}));
 
 import { ReadingShell } from "~/components/reading-shell";
 import { useWorkspace, WorkspaceProvider } from "~/lib/context/workspace-context";
@@ -66,7 +69,7 @@ function renderShell() {
 }
 
 describe("ReadingShell", () => {
-  it("mounts an EPUB reader with one book surface and a placeholder rail", () => {
+  it("mounts an EPUB reader with one book surface and the reading rail", () => {
     renderShell();
 
     expect(document.body.querySelector("[data-testid='epub-reader']")?.textContent).toBe(
@@ -74,6 +77,7 @@ describe("ReadingShell", () => {
     );
     expect(document.body.querySelector("[aria-label='Book surface']")).not.toBeNull();
     expect(document.body.querySelector("[aria-label='Reading rail']")).not.toBeNull();
+    expect(document.body.querySelector("[data-testid='reading-rail']")).not.toBeNull();
   });
 
   it("mounts the existing PDF reader in the same shell", () => {

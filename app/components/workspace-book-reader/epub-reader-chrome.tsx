@@ -20,18 +20,10 @@ import type { TocEntry } from "~/lib/context/reader-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { ReaderLayout, Settings } from "~/lib/settings";
 import { cn } from "~/lib/utils";
+import { ReadingRailMenuPortal } from "~/components/reading-shell/reading-rail-menu-portal";
 
 interface EpubReaderSurfaceProps {
-  panelApi?: DockviewPanelApi;
   containerRef: React.RefObject<HTMLDivElement | null>;
-  localSettings: Settings;
-  onUpdateSettings: (update: Partial<Settings>) => void;
-  book: BookMeta;
-  onDownload: () => void;
-  onCopyPageAsMarkdown: () => void;
-  onOpenSpeedread: () => void;
-  onBookmarkPage: () => void | Promise<void>;
-  isBookmarked: boolean;
   searchOpen: boolean;
   searchQuery: string;
   searchResultsLength: number;
@@ -50,16 +42,7 @@ interface EpubReaderSurfaceProps {
 }
 
 export function EpubReaderSurface({
-  panelApi,
   containerRef,
-  localSettings,
-  onUpdateSettings,
-  book,
-  onDownload,
-  onCopyPageAsMarkdown,
-  onOpenSpeedread,
-  onBookmarkPage,
-  isBookmarked,
   searchOpen,
   searchQuery,
   searchResultsLength,
@@ -78,20 +61,6 @@ export function EpubReaderSurface({
 }: EpubReaderSurfaceProps) {
   return (
     <div className="relative flex-1 overflow-hidden">
-      {!panelApi && (
-        <div className="absolute top-2 left-2 z-20">
-          <ReaderSettingsMenu
-            settings={localSettings}
-            onUpdateSettings={onUpdateSettings}
-            book={book}
-            onDownload={onDownload}
-            onCopyPageAsMarkdown={onCopyPageAsMarkdown}
-            onOpenSpeedread={onOpenSpeedread}
-            onBookmarkPage={onBookmarkPage}
-            isBookmarked={isBookmarked}
-          />
-        </div>
-      )}
       {searchOpen && (
         <div className="absolute top-0 right-0 left-0 z-10">
           <SearchBar
@@ -214,6 +183,22 @@ export function EpubReaderToolbar({
       onMouseEnter={zenMode ? showToolbarPersistent : undefined}
       onMouseLeave={zenMode ? resetToolbarTimer : undefined}
     >
+      {!panelApi ? (
+        <ReadingRailMenuPortal>
+          <ReaderSettingsMenu
+            settings={localSettings}
+            onUpdateSettings={onUpdateSettings}
+            book={book}
+            onDownload={onDownload}
+            onCopyPageAsMarkdown={onCopyPageAsMarkdown}
+            onOpenSpeedread={onOpenSpeedread}
+            onBookmarkPage={onBookmarkPage}
+            isBookmarked={isBookmarked}
+            toc={toc}
+            onNavigateToToc={navigateToTocHref}
+          />
+        </ReadingRailMenuPortal>
+      ) : null}
       <div
         className={cn(
           "relative flex h-10 items-center justify-center px-2 transition-all duration-300 ease-in-out",

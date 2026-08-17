@@ -9,6 +9,20 @@ const navigate = vi.hoisted(() => vi.fn());
 vi.mock("react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("~/lib/context/auth-context", () => ({ useAuth: () => auth }));
 vi.mock("~/components/share-dialog", () => ({ ShareDialog: () => null }));
+vi.mock("~/components/book-list", () => ({
+  TocList: ({
+    entries,
+    onNavigate,
+  }: {
+    entries: { label: string; href: string }[];
+    onNavigate: (href: string) => void;
+  }) =>
+    entries.map((entry) => (
+      <button key={entry.href} onClick={() => onNavigate(entry.href)}>
+        {entry.label}
+      </button>
+    )),
+}));
 vi.mock("~/components/ui/dropdown-menu", () => {
   const RadioGroupContext = createContext<((value: string) => void) | undefined>(undefined);
   const Container = ({ children }: { children: React.ReactNode }) => <div>{children}</div>;
@@ -68,6 +82,7 @@ let container: HTMLDivElement | null = null;
 
 function renderMenu() {
   const onUpdateSettings = vi.fn();
+  const onNavigateToToc = vi.fn();
   container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
   act(() =>
@@ -80,10 +95,12 @@ function renderMenu() {
         onBookmarkPage={vi.fn()}
         onCopyPageAsMarkdown={vi.fn()}
         onOpenSpeedread={vi.fn()}
+        toc={[{ label: "Chapter One", href: "chapter-1.xhtml" }]}
+        onNavigateToToc={onNavigateToToc}
       />,
     ),
   );
-  return { container, onUpdateSettings };
+  return { container, onUpdateSettings, onNavigateToToc };
 }
 
 beforeEach(() => {
@@ -130,5 +147,17 @@ describe("ReaderSettingsMenu", () => {
     expect(rendered.container.textContent).toContain("Download");
     expect(rendered.container.textContent).toContain("Bookmark page");
     expect(rendered.container.textContent).not.toContain("Outline");
+  });
+
+  it("includes the book table of contents and navigates chapters", () => {
+    const rendered = renderMenu();
+    expect(rendered.container.textContent).toContain("Table of Contents");
+
+    const chapter = Array.from(rendered.container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Chapter One",
+    );
+    act(() => chapter?.click());
+
+    expect(rendered.onNavigateToToc).toHaveBeenCalledWith("chapter-1.xhtml");
   });
 });

@@ -10,6 +10,7 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import type { DockviewPanelApi } from "dockview-react";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
+import { useReadingLocation } from "~/hooks/use-reading-location";
 import { usePdfSearch } from "~/hooks/use-pdf-search";
 import { usePdfHighlights } from "~/hooks/use-pdf-highlights";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
@@ -167,6 +168,7 @@ function WorkspacePdfReaderInner({
     panelRef,
     onAfterRender: reapplyAllHighlights,
   });
+  useReadingLocation(book.id, null, currentPage, totalPages);
 
   const bookmarkSyncVersion = useSyncListener(["bookmark"]);
   const { data: bookmarks } = useEffectQuery(

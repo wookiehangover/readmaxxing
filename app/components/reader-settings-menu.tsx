@@ -10,12 +10,14 @@ import {
   Plus,
   SettingsIcon,
   Share2,
+  TableOfContents,
   Type,
   ClipboardCopyIcon,
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { ShareDialog } from "~/components/share-dialog";
+import { TocList } from "~/components/book-list";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { useAuth } from "~/lib/context/auth-context";
+import type { TocEntry } from "~/lib/context/reader-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/settings";
 import { Button } from "./ui/button";
@@ -50,7 +53,10 @@ interface ReaderActionsMenuProps {
   isBookmarked?: boolean;
 }
 
-interface ReaderSettingsMenuProps extends ReaderFormattingMenuProps, ReaderActionsMenuProps {}
+interface ReaderSettingsMenuProps extends ReaderFormattingMenuProps, ReaderActionsMenuProps {
+  toc?: TocEntry[];
+  onNavigateToToc?: (href: string) => void;
+}
 
 const layoutOptions: { value: ReaderLayout; label: string }[] = [
   { value: "single", label: "Single Page" },
@@ -374,7 +380,7 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
           <MoreHorizontal className="size-4" />
           <span className="sr-only">Reader menu</span>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-52 text-xs">
+        <DropdownMenuContent align="end" className="w-52 text-xs">
           <DropdownMenuGroup>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>Formatting</DropdownMenuSubTrigger>
@@ -392,6 +398,19 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
                 />
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            {props.toc && props.toc.length > 0 && props.onNavigateToToc ? (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <TableOfContents className="size-4" />
+                  Table of Contents
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-80 w-64 overflow-y-auto p-1.5">
+                  <ul>
+                    <TocList entries={props.toc} onNavigate={props.onNavigateToToc} />
+                  </ul>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ) : null}
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>

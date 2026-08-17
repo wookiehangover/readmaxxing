@@ -24,6 +24,7 @@ import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell"
 import { useBookReaderPreferences } from "~/hooks/use-book-reader-preferences";
 import { useBookReaderActions } from "~/hooks/use-book-reader-actions";
 import { useEpubPanelSync } from "~/hooks/use-epub-panel-sync";
+import { useReadingLocation } from "~/hooks/use-reading-location";
 import {
   EpubReaderSurface,
   EpubReaderToolbar,
@@ -304,6 +305,7 @@ function WorkspaceBookReaderInner({
     bookRef,
     renditionRef,
   });
+  useReadingLocation(book.id, currentChapterLabel, currentPage, totalPages);
   preferenceNavigationRef.current = { markNavigationInProgress, navigationInProgressRef };
 
   useReaderDwell({
@@ -413,16 +415,7 @@ function WorkspaceBookReaderInner({
     <div ref={panelRef} className="flex h-full outline-none" tabIndex={0}>
       <div className="relative flex min-w-0 flex-1 flex-col">
         <EpubReaderSurface
-          panelApi={panelApi}
           containerRef={containerRef}
-          localSettings={localSettings}
-          onUpdateSettings={handleUpdateSettings}
-          book={book}
-          onDownload={handleDownload}
-          onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
-          onOpenSpeedread={handleOpenSpeedread}
-          onBookmarkPage={handleBookmarkPage}
-          isBookmarked={Boolean(currentBookmark)}
           searchOpen={searchOpen}
           searchQuery={searchQuery}
           searchResultsLength={searchResults.length}

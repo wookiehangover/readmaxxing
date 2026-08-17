@@ -20,6 +20,7 @@ import type { TocEntry } from "~/lib/context/reader-context";
 import type { Settings } from "~/lib/settings";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { cn } from "~/lib/utils";
+import { ReadingRailMenuPortal } from "~/components/reading-shell/reading-rail-menu-portal";
 
 interface PdfReaderViewProps {
   panelApi?: DockviewPanelApi;
@@ -92,20 +93,29 @@ export function PdfReaderView({
 }: PdfReaderViewProps) {
   return (
     <>
+      {!panelApi ? (
+        <ReadingRailMenuPortal>
+          <ReaderSettingsMenu
+            settings={localSettings}
+            onUpdateSettings={onUpdateSettings}
+            isPdf
+            book={book}
+            onDownload={onDownload}
+            onBookmarkPage={onBookmarkPage}
+            isBookmarked={isBookmarked}
+            toc={toc}
+            onNavigateToToc={(href) => {
+              try {
+                const destination = JSON.parse(href);
+                if (typeof destination === "number") goToPage(destination + 1);
+              } catch {
+                // Ignore malformed PDF destinations.
+              }
+            }}
+          />
+        </ReadingRailMenuPortal>
+      ) : null}
       <div className="relative flex-1 overflow-hidden">
-        {!panelApi && (
-          <div className="absolute top-2 left-2 z-20">
-            <ReaderSettingsMenu
-              settings={localSettings}
-              onUpdateSettings={onUpdateSettings}
-              isPdf
-              book={book}
-              onDownload={onDownload}
-              onBookmarkPage={onBookmarkPage}
-              isBookmarked={isBookmarked}
-            />
-          </div>
-        )}
         {searchOpen && (
           <div className="absolute top-0 right-0 left-0 z-10">
             <SearchBar

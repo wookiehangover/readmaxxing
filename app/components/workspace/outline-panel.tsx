@@ -46,7 +46,14 @@ function errorState(error: unknown): OutlineState {
 }
 
 export function OutlinePanel({ params, api }: IDockviewPanelProps<OutlinePanelParams>) {
-  const { bookId, bookTitle } = params;
+  return <WorkspaceOutlinePanel bookId={params.bookId} bookTitle={params.bookTitle} api={api} />;
+}
+
+export function WorkspaceOutlinePanel({
+  bookId,
+  bookTitle,
+  api,
+}: OutlinePanelParams & { api?: IDockviewPanelProps<OutlinePanelParams>["api"] }) {
   const { dockviewApi, navigateInCluster } = useWorkspace();
   const [state, setState] = useState<OutlineState>({ status: "loading", content: null });
   const [refreshKey, setRefreshKey] = useState(0);
@@ -110,7 +117,9 @@ export function OutlinePanel({ params, api }: IDockviewPanelProps<OutlinePanelPa
   const handleNavigateToCfi = useCallback(
     async (locator: string) => {
       await navigateInCluster(bookId, locator);
-      dockviewApi.current?.panels.find((panel) => panel.id === `book-${bookId}`)?.focus();
+      const surface = document.querySelector<HTMLElement>("[aria-label='Book surface']");
+      if (surface) surface.focus({ preventScroll: true });
+      else dockviewApi.current?.panels.find((panel) => panel.id === `book-${bookId}`)?.focus();
     },
     [bookId, dockviewApi, navigateInCluster],
   );

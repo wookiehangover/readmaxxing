@@ -32,6 +32,12 @@ export interface BookCluster {
   readonly notebookPanelId?: string;
 }
 
+export interface ReadingLocation {
+  readonly chapterLabel: string | null;
+  readonly currentPage: number | null;
+  readonly totalPages: number | null;
+}
+
 export interface WorkspaceContextValue {
   /** panelId -> navigateToCfi callback */
   navigationMap: React.MutableRefObject<Map<string, (cfi: string) => void>>;
@@ -98,6 +104,10 @@ export interface WorkspaceContextValue {
   notebookEditorCallbackMap: React.MutableRefObject<Map<string, NotebookEditorCallbacks>>;
   /** bookId -> callback notified when notebook content changes (user edits or programmatic) */
   notebookContentChangeMap: React.MutableRefObject<Map<string, (markdown: string) => void>>;
+  /** Current reader metadata shown in the reading rail. */
+  getReadingLocation: (bookId: string | null) => ReadingLocation | null;
+  setReadingLocation: (bookId: string, location: ReadingLocation) => void;
+  subscribeReadingLocations: (listener: () => void) => () => void;
   /** bookId -> BookCluster (the panels belonging to that book) */
   clustersRef: React.MutableRefObject<Map<string, BookCluster>>;
   /** Book ID of the currently-active cluster, or null if none */
@@ -172,6 +182,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const highlightDeleteMap = useRef(new Map<string, (cfiRange: string) => void>());
   const notebookEditorCallbackMap = useRef(new Map<string, NotebookEditorCallbacks>());
   const notebookContentChangeMap = useRef(new Map<string, (markdown: string) => void>());
+  const readingLocationMap = useRef(new Map<string, ReadingLocation>());
+  const readingLocationListenersRef = useRef(new Set<() => void>());
   const clustersRef = useRef(new Map<string, BookCluster>());
   const activeClusterBookIdRef = useRef<string | null>(null);
   const clusterListenersRef = useRef(new Set<() => void>());
@@ -184,6 +196,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     clusterListenersRef.current.add(listener);
     return () => {
       clusterListenersRef.current.delete(listener);
+    };
+  }, []);
+
+  const getReadingLocation = useCallback((bookId: string | null): ReadingLocation | null => {
+    return bookId ? (readingLocationMap.current.get(bookId) ?? null) : null;
+  }, []);
+
+  const setReadingLocation = useCallback((bookId: string, location: ReadingLocation) => {
+    const current = readingLocationMap.current.get(bookId);
+    if (
+      current?.chapterLabel === location.chapterLabel &&
+      current.currentPage === location.currentPage &&
+      current.totalPages === location.totalPages
+    ) {
+      return;
+    }
+    readingLocationMap.current.set(bookId, location);
+    for (const listener of readingLocationListenersRef.current) listener();
+  }, []);
+
+  const subscribeReadingLocations = useCallback((listener: () => void) => {
+    readingLocationListenersRef.current.add(listener);
+    return () => {
+      readingLocationListenersRef.current.delete(listener);
     };
   }, []);
 
@@ -356,6 +392,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       removeHighlightAnnotationForBook,
       notebookEditorCallbackMap,
       notebookContentChangeMap,
+      getReadingLocation,
+      setReadingLocation,
+      subscribeReadingLocations,
       clustersRef,
       activeClusterBookIdRef,
       notifyClusterChanges,
@@ -371,6 +410,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       findTocForBook,
       applyTempHighlightForBook,
       removeHighlightAnnotationForBook,
+      getReadingLocation,
+      setReadingLocation,
+      subscribeReadingLocations,
       notifyClusterChanges,
       subscribeClusterChanges,
       getClusterForBook,
