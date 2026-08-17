@@ -1,7 +1,17 @@
-import { useState, type ChangeEvent, type MutableRefObject, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 import { MoreHorizontal } from "lucide-react";
 import { NavLink } from "react-router";
 import { BugReportDialog } from "~/components/bug-report-dialog";
+import {
+  DEFAULT_RAIL_WIDTH,
+  RAIL_WIDTH_STORAGE_KEY,
+} from "~/components/reading-shell/reading-rail-width";
 import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
@@ -26,28 +36,41 @@ interface LibraryFrameProps {
 
 export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFrameProps) {
   const [bugReportOpen, setBugReportOpen] = useState(false);
+  const [railWidth, setRailWidth] = useState(DEFAULT_RAIL_WIDTH);
+
+  useEffect(() => {
+    try {
+      const storedWidth = Number(window.sessionStorage.getItem(RAIL_WIDTH_STORAGE_KEY));
+      if (Number.isFinite(storedWidth) && storedWidth > 0) setRailWidth(storedWidth);
+    } catch {
+      // Keep the default width when storage is unavailable.
+    }
+  }, []);
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col">
-      <header className="flex h-10 shrink-0 items-center justify-end px-4 md:px-6">
+      <header className="flex shrink-0 justify-end">
         <nav
           aria-label="Library navigation"
-          className="flex items-center gap-5 text-xs font-normal"
+          className="flex shrink-0 items-start gap-3 px-6 py-5 text-xs font-normal"
+          style={{ width: railWidth, maxWidth: "100%" }}
         >
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                cn("relative leading-[18px] text-foreground", {
-                  "after:absolute after:bottom-0 after:left-0 after:h-px after:w-[15px] after:bg-foreground":
-                    isActive,
-                })
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
+          <div className="flex h-7 min-w-0 flex-1 items-center gap-5">
+            {NAV_ITEMS.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  cn("relative leading-[18px] text-foreground", {
+                    "after:absolute after:bottom-0 after:left-0 after:h-px after:w-[15px] after:bg-foreground":
+                      isActive,
+                  })
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={<Button variant="ghost" size="icon" title="More library actions" />}

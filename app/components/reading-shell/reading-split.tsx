@@ -7,13 +7,15 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
+import {
+  DEFAULT_RAIL_WIDTH,
+  RAIL_WIDTH_STORAGE_KEY,
+} from "~/components/reading-shell/reading-rail-width";
 import { cn } from "~/lib/utils";
 
-const DEFAULT_RAIL_WIDTH = 384;
 const MIN_BOOK_WIDTH = 640;
 const MIN_RAIL_WIDTH = 320;
 const KEYBOARD_RESIZE_STEP = 16;
-const RAIL_WIDTH_STORAGE_KEY = "reading-rail-width";
 
 type DragState = {
   pointerId: number;

@@ -1,7 +1,7 @@
 import React, { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
@@ -56,6 +56,10 @@ function renderFrame(pathname: string) {
   return { container, fileInputRef };
 }
 
+beforeEach(() => {
+  window.sessionStorage.clear();
+});
+
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
@@ -64,6 +68,26 @@ afterEach(() => {
 });
 
 describe("LibraryFrame", () => {
+  it.each([
+    [null, "384px"],
+    ["512", "512px"],
+  ])("matches the reading rail column at stored width %s", (storedWidth, expectedWidth) => {
+    if (storedWidth) window.sessionStorage.setItem("reading-rail-width", storedWidth);
+    const { container } = renderFrame("/library");
+    const nav = container.querySelector<HTMLElement>('nav[aria-label="Library navigation"]')!;
+    const links = nav.querySelectorAll("a");
+    const linkGroup = links.item(0).parentElement!;
+
+    expect(nav.style.width).toBe(expectedWidth);
+    expect(nav.className).toContain("px-6");
+    expect(nav.className).toContain("py-5");
+    expect(linkGroup.className).toContain("flex-1");
+    expect(linkGroup.contains(links.item(links.length - 1))).toBe(true);
+    expect(linkGroup.contains(nav.querySelector('button[title="More library actions"]'))).toBe(
+      false,
+    );
+  });
+
   it.each([
     ["/library", "/library"],
     ["/standard-ebooks", "/standard-ebooks"],
