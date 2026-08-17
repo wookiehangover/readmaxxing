@@ -139,6 +139,7 @@ export function ChatEmptyState({
           </div>
         ))}
         <div className="flex flex-col gap-1.5 text-sm text-foreground animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <span className="text-xs tracking-wide text-muted-foreground">Dig deeper</span>
           {chapterQuestions.status === "loading"
             ? ["w-4/5", "w-3/4", "w-5/6"].map((width) => (
                 <Skeleton key={width} className={cn("h-4", width)} />

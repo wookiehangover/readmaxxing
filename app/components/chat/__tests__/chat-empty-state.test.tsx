@@ -48,7 +48,7 @@ async function waitForText(container: HTMLElement, text: string) {
 }
 
 describe("ChatEmptyState", () => {
-  it("shows left-aligned questions without a headline or airplane", async () => {
+  it("shows the Dig deeper heading with left-aligned loading skeletons", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() => new Promise<Response>(() => {}));
     const container = renderEmptyState();
     await act(async () => {
@@ -68,6 +68,10 @@ describe("ChatEmptyState", () => {
     expect(layout?.classList.contains("px-2")).toBe(false);
     expect(questions?.classList.contains("max-w-sm")).toBe(false);
     expect(suggestion?.className).toContain("text-left");
+    const digDeeperHeading = Array.from(container.querySelectorAll("span")).find(
+      (span) => span.textContent === "Dig deeper",
+    );
+    expect(digDeeperHeading?.className).toBe("text-xs tracking-wide text-muted-foreground");
     expect(container.textContent).not.toContain("Pull the Thread");
     expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
   });
@@ -78,6 +82,7 @@ describe("ChatEmptyState", () => {
 
     await waitForText(container, GENERATED[0]);
     expect(GENERATED.every((question) => container.textContent?.includes(question))).toBe(true);
+    expect(container.textContent).toContain("Dig deeper");
     expect(container.textContent).not.toContain("Pull the Thread");
   });
 
@@ -86,6 +91,7 @@ describe("ChatEmptyState", () => {
     const container = renderEmptyState();
 
     await waitForText(container, "What ideas connect across multiple chapters?");
+    expect(container.textContent).toContain("Dig deeper");
     expect(container.textContent).not.toContain("Pull the Thread");
   });
 
