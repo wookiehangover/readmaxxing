@@ -154,13 +154,36 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0">
-        <div className="flex flex-col gap-3 px-4 pt-4 md:px-6">
-          <div>
-            <h2 className="text-lg font-semibold">Browse Standard Ebooks</h2>
-            <p className="text-sm text-muted-foreground">
-              Search and import free, beautifully formatted public domain ebooks.
+
+        <div className="flex flex-col gap-3 px-4 md:px-6">
+
+          <div className="pt-4 pb-2">
+            <p className="text-xs text-muted-foreground">
+              Ebooks from{" "}
+              <a
+                href="https://standardebooks.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                Standard Ebooks
+              </a>
             </p>
+
+            <p className="mt-1 text-xs text-muted-foreground/70">
+              Standard Ebooks is a volunteer-driven project dedicated to producing free, beautiful
+              digital literature.
+            </p>
+            <a
+              href="https://standardebooks.org/donate"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-block text-xs text-muted-foreground hover:text-foreground"
+            >
+              Support their mission →
+            </a>
           </div>
+
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -177,12 +200,6 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
       </div>
 
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
-        {!isSearching && books.length > 0 && (
-          <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Most Popular
-          </p>
-        )}
-
         {isInitialLoading ? (
           settings.standardEbooksView === "grid" ? (
             <div className="grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
@@ -200,7 +217,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
             </p>
           </div>
         ) : settings.standardEbooksView === "grid" ? (
-          <div className="grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
+          <div className="mx-auto grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
             {books.map((book) => (
               <SEBookCard
                 key={book.urlPath}
@@ -237,31 +254,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
           </div>
         )}
 
-        <div className="mt-6 border-t pt-4 pb-2 text-center">
-          <p className="text-xs text-muted-foreground">
-            Ebooks from{" "}
-            <a
-              href="https://standardebooks.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-foreground"
-            >
-              Standard Ebooks
-            </a>
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground/70">
-            Standard Ebooks is a volunteer-driven project dedicated to producing free, beautiful
-            digital literature.
-          </p>
-          <a
-            href="https://standardebooks.org/donate"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-1 inline-block text-xs text-muted-foreground hover:text-foreground"
-          >
-            Support their mission →
-          </a>
-        </div>
+
       </div>
     </div>
   );

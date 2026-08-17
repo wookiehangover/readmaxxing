@@ -321,7 +321,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
-              <div className="grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
+              <div className="mx-auto grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
                 {sortedGridBooks.map((book) => {
                   return (
                     <LibraryBook
