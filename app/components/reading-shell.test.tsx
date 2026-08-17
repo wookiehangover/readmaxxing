@@ -1,10 +1,19 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const epubReaderProps = vi.hoisted(() => ({
+  current: null as null | {
+    bookId: string;
+    panelTypography?: { readerLayout?: string };
+  },
+}));
+
 vi.mock("~/components/workspace-book-reader", () => ({
-  WorkspaceBookReader: ({ bookId }: { bookId: string }) => (
-    <div data-testid="epub-reader">{bookId}</div>
-  ),
+  WorkspaceBookReader: (props: { bookId: string; panelTypography?: { readerLayout?: string } }) => {
+    epubReaderProps.current = props;
+    return <div data-testid="epub-reader">{props.bookId}</div>;
+  },
 }));
 vi.mock("~/components/workspace-pdf-reader", () => ({
   WorkspacePdfReader: ({ bookId }: { bookId: string }) => (
@@ -42,6 +51,7 @@ const books: BookMeta[] = [
 
 beforeEach(() => {
   activeBookId = "epub-book";
+  epubReaderProps.current = null;
 });
 
 afterEach(() => {
@@ -78,6 +88,15 @@ describe("ReadingShell", () => {
     expect(document.body.querySelector("[aria-label='Book surface']")).not.toBeNull();
     expect(document.body.querySelector("[aria-label='Reading rail']")).not.toBeNull();
     expect(document.body.querySelector("[data-testid='reading-rail']")).not.toBeNull();
+  });
+
+  it("defaults the shell EPUB reader to a spread without dockview chrome", () => {
+    renderShell();
+
+    expect(epubReaderProps.current).toEqual({
+      bookId: "epub-book",
+      panelTypography: { readerLayout: "spread" },
+    });
   });
 
   it("mounts the existing PDF reader in the same shell", () => {

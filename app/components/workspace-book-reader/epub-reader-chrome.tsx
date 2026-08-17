@@ -177,28 +177,31 @@ export function EpubReaderToolbar({
   onBookmarkPage,
   isBookmarked,
 }: EpubReaderToolbarProps) {
+  if (!panelApi) {
+    return (
+      <ReadingRailMenuPortal>
+        <ReaderSettingsMenu
+          settings={localSettings}
+          onUpdateSettings={onUpdateSettings}
+          book={book}
+          onDownload={onDownload}
+          onCopyPageAsMarkdown={onCopyPageAsMarkdown}
+          onOpenSpeedread={onOpenSpeedread}
+          onBookmarkPage={onBookmarkPage}
+          isBookmarked={isBookmarked}
+          toc={toc}
+          onNavigateToToc={navigateToTocHref}
+        />
+      </ReadingRailMenuPortal>
+    );
+  }
+
   return (
     <div
       className={cn({ "absolute right-0 bottom-0 left-0 z-20 pt-10": zenMode })}
       onMouseEnter={zenMode ? showToolbarPersistent : undefined}
       onMouseLeave={zenMode ? resetToolbarTimer : undefined}
     >
-      {!panelApi ? (
-        <ReadingRailMenuPortal>
-          <ReaderSettingsMenu
-            settings={localSettings}
-            onUpdateSettings={onUpdateSettings}
-            book={book}
-            onDownload={onDownload}
-            onCopyPageAsMarkdown={onCopyPageAsMarkdown}
-            onOpenSpeedread={onOpenSpeedread}
-            onBookmarkPage={onBookmarkPage}
-            isBookmarked={isBookmarked}
-            toc={toc}
-            onNavigateToToc={navigateToTocHref}
-          />
-        </ReadingRailMenuPortal>
-      ) : null}
       <div
         className={cn(
           "relative flex h-10 items-center justify-center px-2 transition-all duration-300 ease-in-out",
@@ -289,19 +292,15 @@ export function EpubReaderToolbar({
               </PopoverContent>
             </Popover>
           )}
-          {panelApi && (
-            <>
-              <ReaderFormattingMenu settings={localSettings} onUpdateSettings={onUpdateSettings} />
-              <ReaderActionsMenu
-                book={book}
-                onDownload={onDownload}
-                onCopyPageAsMarkdown={onCopyPageAsMarkdown}
-                onOpenSpeedread={onOpenSpeedread}
-                onBookmarkPage={onBookmarkPage}
-                isBookmarked={isBookmarked}
-              />
-            </>
-          )}
+          <ReaderFormattingMenu settings={localSettings} onUpdateSettings={onUpdateSettings} />
+          <ReaderActionsMenu
+            book={book}
+            onDownload={onDownload}
+            onCopyPageAsMarkdown={onCopyPageAsMarkdown}
+            onOpenSpeedread={onOpenSpeedread}
+            onBookmarkPage={onBookmarkPage}
+            isBookmarked={isBookmarked}
+          />
         </div>
       </div>
     </div>
