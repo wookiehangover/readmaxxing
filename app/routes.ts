@@ -21,6 +21,7 @@ export default [
   route("api/chat/resume/:sessionId", "routes/api.chat.resume.$sessionId.ts"),
   route("api/chat/messages/:sessionId", "routes/api.chat.messages.$sessionId.ts"),
   route("api/chat-title", "routes/api.chat-title.ts"),
+  route("api/chapter-questions", "routes/api.chapter-questions.ts"),
   route("api/bug-report", "routes/api.bug-report.ts"),
   route("api/bug-reports", "routes/api.bug-reports.ts"),
   route("api/admin/llms.txt", "routes/api.admin.llms.txt.ts"),
