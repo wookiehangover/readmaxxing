@@ -169,6 +169,8 @@ describe("ChatInput", () => {
     const form = container.querySelector("form")!;
     expect(form.classList.contains("px-4")).toBe(false);
     expect(form.classList.contains("py-3")).toBe(true);
+    expect(form.classList.contains("pr-6")).toBe(true);
+    expect(form.classList.contains("pl-6")).toBe(false);
     act(() => changeTextarea(textarea, "Normal message"));
     expect(inputRef.current).toBe("Normal message");
 

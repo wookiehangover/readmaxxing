@@ -35,17 +35,21 @@ vi.mock("~/lib/context/workspace-context", () => ({ useWorkspace: () => workspac
 vi.mock("~/components/workspace/panel-components", () => ({
   WorkspaceNotebookPanel: ({ chromeless }: { chromeless?: boolean }) => (
     <div data-testid="notes-panel" data-chromeless={chromeless}>
-      Notes panel
+      <div data-testid="notes-scroll-viewport">Notes panel</div>
     </div>
   ),
 }));
 vi.mock("~/components/chat/chat-panel", () => ({
-  ChatPanel: () => <div data-testid="chat-panel">Chat panel</div>,
+  ChatPanel: () => (
+    <div data-testid="chat-panel">
+      <div data-testid="discuss-scroll-viewport">Chat panel</div>
+    </div>
+  ),
 }));
 vi.mock("~/components/workspace/outline-panel", () => ({
   WorkspaceOutlinePanel: ({ chromeless }: { chromeless?: boolean }) => (
     <div data-testid="outline-panel" data-chromeless={chromeless}>
-      Outline panel
+      <div data-testid="outline-scroll-viewport">Outline panel</div>
     </div>
   ),
 }));
@@ -91,6 +95,41 @@ afterEach(() => {
 });
 
 describe("ReadingRail", () => {
+  it("keeps scroll viewports flush with the right edge while chrome owns its inset", () => {
+    const container = renderRail();
+    const rail = container.firstElementChild as HTMLElement;
+
+    expect(rail.classList.contains("pl-6")).toBe(true);
+    expect(rail.classList.contains("py-5")).toBe(true);
+    expect(rail.classList.contains("px-6")).toBe(false);
+    expect(rail.classList.contains("pr-6")).toBe(false);
+    expect(
+      container.querySelector("[aria-label='Reading tools']")?.parentElement?.className,
+    ).toContain("pr-6");
+
+    for (const testId of [
+      "notes-scroll-viewport",
+      "discuss-scroll-viewport",
+      "outline-scroll-viewport",
+    ]) {
+      clickTab(
+        container,
+        testId === "notes-scroll-viewport"
+          ? "Notes"
+          : testId === "discuss-scroll-viewport"
+            ? "Discuss"
+            : "Outline",
+      );
+      let ancestor = container.querySelector(`[data-testid='${testId}']`)?.parentElement;
+      while (ancestor) {
+        expect(ancestor.classList.contains("px-6")).toBe(false);
+        expect(ancestor.classList.contains("pr-6")).toBe(false);
+        if (ancestor === rail) break;
+        ancestor = ancestor.parentElement;
+      }
+    }
+  });
+
   it("switches Notes, Discuss, and Outline in place", () => {
     const container = renderRail();
     expect(

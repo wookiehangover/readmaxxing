@@ -74,7 +74,9 @@ vi.mock("~/components/tiptap-editor", async () => {
 });
 
 vi.mock("~/components/ui/scroll-area", () => ({
-  ScrollArea: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ScrollArea: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="outline-scroll-viewport">{children}</div>
+  ),
 }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -159,6 +161,11 @@ describe("OutlinePanel", () => {
       (element) => element.textContent === "No outline yet",
     )?.parentElement;
     expect(emptyState?.className).not.toContain("p-6");
+    const scrollContent = container!.querySelector(
+      "[data-testid='outline-scroll-viewport']",
+    )?.firstElementChild;
+    expect(scrollContent?.classList.contains("pr-6")).toBe(true);
+    expect(scrollContent?.classList.contains("pl-6")).toBe(false);
   });
 
   it("mounts an editable outline after a successful fetch", async () => {

@@ -54,5 +54,8 @@ describe("WorkspaceNotebook", () => {
     expect(
       container.querySelector("[data-testid='notebook-editor']")?.getAttribute("data-placeholder"),
     ).toBe("If you're not writing, you're not reading");
+    const scrollContent = container.querySelector("[data-testid='notebook-editor']")?.parentElement;
+    expect(scrollContent?.classList.contains("pr-6")).toBe(true);
+    expect(scrollContent?.classList.contains("pl-6")).toBe(false);
   });
 });

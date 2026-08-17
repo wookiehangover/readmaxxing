@@ -36,11 +36,11 @@ export function ReadingRail() {
 
   return (
     <Tabs.Root
-      className="flex h-full min-h-0 flex-col px-6 py-5"
+      className="flex h-full min-h-0 flex-col pl-6 py-5"
       value={activeTab}
       onValueChange={(value) => setActiveTab(value as ReadingRailTab)}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-3 pr-6">
         <Tabs.List
           aria-label="Reading tools"
           className="relative flex min-w-0 flex-1 items-center gap-5"
@@ -67,7 +67,7 @@ export function ReadingRail() {
         <div id={READING_RAIL_MENU_ID} className="flex min-h-7 shrink-0 items-center" />
       </div>
 
-      <div className="min-h-12 py-3 text-xs">
+      <div className="min-h-12 py-3 pr-6 text-xs">
         <p className="truncate text-foreground">
           <span>{book?.title}</span>
           {chapterLabel ? (
@@ -130,7 +130,7 @@ export function ReadingRail() {
             <WorkspaceOutlinePanel bookId={book.id} bookTitle={book.title} chromeless />
           </Tabs.Panel>
           <Tabs.Panel value="Review" className="min-h-0 flex-1 overflow-hidden outline-none">
-            <Empty className="h-full">
+            <Empty className="h-full pr-6">
               <EmptyHeader>
                 <EmptyTitle>Nothing to review yet.</EmptyTitle>
               </EmptyHeader>

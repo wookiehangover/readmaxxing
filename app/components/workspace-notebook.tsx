@@ -267,18 +267,20 @@ export function WorkspaceNotebook({
       )}
 
       <ScrollArea className="min-h-0 flex-1">
-        {loaded && (
-          <TiptapEditor
-            ref={editorRef}
-            content={content}
-            compact={chromeless}
-            placeholder={chromeless ? NOTES_EMPTY_PLACEHOLDER : undefined}
-            onUpdate={handleUpdate}
-            onNavigateToHighlight={handleNavigateToCfi}
-            onDeleteHighlight={onDeleteHighlight}
-            onReady={() => setEditorReady(true)}
-          />
-        )}
+        <div className={cn("h-full", { "pr-6": chromeless })}>
+          {loaded && (
+            <TiptapEditor
+              ref={editorRef}
+              content={content}
+              compact={chromeless}
+              placeholder={chromeless ? NOTES_EMPTY_PLACEHOLDER : undefined}
+              onUpdate={handleUpdate}
+              onNavigateToHighlight={handleNavigateToCfi}
+              onDeleteHighlight={onDeleteHighlight}
+              onReady={() => setEditorReady(true)}
+            />
+          )}
+        </div>
       </ScrollArea>
     </div>
   );

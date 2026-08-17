@@ -51,7 +51,7 @@ export function ChatMessageList({
             "scroll-fog-bottom": messages.length > 0,
           })}
         >
-          <MessageScrollerContent className="gap-3">
+          <MessageScrollerContent className="gap-3 pr-6">
             {messages.length === 0 && (
               <ChatEmptyState
                 bookId={bookId}

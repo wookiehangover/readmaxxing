@@ -8,7 +8,9 @@ vi.mock("~/components/ui/message-scroller", () => ({
   MessageScrollerViewport: (props: React.ComponentProps<"div">) => (
     <div data-testid="viewport" {...props} />
   ),
-  MessageScrollerContent: (props: React.ComponentProps<"div">) => <div {...props} />,
+  MessageScrollerContent: (props: React.ComponentProps<"div">) => (
+    <div data-testid="content" {...props} />
+  ),
   MessageScrollerItem: (props: React.ComponentProps<"div">) => <div {...props} />,
   MessageScrollerButton: () => null,
 }));
@@ -35,7 +37,7 @@ afterEach(() => {
 });
 
 describe("ChatMessageList", () => {
-  it("keeps vertical rhythm without adding horizontal viewport padding", () => {
+  it("keeps the viewport flush while content owns the right inset", () => {
     const container = document.body.appendChild(document.createElement("div"));
     root = createRoot(container);
     act(() =>
@@ -54,7 +56,11 @@ describe("ChatMessageList", () => {
     );
 
     const viewport = container.querySelector("[data-testid='viewport']")!;
+    const content = container.querySelector("[data-testid='content']")!;
     expect(viewport.classList.contains("px-4")).toBe(false);
+    expect(viewport.classList.contains("pr-6")).toBe(false);
     expect(viewport.classList.contains("py-3")).toBe(true);
+    expect(content.classList.contains("pr-6")).toBe(true);
+    expect(content.classList.contains("pl-6")).toBe(false);
   });
 });

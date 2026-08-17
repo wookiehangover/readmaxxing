@@ -217,56 +217,58 @@ export function WorkspaceOutlinePanel({
         </div>
       )}
       <ScrollArea className="min-h-0 flex-1">
-        {state.status === "loading" ? (
-          <div className={cn("flex h-full items-center justify-center", { "p-6": !chromeless })}>
-            <p className="text-sm text-muted-foreground">Loading outline…</p>
-          </div>
-        ) : state.status === "auth" ? (
-          <div
-            className={cn("flex h-full flex-col items-center justify-center gap-4 text-center", {
-              "p-6": !chromeless,
-            })}
-          >
-            <p className="text-sm text-muted-foreground">
-              Sign in to view the outline for <span className="italic">{bookTitle}</span>
-            </p>
-            <Button render={<a href="/login" />} nativeButton={false} variant="default">
-              Sign in
-            </Button>
-          </div>
-        ) : state.status === "error" ? (
-          <div
-            className={cn("flex h-full flex-col items-center justify-center gap-3 text-center", {
-              "p-6": !chromeless,
-            })}
-          >
-            <p className="text-sm text-muted-foreground">Unable to load the outline.</p>
-            <Button type="button" variant="outline" size="sm" onClick={retry}>
-              Retry
-            </Button>
-          </div>
-        ) : state.status === "empty" ? (
-          <div
-            className={cn("flex h-full flex-col items-center justify-center gap-3 text-center", {
-              "p-6": !chromeless,
-            })}
-          >
-            <ListTree className="size-8 text-muted-foreground" />
-            <p className="text-sm font-medium">No outline yet</p>
-            <p className="text-xs text-muted-foreground">
-              Keep reading. An outline will appear here after a page has been in view long enough.
-            </p>
-          </div>
-        ) : (
-          <TiptapEditor
-            ref={editorRef}
-            content={state.content ?? ""}
-            compact={chromeless}
-            onUpdate={handleUpdate}
-            onBlur={() => void flushSave()}
-            onNavigateToOutlineIncrement={handleNavigateToCfi}
-          />
-        )}
+        <div className={cn("h-full", { "pr-6": chromeless })}>
+          {state.status === "loading" ? (
+            <div className={cn("flex h-full items-center justify-center", { "p-6": !chromeless })}>
+              <p className="text-sm text-muted-foreground">Loading outline…</p>
+            </div>
+          ) : state.status === "auth" ? (
+            <div
+              className={cn("flex h-full flex-col items-center justify-center gap-4 text-center", {
+                "p-6": !chromeless,
+              })}
+            >
+              <p className="text-sm text-muted-foreground">
+                Sign in to view the outline for <span className="italic">{bookTitle}</span>
+              </p>
+              <Button render={<a href="/login" />} nativeButton={false} variant="default">
+                Sign in
+              </Button>
+            </div>
+          ) : state.status === "error" ? (
+            <div
+              className={cn("flex h-full flex-col items-center justify-center gap-3 text-center", {
+                "p-6": !chromeless,
+              })}
+            >
+              <p className="text-sm text-muted-foreground">Unable to load the outline.</p>
+              <Button type="button" variant="outline" size="sm" onClick={retry}>
+                Retry
+              </Button>
+            </div>
+          ) : state.status === "empty" ? (
+            <div
+              className={cn("flex h-full flex-col items-center justify-center gap-3 text-center", {
+                "p-6": !chromeless,
+              })}
+            >
+              <ListTree className="size-8 text-muted-foreground" />
+              <p className="text-sm font-medium">No outline yet</p>
+              <p className="text-xs text-muted-foreground">
+                Keep reading. An outline will appear here after a page has been in view long enough.
+              </p>
+            </div>
+          ) : (
+            <TiptapEditor
+              ref={editorRef}
+              content={state.content ?? ""}
+              compact={chromeless}
+              onUpdate={handleUpdate}
+              onBlur={() => void flushSave()}
+              onNavigateToOutlineIncrement={handleNavigateToCfi}
+            />
+          )}
+        </div>
       </ScrollArea>
     </div>
   );
