@@ -80,7 +80,7 @@ describe("EpubReaderToolbar", () => {
     expect(container.textContent).not.toContain("1 / 10");
   });
 
-  it("keeps the reading surface page-turn click zones active", () => {
+  it("turns pages and releases pointer focus from the reading surface click zones", () => {
     const onPrevious = vi.fn();
     const onNext = vi.fn();
     const container = document.body.appendChild(document.createElement("div"));
@@ -108,16 +108,66 @@ describe("EpubReaderToolbar", () => {
       ),
     );
 
-    act(() => {
-      container
-        .querySelector("[aria-label='Previous page']")
-        ?.dispatchEvent(new Event("pointerup", { bubbles: true }));
-      container
-        .querySelector("[aria-label='Next page']")
-        ?.dispatchEvent(new Event("pointerup", { bubbles: true }));
-    });
+    const previous = container.querySelector<HTMLButtonElement>("[aria-label='Previous page']")!;
+    const next = container.querySelector<HTMLButtonElement>("[aria-label='Next page']")!;
+
+    for (const button of [previous, next]) {
+      button.focus();
+      expect(document.activeElement).toBe(button);
+      act(() => button.dispatchEvent(new Event("pointerup", { bubbles: true })));
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+      expect(document.activeElement).not.toBe(button);
+    }
 
     expect(onPrevious).toHaveBeenCalledOnce();
     expect(onNext).toHaveBeenCalledOnce();
+  });
+
+  it("keeps toolbar page-turn controls keyboard activatable", () => {
+    const onNext = vi.fn();
+    const container = document.body.appendChild(document.createElement("div"));
+    root = createRoot(container);
+    act(() =>
+      root?.render(
+        <EpubReaderToolbar
+          panelApi={{} as never}
+          zenMode={false}
+          toolbarVisible
+          showToolbarPersistent={vi.fn()}
+          resetToolbarTimer={vi.fn()}
+          currentChapterLabel={null}
+          currentPage={1}
+          totalPages={10}
+          isScrollMode={false}
+          isMobile={false}
+          onPrevious={vi.fn()}
+          onNext={onNext}
+          onSearchOpen={vi.fn()}
+          onOpenNotebook={vi.fn()}
+          onOpenChat={vi.fn()}
+          toc={[]}
+          tocOpen={false}
+          setTocOpen={vi.fn()}
+          navigateToTocHref={vi.fn()}
+          localSettings={{} as Settings}
+          onUpdateSettings={vi.fn()}
+          book={{ id: "book-1", title: "Book", author: "Author", coverImage: null, format: "epub" }}
+          onDownload={vi.fn()}
+          onCopyPageAsMarkdown={vi.fn()}
+          onOpenSpeedread={vi.fn()}
+          onBookmarkPage={vi.fn()}
+          isBookmarked={false}
+        />,
+      ),
+    );
+
+    const next = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Next page"),
+    )!;
+    next.focus();
+    act(() => next.click());
+
+    expect(onNext).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(next);
   });
 });

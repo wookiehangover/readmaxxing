@@ -22,6 +22,10 @@ import type { ReaderLayout, Settings } from "~/lib/settings";
 import { cn } from "~/lib/utils";
 import { ReadingRailMenuPortal } from "~/components/reading-shell/reading-rail-menu-portal";
 
+function blurPageTurnControl(event: React.PointerEvent<HTMLButtonElement>) {
+  event.currentTarget.blur();
+}
+
 interface EpubReaderSurfaceProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
   searchOpen: boolean;
@@ -96,7 +100,10 @@ export function EpubReaderSurface({
             type="button"
             aria-label="Previous page"
             className="pointer-events-auto absolute top-0 left-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
-            onPointerUp={onPrevious}
+            onPointerUp={(event) => {
+              onPrevious();
+              blurPageTurnControl(event);
+            }}
           />
           {isMobile && (
             <button
@@ -110,7 +117,10 @@ export function EpubReaderSurface({
             type="button"
             aria-label="Next page"
             className="pointer-events-auto absolute top-0 right-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
-            onPointerUp={onNext}
+            onPointerUp={(event) => {
+              onNext();
+              blurPageTurnControl(event);
+            }}
           />
         </div>
       )}
@@ -231,11 +241,16 @@ export function EpubReaderToolbar({
         </div>
         {!isScrollMode && (
           <div className="hidden items-center gap-4 md:flex">
-            <Button variant="ghost" size="icon" onClick={onPrevious}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onPrevious}
+              onPointerUp={blurPageTurnControl}
+            >
               <ChevronLeft className="size-4" />
               <span className="sr-only">Previous page</span>
             </Button>
-            <Button variant="ghost" size="icon" onClick={onNext}>
+            <Button variant="ghost" size="icon" onClick={onNext} onPointerUp={blurPageTurnControl}>
               <ChevronRight className="size-4" />
               <span className="sr-only">Next page</span>
             </Button>
