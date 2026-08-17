@@ -32,6 +32,7 @@ export interface UsePdfLifecycleConfig {
 
 export interface UsePdfLifecycleReturn {
   toc: TocEntry[];
+  currentChapterLabel: string | null;
   currentPage: number;
   totalPages: number;
   bookProgress: number;
@@ -45,6 +46,47 @@ export interface UsePdfLifecycleReturn {
   viewerRef: React.RefObject<any>;
   /** Reference to the EventBus instance for search/highlight integration */
   eventBusRef: React.RefObject<any>;
+}
+
+export interface PdfChapterStart {
+  label: string;
+  page: number;
+}
+
+export function pdfChapterLabelForPage(
+  chapterStarts: readonly PdfChapterStart[],
+  currentPage: number,
+): string | null {
+  let current: PdfChapterStart | null = null;
+  for (const start of chapterStarts) {
+    if (start.page <= currentPage && (!current || start.page >= current.page)) current = start;
+  }
+  return current?.label ?? null;
+}
+
+async function pdfDestinationPage(doc: any, destination: unknown): Promise<number | null> {
+  try {
+    const resolved =
+      typeof destination === "string" ? await doc.getDestination(destination) : destination;
+    if (typeof resolved === "number") return resolved + 1;
+    if (!Array.isArray(resolved) || resolved.length === 0) return null;
+    const target = resolved[0];
+    if (typeof target === "number") return target + 1;
+    return (await doc.getPageIndex(target)) + 1;
+  } catch {
+    return null;
+  }
+}
+
+async function pdfChapterStarts(doc: any, items: any[]): Promise<PdfChapterStart[]> {
+  const starts: PdfChapterStart[] = [];
+  for (const item of items) {
+    const label = typeof item.title === "string" ? item.title.trim() : "";
+    const page = label ? await pdfDestinationPage(doc, item.dest) : null;
+    if (label && page !== null) starts.push({ label, page });
+    if (item.items?.length) starts.push(...(await pdfChapterStarts(doc, item.items)));
+  }
+  return starts;
 }
 
 /** Map our PdfLayout setting to PDFViewer ScrollMode */
@@ -91,6 +133,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   const ws = useOptionalWorkspace();
 
   const [toc, setToc] = useState<TocEntry[]>([]);
+  const [chapterStarts, setChapterStarts] = useState<PdfChapterStart[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [hasRestoredPosition, setHasRestoredPosition] = useState(false);
@@ -325,6 +368,8 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
           const tocData = mapOutline(outline);
           setToc(tocData);
           configRef.current.onTocExtracted?.(tocData);
+          const starts = await pdfChapterStarts(doc, outline);
+          if (!cancelled) setChapterStarts(starts);
         }
       } catch {
         // Outline extraction is non-fatal
@@ -369,6 +414,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       flushPositionSave();
       unregisterActiveReader(bookId);
       setToc([]);
+      setChapterStarts([]);
       setHasRestoredPosition(false);
       configRef.current.onCleanupToc?.();
 
@@ -413,9 +459,11 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   }, [config.theme]);
 
   const bookProgress = totalPages > 0 ? (currentPage / totalPages) * 100 : 0;
+  const currentChapterLabel = pdfChapterLabelForPage(chapterStarts, currentPage);
 
   return {
     toc,
+    currentChapterLabel,
     currentPage,
     totalPages,
     bookProgress,

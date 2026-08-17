@@ -135,6 +135,7 @@ function WorkspacePdfReaderInner({
 
   const {
     toc,
+    currentChapterLabel,
     bookProgress,
     currentPage,
     hasRestoredPosition,
@@ -168,7 +169,7 @@ function WorkspacePdfReaderInner({
     panelRef,
     onAfterRender: reapplyAllHighlights,
   });
-  useReadingLocation(book.id, null, currentPage, totalPages);
+  useReadingLocation(book.id, currentChapterLabel, currentPage, totalPages);
 
   const bookmarkSyncVersion = useSyncListener(["bookmark"]);
   const { data: bookmarks } = useEffectQuery(

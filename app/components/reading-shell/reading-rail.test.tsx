@@ -17,7 +17,7 @@ const workspace = vi.hoisted(() => ({
         title: "The Power Broker",
         author: "Robert Caro",
         coverImage: null,
-        format: "epub" as const,
+        format: "epub" as "epub" | "pdf",
       },
     ],
   },
@@ -59,6 +59,11 @@ function clickTab(container: HTMLElement, label: string) {
 
 beforeEach(() => {
   workspace.activeClusterBookIdRef.current = "book-1";
+  workspace.booksRef.current[0].title = "The Power Broker";
+  workspace.booksRef.current[0].format = "epub";
+  readingLocation.chapterLabel = "Part III, Chapter VII";
+  readingLocation.currentPage = 283;
+  readingLocation.totalPages = 1164;
 });
 
 afterEach(() => {
@@ -90,5 +95,19 @@ describe("ReadingRail", () => {
     expect(container.textContent).toContain("The Power Broker · Part III, Chapter VII");
     expect(container.textContent).toContain("283 / 1164");
     expect(container.querySelector("#reading-rail-menu")).not.toBeNull();
+  });
+
+  it("shows a PDF bookmark title in the rail metadata", () => {
+    workspace.booksRef.current[0].title = "Designing Data-Intensive Applications";
+    workspace.booksRef.current[0].format = "pdf";
+    readingLocation.chapterLabel = "Part II: Distributed Data";
+    readingLocation.currentPage = 167;
+    readingLocation.totalPages = 616;
+
+    const container = renderRail();
+    expect(container.textContent).toContain(
+      "Designing Data-Intensive Applications · Part II: Distributed Data",
+    );
+    expect(container.textContent).toContain("167 / 616");
   });
 });
