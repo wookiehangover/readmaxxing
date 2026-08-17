@@ -316,7 +316,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              <div className="grid grid-cols-2 items-start gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                 {sortedGridBooks.map((book) => {
                   return (
                     <LibraryBook
@@ -334,10 +334,10 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
                     />
                   );
                 })}
-                <div>
+                <div className="max-w-40">
                   <AddBookCard onClick={() => fileInputRef.current?.click()} />
                 </div>
-                <div>
+                <div className="max-w-40">
                   <Link
                     to="/standard-ebooks"
                     className="flex aspect-[2/3] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground"
@@ -388,7 +388,7 @@ function LibraryBook({
   const needsDownload = bookNeedsDownload(book);
 
   return (
-    <div key={book.id} className="group relative">
+    <div key={book.id} className="group relative max-w-40">
       <button
         type="button"
         onClick={() => handleOpenBook(book)}

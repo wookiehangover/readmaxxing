@@ -182,7 +182,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
 
         {isInitialLoading ? (
           settings.standardEbooksView === "grid" ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            <div className="grid grid-cols-2 items-start gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
               {Array.from({ length: 12 }).map((_, i) => (
                 <SkeletonCard key={i} />
               ))}
@@ -197,7 +197,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
             </p>
           </div>
         ) : settings.standardEbooksView === "grid" ? (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <div className="grid grid-cols-2 items-start gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
             {books.map((book) => (
               <SEBookCard
                 key={book.urlPath}
@@ -276,7 +276,7 @@ function SEBookCard({
   onDownload: (book: SEBook) => void;
 }) {
   return (
-    <div className="group flex flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md">
+    <div className="group flex max-w-40 flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md">
       <div className="aspect-[2/3] w-full overflow-hidden bg-muted">
         {book.coverUrl ? (
           <img
@@ -335,7 +335,7 @@ function SEBookCard({
 
 function SkeletonCard() {
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border bg-card">
+    <div className="flex max-w-40 flex-col overflow-hidden rounded-lg border bg-card">
       <Skeleton className="aspect-[2/3] w-full rounded-none" />
       <div className="flex flex-col gap-1.5 p-2">
         <Skeleton className="h-4 w-3/4" />

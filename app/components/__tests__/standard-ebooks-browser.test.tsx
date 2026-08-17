@@ -56,7 +56,17 @@ describe("StandardEbooksBrowser", () => {
     const grid = container!.querySelector<HTMLElement>(".grid-cols-2");
     expect(grid?.className).toContain("sm:gap-6");
     expect(grid?.className).toContain("xl:grid-cols-6");
+    expect(grid?.className).toContain("items-start");
+    expect([...grid!.children].every((card) => card.classList.contains("max-w-40"))).toBe(true);
     expect(grid?.querySelectorAll('a[href^="https://standardebooks.org/ebooks/"]')).toHaveLength(2);
+
+    const search = container!.querySelector<HTMLInputElement>(
+      '[aria-label="Search Standard Ebooks"]',
+    )!;
+    const toolbar = search.parentElement!.parentElement!;
+    expect(toolbar.className).not.toContain("justify-between");
+    expect(toolbar.children[0]!.contains(search)).toBe(true);
+    expect(toolbar.children[1]!.querySelector('[aria-label="Grid view"]')).not.toBeNull();
 
     const tableToggle = container!.querySelector<HTMLButtonElement>(
       'button[aria-label="Table view"]',
