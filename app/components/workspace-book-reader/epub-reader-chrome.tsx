@@ -100,10 +100,8 @@ export function EpubReaderSurface({
             type="button"
             aria-label="Previous page"
             className="pointer-events-auto absolute top-0 left-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
-            onPointerUp={(event) => {
-              onPrevious();
-              blurPageTurnControl(event);
-            }}
+            onClick={onPrevious}
+            onPointerUp={blurPageTurnControl}
           />
           {isMobile && (
             <button
@@ -117,10 +115,8 @@ export function EpubReaderSurface({
             type="button"
             aria-label="Next page"
             className="pointer-events-auto absolute top-0 right-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
-            onPointerUp={(event) => {
-              onNext();
-              blurPageTurnControl(event);
-            }}
+            onClick={onNext}
+            onPointerUp={blurPageTurnControl}
           />
         </div>
       )}

@@ -80,18 +80,29 @@ it("releases pointer focus while keeping PDF page turns keyboard activatable", (
 
   for (const { overlay, toolbar, handler } of turns) {
     overlay.focus();
-    act(() => overlay.dispatchEvent(new Event("pointerup", { bubbles: true })));
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    act(() => {
+      overlay.dispatchEvent(new Event("pointerup", { bubbles: true }));
+      overlay.click();
+    });
     expect(document.activeElement).not.toBe(overlay);
     expect(handler).toHaveBeenCalledOnce();
 
+    overlay.focus();
+    act(() => overlay.click());
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(document.activeElement).toBe(overlay);
+
     toolbar.focus();
-    act(() => toolbar.dispatchEvent(new Event("pointerup", { bubbles: true })));
+    act(() => {
+      toolbar.dispatchEvent(new Event("pointerup", { bubbles: true }));
+      toolbar.click();
+    });
     expect(document.activeElement).not.toBe(toolbar);
+    expect(handler).toHaveBeenCalledTimes(3);
 
     toolbar.focus();
     act(() => toolbar.click());
-    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenCalledTimes(4);
     expect(document.activeElement).toBe(toolbar);
   }
 });
