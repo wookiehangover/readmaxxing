@@ -1,6 +1,8 @@
 import { useState, type ChangeEvent, type MutableRefObject, type ReactNode } from "react";
+import { MoreHorizontal } from "lucide-react";
 import { NavLink } from "react-router";
 import { BugReportDialog } from "~/components/bug-report-dialog";
+import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,10 +50,10 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
           ))}
           <DropdownMenu>
             <DropdownMenuTrigger
-              aria-label="More library actions"
-              className="leading-[18px] text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              render={<Button variant="ghost" size="icon" title="More library actions" />}
             >
-              …
+              <MoreHorizontal />
+              <span className="sr-only">More library actions</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-36 text-xs">
               <DropdownMenuGroup>

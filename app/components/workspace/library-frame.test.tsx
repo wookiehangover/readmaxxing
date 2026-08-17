@@ -12,11 +12,20 @@ vi.mock("~/components/ui/dropdown-menu", () => ({
       {children}
     </button>
   ),
-  DropdownMenuTrigger: ({ children, ...props }: React.ComponentProps<"button">) => (
-    <button type="button" {...props}>
-      {children}
-    </button>
-  ),
+  DropdownMenuTrigger: ({
+    children,
+    render,
+    ...props
+  }: React.ComponentProps<"button"> & {
+    render?: React.ReactElement<React.ComponentProps<"button">>;
+  }) =>
+    render ? (
+      React.cloneElement(render, props, children)
+    ) : (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
 }));
 
 vi.mock("~/components/bug-report-dialog", () => ({
@@ -72,7 +81,12 @@ describe("LibraryFrame", () => {
         .filter((link) => link !== activeLink)
         .every((link) => !link.className.includes("after:w-[15px]")),
     ).toBe(true);
-    expect(nav.textContent).toContain("…");
+    const overflow = nav.querySelector<HTMLButtonElement>('button[title="More library actions"]');
+    expect(overflow?.dataset.slot).toBe("button");
+    expect(overflow?.className).toContain("size-8");
+    expect(overflow?.className).toContain("hover:bg-muted");
+    expect(overflow?.querySelector("svg")).not.toBeNull();
+    expect(nav.textContent).not.toContain("…");
     expect(container.textContent).toContain("Browse body");
     expect(container.querySelector("aside")).toBeNull();
     expect(container.querySelector('[role="tablist"]')).toBeNull();
@@ -82,8 +96,9 @@ describe("LibraryFrame", () => {
   it("keeps upload and bug report as the only overflow actions", () => {
     const inputClick = vi.spyOn(HTMLInputElement.prototype, "click");
     const { container } = renderFrame("/library");
+    const overflow = container.querySelector('button[title="More library actions"]');
     const actions = Array.from(container.querySelectorAll("button")).filter(
-      (button) => button.textContent !== "…",
+      (button) => button !== overflow,
     );
 
     expect(actions.map((button) => button.textContent)).toEqual(["Upload book", "Bug report"]);
