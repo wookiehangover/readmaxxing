@@ -79,7 +79,7 @@ export async function callPageIncrement(options: {
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(PAGE_INCREMENT_TIMEOUT_MS),
     instructions:
-      "Create an incremental reading outline from the current page. Return zero to three short, factual bullets containing only concrete new information from the page. Do not interpret, editorialize, speculate, or repeat an existing bullet. Return an empty bullets array when the page adds nothing. Do not add Markdown prefixes.",
+      'Create an incremental reading outline from the current page. Return zero to three short, factual bullets containing only concrete new information from the page. Never use the phrase "The author" in outline prose. Do not interpret, editorialize, speculate, or repeat an existing bullet. Return an empty bullets array when the page adds nothing. Do not add Markdown prefixes.',
     prompt: JSON.stringify({
       chapterLabel: options.chapterLabel?.trim() || "Untitled",
       existingBullets: options.existingBullets,

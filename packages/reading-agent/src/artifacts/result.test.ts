@@ -27,6 +27,7 @@ describe("ReadingScribe result", () => {
     expect(ARTIFACT_UPDATE_PROMPT).toContain("nested Markdown headings and/or\nindented lists");
     expect(ARTIFACT_UPDATE_PROMPT).toContain("Never flatten the tree");
     expect(ARTIFACT_UPDATE_PROMPT).toContain("replace the whole outline");
+    expect(ARTIFACT_UPDATE_PROMPT).toContain('Never use the phrase\n"The author"');
     expect(ARTIFACT_UPDATE_PROMPT).toContain("current artifacts are the complete factual boundary");
     expect(ARTIFACT_UPDATE_PROMPT).toContain("Do not use later-book");
     expect(ARTIFACT_UPDATE_PROMPT).toContain("invent people");

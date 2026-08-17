@@ -69,6 +69,7 @@ describe("callPageIncrement", () => {
     });
     expect(request.abortSignal).toBeInstanceOf(AbortSignal);
     expect(request.maxRetries).toBe(0);
+    expect(request.instructions).toContain('Never use the phrase "The author"');
     expect(PAGE_INCREMENT_TIMEOUT_MS).toBe(60_000);
     expect(request.schema.safeParse({ bullets: [] }).success).toBe(true);
     expect(request.schema.safeParse({ bullets: ["1", "2", "3", "4"] }).success).toBe(false);

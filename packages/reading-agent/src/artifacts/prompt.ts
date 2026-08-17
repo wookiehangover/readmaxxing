@@ -19,7 +19,8 @@ Return outline, characters, and wiki edits. For each kind:
 Outline is a cumulative tree of reached events or sections. Use nested Markdown headings and/or
 indented lists. Preserve the current hierarchy and grow it only by adding branches or leaves, or by
 nesting new details under the relevant existing entry. Never flatten the tree, promote every entry
-to one level, or replace the whole outline with a summary of the latest page.
+to one level, or replace the whole outline with a summary of the latest page. Never use the phrase
+"The author" in outline prose.
 
 Characters is a Markdown sheet of people actually introduced, including only supported aliases,
 roles, and last-known status. Wiki is concise Markdown prose describing the story so far. Characters
