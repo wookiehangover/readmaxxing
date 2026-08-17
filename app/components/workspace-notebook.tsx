@@ -20,10 +20,13 @@ import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
 import { useWorkspace } from "~/lib/context/workspace-context";
+import { downloadNotebookMarkdown } from "~/lib/editor/export-notebook-markdown";
+import { cn } from "~/lib/utils";
 
 interface WorkspaceNotebookProps {
   bookId: string;
   bookTitle?: string;
+  chromeless?: boolean;
   onNavigateToCfi?: (cfi: string) => void | Promise<void>;
   onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
   onRegisterAppendHighlight?: (
@@ -36,6 +39,7 @@ interface WorkspaceNotebookProps {
 export function WorkspaceNotebook({
   bookId,
   bookTitle,
+  chromeless = false,
   onNavigateToCfi,
   onDeleteHighlight,
   onRegisterAppendHighlight,
@@ -222,17 +226,7 @@ export function WorkspaceNotebook({
 
   const handleExportMarkdown = useCallback(() => {
     if (!content) return;
-    const markdown = tiptapJsonToMarkdown(content);
-    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const filename = bookTitle ? `${bookTitle}-annotations.md` : "annotations.md";
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadNotebookMarkdown(content, bookTitle);
   }, [content, bookTitle]);
 
   const handleNavigateToCfi = useCallback(
@@ -243,36 +237,39 @@ export function WorkspaceNotebook({
   );
 
   return (
-    <div className="flex h-full flex-col bg-card">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-sm font-semibold">{displayTitle ?? "Notebook"}</h2>
-          {displayAuthor && (
-            <p className="truncate text-xs text-muted-foreground">{displayAuthor}</p>
-          )}
+    <div className={cn("flex h-full flex-col", { "bg-card": !chromeless })}>
+      {!chromeless && (
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-sm font-semibold">{displayTitle ?? "Notebook"}</h2>
+            {displayAuthor && (
+              <p className="truncate text-xs text-muted-foreground">{displayAuthor}</p>
+            )}
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" />}>
+              <Ellipsis className="size-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem render={<Link to={`/books/${bookId}/details`} />}>
+                <FileText className="size-4" />
+                Details
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportMarkdown} disabled={!content}>
+                <Download className="size-4" />
+                Export as Markdown
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" />}>
-            <Ellipsis className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem render={<Link to={`/books/${bookId}/details`} />}>
-              <FileText className="size-4" />
-              Details
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleExportMarkdown} disabled={!content}>
-              <Download className="size-4" />
-              Export as Markdown
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      )}
 
       <ScrollArea className="min-h-0 flex-1">
         {loaded && (
           <TiptapEditor
             ref={editorRef}
             content={content}
+            compact={chromeless}
             onUpdate={handleUpdate}
             onNavigateToHighlight={handleNavigateToCfi}
             onDeleteHighlight={onDeleteHighlight}

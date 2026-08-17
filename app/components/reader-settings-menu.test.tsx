@@ -5,9 +5,11 @@ import type { Settings } from "~/lib/settings";
 
 const auth = vi.hoisted(() => ({ isAuthenticated: true }));
 const navigate = vi.hoisted(() => vi.fn());
+const exportNotebookMarkdown = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock("react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("~/lib/context/auth-context", () => ({ useAuth: () => auth }));
+vi.mock("~/lib/editor/export-notebook-markdown", () => ({ exportNotebookMarkdown }));
 vi.mock("~/components/share-dialog", () => ({ ShareDialog: () => null }));
 vi.mock("~/components/book-list", () => ({
   TocList: ({
@@ -106,6 +108,7 @@ function renderMenu() {
 beforeEach(() => {
   auth.isAuthenticated = true;
   navigate.mockReset();
+  exportNotebookMarkdown.mockClear();
 });
 
 afterEach(() => {
@@ -125,6 +128,22 @@ describe("ReaderSettingsMenu", () => {
 
     expect(navigate).toHaveBeenNthCalledWith(1, "/library");
     expect(navigate).toHaveBeenNthCalledWith(2, "/settings");
+  });
+
+  it("places notebook actions in a final group and exports markdown", async () => {
+    const rendered = renderMenu();
+    const items = Array.from(rendered.container.querySelectorAll<HTMLElement>("[role='menuitem']"));
+    const details = items.find((item) => item.textContent?.includes("Details"));
+    const exportItem = items.find((item) => item.textContent?.includes("Export as Markdown"));
+
+    expect(details?.parentElement).toBe(exportItem?.parentElement);
+    expect(details?.parentElement?.previousElementSibling?.getAttribute("role")).toBe("separator");
+
+    act(() => details?.click());
+    expect(navigate).toHaveBeenCalledWith("/books/book-1/details");
+
+    await act(async () => exportItem?.click());
+    expect(exportNotebookMarkdown).toHaveBeenCalledWith("book-1", "Book");
   });
 
   it("keeps formatting updates in the nested menu", () => {

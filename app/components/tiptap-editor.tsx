@@ -9,6 +9,7 @@ import {
   type HighlightReferenceAttrs,
 } from "~/lib/editor/tiptap-highlight-node";
 import { OutlineIncrement, type OutlineIncrementAttrs } from "~/lib/editor/tiptap-outline-node";
+import { cn } from "~/lib/utils";
 
 export type TiptapEditorContent = JSONContent | string;
 
@@ -28,6 +29,7 @@ export interface TiptapEditorHandle {
 
 interface TiptapEditorProps {
   content?: TiptapEditorContent;
+  compact?: boolean;
   onUpdate?: (content: JSONContent) => void;
   onBlur?: () => void;
   onNavigateToHighlight?: (cfi: string) => void | Promise<void>;
@@ -131,6 +133,7 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
 export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(function TiptapEditor(
   {
     content,
+    compact = false,
     onUpdate,
     onBlur,
     onNavigateToHighlight,
@@ -265,7 +268,10 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     <div className="tiptap-editor">
       <EditorContent
         editor={editor}
-        className="prose prose-sm dark:prose-invert max-w-none px-4 py-3 focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none [&_.tiptap_li]:my-0.5 [&_.tiptap_li_p]:my-0"
+        className={cn(
+          "prose prose-sm dark:prose-invert max-w-none focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none [&_.tiptap_li]:my-0.5 [&_.tiptap_li_p]:my-0",
+          { "px-4 py-3": !compact },
+        )}
       />
     </div>
   );

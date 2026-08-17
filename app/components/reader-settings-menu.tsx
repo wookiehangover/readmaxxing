@@ -13,6 +13,7 @@ import {
   TableOfContents,
   Type,
   ClipboardCopyIcon,
+  FileText,
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -36,6 +37,7 @@ import { useAuth } from "~/lib/context/auth-context";
 import type { TocEntry } from "~/lib/context/reader-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/settings";
+import { exportNotebookMarkdown } from "~/lib/editor/export-notebook-markdown";
 import { Button } from "./ui/button";
 
 interface ReaderFormattingMenuProps {
@@ -369,9 +371,8 @@ export function ReaderActionsMenu(props: ReaderActionsMenuProps) {
 
 export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
   const navigate = useNavigate();
-  const { isAuthenticated, shareOpen, setShareOpen, handleShare } = useReaderActionState(
-    props.book,
-  );
+  const book = props.book;
+  const { isAuthenticated, shareOpen, setShareOpen, handleShare } = useReaderActionState(book);
 
   return (
     <>
@@ -423,9 +424,28 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
               Settings
             </DropdownMenuItem>
           </DropdownMenuGroup>
+          {book ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem onClick={() => navigate(`/books/${book.id}/details`)}>
+                  <FileText className="size-4" />
+                  Details
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    void exportNotebookMarkdown(book.id, book.title).catch(console.error);
+                  }}
+                >
+                  <Download className="size-4" />
+                  Export as Markdown
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
-      <ShareDialog book={props.book ?? null} open={shareOpen} onOpenChange={setShareOpen} />
+      <ShareDialog book={book ?? null} open={shareOpen} onOpenChange={setShareOpen} />
     </>
   );
 }

@@ -54,9 +54,11 @@ export function NotebookPanel({
 export function WorkspaceNotebookPanel({
   bookId,
   bookTitle,
+  chromeless = false,
 }: {
   bookId: string;
   bookTitle: string;
+  chromeless?: boolean;
 }) {
   const { navigateInCluster, notebookCallbackMap, removeHighlightAnnotationForBook } =
     useWorkspace();
@@ -101,6 +103,7 @@ export function WorkspaceNotebookPanel({
     <WorkspaceNotebook
       bookId={bookId}
       bookTitle={bookTitle}
+      chromeless={chromeless}
       onNavigateToCfi={handleNavigateToCfi}
       onDeleteHighlight={handleDeleteHighlight}
       onRegisterAppendHighlight={handleRegisterAppendHighlight}

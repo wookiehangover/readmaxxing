@@ -68,7 +68,7 @@ export function ReadingRail() {
       {book ? (
         <>
           <Tabs.Panel value="Notes" className="min-h-0 flex-1 overflow-hidden outline-none">
-            <WorkspaceNotebookPanel bookId={book.id} bookTitle={book.title} />
+            <WorkspaceNotebookPanel bookId={book.id} bookTitle={book.title} chromeless />
           </Tabs.Panel>
           <Tabs.Panel value="Chat" className="min-h-0 flex-1 overflow-hidden outline-none">
             <ChatPanel bookId={book.id} bookTitle={book.title} />

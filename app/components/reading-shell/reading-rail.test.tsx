@@ -28,7 +28,11 @@ const workspace = vi.hoisted(() => ({
 
 vi.mock("~/lib/context/workspace-context", () => ({ useWorkspace: () => workspace }));
 vi.mock("~/components/workspace/panel-components", () => ({
-  WorkspaceNotebookPanel: () => <div data-testid="notes-panel">Notes panel</div>,
+  WorkspaceNotebookPanel: ({ chromeless }: { chromeless?: boolean }) => (
+    <div data-testid="notes-panel" data-chromeless={chromeless}>
+      Notes panel
+    </div>
+  ),
 }));
 vi.mock("~/components/chat/chat-panel", () => ({
   ChatPanel: () => <div data-testid="chat-panel">Chat panel</div>,
@@ -75,7 +79,9 @@ afterEach(() => {
 describe("ReadingRail", () => {
   it("switches Notes, Chat, and Outline in place", () => {
     const container = renderRail();
-    expect(container.querySelector("[data-testid='notes-panel']")).not.toBeNull();
+    expect(
+      container.querySelector("[data-testid='notes-panel']")?.getAttribute("data-chromeless"),
+    ).toBe("true");
 
     clickTab(container, "Chat");
     expect(container.querySelector("[data-testid='chat-panel']")).not.toBeNull();
