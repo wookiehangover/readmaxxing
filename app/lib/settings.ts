@@ -9,6 +9,7 @@ export type WorkspaceSortBy = "title" | "author" | "recent";
 export type LibraryView = "grid" | "table";
 export type StandardEbooksView = "grid" | "table";
 export type TextAlign = "left" | "center" | "right" | "justify" | undefined;
+export type FontWeight = 300 | 400 | 500 | 600 | 700;
 
 // --- Schema ---
 
@@ -84,6 +85,9 @@ export const LocalUISettingsSchema = Schema.Struct({
   }),
   fontFamily: Schema.optionalWith(Schema.String, { default: () => "Literata" }),
   fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
+  fontWeight: Schema.optionalWith(Schema.Literal(300, 400, 500, 600, 700), {
+    default: () => 400 as const,
+  }),
   lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
   textAlign: Schema.optional(
     Schema.Union(
@@ -121,6 +125,7 @@ export const LOCAL_UI_SETTINGS_KEYS = [
   "focusedSplitRatio",
   "fontFamily",
   "fontSize",
+  "fontWeight",
   "lineHeight",
   "textAlign",
 ] as const satisfies readonly (keyof LocalUISettings)[];
@@ -137,6 +142,7 @@ const defaultSettings: Settings = {
   pdfLayout: "fit-height",
   fontFamily: "Literata",
   fontSize: 100,
+  fontWeight: 400,
   lineHeight: 1.6,
   textAlign: undefined,
   sidebarCollapsed: false,

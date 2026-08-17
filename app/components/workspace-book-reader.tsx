@@ -4,7 +4,7 @@ import { useReaderSearch } from "~/hooks/use-reader-search";
 import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useResolvedTheme, useSettings } from "~/lib/settings";
-import type { PdfLayout, ReaderLayout } from "~/lib/settings";
+import type { FontWeight, PdfLayout, ReaderLayout } from "~/lib/settings";
 import { SpeedreadPopout } from "~/components/speedread-popout";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
@@ -34,6 +34,7 @@ import {
 export interface PanelTypographyParams {
   fontFamily?: string;
   fontSize?: number;
+  fontWeight?: FontWeight;
   lineHeight?: number;
   textAlign?: "left" | "center" | "right" | "justify";
   readerLayout?: ReaderLayout;
@@ -190,6 +191,7 @@ function WorkspaceBookReaderInner({
   const {
     fontFamily: localFontFamily,
     fontSize: localFontSize,
+    fontWeight: localFontWeight,
     lineHeight: localLineHeight,
     textAlign: localTextAlign,
     readerLayout: localReaderLayout,
@@ -279,6 +281,7 @@ function WorkspaceBookReaderInner({
     readerLayout: localReaderLayout,
     fontFamily: localFontFamily,
     fontSize: localFontSize,
+    fontWeight: localFontWeight,
     lineHeight: localLineHeight,
     textAlign: localTextAlign,
     theme: resolvedTheme,

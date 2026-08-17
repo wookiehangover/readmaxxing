@@ -6,7 +6,6 @@ import {
   FastForward,
   Library,
   MoreHorizontal,
-  Minus,
   Plus,
   SettingsIcon,
   Share2,
@@ -43,6 +42,7 @@ import { exportNotebookMarkdown } from "~/lib/editor/export-notebook-markdown";
 import { useReadingChatMenuActions } from "~/lib/context/reading-chat-menu-context";
 import { ChatBookSelectorMenu } from "~/components/chat/chat-book-selector";
 import { ChatRecentSessionsMenu } from "~/components/chat/chat-session-menu";
+import { ReaderFormattingStepper } from "~/components/reader-formatting-stepper";
 import { Button } from "./ui/button";
 
 interface ReaderFormattingMenuProps {
@@ -180,64 +180,43 @@ function ReaderFormattingMenuItems({
       {!isPdf && (
         <DropdownMenuGroup>
           <DropdownMenuLabel>Size &amp; Spacing</DropdownMenuLabel>
-          <DropdownMenuItem closeOnClick={false} className="flex items-center justify-between">
-            <span className="text-sm">Size</span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() =>
-                  onUpdateSettings({
-                    fontSize: Math.max(75, settings.fontSize - 5),
-                  })
-                }
-                className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
-                aria-label="Decrease font size"
-              >
-                <Minus className="size-3" />
-              </button>
-              <span className="w-10 text-center text-sm tabular-nums">{settings.fontSize}%</span>
-              <button
-                onClick={() =>
-                  onUpdateSettings({
-                    fontSize: Math.min(200, settings.fontSize + 5),
-                  })
-                }
-                className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
-                aria-label="Increase font size"
-              >
-                <Plus className="size-3" />
-              </button>
-            </div>
-          </DropdownMenuItem>
-          <DropdownMenuItem closeOnClick={false} className="flex items-center justify-between">
-            <span className="text-sm">Spacing</span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() =>
-                  onUpdateSettings({
-                    lineHeight: Math.max(1.0, Math.round((settings.lineHeight - 0.1) * 10) / 10),
-                  })
-                }
-                className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
-                aria-label="Decrease line height"
-              >
-                <Minus className="size-3" />
-              </button>
-              <span className="w-10 text-center text-sm tabular-nums">
-                {settings.lineHeight.toFixed(1)}
-              </span>
-              <button
-                onClick={() =>
-                  onUpdateSettings({
-                    lineHeight: Math.min(2.5, Math.round((settings.lineHeight + 0.1) * 10) / 10),
-                  })
-                }
-                className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
-                aria-label="Increase line height"
-              >
-                <Plus className="size-3" />
-              </button>
-            </div>
-          </DropdownMenuItem>
+          <ReaderFormattingStepper
+            label="Size"
+            action="font size"
+            value={`${settings.fontSize}%`}
+            onDecrease={() => onUpdateSettings({ fontSize: Math.max(75, settings.fontSize - 5) })}
+            onIncrease={() => onUpdateSettings({ fontSize: Math.min(200, settings.fontSize + 5) })}
+          />
+          <ReaderFormattingStepper
+            label="Weight"
+            action="font weight"
+            value={String(settings.fontWeight)}
+            onDecrease={() =>
+              onUpdateSettings({
+                fontWeight: Math.max(300, settings.fontWeight - 100) as Settings["fontWeight"],
+              })
+            }
+            onIncrease={() =>
+              onUpdateSettings({
+                fontWeight: Math.min(700, settings.fontWeight + 100) as Settings["fontWeight"],
+              })
+            }
+          />
+          <ReaderFormattingStepper
+            label="Spacing"
+            action="line height"
+            value={settings.lineHeight.toFixed(1)}
+            onDecrease={() =>
+              onUpdateSettings({
+                lineHeight: Math.max(1.0, Math.round((settings.lineHeight - 0.1) * 10) / 10),
+              })
+            }
+            onIncrease={() =>
+              onUpdateSettings({
+                lineHeight: Math.min(2.5, Math.round((settings.lineHeight + 0.1) * 10) / 10),
+              })
+            }
+          />
         </DropdownMenuGroup>
       )}
 

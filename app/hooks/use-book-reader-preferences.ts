@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { DockviewPanelApi } from "dockview-react";
 import type { PanelTypographyParams } from "~/components/workspace-book-reader";
 import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
-import type { ReaderLayout, Settings, TextAlign } from "~/lib/settings";
+import type { FontWeight, ReaderLayout, Settings, TextAlign } from "~/lib/settings";
 import {
   getBookPreferences,
   saveBookPreferences,
@@ -33,6 +33,9 @@ export function useBookReaderPreferences({
     () => panelTypography?.fontFamily ?? settings.fontFamily,
   );
   const [fontSize, setFontSize] = useState(() => panelTypography?.fontSize ?? settings.fontSize);
+  const [fontWeight, setFontWeight] = useState<FontWeight>(
+    () => panelTypography?.fontWeight ?? settings.fontWeight,
+  );
   const [lineHeight, setLineHeight] = useState(
     () => panelTypography?.lineHeight ?? settings.lineHeight,
   );
@@ -53,6 +56,9 @@ export function useBookReaderPreferences({
           preferences?.fontFamily ?? panelTypography?.fontFamily ?? settings.fontFamily,
         );
         setFontSize(preferences?.fontSize ?? panelTypography?.fontSize ?? settings.fontSize);
+        setFontWeight(
+          preferences?.fontWeight ?? panelTypography?.fontWeight ?? settings.fontWeight,
+        );
         setLineHeight(
           preferences?.lineHeight ?? panelTypography?.lineHeight ?? settings.lineHeight,
         );
@@ -74,11 +80,13 @@ export function useBookReaderPreferences({
     bookId,
     panelTypography?.fontFamily,
     panelTypography?.fontSize,
+    panelTypography?.fontWeight,
     panelTypography?.lineHeight,
     panelTypography?.readerLayout,
     panelTypography?.textAlign,
     settings.fontFamily,
     settings.fontSize,
+    settings.fontWeight,
     settings.lineHeight,
     settings.readerLayout,
     settings.textAlign,
@@ -89,6 +97,7 @@ export function useBookReaderPreferences({
       const hasBookPreferenceUpdate =
         update.fontFamily !== undefined ||
         update.fontSize !== undefined ||
+        update.fontWeight !== undefined ||
         update.lineHeight !== undefined ||
         "textAlign" in update ||
         update.readerLayout !== undefined;
@@ -97,6 +106,7 @@ export function useBookReaderPreferences({
 
       if (update.fontFamily !== undefined) setFontFamily(update.fontFamily);
       if (update.fontSize !== undefined) setFontSize(update.fontSize);
+      if (update.fontWeight !== undefined) setFontWeight(update.fontWeight);
       if (update.lineHeight !== undefined) setLineHeight(update.lineHeight);
       if ("textAlign" in update) setTextAlign(update.textAlign);
       if (update.readerLayout !== undefined && update.readerLayout !== readerLayout) {
@@ -118,6 +128,7 @@ export function useBookReaderPreferences({
       const updatedPreferences: BookPreferences = {
         fontFamily: update.fontFamily ?? fontFamily,
         fontSize: update.fontSize ?? fontSize,
+        fontWeight: update.fontWeight ?? fontWeight,
         lineHeight: update.lineHeight ?? lineHeight,
         textAlign: "textAlign" in update ? update.textAlign : textAlign,
         readerLayout: update.readerLayout ?? readerLayout,
@@ -131,6 +142,7 @@ export function useBookReaderPreferences({
         const parameterUpdates: Record<string, unknown> = {};
         if (update.fontFamily !== undefined) parameterUpdates.fontFamily = update.fontFamily;
         if (update.fontSize !== undefined) parameterUpdates.fontSize = update.fontSize;
+        if (update.fontWeight !== undefined) parameterUpdates.fontWeight = update.fontWeight;
         if (update.lineHeight !== undefined) parameterUpdates.lineHeight = update.lineHeight;
         if (update.textAlign !== undefined) parameterUpdates.textAlign = update.textAlign;
         if (update.readerLayout !== undefined) parameterUpdates.readerLayout = update.readerLayout;
@@ -141,6 +153,7 @@ export function useBookReaderPreferences({
       bookId,
       fontFamily,
       fontSize,
+      fontWeight,
       lineHeight,
       navigationRef,
       panelApi,
@@ -154,6 +167,7 @@ export function useBookReaderPreferences({
     ...settings,
     fontFamily,
     fontSize,
+    fontWeight,
     lineHeight,
     textAlign,
     readerLayout,
@@ -162,6 +176,7 @@ export function useBookReaderPreferences({
   return {
     fontFamily,
     fontSize,
+    fontWeight,
     lineHeight,
     textAlign,
     readerLayout,

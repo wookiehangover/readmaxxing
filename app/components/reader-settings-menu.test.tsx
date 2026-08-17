@@ -94,6 +94,7 @@ const settings = {
   focusedSplitRatio: 0.5,
   fontFamily: "Literata",
   fontSize: 100,
+  fontWeight: 400,
   lineHeight: 1.6,
   textAlign: undefined,
 } satisfies Settings;
@@ -107,7 +108,10 @@ function RegisterChatActions({ actions }: { actions: ReadingChatMenuActions }) {
   return null;
 }
 
-function renderMenu({ withChatActions = false }: { withChatActions?: boolean } = {}) {
+function renderMenu({
+  withChatActions = false,
+  isPdf = false,
+}: { withChatActions?: boolean; isPdf?: boolean } = {}) {
   const onUpdateSettings = vi.fn();
   const onNavigateToToc = vi.fn();
   const onNewSession = vi.fn();
@@ -133,6 +137,7 @@ function renderMenu({ withChatActions = false }: { withChatActions?: boolean } =
         <ReaderSettingsMenu
           settings={settings}
           onUpdateSettings={onUpdateSettings}
+          isPdf={isPdf}
           book={{ id: "book-1", title: "Book", author: "Author", coverImage: null, format: "epub" }}
           onDownload={vi.fn()}
           onBookmarkPage={vi.fn()}
@@ -197,6 +202,27 @@ describe("ReaderSettingsMenu", () => {
     act(() => spread?.click());
 
     expect(rendered.onUpdateSettings).toHaveBeenCalledWith({ readerLayout: "spread" });
+  });
+
+  it("shows and updates font weight for EPUB books", () => {
+    const rendered = renderMenu();
+    const increaseWeight = rendered.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Increase font weight"]',
+    );
+
+    expect(rendered.container.textContent).toContain("Weight");
+    expect(rendered.container.textContent).toContain("400");
+    act(() => increaseWeight?.click());
+    expect(rendered.onUpdateSettings).toHaveBeenCalledWith({ fontWeight: 500 });
+  });
+
+  it("hides font weight for PDF books", () => {
+    const rendered = renderMenu({ isPdf: true });
+
+    expect(rendered.container.textContent).not.toContain("Weight");
+    expect(
+      rendered.container.querySelector('button[aria-label="Increase font weight"]'),
+    ).toBeNull();
   });
 
   it("includes reader actions without Outline", () => {

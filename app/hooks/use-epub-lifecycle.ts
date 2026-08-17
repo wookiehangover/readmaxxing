@@ -50,7 +50,7 @@ import {
 } from "~/lib/position-utils";
 import type { ReadingDwellUnit } from "~/hooks/use-reader-dwell";
 import { resolveTheme } from "~/lib/settings";
-import type { ReaderLayout, TextAlign, Theme } from "~/lib/settings";
+import type { FontWeight, ReaderLayout, TextAlign, Theme } from "~/lib/settings";
 import { BookService } from "~/lib/stores/book-store";
 import { LocationCacheService } from "~/lib/stores/location-cache-store";
 import { ReadingHistoryService } from "~/lib/stores/reading-history-store";
@@ -96,6 +96,7 @@ export interface UseEpubLifecycleConfig {
   readerLayout: ReaderLayout;
   fontFamily: string;
   fontSize: number;
+  fontWeight: FontWeight;
   lineHeight: number;
   textAlign: TextAlign;
   theme: Theme;
@@ -150,6 +151,7 @@ function readerPreferences(config: UseEpubLifecycleConfig): NavigatorPreferences
     preferenceCss: `${getTypographyCss(
       config.fontFamily,
       config.fontSize,
+      config.fontWeight,
       config.lineHeight,
       config.textAlign,
     )}\n${getThemeColorCss(theme)}`,
@@ -678,6 +680,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   }, [
     config.fontFamily,
     config.fontSize,
+    config.fontWeight,
     config.lineHeight,
     config.readerLayout,
     config.textAlign,
