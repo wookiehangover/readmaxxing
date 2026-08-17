@@ -78,9 +78,11 @@ describe("chapter questions API", () => {
     const response = await action({ request: request() });
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
-      questions: ["Question one?", "Question two?", "Question three?"],
-    });
+    await expect(response.json()).resolves.toEqual([
+      "Question one?",
+      "Question two?",
+      "Question three?",
+    ]);
     expect(mocks.getBook).toHaveBeenCalledWith("book-1", "user-1");
     expect(mocks.getChapters).toHaveBeenCalledWith("user-1", "book-1");
     expect(mocks.gateway).toHaveBeenCalledWith("openai/gpt-5.6-terra");

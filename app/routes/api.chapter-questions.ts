@@ -112,5 +112,5 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "Invalid model response" }, { status: 502 });
   }
 
-  return Response.json({ questions });
+  return Response.json(questions);
 }
