@@ -820,10 +820,6 @@ function WorkspaceBookReaderInner({
     ws.openChatRef.current?.(book);
   }, [ws, book]);
 
-  const handleOpenOutline = useCallback(() => {
-    ws.openOutlineRef.current?.(book);
-  }, [ws, book]);
-
   const isScrollMode = localReaderLayout === "scroll";
 
   // Construct a settings-like object with local typography values for the menu
@@ -1012,7 +1008,6 @@ function WorkspaceBookReaderInner({
                 book={book}
                 onDownload={handleDownload}
                 onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
-                onOpenOutline={handleOpenOutline}
                 onOpenSpeedread={handleOpenSpeedread}
                 onBookmarkPage={handleBookmarkPage}
                 isBookmarked={Boolean(currentBookmark)}
