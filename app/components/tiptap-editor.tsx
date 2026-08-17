@@ -54,13 +54,13 @@ function OutlineIncrementView({ node, editor }: ReactNodeViewProps) {
   }, [editor, locator]);
 
   return (
-    <NodeViewWrapper className="relative my-2 pl-8">
+    <NodeViewWrapper className="relative my-2">
       {locator && page ? (
         <button
           type="button"
           contentEditable={false}
           onClick={handleNavigate}
-          className="absolute top-0 left-0 w-6 cursor-pointer rounded-sm py-0.5 text-right text-xs font-normal text-muted-foreground/70 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute top-0 left-0 w-6 cursor-pointer rounded-sm py-0.5 text-left text-xs font-normal text-muted-foreground/70 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`Go to page ${page}`}
           title={`Go to page ${page}`}
         >

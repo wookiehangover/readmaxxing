@@ -354,6 +354,10 @@ describe("OutlinePanel", () => {
       'button[aria-label="Go to page 12"]',
     );
     expect(mark).not.toBeNull();
+    expect(mark!.parentElement?.className).not.toContain("pl-8");
+    expect(mark!.className).toContain("left-0");
+    expect(mark!.className).toContain("text-left");
+    expect(mark!.className).not.toContain("text-right");
     expect(editorContainer.querySelector('button[aria-label="Go to page 13"]')).toBeNull();
     expect(editorContainer.querySelectorAll("button")).toHaveLength(1);
 
