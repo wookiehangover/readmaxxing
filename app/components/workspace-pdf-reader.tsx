@@ -15,7 +15,11 @@ import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
-import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
+import {
+  ReaderActionsMenu,
+  ReaderFormattingMenu,
+  ReaderSettingsMenu,
+} from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { SearchBar } from "~/components/search-bar";
 import { useEffectQuery } from "~/hooks/use-effect-query";
@@ -380,6 +384,7 @@ function WorkspacePdfReaderInner({
       );
     });
   }, [book.id, bookmarks, currentPage]);
+
   // Keep goToPage in sync for navigation map
   useEffect(() => {
     setGoToPage(goToPage);
@@ -409,6 +414,19 @@ function WorkspacePdfReaderInner({
       onPointerDown={handlePanelPointerDown}
     >
       <div className="relative flex-1 overflow-hidden">
+        {!panelApi && (
+          <div className="absolute top-2 left-2 z-20">
+            <ReaderSettingsMenu
+              settings={localSettings}
+              onUpdateSettings={handleUpdateSettings}
+              isPdf
+              book={book}
+              onDownload={handleDownload}
+              onBookmarkPage={handleBookmarkPage}
+              isBookmarked={Boolean(currentBookmark)}
+            />
+          </div>
+        )}
         {searchOpen && (
           <div className="absolute top-0 right-0 left-0 z-10">
             <SearchBar
@@ -548,17 +566,21 @@ function WorkspacePdfReaderInner({
               </PopoverContent>
             </Popover>
           )}
-          <ReaderFormattingMenu
-            settings={localSettings}
-            onUpdateSettings={handleUpdateSettings}
-            isPdf
-          />
-          <ReaderActionsMenu
-            book={book}
-            onDownload={handleDownload}
-            onBookmarkPage={handleBookmarkPage}
-            isBookmarked={Boolean(currentBookmark)}
-          />
+          {panelApi && (
+            <>
+              <ReaderFormattingMenu
+                settings={localSettings}
+                onUpdateSettings={handleUpdateSettings}
+                isPdf
+              />
+              <ReaderActionsMenu
+                book={book}
+                onDownload={handleDownload}
+                onBookmarkPage={handleBookmarkPage}
+                isBookmarked={Boolean(currentBookmark)}
+              />
+            </>
+          )}
         </div>
       </div>
       {/* Portal popovers to document.body to escape dockview's CSS transforms */}
