@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { Skeleton } from "~/components/ui/skeleton";
+import { loadChapterQuestions } from "~/lib/chat/chapter-questions";
 import { cn } from "~/lib/utils";
 
 export const SUGGESTION_CATEGORIES = [
@@ -72,16 +75,45 @@ function crossBookCategory(titles: string[]) {
 }
 
 export function ChatEmptyState({
+  bookId,
   bookTitles,
+  chapterIndex,
   sendMessage,
 }: {
+  bookId: string;
   bookTitles: string[];
+  chapterIndex: number | undefined;
   sendMessage: (message: { text: string }) => void;
 }) {
+  const fallbackQuestions = SUGGESTION_CATEGORIES[2].suggestions;
+  const [chapterQuestions, setChapterQuestions] = useState<
+    { status: "loading" } | { status: "ready"; questions: readonly string[] }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    if (chapterIndex === undefined) {
+      setChapterQuestions({ status: "ready", questions: fallbackQuestions });
+      return;
+    }
+
+    setChapterQuestions({ status: "loading" });
+    loadChapterQuestions(bookId, chapterIndex)
+      .then((questions) => {
+        if (!cancelled) setChapterQuestions({ status: "ready", questions });
+      })
+      .catch(() => {
+        if (!cancelled) setChapterQuestions({ status: "ready", questions: fallbackQuestions });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId, chapterIndex, fallbackQuestions]);
+
   const categories =
     bookTitles.length >= 2
-      ? [crossBookCategory(bookTitles), ...SUGGESTION_CATEGORIES]
-      : SUGGESTION_CATEGORIES;
+      ? [crossBookCategory(bookTitles), ...SUGGESTION_CATEGORIES.slice(0, 2)]
+      : SUGGESTION_CATEGORIES.slice(0, 2);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -106,6 +138,22 @@ export function ChatEmptyState({
             </div>
           </div>
         ))}
+        <div className="flex flex-col gap-1.5 text-sm text-foreground animate-in fade-in slide-in-from-bottom-2 duration-300">
+          {chapterQuestions.status === "loading"
+            ? ["w-4/5", "w-3/4", "w-5/6"].map((width) => (
+                <Skeleton key={width} className={cn("h-4", width)} />
+              ))
+            : chapterQuestions.questions.map((question) => (
+                <button
+                  key={question}
+                  type="button"
+                  className="cursor-pointer text-left"
+                  onClick={() => sendMessage({ text: question })}
+                >
+                  {question}
+                </button>
+              ))}
+        </div>
       </div>
     </div>
   );

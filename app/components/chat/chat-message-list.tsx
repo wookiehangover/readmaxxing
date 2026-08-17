@@ -24,6 +24,7 @@ export function ChatMessageList({
   messages,
   status,
   bookId,
+  currentChapterIndex,
   bookFormat,
   bookDataRef,
   bookAnnotations,
@@ -34,6 +35,7 @@ export function ChatMessageList({
   messages: UIMessage[];
   status: string;
   bookId: string;
+  currentChapterIndex?: number;
   bookFormat?: string;
   bookDataRef: React.RefObject<ArrayBuffer | null>;
   bookAnnotations: BookAnnotation[];
@@ -51,7 +53,12 @@ export function ChatMessageList({
         >
           <MessageScrollerContent className="gap-3">
             {messages.length === 0 && (
-              <ChatEmptyState bookTitles={selectedBookTitles} sendMessage={sendMessage} />
+              <ChatEmptyState
+                bookId={bookId}
+                bookTitles={selectedBookTitles}
+                chapterIndex={currentChapterIndex}
+                sendMessage={sendMessage}
+              />
             )}
             {messages.map((message, index) => {
               const isCurrentlyStreaming = status === "streaming" && index === messages.length - 1;

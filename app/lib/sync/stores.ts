@@ -18,6 +18,7 @@ let _chatSessionStore: UseStore | null = null;
 let _activeSessionStore: UseStore | null = null;
 let _chatMessagesStore: UseStore | null = null;
 let _syncFlagsStore: UseStore | null = null;
+let _chapterQuestionsStore: UseStore | null = null;
 
 /** Book metadata (BookMeta records, key = bookId). */
 export function getBookStore(): UseStore {
@@ -95,4 +96,11 @@ export function getChatMessagesStore(): UseStore {
 export function getSyncFlagsStore(): UseStore {
   if (!_syncFlagsStore) _syncFlagsStore = createStore("ebook-reader-sync-flags", "flags");
   return _syncFlagsStore;
+}
+
+/** Local chapter question cache (string[3], key = bookId + chapter index). */
+export function getChapterQuestionsStore(): UseStore {
+  if (!_chapterQuestionsStore)
+    _chapterQuestionsStore = createStore("ebook-reader-chapter-questions", "questions");
+  return _chapterQuestionsStore;
 }

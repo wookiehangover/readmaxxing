@@ -82,22 +82,21 @@ export function ChatPanelInner({
     consumePendingHighlightPill();
   }, [consumePendingHighlightPill]);
 
+  const [currentChapterIndex, setCurrentChapterIndex] = useState<number>();
   const currentChapterRef = useRef<number | undefined>(undefined);
   const visibleTextRef = useRef("");
   useEffect(() => {
-    const context = chatContextMap.current.get(bookId);
-    if (context) {
-      currentChapterRef.current = context.currentChapterIndex;
-      visibleTextRef.current = context.visibleText ?? "";
-    }
-
-    const interval = setInterval(() => {
+    const updateContext = () => {
       const latest = chatContextMap.current.get(bookId);
-      if (latest) {
-        currentChapterRef.current = latest.currentChapterIndex;
-        visibleTextRef.current = latest.visibleText ?? "";
-      }
-    }, 1000);
+      const nextChapterIndex = latest?.currentChapterIndex;
+      currentChapterRef.current = nextChapterIndex;
+      visibleTextRef.current = latest?.visibleText ?? "";
+      setCurrentChapterIndex((current) =>
+        current === nextChapterIndex ? current : nextChapterIndex,
+      );
+    };
+    updateContext();
+    const interval = setInterval(updateContext, 1000);
     return () => clearInterval(interval);
   }, [bookId, chatContextMap]);
 
@@ -365,6 +364,7 @@ export function ChatPanelInner({
         messages={messages}
         status={status}
         bookId={bookId}
+        currentChapterIndex={currentChapterIndex}
         bookFormat={bookFormat}
         bookDataRef={bookDataRef}
         bookAnnotations={bookAnnotations}
