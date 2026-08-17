@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe("ChatEmptyState", () => {
-  it("left-aligns the suggested-question column", () => {
+  it("shows left-aligned questions without a headline or airplane", () => {
     const container = document.body.appendChild(document.createElement("div"));
     root = createRoot(container);
     act(() => root?.render(<ChatEmptyState bookTitles={["Book"]} sendMessage={vi.fn()} />));
@@ -24,8 +24,25 @@ describe("ChatEmptyState", () => {
     );
     const layout = container.firstElementChild;
 
+    expect(container.textContent).not.toContain("Discuss");
+    expect(container.querySelector("svg")).toBeNull();
     expect(layout?.className).not.toContain("items-center");
     expect(layout?.className).not.toContain("justify-center");
+    expect(layout?.classList.contains("px-2")).toBe(false);
     expect(suggestion?.className).toContain("text-left");
+  });
+
+  it("sends a clicked suggestion", () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    const sendMessage = vi.fn();
+    root = createRoot(container);
+    act(() => root?.render(<ChatEmptyState bookTitles={["Book"]} sendMessage={sendMessage} />));
+
+    const suggestion = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("What is this book about?"),
+    );
+    act(() => suggestion?.click());
+
+    expect(sendMessage).toHaveBeenCalledWith({ text: "What is this book about?" });
   });
 });
