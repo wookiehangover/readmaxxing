@@ -2,7 +2,7 @@ import { useEditor, EditorContent, NodeViewContent, NodeViewWrapper } from "@tip
 import type { ReactNodeViewProps, JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
-import { useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
+import { useCallback, useEffect, useRef, useImperativeHandle, forwardRef, useState } from "react";
 import { Navigation, Trash2 } from "lucide-react";
 import {
   HighlightReference,
@@ -30,6 +30,7 @@ export interface TiptapEditorHandle {
 interface TiptapEditorProps {
   content?: TiptapEditorContent;
   compact?: boolean;
+  placeholder?: string;
   onUpdate?: (content: JSONContent) => void;
   onBlur?: () => void;
   onNavigateToHighlight?: (cfi: string) => void | Promise<void>;
@@ -134,6 +135,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
   {
     content,
     compact = false,
+    placeholder,
     onUpdate,
     onBlur,
     onNavigateToHighlight,
@@ -143,6 +145,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
   },
   ref,
 ) {
+  const [isEmpty, setIsEmpty] = useState(true);
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
   const onBlurRef = useRef(onBlur);
@@ -166,6 +169,8 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       type: "doc",
       content: [{ type: "paragraph" }],
     },
+    onCreate: ({ editor }) => setIsEmpty(editor.isEmpty),
+    onTransaction: ({ editor }) => setIsEmpty(editor.isEmpty),
     onUpdate: ({ editor }) => {
       onUpdateRef.current?.(editor.getJSON());
     },
@@ -265,7 +270,20 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
   );
 
   return (
-    <div className="tiptap-editor">
+    <div className="tiptap-editor relative">
+      {placeholder && isEmpty ? (
+        <p
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute top-0 left-0 z-10 text-sm text-muted-foreground",
+            {
+              "px-4 py-3": !compact,
+            },
+          )}
+        >
+          {placeholder}
+        </p>
+      ) : null}
       <EditorContent
         editor={editor}
         className={cn(

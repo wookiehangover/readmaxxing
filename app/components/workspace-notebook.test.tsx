@@ -18,8 +18,8 @@ vi.mock("~/lib/context/workspace-context", () => ({
   }),
 }));
 vi.mock("~/components/tiptap-editor", () => ({
-  TiptapEditor: ({ compact }: { compact?: boolean }) => (
-    <div data-testid="notebook-editor" data-compact={compact} />
+  TiptapEditor: ({ compact, placeholder }: { compact?: boolean; placeholder?: string }) => (
+    <div data-testid="notebook-editor" data-compact={compact} data-placeholder={placeholder} />
   ),
 }));
 
@@ -51,5 +51,8 @@ describe("WorkspaceNotebook", () => {
     expect(
       container.querySelector("[data-testid='notebook-editor']")?.getAttribute("data-compact"),
     ).toBe("true");
+    expect(
+      container.querySelector("[data-testid='notebook-editor']")?.getAttribute("data-placeholder"),
+    ).toBe("If you're not writing, you're not reading");
   });
 });

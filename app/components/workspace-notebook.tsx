@@ -23,6 +23,8 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { downloadNotebookMarkdown } from "~/lib/editor/export-notebook-markdown";
 import { cn } from "~/lib/utils";
 
+const NOTES_EMPTY_PLACEHOLDER = "If you're not writing, you're not reading";
+
 interface WorkspaceNotebookProps {
   bookId: string;
   bookTitle?: string;
@@ -270,6 +272,7 @@ export function WorkspaceNotebook({
             ref={editorRef}
             content={content}
             compact={chromeless}
+            placeholder={chromeless ? NOTES_EMPTY_PLACEHOLDER : undefined}
             onUpdate={handleUpdate}
             onNavigateToHighlight={handleNavigateToCfi}
             onDeleteHighlight={onDeleteHighlight}
