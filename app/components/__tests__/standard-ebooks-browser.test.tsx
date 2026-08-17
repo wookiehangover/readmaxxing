@@ -53,9 +53,12 @@ describe("StandardEbooksBrowser", () => {
       root!.render(<StandardEbooksBrowser onBookAdded={vi.fn()} />);
     });
 
-    const grid = container!.querySelector<HTMLElement>(".grid-cols-2");
+    const grid = container!.querySelector<HTMLElement>(".grid");
+    expect(grid?.classList.contains("max-w-6xl")).toBe(true);
+    expect(grid?.classList.contains("grid-cols-[repeat(auto-fill,minmax(10rem,10rem))]")).toBe(
+      true,
+    );
     expect(grid?.className).toContain("sm:gap-6");
-    expect(grid?.className).toContain("xl:grid-cols-6");
     expect(grid?.className).toContain("items-start");
     expect([...grid!.children].every((card) => card.classList.contains("max-w-40"))).toBe(true);
     expect(grid?.querySelectorAll('a[href^="https://standardebooks.org/ebooks/"]')).toHaveLength(2);
@@ -76,7 +79,8 @@ describe("StandardEbooksBrowser", () => {
       await Promise.resolve();
     });
 
-    expect(container!.querySelector(".grid-cols-2")).toBeNull();
+    expect(grid?.classList.contains("grid")).toBe(false);
     expect(container!.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(container!.querySelector("table")?.closest(".max-w-6xl")).not.toBeNull();
   });
 });

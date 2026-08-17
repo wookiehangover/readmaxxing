@@ -55,14 +55,26 @@ function renderLibrary(onOpenBook = vi.fn()) {
 }
 
 describe("LibraryBrowseContent", () => {
-  it("caps every library grid card while leaving the grid tracks available", () => {
+  it("caps the library grid and keeps its tracks cover-sized", () => {
     renderLibrary();
 
-    const grid = container!.querySelector<HTMLElement>(".grid-cols-2")!;
+    const grid = container!.querySelector<HTMLElement>(".grid")!;
+    expect(grid.classList.contains("max-w-6xl")).toBe(true);
+    expect(grid.classList.contains("grid-cols-[repeat(auto-fill,minmax(10rem,10rem))]")).toBe(true);
     expect(grid.className).toContain("items-start");
     expect([...grid.children]).toHaveLength(3);
     expect([...grid.children].every((card) => card.classList.contains("max-w-40"))).toBe(true);
     expect(grid.querySelector('[aria-label="Open Test Book"] .aspect-\\[2\\/3\\]')).not.toBeNull();
+  });
+
+  it("uses the same content cap for the table view", async () => {
+    renderLibrary();
+
+    await act(async () =>
+      container!.querySelector<HTMLButtonElement>('button[aria-label="Table view"]')!.click(),
+    );
+
+    expect(container!.querySelector("table")?.closest(".max-w-6xl")).not.toBeNull();
   });
 
   it("keeps search, sort, and layout together in order and still opens a book", async () => {

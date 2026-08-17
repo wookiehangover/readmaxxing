@@ -303,20 +303,22 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
             </div>
           ) : libraryView === "table" ? (
             <div className="flex-1 overflow-hidden p-4 pt-2 md:p-6 md:pt-3">
-              <LibraryTable
-                books={filteredBooks}
-                onOpenBook={handleOpenBook}
-                onOpenNotebook={handleOpenNotebook}
-                onOpenChat={handleOpenChat}
-                onDeleteBook={handleDeleteBook}
-                onReloadBook={handleReloadBook}
-                syncActive={syncActive}
-                downloadingBookIds={downloadingBookIds}
-              />
+              <div className="h-full w-full max-w-6xl">
+                <LibraryTable
+                  books={filteredBooks}
+                  onOpenBook={handleOpenBook}
+                  onOpenNotebook={handleOpenNotebook}
+                  onOpenChat={handleOpenChat}
+                  onDeleteBook={handleDeleteBook}
+                  onReloadBook={handleReloadBook}
+                  syncActive={syncActive}
+                  downloadingBookIds={downloadingBookIds}
+                />
+              </div>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
-              <div className="grid grid-cols-2 items-start gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              <div className="grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
                 {sortedGridBooks.map((book) => {
                   return (
                     <LibraryBook

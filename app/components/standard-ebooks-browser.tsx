@@ -182,7 +182,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
 
         {isInitialLoading ? (
           settings.standardEbooksView === "grid" ? (
-            <div className="grid grid-cols-2 items-start gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            <div className="grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
               {Array.from({ length: 12 }).map((_, i) => (
                 <SkeletonCard key={i} />
               ))}
@@ -197,7 +197,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
             </p>
           </div>
         ) : settings.standardEbooksView === "grid" ? (
-          <div className="grid grid-cols-2 items-start gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <div className="grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
             {books.map((book) => (
               <SEBookCard
                 key={book.urlPath}
@@ -209,7 +209,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
             ))}
           </div>
         ) : (
-          <div className="[&>div]:h-auto [&>div]:overflow-visible">
+          <div className="w-full max-w-6xl [&>div]:h-auto [&>div]:overflow-visible">
             <StandardEbooksTable
               books={books}
               isDownloading={isBookDownloading}
@@ -348,7 +348,7 @@ function SkeletonCard() {
 
 function StandardEbooksTableSkeleton() {
   return (
-    <div className="flex flex-col overflow-hidden rounded-md border">
+    <div className="flex w-full max-w-6xl flex-col overflow-hidden rounded-md border">
       <Skeleton className="h-10 w-full rounded-none" />
       {Array.from({ length: 8 }).map((_, i) => (
         <div key={i} className="border-t p-2">
