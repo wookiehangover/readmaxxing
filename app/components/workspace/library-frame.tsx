@@ -1,6 +1,5 @@
 import {
   createContext,
-  useEffect,
   useContext,
   useState,
   type ChangeEvent,
@@ -11,10 +10,7 @@ import { createPortal } from "react-dom";
 import { MoreHorizontal } from "lucide-react";
 import { NavLink } from "react-router";
 import { BugReportDialog } from "~/components/bug-report-dialog";
-import {
-  DEFAULT_RAIL_WIDTH,
-  RAIL_WIDTH_STORAGE_KEY,
-} from "~/components/reading-shell/reading-rail-width";
+import { DEFAULT_RAIL_WIDTH } from "~/components/reading-shell/reading-rail-width";
 import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
@@ -47,17 +43,7 @@ interface LibraryFrameProps {
 
 export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFrameProps) {
   const [bugReportOpen, setBugReportOpen] = useState(false);
-  const [railWidth, setRailWidth] = useState(DEFAULT_RAIL_WIDTH);
   const [headerControlsElement, setHeaderControlsElement] = useState<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    try {
-      const storedWidth = Number(window.sessionStorage.getItem(RAIL_WIDTH_STORAGE_KEY));
-      if (Number.isFinite(storedWidth) && storedWidth > 0) setRailWidth(storedWidth);
-    } catch {
-      // Keep the default width when storage is unavailable.
-    }
-  }, []);
 
   return (
     <LibraryHeaderControlsContext.Provider value={headerControlsElement}>
@@ -71,7 +57,7 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
           <nav
             aria-label="Library navigation"
             className="flex shrink-0 items-start gap-3 px-6 text-xs font-normal"
-            style={{ width: railWidth, maxWidth: "100%" }}
+            style={{ width: DEFAULT_RAIL_WIDTH, maxWidth: "100%" }}
           >
             <div className="flex h-7 min-w-0 flex-1 items-center gap-5">
               {NAV_ITEMS.map((item) => (

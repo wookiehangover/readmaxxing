@@ -70,8 +70,8 @@ afterEach(() => {
 describe("LibraryFrame", () => {
   it.each([
     [null, "384px"],
-    ["512", "512px"],
-  ])("matches the reading rail column at stored width %s", (storedWidth, expectedWidth) => {
+    ["512", "384px"],
+  ])("uses the default rail width with stored width %s", (storedWidth, expectedWidth) => {
     if (storedWidth) window.sessionStorage.setItem("reading-rail-width", storedWidth);
     const { container } = renderFrame("/library");
     const nav = container.querySelector<HTMLElement>('nav[aria-label="Library navigation"]')!;
