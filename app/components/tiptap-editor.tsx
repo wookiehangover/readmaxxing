@@ -275,9 +275,11 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
         <p
           aria-hidden="true"
           className={cn(
-            "pointer-events-none absolute top-0 left-0 z-10 text-sm text-muted-foreground",
+            "pointer-events-none absolute top-0 left-0 z-10 text-sm",
             {
               "px-4 py-3": !compact,
+              "text-muted-foreground": !compact,
+              "text-muted-foreground/35": compact,
             },
           )}
         >

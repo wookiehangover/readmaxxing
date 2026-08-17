@@ -28,7 +28,8 @@ describe("TiptapEditor placeholder", () => {
     const placeholder = Array.from(container.querySelectorAll("p")).find(
       (element) => element.textContent === PLACEHOLDER,
     );
-    expect(placeholder?.classList.contains("text-muted-foreground")).toBe(true);
+    expect(placeholder?.classList.contains("text-muted-foreground/35")).toBe(true);
+    expect(placeholder?.classList.contains("text-muted-foreground")).toBe(false);
     expect(JSON.stringify(editorRef.current?.getContent())).not.toContain(PLACEHOLDER);
 
     act(() => editorRef.current?.setContent("Written note"));
