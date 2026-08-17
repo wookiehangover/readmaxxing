@@ -154,9 +154,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0">
-
         <div className="flex flex-col gap-3 px-4 md:px-6">
-
           <div className="pt-4 pb-2">
             <p className="text-xs text-muted-foreground">
               Ebooks from{" "}
@@ -183,7 +181,6 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
               Support their mission →
             </a>
           </div>
-
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -253,8 +250,6 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
             )}
           </div>
         )}
-
-
       </div>
     </div>
   );

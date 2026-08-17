@@ -46,9 +46,7 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern: ({ request, url, sameOrigin }) =>
-              sameOrigin &&
-              request.mode === "navigate" &&
-              isNetworkOnlyDocumentPath(url.pathname),
+              sameOrigin && request.mode === "navigate" && isNetworkOnlyDocumentPath(url.pathname),
             handler: "NetworkOnly",
           },
           {

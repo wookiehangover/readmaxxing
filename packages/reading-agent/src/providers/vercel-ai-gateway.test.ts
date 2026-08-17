@@ -57,12 +57,7 @@ describe("Vercel AI Gateway provider", () => {
       "openai",
       openaiGatewayProvider,
       ["gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"],
-      [
-        "openai/gpt-5.5",
-        "openai/gpt-5.6-luna",
-        "openai/gpt-5.6-sol",
-        "openai/gpt-5.6-terra",
-      ],
+      ["openai/gpt-5.5", "openai/gpt-5.6-luna", "openai/gpt-5.6-sol", "openai/gpt-5.6-terra"],
       VERCEL_AI_GATEWAY_V1_BASE_URL,
     ],
     ["xai", xaiGatewayProvider, ["grok-4.5"], ["xai/grok-4.5"], VERCEL_AI_GATEWAY_V1_BASE_URL],

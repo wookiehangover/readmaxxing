@@ -7,17 +7,20 @@ End-to-end tests using Playwright. The test suite includes both offline-capable 
 ### Prerequisites
 
 1. **Start local services** (Postgres + Redis):
+
    ```bash
    docker-compose up -d
    ```
 
 2. **Initialize the database**:
+
    ```bash
    export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres?search_path=readmax"
    bash scripts/init-db.sh
    ```
 
 3. **Set environment variables**:
+
    ```bash
    export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres?search_path=readmax"
    export REDIS_URL="redis://localhost:6379"
@@ -26,6 +29,7 @@ End-to-end tests using Playwright. The test suite includes both offline-capable 
    ```
 
    Or create `.env.local`:
+
    ```bash
    cp .env.example .env.local
    # Edit .env.local with the above values
@@ -56,6 +60,7 @@ pnpm playwright test --headed
 ## Test organization
 
 ### Database-independent tests
+
 These tests work without Postgres/Redis and test core offline functionality:
 
 - `workspace.spec.ts` — workspace layout, epub uploads, reader navigation
@@ -63,6 +68,7 @@ These tests work without Postgres/Redis and test core offline functionality:
 - `signed-out-first-open.spec.ts` — offline-first user experience
 
 ### Database-dependent tests
+
 These tests require Postgres and use `skipIfAuthNotConfigured()` to skip gracefully when the database is unavailable:
 
 - `chat.spec.ts` — AI chat with tool use (create highlights, append to notes, resumable streaming). Skipped in CI via `SKIP_AI_TESTS` (requires Anthropic API key)

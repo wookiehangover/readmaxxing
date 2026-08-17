@@ -85,8 +85,8 @@ jobs:
       WEBAUTHN_RP_ID: localhost
       WEBAUTHN_RP_ORIGIN: http://localhost:5173
       # Skip tests requiring external services in CI
-      SKIP_AI_TESTS: "true"  # Chat tests require Anthropic API key
-      SKIP_SHARE_TESTS: "true"  # Share tests require Vercel Blob storage
+      SKIP_AI_TESTS: "true" # Chat tests require Anthropic API key
+      SKIP_SHARE_TESTS: "true" # Share tests require Vercel Blob storage
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
