@@ -274,14 +274,11 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       {placeholder && isEmpty ? (
         <p
           aria-hidden="true"
-          className={cn(
-            "pointer-events-none absolute top-0 left-0 z-10 text-sm",
-            {
-              "px-4 py-3": !compact,
-              "text-muted-foreground": !compact,
-              "text-muted-foreground/35": compact,
-            },
-          )}
+          className={cn("pointer-events-none absolute top-0 left-0 z-10 text-sm", {
+            "px-4 py-3": !compact,
+            "text-muted-foreground": !compact,
+            "text-muted-foreground/35": compact,
+          })}
         >
           {placeholder}
         </p>
@@ -289,7 +286,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       <EditorContent
         editor={editor}
         className={cn(
-          "prose prose-sm dark:prose-invert max-w-none focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none [&_.tiptap_li]:my-0.5 [&_.tiptap_li_p]:my-0",
+          "prose prose-sm dark:prose-invert max-w-none focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none [&_.tiptap_li]:my-0.5 [&_.tiptap_li_p]:my-0 [&_h1]:text-[1.125em] [&_h1]:font-medium [&_h2]:text-[1em] [&_h2]:font-medium [&_h3]:text-[0.9375em] [&_h4]:text-[0.875em] [&_h5]:text-[0.8125em] [&_h6]:text-[0.75em]",
           { "px-4 py-3": !compact },
         )}
       />

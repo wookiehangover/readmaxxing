@@ -52,3 +52,37 @@ describe("TiptapEditor placeholder", () => {
     expect(container.textContent).toContain("Written note");
   });
 });
+
+describe("TiptapEditor rail heading styles", () => {
+  it("keeps semantic headings while applying the quiet editorial scale", async () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    root = createRoot(container);
+
+    await act(async () =>
+      root?.render(
+        <TiptapEditor
+          content={{
+            type: "doc",
+            content: [
+              { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "H1" }] },
+              { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "H2" }] },
+            ],
+          }}
+          compact
+        />,
+      ),
+    );
+
+    const prose = container.querySelector(".prose");
+    expect(container.querySelector("h1")?.textContent).toBe("H1");
+    expect(container.querySelector("h2")?.textContent).toBe("H2");
+    expect(prose?.classList.contains("[&_h1]:text-[1.125em]")).toBe(true);
+    expect(prose?.classList.contains("[&_h1]:font-medium")).toBe(true);
+    expect(prose?.classList.contains("[&_h2]:text-[1em]")).toBe(true);
+    expect(prose?.classList.contains("[&_h2]:font-medium")).toBe(true);
+    expect(prose?.classList.contains("[&_h3]:text-[0.9375em]")).toBe(true);
+    expect(prose?.classList.contains("[&_h4]:text-[0.875em]")).toBe(true);
+    expect(prose?.classList.contains("[&_h5]:text-[0.8125em]")).toBe(true);
+    expect(prose?.classList.contains("[&_h6]:text-[0.75em]")).toBe(true);
+  });
+});
