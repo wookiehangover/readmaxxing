@@ -1,0 +1,98 @@
+import React, { act, createRef } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("~/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  DropdownMenuGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onClick }: React.ComponentProps<"button">) => (
+    <button type="button" onClick={onClick}>
+      {children}
+    </button>
+  ),
+  DropdownMenuTrigger: ({ children, ...props }: React.ComponentProps<"button">) => (
+    <button type="button" {...props}>
+      {children}
+    </button>
+  ),
+}));
+
+vi.mock("~/components/bug-report-dialog", () => ({
+  BugReportDialog: ({ open }: { open?: boolean }) => (
+    <div data-testid="bug-report-state" data-open={open} />
+  ),
+}));
+
+import { LibraryFrame } from "~/components/workspace/library-frame";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+let root: Root | null = null;
+
+function renderFrame(pathname: string) {
+  const container = document.body.appendChild(document.createElement("div"));
+  const fileInputRef = createRef<HTMLInputElement>();
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      <MemoryRouter initialEntries={[pathname]}>
+        <LibraryFrame fileInputRef={fileInputRef} onFileInput={vi.fn()}>
+          <div>Browse body</div>
+        </LibraryFrame>
+      </MemoryRouter>,
+    );
+  });
+  return { container, fileInputRef };
+}
+
+afterEach(() => {
+  act(() => root?.unmount());
+  root = null;
+  document.body.innerHTML = "";
+  vi.restoreAllMocks();
+});
+
+describe("LibraryFrame", () => {
+  it.each([
+    ["/library", "/library"],
+    ["/standard-ebooks", "/standard-ebooks"],
+  ])("renders the slim shared navigation on %s", (pathname, activeHref) => {
+    const { container } = renderFrame(pathname);
+    const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
+    const links = Array.from(nav.querySelectorAll("a"));
+
+    expect(links.map((link) => link.textContent)).toEqual(["Library", "Free ebooks", "Settings"]);
+    const activeLink = nav.querySelector<HTMLAnchorElement>(`a[href="${activeHref}"]`)!;
+    expect(activeLink.getAttribute("aria-current")).toBe("page");
+    expect(activeLink.className).toContain("after:w-[15px]");
+    expect(
+      links
+        .filter((link) => link !== activeLink)
+        .every((link) => !link.className.includes("after:w-[15px]")),
+    ).toBe(true);
+    expect(nav.textContent).toContain("…");
+    expect(container.textContent).toContain("Browse body");
+    expect(container.querySelector("aside")).toBeNull();
+    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Open sidebar"]')).toBeNull();
+  });
+
+  it("keeps upload and bug report as the only overflow actions", () => {
+    const inputClick = vi.spyOn(HTMLInputElement.prototype, "click");
+    const { container } = renderFrame("/library");
+    const actions = Array.from(container.querySelectorAll("button")).filter(
+      (button) => button.textContent !== "…",
+    );
+
+    expect(actions.map((button) => button.textContent)).toEqual(["Upload book", "Bug report"]);
+    act(() => actions[0]?.click());
+    expect(inputClick).toHaveBeenCalledOnce();
+
+    act(() => actions[1]?.click());
+    expect(
+      container.querySelector('[data-testid="bug-report-state"]')?.getAttribute("data-open"),
+    ).toBe("true");
+  });
+});

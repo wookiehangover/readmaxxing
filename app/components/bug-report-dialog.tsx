@@ -20,6 +20,9 @@ import { useSettings } from "~/lib/settings";
 type BugReportDialogProps = {
   readonly triggerClassName?: string;
   readonly triggerSize?: "icon" | "icon-sm";
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
+  readonly hideTrigger?: boolean;
 };
 
 type PanelSnapshot = {
@@ -60,13 +63,22 @@ function panelSnapshot(panel: unknown): PanelSnapshot | null {
 export function BugReportDialog({
   triggerClassName,
   triggerSize = "icon",
+  open: controlledOpen,
+  onOpenChange,
+  hideTrigger = false,
 }: BugReportDialogProps = {}) {
   const ws = useWorkspace();
   const [settings] = useSettings();
   const auth = useAuth();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+
+  function setOpen(nextOpen: boolean) {
+    if (controlledOpen === undefined) setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }
 
   function buildContext() {
     const api = ws.dockviewApi.current;
@@ -130,27 +142,29 @@ export function BugReportDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <TooltipProvider delay={400}>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size={triggerSize}
-                className={triggerClassName}
-                onClick={() => setOpen(true)}
-              />
-            }
-          >
-            <LifeBuoy />
-            <span className="sr-only">Need help?</span>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="end">
-            Need help?
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      {!hideTrigger && (
+        <TooltipProvider delay={400}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size={triggerSize}
+                  className={triggerClassName}
+                  onClick={() => setOpen(true)}
+                />
+              }
+            >
+              <LifeBuoy />
+              <span className="sr-only">Need help?</span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="end">
+              Need help?
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
 
       <DialogContent>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
