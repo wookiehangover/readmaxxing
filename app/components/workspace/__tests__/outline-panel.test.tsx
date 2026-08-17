@@ -10,11 +10,25 @@ const mocks = vi.hoisted(() => ({
   fetchReadingArtifacts: vi.fn(),
   saveReadingOutline: vi.fn(),
   setContent: vi.fn(),
+  navigateInCluster: vi.fn(),
+  focusBookPanel: vi.fn(),
   editorProps: null as null | {
     content?: string;
     onUpdate?: (content: JSONContent) => void;
     onBlur?: () => void;
+    onNavigateToOutlineIncrement?: (locator: string) => void | Promise<void>;
   },
+}));
+
+vi.mock("~/lib/context/workspace-context", () => ({
+  useWorkspace: () => ({
+    dockviewApi: {
+      current: {
+        panels: [{ id: "book-book-1", focus: mocks.focusBookPanel }],
+      },
+    },
+    navigateInCluster: mocks.navigateInCluster,
+  }),
 }));
 
 vi.mock("~/lib/reading-agent/artifacts-client", async () => {
@@ -92,7 +106,10 @@ beforeEach(() => {
   mocks.fetchReadingArtifacts.mockReset();
   mocks.saveReadingOutline.mockReset();
   mocks.setContent.mockReset();
+  mocks.navigateInCluster.mockReset();
+  mocks.focusBookPanel.mockReset();
   mocks.editorProps = null;
+  mocks.navigateInCluster.mockResolvedValue(undefined);
   mocks.saveReadingOutline.mockImplementation(async (bookId: string, content: string) => ({
     bookId,
     artifact: {
@@ -121,6 +138,19 @@ describe("OutlinePanel", () => {
     expect(container!.querySelector("[data-testid='outline-editor']")?.textContent).toBe(
       "# Chapter 1\n\nSiddhartha leaves home.",
     );
+  });
+
+  it("navigates to a linked increment and focuses the book panel", async () => {
+    mocks.fetchReadingArtifacts.mockResolvedValue(outline);
+    renderPanel();
+    await act(async () => {});
+
+    await act(async () => {
+      await mocks.editorProps!.onNavigateToOutlineIncrement!("epubcfi(/6/4!/4/2/1:0)");
+    });
+
+    expect(mocks.navigateInCluster).toHaveBeenCalledWith("book-1", "epubcfi(/6/4!/4/2/1:0)");
+    expect(mocks.focusBookPanel).toHaveBeenCalledOnce();
   });
 
   it("shows a sign-in prompt on 401", async () => {
@@ -256,5 +286,39 @@ describe("OutlinePanel", () => {
     expect(mocks.setContent).toHaveBeenCalledWith(
       "# Chapter 1\n\nSiddhartha leaves home.\n\n- A new dwell fact.",
     );
+  });
+
+  it("renders only linked increments with page labels as quiet gutter marks", async () => {
+    const { TiptapEditor: ActualTiptapEditor } = await vi.importActual<
+      typeof import("~/components/tiptap-editor")
+    >("~/components/tiptap-editor");
+    const onNavigate = vi.fn();
+    const editorContainer = document.body.appendChild(document.createElement("div"));
+    const editorRoot = createRoot(editorContainer);
+
+    await act(async () =>
+      editorRoot.render(
+        <ActualTiptapEditor
+          content={
+            '<div data-outline-increment="" data-locator="chapter.xhtml#page=12" data-page="12">\n\n- Linked fact.\n\n</div>\n\n<div data-outline-increment="" data-locator="chapter.xhtml#page=13">\n\n- Missing label.\n\n</div>\n\n- Legacy fact.'
+          }
+          onNavigateToOutlineIncrement={onNavigate}
+        />,
+      ),
+    );
+    await act(async () => {});
+
+    const mark = editorContainer.querySelector<HTMLButtonElement>(
+      'button[aria-label="Go to page 12"]',
+    );
+    expect(mark).not.toBeNull();
+    expect(editorContainer.querySelector('button[aria-label="Go to page 13"]')).toBeNull();
+    expect(editorContainer.querySelectorAll("button")).toHaveLength(1);
+
+    await act(async () => mark!.click());
+    expect(onNavigate).toHaveBeenCalledWith("chapter.xhtml#page=12");
+
+    act(() => editorRoot.unmount());
+    editorContainer.remove();
   });
 });

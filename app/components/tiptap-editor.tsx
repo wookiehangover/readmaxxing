@@ -1,4 +1,4 @@
-import { useEditor, EditorContent, NodeViewWrapper } from "@tiptap/react";
+import { useEditor, EditorContent, NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 import type { ReactNodeViewProps, JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
@@ -8,7 +8,7 @@ import {
   HighlightReference,
   type HighlightReferenceAttrs,
 } from "~/lib/editor/tiptap-highlight-node";
-import { OutlineIncrement } from "~/lib/editor/tiptap-outline-node";
+import { OutlineIncrement, type OutlineIncrementAttrs } from "~/lib/editor/tiptap-outline-node";
 
 export type TiptapEditorContent = JSONContent | string;
 
@@ -31,9 +31,42 @@ interface TiptapEditorProps {
   onUpdate?: (content: JSONContent) => void;
   onBlur?: () => void;
   onNavigateToHighlight?: (cfi: string) => void | Promise<void>;
+  onNavigateToOutlineIncrement?: (locator: string) => void | Promise<void>;
   onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
   /** Fires once the underlying Tiptap editor instance is created and ready. */
   onReady?: () => void;
+}
+
+function OutlineIncrementView({ node, editor }: ReactNodeViewProps) {
+  const { locator, page } = node.attrs as OutlineIncrementAttrs;
+
+  const handleNavigate = useCallback(() => {
+    if (!locator) return;
+    editor.view.dom.dispatchEvent(
+      new CustomEvent("outline-increment-navigate", {
+        detail: { locator },
+        bubbles: true,
+      }),
+    );
+  }, [editor, locator]);
+
+  return (
+    <NodeViewWrapper className="relative my-2 pl-8">
+      {locator && page ? (
+        <button
+          type="button"
+          contentEditable={false}
+          onClick={handleNavigate}
+          className="absolute top-0 left-0 w-6 cursor-pointer rounded-sm py-0.5 text-right text-xs font-normal text-muted-foreground/70 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`Go to page ${page}`}
+          title={`Go to page ${page}`}
+        >
+          {page}
+        </button>
+      ) : null}
+      <NodeViewContent />
+    </NodeViewWrapper>
+  );
 }
 
 function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps) {
@@ -96,7 +129,15 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
 }
 
 export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(function TiptapEditor(
-  { content, onUpdate, onBlur, onNavigateToHighlight, onDeleteHighlight, onReady },
+  {
+    content,
+    onUpdate,
+    onBlur,
+    onNavigateToHighlight,
+    onNavigateToOutlineIncrement,
+    onDeleteHighlight,
+    onReady,
+  },
   ref,
 ) {
   const onUpdateRef = useRef(onUpdate);
@@ -114,7 +155,9 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       HighlightReference.configure({
         component: HighlightReferenceView,
       }),
-      OutlineIncrement,
+      OutlineIncrement.configure({
+        component: OutlineIncrementView,
+      }),
     ],
     content: content || {
       type: "doc",
@@ -155,13 +198,22 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       onDeleteHighlight?.(detail.highlightId, detail.cfiRange);
     };
 
+    const handleOutlineNavigate = (e: Event) => {
+      const detail = (e as CustomEvent<{ locator?: unknown }>).detail;
+      if (typeof detail?.locator === "string") {
+        void onNavigateToOutlineIncrement?.(detail.locator);
+      }
+    };
+
     dom.addEventListener("highlight-navigate", handleNavigate);
     dom.addEventListener("highlight-delete", handleDelete);
+    dom.addEventListener("outline-increment-navigate", handleOutlineNavigate);
     return () => {
       dom.removeEventListener("highlight-navigate", handleNavigate);
       dom.removeEventListener("highlight-delete", handleDelete);
+      dom.removeEventListener("outline-increment-navigate", handleOutlineNavigate);
     };
-  }, [editor, onNavigateToHighlight, onDeleteHighlight]);
+  }, [editor, onNavigateToHighlight, onNavigateToOutlineIncrement, onDeleteHighlight]);
 
   // Expose imperative handle for appending highlight references
   useImperativeHandle(

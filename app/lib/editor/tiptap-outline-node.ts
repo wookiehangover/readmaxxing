@@ -1,6 +1,12 @@
-import { mergeAttributes, Node } from "@tiptap/react";
+import { mergeAttributes, Node, ReactNodeViewRenderer } from "@tiptap/react";
+import type { ComponentType } from "react";
 
-export const OutlineIncrement = Node.create({
+export interface OutlineIncrementAttrs {
+  locator: string | null;
+  page: string | null;
+}
+
+export const OutlineIncrement = Node.create<{ component: ComponentType<any> }>({
   name: "outlineIncrement",
   group: "block",
   content: "block+",
@@ -29,5 +35,14 @@ export const OutlineIncrement = Node.create({
 
   renderHTML({ HTMLAttributes }) {
     return ["div", mergeAttributes(HTMLAttributes, { "data-outline-increment": "" }), 0];
+  },
+
+  addNodeView() {
+    const component = this.options.component as ComponentType<any>;
+    if (!component) return null;
+    return ReactNodeViewRenderer(component, {
+      stopEvent: ({ event }) =>
+        event.type === "click" || event.type === "mousedown" || event.type === "mouseup",
+    });
   },
 });

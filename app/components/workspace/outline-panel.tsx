@@ -6,6 +6,7 @@ import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-edito
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
+import { useWorkspace } from "~/lib/context/workspace-context";
 import {
   fetchReadingArtifacts,
   ReadingArtifactsError,
@@ -46,6 +47,7 @@ function errorState(error: unknown): OutlineState {
 
 export function OutlinePanel({ params, api }: IDockviewPanelProps<OutlinePanelParams>) {
   const { bookId, bookTitle } = params;
+  const { dockviewApi, navigateInCluster } = useWorkspace();
   const [state, setState] = useState<OutlineState>({ status: "loading", content: null });
   const [refreshKey, setRefreshKey] = useState(0);
   const editorRef = useRef<TiptapEditorHandle | null>(null);
@@ -104,6 +106,14 @@ export function OutlinePanel({ params, api }: IDockviewPanelProps<OutlinePanelPa
     setState({ status: "loading", content: null });
     setRefreshKey((key) => key + 1);
   }, []);
+
+  const handleNavigateToCfi = useCallback(
+    async (locator: string) => {
+      await navigateInCluster(bookId, locator);
+      dockviewApi.current?.panels.find((panel) => panel.id === `book-${bookId}`)?.focus();
+    },
+    [bookId, dockviewApi, navigateInCluster],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -225,6 +235,7 @@ export function OutlinePanel({ params, api }: IDockviewPanelProps<OutlinePanelPa
             content={state.content ?? ""}
             onUpdate={handleUpdate}
             onBlur={() => void flushSave()}
+            onNavigateToOutlineIncrement={handleNavigateToCfi}
           />
         )}
       </ScrollArea>
