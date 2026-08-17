@@ -200,10 +200,10 @@ function ChatMessageImpl({
   );
 
   return (
-    <Message align={isUser ? "end" : "start"} className="px-5">
+    <Message align={isUser ? "end" : "start"}>
       <MessageContent>
         <Bubble
-          align={isUser ? "end" : "start"}
+          align="start"
           variant={isUser ? "secondary" : "ghost"}
           className={cn("max-w-prose", {
             "my-5": isUser,
