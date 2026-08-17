@@ -6,6 +6,7 @@ import type { FocusedCluster } from "~/hooks/use-focused-mode";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { AppRuntime } from "~/lib/effect-runtime";
 import type { BookMeta } from "~/lib/stores/book-store";
+import { getBookReadingPath } from "~/lib/reading-route";
 import { truncateTitle } from "~/lib/workspace-utils";
 import type { useWorkspace } from "~/lib/context/workspace-context";
 import { AnnotationService } from "~/lib/stores/annotations-store";
@@ -52,7 +53,7 @@ export function deferBookOpenUntilWorkspaceReady(
   }
 
   pendingOpenBookRef.current = book;
-  if (!isWorkspaceRoute) navigate("/");
+  if (!isWorkspaceRoute) navigate(getBookReadingPath(book.id));
   return true;
 }
 

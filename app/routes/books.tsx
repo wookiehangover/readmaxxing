@@ -4,6 +4,6 @@ export function clientLoader() {
   throw redirect("/library");
 }
 
-export default function WorkspaceRedirectRoute() {
+export default function MissingBookRedirectRoute() {
   return null;
 }

@@ -117,7 +117,7 @@ describe("deferBookOpenUntilWorkspaceReady", () => {
 
     expect(deferred).toBe(true);
     expect(pending.current).toBe(book);
-    expect(navigate).toHaveBeenCalledWith("/");
+    expect(navigate).toHaveBeenCalledWith("/books/book-a");
   });
 
   it("queues without navigating while the workspace layout is restoring", () => {

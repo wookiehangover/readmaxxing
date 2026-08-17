@@ -1,25 +1,30 @@
-import React, { act } from "react";
-import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-vi.mock("~/components/reading-shell", () => ({
-  ReadingShell: () => <div data-testid="reading-shell" />,
-}));
+import { clientLoader } from "~/routes/workspace";
+import { clientLoader as missingBookClientLoader } from "~/routes/books";
 
-import WorkspaceRoute from "~/routes/workspace";
+function getRedirect(loader: () => unknown): Response {
+  try {
+    loader();
+  } catch (cause) {
+    return cause as Response;
+  }
+  throw new Error("Expected route loader to redirect");
+}
 
-afterEach(() => {
-  document.body.innerHTML = "";
-});
+describe("WorkspaceRedirectRoute", () => {
+  it("redirects the root route to the library", () => {
+    const response = getRedirect(clientLoader);
 
-describe("WorkspaceRoute", () => {
-  it("mounts the reading shell instead of dockview", () => {
-    const root = createRoot(document.body.appendChild(document.createElement("div")));
+    expect(response).toBeInstanceOf(Response);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/library");
+  });
 
-    act(() => root.render(<WorkspaceRoute />));
+  it("redirects a missing book id to the library", () => {
+    const response = getRedirect(missingBookClientLoader);
 
-    expect(document.body.querySelector("[data-testid='reading-shell']")).not.toBeNull();
-    expect(document.body.querySelector(".dv-dockview")).toBeNull();
-    act(() => root.unmount());
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/library");
   });
 });

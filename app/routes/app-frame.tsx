@@ -26,7 +26,7 @@ import {
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useOpenBookChapterUploads } from "~/hooks/use-open-book-chapter-uploads";
 import { useSyncListener } from "~/hooks/use-sync-listener";
-import { consumePendingBookOpen, useWorkspaceLayout } from "~/hooks/use-workspace-layout";
+import { useWorkspaceLayout } from "~/hooks/use-workspace-layout";
 import {
   clearPendingBookOpenOnWorkspaceExit,
   useWorkspacePanels,
@@ -36,6 +36,7 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { ensureLocalThenOpen } from "~/lib/library-book-open";
 import { hasDemoOnboardingState, isFirstVisit, seedDemo } from "~/lib/onboarding/demo-seed";
+import { activateReadingRoute, getBookReadingPath, getReadingBookId } from "~/lib/reading-route";
 import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { BookService, bookNeedsDownload, type BookMeta } from "~/lib/stores/book-store";
 import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
@@ -114,7 +115,8 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const ws = useWorkspace();
   const location = useLocation();
   const navigate = useNavigate();
-  const isWorkspaceRoute = location.pathname === "/";
+  const readingBookId = getReadingBookId(location.pathname);
+  const isWorkspaceRoute = readingBookId !== null;
   const isWorkspaceRouteRef = useRef(isWorkspaceRoute);
   isWorkspaceRouteRef.current = isWorkspaceRoute;
   const previousWorkspaceRouteRef = useRef(isWorkspaceRoute);
@@ -241,8 +243,16 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
 
   useEffect(() => {
     layoutReadyRef.current = isWorkspaceRoute;
-    if (isWorkspaceRoute) consumePendingBookOpen(pendingOpenBookRef, openBook);
-  }, [isWorkspaceRoute, openBook]);
+    if (!isWorkspaceRoute || readingBookId === null) return;
+    pendingOpenBookRef.current = null;
+    activateReadingRoute({
+      bookId: readingBookId,
+      books,
+      activeBookId: ws.activeClusterBookIdRef.current,
+      openBook,
+      navigate,
+    });
+  }, [books, isWorkspaceRoute, navigate, openBook, readingBookId, ws]);
 
   ws.booksRef.current = books;
 
@@ -299,8 +309,9 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     (book: BookMeta) => {
       updateBooks((previous) => [...previous, book]);
       openBook(book);
+      navigate(getBookReadingPath(book.id));
     },
-    [openBook, updateBooks],
+    [navigate, openBook, updateBooks],
   );
 
   const handleBookDeleted = useCallback(
@@ -337,6 +348,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
           refreshBooks: (freshBooks) => updateBooks(() => freshBooks),
           openBook,
         });
+        navigate(getBookReadingPath(book.id));
         setMobileOpen(false);
       } catch (error) {
         console.error("Failed to download sidebar book before opening:", error);
@@ -348,14 +360,14 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
         }
       }
     },
-    [openBook, updateBooks],
+    [navigate, openBook, updateBooks],
   );
 
   const handleActivateCluster = useCallback(
     (bookId: string) => {
       if (!isWorkspaceRoute) pendingClusterActivationRef.current = bookId;
       ws.setActiveCluster(bookId);
-      if (!isWorkspaceRoute) navigate("/");
+      navigate(getBookReadingPath(bookId));
     },
     [isWorkspaceRoute, navigate, ws],
   );

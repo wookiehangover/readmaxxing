@@ -1,5 +1,6 @@
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { WorkspaceContextValue } from "~/lib/context/workspace-context";
@@ -33,7 +34,11 @@ describe("WorkspaceLibraryRoute", () => {
   it("keeps mounting the existing library browse page", () => {
     const root = createRoot(document.body.appendChild(document.createElement("div")));
 
-    act(() => root.render(React.createElement(WorkspaceLibraryRoute)));
+    act(() =>
+      root.render(
+        React.createElement(MemoryRouter, null, React.createElement(WorkspaceLibraryRoute)),
+      ),
+    );
 
     expect(document.body.textContent).toContain("Existing library page");
     act(() => root.unmount());
@@ -43,13 +48,15 @@ describe("WorkspaceLibraryRoute", () => {
 describe("openBookInWorkspace", () => {
   it("immediately hands a local book to the pending-safe workspace handler", () => {
     const openBook = vi.fn();
+    const navigate = vi.fn();
     const workspace = {
       openBookRef: { current: openBook },
     } as Pick<WorkspaceContextValue, "openBookRef">;
 
-    openBookInWorkspace(book, workspace);
+    openBookInWorkspace(book, workspace, navigate);
 
     expect(openBook).toHaveBeenCalledWith(book);
+    expect(navigate).toHaveBeenCalledWith("/books/book-1");
   });
 
   it("does not hand off a cancelled open", () => {
@@ -59,7 +66,7 @@ describe("openBookInWorkspace", () => {
       openBookRef: { current: vi.fn() },
     } as Pick<WorkspaceContextValue, "openBookRef">;
 
-    openBookInWorkspace(book, workspace, controller.signal);
+    openBookInWorkspace(book, workspace, vi.fn(), controller.signal);
 
     expect(workspace.openBookRef.current).not.toHaveBeenCalled();
   });
