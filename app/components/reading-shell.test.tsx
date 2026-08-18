@@ -96,7 +96,7 @@ function setShellWidth(width: number) {
 }
 
 describe("ReadingShell", () => {
-  it("uses the active book title and restores the default title on unmount", () => {
+  it("restores the previous title on unmount while it still owns the title", () => {
     renderShell();
 
     expect(document.title).toBe("EPUB Book");
@@ -104,6 +104,16 @@ describe("ReadingShell", () => {
     act(() => root?.unmount());
     root = null;
     expect(document.title).toBe("Readmaxxing");
+  });
+
+  it("does not overwrite a destination title set before unmount", () => {
+    renderShell();
+    document.title = "Settings — Readmaxxing";
+
+    act(() => root?.unmount());
+    root = null;
+
+    expect(document.title).toBe("Settings — Readmaxxing");
   });
 
   it("uses the default title while no book is open", () => {

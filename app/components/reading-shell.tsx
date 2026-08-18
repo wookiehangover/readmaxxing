@@ -17,10 +17,14 @@ export function ReadingShell() {
   const book = workspace.booksRef.current.find((candidate) => candidate.id === activeBookId);
 
   useEffect(() => {
-    document.title = book?.title ?? "Readmaxxing";
+    const previousTitle = document.title;
+    const readerTitle = book?.title ?? "Readmaxxing";
+    document.title = readerTitle;
 
     return () => {
-      document.title = "Readmaxxing";
+      if (document.title === readerTitle) {
+        document.title = previousTitle;
+      }
     };
   }, [book?.title]);
 
