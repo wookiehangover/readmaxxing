@@ -7,8 +7,9 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { MoreHorizontal } from "lucide-react";
-import { NavLink } from "react-router";
+import { Bug, MoreHorizontal, Upload } from "lucide-react";
+import { NavLink, useNavigate } from "react-router";
+import { Effect } from "effect";
 import { BugReportDialog } from "~/components/bug-report-dialog";
 import { DEFAULT_RAIL_WIDTH } from "~/components/reading-shell/reading-rail-width";
 import { Button } from "~/components/ui/button";
@@ -17,9 +18,16 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { useEffectQuery } from "~/hooks/use-effect-query";
+import { useOptionalWorkspace } from "~/lib/context/workspace-context";
+import { getBookReadingPath } from "~/lib/reading-route";
+import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { cn } from "~/lib/utils";
+import { sortBooks } from "~/lib/workspace-utils";
 
 const NAV_ITEMS = [
   { label: "Library", to: "/library" },
@@ -42,8 +50,22 @@ interface LibraryFrameProps {
 }
 
 export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFrameProps) {
+  const workspace = useOptionalWorkspace();
+  const navigate = useNavigate();
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [headerControlsElement, setHeaderControlsElement] = useState<HTMLDivElement | null>(null);
+  const { data: lastOpenedMap } = useEffectQuery(
+    () => WorkspaceService.pipe(Effect.andThen((service) => service.getLastOpenedMap())),
+    [],
+  );
+  const recentBooks =
+    workspace && lastOpenedMap instanceof Map
+      ? sortBooks(
+          workspace.booksRef.current.filter((book) => lastOpenedMap.has(book.id)),
+          "recent",
+          lastOpenedMap,
+        ).slice(0, 5)
+      : [];
 
   return (
     <LibraryHeaderControlsContext.Provider value={headerControlsElement}>
@@ -65,7 +87,8 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
                   key={item.to}
                   to={item.to}
                   className={({ isActive }) =>
-                    cn("relative leading-[18px] text-foreground", {
+                    cn("relative leading-[18px] text-muted-foreground hover:text-foreground", {
+                      "text-foreground": isActive,
                       "after:absolute after:bottom-0 after:left-0 after:h-px after:w-[15px] after:bg-foreground":
                         isActive,
                     })
@@ -85,12 +108,32 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
               <DropdownMenuContent align="end" className="w-36 text-xs">
                 <DropdownMenuGroup>
                   <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                    <Upload />
                     Upload book
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setBugReportOpen(true)}>
+                    <Bug />
                     Bug report
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
+                {recentBooks.length > 0 ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Recent</DropdownMenuLabel>
+                      {recentBooks.map((book) => (
+                        <DropdownMenuItem
+                          key={book.id}
+                          onClick={() => navigate(getBookReadingPath(book.id))}
+                        >
+                          <span className="min-w-0 truncate" title={book.title}>
+                            {book.title}
+                          </span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuGroup>
+                  </>
+                ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
           </nav>
