@@ -164,10 +164,15 @@ describe("ReadingRail", () => {
     ).toBe(true);
   });
 
-  it("shows the Review empty stub", () => {
+  it("hides Review and defaults to Notes", () => {
     const container = renderRail();
-    clickTab(container, "Review");
-    expect(container.textContent).toContain("Nothing to review yet.");
+    const tabList = container.querySelector("[aria-label='Reading tools']");
+    const tabs = Array.from(tabList?.querySelectorAll("button") ?? []);
+
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Notes", "Discuss", "Outline"]);
+    expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector("[data-testid='notes-panel']")).not.toBeNull();
+    expect(container.textContent).not.toContain("Nothing to review yet.");
   });
 
   it("shows title, chapter, page metadata, and the rail menu slot", () => {

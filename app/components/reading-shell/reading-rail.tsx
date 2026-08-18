@@ -11,7 +11,7 @@ import { WorkspaceNotebookPanel } from "~/components/workspace/panel-components"
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { cn } from "~/lib/utils";
 
-const tabs = ["Notes", "Discuss", "Outline", "Review"] as const;
+const tabs = ["Notes", "Discuss", "Outline"] as const;
 type ReadingRailTab = (typeof tabs)[number];
 
 export function ReadingRail() {
