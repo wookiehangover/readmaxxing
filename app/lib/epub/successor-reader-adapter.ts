@@ -22,6 +22,7 @@ import {
   type SelectionChangedDetail,
   type TocEntry,
 } from "@readmaxxing/epub-successor";
+import type { PublisherPageMap } from "~/lib/epub/publisher-pages";
 
 const POSITION_CACHE_KIND = "epub-successor-positions";
 /** Bumped when position sampling semantics change (empty-section skip, chars/page). */
@@ -442,6 +443,8 @@ export class SuccessorRenditionAdapter {
   constructor(
     readonly publication: Publication,
     readonly navigator: Navigator,
+    readonly positions: readonly PersistentLocator[] = [],
+    readonly publisherPages: PublisherPageMap | null = null,
   ) {
     navigator.addEventListener("relocation", (event) => {
       const relocation = (event as CustomEvent<Relocation>).detail;
@@ -478,6 +481,8 @@ export class SuccessorRenditionAdapter {
       hrefsMatch(candidate.href, target),
     );
     if (!link) throw new RangeError(`Publication spine does not contain ${target}`);
+    const pageMatch = target.match(/#page=([1-9]\d*)$/);
+    if (pageMatch) return this.#displayPage(link.href, Number(pageMatch[1]));
     const fragment = target.includes("#") ? target.slice(target.indexOf("#") + 1) : undefined;
     return this.navigator.display({ href: link.href, ...(fragment ? { fragment } : {}) });
   }
@@ -579,6 +584,42 @@ export class SuccessorRenditionAdapter {
     const range = resolveCfi(cfi, document, sectionMetadata(this.publication, spineIndex));
     if (!range) throw new RangeError("CFI could not be resolved in its publication section");
     return this.navigator.restoreRange(range);
+  }
+
+  async #displayPage(href: PublicationPath, page: number): Promise<Relocation> {
+    const publisherEntryIndex =
+      this.publisherPages?.entries.findIndex(
+        (entry, index) =>
+          positionHrefsMatch(entry.href, href) && (entry.pageNumber ?? index + 1) === page,
+      ) ?? -1;
+    if (publisherEntryIndex >= 0) {
+      const entry = this.publisherPages!.entries[publisherEntryIndex]!;
+      return this.navigator.display({
+        href,
+        ...(entry.fragment ? { fragment: entry.fragment } : {}),
+      });
+    }
+
+    const position = this.positions.find(
+      (candidate) =>
+        positionHrefsMatch(candidate.href, href) &&
+        pageIndexFromPositions(this.positions, {
+          href,
+          textOffset: candidate.selectors.textPosition.start,
+        }) === page,
+    );
+    if (position?.locations.cfi) return this.#displayCfi(position.locations.cfi);
+
+    const firstPage = pageIndexFromPositions(this.positions, { href, localProgression: 0 });
+    const lastPage = pageIndexFromPositions(this.positions, { href, localProgression: 1 });
+    if (firstPage === null || lastPage === null || page < firstPage || page > lastPage) {
+      throw new RangeError(`Publication page ${page} does not belong to ${href}`);
+    }
+
+    const relocation = await this.navigator.display({ href });
+    if (position) return this.navigator.restoreProgression(position.locations.progression);
+    if (firstPage === lastPage) return relocation;
+    return this.navigator.restoreProgression((page - firstPage) / (lastPage - firstPage));
   }
 
   #compatibilityLocation(relocation: Relocation): CompatibilityLocation {

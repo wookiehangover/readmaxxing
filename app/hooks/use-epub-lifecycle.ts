@@ -518,11 +518,6 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         security: { resourceProvider: provider },
       });
       navigatorRef.current = navigator;
-      rendition = new SuccessorRenditionAdapter(publication, navigator);
-      renditionRef.current = rendition;
-      navigator.addEventListener("relocation", (event) =>
-        handleRelocation((event as CustomEvent<Relocation>).detail),
-      );
       setToc(tocData);
       configRef.current.onTocExtracted?.(tocData);
 
@@ -546,6 +541,12 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           ).catch(console.error);
         }
       }
+
+      rendition = new SuccessorRenditionAdapter(publication, navigator, positions, publisherPages);
+      renditionRef.current = rendition;
+      navigator.addEventListener("relocation", (event) =>
+        handleRelocation((event as CustomEvent<Relocation>).detail),
+      );
 
       const observedDocuments = new WeakSet<Document>();
       rendition.hooks.content.register(({ document }: { document: Document }) => {
