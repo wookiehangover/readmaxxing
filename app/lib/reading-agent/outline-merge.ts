@@ -1,6 +1,8 @@
 const UNTITLED_CHAPTER = "Untitled";
 const CHAPTER_HEADING_PATTERN = /^##[ \t]+(.+?)[ \t]*$/gm;
 const BULLET_PATTERN = /^-[ \t]+(.+?)[ \t]*$/gm;
+const INCREMENT_PATTERN = /<div[ \t]+[^>\r\n]*data-outline-increment=(?:""|'')[^>\r\n]*>/g;
+const LOCATOR_PAGE_PATTERN = /(?:#page=|page:)([0-9]+)/;
 
 interface ChapterSection {
   readonly contentStart: number;
@@ -79,6 +81,43 @@ function incrementMarkdown(
   return `${opening}${eol}${eol}${bulletMarkdown}${eol}${eol}</div>`;
 }
 
+function attributeValue(openingTag: string, attribute: string): string | null {
+  const match = new RegExp(`${attribute}=(?:"([^"]*)"|'([^']*)')`).exec(openingTag);
+  return match?.[1] ?? match?.[2] ?? null;
+}
+
+function locatorPage(locator: string): number | null {
+  const value = LOCATOR_PAGE_PATTERN.exec(locator)?.[1];
+  return value === undefined ? null : Number(value);
+}
+
+function metadataPage(metadata: OutlineIncrementMetadata): number | null {
+  return metadata.displayPage != null && Number.isFinite(metadata.displayPage)
+    ? metadata.displayPage
+    : locatorPage(metadata.locator);
+}
+
+function incrementPage(openingTag: string): number | null {
+  const page = attributeValue(openingTag, "data-page");
+  if (page !== null) {
+    const value = Number(page);
+    if (Number.isFinite(value)) return value;
+  }
+  const locator = attributeValue(openingTag, "data-locator");
+  return locator === null ? null : locatorPage(locator);
+}
+
+function insertionOffset(markdown: string, section: ChapterSection, page: number): number | null {
+  const chapter = markdown.slice(section.contentStart, section.end);
+  for (const match of chapter.matchAll(INCREMENT_PATTERN)) {
+    const existingPage = incrementPage(match[0]);
+    if (existingPage !== null && existingPage > page) {
+      return section.contentStart + (match.index ?? 0);
+    }
+  }
+  return null;
+}
+
 function appendSection(markdown: string, sectionMarkdown: string, eol: string): string {
   if (!markdown.trim()) return sectionMarkdown;
   if (markdown.endsWith(`${eol}${eol}`)) return `${markdown}${sectionMarkdown}`;
@@ -102,6 +141,12 @@ export function mergeOutlineMarkdown(
   const increment = incrementMarkdown(additions, metadata, eol);
   if (!section) {
     return appendSection(currentMarkdown, `## ${label}${eol}${eol}${increment}`, eol);
+  }
+
+  const page = metadataPage(metadata);
+  const offset = page === null ? null : insertionOffset(currentMarkdown, section, page);
+  if (offset !== null) {
+    return `${currentMarkdown.slice(0, offset)}${increment}${eol}${eol}${currentMarkdown.slice(offset)}`;
   }
 
   return `${currentMarkdown.slice(0, section.bodyEnd)}${eol}${eol}${increment}${currentMarkdown.slice(section.bodyEnd)}`;

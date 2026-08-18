@@ -33,6 +33,43 @@ describe("mergeOutlineMarkdown", () => {
     );
   });
 
+  it("inserts before the first increment with a higher locator page", () => {
+    const current =
+      '## One\nUser-edited introduction.\n\n<div data-outline-increment="" data-locator="chapter-1.xhtml#page=20">\n\n- Later event.\n\n</div>';
+    expect(
+      mergeOutlineMarkdown(current, "One", ["Earlier event."], {
+        locator: "page:10",
+      }),
+    ).toBe(
+      '## One\nUser-edited introduction.\n\n<div data-outline-increment="" data-locator="page:10">\n\n- Earlier event.\n\n</div>\n\n<div data-outline-increment="" data-locator="chapter-1.xhtml#page=20">\n\n- Later event.\n\n</div>',
+    );
+  });
+
+  it("appends when the new display page follows existing increments", () => {
+    const current =
+      '## One\n\n<div data-outline-increment="" data-locator="page:10" data-page="10">\n\n- Earlier event.\n\n</div>';
+    expect(
+      mergeOutlineMarkdown(current, "One", ["Later event."], {
+        locator: "chapter-1.xhtml",
+        displayPage: 20,
+      }),
+    ).toBe(
+      `${current}\n\n<div data-outline-increment="" data-locator="chapter-1.xhtml" data-page="20">\n\n- Later event.\n\n</div>`,
+    );
+  });
+
+  it("appends when the new increment has no page metadata", () => {
+    const current =
+      '## One\n\n<div data-outline-increment="" data-locator="page:20" data-page="20">\n\n- Paged event.\n\n</div>';
+    const merged = mergeOutlineMarkdown(current, "One", ["Unpaged event."], {
+      locator: "chapter-1.xhtml",
+    });
+
+    expect(merged).toBe(
+      `${current}\n\n<div data-outline-increment="" data-locator="chapter-1.xhtml">\n\n- Unpaged event.\n\n</div>`,
+    );
+  });
+
   it("adds an unknown chapter at the end", () => {
     const current = "## One\n- First event.";
     expect(
