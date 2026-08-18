@@ -166,6 +166,16 @@ afterEach(() => {
 });
 
 describe("ReaderSettingsMenu", () => {
+  it("shows icons for the Formatting and Actions submenu triggers", () => {
+    const rendered = renderMenu();
+    const triggers = Array.from(rendered.container.querySelectorAll("div")).filter(
+      (element) => element.textContent === "Formatting" || element.textContent === "Actions",
+    );
+
+    expect(triggers).toHaveLength(2);
+    expect(triggers.every((trigger) => trigger.querySelector("svg"))).toBe(true);
+  });
+
   it("includes Library and Settings navigation", () => {
     const rendered = renderMenu();
     const items = Array.from(rendered.container.querySelectorAll<HTMLElement>("[role='menuitem']"));

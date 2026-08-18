@@ -11,6 +11,7 @@ import {
   Share2,
   TableOfContents,
   Type,
+  Zap,
   ClipboardCopyIcon,
   FileText,
   History,
@@ -382,13 +383,19 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
         <DropdownMenuContent align="end" className="w-52 text-xs">
           <DropdownMenuGroup>
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Formatting</DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger>
+                <Type className="size-4" />
+                Formatting
+              </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-52 text-xs">
                 <ReaderFormattingMenuItems {...props} />
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger>Actions</DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger>
+                <Zap className="size-4" />
+                Actions
+              </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-52 text-xs">
                 <ReaderActionItems
                   {...props}
