@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
+import type { Route } from "./+types/workspace-library";
 import { LibraryBrowseContent } from "~/components/workspace/library-browse-content";
 import { useWorkspace, type WorkspaceContextValue } from "~/lib/context/workspace-context";
 import { ensureLocalThenOpen, refreshWorkspaceBooks } from "~/lib/library-book-open";
@@ -9,6 +10,10 @@ import type { BookMeta } from "~/lib/stores/book-store";
 
 type WorkspaceBookRefs = Pick<WorkspaceContextValue, "openBookRef">;
 type Navigate = (path: string) => void | Promise<void>;
+
+export function meta(_args: Route.MetaArgs) {
+  return [{ title: "Library — Readmaxxing" }];
+}
 
 export function openBookInWorkspace(
   book: BookMeta,
