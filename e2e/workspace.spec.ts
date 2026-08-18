@@ -1,30 +1,32 @@
 import { test, expect, type Page } from "@playwright/test";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { waitForAppHydration } from "./helpers/auth";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const TEST_EPUB = resolve(__dirname, "fixtures/test-book.epub");
 
-/**
- * Upload a test epub via the hidden file input in the sidebar.
- * Returns once the book is visible in the current layout.
- *
- * Note: the upload flow auto-opens the first book and auto-collapses the
- * sidebar, so asserting on the sidebar entry is unreliable. The book-reader
- * Dockview tab is hidden, so the ClusterBar pill is the visible completion
- * signal.
- */
+/** Upload a test epub and wait for its reading route to hydrate. */
 async function uploadTestBook(page: Page) {
-  // The sidebar has a hidden file input for epub uploads — use .first() since
-  // the watermark panel also has one
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_EPUB);
 
-  const focusedPill = page
-    .getByRole("tablist", { name: "Open books" })
-    .getByRole("tab", { name: /Test Book for E2E/ });
-  await expect(focusedPill.first()).toBeVisible({ timeout: 15_000 });
+  const readingShell = page.getByTestId("reading-shell");
+  const libraryBook = page.getByRole("button", { name: "Open Test Book for E2E" });
+  await expect
+    .poll(
+      async () =>
+        (await readingShell.isVisible().catch(() => false)) ||
+        (await libraryBook.isVisible().catch(() => false)),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+
+  if (!(await readingShell.isVisible().catch(() => false))) {
+    await libraryBook.click({ force: true, timeout: 5_000 }).catch(() => {});
+    await expect(readingShell).toBeVisible({ timeout: 20_000 });
+  }
 }
 
 /**
@@ -44,60 +46,41 @@ async function uploadAndOpenBook(page: Page) {
 test.describe("Workspace route", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
-    await page.goto("/");
-    // Wait for client-side hydration — the workspace route is the index
-    // The dockview container should be present once hydrated
-    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
 
-    // Clear IndexedDB + storage, then pre-collapse the sidebar. The app
-    // auto-collapses the sidebar on first-book open and dispatches a resize
-    // event during the transition, which races epubjs initialization and
-    // leaves the iframe empty. Pre-collapsing short-circuits the auto-collapse
-    // branch in openBook so the transition never fires during tests. Tests
-    // that inspect sidebar contents expand it explicitly.
+    // Clear IndexedDB + storage to isolate each test.
     await page.evaluate(async () => {
       const dbs = await indexedDB.databases();
       for (const db of dbs) {
         if (db.name) indexedDB.deleteDatabase(db.name);
       }
       localStorage.clear();
-      localStorage.setItem(
-        "app-settings",
-        JSON.stringify({ sidebarCollapsed: true, updatedAt: Date.now() }),
-      );
     });
 
     // Reload after clearing storage to get a fresh state
     await page.goto("/");
-    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await waitForAppHydration(page);
   });
 
-  test("loads and renders dockview and sidebar", async ({ page }) => {
-    // Verify dockview renders
-    const dockview = page.locator(".dv-dockview");
-    await expect(dockview).toBeVisible();
-
-    // Verify sidebar renders — it contains the hidden file input and action buttons
-    // The sidebar has a "Settings" link
-    await expect(page.getByTitle("Settings")).toBeVisible();
+  test("loads and renders library chrome", async ({ page }) => {
+    const navigation = page.getByRole("navigation", { name: "Library navigation" });
+    await expect(navigation).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Library", exact: true })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: "Settings" })).toBeVisible();
+    await expect(page.locator('input[type="file"][accept=".epub,.pdf"]').first()).toBeAttached();
   });
 
-  test("upload book via file input and verify it appears in sidebar", async ({ page }) => {
+  test("upload book via file input and verify it appears in the library", async ({ page }) => {
     await uploadTestBook(page);
-
-    // The sidebar auto-collapses when the first book opens — expand it so the
-    // book title text is rendered.
-    await page.getByTitle("Expand sidebar").click();
-
-    // Verify the book title is now in the sidebar
-    const bookEntry = page.locator("aside").getByText("Test Book for E2E", { exact: true });
-    await expect(bookEntry).toBeVisible();
+    await page.goto("/library");
+    await waitForAppHydration(page);
+    await expect(page.getByRole("button", { name: "Open Test Book for E2E" })).toBeVisible();
   });
 
   test("uploaded book opens in a reader panel", async ({ page }) => {
     await uploadAndOpenBook(page);
 
-    // Verify the reader panel mounted. In focused mode the book tab is hidden.
+    await expect(page.getByTestId("reading-shell")).toBeVisible();
     await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
       timeout: 10_000,
     });
@@ -180,10 +163,10 @@ test.describe("Workspace route", () => {
     const chapterText = iframe.locator("p").first();
     await expect(chapterText).toBeVisible({ timeout: 20_000 });
 
-    // Open the notebook panel FIRST so the callback map is registered
-    const notebookBtn = page.getByRole("button", { name: "Open Notebook" });
-    await expect(notebookBtn.first()).toBeVisible({ timeout: 10_000 });
-    await notebookBtn.first().click();
+    // Open the Notes rail FIRST so the callback map is registered.
+    const notebookTab = page.getByRole("tab", { name: "Notes" });
+    await expect(notebookTab).toBeVisible({ timeout: 10_000 });
+    await notebookTab.click();
 
     // Wait for notebook panel to render
     await page.waitForTimeout(1_000);
@@ -215,10 +198,8 @@ test.describe("Workspace route", () => {
     // Click "Add to Notebook" to save the highlight
     await highlightBtn.click();
 
-    // Switch to the notebook tab to see the highlight reference
-    const notebookTab = page.locator(".dv-default-tab", { hasText: "Notes:" });
-    await expect(notebookTab.first()).toBeVisible({ timeout: 10_000 });
-    await notebookTab.first().click();
+    // Switch to the Notes rail to see the highlight reference.
+    await notebookTab.click();
 
     // Wait for the highlight reference blockquote to appear in the notebook
     const highlightRef = page.locator("blockquote").first();
@@ -237,7 +218,7 @@ test.describe("Workspace route", () => {
 
     // Test delete: hover the blockquote and click the delete button
     // Re-focus the notebook panel
-    await notebookTab.first().click();
+    await notebookTab.click();
 
     // Wait for blockquote to be visible again
     const highlightRefAgain = page.locator("blockquote").first();
@@ -284,11 +265,11 @@ test.describe("Workspace route", () => {
     await expect(highlightBtn).toBeVisible({ timeout: 10_000 });
     await highlightBtn.click();
 
-    // Now open the notebook — the highlight reference should already be
+    // Now open the Notes rail — the highlight reference should already be
     // persisted in IDB via the fallback path, so the blockquote must appear.
-    const notebookBtn = page.getByRole("button", { name: "Open Notebook" });
-    await expect(notebookBtn.first()).toBeVisible({ timeout: 10_000 });
-    await notebookBtn.first().click();
+    const notebookTab = page.getByRole("tab", { name: "Notes" });
+    await expect(notebookTab).toBeVisible({ timeout: 10_000 });
+    await notebookTab.click();
 
     const highlightRef = page.locator("blockquote").first();
     await expect(highlightRef).toBeVisible({ timeout: 15_000 });
@@ -306,11 +287,12 @@ test.describe("Workspace route", () => {
     await uploadAndOpenBook(page);
 
     // Wait for the reader formatting button
-    const settingsButton = page.getByRole("button", { name: "Reader formatting" });
+    const settingsButton = page.getByRole("button", { name: "Reader menu" });
     await expect(settingsButton.first()).toBeVisible({ timeout: 15_000 });
 
     // Open settings dropdown
     await settingsButton.first().click();
+    await page.getByRole("menuitem", { name: "Formatting" }).hover();
 
     // Verify layout options are visible
     await expect(page.getByText("Layout")).toBeVisible({ timeout: 5_000 });

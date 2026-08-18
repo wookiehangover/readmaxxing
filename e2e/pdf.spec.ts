@@ -5,78 +5,67 @@ import {
   installVirtualAuthenticator,
   registerAndSignIn,
   skipIfAuthNotConfigured,
+  waitForAppHydration,
 } from "./helpers/auth";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const TEST_PDF = resolve(__dirname, "fixtures/test-document.pdf");
 
-/**
- * Upload a test PDF via the hidden file input in the sidebar.
- * Returns once the PDF is visible in the current layout.
- *
- * Note: the first book upload auto-opens a reader panel and auto-collapses
- * the sidebar, so we wait on the ClusterBar pill rather than the sidebar
- * entry.
- */
+/** Upload a test PDF and wait for its reading route to hydrate. */
 async function uploadTestPdf(page: Page) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_PDF);
 
-  const focusedPill = page
-    .getByRole("tablist", { name: "Open books" })
-    .getByRole("tab", { name: /Test PDF for E2E/ });
-  await expect(focusedPill.first()).toBeVisible({ timeout: 15_000 });
+  const readingShell = page.getByTestId("reading-shell");
+  const libraryBook = page.getByRole("button", { name: "Open Test PDF for E2E" });
+  await expect
+    .poll(
+      async () =>
+        (await readingShell.isVisible().catch(() => false)) ||
+        (await libraryBook.isVisible().catch(() => false)),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+
+  if (!(await readingShell.isVisible().catch(() => false))) {
+    await libraryBook.click({ force: true, timeout: 5_000 }).catch(() => {});
+    await expect(readingShell).toBeVisible({ timeout: 20_000 });
+  }
 }
 
 test.describe("PDF support", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
-    // Wait for client-side hydration — the workspace route is the index
-    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
 
-    // Clear IndexedDB + storage, then pre-collapse the sidebar. See
-    // e2e/workspace.spec.ts beforeEach for why — the auto-collapse resize
-    // event races epubjs/pdf.js initialization on first-book open.
+    // Clear IndexedDB + storage to isolate each test.
     await page.evaluate(async () => {
       const dbs = await indexedDB.databases();
       for (const db of dbs) {
         if (db.name) indexedDB.deleteDatabase(db.name);
       }
       localStorage.clear();
-      localStorage.setItem(
-        "app-settings",
-        JSON.stringify({ sidebarCollapsed: true, updatedAt: Date.now() }),
-      );
     });
 
     // Reload after clearing storage to get a fresh state
     await page.goto("/");
-    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await waitForAppHydration(page);
   });
 
-  test("upload a PDF and verify it appears in sidebar", async ({ page }) => {
+  test("upload a PDF and verify it appears in the library", async ({ page }) => {
     await uploadTestPdf(page);
-
-    // The sidebar auto-collapses when the first book opens — expand it so the
-    // book title text is rendered.
-    await page.getByTitle("Expand sidebar").click();
-
-    // Verify the PDF title appears in the sidebar
-    const sidebarBook = page.locator("aside").getByText("Test PDF for E2E", { exact: true });
-    await expect(sidebarBook).toBeVisible();
+    await page.goto("/library");
+    await waitForAppHydration(page);
+    await expect(page.getByRole("button", { name: "Open Test PDF for E2E" })).toBeVisible();
   });
 
-  test("PDF shows correct author in sidebar", async ({ page }) => {
+  test("PDF shows correct author in the library table", async ({ page }) => {
     await uploadTestPdf(page);
-
-    // The sidebar auto-collapses when the first book opens — expand it so the
-    // author text is rendered.
-    await page.getByTitle("Expand sidebar").click();
-
-    // The author should appear somewhere in the sidebar near the book
-    const author = page.locator("aside").getByText("Test PDF Author");
-    await expect(author).toBeVisible({ timeout: 10_000 });
+    await page.goto("/library");
+    await waitForAppHydration(page);
+    await page.getByRole("button", { name: "Table view" }).click();
+    const bookRow = page.getByRole("row").filter({ hasText: "Test PDF for E2E" });
+    await expect(bookRow).toContainText("Test PDF Author", { timeout: 10_000 });
   });
 
   test("uploaded PDF opens in reader with canvas visible", async ({ page }) => {
@@ -114,10 +103,11 @@ test.describe("PDF support", () => {
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 
-    // Click the formatting button (the Type icon button with "Reader formatting" sr-only text)
-    const settingsBtn = page.getByRole("button", { name: "Reader formatting" });
+    // Open formatting from the reading rail menu.
+    const settingsBtn = page.getByRole("button", { name: "Reader menu" });
     await expect(settingsBtn).toBeVisible({ timeout: 5_000 });
     await settingsBtn.click();
+    await page.getByRole("menuitem", { name: "Formatting" }).hover();
 
     // Settings menu should show PDF layout options
     await expect(page.getByText("Fit to Height")).toBeVisible({ timeout: 5_000 });
@@ -176,7 +166,9 @@ test.describe("PDF support", () => {
     await expect(page.getByText("1 of 1")).toBeVisible({ timeout: 10_000 });
 
     // Verify we're on page 1
-    await expect(page.getByText("1 / 2")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole("main", { name: "Book surface" }).getByText("1 / 2")).toBeVisible({
+      timeout: 5_000,
+    });
   });
 
   test("selecting text in PDF shows highlight popover", async ({ page }) => {
@@ -237,8 +229,8 @@ test.describe("PDF support", () => {
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 
-    // Click the "Open Chat" button in the PDF toolbar
-    const chatBtn = page.getByRole("button", { name: "Open Chat" });
+    // Open the Discuss rail.
+    const chatBtn = page.getByRole("tab", { name: "Discuss" });
     await expect(chatBtn).toBeVisible({ timeout: 5_000 });
     await chatBtn.click();
 
@@ -261,8 +253,8 @@ test.describe("PDF support", () => {
     await expect(pdfContainer).toBeVisible({ timeout: 15_000 });
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 
-    // Open chat panel
-    const chatBtn = page.getByRole("button", { name: "Open Chat" });
+    // Open the Discuss rail.
+    const chatBtn = page.getByRole("tab", { name: "Discuss" });
     await chatBtn.click();
 
     // Wait for chat to load (textarea should appear)

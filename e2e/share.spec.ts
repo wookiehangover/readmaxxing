@@ -5,6 +5,7 @@ import {
   installVirtualAuthenticator,
   registerAndSignIn,
   skipIfAuthNotConfigured,
+  waitForAppHydration,
 } from "./helpers/auth";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,10 +28,6 @@ async function clearBrowserStorage(page: Page) {
       if (db.name) indexedDB.deleteDatabase(db.name);
     }
     localStorage.clear();
-    localStorage.setItem(
-      "app-settings",
-      JSON.stringify({ sidebarCollapsed: true, updatedAt: Date.now() }),
-    );
   });
 }
 
@@ -96,10 +93,21 @@ async function uploadTestBook(page: Page) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_EPUB);
 
-  const focusedPill = page
-    .getByRole("tablist", { name: "Open books" })
-    .getByRole("tab", { name: new RegExp(BOOK_TITLE) });
-  await expect(focusedPill.first()).toBeVisible({ timeout: 15_000 });
+  const readingShell = page.getByTestId("reading-shell");
+  const libraryBook = page.getByRole("button", { name: "Open Test Book for E2E" });
+  await expect
+    .poll(
+      async () =>
+        (await readingShell.isVisible().catch(() => false)) ||
+        (await libraryBook.isVisible().catch(() => false)),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+
+  if (!(await readingShell.isVisible().catch(() => false))) {
+    await libraryBook.click({ force: true, timeout: 5_000 }).catch(() => {});
+    await expect(readingShell).toBeVisible({ timeout: 20_000 });
+  }
 }
 
 async function waitForBookSyncedForSharing(page: Page) {
@@ -118,9 +126,8 @@ async function waitForBookSyncedForSharing(page: Page) {
 }
 
 async function openBookMenuFromLibrary(page: Page) {
-  await page.getByRole("button", { name: "New Library tab" }).click({ timeout: 10_000 });
-  await expect(page.locator(".dv-default-tab").filter({ hasText: /^Library$/ })).toHaveCount(1);
-
+  await page.goto("/library");
+  await waitForAppHydration(page);
   await page.getByRole("button", { name: "Table view" }).click();
   const bookRow = page.getByRole("row").filter({ hasText: BOOK_TITLE }).first();
   await expect(bookRow).toBeVisible({ timeout: 10_000 });
@@ -184,10 +191,13 @@ async function expectShareLandingPage(page: Page) {
 
 async function importSharedBook(page: Page) {
   await Promise.all([
-    page.waitForURL((url) => url.pathname === "/", { timeout: 30_000, waitUntil: "commit" }),
+    page.waitForURL((url) => url.pathname === "/library", {
+      timeout: 30_000,
+      waitUntil: "commit",
+    }),
     page.getByRole("button", { name: "Add to Library & Read" }).click(),
   ]);
-  await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+  await waitForAppHydration(page);
 
   await expect
     .poll(
@@ -212,15 +222,14 @@ test.describe("Share", () => {
     await installVirtualAuthenticator(context, page);
     await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
 
-    await page.goto("/");
-    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
     await clearBrowserStorage(page);
 
     await registerAndSignIn(page);
     await uploadTestBook(page);
     await waitForBookSyncedForSharing(page);
     await page.reload();
-    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await waitForAppHydration(page);
     await expect
       .poll(
         async () => {

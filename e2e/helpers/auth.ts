@@ -36,15 +36,28 @@ export async function installVirtualAuthenticator(context: BrowserContext, page:
   });
 }
 
+export async function waitForAppHydration(page: Page) {
+  const libraryNavigation = page.getByRole("navigation", { name: "Library navigation" });
+  const readingShell = page.getByTestId("reading-shell");
+
+  await expect
+    .poll(
+      async () =>
+        (await libraryNavigation.isVisible().catch(() => false)) ||
+        (await readingShell.isVisible().catch(() => false)),
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+}
+
 /**
  * Register a fresh passkey via the /login page. Leaves the user signed in
- * and back on the workspace route with the dockview hydrated.
+ * and back on the hydrated library or reading route.
  */
 export async function registerAndSignIn(page: Page) {
   await page.goto("/login");
   await page.getByRole("button", { name: "Create account" }).click();
-  await page.waitForURL((url) => url.pathname === "/", { timeout: 20_000 });
-  await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+  await waitForAppHydration(page);
 
   // AuthProvider resolves /api/auth/session asynchronously after navigate;
   // the chat panel short-circuits to the "Sign in" CTA until isAuthenticated
@@ -63,5 +76,5 @@ export async function registerAndSignIn(page: Page) {
     )
     .not.toBeNull();
   await page.reload();
-  await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+  await waitForAppHydration(page);
 }
