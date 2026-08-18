@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { LibraryToolbar } from "~/components/workspace/library-toolbar";
+import { LibraryHeaderControls } from "~/components/workspace/library-frame";
 import { LibraryTable } from "~/components/workspace/library-table";
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
@@ -291,32 +292,36 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
         </div>
       ) : (
         <>
-          <LibraryToolbar
-            query={searchQuery}
-            onQueryChange={setSearchQuery}
-            sortBy={librarySortBy}
-            onSortByChange={handleLibrarySortByChange}
-          />
+          <LibraryHeaderControls>
+            <LibraryToolbar
+              query={searchQuery}
+              onQueryChange={setSearchQuery}
+              sortBy={librarySortBy}
+              onSortByChange={handleLibrarySortByChange}
+            />
+          </LibraryHeaderControls>
           {!hasMatches ? (
             <div className="flex flex-1 items-center justify-center p-6">
               <p className="text-sm text-muted-foreground">No matching books</p>
             </div>
           ) : libraryView === "table" ? (
             <div className="flex-1 overflow-hidden p-4 pt-2 md:p-6 md:pt-3">
-              <LibraryTable
-                books={filteredBooks}
-                onOpenBook={handleOpenBook}
-                onOpenNotebook={handleOpenNotebook}
-                onOpenChat={handleOpenChat}
-                onDeleteBook={handleDeleteBook}
-                onReloadBook={handleReloadBook}
-                syncActive={syncActive}
-                downloadingBookIds={downloadingBookIds}
-              />
+              <div className="h-full w-full max-w-6xl">
+                <LibraryTable
+                  books={filteredBooks}
+                  onOpenBook={handleOpenBook}
+                  onOpenNotebook={handleOpenNotebook}
+                  onOpenChat={handleOpenChat}
+                  onDeleteBook={handleDeleteBook}
+                  onReloadBook={handleReloadBook}
+                  syncActive={syncActive}
+                  downloadingBookIds={downloadingBookIds}
+                />
+              </div>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+              <div className="mx-auto grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
                 {sortedGridBooks.map((book) => {
                   return (
                     <LibraryBook
@@ -334,10 +339,10 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
                     />
                   );
                 })}
-                <div>
+                <div className="max-w-40">
                   <AddBookCard onClick={() => fileInputRef.current?.click()} />
                 </div>
-                <div>
+                <div className="max-w-40">
                   <Link
                     to="/standard-ebooks"
                     className="flex aspect-[2/3] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground"
@@ -388,7 +393,7 @@ function LibraryBook({
   const needsDownload = bookNeedsDownload(book);
 
   return (
-    <div key={book.id} className="group relative">
+    <div key={book.id} className="group relative max-w-40">
       <button
         type="button"
         onClick={() => handleOpenBook(book)}

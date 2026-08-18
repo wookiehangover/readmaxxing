@@ -46,9 +46,7 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern: ({ request, url, sameOrigin }) =>
-              sameOrigin &&
-              request.mode === "navigate" &&
-              isNetworkOnlyDocumentPath(url.pathname),
+              sameOrigin && request.mode === "navigate" && isNetworkOnlyDocumentPath(url.pathname),
             handler: "NetworkOnly",
           },
           {
@@ -57,7 +55,8 @@ export default defineConfig({
               request.mode === "navigate" &&
               !isNetworkOnlyDocumentPath(url.pathname) &&
               !url.pathname.startsWith("/api/") &&
-              !url.pathname.startsWith("/share/"),
+              !url.pathname.startsWith("/share/") &&
+              !url.pathname.startsWith("/debug/"),
             handler: "NetworkFirst",
             options: {
               cacheName: "documents",

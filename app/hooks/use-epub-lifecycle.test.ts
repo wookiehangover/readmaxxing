@@ -5,9 +5,13 @@ import {
   normalizePublicationPath,
   openPublication,
   openZipResourceProvider,
+  type Navigator,
   type PersistentLocator,
+  type Publication,
+  type Relocation,
 } from "@readmaxxing/epub-successor";
 import {
+  displayEpubTargetWithCfiFallback,
   displayStoredCfiWithFallback,
   resolveTocNavigationTarget,
 } from "~/hooks/use-epub-lifecycle";
@@ -22,6 +26,7 @@ import {
   serializeSuccessorPositionCache,
   spineIndexFromCfi,
   extractCompatibleToc,
+  SuccessorRenditionAdapter,
 } from "~/lib/epub/successor-reader-adapter";
 import type { ReaderBookLike } from "~/lib/epub/successor-toc";
 
@@ -191,6 +196,91 @@ describe("logicalChapterIndex", () => {
 });
 
 describe("successor position compatibility", () => {
+  const publication: Publication = {
+    metadata: { title: "Test", languages: ["en"], authors: [] },
+    readingOrder: ["OPS/front.xhtml", "OPS/chapter.xhtml"].map((href) => ({
+      href: normalizePublicationPath(href),
+      rel: [],
+      properties: [],
+    })),
+    resources: [],
+    toc: [],
+    landmarks: [],
+    diagnostics: [],
+  };
+  const relocation: Relocation = {
+    href: normalizePublicationPath("OPS/chapter.xhtml"),
+    spineIndex: 1,
+    localProgression: 0.5,
+    totalProgression: 0.75,
+  };
+
+  function createMockNavigator() {
+    const display = vi.fn(async () => relocation);
+    const restoreProgression = vi.fn(async () => relocation);
+    const navigator = {
+      addEventListener: vi.fn(),
+      display,
+      restoreProgression,
+    } as unknown as Navigator;
+    return { navigator, display, restoreProgression };
+  }
+
+  it("displays href page locators at the matching sampled EPUB page", async () => {
+    const positions: PersistentLocator[] = [
+      {
+        href: normalizePublicationPath("OPS/front.xhtml"),
+        locations: { progression: 0, totalProgression: 0, position: 1 },
+        text: {},
+        selectors: { textQuote: { exact: "" }, textPosition: { start: 0, end: 0 } },
+      },
+      {
+        href: normalizePublicationPath("OPS/chapter.xhtml"),
+        locations: {
+          progression: 0,
+          totalProgression: 0.5,
+          position: 2,
+          cfi: createCfi("epubcfi(/6/4!/4)"),
+        },
+        text: {},
+        selectors: { textQuote: { exact: "" }, textPosition: { start: 0, end: 0 } },
+      },
+      {
+        href: normalizePublicationPath("OPS/chapter.xhtml"),
+        locations: {
+          progression: 0.5,
+          totalProgression: 0.75,
+          position: 3,
+          cfi: createCfi("epubcfi(/6/4!/4/2)"),
+        },
+        text: {},
+        selectors: { textQuote: { exact: "" }, textPosition: { start: 1500, end: 1500 } },
+      },
+    ];
+    const { navigator, display, restoreProgression } = createMockNavigator();
+    const rendition = new SuccessorRenditionAdapter(publication, navigator, positions);
+
+    await rendition.display("OPS/chapter.xhtml#page=2");
+    await rendition.display("OPS/chapter.xhtml#page=3");
+
+    expect(display.mock.calls).toEqual([
+      [{ href: normalizePublicationPath("OPS/chapter.xhtml") }],
+      [{ href: normalizePublicationPath("OPS/chapter.xhtml") }],
+    ]);
+    expect(restoreProgression.mock.calls).toEqual([[0], [0.5]]);
+  });
+
+  it("keeps CFI display navigation on the existing CFI path", async () => {
+    const { navigator, display, restoreProgression } = createMockNavigator();
+    const rendition = new SuccessorRenditionAdapter(publication, navigator);
+    const cfi = "epubcfi(/6/4!/4)";
+
+    await rendition.display(cfi, { localProgression: 0.5 });
+
+    expect(display).toHaveBeenCalledWith({ spineIndex: 1 });
+    expect(restoreProgression).toHaveBeenCalledWith(0.5);
+  });
+
   it("extracts the spine index from stored standard CFIs", () => {
     expect(spineIndexFromCfi("epubcfi(/6/2[chapter]!/4/2/2:0)")).toBe(0);
     expect(spineIndexFromCfi("epubcfi(/6/8!/4/2)")).toBe(3);
@@ -458,5 +548,23 @@ describe.each(["stored positions", "bookmarks"])("legacy CFI fallback for %s", (
 
     expect(display.mock.calls).toEqual([["not-a-cfi", undefined], [0]]);
     expect(onFallback).toHaveBeenCalledOnce();
+  });
+});
+
+describe("EPUB navigation targets", () => {
+  it("does not route outline page locators through legacy CFI fallback", async () => {
+    const error = new RangeError("page locator failed");
+    const display = vi.fn(async () => {
+      throw error;
+    });
+    const onFallback = vi.fn();
+
+    await expect(
+      displayEpubTargetWithCfiFallback({ display }, "OPS/chapter.xhtml#page=12", onFallback),
+    ).rejects.toBe(error);
+
+    expect(display).toHaveBeenCalledOnce();
+    expect(display).toHaveBeenCalledWith("OPS/chapter.xhtml#page=12", undefined);
+    expect(onFallback).not.toHaveBeenCalled();
   });
 });

@@ -2,14 +2,11 @@
 
 Ebook/PDF reader web app. Users add `.epub`/`.pdf` files (drag-and-drop, file picker, or the Standard Ebooks catalog), persisted in IndexedDB. The app is local-first for most entities (IndexedDB is the source of truth; sync is optional and requires a passkey session). **Chat is the exception** — Postgres is authoritative.
 
-## Workspace layout
+## Reading and library shells
 
-The main route (`app/routes/workspace.tsx`) is a [dockview](https://dockview.dev) multi-panel workspace, not a fixed sidebar/reader split.
+The index route redirects to `/library`. Books open at `/books/:id`, where `ReadingShell` renders the reader and its text-only right rail. The `/library` and `/standard-ebooks` routes use the chromeless `LibraryFrame`; the main route is no longer a dockview workspace.
 
-- **Panel types** (`app/components/workspace/`): book reader, chat, notebook, bookmarks, reading history, new-tab, Standard Ebooks browser, watermark (empty state).
-- **Book clusters**: a reader panel plus its chat/notebook tabs form a logical "cluster" (`BookCluster` in `app/lib/context/workspace-context.tsx`) so link navigation can resolve which chat/notebook belongs to which book.
-- **Layout**: a single focused layout — one cluster visible at a time, with the book/right-group split controlled by `focusedSplitRatio`. Inactive clusters are unmounted and remounted on activation.
-- Workspace state lives in `app/lib/stores/workspace-store.ts`; layout/panel logic in `app/hooks/use-workspace-*.ts`.
+`app/routes/app-frame.tsx` and `WorkspaceProvider` still coordinate book uploads, reading navigation, and shared reader/notebook callbacks. Some compatibility state and reader APIs retain dockview types while that shared wiring remains in use, but dock-only panel modules are not part of the live route tree.
 
 ## Client-side only
 
@@ -63,6 +60,10 @@ Chat is **server-authoritative**: Postgres (`readmax.chat_session`, `readmax.cha
 - **IDB warm-start cache**: `app/lib/stores/chat-store.ts` keeps a per-session IDB copy of messages so the panel paints before server hydration. Written from the server list via `cacheServerMessages()`; **never** pushed for messages. Session metadata (title, `bookId`, timestamps) syncs LWW as `chat_session`.
 - **Server-executed tools** (run inside `/api/chat`, not the browser): `read_notes`, `append_to_notes`, `edit_notes` (sandboxed JS edit script against the notebook SDK), `create_highlight` (upserts by text anchor; client resolves CFI later), `search_book`, `read_chapter`, `search_standard_ebooks`, plus Anthropic `web_search`. Output streams back as SSE message parts; `app/components/chat/use-chat-tool-handlers.ts` watches for `output-available` parts and applies the state change locally — the client never re-runs these tools.
 - **Auth-gated endpoints** (require a passkey session; unauthenticated → 401 with a sign-in CTA): `POST /api/chat`, `POST /api/chat-title`, `GET /api/chat/resume/:sessionId`, `GET /api/chat/messages/:sessionId`.
+
+## Reading artifacts
+
+Outline, character-sheet, and story-so-far artifacts are server-authoritative Postgres data scoped by user and book. Authenticated dwell ingestion uses `POST /api/books/:bookId/artifacts/ingest`; the server verifies the normalized-text SHA-256 fingerprint and deduplicates before any background work. Current heads and newest-first revision history are available from `GET /api/books/:bookId/artifacts` and `GET /api/books/:bookId/artifacts/revisions?kind=outline|characters|wiki`. Background ingest claims durable Postgres queue rows and generates page increments through the AI Gateway before merging artifact revisions. Queue rows, artifacts, revisions, and per-unit usage remain durable across transient generation failures.
 
 ## Notebooks
 

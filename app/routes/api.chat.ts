@@ -475,7 +475,7 @@ export async function action({ request }: Route.ActionArgs) {
     originalMessages,
     execute: async ({ writer }) => {
       const result = streamText({
-        model: gateway("anthropic/claude-sonnet-4.6"),
+        model: gateway("openai/gpt-5.6-sol"),
         instructions: buildSystemPrompt(systemPromptContext),
         messages: await convertToModelMessages(originalMessages),
         tools: {

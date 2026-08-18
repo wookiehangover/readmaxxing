@@ -1,13 +1,6 @@
 import type { UIMessage } from "@ai-sdk/react";
-import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerItem,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-} from "~/components/ui/message-scroller";
 import { Marker, MarkerContent } from "~/components/ui/marker";
+import { ScrollArea } from "~/components/ui/scroll-area";
 import { cn } from "~/lib/utils";
 import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
 import { ChatMessage } from "./chat-message";
@@ -24,6 +17,7 @@ export function ChatMessageList({
   messages,
   status,
   bookId,
+  currentChapterIndex,
   bookFormat,
   bookDataRef,
   bookAnnotations,
@@ -34,6 +28,7 @@ export function ChatMessageList({
   messages: UIMessage[];
   status: string;
   bookId: string;
+  currentChapterIndex?: number;
   bookFormat?: string;
   bookDataRef: React.RefObject<ArrayBuffer | null>;
   bookAnnotations: BookAnnotation[];
@@ -42,69 +37,64 @@ export function ChatMessageList({
   sendMessage: (message: { text: string }) => void;
 }) {
   return (
-    <MessageScrollerProvider autoScroll defaultScrollPosition="end">
-      <MessageScroller className="flex-1">
-        <MessageScrollerViewport
-          className={cn("relative px-4 py-3", {
-            "scroll-fog-bottom": messages.length > 0,
-          })}
-        >
-          <MessageScrollerContent className="gap-3">
-            {messages.length === 0 && (
-              <ChatEmptyState bookTitles={selectedBookTitles} sendMessage={sendMessage} />
-            )}
-            {messages.map((message, index) => {
-              const isCurrentlyStreaming = status === "streaming" && index === messages.length - 1;
-              const isLast = index === messages.length - 1;
-              const inlineAnnotations = bookAnnotations.filter(
-                (annotation) =>
-                  annotation.afterMessageId === message.id ||
-                  (isLast && !messageIdSet.has(annotation.afterMessageId ?? "")),
-              );
+    <ScrollArea
+      className={cn("min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]]:py-3", {
+        "[&_[data-slot=scroll-area-viewport]]:scroll-fog-bottom": messages.length > 0,
+      })}
+    >
+      <div className="flex h-max min-h-full flex-col gap-3 pr-6">
+        {messages.length === 0 && (
+          <ChatEmptyState
+            bookId={bookId}
+            bookTitles={selectedBookTitles}
+            chapterIndex={currentChapterIndex}
+            sendMessage={sendMessage}
+          />
+        )}
+        {messages.map((message, index) => {
+          const isCurrentlyStreaming = status === "streaming" && index === messages.length - 1;
+          const isLast = index === messages.length - 1;
+          const inlineAnnotations = bookAnnotations.filter(
+            (annotation) =>
+              annotation.afterMessageId === message.id ||
+              (isLast && !messageIdSet.has(annotation.afterMessageId ?? "")),
+          );
 
-              return (
-                <MessageScrollerItem
-                  key={message.id}
-                  messageId={message.id}
-                  scrollAnchor={message.role === "user"}
-                >
-                  <ChatMessage
-                    message={message}
-                    bookId={bookId}
-                    bookFormat={bookFormat}
-                    bookDataRef={bookDataRef}
-                    isStreaming={isCurrentlyStreaming}
-                  />
-                  {message.role === "assistant" && !isCurrentlyStreaming && (
-                    <SuggestedPrompts
-                      prompts={parseSuggestedPrompts(
-                        joinTextParts(
-                          message.parts
-                            ?.filter(
-                              (part): part is { type: "text"; text: string } =>
-                                part.type === "text",
-                            )
-                            .map((part) => part.text) ?? [],
-                        ),
-                      )}
-                      sendMessage={sendMessage}
-                    />
+          return (
+            <div key={message.id} className="min-w-0 shrink-0">
+              <ChatMessage
+                message={message}
+                bookId={bookId}
+                bookFormat={bookFormat}
+                bookDataRef={bookDataRef}
+                isStreaming={isCurrentlyStreaming}
+              />
+              {message.role === "assistant" && !isCurrentlyStreaming && (
+                <SuggestedPrompts
+                  prompts={parseSuggestedPrompts(
+                    joinTextParts(
+                      message.parts
+                        ?.filter(
+                          (part): part is { type: "text"; text: string } => part.type === "text",
+                        )
+                        .map((part) => part.text) ?? [],
+                    ),
                   )}
-                  {inlineAnnotations.map((annotation) => (
-                    <BookAnnotationMarker
-                      key={annotation.id}
-                      action={annotation.action}
-                      title={annotation.title}
-                    />
-                  ))}
-                </MessageScrollerItem>
-              );
-            })}
-          </MessageScrollerContent>
-        </MessageScrollerViewport>
-        <MessageScrollerButton />
-      </MessageScroller>
-    </MessageScrollerProvider>
+                  sendMessage={sendMessage}
+                />
+              )}
+              {inlineAnnotations.map((annotation) => (
+                <BookAnnotationMarker
+                  key={annotation.id}
+                  action={annotation.action}
+                  title={annotation.title}
+                />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </ScrollArea>
   );
 }
 

@@ -1,8 +1,10 @@
 import { createStore, get, set } from "idb-keyval";
+import type { FontWeight } from "~/lib/settings";
 
 export interface BookPreferences {
   fontFamily?: string;
   fontSize?: number;
+  fontWeight?: FontWeight;
   lineHeight?: number;
   textAlign?: "left" | "center" | "right" | "justify";
   readerLayout?: "single" | "spread" | "scroll";

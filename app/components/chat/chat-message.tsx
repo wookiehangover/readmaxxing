@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from "react";
+import { createElement, memo, type ComponentProps, useCallback, useMemo } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import { Streamdown } from "streamdown";
 import type { Components } from "streamdown";
@@ -10,6 +10,28 @@ import { cn } from "~/lib/utils";
 import { getToolInfo, joinTextParts, stripSuggestedPrompts } from "./chat-utils";
 import { SEBookCardsInChat } from "./se-book-cards";
 import { ToolStepsDetails } from "./chat-tool-steps";
+
+type StreamdownHeadingProps = ComponentProps<"h1"> & { node?: unknown };
+
+function streamdownHeading(level: 1 | 2 | 3 | 4 | 5 | 6, className: string) {
+  const tag = `h${level}` as const;
+
+  return ({ node: _node, className: incomingClassName, ...props }: StreamdownHeadingProps) =>
+    createElement(tag, {
+      ...props,
+      className: cn(incomingClassName, className),
+      "data-streamdown": `heading-${level}`,
+    });
+}
+
+const quietStreamdownHeadings = {
+  h1: streamdownHeading(1, "text-[1.125em] font-medium"),
+  h2: streamdownHeading(2, "text-[1em] font-medium"),
+  h3: streamdownHeading(3, "text-[0.9375em]"),
+  h4: streamdownHeading(4, "text-[0.875em]"),
+  h5: streamdownHeading(5, "text-[0.875em]"),
+  h6: streamdownHeading(6, "text-[0.8125em]"),
+} satisfies Components;
 
 function ChatMessageImpl({
   message,
@@ -80,6 +102,7 @@ function ChatMessageImpl({
 
   const streamdownComponents = useMemo<Components>(
     () => ({
+      ...quietStreamdownHeadings,
       ref: ({ children, chapter, query }: Record<string, unknown>) => {
         const queryStr = typeof query === "string" ? query : "";
         if (!queryStr) {
@@ -177,10 +200,10 @@ function ChatMessageImpl({
   );
 
   return (
-    <Message align={isUser ? "end" : "start"} className="px-5">
+    <Message align={isUser ? "end" : "start"}>
       <MessageContent>
         <Bubble
-          align={isUser ? "end" : "start"}
+          align="start"
           variant={isUser ? "secondary" : "ghost"}
           className={cn("max-w-prose", {
             "my-5": isUser,

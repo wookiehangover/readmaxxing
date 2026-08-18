@@ -73,6 +73,7 @@ describe("PWA document navigation", () => {
     expect(matchesRoute(route!, "/about")).toBe(true);
     expect(matchesRoute(route!, "/api/chat")).toBe(false);
     expect(matchesRoute(route!, "/share/book-id")).toBe(false);
+    expect(matchesRoute(route!, "/debug/reading-agent")).toBe(false);
     expect(matchesRoute(route!, "https://other.test/about", false)).toBe(false);
   });
 

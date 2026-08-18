@@ -1,4 +1,4 @@
-import type { ReaderLayout, TextAlign } from "~/lib/settings";
+import type { FontWeight, ReaderLayout, TextAlign } from "~/lib/settings";
 
 export function getFontFallback(fontFamily: string): string {
   if (fontFamily === "Geist" || fontFamily === "Inter") return "sans-serif";
@@ -10,6 +10,7 @@ export function getFontFallback(fontFamily: string): string {
 export function getTypographyCss(
   fontFamily: string,
   fontSize: number,
+  fontWeight: FontWeight,
   lineHeight: number,
   textAlign: TextAlign,
 ): string {
@@ -87,6 +88,9 @@ export function getTypographyCss(
       font-family: "${fontFamily}", ${fallback} !important;
       font-size: ${fontSize}% !important;
       line-height: ${lineHeight} !important;
+    }
+    body {
+      font-weight: ${fontWeight} !important;
     }${textAlignCss}
   `;
 }

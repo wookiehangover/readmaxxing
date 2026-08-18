@@ -1,45 +1,30 @@
-import React, { act } from "react";
-import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-const outletContext = vi.hoisted(() => ({
-  current: {
-    onDockviewReady: vi.fn(),
-    onDockviewDispose: vi.fn(),
-  },
-}));
+import { clientLoader } from "~/routes/workspace";
+import { clientLoader as missingBookClientLoader } from "~/routes/books";
 
-vi.mock("dockview-react", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("dockview-react")>()),
-  DockviewReact: () => null,
-}));
+function getRedirect(loader: () => unknown): Response {
+  try {
+    loader();
+  } catch (cause) {
+    return cause as Response;
+  }
+  throw new Error("Expected route loader to redirect");
+}
 
-vi.mock("react-router", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("react-router")>()),
-  useOutletContext: () => outletContext.current,
-}));
+describe("WorkspaceRedirectRoute", () => {
+  it("redirects the root route to the library", () => {
+    const response = getRedirect(clientLoader);
 
-import WorkspaceRoute from "~/routes/workspace";
+    expect(response).toBeInstanceOf(Response);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/library");
+  });
 
-afterEach(() => {
-  document.body.innerHTML = "";
-  vi.clearAllMocks();
-});
+  it("redirects a missing book id to the library", () => {
+    const response = getRedirect(missingBookClientLoader);
 
-describe("WorkspaceRoute", () => {
-  it("uses the latest dispose callback only when the route unmounts", () => {
-    const firstDispose = vi.fn();
-    const latestDispose = vi.fn();
-    outletContext.current = { onDockviewReady: vi.fn(), onDockviewDispose: firstDispose };
-    const root = createRoot(document.body.appendChild(document.createElement("div")));
-
-    act(() => root.render(<WorkspaceRoute />));
-    outletContext.current = { onDockviewReady: vi.fn(), onDockviewDispose: latestDispose };
-    act(() => root.render(<WorkspaceRoute />));
-
-    expect(firstDispose).not.toHaveBeenCalled();
-    expect(latestDispose).not.toHaveBeenCalled();
-    act(() => root.unmount());
-    expect(latestDispose).toHaveBeenCalledOnce();
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/library");
   });
 });

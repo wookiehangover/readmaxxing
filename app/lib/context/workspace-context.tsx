@@ -32,11 +32,19 @@ export interface BookCluster {
   readonly notebookPanelId?: string;
 }
 
+export interface ReadingLocation {
+  readonly chapterLabel: string | null;
+  readonly currentPage: number | null;
+  readonly totalPages: number | null;
+}
+
 export interface WorkspaceContextValue {
   /** panelId -> navigateToCfi callback */
   navigationMap: React.MutableRefObject<Map<string, (cfi: string) => void>>;
   /** panelId -> TOC entries */
   tocMap: React.MutableRefObject<Map<string, TocEntry[]>>;
+  /** bookId -> TOC navigation callback */
+  tocNavigationMap: React.MutableRefObject<Map<string, (href: string) => void>>;
   /** bookId -> appendHighlightReference callback */
   notebookCallbackMap: React.MutableRefObject<
     Map<string, (attrs: { highlightId: string; cfiRange: string; text: string }) => void>
@@ -70,6 +78,8 @@ export interface WorkspaceContextValue {
   openStandardEbooksRef: React.MutableRefObject<(() => void) | null>;
   /** Find the navigation callback for a book by scanning dockview panels */
   findNavForBook: (bookId: string) => ((cfi: string) => void) | undefined;
+  /** Find the callback used by the reader's table of contents */
+  findTocNavigationForBook: (bookId: string) => ((href: string) => void) | undefined;
   /** Like findNavForBook but retries with short delays if the callback isn't registered yet */
   waitForNavForBook: (bookId: string) => Promise<((cfi: string) => void) | undefined>;
   /** Callback ref for when a book is added (calls setBooks in workspace.tsx) */
@@ -98,6 +108,10 @@ export interface WorkspaceContextValue {
   notebookEditorCallbackMap: React.MutableRefObject<Map<string, NotebookEditorCallbacks>>;
   /** bookId -> callback notified when notebook content changes (user edits or programmatic) */
   notebookContentChangeMap: React.MutableRefObject<Map<string, (markdown: string) => void>>;
+  /** Current reader metadata shown in the reading rail. */
+  getReadingLocation: (bookId: string | null) => ReadingLocation | null;
+  setReadingLocation: (bookId: string, location: ReadingLocation) => void;
+  subscribeReadingLocations: (listener: () => void) => () => void;
   /** bookId -> BookCluster (the panels belonging to that book) */
   clustersRef: React.MutableRefObject<Map<string, BookCluster>>;
   /** Book ID of the currently-active cluster, or null if none */
@@ -144,6 +158,7 @@ export function useOptionalWorkspace(): WorkspaceContextValue | null {
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const navigationMap = useRef(new Map<string, (cfi: string) => void>());
   const tocMap = useRef(new Map<string, TocEntry[]>());
+  const tocNavigationMap = useRef(new Map<string, (href: string) => void>());
   const notebookCallbackMap = useRef(
     new Map<string, (attrs: { highlightId: string; cfiRange: string; text: string }) => void>(),
   );
@@ -172,6 +187,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const highlightDeleteMap = useRef(new Map<string, (cfiRange: string) => void>());
   const notebookEditorCallbackMap = useRef(new Map<string, NotebookEditorCallbacks>());
   const notebookContentChangeMap = useRef(new Map<string, (markdown: string) => void>());
+  const readingLocationMap = useRef(new Map<string, ReadingLocation>());
+  const readingLocationListenersRef = useRef(new Set<() => void>());
   const clustersRef = useRef(new Map<string, BookCluster>());
   const activeClusterBookIdRef = useRef<string | null>(null);
   const clusterListenersRef = useRef(new Set<() => void>());
@@ -184,6 +201,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     clusterListenersRef.current.add(listener);
     return () => {
       clusterListenersRef.current.delete(listener);
+    };
+  }, []);
+
+  const getReadingLocation = useCallback((bookId: string | null): ReadingLocation | null => {
+    return bookId ? (readingLocationMap.current.get(bookId) ?? null) : null;
+  }, []);
+
+  const setReadingLocation = useCallback((bookId: string, location: ReadingLocation) => {
+    const current = readingLocationMap.current.get(bookId);
+    if (
+      current?.chapterLabel === location.chapterLabel &&
+      current.currentPage === location.currentPage &&
+      current.totalPages === location.totalPages
+    ) {
+      return;
+    }
+    readingLocationMap.current.set(bookId, location);
+    for (const listener of readingLocationListenersRef.current) listener();
+  }, []);
+
+  const subscribeReadingLocations = useCallback((listener: () => void) => {
+    readingLocationListenersRef.current.add(listener);
+    return () => {
+      readingLocationListenersRef.current.delete(listener);
     };
   }, []);
 
@@ -217,6 +258,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const findNavForBook = useCallback((bookId: string): ((cfi: string) => void) | undefined => {
+    const direct = navigationMap.current.get(bookId);
+    if (direct) return direct;
     const api = dockviewApi.current;
     if (!api) return undefined;
     for (const panel of api.panels) {
@@ -232,6 +275,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const applyTempHighlightForBook = useCallback((bookId: string, cfi: string): void => {
+    const direct = tempHighlightMap.current.get(bookId);
+    if (direct) {
+      direct(cfi);
+      return;
+    }
     const api = dockviewApi.current;
     if (!api) return;
     for (const panel of api.panels) {
@@ -249,6 +297,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeHighlightAnnotationForBook = useCallback((bookId: string, cfiRange: string): void => {
+    const direct = highlightDeleteMap.current.get(bookId);
+    if (direct) {
+      direct(cfiRange);
+      return;
+    }
     const api = dockviewApi.current;
     if (!api) return;
     for (const panel of api.panels) {
@@ -298,6 +351,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const findTocForBook = useCallback((bookId: string): TocEntry[] | undefined => {
+    const direct = tocMap.current.get(bookId);
+    if (direct && direct.length > 0) return direct;
     const api = dockviewApi.current;
     if (!api) return undefined;
     for (const panel of api.panels) {
@@ -312,10 +367,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     return undefined;
   }, []);
 
+  const findTocNavigationForBook = useCallback(
+    (bookId: string) => tocNavigationMap.current.get(bookId),
+    [],
+  );
+
   const value: WorkspaceContextValue = useMemo(
     () => ({
       navigationMap,
       tocMap,
+      tocNavigationMap,
       notebookCallbackMap,
       tocChangeListener,
       booksChangeListener,
@@ -334,6 +395,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       pendingHighlightPillMap,
       pendingChatPromptMap,
       findNavForBook,
+      findTocNavigationForBook,
       waitForNavForBook,
       findTocForBook,
       tempHighlightMap,
@@ -342,6 +404,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       removeHighlightAnnotationForBook,
       notebookEditorCallbackMap,
       notebookContentChangeMap,
+      getReadingLocation,
+      setReadingLocation,
+      subscribeReadingLocations,
       clustersRef,
       activeClusterBookIdRef,
       notifyClusterChanges,
@@ -357,6 +422,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       findTocForBook,
       applyTempHighlightForBook,
       removeHighlightAnnotationForBook,
+      getReadingLocation,
+      setReadingLocation,
+      subscribeReadingLocations,
       notifyClusterChanges,
       subscribeClusterChanges,
       getClusterForBook,

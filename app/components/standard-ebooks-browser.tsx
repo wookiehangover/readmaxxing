@@ -5,6 +5,7 @@ import { StandardEbooksToolbar } from "~/components/standard-ebooks-toolbar";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { StandardEbooksTable } from "~/components/workspace/standard-ebooks-table";
+import { LibraryHeaderControls } from "~/components/workspace/library-frame";
 import { useSettings } from "~/lib/settings";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
@@ -153,12 +154,32 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0">
-        <div className="flex flex-col gap-3 px-4 pt-4 md:px-6">
-          <div>
-            <h2 className="text-lg font-semibold">Browse Standard Ebooks</h2>
-            <p className="text-sm text-muted-foreground">
-              Search and import free, beautifully formatted public domain ebooks.
+        <div className="flex flex-col gap-3 px-4 md:px-6">
+          <div className="pt-4 pb-2">
+            <p className="text-xs text-muted-foreground">
+              Ebooks from{" "}
+              <a
+                href="https://standardebooks.org"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-foreground"
+              >
+                Standard Ebooks
+              </a>
             </p>
+
+            <p className="mt-1 text-xs text-muted-foreground/70">
+              Standard Ebooks is a volunteer-driven project dedicated to producing free, beautiful
+              digital literature.
+            </p>
+            <a
+              href="https://standardebooks.org/donate"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-block text-xs text-muted-foreground hover:text-foreground"
+            >
+              Support their mission →
+            </a>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -170,19 +191,15 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
           )}
         </div>
 
-        <StandardEbooksToolbar query={query} onQueryChange={setQuery} />
+        <LibraryHeaderControls>
+          <StandardEbooksToolbar query={query} onQueryChange={setQuery} />
+        </LibraryHeaderControls>
       </div>
 
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
-        {!isSearching && books.length > 0 && (
-          <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Most Popular
-          </p>
-        )}
-
         {isInitialLoading ? (
           settings.standardEbooksView === "grid" ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            <div className="grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
               {Array.from({ length: 12 }).map((_, i) => (
                 <SkeletonCard key={i} />
               ))}
@@ -197,7 +214,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
             </p>
           </div>
         ) : settings.standardEbooksView === "grid" ? (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-6 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <div className="mx-auto grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
             {books.map((book) => (
               <SEBookCard
                 key={book.urlPath}
@@ -209,7 +226,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
             ))}
           </div>
         ) : (
-          <div className="[&>div]:h-auto [&>div]:overflow-visible">
+          <div className="w-full max-w-6xl [&>div]:h-auto [&>div]:overflow-visible">
             <StandardEbooksTable
               books={books}
               isDownloading={isBookDownloading}
@@ -233,32 +250,6 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
             )}
           </div>
         )}
-
-        <div className="mt-6 border-t pt-4 pb-2 text-center">
-          <p className="text-xs text-muted-foreground">
-            Ebooks from{" "}
-            <a
-              href="https://standardebooks.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-foreground"
-            >
-              Standard Ebooks
-            </a>
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground/70">
-            Standard Ebooks is a volunteer-driven project dedicated to producing free, beautiful
-            digital literature.
-          </p>
-          <a
-            href="https://standardebooks.org/donate"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-1 inline-block text-xs text-muted-foreground hover:text-foreground"
-          >
-            Support their mission →
-          </a>
-        </div>
       </div>
     </div>
   );
@@ -276,7 +267,7 @@ function SEBookCard({
   onDownload: (book: SEBook) => void;
 }) {
   return (
-    <div className="group flex flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md">
+    <div className="group flex max-w-40 flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md">
       <div className="aspect-[2/3] w-full overflow-hidden bg-muted">
         {book.coverUrl ? (
           <img
@@ -335,7 +326,7 @@ function SEBookCard({
 
 function SkeletonCard() {
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border bg-card">
+    <div className="flex max-w-40 flex-col overflow-hidden rounded-lg border bg-card">
       <Skeleton className="aspect-[2/3] w-full rounded-none" />
       <div className="flex flex-col gap-1.5 p-2">
         <Skeleton className="h-4 w-3/4" />
@@ -348,7 +339,7 @@ function SkeletonCard() {
 
 function StandardEbooksTableSkeleton() {
   return (
-    <div className="flex flex-col overflow-hidden rounded-md border">
+    <div className="flex w-full max-w-6xl flex-col overflow-hidden rounded-md border">
       <Skeleton className="h-10 w-full rounded-none" />
       {Array.from({ length: 8 }).map((_, i) => (
         <div key={i} className="border-t p-2">

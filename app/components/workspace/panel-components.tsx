@@ -48,14 +48,26 @@ export function BookReaderPanel({
 export function NotebookPanel({
   params,
 }: IDockviewPanelProps<{ bookId: string; bookTitle: string }>) {
+  return <WorkspaceNotebookPanel bookId={params.bookId} bookTitle={params.bookTitle} />;
+}
+
+export function WorkspaceNotebookPanel({
+  bookId,
+  bookTitle,
+  chromeless = false,
+}: {
+  bookId: string;
+  bookTitle: string;
+  chromeless?: boolean;
+}) {
   const { navigateInCluster, notebookCallbackMap, removeHighlightAnnotationForBook } =
     useWorkspace();
 
   const handleNavigateToCfi = useCallback(
     async (cfi: string) => {
-      await navigateInCluster(params.bookId, cfi);
+      await navigateInCluster(bookId, cfi);
     },
-    [navigateInCluster, params.bookId],
+    [bookId, navigateInCluster],
   );
 
   const handleRegisterAppendHighlight = useCallback(
@@ -82,15 +94,16 @@ export function NotebookPanel({
         yield* svc.deleteHighlight(highlightId);
       });
       AppRuntime.runPromise(deleteProgram).catch(console.error);
-      removeHighlightAnnotationForBook(params.bookId, cfiRange);
+      removeHighlightAnnotationForBook(bookId, cfiRange);
     },
-    [params.bookId, removeHighlightAnnotationForBook],
+    [bookId, removeHighlightAnnotationForBook],
   );
 
   return (
     <WorkspaceNotebook
-      bookId={params.bookId}
-      bookTitle={params.bookTitle}
+      bookId={bookId}
+      bookTitle={bookTitle}
+      chromeless={chromeless}
       onNavigateToCfi={handleNavigateToCfi}
       onDeleteHighlight={handleDeleteHighlight}
       onRegisterAppendHighlight={handleRegisterAppendHighlight}

@@ -14,7 +14,8 @@ import {
 import { BookCover } from "~/components/book-list";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { useOptionalWorkspace } from "~/lib/context/workspace-context";
+import { useOptionalWorkspace, type WorkspaceContextValue } from "~/lib/context/workspace-context";
+import { getBookReadingPath } from "~/lib/reading-route";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 
 function isEditableElement(element: Element | null): boolean {
@@ -41,6 +42,17 @@ function CommandBarBookIcon({ book }: { book: BookMeta }) {
       <BookOpen className="size-4" />
     </div>
   );
+}
+
+type CommandBarWorkspace = Pick<WorkspaceContextValue, "openBookRef"> | null;
+
+export function openCommandBarBook(
+  book: BookMeta,
+  workspace: CommandBarWorkspace,
+  navigate: (path: string) => void | Promise<void>,
+): void {
+  workspace?.openBookRef.current?.(book);
+  void navigate(getBookReadingPath(book.id));
 }
 
 export function CommandBar() {
@@ -85,12 +97,7 @@ export function CommandBar() {
 
   const handleSelectBook = useCallback(
     (book: BookMeta) => {
-      const openBook = workspace?.openBookRef.current;
-      if (openBook) {
-        openBook(book);
-      } else {
-        navigate(`/books/${book.id}/details`);
-      }
+      openCommandBarBook(book, workspace, navigate);
       setOpen(false);
     },
     [navigate, workspace],

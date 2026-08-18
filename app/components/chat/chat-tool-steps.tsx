@@ -97,7 +97,7 @@ export function ToolStepsDetails({
   showBookLabel: boolean;
 }) {
   return (
-    <details className="group mb-5 -ml-4" open={isStreaming || undefined}>
+    <details className="group mb-5" open={isStreaming || undefined}>
       <summary className="flex cursor-pointer list-none items-center gap-1 font-mono text-[11px] text-muted-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
         {buildStepsSummary(toolParts, resolveBookTitle, showBookLabel)}

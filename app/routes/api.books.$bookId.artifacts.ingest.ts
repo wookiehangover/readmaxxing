@@ -1,0 +1,170 @@
+import { createHash } from "node:crypto";
+import { getSessionFromRequest } from "~/lib/database/auth-middleware";
+import { getBookByIdForUser } from "~/lib/database/book/book";
+import {
+  getReadingIngestUnitByLocator,
+  insertReadingIngestUnit,
+  refreshReadingIngestUnit,
+  type ReadingIngestUnitRow,
+  type ReadingUnitKind,
+} from "~/lib/database/reading-artifact/reading-artifact";
+import { scheduleReadingIngestQueue } from "~/lib/reading-agent/dispatch.server";
+
+const MIN_READING_TEXT_LENGTH = 20;
+const FINGERPRINT_PATTERN = /^[a-f0-9]{64}$/;
+
+interface IngestPayload {
+  fingerprint: string;
+  unitKind: ReadingUnitKind;
+  locator: string;
+  chapterLabel?: string;
+  displayPage?: number;
+  text: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+export function normalizeReadingText(text: string): string {
+  return text.normalize("NFC").trim();
+}
+
+export function computeReadingFingerprint(data: {
+  userId: string;
+  bookId: string;
+  locator: string;
+}): string {
+  return createHash("sha256")
+    .update(JSON.stringify([data.userId, data.bookId, data.locator.trim()]))
+    .digest("hex");
+}
+
+export function parseIngestPayload(value: unknown): IngestPayload | { error: string } {
+  if (!isRecord(value)) return { error: "body must be an object" };
+  if (typeof value.fingerprint !== "string" || !FINGERPRINT_PATTERN.test(value.fingerprint)) {
+    return { error: "fingerprint must be a lowercase hex SHA-256 value" };
+  }
+  if (value.unitKind !== "epub-spine" && value.unitKind !== "pdf-page") {
+    return { error: "unitKind must be epub-spine or pdf-page" };
+  }
+  if (typeof value.locator !== "string" || value.locator.trim().length === 0) {
+    return { error: "locator must be a non-empty string" };
+  }
+  if (typeof value.text !== "string") return { error: "text must be a string" };
+
+  const text = normalizeReadingText(value.text);
+  if (Array.from(text).length < MIN_READING_TEXT_LENGTH) {
+    return { error: `text must contain at least ${MIN_READING_TEXT_LENGTH} characters` };
+  }
+  if (value.chapterLabel !== undefined && typeof value.chapterLabel !== "string") {
+    return { error: "chapterLabel must be a string when provided" };
+  }
+  if (
+    value.displayPage !== undefined &&
+    (!Number.isSafeInteger(value.displayPage) || (value.displayPage as number) < 1)
+  ) {
+    return { error: "displayPage must be a positive integer when provided" };
+  }
+
+  return {
+    fingerprint: value.fingerprint,
+    unitKind: value.unitKind,
+    locator: value.locator.trim(),
+    chapterLabel: value.chapterLabel?.trim() || undefined,
+    displayPage: value.displayPage as number | undefined,
+    text,
+  };
+}
+
+function serializeUnit(unit: ReadingIngestUnitRow) {
+  return {
+    id: unit.id,
+    fingerprint: unit.fingerprint,
+    status: unit.status,
+    firstSeenAt: unit.firstSeenAt,
+    lastSeenAt: unit.lastSeenAt,
+  };
+}
+
+export async function action({
+  request,
+  params,
+}: {
+  request: Request;
+  params: { bookId: string };
+}) {
+  if (request.method !== "POST") {
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
+  }
+  if (!process.env.DATABASE_URL) {
+    return Response.json({ error: "Sync not configured" }, { status: 503 });
+  }
+
+  const session = await getSessionFromRequest(request);
+  if (!session) return Response.json({ error: "auth_required" }, { status: 401 });
+
+  const book = await getBookByIdForUser(params.bookId, session.userId);
+  if (!book) return Response.json({ error: "Book not found" }, { status: 404 });
+
+  let rawBody: unknown;
+  try {
+    rawBody = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const payload = parseIngestPayload(rawBody);
+  if ("error" in payload) return Response.json({ error: payload.error }, { status: 400 });
+
+  const expectedFingerprint = computeReadingFingerprint({
+    userId: session.userId,
+    bookId: params.bookId,
+    locator: payload.locator,
+  });
+  if (payload.fingerprint !== expectedFingerprint) {
+    return Response.json({ error: "fingerprint does not match payload" }, { status: 400 });
+  }
+
+  const existing = await getReadingIngestUnitByLocator(
+    session.userId,
+    params.bookId,
+    payload.locator,
+  );
+  if (existing) {
+    const refreshed =
+      existing.status === "pending" || existing.status === "error"
+        ? await refreshReadingIngestUnit({
+            userId: session.userId,
+            bookId: params.bookId,
+            unitId: existing.id,
+            chapterLabel: payload.chapterLabel,
+            displayPage: payload.displayPage,
+            text: payload.text,
+          })
+        : null;
+    if (existing.status === "pending" || existing.status === "error") {
+      scheduleReadingIngestQueue(session.userId);
+    }
+    return Response.json({ deduplicated: true, unit: serializeUnit(refreshed ?? existing) });
+  }
+
+  const inserted = await insertReadingIngestUnit({
+    userId: session.userId,
+    bookId: params.bookId,
+    ...payload,
+  });
+  if (inserted) {
+    scheduleReadingIngestQueue(session.userId);
+    return Response.json({ deduplicated: false, unit: serializeUnit(inserted) }, { status: 202 });
+  }
+
+  const raced = await getReadingIngestUnitByLocator(session.userId, params.bookId, payload.locator);
+  if (!raced) {
+    return Response.json({ error: "Ingest unit conflict could not be resolved" }, { status: 409 });
+  }
+  if (raced.status === "pending" || raced.status === "error") {
+    scheduleReadingIngestQueue(session.userId);
+  }
+  return Response.json({ deduplicated: true, unit: serializeUnit(raced) });
+}

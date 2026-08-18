@@ -28,7 +28,6 @@ function GatedChatInputWithDialog({
   return (
     <>
       <ChatInput
-        bookTitle="The Great Gatsby"
         textareaRef={textareaRef}
         inputRef={{ current: "" }}
         isLoading={false}
@@ -84,7 +83,6 @@ describe("ChatInput", () => {
     act(() => {
       root.render(
         <ChatInput
-          bookTitle="The Great Gatsby"
           textareaRef={textareaRef}
           inputRef={inputRef}
           isLoading={false}
@@ -126,7 +124,6 @@ describe("ChatInput", () => {
     act(() => {
       root.render(
         <ChatInput
-          bookTitle="The Great Gatsby"
           textareaRef={textareaRef}
           inputRef={inputRef}
           isLoading={false}
@@ -158,7 +155,6 @@ describe("ChatInput", () => {
     act(() => {
       root.render(
         <ChatInput
-          bookTitle="The Great Gatsby"
           textareaRef={textareaRef}
           inputRef={inputRef}
           isLoading={false}
@@ -169,10 +165,15 @@ describe("ChatInput", () => {
     });
 
     const textarea = textareaRef.current!;
+    expect(textarea.placeholder).toBe("Ask about this book...");
+    const form = container.querySelector("form")!;
+    expect(form.classList.contains("px-4")).toBe(false);
+    expect(form.classList.contains("py-3")).toBe(true);
+    expect(form.classList.contains("pr-6")).toBe(true);
+    expect(form.classList.contains("pl-6")).toBe(false);
     act(() => changeTextarea(textarea, "Normal message"));
     expect(inputRef.current).toBe("Normal message");
 
-    const form = container.querySelector("form")!;
     act(() => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
     expect(onSubmit).toHaveBeenCalledOnce();
     act(() => root.unmount());

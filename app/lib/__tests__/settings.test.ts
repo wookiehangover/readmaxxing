@@ -26,6 +26,7 @@ const defaultSettings: Settings = {
   readerLayout: "single",
   fontFamily: "Literata",
   fontSize: 100,
+  fontWeight: 400,
   lineHeight: 1.6,
   textAlign: undefined,
   sidebarCollapsed: false,
@@ -255,6 +256,7 @@ describe("saveSettings", () => {
       ...defaultSettings,
       fontSize: 120,
       fontFamily: "Georgia",
+      fontWeight: 600,
       lineHeight: 1.8,
     });
 
@@ -262,6 +264,7 @@ describe("saveSettings", () => {
     const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(localRaw.fontSize).toBe(120);
     expect(localRaw.fontFamily).toBe("Georgia");
+    expect(localRaw.fontWeight).toBe(600);
     expect(localRaw.lineHeight).toBe(1.8);
 
     // Verify they're NOT in synced bucket
@@ -278,6 +281,7 @@ describe("saveSettings", () => {
       theme: "light",
       fontFamily: "Merriweather",
       fontSize: 110,
+      fontWeight: 500,
       sidebarCollapsed: true,
       libraryView: "table",
     });
@@ -285,6 +289,7 @@ describe("saveSettings", () => {
     expect(result.theme).toBe("light");
     expect(result.fontFamily).toBe("Merriweather");
     expect(result.fontSize).toBe(110);
+    expect(result.fontWeight).toBe(500);
     expect(result.sidebarCollapsed).toBe(true);
     expect(result.libraryView).toBe("table");
 
@@ -292,10 +297,12 @@ describe("saveSettings", () => {
     const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(localRaw.fontFamily).toBe("Merriweather");
     expect(localRaw.fontSize).toBe(110);
+    expect(localRaw.fontWeight).toBe(500);
 
     const syncedRaw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
     expect(syncedRaw).not.toHaveProperty("fontFamily");
     expect(syncedRaw).not.toHaveProperty("fontSize");
+    expect(syncedRaw).not.toHaveProperty("fontWeight");
     expect(syncedRaw).not.toHaveProperty("lineHeight");
   });
 });

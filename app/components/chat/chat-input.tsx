@@ -21,13 +21,11 @@ export function ChatInput({
   onStop,
   highlightPill,
   onClearHighlightPill,
-  bookTitle,
   onInteraction,
 }: {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   inputRef: React.MutableRefObject<string>;
   isLoading: boolean;
-  bookTitle: string;
   onSubmit: (e: React.FormEvent) => void;
   onStop: () => void;
   highlightPill?: { text: string; pageLabel: string };
@@ -86,7 +84,7 @@ export function ChatInput({
   );
 
   return (
-    <form onSubmit={handleSubmit} className="px-4 py-3">
+    <form onSubmit={handleSubmit} className="py-3 pr-6">
       {highlightPreview ? (
         <div className="mb-2 flex">
           <Attachment size="xs" className="max-w-[200px] rounded-full border-0 bg-muted">
@@ -117,7 +115,7 @@ export function ChatInput({
             "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
             "field-sizing-content max-h-[6lh] min-h-10",
           )}
-          placeholder={`Ask about ${bookTitle}...`}
+          placeholder="Ask about this book..."
           onPointerDown={(e) => {
             if (onInteraction && !passiveOpenGuardRef.current) e.preventDefault();
           }}

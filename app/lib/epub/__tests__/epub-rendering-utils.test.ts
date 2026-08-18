@@ -32,32 +32,37 @@ describe("getFontFallback", () => {
 
 describe("getTypographyCss", () => {
   it("includes font-family with fallback", () => {
-    const css = getTypographyCss("Literata", 100, 1.6, undefined);
+    const css = getTypographyCss("Literata", 100, 400, 1.6, undefined);
     expect(css).toContain('"Literata", serif !important');
   });
 
   it("includes font-size percentage", () => {
-    const css = getTypographyCss("Literata", 120, 1.6, undefined);
+    const css = getTypographyCss("Literata", 120, 400, 1.6, undefined);
     expect(css).toContain("font-size: 120% !important");
   });
 
   it("includes line-height", () => {
-    const css = getTypographyCss("Literata", 100, 1.8, undefined);
+    const css = getTypographyCss("Literata", 100, 400, 1.8, undefined);
     expect(css).toContain("line-height: 1.8 !important");
   });
 
   it("includes text-align when specified", () => {
-    const css = getTypographyCss("Literata", 100, 1.6, "justify");
+    const css = getTypographyCss("Literata", 100, 400, 1.6, "justify");
     expect(css).toContain("text-align: justify !important");
   });
 
   it("does not include text-align when undefined (default)", () => {
-    const css = getTypographyCss("Literata", 100, 1.6, undefined);
+    const css = getTypographyCss("Literata", 100, 400, 1.6, undefined);
     expect(css).not.toContain("text-align:");
   });
 
+  it("applies font weight through body inheritance so heading rules remain relative", () => {
+    const css = getTypographyCss("Literata", 100, 600, 1.6, undefined);
+    expect(css).toContain("body {\n      font-weight: 600 !important;");
+  });
+
   it("includes absolute-origin @font-face declarations for every reader font", () => {
-    const css = getTypographyCss("Literata", 100, 1.6, undefined);
+    const css = getTypographyCss("Literata", 100, 400, 1.6, undefined);
     const fontFiles = [
       "Geist[wght].woff2",
       "GeistMono[wght].woff2",
@@ -78,7 +83,7 @@ describe("getTypographyCss", () => {
   });
 
   it("uses correct fallback for monospace fonts", () => {
-    const css = getTypographyCss("Geist Mono", 100, 1.6, undefined);
+    const css = getTypographyCss("Geist Mono", 100, 400, 1.6, undefined);
     expect(css).toContain('"Geist Mono", monospace !important');
   });
 });

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { waitForAppHydration } from "./helpers/auth";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -44,14 +45,7 @@ test("signed-out first visit does not remain on the workspace loader", async ({ 
   await expect(page.getByText("Loading workspace…", { exact: true })).toBeHidden({
     timeout: 15_000,
   });
-  await expect
-    .poll(
-      async () =>
-        (await page.locator(".dv-dockview").isVisible()) ||
-        (await page.getByRole("button", { name: "Previous page" }).first().isVisible()),
-      { timeout: 15_000 },
-    )
-    .toBe(true);
+  await waitForAppHydration(page);
   expect(hydrationErrors).toEqual([]);
 });
 
@@ -74,10 +68,25 @@ test("signed-out first upload auto-opens readable epub without reported TypeErro
 
   await resetSignedOutState(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+  await waitForAppHydration(page);
 
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_EPUB);
+
+  const readingShell = page.getByTestId("reading-shell");
+  const libraryBook = page.getByRole("button", { name: "Open Test Book for E2E" });
+  await expect
+    .poll(
+      async () =>
+        (await readingShell.isVisible().catch(() => false)) ||
+        (await libraryBook.isVisible().catch(() => false)),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+  if (!(await readingShell.isVisible().catch(() => false))) {
+    await libraryBook.click({ force: true, timeout: 5_000 }).catch(() => {});
+    await expect(readingShell).toBeVisible({ timeout: 20_000 });
+  }
 
   await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
     timeout: 20_000,

@@ -5,22 +5,34 @@ import {
   installVirtualAuthenticator,
   registerAndSignIn,
   skipIfAuthNotConfigured,
+  waitForAppHydration,
 } from "./helpers/auth";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const TEST_EPUB = resolve(__dirname, "fixtures/test-book.epub");
-const BOOK_TITLE = "Test Book for E2E";
 
 const ASSISTANT_BUBBLE = ".max-w-prose.text-foreground";
 
 async function uploadTestBook(page: Page) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_EPUB);
-  const focusedPill = page
-    .getByRole("tablist", { name: "Open books" })
-    .getByRole("tab", { name: new RegExp(BOOK_TITLE) });
-  await expect(focusedPill.first()).toBeVisible({ timeout: 15_000 });
+
+  const readingShell = page.getByTestId("reading-shell");
+  const libraryBook = page.getByRole("button", { name: "Open Test Book for E2E" });
+  await expect
+    .poll(
+      async () =>
+        (await readingShell.isVisible().catch(() => false)) ||
+        (await libraryBook.isVisible().catch(() => false)),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+
+  if (!(await readingShell.isVisible().catch(() => false))) {
+    await libraryBook.click({ force: true, timeout: 5_000 }).catch(() => {});
+    await expect(readingShell).toBeVisible({ timeout: 20_000 });
+  }
 }
 
 // Chapter text matches e2e/fixtures/create-test-epub.mjs. Used to seed the
@@ -51,15 +63,14 @@ const FIXTURE_CHAPTERS = [
 ];
 
 async function openBookAndChat(page: Page) {
-  // The book auto-opens on upload (handleBookAdded -> openBook), so we skip
-  // the sidebar click and wait for the reader toolbar to initialize.
+  // The book auto-opens on upload, so wait for the reader toolbar to initialize.
   await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
     timeout: 20_000,
   });
 
   const textarea = page.locator('textarea[placeholder*="Ask"]');
   if ((await textarea.count()) === 0) {
-    await page.getByRole("button", { name: "Open chat" }).first().click();
+    await page.getByRole("tab", { name: "Discuss" }).click();
   }
   await expect(textarea.first()).toBeVisible({ timeout: 15_000 });
 
@@ -175,11 +186,11 @@ async function expectImmediateHighlightMarkers(
 }
 
 async function mountNotebookAndReturnToChat(page: Page) {
-  await page.getByRole("button", { name: "Open Notebook" }).first().click();
-  const notebookTab = page.locator(".dv-default-tab", { hasText: "Notes:" });
-  await expect(notebookTab.first()).toBeVisible({ timeout: 10_000 });
+  const notebookTab = page.getByRole("tab", { name: "Notes" });
+  await notebookTab.click();
+  await expect(notebookTab).toBeVisible({ timeout: 10_000 });
   await expect(page.locator(".ProseMirror")).toBeVisible({ timeout: 15_000 });
-  await page.locator(".dv-default-tab", { hasText: "Discuss:" }).first().click();
+  await page.getByRole("tab", { name: "Discuss" }).click();
   await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeVisible({
     timeout: 10_000,
   });
@@ -240,20 +251,14 @@ test.describe("Chat (server-authoritative)", () => {
     await installVirtualAuthenticator(context, page);
     await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
 
-    await page.goto("/");
-    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
-    // Clear storage + pre-collapse the sidebar. See e2e/workspace.spec.ts
-    // beforeEach for why — auto-collapse races epubjs initialization.
+    await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
+    // Clear storage to isolate each test.
     await page.evaluate(async () => {
       const dbs = await indexedDB.databases();
       for (const db of dbs) {
         if (db.name) indexedDB.deleteDatabase(db.name);
       }
       localStorage.clear();
-      localStorage.setItem(
-        "app-settings",
-        JSON.stringify({ sidebarCollapsed: true, updatedAt: Date.now() }),
-      );
     });
 
     await registerAndSignIn(page);
@@ -273,14 +278,14 @@ test.describe("Chat (server-authoritative)", () => {
     // Open the notebook so its editor mounts and registers an append callback
     // via notebookEditorCallbackMap. With renderer: "always", the notebook
     // component stays mounted after we switch back to the chat tab.
-    await page.getByRole("button", { name: "Open Notebook" }).first().click();
-    const notebookTab = page.locator(".dv-default-tab", { hasText: "Notes:" });
-    await expect(notebookTab.first()).toBeVisible({ timeout: 10_000 });
+    const notebookTab = page.getByRole("tab", { name: "Notes" });
+    await notebookTab.click();
+    await expect(notebookTab).toBeVisible({ timeout: 10_000 });
     await expect(page.locator(".ProseMirror")).toBeVisible({ timeout: 15_000 });
 
     // Switch back to the chat tab so the textarea is actionable again.
-    const chatTab = page.locator(".dv-default-tab", { hasText: "Discuss:" });
-    await chatTab.first().click();
+    const chatTab = page.getByRole("tab", { name: "Discuss" });
+    await chatTab.click();
     const textarea = page.locator('textarea[placeholder*="Ask"]');
     await expect(textarea.first()).toBeVisible({ timeout: 10_000 });
 
@@ -295,7 +300,7 @@ test.describe("Chat (server-authoritative)", () => {
     await expect(page.locator(ASSISTANT_BUBBLE).first()).toBeVisible({ timeout: 30_000 });
 
     // Switch to notebook and verify the marker landed in the editor.
-    await notebookTab.first().click();
+    await notebookTab.click();
     await expect(page.locator(".ProseMirror")).toContainText(marker, { timeout: 60_000 });
   });
 
@@ -360,7 +365,7 @@ test.describe("Chat (server-authoritative)", () => {
     const highlight = await readHighlightFromIdb(page, passage);
     expect(highlight).not.toBeNull();
 
-    await notebookTab.first().click();
+    await notebookTab.click();
     const reference = page.locator(".node-highlightReference, [data-highlight-reference]", {
       hasText: passage,
     });
@@ -405,7 +410,7 @@ test.describe("Chat (server-authoritative)", () => {
       )
       .toBe(true);
 
-    await page.locator(".dv-default-tab", { hasText: "Discuss:" }).first().click();
+    await page.getByRole("tab", { name: "Discuss" }).click();
     const marker = `E2E-GOLDEN-${Date.now()}`;
     await sendChatMessage(
       page,
@@ -414,7 +419,7 @@ test.describe("Chat (server-authoritative)", () => {
     await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeEnabled({
       timeout: 90_000,
     });
-    await notebookTab.first().click();
+    await notebookTab.click();
     await expectImmediateHighlightMarkers(page, [{ highlightText: passage, marker }]);
   });
 
@@ -443,7 +448,7 @@ test.describe("Chat (server-authoritative)", () => {
       timeout: 90_000,
     });
 
-    await notebookTab.first().click();
+    await notebookTab.click();
     await expectImmediateHighlightMarkers(page, [{ highlightText: "The quick brown fox", marker }]);
   });
 
@@ -484,7 +489,7 @@ test.describe("Chat (server-authoritative)", () => {
     await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeEnabled({
       timeout: 90_000,
     });
-    await notebookTab.first().click();
+    await notebookTab.click();
     await expectImmediateHighlightMarkers(page, [
       { highlightText: firstText, marker: markerA },
       { highlightText: secondText, marker: markerB },
@@ -502,7 +507,7 @@ test.describe("Chat (server-authoritative)", () => {
     await page.waitForTimeout(400);
 
     await page.reload();
-    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await waitForAppHydration(page);
 
     // The chat panel remounts, fetches the session's messages, and reconnects
     // to any in-flight stream via /api/chat/resume. Eventually the completed
