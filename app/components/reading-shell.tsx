@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { ReadingRail } from "~/components/reading-shell/reading-rail";
 import { ReadingSplit } from "~/components/reading-shell/reading-split";
 import { WorkspaceBookReader } from "~/components/workspace-book-reader";
@@ -14,6 +14,14 @@ export function ReadingShell() {
     () => workspace.activeClusterBookIdRef.current,
   );
   const book = workspace.booksRef.current.find((candidate) => candidate.id === activeBookId);
+
+  useEffect(() => {
+    document.title = book?.title ?? "Readmaxxing";
+
+    return () => {
+      document.title = "Readmaxxing";
+    };
+  }, [book?.title]);
 
   const bookSurface = book ? (
     book.format === "pdf" ? (

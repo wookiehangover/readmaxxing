@@ -31,7 +31,7 @@ import type { BookMeta } from "~/lib/stores/book-store";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let root: Root | null = null;
-let activeBookId = "epub-book";
+let activeBookId: string | null = "epub-book";
 const books: BookMeta[] = [
   {
     id: "epub-book",
@@ -53,6 +53,7 @@ beforeEach(() => {
   activeBookId = "epub-book";
   epubReaderProps.current = null;
   window.sessionStorage.clear();
+  document.title = "Readmaxxing";
 });
 
 afterEach(() => {
@@ -95,6 +96,25 @@ function setShellWidth(width: number) {
 }
 
 describe("ReadingShell", () => {
+  it("uses the active book title and restores the default title on unmount", () => {
+    renderShell();
+
+    expect(document.title).toBe("EPUB Book");
+
+    act(() => root?.unmount());
+    root = null;
+    expect(document.title).toBe("Readmaxxing");
+  });
+
+  it("uses the default title while no book is open", () => {
+    document.title = "Previous Book";
+    activeBookId = null;
+
+    renderShell();
+
+    expect(document.title).toBe("Readmaxxing");
+  });
+
   it("mounts an EPUB reader with one book surface and the reading rail", () => {
     renderShell();
 
