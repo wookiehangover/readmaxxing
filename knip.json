@@ -1,0 +1,35 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "app/root.tsx",
+    "app/routes.ts",
+    "app/**/*.test.{ts,tsx}",
+    "e2e/**/*.ts",
+    "react-router.config.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "scripts/**/*.{js,mjs,ts}"
+  ],
+  "project": ["app/**/*.{ts,tsx}", "e2e/**/*.ts", "scripts/**/*.{js,mjs,ts}", "*.config.ts"],
+  "ignore": [
+    ".react-router/**",
+    "build/**",
+    "packages/**",
+    "app/components/radial-progress.tsx",
+    "app/components/sync-status.tsx",
+    "app/components/ui/message-scroller.tsx",
+    "app/components/ui/sidebar.tsx",
+    "app/lib/redis.server.ts",
+    "app/routes/home.tsx"
+  ],
+  "ignoreDependencies": [
+    "@fontsource-variable/geist",
+    "@shadcn/react",
+    "@tailwindcss/typography",
+    "redis",
+    "shadcn",
+    "tailwindcss",
+    "tw-animate-css",
+    "use-stick-to-bottom"
+  ]
+}

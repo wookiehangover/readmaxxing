@@ -2,14 +2,11 @@
 
 Ebook/PDF reader web app. Users add `.epub`/`.pdf` files (drag-and-drop, file picker, or the Standard Ebooks catalog), persisted in IndexedDB. The app is local-first for most entities (IndexedDB is the source of truth; sync is optional and requires a passkey session). **Chat is the exception** — Postgres is authoritative.
 
-## Workspace layout
+## Reading and library shells
 
-The main route (`app/routes/workspace.tsx`) is a [dockview](https://dockview.dev) multi-panel workspace, not a fixed sidebar/reader split.
+The index route redirects to `/library`. Books open at `/books/:id`, where `ReadingShell` renders the reader and its text-only right rail. The `/library` and `/standard-ebooks` routes use the chromeless `LibraryFrame`; the main route is no longer a dockview workspace.
 
-- **Panel types** (`app/components/workspace/`): book reader, chat, notebook, bookmarks, outline, reading history, new-tab, Standard Ebooks browser, watermark (empty state).
-- **Book clusters**: a reader panel plus its chat/notebook tabs form a logical "cluster" (`BookCluster` in `app/lib/context/workspace-context.tsx`) so link navigation can resolve which chat/notebook belongs to which book.
-- **Layout**: a single focused layout — one cluster visible at a time, with the book/right-group split controlled by `focusedSplitRatio`. Inactive clusters are unmounted and remounted on activation.
-- Workspace state lives in `app/lib/stores/workspace-store.ts`; layout/panel logic in `app/hooks/use-workspace-*.ts`.
+`app/routes/app-frame.tsx` and `WorkspaceProvider` still coordinate book uploads, reading navigation, and shared reader/notebook callbacks. Some compatibility state and reader APIs retain dockview types while that shared wiring remains in use, but dock-only panel modules are not part of the live route tree.
 
 ## Client-side only
 
