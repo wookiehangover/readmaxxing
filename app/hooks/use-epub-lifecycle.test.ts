@@ -11,6 +11,7 @@ import {
   type Relocation,
 } from "@readmaxxing/epub-successor";
 import {
+  displayEpubTargetWithCfiFallback,
   displayStoredCfiWithFallback,
   resolveTocNavigationTarget,
 } from "~/hooks/use-epub-lifecycle";
@@ -235,13 +236,23 @@ describe("successor position compatibility", () => {
       },
       {
         href: normalizePublicationPath("OPS/chapter.xhtml"),
-        locations: { progression: 0, totalProgression: 0.5, position: 2 },
+        locations: {
+          progression: 0,
+          totalProgression: 0.5,
+          position: 2,
+          cfi: createCfi("epubcfi(/6/4!/4)"),
+        },
         text: {},
         selectors: { textQuote: { exact: "" }, textPosition: { start: 0, end: 0 } },
       },
       {
         href: normalizePublicationPath("OPS/chapter.xhtml"),
-        locations: { progression: 0.5, totalProgression: 0.75, position: 3 },
+        locations: {
+          progression: 0.5,
+          totalProgression: 0.75,
+          position: 3,
+          cfi: createCfi("epubcfi(/6/4!/4/2)"),
+        },
         text: {},
         selectors: { textQuote: { exact: "" }, textPosition: { start: 1500, end: 1500 } },
       },
@@ -537,5 +548,23 @@ describe.each(["stored positions", "bookmarks"])("legacy CFI fallback for %s", (
 
     expect(display.mock.calls).toEqual([["not-a-cfi", undefined], [0]]);
     expect(onFallback).toHaveBeenCalledOnce();
+  });
+});
+
+describe("EPUB navigation targets", () => {
+  it("does not route outline page locators through legacy CFI fallback", async () => {
+    const error = new RangeError("page locator failed");
+    const display = vi.fn(async () => {
+      throw error;
+    });
+    const onFallback = vi.fn();
+
+    await expect(
+      displayEpubTargetWithCfiFallback({ display }, "OPS/chapter.xhtml#page=12", onFallback),
+    ).rejects.toBe(error);
+
+    expect(display).toHaveBeenCalledOnce();
+    expect(display).toHaveBeenCalledWith("OPS/chapter.xhtml#page=12", undefined);
+    expect(onFallback).not.toHaveBeenCalled();
   });
 });

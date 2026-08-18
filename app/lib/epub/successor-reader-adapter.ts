@@ -608,7 +608,6 @@ export class SuccessorRenditionAdapter {
           textOffset: candidate.selectors.textPosition.start,
         }) === page,
     );
-    if (position?.locations.cfi) return this.#displayCfi(position.locations.cfi);
 
     const firstPage = pageIndexFromPositions(this.positions, { href, localProgression: 0 });
     const lastPage = pageIndexFromPositions(this.positions, { href, localProgression: 1 });
@@ -617,6 +616,7 @@ export class SuccessorRenditionAdapter {
     }
 
     const relocation = await this.navigator.display({ href });
+    // Generated position CFIs can drift from the mounted DOM; local progression is stable here.
     if (position) return this.navigator.restoreProgression(position.locations.progression);
     if (firstPage === lastPage) return relocation;
     return this.navigator.restoreProgression((page - firstPage) / (lastPage - firstPage));

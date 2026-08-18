@@ -84,6 +84,19 @@ export async function displayStoredCfiWithFallback(
   }
 }
 
+export async function displayEpubTargetWithCfiFallback(
+  rendition: CfiDisplayTarget,
+  target: string,
+  onFallback: (error: unknown) => void,
+  options?: { readonly localProgression?: number },
+): Promise<void> {
+  if (!target.trim().startsWith("epubcfi(")) {
+    await rendition.display(target, options);
+    return;
+  }
+  await displayStoredCfiWithFallback(rendition, target, onFallback, options);
+}
+
 export interface ChatContextEntry {
   currentChapterIndex: number;
   currentSpineHref: string;
@@ -249,7 +262,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     ) => {
       suppressPositionSaveRef.current = true;
       try {
-        await displayStoredCfiWithFallback(
+        await displayEpubTargetWithCfiFallback(
           rendition,
           cfi,
           (error) => {
