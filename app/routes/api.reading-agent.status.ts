@@ -6,12 +6,13 @@ import {
   listRecentReadingIngestUnits,
   type ReadingAgentUsageRow,
 } from "~/lib/database/reading-artifact/reading-artifact";
-import { getActiveReadingAgentHost } from "~/lib/reading-agent/agent-host.server";
-import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
-
 export const READING_AGENT_STATUS_TIMEOUT_MS = 3_000;
 
 class ReadingAgentStatusTimeoutError extends Error {}
+
+function gatewayConfigured(): boolean {
+  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+}
 
 function serializeUsage(usage: ReadingAgentUsageRow | null) {
   if (!usage) return null;
@@ -31,12 +32,11 @@ async function loadStatus(request: Request): Promise<Response> {
   const session = await getSessionFromRequest(request);
   if (!session) return Response.json({ error: "auth_required" }, { status: 401 });
 
-  const hostConfigured = Boolean(process.env.READING_AGENT_SECRET);
+  const gatewayReady = gatewayConfigured();
   const schema = await getReadingAgentSchemaHealth();
   if (!schema.ok) {
     return Response.json({
-      hostConfigured,
-      hostActive: false,
+      gatewayConfigured: gatewayReady,
       schema,
       lease: null,
       units: [],
@@ -50,13 +50,8 @@ async function loadStatus(request: Request): Promise<Response> {
     listRecentReadingIngestUnits({ userId: session.userId, bookId }),
     getLatestReadingAgentUsage(session.userId),
   ]);
-  const hostActive = Boolean(
-    lease &&
-    getActiveReadingAgentHost(readingConversationId(session.userId, lease.bookId, lease.unitId)),
-  );
   return Response.json({
-    hostConfigured,
-    hostActive,
+    gatewayConfigured: gatewayReady,
     schema,
     lease,
     units,

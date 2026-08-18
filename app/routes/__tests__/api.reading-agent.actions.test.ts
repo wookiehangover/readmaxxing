@@ -1,6 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
-
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   schema: vi.fn(),
@@ -11,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   reset: vi.fn(),
   getUnit: vi.fn(),
   schedule: vi.fn(),
-  stopHost: vi.fn(),
 }));
 
 vi.mock("~/lib/database/auth-middleware", () => ({ getSessionFromRequest: mocks.auth }));
@@ -27,16 +24,10 @@ vi.mock("~/lib/reading-agent/dispatch.server", () => ({
   reclaimStaleReadingAgentLease: mocks.reclaim,
   scheduleReadingIngestQueue: mocks.schedule,
 }));
-vi.mock("~/lib/reading-agent/agent-host.server", () => ({
-  stopReadingAgentHost: mocks.stopHost,
-}));
-
-import { action, READING_AGENT_ABORT_TIMEOUT_MS } from "~/routes/api.reading-agent.actions";
+import { action } from "~/routes/api.reading-agent.actions";
 
 const originalEnv = {
   databaseUrl: process.env.DATABASE_URL,
-  readingAgentUrl: process.env.READING_AGENT_URL,
-  readingAgentSecret: process.env.READING_AGENT_SECRET,
   gatewayApiKey: process.env.AI_GATEWAY_API_KEY,
   oidcToken: process.env.VERCEL_OIDC_TOKEN,
 };
@@ -51,8 +42,6 @@ function request(body: unknown): Request {
 
 beforeEach(() => {
   process.env.DATABASE_URL = "postgres://configured";
-  process.env.READING_AGENT_URL = "http://localhost:5174/agents/reading-scribe";
-  process.env.READING_AGENT_SECRET = "secret";
   process.env.AI_GATEWAY_API_KEY = "gateway-key";
   delete process.env.VERCEL_OIDC_TOKEN;
   mocks.auth.mockReset().mockResolvedValue({ userId: "user-1" });
@@ -64,16 +53,11 @@ beforeEach(() => {
   mocks.reset.mockReset().mockResolvedValue(true);
   mocks.getUnit.mockReset().mockResolvedValue(null);
   mocks.schedule.mockReset();
-  mocks.stopHost.mockReset().mockResolvedValue(false);
 });
 
 afterEach(() => {
   if (originalEnv.databaseUrl == null) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = originalEnv.databaseUrl;
-  if (originalEnv.readingAgentUrl == null) delete process.env.READING_AGENT_URL;
-  else process.env.READING_AGENT_URL = originalEnv.readingAgentUrl;
-  if (originalEnv.readingAgentSecret == null) delete process.env.READING_AGENT_SECRET;
-  else process.env.READING_AGENT_SECRET = originalEnv.readingAgentSecret;
   if (originalEnv.gatewayApiKey == null) delete process.env.AI_GATEWAY_API_KEY;
   else process.env.AI_GATEWAY_API_KEY = originalEnv.gatewayApiKey;
   if (originalEnv.oidcToken == null) delete process.env.VERCEL_OIDC_TOKEN;
@@ -112,15 +96,13 @@ describe("reading-agent actions API", () => {
     expect(mocks.schedule).not.toHaveBeenCalled();
   });
 
-  it("starts without a remote sidecar URL", async () => {
-    delete process.env.READING_AGENT_URL;
+  it("starts with Gateway credentials", async () => {
     const response = await action({ request: request({ action: "start" }) });
     expect(response.status).toBe(200);
     expect(mocks.schedule).toHaveBeenCalledWith("user-1");
   });
 
-  it("stops the in-app host despite a leftover URL without incrementing attempts", async () => {
-    mocks.stopHost.mockResolvedValue(true);
+  it("stops a leased unit without incrementing attempts", async () => {
     mocks.lease.mockResolvedValue({
       unitId: "unit-1",
       bookId: "book-1",
@@ -136,15 +118,11 @@ describe("reading-agent actions API", () => {
       stopped: true,
       unitId: "unit-1",
     });
-    expect(mocks.stopHost).toHaveBeenCalledWith(
-      readingConversationId("user-1", "book-1", "unit-1"),
-    );
     expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-1");
     expect(mocks.reclaim).not.toHaveBeenCalled();
   });
 
-  it("stops an active in-app host from an expired current lease", async () => {
-    mocks.stopHost.mockResolvedValue(true);
+  it("stops a unit from an expired current lease", async () => {
     mocks.lease.mockResolvedValue({
       unitId: "unit-expired",
       bookId: "book-expired",
@@ -160,9 +138,6 @@ describe("reading-agent actions API", () => {
       stopped: true,
       unitId: "unit-expired",
     });
-    expect(mocks.stopHost).toHaveBeenCalledWith(
-      readingConversationId("user-1", "book-expired", "unit-expired"),
-    );
     expect(mocks.stop).toHaveBeenCalledWith("user-1", "unit-expired");
     expect(mocks.reclaim).not.toHaveBeenCalled();
   });
@@ -171,7 +146,6 @@ describe("reading-agent actions API", () => {
     const response = await action({ request: request({ action: "stop" }) });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true, stopped: false });
-    expect(mocks.stopHost).not.toHaveBeenCalled();
     expect(mocks.stop).not.toHaveBeenCalled();
     expect(mocks.reclaim).toHaveBeenCalledWith("user-1");
   });
@@ -214,7 +188,7 @@ describe("reading-agent actions API", () => {
     expect(mocks.retry).not.toHaveBeenCalled();
   });
 
-  it("aborts a host from an expired current lease before retrying a processing unit", async () => {
+  it("retries a processing unit directly", async () => {
     mocks.getUnit.mockResolvedValue({
       id: "unit-1",
       bookId: "book-1",
@@ -224,20 +198,8 @@ describe("reading-agent actions API", () => {
       claimedAt: new Date("2026-01-01T00:01:00Z"),
       lastError: null,
     });
-    mocks.lease.mockResolvedValue({
-      unitId: "unit-1",
-      bookId: "book-1",
-      expiresAt: new Date(0),
-      chapterLabel: "Chapter 1",
-      locator: "chapter-1.xhtml",
-    });
-    mocks.stopHost.mockResolvedValue(true);
-
     const response = await action({ request: request({ action: "retry", unitId: "unit-1" }) });
     expect(response.status).toBe(200);
-    expect(mocks.stopHost).toHaveBeenCalledWith(
-      readingConversationId("user-1", "book-1", "unit-1"),
-    );
     expect(mocks.retry).toHaveBeenCalledWith("user-1", "unit-1");
     expect(mocks.schedule).toHaveBeenCalledWith("user-1");
   });
@@ -281,8 +243,7 @@ describe("reading-agent actions API", () => {
     expect(mocks.reset).not.toHaveBeenCalled();
   });
 
-  it("aborts the host before resetting a processing unit", async () => {
-    mocks.stopHost.mockResolvedValue(true);
+  it("resets a processing unit directly", async () => {
     mocks.getUnit.mockResolvedValue({
       id: "unit-1",
       bookId: "book-1",
@@ -294,43 +255,9 @@ describe("reading-agent actions API", () => {
     });
     const response = await action({ request: request({ action: "reset", unitId: "unit-1" }) });
     expect(response.status).toBe(200);
-    expect(mocks.stopHost).toHaveBeenCalledWith(
-      readingConversationId("user-1", "book-1", "unit-1"),
-    );
     expect(mocks.reset).toHaveBeenCalledWith("user-1", "unit-1");
-    expect(mocks.stopHost.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.reset.mock.invocationCallOrder[0]!,
-    );
     expect(mocks.stop).not.toHaveBeenCalled();
     expect(mocks.schedule).not.toHaveBeenCalled();
-  });
-
-  it("bounds a slow host abort before skipping a processing unit", async () => {
-    vi.useFakeTimers();
-    mocks.stopHost.mockReturnValue(new Promise(() => {}));
-    mocks.getUnit.mockResolvedValue({
-      id: "unit-1",
-      bookId: "book-1",
-      status: "processing",
-      attemptCount: 8,
-      nextAttemptAt: new Date("2026-01-01T00:00:00Z"),
-      claimedAt: new Date("2026-01-01T00:01:00Z"),
-      lastError: null,
-    });
-
-    try {
-      const responsePromise = action({
-        request: request({ action: "reset", unitId: "unit-1" }),
-      });
-      await vi.advanceTimersByTimeAsync(READING_AGENT_ABORT_TIMEOUT_MS);
-      const response = await responsePromise;
-
-      expect(response.status).toBe(200);
-      expect(mocks.reset).toHaveBeenCalledWith("user-1", "unit-1");
-      expect(mocks.schedule).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it.each(["done", "skipped"] as const)("returns 409 when resetting a %s unit", async (status) => {

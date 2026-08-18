@@ -174,7 +174,7 @@ describe("reading-agent debug page", () => {
     expect(container!.textContent).toContain("No usage recorded");
     expect(container!.textContent).toContain("No page increment yet");
     expect(container!.textContent).toContain("No recent ingest units");
-    expect(container!.textContent).toContain("Agent host");
+    expect(container!.textContent).toContain("AI Gateway");
     expect(container!.textContent).toContain("openai/gpt-5.6-terra");
     expect(container!.textContent).not.toContain("Not configured");
   });

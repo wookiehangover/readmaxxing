@@ -7,20 +7,16 @@ import {
   retryReadingIngestUnit,
   stopReadingIngestUnit,
 } from "~/lib/database/reading-artifact/reading-artifact";
-import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
 import {
   reclaimStaleReadingAgentLease,
   scheduleReadingIngestQueue,
 } from "~/lib/reading-agent/dispatch.server";
-import { stopReadingAgentHost } from "~/lib/reading-agent/agent-host.server";
 
 type QueueAction = "start" | "stop" | "retry" | "reset";
 
 export type ReadingAgentActionPayload =
   | { action: "start" | "stop" }
   | { action: "retry" | "reset"; unitId: string };
-
-export const READING_AGENT_ABORT_TIMEOUT_MS = 1_000;
 
 export async function action({ request }: { request: Request }): Promise<Response> {
   if (request.method !== "POST") {
@@ -80,7 +76,6 @@ async function stopQueue(userId: string): Promise<Response> {
     return Response.json({ ok: true, stopped: false });
   }
 
-  await abortConversation(userId, lease.bookId, lease.unitId);
   await stopReadingIngestUnit(userId, lease.unitId);
   return Response.json({ ok: true, stopped: true, unitId: lease.unitId });
 }
@@ -90,13 +85,6 @@ async function retryUnit(userId: string, unitId: string): Promise<Response> {
   if (!unit) return Response.json({ error: "not_found" }, { status: 404 });
   if (unit.status === "done" || unit.status === "skipped") {
     return Response.json({ error: "not_retryable", status: unit.status }, { status: 409 });
-  }
-
-  if (unit.status === "processing") {
-    const lease = await getCurrentReadingAgentLease(userId);
-    if (lease?.unitId === unit.id) {
-      await abortConversation(userId, lease.bookId, lease.unitId);
-    }
   }
 
   await retryReadingIngestUnit(userId, unit.id);
@@ -111,37 +99,8 @@ async function resetUnit(userId: string, unitId: string): Promise<Response> {
     return Response.json({ error: "not_resettable", status: unit.status }, { status: 409 });
   }
 
-  if (unit.status === "processing") {
-    await abortConversation(userId, unit.bookId, unit.id, READING_AGENT_ABORT_TIMEOUT_MS);
-  }
-
   await resetReadingIngestUnit(userId, unit.id);
   return Response.json({ ok: true, unitId: unit.id });
-}
-
-async function abortConversation(
-  userId: string,
-  bookId: string,
-  unitId: string,
-  timeoutMs?: number,
-): Promise<void> {
-  const conversationId = readingConversationId(userId, bookId, unitId);
-  const stop = stopReadingAgentHost(conversationId);
-  if (timeoutMs === undefined) {
-    await stop;
-    return;
-  }
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await Promise.race([
-      stop,
-      new Promise<void>((resolve) => {
-        timeout = setTimeout(resolve, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
 }
 
 async function parseActionPayload(

@@ -7,9 +7,7 @@ const mocks = vi.hoisted(() => ({
   units: vi.fn(),
   usage: vi.fn(),
   increment: vi.fn(),
-  activeHost: vi.fn(),
   clear: vi.fn(),
-  createFlueClient: vi.fn(),
   selectedModel: "openai/gpt-5.6-terra",
   getSelectedModel: vi.fn(),
   isDebugModel: vi.fn(),
@@ -27,10 +25,6 @@ vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   getLatestReadingAgentUsage: mocks.usage,
   getLatestReadingPageIncrementRevision: mocks.increment,
 }));
-vi.mock("~/lib/reading-agent/agent-host.server", () => ({
-  getActiveReadingAgentHost: mocks.activeHost,
-}));
-vi.mock("@flue/sdk", () => ({ createFlueClient: mocks.createFlueClient }));
 vi.mock("~/lib/reading-agent/debug-model.server", () => ({
   getSelectedDebugModel: mocks.getSelectedModel,
   isDebugReadingAgentModel: mocks.isDebugModel,
@@ -71,9 +65,7 @@ beforeEach(() => {
   mocks.units.mockReset().mockResolvedValue([]);
   mocks.usage.mockReset().mockResolvedValue(null);
   mocks.increment.mockReset().mockResolvedValue(null);
-  mocks.activeHost.mockReset().mockReturnValue(undefined);
   mocks.clear.mockReset().mockResolvedValue(undefined);
-  mocks.createFlueClient.mockReset();
   mocks.selectedModel = "openai/gpt-5.6-terra";
   mocks.getSelectedModel.mockReset().mockImplementation(() => mocks.selectedModel);
   mocks.isDebugModel
@@ -119,8 +111,6 @@ describe("reading-agent debug API", () => {
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({ error: "auth_required" });
     expect(mocks.schema).not.toHaveBeenCalled();
-    expect(mocks.activeHost).not.toHaveBeenCalled();
-    expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 
   it("does not clear stored data for an unsigned request", async () => {
@@ -201,8 +191,6 @@ describe("reading-agent debug API", () => {
       bullets: ["A storm closes the mountain pass.", "The innkeeper offers shelter."],
       createdAt: "2026-08-16T06:00:01.000Z",
     });
-    expect(mocks.activeHost).not.toHaveBeenCalled();
-    expect(mocks.createFlueClient).not.toHaveBeenCalled();
   });
 
   it("sets an optional model, runs the shared action, and returns a fresh snapshot", async () => {

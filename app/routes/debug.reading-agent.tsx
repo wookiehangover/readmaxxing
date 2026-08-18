@@ -100,8 +100,8 @@ function HealthCards({ status }: { status: ReadingAgentStatus }) {
     <div className="grid gap-4 md:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle>Agent host</CardTitle>
-          <CardDescription>Vercel AI Gateway readiness</CardDescription>
+          <CardTitle>AI Gateway</CardTitle>
+          <CardDescription>Credential readiness</CardDescription>
           <CardAction>
             <Badge variant={status.gatewayConfigured ? "default" : "destructive"}>
               {status.gatewayConfigured ? "Configured" : "Not configured"}
@@ -152,7 +152,7 @@ function LeaseCard({
     <Card>
       <CardHeader>
         <CardTitle>Current lease</CardTitle>
-        <CardDescription>The one ReadingScribe job allowed to run for this user</CardDescription>
+        <CardDescription>The one page increment job allowed to run for this user</CardDescription>
         <CardAction className="flex items-center gap-2">
           {lease ? <Badge>Processing</Badge> : null}
           <Button

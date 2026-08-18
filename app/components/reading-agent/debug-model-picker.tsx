@@ -75,7 +75,7 @@ export function DebugModelPicker() {
       <CardHeader>
         <CardTitle>Next ingest model</CardTitle>
         <CardDescription>
-          Debug-only selection for the next ReadingScribe call. Latest usage remains authoritative.
+          Debug-only selection for the next page increment call. Latest usage remains authoritative.
           {error ? ` ${error}.` : ""}
         </CardDescription>
         <CardAction>

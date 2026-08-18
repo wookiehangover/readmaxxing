@@ -6,9 +6,6 @@ import type {
 import {
   dispatchReadingIngestUnit,
   drainReadingIngestQueue,
-  ORPHANED_READING_AGENT_ERROR,
-  readingConversationId,
-  reclaimOrphanedReadingAgentLease,
   resetLocalReadingIngestSweep,
   shouldStartLocalReadingIngestSweep,
   startLocalReadingIngestSweep,
@@ -81,10 +78,6 @@ const dispatch = vi.fn();
 const listUserIds = vi.fn();
 const reclaim = vi.fn();
 const drain = vi.fn();
-const getLease = vi.fn();
-const getActiveHost = vi.fn();
-const stopUnit = vi.fn();
-
 beforeEach(() => {
   setSelectedDebugModel(DEFAULT_DEBUG_READING_AGENT_MODEL);
   claimLease.mockReset().mockResolvedValue(leased);
@@ -96,9 +89,6 @@ beforeEach(() => {
   listUserIds.mockReset().mockResolvedValue([]);
   reclaim.mockReset().mockResolvedValue(0);
   drain.mockReset().mockResolvedValue(undefined);
-  getLease.mockReset().mockResolvedValue(null);
-  getActiveHost.mockReset().mockReturnValue(false);
-  stopUnit.mockReset().mockResolvedValue(true);
   callIncrement.mockReset().mockResolvedValue({
     bullets: ["New event."],
     usage: aiSdkUsage,
@@ -194,7 +184,7 @@ describe("reading ingest dispatch", () => {
     expect(callIncrement).not.toHaveBeenCalled();
   });
 
-  it("does not pass Flue host, secret, conversation, or artifact inputs", async () => {
+  it("does not pass host, secret, conversation, or artifact inputs", async () => {
     await expect(dispatchReadingIngestUnit(unit, options())).resolves.toBe("done");
 
     const call = callIncrement.mock.calls[0]?.[0];
@@ -202,44 +192,6 @@ describe("reading ingest dispatch", () => {
     expect(call).not.toHaveProperty("conversationId");
     expect(call).not.toHaveProperty("artifacts");
     expect(complete).toHaveBeenCalledOnce();
-  });
-
-  it("uses a stable, opaque conversation id per ingest unit", () => {
-    expect(readingConversationId("user-1", "book-1", "unit-1")).toBe(
-      readingConversationId("user-1", "book-1", "unit-1"),
-    );
-    expect(readingConversationId("user-1", "book-1", "unit-1")).not.toBe(
-      readingConversationId("user-1", "book-1", "unit-2"),
-    );
-    expect(readingConversationId("user-1", "book-1", "unit-1")).not.toBe(
-      readingConversationId("user-1", "book-2", "unit-1"),
-    );
-  });
-
-  it("reclaims a live lease when its in-app host is missing", async () => {
-    getLease.mockResolvedValue(leased.lease);
-
-    await expect(
-      reclaimOrphanedReadingAgentLease("user-1", {
-        dependencies: { getLease, getActiveHost, stopUnit },
-      }),
-    ).resolves.toBe(true);
-
-    expect(getActiveHost).toHaveBeenCalledWith(readingConversationId("user-1", "book-1", "unit-1"));
-    expect(stopUnit).toHaveBeenCalledWith("user-1", "unit-1", ORPHANED_READING_AGENT_ERROR);
-  });
-
-  it("leaves a live lease running when its in-app host is active", async () => {
-    getLease.mockResolvedValue(leased.lease);
-    getActiveHost.mockReturnValue(true);
-
-    await expect(
-      reclaimOrphanedReadingAgentLease("user-1", {
-        dependencies: { getLease, getActiveHost, stopUnit },
-      }),
-    ).resolves.toBe(false);
-
-    expect(stopUnit).not.toHaveBeenCalled();
   });
 
   it("does nothing when the queue is empty or a user lease is busy", async () => {

@@ -1,13 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { readingConversationId } from "~/lib/reading-agent/conversation-id.server";
-
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   schema: vi.fn(),
   lease: vi.fn(),
   units: vi.fn(),
   usage: vi.fn(),
-  activeHost: vi.fn(),
 }));
 
 vi.mock("~/lib/database/auth-middleware", () => ({ getSessionFromRequest: mocks.auth }));
@@ -17,16 +14,12 @@ vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   listRecentReadingIngestUnits: mocks.units,
   getLatestReadingAgentUsage: mocks.usage,
 }));
-vi.mock("~/lib/reading-agent/agent-host.server", () => ({
-  getActiveReadingAgentHost: mocks.activeHost,
-}));
-
 import { loader, READING_AGENT_STATUS_TIMEOUT_MS } from "~/routes/api.reading-agent.status";
 
 const originalEnv = {
   databaseUrl: process.env.DATABASE_URL,
-  readingAgentUrl: process.env.READING_AGENT_URL,
-  readingAgentSecret: process.env.READING_AGENT_SECRET,
+  gatewayApiKey: process.env.AI_GATEWAY_API_KEY,
+  oidcToken: process.env.VERCEL_OIDC_TOKEN,
 };
 
 function request(query = ""): Request {
@@ -35,24 +28,23 @@ function request(query = ""): Request {
 
 beforeEach(() => {
   process.env.DATABASE_URL = "postgres://configured";
-  delete process.env.READING_AGENT_URL;
-  delete process.env.READING_AGENT_SECRET;
+  delete process.env.AI_GATEWAY_API_KEY;
+  delete process.env.VERCEL_OIDC_TOKEN;
   mocks.auth.mockReset().mockResolvedValue({ userId: "user-1" });
   mocks.schema.mockReset().mockResolvedValue({ ok: true });
   mocks.lease.mockReset().mockResolvedValue(null);
   mocks.units.mockReset().mockResolvedValue([]);
   mocks.usage.mockReset().mockResolvedValue(null);
-  mocks.activeHost.mockReset().mockReturnValue(undefined);
 });
 
 afterEach(() => {
   vi.useRealTimers();
   if (originalEnv.databaseUrl == null) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = originalEnv.databaseUrl;
-  if (originalEnv.readingAgentUrl == null) delete process.env.READING_AGENT_URL;
-  else process.env.READING_AGENT_URL = originalEnv.readingAgentUrl;
-  if (originalEnv.readingAgentSecret == null) delete process.env.READING_AGENT_SECRET;
-  else process.env.READING_AGENT_SECRET = originalEnv.readingAgentSecret;
+  if (originalEnv.gatewayApiKey == null) delete process.env.AI_GATEWAY_API_KEY;
+  else process.env.AI_GATEWAY_API_KEY = originalEnv.gatewayApiKey;
+  if (originalEnv.oidcToken == null) delete process.env.VERCEL_OIDC_TOKEN;
+  else process.env.VERCEL_OIDC_TOKEN = originalEnv.oidcToken;
 });
 
 describe("reading-agent status API", () => {
@@ -90,8 +82,7 @@ describe("reading-agent status API", () => {
     const response = await loader({ request: request() });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
-      hostConfigured: false,
-      hostActive: false,
+      gatewayConfigured: false,
       schema: { ok: false, missingColumns: ["reading_ingest_unit.next_attempt_at"] },
       lease: null,
       units: [],
@@ -102,8 +93,8 @@ describe("reading-agent status API", () => {
     expect(mocks.usage).not.toHaveBeenCalled();
   });
 
-  it("returns configured in-app host, lease, filtered text-free units, and usage", async () => {
-    process.env.READING_AGENT_SECRET = "secret";
+  it("returns Gateway readiness, lease, filtered text-free units, and usage", async () => {
+    process.env.VERCEL_OIDC_TOKEN = "oidc-token";
     mocks.lease.mockResolvedValue({
       bookId: "book-1",
       unitId: "unit-1",
@@ -134,19 +125,15 @@ describe("reading-agent status API", () => {
       totalTokens: 18,
       costTotal: "0.01",
       model: "test-model",
-      source: "flue",
+      source: "ai-sdk",
       createdAt: new Date("2026-01-01T00:02:00Z"),
     });
-    mocks.activeHost.mockReturnValue({ url: "http://reading-agent.local" });
-
     const response = await loader({ request: request("?bookId=book-1") });
     const body = await response.json();
     expect(response.status).toBe(200);
-    expect(body.hostConfigured).toBe(true);
-    expect(body.hostActive).toBe(true);
-    expect(mocks.activeHost).toHaveBeenCalledWith(
-      readingConversationId("user-1", "book-1", "unit-1"),
-    );
+    expect(body.gatewayConfigured).toBe(true);
+    expect(body).not.toHaveProperty("hostConfigured");
+    expect(body).not.toHaveProperty("hostActive");
     expect(body).not.toHaveProperty("hostUrl");
     expect(mocks.units).toHaveBeenCalledWith({ userId: "user-1", bookId: "book-1" });
     expect(body.lease).toMatchObject({ unitId: "unit-1", chapterLabel: "Chapter 1" });
@@ -158,12 +145,12 @@ describe("reading-agent status API", () => {
       cacheWrite: 1,
       totalTokens: 18,
       model: "test-model",
-      source: "flue",
+      source: "ai-sdk",
       createdAt: "2026-01-01T00:02:00.000Z",
     });
   });
 
-  it("reports an unexpired database lease without an in-app host as inactive", async () => {
+  it("reports an unexpired database lease without host state", async () => {
     mocks.lease.mockResolvedValue({
       bookId: "book-orphan",
       unitId: "unit-orphan",
@@ -174,10 +161,8 @@ describe("reading-agent status API", () => {
 
     const response = await loader({ request: request() });
 
-    await expect(response.json()).resolves.toMatchObject({
-      hostActive: false,
-      lease: { unitId: "unit-orphan" },
-    });
-    expect(mocks.activeHost).toHaveBeenCalledOnce();
+    const body = await response.json();
+    expect(body).toMatchObject({ gatewayConfigured: false, lease: { unitId: "unit-orphan" } });
+    expect(body).not.toHaveProperty("hostActive");
   });
 });
