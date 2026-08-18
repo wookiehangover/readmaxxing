@@ -15,11 +15,11 @@ import {
   isDebugReadingAgentModel,
   setSelectedDebugModel,
 } from "~/lib/reading-agent/debug-model.server";
-import { getOutlineChapterBullets } from "~/lib/reading-agent/outline-merge";
 import {
   executeReadingAgentAction,
   parseReadingAgentActionPayload,
-} from "~/routes/api.reading-agent.actions";
+} from "~/lib/reading-agent/actions.server";
+import { getOutlineChapterBullets } from "~/lib/reading-agent/outline-merge";
 
 function serializeUsage(usage: ReadingAgentUsageRow | null) {
   if (!usage) return null;

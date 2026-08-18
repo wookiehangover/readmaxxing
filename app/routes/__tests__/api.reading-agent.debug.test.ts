@@ -30,7 +30,7 @@ vi.mock("~/lib/reading-agent/debug-model.server", () => ({
   isDebugReadingAgentModel: mocks.isDebugModel,
   setSelectedDebugModel: mocks.setSelectedModel,
 }));
-vi.mock("~/routes/api.reading-agent.actions", () => ({
+vi.mock("~/lib/reading-agent/actions.server", () => ({
   parseReadingAgentActionPayload: mocks.parseAction,
   executeReadingAgentAction: mocks.executeAction,
 }));
