@@ -361,7 +361,7 @@ describe("OutlinePanel", () => {
       'button[aria-label="Go to page 12"]',
     );
     expect(mark).not.toBeNull();
-    expect(mark!.parentElement?.className).toContain("pl-7");
+    expect(mark!.parentElement?.className).toContain("pl-[22px]");
     expect(mark!.parentElement?.className).not.toContain("pl-8");
     expect(mark!.className).toContain("left-0");
     expect(mark!.className).toContain("text-left");
