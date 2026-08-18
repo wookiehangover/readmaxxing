@@ -77,7 +77,9 @@ describe("LibraryBrowseContent", () => {
       container!.querySelector<HTMLButtonElement>('button[aria-label="Table view"]')!.click(),
     );
 
-    expect(container!.querySelector("table")?.closest(".max-w-6xl")).not.toBeNull();
+    const tableWrapper = container!.querySelector("table")?.closest(".max-w-6xl");
+    expect(tableWrapper).not.toBeNull();
+    expect(tableWrapper!.classList.contains("mx-auto")).toBe(true);
   });
 
   it("keeps search, sort, and layout together in order and still opens a book", async () => {
