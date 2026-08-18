@@ -70,6 +70,16 @@ describe("callPageIncrement", () => {
     expect(request.abortSignal).toBeInstanceOf(AbortSignal);
     expect(request.maxRetries).toBe(0);
     expect(request.instructions).toContain('Never use the phrase "The author"');
+    for (const example of [
+      "The train reaches Moscow before dawn.",
+      "Mara hides the letter under the floorboards.",
+      "The treaty establishes a ten-year ceasefire.",
+      "The author reveals that Mara is afraid.",
+      "This moving scene proves courage conquers fear.",
+      "- The train reaches Moscow before dawn.",
+    ]) {
+      expect(request.instructions).toContain(example);
+    }
     expect(PAGE_INCREMENT_TIMEOUT_MS).toBe(60_000);
     expect(request.schema.safeParse({ bullets: [] }).success).toBe(true);
     expect(request.schema.safeParse({ bullets: ["1", "2", "3", "4"] }).success).toBe(false);
