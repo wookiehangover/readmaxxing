@@ -55,15 +55,31 @@ vi.mock("~/components/workspace/outline-panel", () => ({
 }));
 
 import { ReadingRail } from "~/components/reading-shell/reading-rail";
+import {
+  ReadingRailTabProvider,
+  useReadingRailTab,
+} from "~/components/reading-shell/reading-rail-tab-context";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let root: Root | null = null;
 
+function ActiveTabProbe() {
+  const { activeTab } = useReadingRailTab();
+  return <output data-testid="active-rail-tab">{activeTab}</output>;
+}
+
 function renderRail() {
   const container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
-  act(() => root?.render(<ReadingRail />));
+  act(() =>
+    root?.render(
+      <ReadingRailTabProvider>
+        <ReadingRail />
+        <ActiveTabProbe />
+      </ReadingRailTabProvider>,
+    ),
+  );
   return container;
 }
 
@@ -138,11 +154,13 @@ describe("ReadingRail", () => {
 
     clickTab(container, "Discuss");
     expect(container.querySelector("[data-testid='chat-panel']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Discuss");
 
     clickTab(container, "Outline");
     expect(
       container.querySelector("[data-testid='outline-panel']")?.getAttribute("data-chromeless"),
     ).toBe("true");
+    expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Outline");
   });
 
   it("uses one sliding underline left-aligned with the active tab label", () => {

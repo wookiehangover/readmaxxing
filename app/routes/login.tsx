@@ -2,10 +2,15 @@ import { useState } from "react";
 import { redirect, useNavigate, useSearchParams } from "react-router";
 import { Cause, Effect, Runtime } from "effect";
 import { Loader2 } from "lucide-react";
+import type { Route } from "./+types/login";
 import { Button } from "~/components/ui/button";
 import { AuthService } from "~/lib/auth-service";
 import { useAuth } from "~/lib/context/auth-context";
 import { AppRuntime } from "~/lib/effect-runtime";
+
+export function meta(_args: Route.MetaArgs) {
+  return [{ title: "Log in — Readmaxxing" }];
+}
 
 /**
  * Extract the real error message from Effect's FiberFailure wrapper.

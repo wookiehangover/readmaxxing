@@ -1,5 +1,6 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { ReadingRail } from "~/components/reading-shell/reading-rail";
+import { ReadingRailTabProvider } from "~/components/reading-shell/reading-rail-tab-context";
 import { ReadingSplit } from "~/components/reading-shell/reading-split";
 import { WorkspaceBookReader } from "~/components/workspace-book-reader";
 import { WorkspacePdfReader } from "~/components/workspace-pdf-reader";
@@ -15,6 +16,18 @@ export function ReadingShell() {
   );
   const book = workspace.booksRef.current.find((candidate) => candidate.id === activeBookId);
 
+  useEffect(() => {
+    const previousTitle = document.title;
+    const readerTitle = book?.title ?? "Readmaxxing";
+    document.title = readerTitle;
+
+    return () => {
+      if (document.title === readerTitle) {
+        document.title = previousTitle;
+      }
+    };
+  }, [book?.title]);
+
   const bookSurface = book ? (
     book.format === "pdf" ? (
       <WorkspacePdfReader bookId={book.id} />
@@ -28,8 +41,10 @@ export function ReadingShell() {
   );
 
   return (
-    <ReadingChatMenuProvider>
-      <ReadingSplit book={bookSurface} rail={<ReadingRail />} />
-    </ReadingChatMenuProvider>
+    <ReadingRailTabProvider>
+      <ReadingChatMenuProvider>
+        <ReadingSplit book={bookSurface} rail={<ReadingRail />} />
+      </ReadingChatMenuProvider>
+    </ReadingRailTabProvider>
   );
 }

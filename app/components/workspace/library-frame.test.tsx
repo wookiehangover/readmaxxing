@@ -1,17 +1,33 @@
 import React, { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { BookMeta } from "~/lib/stores/book-store";
+
+const mocks = vi.hoisted(() => ({
+  books: [] as BookMeta[],
+  lastOpenedMap: new Map<string, number>(),
+}));
+
+vi.mock("~/hooks/use-effect-query", () => ({
+  useEffectQuery: () => ({ data: mocks.lastOpenedMap, error: undefined, isLoading: false }),
+}));
+
+vi.mock("~/lib/context/workspace-context", () => ({
+  useOptionalWorkspace: () => ({ booksRef: { current: mocks.books } }),
+}));
 
 vi.mock("~/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   DropdownMenuContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   DropdownMenuGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
-  DropdownMenuItem: ({ children, onClick }: React.ComponentProps<"button">) => (
-    <button type="button" onClick={onClick}>
+  DropdownMenuItem: ({ children, ...props }: React.ComponentProps<"button">) => (
+    <button type="button" {...props}>
       {children}
     </button>
   ),
+  DropdownMenuLabel: ({ children }: React.PropsWithChildren) => <span>{children}</span>,
+  DropdownMenuSeparator: () => <hr />,
   DropdownMenuTrigger: ({
     children,
     render,
@@ -40,6 +56,10 @@ import { LibraryFrame, LibraryHeaderControls } from "~/components/workspace/libr
 
 let root: Root | null = null;
 
+function LocationProbe() {
+  return <div data-testid="location">{useLocation().pathname}</div>;
+}
+
 function renderFrame(pathname: string, children: React.ReactNode = <div>Browse body</div>) {
   const container = document.body.appendChild(document.createElement("div"));
   const fileInputRef = createRef<HTMLInputElement>();
@@ -58,6 +78,8 @@ function renderFrame(pathname: string, children: React.ReactNode = <div>Browse b
 
 beforeEach(() => {
   window.sessionStorage.clear();
+  mocks.books = [];
+  mocks.lastOpenedMap = new Map();
 });
 
 afterEach(() => {
@@ -117,10 +139,21 @@ describe("LibraryFrame", () => {
     const activeLink = nav.querySelector<HTMLAnchorElement>(`a[href="${activeHref}"]`)!;
     expect(activeLink.getAttribute("aria-current")).toBe("page");
     expect(activeLink.className).toContain("after:w-[15px]");
+    expect(activeLink.className).toContain("text-foreground");
+    expect(activeLink.className).not.toContain("text-muted-foreground");
     expect(
       links
         .filter((link) => link !== activeLink)
         .every((link) => !link.className.includes("after:w-[15px]")),
+    ).toBe(true);
+    expect(
+      links
+        .filter((link) => link !== activeLink)
+        .every(
+          (link) =>
+            link.className.includes("text-muted-foreground") &&
+            link.className.includes("hover:text-foreground"),
+        ),
     ).toBe(true);
     const overflow = nav.querySelector<HTMLButtonElement>('button[title="More library actions"]');
     expect(overflow?.dataset.slot).toBe("button");
@@ -134,7 +167,7 @@ describe("LibraryFrame", () => {
     expect(container.querySelector('[aria-label="Open sidebar"]')).toBeNull();
   });
 
-  it("keeps upload and bug report as the only overflow actions", () => {
+  it("shows iconed upload and bug report actions and omits an empty Recent section", () => {
     const inputClick = vi.spyOn(HTMLInputElement.prototype, "click");
     const { container } = renderFrame("/library");
     const overflow = container.querySelector('button[title="More library actions"]');
@@ -143,6 +176,10 @@ describe("LibraryFrame", () => {
     );
 
     expect(actions.map((button) => button.textContent)).toEqual(["Upload book", "Bug report"]);
+    expect(actions[0]?.querySelector("svg.lucide-upload")).not.toBeNull();
+    expect(actions[1]?.querySelector("svg.lucide-bug")).not.toBeNull();
+    expect(container.textContent).not.toContain("Recent");
+    expect(container.querySelector("hr")).toBeNull();
     act(() => actions[0]?.click());
     expect(inputClick).toHaveBeenCalledOnce();
 
@@ -150,5 +187,42 @@ describe("LibraryFrame", () => {
     expect(
       container.querySelector('[data-testid="bug-report-state"]')?.getAttribute("data-open"),
     ).toBe("true");
+  });
+
+  it("lists the five most recently opened books and navigates to the selected book", () => {
+    mocks.books = Array.from({ length: 7 }, (_, index) => ({
+      id: `book-${index + 1}`,
+      title: `Book ${index + 1}`,
+      author: `Author ${index + 1}`,
+      coverImage: null,
+      format: "epub" as const,
+    }));
+    mocks.lastOpenedMap = new Map([
+      ["book-1", 100],
+      ["book-2", 600],
+      ["book-3", 300],
+      ["book-4", 500],
+      ["book-5", 200],
+      ["book-6", 400],
+    ]);
+    const { container } = renderFrame("/library", <LocationProbe />);
+    const recentLabel = Array.from(container.querySelectorAll("span")).find(
+      (span) => span.textContent === "Recent",
+    );
+    const recentGroup = recentLabel?.parentElement;
+    const recentItems = Array.from(recentGroup?.querySelectorAll("button") ?? []);
+
+    expect(container.querySelectorAll("hr")).toHaveLength(1);
+    expect(recentItems.map((button) => button.textContent)).toEqual([
+      "Book 2",
+      "Book 4",
+      "Book 6",
+      "Book 3",
+      "Book 5",
+    ]);
+    expect(recentItems[0]?.querySelector("span")?.className).toContain("truncate");
+
+    act(() => recentItems[2]?.click());
+    expect(container.querySelector('[data-testid="location"]')?.textContent).toBe("/books/book-6");
   });
 });

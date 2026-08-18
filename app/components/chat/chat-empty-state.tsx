@@ -129,7 +129,7 @@ export function ChatEmptyState({
                 <button
                   key={suggestion}
                   type="button"
-                  className="cursor-pointer text-left"
+                  className={cn("cursor-pointer text-left", { "hover:underline": true })}
                   onClick={() => sendMessage({ text: suggestion })}
                 >
                   {suggestion}
@@ -148,7 +148,7 @@ export function ChatEmptyState({
                 <button
                   key={question}
                   type="button"
-                  className="cursor-pointer text-left"
+                  className={cn("cursor-pointer text-left", { "hover:underline": true })}
                   onClick={() => sendMessage({ text: question })}
                 >
                   {question}

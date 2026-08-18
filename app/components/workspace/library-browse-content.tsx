@@ -306,7 +306,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
             </div>
           ) : libraryView === "table" ? (
             <div className="flex-1 overflow-hidden p-4 pt-2 md:p-6 md:pt-3">
-              <div className="h-full w-full max-w-6xl">
+              <div className="mx-auto h-full w-full max-w-6xl">
                 <LibraryTable
                   books={filteredBooks}
                   onOpenBook={handleOpenBook}

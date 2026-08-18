@@ -3,6 +3,10 @@ import { Tabs } from "@base-ui/react/tabs";
 import { TocList } from "~/components/book-list";
 import { ChatPanel } from "~/components/chat/chat-panel";
 import { READING_RAIL_MENU_ID } from "~/components/reading-shell/reading-rail-menu-portal";
+import {
+  useReadingRailTab,
+  type ReadingRailTab,
+} from "~/components/reading-shell/reading-rail-tab-context";
 import { Button } from "~/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "~/components/ui/empty";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "~/components/ui/popover";
@@ -12,10 +16,10 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { cn } from "~/lib/utils";
 
 const tabs = ["Notes", "Discuss", "Outline"] as const;
-type ReadingRailTab = (typeof tabs)[number];
 
 export function ReadingRail() {
   const workspace = useWorkspace();
+  const { activeTab, setActiveTab } = useReadingRailTab();
   const activeBookId = useSyncExternalStore(
     workspace.subscribeClusterChanges,
     () => workspace.activeClusterBookIdRef.current,
@@ -26,7 +30,6 @@ export function ReadingRail() {
     () => workspace.getReadingLocation(activeBookId),
     () => null,
   );
-  const [activeTab, setActiveTab] = useState<ReadingRailTab>("Notes");
   const [tocOpen, setTocOpen] = useState(false);
   const book = workspace.booksRef.current.find((candidate) => candidate.id === activeBookId);
   const toc = activeBookId ? workspace.findTocForBook(activeBookId) : undefined;

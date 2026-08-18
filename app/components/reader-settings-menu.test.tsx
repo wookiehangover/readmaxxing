@@ -78,6 +78,11 @@ import {
   useReadingChatMenuRegistration,
   type ReadingChatMenuActions,
 } from "~/lib/context/reading-chat-menu-context";
+import {
+  ReadingRailTabProvider,
+  useReadingRailTab,
+  type ReadingRailTab,
+} from "~/components/reading-shell/reading-rail-tab-context";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -108,6 +113,22 @@ function RegisterChatActions({ actions }: { actions: ReadingChatMenuActions }) {
   return null;
 }
 
+function RailTabControls() {
+  const { setActiveTab } = useReadingRailTab();
+  return (
+    <>
+      {(["Notes", "Discuss", "Outline"] satisfies ReadingRailTab[]).map((tab) => (
+        <button
+          key={tab}
+          aria-label={`Set active rail tab to ${tab}`}
+          data-testid={`set-rail-tab-${tab}`}
+          onClick={() => setActiveTab(tab)}
+        />
+      ))}
+    </>
+  );
+}
+
 function renderMenu({
   withChatActions = false,
   isPdf = false,
@@ -132,21 +153,30 @@ function renderMenu({
   root = createRoot(container);
   act(() =>
     root?.render(
-      <ReadingChatMenuProvider>
-        {withChatActions ? <RegisterChatActions actions={chatActions} /> : null}
-        <ReaderSettingsMenu
-          settings={settings}
-          onUpdateSettings={onUpdateSettings}
-          isPdf={isPdf}
-          book={{ id: "book-1", title: "Book", author: "Author", coverImage: null, format: "epub" }}
-          onDownload={vi.fn()}
-          onBookmarkPage={vi.fn()}
-          onCopyPageAsMarkdown={vi.fn()}
-          onOpenSpeedread={vi.fn()}
-          toc={[{ label: "Chapter One", href: "chapter-1.xhtml" }]}
-          onNavigateToToc={onNavigateToToc}
-        />
-      </ReadingChatMenuProvider>,
+      <ReadingRailTabProvider>
+        <ReadingChatMenuProvider>
+          <RailTabControls />
+          {withChatActions ? <RegisterChatActions actions={chatActions} /> : null}
+          <ReaderSettingsMenu
+            settings={settings}
+            onUpdateSettings={onUpdateSettings}
+            isPdf={isPdf}
+            book={{
+              id: "book-1",
+              title: "Book",
+              author: "Author",
+              coverImage: null,
+              format: "epub",
+            }}
+            onDownload={vi.fn()}
+            onBookmarkPage={vi.fn()}
+            onCopyPageAsMarkdown={vi.fn()}
+            onOpenSpeedread={vi.fn()}
+            toc={[{ label: "Chapter One", href: "chapter-1.xhtml" }]}
+            onNavigateToToc={onNavigateToToc}
+          />
+        </ReadingChatMenuProvider>
+      </ReadingRailTabProvider>,
     ),
   );
   return { container, onUpdateSettings, onNavigateToToc, onNewSession, onSwitchSession };
@@ -187,20 +217,40 @@ describe("ReaderSettingsMenu", () => {
     expect(navigate).toHaveBeenNthCalledWith(2, "/settings");
   });
 
-  it("places notebook actions in a final group and exports markdown", async () => {
+  it("shows notebook export only on Notes and never shows Details", async () => {
     const rendered = renderMenu();
-    const items = Array.from(rendered.container.querySelectorAll<HTMLElement>("[role='menuitem']"));
-    const details = items.find((item) => item.textContent?.includes("Details"));
-    const exportItem = items.find((item) => item.textContent?.includes("Export as Markdown"));
+    const findExportItem = () =>
+      Array.from(rendered.container.querySelectorAll<HTMLElement>("[role='menuitem']")).find(
+        (item) => item.textContent?.includes("Export as Markdown"),
+      );
 
-    expect(details?.parentElement).toBe(exportItem?.parentElement);
-    expect(details?.parentElement?.previousElementSibling?.getAttribute("role")).toBe("separator");
+    expect(rendered.container.textContent).not.toContain("Details");
+    expect(findExportItem()?.parentElement?.previousElementSibling?.getAttribute("role")).toBe(
+      "separator",
+    );
 
-    act(() => details?.click());
-    expect(navigate).toHaveBeenCalledWith("/books/book-1/details");
-
-    await act(async () => exportItem?.click());
+    await act(async () => findExportItem()?.click());
     expect(exportNotebookMarkdown).toHaveBeenCalledWith("book-1", "Book");
+
+    act(() =>
+      rendered.container
+        .querySelector<HTMLButtonElement>("[data-testid='set-rail-tab-Discuss']")
+        ?.click(),
+    );
+    expect(findExportItem()).toBeUndefined();
+    act(() =>
+      rendered.container
+        .querySelector<HTMLButtonElement>("[data-testid='set-rail-tab-Outline']")
+        ?.click(),
+    );
+    expect(findExportItem()).toBeUndefined();
+    act(() =>
+      rendered.container
+        .querySelector<HTMLButtonElement>("[data-testid='set-rail-tab-Notes']")
+        ?.click(),
+    );
+    expect(findExportItem()).not.toBeUndefined();
+    expect(navigate.mock.calls.some(([path]) => path === "/books/book-1/details")).toBe(false);
   });
 
   it("keeps formatting updates in the nested menu", () => {
@@ -261,13 +311,13 @@ describe("ReaderSettingsMenu", () => {
   it("keeps chat actions in a separate final group and switches recent sessions", () => {
     const rendered = renderMenu({ withChatActions: true });
     const items = Array.from(rendered.container.querySelectorAll<HTMLElement>("[role='menuitem']"));
-    const details = items.find((item) => item.textContent?.includes("Details"));
+    const exportItem = items.find((item) => item.textContent?.includes("Export as Markdown"));
     const recentSession = items.find((item) => item.textContent?.includes("Session Two"));
     const newChat = items.find((item) => item.textContent?.includes("New chat"));
 
     expect(rendered.container.textContent).toContain("Recent");
     expect(rendered.container.textContent).toContain("Books in this chat");
-    expect(newChat?.parentElement).not.toBe(details?.parentElement);
+    expect(newChat?.parentElement).not.toBe(exportItem?.parentElement);
     expect(newChat?.parentElement?.previousElementSibling?.getAttribute("role")).toBe("separator");
     expect(newChat?.parentElement?.lastElementChild).toBe(newChat);
 
