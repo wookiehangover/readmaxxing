@@ -82,6 +82,11 @@ describe("ChatEmptyState", () => {
 
     await waitForText(container, GENERATED[0]);
     expect(GENERATED.every((question) => container.textContent?.includes(question))).toBe(true);
+    expect(
+      Array.from(container.querySelectorAll("button")).every((button) =>
+        button.classList.contains("hover:underline"),
+      ),
+    ).toBe(true);
     expect(container.textContent).toContain("Dig deeper");
     expect(container.textContent).not.toContain("Pull the Thread");
   });
