@@ -34,11 +34,13 @@ import {
   downloadBookForOpenRequested,
   hydrateBooks,
   importSharedBookRequested,
+  loadBookDataRequested,
   replaceBookFileRequested,
   seedDemoBookRequested,
   uploadBooksRequested,
   type BookAddedCallback,
   type BookDeletedCallback,
+  type BookDataLoadedCallback,
   type BookMutationCompletedCallback,
   type BookMutationFailedCallback,
   type BookReplacementRequest,
@@ -268,12 +270,22 @@ async function downloadBookForOpen(bookId: string) {
   return AppRuntime.runPromise(downloadBookForOpenEffect(bookId));
 }
 
+async function loadBookData(bookId: string) {
+  return AppRuntime.runPromise(
+    BookService.pipe(Effect.andThen((service) => service.getBookData(bookId))),
+  );
+}
+
 function notifyBookAdded(callback: BookAddedCallback | undefined, book: BookMeta) {
   try {
     callback?.(book);
   } catch (error) {
     console.error("Failed to handle added book:", error);
   }
+}
+
+function notifyBookDataLoaded(callback: BookDataLoadedCallback, data: ArrayBuffer) {
+  callback(data);
 }
 
 function notifyBookDeleted(callback: BookDeletedCallback | undefined, bookId: string) {
@@ -438,6 +450,16 @@ export function* downloadBookForOpenSaga(action: ReturnType<typeof downloadBookF
   }
 }
 
+export function* loadBookDataSaga(action: ReturnType<typeof loadBookDataRequested>) {
+  const [bookId, onCompleted, onFailed] = action.payload;
+  try {
+    const data = yield* call(loadBookData, bookId);
+    yield* call(notifyBookDataLoaded, onCompleted, data);
+  } catch (error) {
+    yield* call(notifyBookMutationFailed, onFailed, errorMessage(error));
+  }
+}
+
 export function* booksSaga() {
   yield* takeLatest(hydrateBooks, hydrateBooksSaga);
   yield* takeEvery(uploadBooksRequested, uploadBooksSaga);
@@ -447,4 +469,5 @@ export function* booksSaga() {
   yield* takeEvery(adoptDemoBookRequested, adoptDemoBookSaga);
   yield* takeEvery(deleteBookRequested, deleteBookSaga);
   yield* takeEvery(downloadBookForOpenRequested, downloadBookForOpenSaga);
+  yield* takeEvery(loadBookDataRequested, loadBookDataSaga);
 }

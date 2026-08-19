@@ -9,6 +9,9 @@ import type { BookmarksState } from "~/lib/themis/bookmarks/bookmarks-types";
 import type { BooksState } from "~/lib/themis/books/books-slice";
 import { createBooksSelectors } from "~/lib/themis/books/books-selectors";
 import { booksReducer } from "~/lib/themis/books/books-slice";
+import { createReadingPositionsSelectors } from "~/lib/themis/reading-positions/reading-positions-selectors";
+import { readingPositionsReducer } from "~/lib/themis/reading-positions/reading-positions-slice";
+import type { ReadingPositionsState } from "~/lib/themis/reading-positions/reading-positions-types";
 import { createWorkspaceRestoreSelectors } from "~/lib/themis/workspace-restore/workspace-restore-selectors";
 import { workspaceRestoreReducer } from "~/lib/themis/workspace-restore/workspace-restore-slice";
 import type { WorkspaceRestoreState } from "~/lib/themis/workspace-restore/workspace-restore-types";
@@ -18,12 +21,14 @@ export type AppStoreCore = ReactStore<
     annotations: AnnotationsState;
     bookmarks: BookmarksState;
     books: BooksState;
+    readingPositions: ReadingPositionsState;
     workspaceRestore: WorkspaceRestoreState;
   },
   {
     annotations: typeof annotationsReducer;
     bookmarks: typeof bookmarksReducer;
     books: typeof booksReducer;
+    readingPositions: typeof readingPositionsReducer;
     workspaceRestore: typeof workspaceRestoreReducer;
   }
 >;
@@ -33,12 +38,14 @@ export function createAppStore() {
     annotations: annotationsReducer,
     bookmarks: bookmarksReducer,
     books: booksReducer,
+    readingPositions: readingPositionsReducer,
     workspaceRestore: workspaceRestoreReducer,
   });
   return Object.assign(store, {
     annotationsSelectors: createAnnotationsSelectors(store),
     bookmarksSelectors: createBookmarksSelectors(store),
     booksSelectors: createBooksSelectors(store),
+    readingPositionsSelectors: createReadingPositionsSelectors(store),
     workspaceRestoreSelectors: createWorkspaceRestoreSelectors(store),
   });
 }

@@ -1,9 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { Effect } from "effect";
-import { BookService } from "~/lib/stores/book-store";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { ReadingPositionService } from "~/lib/stores/position-store";
-import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
+import { resolveStartCfi } from "~/lib/position-utils";
 import type { PdfLayout, Theme } from "~/lib/settings";
 import { resolveTheme } from "~/lib/settings";
 import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-readers";
@@ -11,8 +7,13 @@ import type { TocEntry } from "~/lib/context/reader-context";
 import { isEditableElement } from "~/lib/dom-utils";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 import { usePositionNudge } from "~/hooks/use-position-nudge";
-
-const POSITION_SAVE_DEBOUNCE_MS = 1000;
+import { loadBookDataRequested } from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
+import {
+  flushReadingPositionRequested,
+  hydrateReadingPositionsRequested,
+  readingPositionChanged,
+} from "~/lib/themis/reading-positions/reading-positions-slice";
 
 export interface UsePdfLifecycleConfig {
   bookId: string;
@@ -131,6 +132,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
 
   // Access workspace context to check if this book panel is active in focused mode
   const ws = useOptionalWorkspace();
+  const store = useAppStore();
 
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [chapterStarts, setChapterStarts] = useState<PdfChapterStart[]>([]);
@@ -142,56 +144,35 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   const loadingTaskRef = useRef<any>(null);
   const viewerRef = useRef<any>(null);
   const eventBusRef = useRef<any>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestPageRef = useRef<number>(1);
 
   const flushPositionSave = useCallback(() => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
     const page = latestPageRef.current;
     if (page > 0) {
-      savePositionDualKey({
-        panelId: configRef.current.panelId,
-        bookId,
-        cfi: `page:${page}`,
-        savePosition: (key, val, options) =>
-          AppRuntime.runPromise(
-            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val, options))),
-          ),
-      }).catch((err) => console.error("Failed to flush PDF position:", err));
+      const panelId = configRef.current.panelId;
+      store.dispatch(
+        flushReadingPositionRequested({
+          bookId,
+          cfi: `page:${page}`,
+          ...(panelId !== undefined ? { panelId } : {}),
+        }),
+      );
     }
-  }, [bookId]);
+  }, [bookId, store]);
 
   const savePositionDebounced = useCallback(
     (page: number) => {
       latestPageRef.current = page;
-      savePositionDualKey({
-        panelId: configRef.current.panelId,
-        bookId,
-        cfi: `page:${page}`,
-        recordChange: false,
-        savePosition: (key, val, options) =>
-          AppRuntime.runPromise(
-            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val, options))),
-          ),
-      }).catch((err) => console.error("Failed to save local PDF position:", err));
-
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        savePositionDualKey({
-          panelId: undefined,
+      const panelId = configRef.current.panelId;
+      store.dispatch(
+        readingPositionChanged({
           bookId,
           cfi: `page:${page}`,
-          savePosition: (key, val, options) =>
-            AppRuntime.runPromise(
-              ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val, options))),
-            ),
-        }).catch((err) => console.error("Failed to save PDF position:", err));
-      }, POSITION_SAVE_DEBOUNCE_MS);
+          ...(panelId !== undefined ? { panelId } : {}),
+        }),
+      );
     },
-    [bookId],
+    [bookId, store],
   );
 
   const goToPage = useCallback((page: number) => {
@@ -238,9 +219,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
 
     const init = async () => {
       // Load book data
-      const bookData = await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.getBookData(bookId))),
-      );
+      const bookData = await new Promise<ArrayBuffer>((resolve, reject) => {
+        store.dispatch(loadBookDataRequested(bookId, resolve, (error) => reject(new Error(error))));
+      });
       if (cancelled) return;
 
       // Setup pdfjs worker
@@ -326,15 +307,24 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
         applyLayoutToViewer(viewer, configRef.current.pdfLayout);
 
         // Restore reading position
-        resolveStartCfi({
-          latestCfi: latestPageRef.current > 1 ? `page:${latestPageRef.current}` : null,
-          panelId,
-          bookId,
-          getPosition: (key) =>
-            AppRuntime.runPromise(
-              ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(key))),
+        const positionKeys = panelId === undefined ? [bookId] : [bookId, panelId];
+        new Promise<void>((resolve, reject) => {
+          store.dispatch(
+            hydrateReadingPositionsRequested(positionKeys, resolve, (error) =>
+              reject(new Error(error)),
             ),
+          );
         })
+          .then(() =>
+            resolveStartCfi({
+              latestCfi: latestPageRef.current > 1 ? `page:${latestPageRef.current}` : null,
+              panelId,
+              bookId,
+              getPosition: async (key) =>
+                store.readingPositionsSelectors.selectPosition.select(store.state, key)?.cfi ??
+                null,
+            }),
+          )
           .then((savedPos) => {
             let startPage = 1;
             if (savedPos && savedPos.startsWith("page:")) {

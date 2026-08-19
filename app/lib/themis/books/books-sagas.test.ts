@@ -31,6 +31,7 @@ import {
   downloadBookForOpenRequested,
   hydrateBooks,
   importSharedBookRequested,
+  loadBookDataRequested,
   replaceBookFileRequested,
   seedDemoBookRequested,
   uploadBooksRequested,
@@ -64,6 +65,18 @@ afterEach(() => {
 });
 
 describe("booksSaga", () => {
+  it("loads reader binary through the saga without storing it in Redux", async () => {
+    const data = new ArrayBuffer(8);
+    const onCompleted = vi.fn();
+    mocks.runPromise.mockResolvedValueOnce(data);
+    const store = startStore();
+
+    store.dispatch(loadBookDataRequested("book-1", onCompleted, vi.fn()));
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(data));
+    expect(JSON.stringify(store.state)).not.toContain("ArrayBuffer");
+  });
+
   it("hydrates an empty IDB result", async () => {
     mocks.runPromise.mockResolvedValueOnce([]);
     const store = startStore();

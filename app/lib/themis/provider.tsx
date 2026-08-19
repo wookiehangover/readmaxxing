@@ -4,6 +4,7 @@ import { annotationsSaga } from "~/lib/themis/annotations/annotations-sagas";
 import { bookmarksSaga } from "~/lib/themis/bookmarks/bookmarks-sagas";
 import { booksSaga } from "~/lib/themis/books/books-sagas";
 import { hydrateBooks } from "~/lib/themis/books/books-slice";
+import { readingPositionsSaga } from "~/lib/themis/reading-positions/reading-positions-sagas";
 import { createAppStore, type AppStore } from "~/lib/themis/store";
 import { workspaceRestoreSaga } from "~/lib/themis/workspace-restore/workspace-restore-sagas";
 import { hydrateWorkspaceRestore } from "~/lib/themis/workspace-restore/workspace-restore-slice";
@@ -22,6 +23,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     const cancelAnnotationsSaga = store.runSaga(annotationsSaga);
     const cancelBookmarksSaga = store.runSaga(bookmarksSaga);
     const cancelBooksSaga = store.runSaga(booksSaga);
+    const cancelReadingPositionsSaga = store.runSaga(readingPositionsSaga);
     const cancelWorkspaceRestoreSaga = store.runSaga(workspaceRestoreSaga);
     store.dispatch(hydrateBooks());
     store.dispatch(hydrateWorkspaceRestore());
@@ -29,6 +31,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelWorkspaceRestoreSaga();
+      cancelReadingPositionsSaga();
       cancelBooksSaga();
       cancelBookmarksSaga();
       cancelAnnotationsSaga();
