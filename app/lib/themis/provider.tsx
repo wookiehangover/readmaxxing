@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
+import { booksSaga } from "~/lib/themis/books/books-sagas";
+import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { createAppStore, type AppStore } from "~/lib/themis/store";
 
 const AppStoreContext = createContext<AppStore | null>(null);
@@ -9,7 +11,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!store) return;
-    return store.init();
+    const disposeStore = store.init();
+    const cancelBooksSaga = store.runSaga(booksSaga);
+    store.dispatch(hydrateBooks());
+
+    return () => {
+      cancelBooksSaga();
+      disposeStore();
+    };
   }, [store]);
 
   return <AppStoreContext.Provider value={store}>{children}</AppStoreContext.Provider>;

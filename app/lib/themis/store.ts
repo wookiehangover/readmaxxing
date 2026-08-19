@@ -1,12 +1,11 @@
 import { ReactStore } from "@augmentcode/themis/react-store";
 
-const placeholderInitialState = {};
-
-// The books slice will replace this placeholder in the next migration task.
-const placeholderReducer = (state = placeholderInitialState) => state;
+import { createBooksSelectors } from "~/lib/themis/books/books-selectors";
+import { booksReducer } from "~/lib/themis/books/books-slice";
 
 export function createAppStore() {
-  return new ReactStore({ placeholder: placeholderReducer });
+  const store = new ReactStore({ books: booksReducer });
+  return Object.assign(store, { booksSelectors: createBooksSelectors(store) });
 }
 
 export type AppStore = ReturnType<typeof createAppStore>;

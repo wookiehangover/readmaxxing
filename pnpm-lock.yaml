@@ -161,6 +161,9 @@ importers:
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
+      typed-redux-saga:
+        specifier: ^1.5.0
+        version: 1.5.0(redux-saga@1.5.1)
       ulid:
         specifier: ^3.0.2
         version: 3.0.2
