@@ -8,17 +8,18 @@ import { StandardEbooksTable } from "~/components/workspace/standard-ebooks-tabl
 import { LibraryHeaderControls } from "~/components/workspace/library-frame";
 import { useSettings } from "~/lib/settings";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import { parseEpubEffect } from "~/lib/epub/epub-service";
+import type { BookMeta } from "~/lib/stores/book-store";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { computeFileHash } from "~/lib/book-hash";
 import { useEffectQuery } from "~/hooks/use-effect-query";
+import { uploadBooksRequested } from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
 
 interface StandardEbooksBrowserProps {
   onBookAdded: (book: BookMeta) => void;
 }
 
 export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProps) {
+  const store = useAppStore();
   const [settings] = useSettings();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -107,35 +108,38 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
       setDownloadingUrls((prev) => new Set(prev).add(seBook.urlPath));
       setError(null);
 
-      const program = Effect.gen(function* () {
-        const seSvc = yield* StandardEbooksService;
-        const arrayBuffer = yield* seSvc.downloadEpub(seBook.urlPath);
-        const fileHash = yield* Effect.promise(() => computeFileHash(arrayBuffer));
-
-        const existing = yield* BookService.pipe(Effect.andThen((s) => s.findByFileHash(fileHash)));
-        if (existing) return existing;
-
-        const metadata = yield* parseEpubEffect(arrayBuffer);
-        const book: BookMeta = {
-          id: crypto.randomUUID(),
-          title: metadata.title,
-          author: metadata.author,
-          coverImage: metadata.coverImage,
-          format: "epub" as const,
-          fileHash,
-        };
-        yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
-        return book;
-      });
-
       try {
-        const book = await AppRuntime.runPromise(program);
-        setAddedUrls((prev) => new Set(prev).add(seBook.urlPath));
-        onBookAdded(book);
+        const arrayBuffer = await AppRuntime.runPromise(
+          StandardEbooksService.pipe(
+            Effect.andThen((service) => service.downloadEpub(seBook.urlPath)),
+          ),
+        );
+        const finishDownload = () => {
+          setDownloadingUrls((prev) => {
+            const next = new Set(prev);
+            next.delete(seBook.urlPath);
+            return next;
+          });
+        };
+        store.dispatch(
+          uploadBooksRequested(
+            [{ name: `${seBook.title}.epub`, arrayBuffer: async () => arrayBuffer }],
+            (book) => {
+              setAddedUrls((prev) => new Set(prev).add(seBook.urlPath));
+              finishDownload();
+              onBookAdded(book);
+            },
+            undefined,
+            (uploadError) => {
+              console.error("Failed to import book:", uploadError);
+              setError(`Failed to import "${seBook.title}". Please try again.`);
+              finishDownload();
+            },
+          ),
+        );
       } catch (err) {
         console.error("Failed to import book:", err);
         setError(`Failed to import "${seBook.title}". Please try again.`);
-      } finally {
         setDownloadingUrls((prev) => {
           const next = new Set(prev);
           next.delete(seBook.urlPath);
@@ -143,7 +147,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
         });
       }
     },
-    [downloadingUrls, addedUrls, onBookAdded],
+    [downloadingUrls, addedUrls, onBookAdded, store],
   );
   const isBookDownloading = useCallback(
     (book: SEBook) => downloadingUrls.has(book.urlPath),

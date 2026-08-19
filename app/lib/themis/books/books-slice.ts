@@ -16,6 +16,8 @@ export interface BookUploadFile {
 
 export type BookAddedCallback = (book: BookMeta) => void;
 export type BookDeletedCallback = (bookId: string) => void;
+export type BookUploadCompletedCallback = () => void;
+export type BookUploadFailedCallback = (error: string) => void;
 
 export interface BooksState {
   collection: Collection<BookMeta, "id">;
@@ -32,7 +34,14 @@ export const bookUpdated = createAction<[book: BookMeta]>("books/bookUpdated");
 export const bookDeleted = createAction<[bookId: string]>("books/bookDeleted");
 export const booksHydrateFailed = createAction<[error: string]>("books/hydrateFailed");
 export const uploadBooksRequested =
-  createAction<[files: BookUploadFile[], onBookAdded?: BookAddedCallback]>("books/uploadRequested");
+  createAction<
+    [
+      files: BookUploadFile[],
+      onBookAdded?: BookAddedCallback,
+      onUploadCompleted?: BookUploadCompletedCallback,
+      onUploadFailed?: BookUploadFailedCallback,
+    ]
+  >("books/uploadRequested");
 export const booksUploadCompleted = createAction("books/uploadCompleted");
 export const booksUploadFailed = createAction<[error: string]>("books/uploadFailed");
 export const deleteBookRequested =

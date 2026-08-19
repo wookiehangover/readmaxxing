@@ -29,7 +29,7 @@ import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 import { useAppStore } from "~/lib/themis/provider";
-import { bookAdded, hydrateBooks } from "~/lib/themis/books/books-slice";
+import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { cn } from "~/lib/utils";
 
 function createInitialFocusedState(
@@ -257,14 +257,6 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     [navigate, openBook],
   );
 
-  const handleBookAdded = useCallback(
-    (book: BookMeta) => {
-      store.dispatch(bookAdded(book));
-      handleUploadedBookAdded(book);
-    },
-    [handleUploadedBookAdded, store],
-  );
-
   const handleBookDeleted = useCallback(
     (bookId: string) => {
       closeBookPanels(bookId);
@@ -280,11 +272,11 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     ws.openChatRef.current = openChat;
     ws.openBookmarksRef.current = openBookmarks;
     ws.openStandardEbooksRef.current = openStandardEbooks;
-    ws.onBookAddedRef.current = handleBookAdded;
+    ws.onBookAddedRef.current = handleUploadedBookAdded;
     ws.onBookDeletedRef.current = handleBookDeleted;
   }, [
-    handleBookAdded,
     handleBookDeleted,
+    handleUploadedBookAdded,
     openBook,
     openBookmarks,
     openChat,
@@ -308,7 +300,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   return (
     <>
       {loaderData.demoBook && isWorkspaceRoute && !workspaceReady && <WorkspaceLoadingOverlay />}
-      <DropZone onBookAdded={handleBookAdded}>
+      <DropZone onBookAdded={handleUploadedBookAdded}>
         <div
           className={cn("flex h-dvh", {
             "animate-in fade-in-0 duration-300": frameReady,

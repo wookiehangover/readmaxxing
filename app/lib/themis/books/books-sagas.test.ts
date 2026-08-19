@@ -84,16 +84,20 @@ describe("booksSaga", () => {
 
   it("adds a persisted upload before invoking its UI callback", async () => {
     const book = makeBook("uploaded");
-    const onBookAdded = vi.fn();
-    mocks.runPromise.mockResolvedValueOnce(book);
     const store = startStore();
+    const onBookAdded = vi.fn(() => {
+      expect(store.booksSelectors.selectBookById.select(store.state, book.id)).toEqual(book);
+    });
+    const onUploadCompleted = vi.fn();
+    mocks.runPromise.mockResolvedValueOnce(book);
 
-    store.dispatch(uploadBooksRequested([makeFile()], onBookAdded));
+    store.dispatch(uploadBooksRequested([makeFile()], onBookAdded, onUploadCompleted));
 
     await vi.waitFor(() =>
       expect(store.booksSelectors.selectBookById.select(store.state, book.id)).toEqual(book),
     );
     await vi.waitFor(() => expect(onBookAdded).toHaveBeenCalledWith(book));
+    expect(onUploadCompleted).toHaveBeenCalledOnce();
     expect(store.state.books.uploading).toBe(false);
     expect(store.state.books.error).toBeNull();
     expect(getItem(store.state.books.collection, book.id)).not.toHaveProperty("data");
@@ -102,10 +106,12 @@ describe("booksSaga", () => {
   it("keeps an upload out of the collection when persistence fails", async () => {
     mocks.runPromise.mockRejectedValueOnce(new Error("parse failed"));
     const store = startStore();
+    const onUploadFailed = vi.fn();
 
-    store.dispatch(uploadBooksRequested([makeFile()]));
+    store.dispatch(uploadBooksRequested([makeFile()], undefined, undefined, onUploadFailed));
 
     await vi.waitFor(() => expect(store.state.books.error).toBe("parse failed"));
+    expect(onUploadFailed).toHaveBeenCalledWith("parse failed");
     expect(store.state.books.uploading).toBe(false);
     expect(store.booksSelectors.selectAllBooks.select(store.state)).toEqual([]);
   });

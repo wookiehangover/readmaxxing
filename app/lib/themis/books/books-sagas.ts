@@ -21,6 +21,8 @@ import {
   uploadBooksRequested,
   type BookAddedCallback,
   type BookDeletedCallback,
+  type BookUploadCompletedCallback,
+  type BookUploadFailedCallback,
   type BookUploadFile,
 } from "~/lib/themis/books/books-slice";
 
@@ -91,6 +93,22 @@ function notifyBookDeleted(callback: BookDeletedCallback | undefined, bookId: st
   }
 }
 
+function notifyUploadCompleted(callback: BookUploadCompletedCallback | undefined) {
+  try {
+    callback?.();
+  } catch (error) {
+    console.error("Failed to handle completed book upload:", error);
+  }
+}
+
+function notifyUploadFailed(callback: BookUploadFailedCallback | undefined, error: string) {
+  try {
+    callback?.(error);
+  } catch (callbackError) {
+    console.error("Failed to handle book upload failure:", callbackError);
+  }
+}
+
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -105,7 +123,7 @@ export function* hydrateBooksSaga() {
 }
 
 export function* uploadBooksSaga(action: ReturnType<typeof uploadBooksRequested>) {
-  const [files, onBookAdded] = action.payload;
+  const [files, onBookAdded, onUploadCompleted, onUploadFailed] = action.payload;
   try {
     for (const file of files) {
       const book = yield* call(persistUploadedBook, file);
@@ -113,8 +131,11 @@ export function* uploadBooksSaga(action: ReturnType<typeof uploadBooksRequested>
       yield* call(notifyBookAdded, onBookAdded, book);
     }
     yield* put(booksUploadCompleted());
+    yield* call(notifyUploadCompleted, onUploadCompleted);
   } catch (error) {
-    yield* put(booksUploadFailed(errorMessage(error)));
+    const message = errorMessage(error);
+    yield* put(booksUploadFailed(message));
+    yield* call(notifyUploadFailed, onUploadFailed, message);
   }
 }
 

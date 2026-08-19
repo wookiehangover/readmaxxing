@@ -1,16 +1,15 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation } from "react-router";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { Menu, PanelsTopLeft, Settings } from "lucide-react";
 import type { Route } from "./+types/library";
-import type { BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import { DropZone } from "~/components/drop-zone";
 import { BookList } from "~/components/book-list";
 import { ThemeToggle } from "~/components/theme-toggle";
 import { ReaderNavigationProvider } from "~/lib/context/reader-context";
 import { useIsMobile } from "~/hooks/use-mobile";
-import { bookAdded, hydrateBooks } from "~/lib/themis/books/books-slice";
+import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
 import {
   Sheet,
@@ -48,13 +47,6 @@ export default function LibraryLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
-  const handleBookAdded = useCallback(
-    (book: BookMeta) => {
-      store.dispatch(bookAdded(book));
-    },
-    [store],
-  );
-
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
@@ -79,7 +71,7 @@ export default function LibraryLayout() {
 
   return (
     <ReaderNavigationProvider>
-      <DropZone onBookAdded={handleBookAdded}>
+      <DropZone>
         <div className="flex h-dvh animate-in fade-in-0 duration-300">
           {/* Desktop sidebar — shown when isMobile is undefined (SSR/initial) or false */}
           {isMobile !== true && (

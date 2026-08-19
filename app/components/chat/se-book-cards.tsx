@@ -2,12 +2,11 @@ import { useState, useCallback } from "react";
 import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { Globe, Loader2, Plus, Check } from "lucide-react";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
-import { parseEpubEffect } from "~/lib/epub/epub-service";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { computeFileHash } from "~/lib/book-hash";
 import { useWorkspace } from "~/lib/context/workspace-context";
+import { uploadBooksRequested } from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
 
 /** Inline SE book card for chat results — compact horizontal layout. */
 export function ChatSEBookCard({
@@ -82,6 +81,7 @@ export function ChatSEBookCard({
 /** Renders SE search results as a horizontally scrollable row of cards in chat. */
 export function SEBookCardsInChat({ books }: { books: SEBook[] }) {
   const { onBookAddedRef } = useWorkspace();
+  const store = useAppStore();
   const [downloadingUrls, setDownloadingUrls] = useState<Set<string>>(new Set());
   const [addedUrls, setAddedUrls] = useState<Set<string>>(new Set());
 
@@ -91,34 +91,36 @@ export function SEBookCardsInChat({ books }: { books: SEBook[] }) {
 
       setDownloadingUrls((prev) => new Set(prev).add(seBook.urlPath));
 
-      const program = Effect.gen(function* () {
-        const seSvc = yield* StandardEbooksService;
-        const arrayBuffer = yield* seSvc.downloadEpub(seBook.urlPath);
-        const fileHash = yield* Effect.promise(() => computeFileHash(arrayBuffer));
-
-        const existing = yield* BookService.pipe(Effect.andThen((s) => s.findByFileHash(fileHash)));
-        if (existing) return existing;
-
-        const metadata = yield* parseEpubEffect(arrayBuffer);
-        const book: BookMeta = {
-          id: crypto.randomUUID(),
-          title: metadata.title,
-          author: metadata.author,
-          coverImage: metadata.coverImage,
-          format: "epub" as const,
-          fileHash,
-        };
-        yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
-        return book;
-      });
-
       try {
-        const book = await AppRuntime.runPromise(program);
-        setAddedUrls((prev) => new Set(prev).add(seBook.urlPath));
-        onBookAddedRef.current?.(book);
+        const arrayBuffer = await AppRuntime.runPromise(
+          StandardEbooksService.pipe(
+            Effect.andThen((service) => service.downloadEpub(seBook.urlPath)),
+          ),
+        );
+        const finishDownload = () => {
+          setDownloadingUrls((prev) => {
+            const next = new Set(prev);
+            next.delete(seBook.urlPath);
+            return next;
+          });
+        };
+        store.dispatch(
+          uploadBooksRequested(
+            [{ name: `${seBook.title}.epub`, arrayBuffer: async () => arrayBuffer }],
+            (book) => {
+              setAddedUrls((prev) => new Set(prev).add(seBook.urlPath));
+              finishDownload();
+              onBookAddedRef.current?.(book);
+            },
+            undefined,
+            (error) => {
+              console.error("Failed to import book from chat:", error);
+              finishDownload();
+            },
+          ),
+        );
       } catch (err) {
         console.error("Failed to import book from chat:", err);
-      } finally {
         setDownloadingUrls((prev) => {
           const next = new Set(prev);
           next.delete(seBook.urlPath);
@@ -126,7 +128,7 @@ export function SEBookCardsInChat({ books }: { books: SEBook[] }) {
         });
       }
     },
-    [downloadingUrls, addedUrls, onBookAddedRef],
+    [downloadingUrls, addedUrls, onBookAddedRef, store],
   );
 
   if (books.length === 0) return null;
