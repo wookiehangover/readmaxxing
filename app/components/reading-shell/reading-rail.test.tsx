@@ -138,18 +138,26 @@ describe("ReadingRail", () => {
     expect(container.querySelector("[data-testid='book-surface']")).not.toBeNull();
   });
 
-  it("insets mobile tool panels without changing desktop panel padding", () => {
+  it("keeps mobile tool panels and scroll viewports flush with the screen edge", () => {
     const container = renderMobileRail();
+    const rail = container.firstElementChild as HTMLElement;
 
-    for (const [tab, testId] of [
-      ["Notes", "notes-panel"],
-      ["Discuss", "chat-panel"],
-      ["Outline", "outline-panel"],
+    for (const [tab, panelTestId, viewportTestId] of [
+      ["Notes", "notes-panel", "notes-scroll-viewport"],
+      ["Discuss", "chat-panel", "discuss-scroll-viewport"],
+      ["Outline", "outline-panel", "outline-scroll-viewport"],
     ]) {
       clickTab(container, tab);
-      expect(
-        container.querySelector(`[data-testid='${testId}']`)?.parentElement?.className,
-      ).toContain("px-6");
+      const panel = container.querySelector(`[data-testid='${panelTestId}']`)?.parentElement;
+      expect(panel?.className).toBe("min-h-0 flex-1 overflow-hidden outline-none");
+
+      let ancestor = container.querySelector(`[data-testid='${viewportTestId}']`)?.parentElement;
+      while (ancestor) {
+        expect(ancestor.classList.contains("px-6")).toBe(false);
+        expect(ancestor.classList.contains("pr-6")).toBe(false);
+        if (ancestor === rail) break;
+        ancestor = ancestor.parentElement;
+      }
     }
   });
 
