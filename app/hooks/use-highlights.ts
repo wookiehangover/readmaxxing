@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DecorationClickDetail, SelectionChangedDetail } from "@readmaxxing/epub-successor";
-import { Effect } from "effect";
-import { AnnotationService, type Highlight } from "~/lib/stores/annotations-store";
-import { AppRuntime } from "~/lib/effect-runtime";
+import type { Highlight } from "~/lib/stores/annotations-store";
 import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
 import { type Theme, resolveTheme } from "~/lib/settings";
 import { useSyncListener } from "~/hooks/use-sync-listener";
+import { useAppStore } from "~/lib/themis/provider";
+import {
+  addHighlightRequested,
+  hydrateAnnotationsRequested,
+} from "~/lib/themis/annotations/annotations-slice";
 
 const HIGHLIGHT_COLOR_LIGHT = "rgba(255, 213, 79, 0.6)";
 const HIGHLIGHT_COLOR_DARK = "rgba(255, 220, 100, 0.8)";
@@ -37,6 +40,9 @@ export function useHighlights({
 }: UseHighlightsOptions) {
   const highlightsRef = useRef<Map<string, Highlight>>(new Map());
   const [selectionPopover, setSelectionPopover] = useState<SelectionPopover | null>(null);
+  const store = useAppStore();
+  const highlights = store.annotationsSelectors.selectHighlightsByBook.useValue(bookId);
+  const highlightSyncVersion = useSyncListener(["highlight"]);
 
   const onHighlightClickRef = useRef(onHighlightClick);
   onHighlightClickRef.current = onHighlightClick;
@@ -69,29 +75,38 @@ export function useHighlights({
     [theme],
   );
 
-  /** Load all highlights for the book from IndexedDB and apply them to the rendition. */
+  const reconcileHighlights = useCallback(
+    (rendition: SuccessorRenditionAdapter, nextHighlights: Highlight[]) => {
+      const nextByCfi = new Map<string, Highlight>();
+      for (const highlight of nextHighlights) {
+        const previous = highlightsRef.current.get(highlight.cfiRange);
+        if (previous && previous.id !== highlight.id) rendition.removeDecoration(previous.id);
+        nextByCfi.set(highlight.cfiRange, highlight);
+        applyHighlightToRendition(rendition, highlight);
+      }
+      for (const [cfiRange, highlight] of highlightsRef.current) {
+        if (!nextByCfi.has(cfiRange)) rendition.removeDecoration(highlight.id);
+      }
+      highlightsRef.current = nextByCfi;
+    },
+    [applyHighlightToRendition],
+  );
+
+  useEffect(() => {
+    store.dispatch(hydrateAnnotationsRequested(bookId));
+  }, [bookId, highlightSyncVersion, store]);
+
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (rendition) reconcileHighlights(rendition, highlights);
+  }, [highlights, reconcileHighlights, renditionRef]);
+
+  /** Apply the current annotations collection after the rendition becomes ready. */
   const loadAndApplyHighlights = useCallback(
     async (rendition: SuccessorRenditionAdapter) => {
-      const program = Effect.gen(function* () {
-        const svc = yield* AnnotationService;
-        return yield* svc.getHighlightsByBook(bookId);
-      }).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to load highlights:", error);
-            return [] as Highlight[];
-          }),
-        ),
-      );
-      const existing = await AppRuntime.runPromise(program);
-      const hlMap = new Map<string, Highlight>();
-      for (const hl of existing) {
-        hlMap.set(hl.cfiRange, hl);
-        applyHighlightToRendition(rendition, hl);
-      }
-      highlightsRef.current = hlMap;
+      reconcileHighlights(rendition, highlights);
     },
-    [bookId, applyHighlightToRendition],
+    [highlights, reconcileHighlights],
   );
 
   /** Register successor selection and decoration-click handlers. */
@@ -163,13 +178,15 @@ export function useHighlights({
       createdAt: Date.now(),
     };
 
-    const saveProgram = Effect.gen(function* () {
-      const svc = yield* AnnotationService;
-      yield* svc.saveHighlight(highlight);
+    const saved = await new Promise<Highlight | null>((resolve) => {
+      store.dispatch(
+        addHighlightRequested(highlight, resolve, (error) => {
+          console.error("Failed to save highlight:", error);
+          resolve(null);
+        }),
+      );
     });
-    await AppRuntime.runPromise(saveProgram).catch(console.error);
-    highlightsRef.current.set(cfiRange, highlight);
-    applyHighlightToRendition(rendition, highlight);
+    if (!saved) return null;
 
     setSelectionPopover(null);
 
@@ -179,65 +196,8 @@ export function useHighlights({
       if (win) win.getSelection()?.removeAllRanges();
     });
 
-    return highlight;
-  }, [selectionPopover, bookId, renditionRef, applyHighlightToRendition]);
-
-  // Incrementally sync highlights when sync pulls highlight data
-  const highlightSyncVersion = useSyncListener(["highlight"]);
-  useEffect(() => {
-    if (highlightSyncVersion === 0) return;
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-
-    const program = Effect.gen(function* () {
-      const svc = yield* AnnotationService;
-      return yield* svc.getHighlightsByBook(bookId);
-    }).pipe(
-      Effect.catchAll((error) =>
-        Effect.sync(() => {
-          console.error("Failed to sync highlights:", error);
-          return [] as Highlight[];
-        }),
-      ),
-    );
-
-    (async () => {
-      try {
-        const freshHighlights = await AppRuntime.runPromise(program);
-
-        const existingIds = new Set(Array.from(highlightsRef.current.values()).map((h) => h.id));
-        const freshIds = new Set(freshHighlights.map((h) => h.id));
-
-        // Skip if nothing changed
-        if (
-          existingIds.size === freshIds.size &&
-          [...freshIds].every((id) => existingIds.has(id))
-        ) {
-          return;
-        }
-
-        // Add only NEW highlights
-        for (const hl of freshHighlights) {
-          if (!highlightsRef.current.has(hl.cfiRange)) {
-            highlightsRef.current.set(hl.cfiRange, hl);
-            applyHighlightToRendition(rendition, hl);
-          }
-        }
-
-        // Remove highlights that are no longer in fresh set (soft-deleted)
-        const freshCfiRanges = new Set(freshHighlights.map((h) => h.cfiRange));
-        for (const [cfiRange] of highlightsRef.current) {
-          if (!freshCfiRanges.has(cfiRange)) {
-            const existing = highlightsRef.current.get(cfiRange);
-            if (existing) rendition.removeDecoration(existing.id);
-            highlightsRef.current.delete(cfiRange);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to sync highlights:", err);
-      }
-    })();
-  }, [bookId, renditionRef, applyHighlightToRendition, highlightSyncVersion]);
+    return saved;
+  }, [selectionPopover, theme, bookId, renditionRef, store]);
 
   const dismissPopovers = useCallback(() => {
     setSelectionPopover(null);

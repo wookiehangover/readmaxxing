@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
+import { annotationsSaga } from "~/lib/themis/annotations/annotations-sagas";
 import { booksSaga } from "~/lib/themis/books/books-sagas";
 import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { createAppStore, type AppStore } from "~/lib/themis/store";
@@ -17,6 +18,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!store) return;
     const disposeStore = store.init();
+    const cancelAnnotationsSaga = store.runSaga(annotationsSaga);
     const cancelBooksSaga = store.runSaga(booksSaga);
     const cancelWorkspaceRestoreSaga = store.runSaga(workspaceRestoreSaga);
     store.dispatch(hydrateBooks());
@@ -26,6 +28,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelWorkspaceRestoreSaga();
       cancelBooksSaga();
+      cancelAnnotationsSaga();
       disposeStore();
     };
   }, [store]);

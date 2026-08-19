@@ -1,5 +1,8 @@
 import { ReactStore } from "@augmentcode/themis/react-store";
 
+import { createAnnotationsSelectors } from "~/lib/themis/annotations/annotations-selectors";
+import { annotationsReducer } from "~/lib/themis/annotations/annotations-slice";
+import type { AnnotationsState } from "~/lib/themis/annotations/annotations-types";
 import type { BooksState } from "~/lib/themis/books/books-slice";
 import { createBooksSelectors } from "~/lib/themis/books/books-selectors";
 import { booksReducer } from "~/lib/themis/books/books-slice";
@@ -8,13 +11,22 @@ import { workspaceRestoreReducer } from "~/lib/themis/workspace-restore/workspac
 import type { WorkspaceRestoreState } from "~/lib/themis/workspace-restore/workspace-restore-types";
 
 export type AppStoreCore = ReactStore<
-  { books: BooksState; workspaceRestore: WorkspaceRestoreState },
-  { books: typeof booksReducer; workspaceRestore: typeof workspaceRestoreReducer }
+  { annotations: AnnotationsState; books: BooksState; workspaceRestore: WorkspaceRestoreState },
+  {
+    annotations: typeof annotationsReducer;
+    books: typeof booksReducer;
+    workspaceRestore: typeof workspaceRestoreReducer;
+  }
 >;
 
 export function createAppStore() {
-  const store = new ReactStore({ books: booksReducer, workspaceRestore: workspaceRestoreReducer });
+  const store = new ReactStore({
+    annotations: annotationsReducer,
+    books: booksReducer,
+    workspaceRestore: workspaceRestoreReducer,
+  });
   return Object.assign(store, {
+    annotationsSelectors: createAnnotationsSelectors(store),
     booksSelectors: createBooksSelectors(store),
     workspaceRestoreSelectors: createWorkspaceRestoreSelectors(store),
   });

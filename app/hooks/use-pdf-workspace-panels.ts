@@ -4,9 +4,10 @@ import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
-import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import type { DockviewPanelApi } from "dockview-react";
 import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell";
+import { useAppStore } from "~/lib/themis/provider";
+import { appendHighlightToNotebookRequested } from "~/lib/themis/annotations/annotations-slice";
 
 type SavedHighlight = { id: string; cfiRange: string; text: string };
 
@@ -38,6 +39,7 @@ export function usePdfWorkspacePanels({
   handleOpenNotebookRef,
 }: UsePdfWorkspacePanelsOptions) {
   const ws = useWorkspace();
+  const store = useAppStore();
   const {
     navigationMap,
     notebookCallbackMap,
@@ -112,19 +114,12 @@ export function usePdfWorkspacePanels({
       appendFn(attrs);
       return;
     }
-    // Notebook panel isn't mounted — write the reference directly to IDB so
-    // the highlight is visible (and deletable) the next time the notebook
-    // opens, instead of silently orphaning it.
-    AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
-      .then(() => {
-        queueMicrotask(() => {
-          window.dispatchEvent(
-            new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-          );
-        });
-      })
-      .catch((err) => console.error("Failed to append highlight to notebook:", err));
-  }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
+    store.dispatch(
+      appendHighlightToNotebookRequested(book.id, attrs, undefined, (error) =>
+        console.error("Failed to append highlight to notebook:", error),
+      ),
+    );
+  }, [saveHighlightFromPopover, notebookCallbackMap, book.id, store]);
 
   const handleAskQuestion = useCallback(async () => {
     try {
@@ -143,15 +138,11 @@ export function usePdfWorkspacePanels({
           { type: "paragraph" },
         ]);
       } else {
-        AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
-          .then(() => {
-            queueMicrotask(() => {
-              window.dispatchEvent(
-                new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-              );
-            });
-          })
-          .catch((err) => console.error("Failed to append highlight to notebook:", err));
+        store.dispatch(
+          appendHighlightToNotebookRequested(book.id, attrs, undefined, (error) =>
+            console.error("Failed to append highlight to notebook:", error),
+          ),
+        );
       }
 
       pendingHighlightPillMap.current.set(book.id, {
@@ -171,6 +162,7 @@ export function usePdfWorkspacePanels({
     notebookEditorCallbackMap,
     pendingHighlightPillMap,
     saveHighlightFromPopover,
+    store,
     ws.openChatRef,
   ]);
 

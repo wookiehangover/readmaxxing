@@ -4,17 +4,17 @@ import { Effect } from "effect";
 import { ArrowLeft, BookOpen, CloudUpload, RotateCcw } from "lucide-react";
 import type { Route } from "./+types/book-details";
 import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
-import { AnnotationService } from "~/lib/stores/annotations-store";
 import { useSyncActions } from "~/lib/sync/use-sync";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
-import { useEffectQuery } from "~/hooks/use-effect-query";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { replaceBookFileRequested } from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
+import { hydrateAnnotationsRequested } from "~/lib/themis/annotations/annotations-slice";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 export function meta({ loaderData }: Route.MetaArgs) {
   const title = loaderData?.book?.title ?? "Readmaxxing";
@@ -111,13 +111,15 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
 
   const isDeleted = deletedAt !== undefined;
 
-  // Load notebook for this book
-  const { data: notebook, isLoading: notebookLoading } = useEffectQuery(
-    () => AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(book.id))),
-    [book.id],
-  );
+  const notebook = store.annotationsSelectors.selectNotebookByBookId.useValue(book.id);
+  const annotationsLoaded = store.annotationsSelectors.selectAnnotationsLoaded.useValue(book.id);
+  const notebookSyncVersion = useSyncListener(["notebook"]);
   const notebookContent = notebook?.content ?? null;
-  const hasNotebook = !notebookLoading && notebookContent !== null;
+  const hasNotebook = annotationsLoaded && notebookContent !== null;
+
+  useEffect(() => {
+    store.dispatch(hydrateAnnotationsRequested(book.id));
+  }, [book.id, notebookSyncVersion, store]);
 
   // Debounced notebook save
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

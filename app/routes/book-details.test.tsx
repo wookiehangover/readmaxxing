@@ -16,9 +16,7 @@ vi.mock("react-router", async (importOriginal) => {
     useRevalidator: () => ({ revalidate: mocks.revalidate, state: "idle" }),
   };
 });
-vi.mock("~/hooks/use-effect-query", () => ({
-  useEffectQuery: () => ({ data: null, isLoading: false }),
-}));
+vi.mock("~/hooks/use-sync-listener", () => ({ useSyncListener: () => 0 }));
 vi.mock("~/lib/sync/use-sync", () => ({
   useSyncActions: () => ({
     triggerSync: vi.fn(),
@@ -27,7 +25,13 @@ vi.mock("~/lib/sync/use-sync", () => ({
   }),
 }));
 vi.mock("~/lib/themis/provider", () => ({
-  useAppStore: () => ({ dispatch: mocks.dispatch }),
+  useAppStore: () => ({
+    dispatch: mocks.dispatch,
+    annotationsSelectors: {
+      selectNotebookByBookId: { useValue: () => undefined },
+      selectAnnotationsLoaded: { useValue: () => true },
+    },
+  }),
 }));
 
 import BookDetailsRoute from "./book-details";
@@ -73,8 +77,9 @@ describe("BookDetailsRoute", () => {
 
     act(() => input.dispatchEvent(new Event("change", { bubbles: true })));
 
-    expect(mocks.dispatch).toHaveBeenCalledOnce();
-    const action = mocks.dispatch.mock.calls[0]![0] as ReturnType<typeof replaceBookFileRequested>;
+    const action = mocks.dispatch.mock.calls
+      .map(([dispatched]) => dispatched as ReturnType<typeof replaceBookFileRequested>)
+      .find((dispatched) => dispatched.type === replaceBookFileRequested.type)!;
     expect(action.type).toBe(replaceBookFileRequested.type);
     expect(action.payload[0]).toMatchObject({ bookId: "book-1", file, syncActive: false });
     expect(action.payload[0].reloadBookFiles).toBe(mocks.reloadBookFiles);

@@ -2,7 +2,6 @@ import { useCallback } from "react";
 import type { Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { SelectionPopover, useHighlights } from "~/hooks/use-highlights";
-import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import { AppRuntime } from "~/lib/effect-runtime";
 import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -10,6 +9,8 @@ import { tokenizeSpeedreadText } from "~/lib/speedread";
 import { BookmarkService } from "~/lib/stores/bookmark-store";
 import { BookService } from "~/lib/stores/book-store";
 import { Effect } from "effect";
+import { useAppStore } from "~/lib/themis/provider";
+import { appendHighlightToNotebookRequested } from "~/lib/themis/annotations/annotations-slice";
 
 type HighlightsState = ReturnType<typeof useHighlights>;
 
@@ -43,6 +44,7 @@ export function useBookReaderActions({
   setSpeedreadOpen,
 }: UseBookReaderActionsOptions) {
   const workspace = useWorkspace();
+  const store = useAppStore();
 
   const clearSelection = useCallback(() => {
     const contents = renditionRef.current?.getContents?.() ?? [];
@@ -64,16 +66,12 @@ export function useBookReaderActions({
       append(attributes);
       return;
     }
-    AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attributes))
-      .then(() => {
-        queueMicrotask(() => {
-          window.dispatchEvent(
-            new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-          );
-        });
-      })
-      .catch((error) => console.error("Failed to append highlight to notebook:", error));
-  }, [book.id, saveHighlightFromPopover, workspace.notebookCallbackMap]);
+    store.dispatch(
+      appendHighlightToNotebookRequested(book.id, attributes, undefined, (error) =>
+        console.error("Failed to append highlight to notebook:", error),
+      ),
+    );
+  }, [book.id, saveHighlightFromPopover, store, workspace.notebookCallbackMap]);
 
   const handleAskQuestion = useCallback(async () => {
     if (!selectionPopover) return;
@@ -93,15 +91,11 @@ export function useBookReaderActions({
           { type: "paragraph" },
         ]);
       } else {
-        AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attributes))
-          .then(() => {
-            queueMicrotask(() => {
-              window.dispatchEvent(
-                new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-              );
-            });
-          })
-          .catch((error) => console.error("Failed to append highlight to notebook:", error));
+        store.dispatch(
+          appendHighlightToNotebookRequested(book.id, attributes, undefined, (error) =>
+            console.error("Failed to append highlight to notebook:", error),
+          ),
+        );
       }
 
       workspace.pendingHighlightPillMap.current.set(book.id, {
@@ -122,6 +116,7 @@ export function useBookReaderActions({
     dismissPopovers,
     saveHighlightFromPopover,
     selectionPopover,
+    store,
     workspace,
   ]);
 

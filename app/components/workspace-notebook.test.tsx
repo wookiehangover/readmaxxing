@@ -2,15 +2,21 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const queryResults = vi.hoisted(() => [
-  { data: { title: "Book title", author: "Book author" }, isLoading: false },
-  { data: { content: { type: "doc", content: [] } }, isLoading: false },
-]);
-
-vi.mock("~/hooks/use-effect-query", () => ({
-  useEffectQuery: () => queryResults.shift() ?? { data: undefined, isLoading: false },
-}));
 vi.mock("~/hooks/use-sync-listener", () => ({ useSyncListener: () => 0 }));
+vi.mock("~/lib/themis/provider", () => ({
+  useAppStore: () => ({
+    dispatch: vi.fn(),
+    booksSelectors: {
+      selectBookById: { useValue: () => ({ title: "Book title", author: "Book author" }) },
+    },
+    annotationsSelectors: {
+      selectNotebookByBookId: {
+        useValue: () => ({ content: { type: "doc", content: [] } }),
+      },
+      selectAnnotationsLoaded: { useValue: () => true },
+    },
+  }),
+}));
 vi.mock("~/lib/context/workspace-context", () => ({
   useWorkspace: () => ({
     notebookEditorCallbackMap: { current: new Map() },
