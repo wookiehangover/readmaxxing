@@ -9,6 +9,8 @@ const AppStoreContext = createContext<AppStore | null>(null);
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [store] = useState(() => (typeof window === "undefined" ? null : createAppStore()));
 
+  // React Router currently owns this client-only lifecycle here; moving init before render is a separate migration.
+  // eslint-disable-next-line themis/react-component-lifecycle-boundary
   useEffect(() => {
     if (!store) return;
     const disposeStore = store.init();

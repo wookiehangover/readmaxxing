@@ -9,6 +9,7 @@
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc",
     "lint": "oxlint .",
+    "lint:themis": "eslint \"app/lib/themis/**/*.{ts,tsx}\"",
     "format": "oxfmt --write app/",
     "test": "vitest",
     "e2e": "playwright test"
@@ -70,6 +71,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@babel/eslint-parser": "^8.0.1",
     "@playwright/test": "^1.61.1",
     "@react-router/dev": "^8",
     "@tailwindcss/vite": "^4.3.2",
@@ -77,6 +80,7 @@
     "@types/node": "^22.19.19",
     "@types/react": "^19.2.17",
     "@types/react-dom": "19.2.3",
+    "eslint": "^10.8.1",
     "fake-indexeddb": "^6.2.5",
     "happy-dom": "^20.10.6",
     "knip": "^6.32.2",

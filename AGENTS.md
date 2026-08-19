@@ -16,6 +16,7 @@ Ebook/PDF reader web app: React Router v7 (framework mode) + TypeScript, Tailwin
 | Test one file        | `pnpm vitest run path/to/file.test.ts`  |
 | Lint                 | `pnpm oxlint`                           |
 | Lint one path        | `pnpm oxlint path/to/file.ts`           |
+| Themis lint          | `pnpm lint:themis`                      |
 | Format               | `pnpm oxfmt .`                          |
 | E2E (all)            | `pnpm e2e`                              |
 | E2E one file         | `pnpm playwright test e2e/chat.spec.ts` |
@@ -28,7 +29,7 @@ Run `pnpm oxfmt .` and `pnpm oxlint` before committing; fix all warnings. Run `p
 
 - Before store, saga, or selector work, read `.agents/skills/themis/SKILL.md`, `.agents/skills/themis/react/SKILL.md`, and `.agents/skills/themis/core/SKILL.md`, then load the applicable leaf skills.
 - This React app uses `ReactStore` as its only Store family. Do not apply Svelte `Store` or `StreamingStore` guidance.
-- Keep oxlint as the default linter and use `pnpm oxlint`; do not add ESLint outside the dedicated lint migration task.
+- Keep oxlint as the default linter and use `pnpm oxlint`; run `pnpm lint:themis` for scoped Themis architecture rules.
 
 ## External References
 
