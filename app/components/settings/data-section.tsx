@@ -1,5 +1,4 @@
-import { Effect } from "effect";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
 import {
@@ -21,9 +20,8 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { useAuth } from "~/lib/context/auth-context";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { exportBookData } from "~/lib/export/data-export";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
+import { useAppStore } from "~/lib/themis/provider";
 
 /**
  * App-owned IndexedDB database names. Used when `indexedDB.databases()` is
@@ -116,27 +114,12 @@ function clearWebStorage(): void {
 
 export function DataSection() {
   const { logout } = useAuth();
-  const [books, setBooks] = useState<BookMeta[]>([]);
+  const store = useAppStore();
+  const books = store.booksSelectors.selectAllBooks.useValue();
   const [selectedBookId, setSelectedBookId] = useState("all");
   const [isExporting, setIsExporting] = useState(false);
   const [open, setOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    AppRuntime.runPromise(BookService.pipe(Effect.andThen((service) => service.getBooks())))
-      .then((loadedBooks) => {
-        if (active) setBooks(loadedBooks);
-      })
-      .catch((cause) => {
-        console.error(cause);
-        toast("Could not load books");
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   async function handleExport() {
     setIsExporting(true);

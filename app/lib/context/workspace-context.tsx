@@ -55,7 +55,11 @@ export interface WorkspaceContextValue {
   dockviewApi: React.MutableRefObject<DockviewApi | null>;
   /** File input element for triggering uploads */
   fileInputRef: React.MutableRefObject<HTMLInputElement | null>;
-  /** @deprecated Compatibility mirror of the Themis books slice. */
+  /**
+   * @deprecated Compatibility mirror of the Themis books slice, kept only for
+   * chat consumers (`chat-message.tsx`) that have not migrated to selectors.
+   * No migrated book UI reads this ref.
+   */
   booksRef: React.MutableRefObject<BookMeta[]>;
   /**
    * IDs of books that currently have an open panel. This is the full

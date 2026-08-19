@@ -213,8 +213,8 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     });
   }, [books, isWorkspaceRoute, navigate, openBook, readingBookId, ws]);
 
-  // Deprecated compatibility mirror for reader/chat consumers that have not
-  // moved to Themis yet. The slice remains the source of truth.
+  // Deprecated compatibility mirror for out-of-scope chat consumers.
+  // The slice remains the source of truth for migrated book UI.
   ws.booksRef.current = books;
 
   useEffect(() => {

@@ -7,6 +7,7 @@ import type { PdfLayout, Settings } from "~/lib/settings";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useEffectQuery } from "~/hooks/use-effect-query";
 import { AppRuntime } from "~/lib/effect-runtime";
+import { useAppStore } from "~/lib/themis/provider";
 import type { DockviewPanelApi } from "dockview-react";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
@@ -47,20 +48,13 @@ export function WorkspacePdfReader({ bookId, panelApi, panelTypography }: Worksp
     return () => disposable.dispose();
   }, [panelApi, hasBeenVisible]);
 
-  const {
-    data: book,
-    error,
-    isLoading,
-  } = useEffectQuery(
-    () =>
-      BookService.pipe(
-        Effect.andThen((s) => s.getBook(bookId)),
-        Effect.catchTag("BookNotFoundError", () => Effect.succeed(null as BookMeta | null)),
-      ),
-    [bookId],
-  );
+  // Look up book metadata from the Themis books collection. Populated at app
+  // startup by the books hydrate saga, so this is a synchronous read.
+  const store = useAppStore();
+  const booksLoading = store.booksSelectors.selectBooksLoading.useValue();
+  const book = store.booksSelectors.selectBookById.useValue(bookId);
 
-  if (isLoading) {
+  if (!book && booksLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Loading book…</p>
@@ -68,7 +62,7 @@ export function WorkspacePdfReader({ bookId, panelApi, panelTypography }: Worksp
     );
   }
 
-  if (error || !book) {
+  if (!book) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Book not found.</p>

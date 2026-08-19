@@ -32,6 +32,15 @@ const workspace = vi.hoisted(() => ({
 }));
 
 vi.mock("~/lib/context/workspace-context", () => ({ useWorkspace: () => workspace }));
+vi.mock("~/lib/themis/provider", () => ({
+  useAppStore: () => ({
+    booksSelectors: {
+      selectBookById: {
+        useValue: (bookId: string) => workspace.booksRef.current.find((book) => book.id === bookId),
+      },
+    },
+  }),
+}));
 vi.mock("~/components/workspace/panel-components", () => ({
   WorkspaceNotebookPanel: ({ chromeless }: { chromeless?: boolean }) => (
     <div data-testid="notes-panel" data-chromeless={chromeless}>

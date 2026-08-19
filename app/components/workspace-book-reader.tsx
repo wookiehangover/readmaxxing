@@ -2,7 +2,8 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import { useReaderSearch } from "~/hooks/use-reader-search";
 import { Effect } from "effect";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
+import type { BookMeta } from "~/lib/stores/book-store";
+import { useAppStore } from "~/lib/themis/provider";
 import { useResolvedTheme, useSettings } from "~/lib/settings";
 import type { FontWeight, PdfLayout, ReaderLayout } from "~/lib/settings";
 import { SpeedreadPopout } from "~/components/speedread-popout";
@@ -114,21 +115,13 @@ export function WorkspaceBookReader({
     }
   }, []);
 
-  // Load book data via useEffectQuery
-  const {
-    data: book,
-    error,
-    isLoading,
-  } = useEffectQuery(
-    () =>
-      BookService.pipe(
-        Effect.andThen((s) => s.getBook(bookId)),
-        Effect.catchTag("BookNotFoundError", () => Effect.succeed(null as BookMeta | null)),
-      ),
-    [bookId],
-  );
+  // Look up book metadata from the Themis books collection. Populated at app
+  // startup by the books hydrate saga, so this is a synchronous read.
+  const store = useAppStore();
+  const booksLoading = store.booksSelectors.selectBooksLoading.useValue();
+  const book = store.booksSelectors.selectBookById.useValue(bookId);
 
-  if (isLoading) {
+  if (!book && booksLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Loading book…</p>
@@ -136,7 +129,7 @@ export function WorkspaceBookReader({
     );
   }
 
-  if (error || !book) {
+  if (!book) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Book not found.</p>

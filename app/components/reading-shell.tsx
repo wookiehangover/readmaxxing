@@ -6,15 +6,17 @@ import { WorkspaceBookReader } from "~/components/workspace-book-reader";
 import { WorkspacePdfReader } from "~/components/workspace-pdf-reader";
 import { ReadingChatMenuProvider } from "~/lib/context/reading-chat-menu-context";
 import { useWorkspace } from "~/lib/context/workspace-context";
+import { useAppStore } from "~/lib/themis/provider";
 
 export function ReadingShell() {
   const workspace = useWorkspace();
+  const store = useAppStore();
   const activeBookId = useSyncExternalStore(
     workspace.subscribeClusterChanges,
     () => workspace.activeClusterBookIdRef.current,
     () => workspace.activeClusterBookIdRef.current,
   );
-  const book = workspace.booksRef.current.find((candidate) => candidate.id === activeBookId);
+  const book = store.booksSelectors.selectBookById.useValue(activeBookId ?? "");
 
   useEffect(() => {
     const previousTitle = document.title;
