@@ -1,9 +1,7 @@
 import { useState, useCallback } from "react";
-import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { Globe, Loader2, Plus, Check } from "lucide-react";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { uploadBooksRequested } from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
@@ -92,11 +90,7 @@ export function SEBookCardsInChat({ books }: { books: SEBook[] }) {
       setDownloadingUrls((prev) => new Set(prev).add(seBook.urlPath));
 
       try {
-        const arrayBuffer = await AppRuntime.runPromise(
-          StandardEbooksService.pipe(
-            Effect.andThen((service) => service.downloadEpub(seBook.urlPath)),
-          ),
-        );
+        const arrayBuffer = await StandardEbooksService.downloadEpub(seBook.urlPath);
         const finishDownload = () => {
           setDownloadingUrls((prev) => {
             const next = new Set(prev);

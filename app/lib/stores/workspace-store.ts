@@ -1,6 +1,5 @@
 import { createStore, get, set, del, keys } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
-import { Context, Effect, Layer, Schema } from "effect";
 import type { SerializedDockview } from "dockview-react";
 import { WorkspaceError, DecodeError } from "~/lib/errors";
 
@@ -10,13 +9,7 @@ import { WorkspaceError, DecodeError } from "~/lib/errors";
  * SerializedDockview is an external type we don't deeply validate.
  * We only check that it's a non-null object with expected top-level shape.
  */
-const SerializedDockviewSchema = Schema.Struct({
-  grid: Schema.Unknown,
-  panels: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-});
-
 const decodeLayout = (raw: unknown): SerializedDockview => {
-  Schema.decodeUnknownSync(SerializedDockviewSchema)(raw);
   if (
     !raw ||
     typeof raw !== "object" ||
@@ -28,27 +21,45 @@ const decodeLayout = (raw: unknown): SerializedDockview => {
   return raw as SerializedDockview;
 };
 
-const FocusedWorkspaceClusterSchema = Schema.Struct({
-  bookId: Schema.String,
-  bookTitle: Schema.String,
-  bookFormat: Schema.optional(Schema.String),
-  hasChat: Schema.Boolean,
-  hasNotebook: Schema.Boolean,
-  activeTab: Schema.Literal("book", "chat", "notebook"),
-});
+export interface FocusedWorkspaceCluster {
+  bookId: string;
+  bookTitle: string;
+  bookFormat?: string;
+  hasChat: boolean;
+  hasNotebook: boolean;
+  activeTab: "book" | "chat" | "notebook";
+}
 
-const FocusedWorkspaceStateSchema = Schema.Struct({
-  order: Schema.Array(Schema.String),
-  activeBookId: Schema.NullOr(Schema.String),
-  clusters: Schema.Array(FocusedWorkspaceClusterSchema),
-});
-
-export type FocusedWorkspaceCluster = typeof FocusedWorkspaceClusterSchema.Type;
-export type FocusedWorkspaceState = typeof FocusedWorkspaceStateSchema.Type;
+export interface FocusedWorkspaceState {
+  order: string[];
+  activeBookId: string | null;
+  clusters: FocusedWorkspaceCluster[];
+}
 
 const decodeFocusedWorkspaceState = (raw: unknown): FocusedWorkspaceState => {
-  const decoded = Schema.decodeUnknownSync(FocusedWorkspaceStateSchema)(raw);
-  return decoded as FocusedWorkspaceState;
+  if (!raw || typeof raw !== "object") throw new Error("Invalid focused workspace state");
+  const state = raw as Record<string, unknown>;
+  if (
+    !Array.isArray(state.order) ||
+    state.order.some((id) => typeof id !== "string") ||
+    (state.activeBookId !== null && typeof state.activeBookId !== "string") ||
+    !Array.isArray(state.clusters) ||
+    state.clusters.some((value) => {
+      if (!value || typeof value !== "object") return true;
+      const cluster = value as Record<string, unknown>;
+      return (
+        typeof cluster.bookId !== "string" ||
+        typeof cluster.bookTitle !== "string" ||
+        (cluster.bookFormat !== undefined && typeof cluster.bookFormat !== "string") ||
+        typeof cluster.hasChat !== "boolean" ||
+        typeof cluster.hasNotebook !== "boolean" ||
+        !["book", "chat", "notebook"].includes(String(cluster.activeTab))
+      );
+    })
+  ) {
+    throw new Error("Invalid focused workspace state");
+  }
+  return state as unknown as FocusedWorkspaceState;
 };
 
 // --- idb-keyval stores (lazy-initialized for SSR safety) ---
@@ -67,8 +78,6 @@ function getLastOpenedStore() {
   return _lastOpenedStore;
 }
 
-// --- Effect Service ---
-
 /**
  * Single-key layout storage. The serialized dockview state for the (only)
  * focused layout is saved here.
@@ -83,44 +92,19 @@ const FOCUSED_STATE_KEY = "focused-workspace-state";
 const LEGACY_FOCUSED_LAYOUT_KEY = "dockview-layout-focused";
 const LEGACY_FREEFORM_LAYOUT_KEY = "dockview-layout-freeform";
 
-export class WorkspaceService extends Context.Tag("WorkspaceService")<
-  WorkspaceService,
-  {
-    readonly saveLayout: (layout: SerializedDockview) => Effect.Effect<void, WorkspaceError>;
-    readonly getLayout: () => Effect.Effect<
-      SerializedDockview | null,
-      WorkspaceError | DecodeError
-    >;
-    readonly clearLayout: () => Effect.Effect<void, WorkspaceError>;
-    readonly saveFocusedState: (
-      state: FocusedWorkspaceState,
-    ) => Effect.Effect<void, WorkspaceError>;
-    readonly getFocusedState: () => Effect.Effect<
-      FocusedWorkspaceState | null,
-      WorkspaceError | DecodeError
-    >;
-    readonly clearFocusedState: () => Effect.Effect<void, WorkspaceError>;
-    readonly saveLastOpened: (
-      bookId: string,
-      timestamp: number,
-    ) => Effect.Effect<void, WorkspaceError>;
-    readonly getLastOpenedMap: () => Effect.Effect<Map<string, number>, WorkspaceError>;
-  }
->() {}
-
 export interface WorkspaceServiceStores {
   readonly layoutStore: UseStore;
   readonly lastOpenedStore: UseStore;
 }
 
-export function makeWorkspaceService(stores: WorkspaceServiceStores): WorkspaceService["Type"] {
+export function makeWorkspaceService(stores: WorkspaceServiceStores) {
   const { layoutStore, lastOpenedStore } = stores;
 
   // One-time migration: adopt any legacy focused-mode layout into the single
   // layout slot and drop the obsolete per-mode keys. Idempotent — once the
   // legacy keys are deleted this becomes a no-op.
-  const migrateLegacyLayout = Effect.tryPromise({
-    try: async () => {
+  const migrateLegacyLayout = async () => {
+    try {
       const legacyFocused = await get<unknown>(LEGACY_FOCUSED_LAYOUT_KEY, layoutStore);
       if (legacyFocused !== undefined) {
         const existing = await get<unknown>(LAYOUT_KEY, layoutStore);
@@ -133,101 +117,114 @@ export function makeWorkspaceService(stores: WorkspaceServiceStores): WorkspaceS
       if (legacyFreeform !== undefined) {
         await del(LEGACY_FREEFORM_LAYOUT_KEY, layoutStore);
       }
-    },
-    catch: (cause) => new WorkspaceError({ operation: "migrateLegacyLayout", cause }),
-  });
+    } catch (cause) {
+      throw new WorkspaceError({ operation: "migrateLegacyLayout", cause });
+    }
+  };
 
   return {
-    saveLayout: (layout: SerializedDockview) =>
-      Effect.tryPromise({
-        try: () => set(LAYOUT_KEY, layout, layoutStore),
-        catch: (cause) => new WorkspaceError({ operation: "saveLayout", cause }),
-      }),
+    async saveLayout(layout: SerializedDockview) {
+      try {
+        await set(LAYOUT_KEY, layout, layoutStore);
+      } catch (cause) {
+        throw new WorkspaceError({ operation: "saveLayout", cause });
+      }
+    },
 
-    clearLayout: () =>
-      Effect.tryPromise({
-        try: () => del(LAYOUT_KEY, layoutStore),
-        catch: (cause) => new WorkspaceError({ operation: "clearLayout", cause }),
-      }),
+    async clearLayout() {
+      try {
+        await del(LAYOUT_KEY, layoutStore);
+      } catch (cause) {
+        throw new WorkspaceError({ operation: "clearLayout", cause });
+      }
+    },
 
-    getLayout: () =>
-      Effect.gen(function* () {
-        yield* migrateLegacyLayout;
-        const raw = yield* Effect.tryPromise({
-          try: () => get<unknown>(LAYOUT_KEY, layoutStore),
-          catch: (cause) => new WorkspaceError({ operation: "getLayout", cause }),
-        });
-        if (!raw) return null;
-        return yield* Effect.try({
-          try: () => decodeLayout(raw),
-          catch: (cause) => new DecodeError({ operation: "getLayout", cause }),
-        }).pipe(
-          Effect.catchAll(() =>
-            Effect.tryPromise({
-              try: () => del(LAYOUT_KEY, layoutStore),
-              catch: (cause) => new WorkspaceError({ operation: "clearInvalidLayout", cause }),
-            }).pipe(Effect.as(null)),
-          ),
-        );
-      }),
+    async getLayout() {
+      await migrateLegacyLayout();
+      let raw: unknown;
+      try {
+        raw = await get(LAYOUT_KEY, layoutStore);
+      } catch (cause) {
+        throw new WorkspaceError({ operation: "getLayout", cause });
+      }
+      if (!raw) return null;
+      try {
+        return decodeLayout(raw);
+      } catch (cause) {
+        console.warn(new DecodeError({ operation: "getLayout", cause }));
+        try {
+          await del(LAYOUT_KEY, layoutStore);
+        } catch (clearCause) {
+          throw new WorkspaceError({ operation: "clearInvalidLayout", cause: clearCause });
+        }
+        return null;
+      }
+    },
 
-    saveFocusedState: (state: FocusedWorkspaceState) =>
-      Effect.tryPromise({
-        try: () => set(FOCUSED_STATE_KEY, state, layoutStore),
-        catch: (cause) => new WorkspaceError({ operation: "saveFocusedState", cause }),
-      }),
+    async saveFocusedState(state: FocusedWorkspaceState) {
+      try {
+        await set(FOCUSED_STATE_KEY, state, layoutStore);
+      } catch (cause) {
+        throw new WorkspaceError({ operation: "saveFocusedState", cause });
+      }
+    },
 
-    clearFocusedState: () =>
-      Effect.tryPromise({
-        try: () => del(FOCUSED_STATE_KEY, layoutStore),
-        catch: (cause) => new WorkspaceError({ operation: "clearFocusedState", cause }),
-      }),
+    async clearFocusedState() {
+      try {
+        await del(FOCUSED_STATE_KEY, layoutStore);
+      } catch (cause) {
+        throw new WorkspaceError({ operation: "clearFocusedState", cause });
+      }
+    },
 
-    getFocusedState: () =>
-      Effect.gen(function* () {
-        const raw = yield* Effect.tryPromise({
-          try: () => get<unknown>(FOCUSED_STATE_KEY, layoutStore),
-          catch: (cause) => new WorkspaceError({ operation: "getFocusedState", cause }),
-        });
-        if (!raw) return null;
-        return yield* Effect.try({
-          try: () => decodeFocusedWorkspaceState(raw),
-          catch: (cause) => new DecodeError({ operation: "getFocusedState", cause }),
-        }).pipe(
-          Effect.catchAll(() =>
-            Effect.tryPromise({
-              try: () => del(FOCUSED_STATE_KEY, layoutStore),
-              catch: (cause) =>
-                new WorkspaceError({ operation: "clearInvalidFocusedState", cause }),
-            }).pipe(Effect.as(null)),
-          ),
-        );
-      }),
+    async getFocusedState() {
+      let raw: unknown;
+      try {
+        raw = await get(FOCUSED_STATE_KEY, layoutStore);
+      } catch (cause) {
+        throw new WorkspaceError({ operation: "getFocusedState", cause });
+      }
+      if (!raw) return null;
+      try {
+        return decodeFocusedWorkspaceState(raw);
+      } catch (cause) {
+        console.warn(new DecodeError({ operation: "getFocusedState", cause }));
+        try {
+          await del(FOCUSED_STATE_KEY, layoutStore);
+        } catch (clearCause) {
+          throw new WorkspaceError({ operation: "clearInvalidFocusedState", cause: clearCause });
+        }
+        return null;
+      }
+    },
 
-    saveLastOpened: (bookId: string, timestamp: number) =>
-      Effect.tryPromise({
-        try: () => set(bookId, timestamp, lastOpenedStore),
-        catch: (cause) => new WorkspaceError({ operation: "saveLastOpened", cause }),
-      }),
+    async saveLastOpened(bookId: string, timestamp: number) {
+      try {
+        await set(bookId, timestamp, lastOpenedStore);
+      } catch (cause) {
+        throw new WorkspaceError({ operation: "saveLastOpened", cause });
+      }
+    },
 
-    getLastOpenedMap: () =>
-      Effect.tryPromise({
-        try: async () => {
-          const allKeys = await keys(lastOpenedStore);
-          const map = new Map<string, number>();
-          for (const key of allKeys) {
-            if (typeof key !== "string") continue;
-            const timestamp = await get<unknown>(key, lastOpenedStore);
-            if (typeof timestamp !== "number") continue;
-            map.set(key, timestamp);
-          }
-          return map;
-        },
-        catch: (cause) => new WorkspaceError({ operation: "getLastOpenedMap", cause }),
-      }),
+    async getLastOpenedMap() {
+      try {
+        const allKeys = await keys(lastOpenedStore);
+        const map = new Map<string, number>();
+        for (const key of allKeys) {
+          if (typeof key !== "string") continue;
+          const timestamp = await get<unknown>(key, lastOpenedStore);
+          if (typeof timestamp !== "number") continue;
+          map.set(key, timestamp);
+        }
+        return map;
+      } catch (cause) {
+        throw new WorkspaceError({ operation: "getLastOpenedMap", cause });
+      }
+    },
   };
 }
 
-export const WorkspaceServiceLive = Layer.sync(WorkspaceService, () =>
-  makeWorkspaceService({ layoutStore: getLayoutStore(), lastOpenedStore: getLastOpenedStore() }),
-);
+export const WorkspaceService = makeWorkspaceService({
+  layoutStore: getLayoutStore(),
+  lastOpenedStore: getLastOpenedStore(),
+});

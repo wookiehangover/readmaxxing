@@ -2,9 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ runPromise: vi.fn() }));
 
-vi.mock("~/lib/effect-runtime", () => ({
-  AppRuntime: { runPromise: mocks.runPromise },
-}));
+vi.mock("~/lib/stores/workspace-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/stores/workspace-store")>();
+  return {
+    ...actual,
+    WorkspaceService: new Proxy(actual.WorkspaceService, { get: () => mocks.runPromise }),
+  };
+});
 
 import { workspaceRestoreSaga } from "~/lib/themis/workspace-restore/workspace-restore-sagas";
 import {
@@ -47,10 +51,9 @@ afterEach(() => {
 
 describe("workspaceRestoreSaga", () => {
   it("hydrates both restore facts from IDB", async () => {
-    mocks.runPromise.mockResolvedValueOnce({
-      lastOpenedByBookId: { "book-1": 123 },
-      focusedWorkspace,
-    });
+    mocks.runPromise
+      .mockResolvedValueOnce(new Map([["book-1", 123]]))
+      .mockResolvedValueOnce(focusedWorkspace);
     const store = startStore();
 
     store.dispatch(hydrateWorkspaceRestore());

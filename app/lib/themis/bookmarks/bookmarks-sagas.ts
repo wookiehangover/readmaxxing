@@ -1,7 +1,5 @@
-import { Effect } from "effect";
 import { call, put, takeEvery } from "typed-redux-saga";
 
-import { AppRuntime } from "~/lib/effect-runtime";
 import { BookmarkService, type Bookmark } from "~/lib/stores/bookmark-store";
 import {
   addBookmarkRequested,
@@ -15,22 +13,16 @@ import {
 } from "~/lib/themis/bookmarks/bookmarks-slice";
 
 async function loadBookmarks(bookId: string) {
-  return AppRuntime.runPromise(
-    BookmarkService.pipe(Effect.andThen((service) => service.getBookmarksByBook(bookId))),
-  );
+  return BookmarkService.getBookmarksByBook(bookId);
 }
 
 async function persistBookmark(bookmark: Bookmark) {
-  await AppRuntime.runPromise(
-    BookmarkService.pipe(Effect.andThen((service) => service.saveBookmark(bookmark))),
-  );
+  await BookmarkService.saveBookmark(bookmark);
   return bookmark;
 }
 
 async function persistBookmarkDeletion(bookmarkId: string) {
-  return AppRuntime.runPromise(
-    BookmarkService.pipe(Effect.andThen((service) => service.deleteBookmark(bookmarkId))),
-  );
+  return BookmarkService.deleteBookmark(bookmarkId);
 }
 
 function errorMessage(error: unknown) {

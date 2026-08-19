@@ -4,7 +4,13 @@ import type { ChatMessage, ChatSession } from "~/lib/stores/chat-store";
 
 const mocks = vi.hoisted(() => ({ runPromise: vi.fn() }));
 
-vi.mock("~/lib/effect-runtime", () => ({ AppRuntime: { runPromise: mocks.runPromise } }));
+vi.mock("~/lib/stores/chat-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/stores/chat-store")>();
+  return {
+    ...actual,
+    ChatService: new Proxy(actual.ChatService, { get: () => mocks.runPromise }),
+  };
+});
 
 import { chatSessionsSaga } from "~/lib/themis/chat-sessions/chat-sessions-sagas";
 import {
@@ -39,10 +45,10 @@ afterEach(() => {
 });
 
 describe("chatSessionsSaga", () => {
-  it("hydrates sessions through AppRuntime", async () => {
+  it("hydrates sessions from persistence", async () => {
     const session = makeSession("session-1");
     const onCompleted = vi.fn();
-    mocks.runPromise.mockResolvedValueOnce({ sessions: [session], activeSessionId: session.id });
+    mocks.runPromise.mockResolvedValueOnce([session]).mockResolvedValueOnce(session.id);
     const store = startStore();
 
     store.dispatch(hydrateChatSessionsRequested("book-1", true, onCompleted));
@@ -62,6 +68,8 @@ describe("chatSessionsSaga", () => {
     mocks.runPromise
       .mockResolvedValueOnce(first)
       .mockResolvedValueOnce(second)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(first.id);
     const store = startStore();
     store.dispatch(chatSessionsHydrated("book-1", [first, second], second.id));
@@ -89,7 +97,10 @@ describe("chatSessionsSaga", () => {
     const messages: ChatMessage[] = [
       { id: "message-1", role: "assistant", content: "Hello", createdAt: 1 },
     ];
-    mocks.runPromise.mockResolvedValueOnce(messages).mockResolvedValueOnce(renamed);
+    mocks.runPromise
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(renamed);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -118,7 +129,7 @@ describe("chatSessionsSaga", () => {
         store.chatSessionsSelectors.selectActiveSessionByBook.select(store.state, "book-1")?.title,
       ).toBe(renamed.title),
     );
-    expect(mocks.runPromise).toHaveBeenCalledTimes(2);
+    expect(mocks.runPromise).toHaveBeenCalledTimes(3);
   });
 
   it("keeps failed creates out of the collection", async () => {

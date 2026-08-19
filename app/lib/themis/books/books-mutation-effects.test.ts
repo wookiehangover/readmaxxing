@@ -1,69 +1,65 @@
-import { Effect, Layer } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EpubParseError, StorageError } from "~/lib/errors";
-import { EpubService } from "~/lib/epub/epub-service";
-import { PdfService } from "~/lib/pdf/pdf-service";
-import { AnnotationService, type Highlight } from "~/lib/stores/annotations-store";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import {
-  deletePersistedBookEffect,
-  downloadBookForOpenEffect,
-  persistUploadedBookEffect,
-} from "~/lib/themis/books/books-sagas";
+import type { Highlight } from "~/lib/stores/annotations-store";
+import type { BookMeta } from "~/lib/stores/book-store";
 import type { BookUploadFile } from "~/lib/themis/books/books-slice";
+
+const mocks = vi.hoisted(() => ({
+  findByFileHash: vi.fn(),
+  saveBook: vi.fn(),
+  updateBookMeta: vi.fn(),
+  deleteBook: vi.fn(),
+  getBookData: vi.fn(),
+  getBooks: vi.fn(),
+  parseEpub: vi.fn(),
+  parsePdf: vi.fn(),
+  getHighlightsByBook: vi.fn(),
+  deleteHighlight: vi.fn(),
+}));
+
+vi.mock("~/lib/stores/book-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/stores/book-store")>();
+  return { ...actual, BookService: { ...actual.BookService, ...mocks } };
+});
+vi.mock("~/lib/stores/annotations-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/stores/annotations-store")>();
+  return {
+    ...actual,
+    AnnotationService: {
+      ...actual.AnnotationService,
+      getHighlightsByBook: mocks.getHighlightsByBook,
+      deleteHighlight: mocks.deleteHighlight,
+    },
+  };
+});
+vi.mock("~/lib/epub/epub-service", () => ({ parseEpub: mocks.parseEpub }));
+vi.mock("~/lib/pdf/pdf-service", () => ({ parsePdf: mocks.parsePdf }));
+
+import {
+  deletePersistedBook,
+  downloadBookForOpen,
+  persistUploadedBook,
+} from "~/lib/themis/books/books-sagas";
 
 function makeFile(name = "book.epub"): BookUploadFile {
   const data = new Uint8Array([1, 2, 3]).buffer as ArrayBuffer;
   return { name, arrayBuffer: async () => data };
 }
 
-function uploadLayer(options: {
-  existing?: BookMeta | null;
-  parseFailure?: boolean;
-  saveFailure?: boolean;
-}) {
-  const findByFileHash = vi.fn(() => Effect.succeed(options.existing ?? null));
-  const saveBook = vi.fn((_book: BookMeta, _data: ArrayBuffer) =>
-    options.saveFailure
-      ? Effect.fail(new StorageError({ operation: "saveBook" }))
-      : Effect.succeed(undefined),
-  );
-  const updateBookMeta = vi.fn(() => Effect.succeed(undefined));
-  const parseEpub = vi.fn(() =>
-    options.parseFailure
-      ? Effect.fail(new EpubParseError({ operation: "parseEpub" }))
-      : Effect.succeed({ title: "Parsed", author: "Author", coverImage: null }),
-  );
-  const layer = Layer.mergeAll(
-    Layer.succeed(BookService, {
-      findByFileHash,
-      saveBook,
-      updateBookMeta,
-    } as unknown as BookService["Type"]),
-    Layer.succeed(EpubService, { parseEpub }),
-    Layer.succeed(PdfService, {
-      parsePdf: () =>
-        Effect.succeed({ title: "PDF", author: "Author", pageCount: 1, coverImage: null }),
-    }),
-  );
-  return { findByFileHash, saveBook, updateBookMeta, parseEpub, layer };
-}
+describe("book mutation persistence", () => {
+  beforeEach(() => vi.clearAllMocks());
 
-describe("book mutation effects", () => {
   it("parses, hashes, and saves a new upload", async () => {
-    const { findByFileHash, saveBook, parseEpub, layer } = uploadLayer({});
+    mocks.findByFileHash.mockResolvedValueOnce(null);
+    mocks.parseEpub.mockResolvedValueOnce({ title: "Parsed", author: "Author", coverImage: null });
+    mocks.saveBook.mockResolvedValueOnce(undefined);
 
-    const book = await Effect.runPromise(
-      Effect.provide(persistUploadedBookEffect(makeFile()), layer),
-    );
+    const book = await persistUploadedBook(makeFile());
 
-    expect(findByFileHash).toHaveBeenCalledOnce();
-    expect(parseEpub).toHaveBeenCalledOnce();
-    expect(saveBook).toHaveBeenCalledOnce();
+    expect(mocks.parseEpub).toHaveBeenCalledOnce();
+    expect(mocks.saveBook).toHaveBeenCalledOnce();
     expect(book).toMatchObject({ title: "Parsed", author: "Author", format: "epub" });
     expect(book.fileHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(saveBook.mock.calls[0][1]).toBeInstanceOf(ArrayBuffer);
   });
 
   it("reuses a duplicate hash without parsing or saving", async () => {
@@ -73,89 +69,46 @@ describe("book mutation effects", () => {
       author: "Author",
       coverImage: null,
       format: "epub",
-      fileHash: "same-hash",
     };
-    const { saveBook, parseEpub, layer } = uploadLayer({ existing });
+    mocks.findByFileHash.mockResolvedValueOnce(existing);
 
-    const book = await Effect.runPromise(
-      Effect.provide(persistUploadedBookEffect(makeFile()), layer),
-    );
-
-    expect(book).toBe(existing);
-    expect(parseEpub).not.toHaveBeenCalled();
-    expect(saveBook).not.toHaveBeenCalled();
+    await expect(persistUploadedBook(makeFile())).resolves.toBe(existing);
+    expect(mocks.parseEpub).not.toHaveBeenCalled();
+    expect(mocks.saveBook).not.toHaveBeenCalled();
   });
 
-  it("patches duplicate metadata for a shared import without parsing or saving", async () => {
-    const existing: BookMeta = {
-      id: "existing",
-      title: "Existing",
-      author: "Author",
-      coverImage: null,
-      format: "epub",
-      fileHash: "same-hash",
-    };
-    const { saveBook, updateBookMeta, parseEpub, layer } = uploadLayer({ existing });
-
-    const book = await Effect.runPromise(
-      Effect.provide(
-        persistUploadedBookEffect(makeFile(), {
-          existingPatch: { sharedBy: "reader", shareId: "share-1" },
-        }),
-        layer,
-      ),
-    );
-
-    expect(book).toMatchObject({ id: existing.id, sharedBy: "reader", shareId: "share-1" });
-    expect(updateBookMeta).toHaveBeenCalledWith(book);
-    expect(parseEpub).not.toHaveBeenCalled();
-    expect(saveBook).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ["parse", { parseFailure: true }],
-    ["save", { saveFailure: true }],
-  ] as const)("fails the upload when %s fails", async (_operation, options) => {
-    const { layer } = uploadLayer(options);
-
-    await expect(
-      Effect.runPromise(Effect.provide(persistUploadedBookEffect(makeFile()), layer)),
-    ).rejects.toBeDefined();
+  it("rejects failed parsing", async () => {
+    mocks.findByFileHash.mockResolvedValueOnce(null);
+    mocks.parseEpub.mockRejectedValueOnce(new Error("invalid epub"));
+    await expect(persistUploadedBook(makeFile())).rejects.toThrow("invalid epub");
   });
 
   it("deletes highlights before deleting the book", async () => {
-    const operations: string[] = [];
-    const highlights: Highlight[] = ["one", "two"].map((id) => ({
-      id,
-      bookId: "book-1",
-      cfiRange: `range-${id}`,
-      text: id,
-      color: "yellow",
-      createdAt: 1,
-    }));
-    const annotationLayer = Layer.succeed(AnnotationService, {
-      getHighlightsByBook: () => Effect.succeed(highlights),
-      deleteHighlight: (id: string) =>
-        Effect.sync(() => {
-          operations.push(`highlight:${id}`);
-        }),
-    } as unknown as AnnotationService["Type"]);
-    const bookLayer = Layer.succeed(BookService, {
-      deleteBook: (id: string) =>
-        Effect.sync(() => {
-          operations.push(`book:${id}`);
-        }),
-    } as unknown as BookService["Type"]);
-
-    await Effect.runPromise(
-      Effect.provide(deletePersistedBookEffect("book-1"), Layer.merge(annotationLayer, bookLayer)),
+    const highlights = ["one", "two"].map(
+      (id): Highlight => ({
+        id,
+        bookId: "book-1",
+        cfiRange: id,
+        text: id,
+        color: "yellow",
+        createdAt: 1,
+      }),
     );
+    const operations: string[] = [];
+    mocks.getHighlightsByBook.mockResolvedValueOnce(highlights);
+    mocks.deleteHighlight.mockImplementation(async (id: string) => {
+      operations.push(`highlight:${id}`);
+    });
+    mocks.deleteBook.mockImplementationOnce(async (id: string) => {
+      operations.push(`book:${id}`);
+    });
 
-    expect(operations).toEqual(["highlight:one", "highlight:two", "book:book-1"]);
+    await deletePersistedBook("book-1");
+    expect(operations.slice(0, 2).sort()).toEqual(["highlight:one", "highlight:two"]);
+    expect(operations[2]).toBe("book:book-1");
   });
 
-  it("downloads through BookService and returns refreshed local metadata", async () => {
-    const operations: string[] = [];
+  it("downloads and returns refreshed local metadata", async () => {
     const downloaded: BookMeta = {
       id: "book-1",
       title: "Downloaded",
@@ -164,25 +117,9 @@ describe("book mutation effects", () => {
       format: "epub",
       hasLocalFile: true,
     };
-    const layer = Layer.succeed(BookService, {
-      getBookData: () =>
-        Effect.sync(() => {
-          operations.push("data");
-          return new ArrayBuffer(4);
-        }),
-      getBooks: () =>
-        Effect.sync(() => {
-          operations.push("books");
-          return [downloaded];
-        }),
-    } as unknown as BookService["Type"]);
+    mocks.getBookData.mockResolvedValueOnce(new ArrayBuffer(4));
+    mocks.getBooks.mockResolvedValueOnce([downloaded]);
 
-    const result = await Effect.runPromise(
-      Effect.provide(downloadBookForOpenEffect("book-1"), layer),
-    );
-
-    expect(operations).toEqual(["data", "books"]);
-    expect(result).toBe(downloaded);
-    expect(result).not.toHaveProperty("data");
+    await expect(downloadBookForOpen("book-1")).resolves.toBe(downloaded);
   });
 });

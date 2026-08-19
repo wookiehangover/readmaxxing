@@ -1,18 +1,16 @@
-import { Effect } from "effect";
 import { call, put, takeEvery, takeLatest, takeLeading } from "typed-redux-saga";
 
 import { computeFileHash } from "~/lib/book-hash";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { parseEpubEffect } from "~/lib/epub/epub-service";
+import { parseEpub } from "~/lib/epub/epub-service";
 import {
   completeDemoOnboarding,
-  fetchDemoEpubEffect,
+  fetchDemoEpub,
   isFirstVisit,
-  provisionDemoContentEffect,
+  provisionDemoContent,
 } from "~/lib/onboarding/demo-seed";
 import { persistAdoptedDemoContent } from "~/lib/onboarding/adopt-demo";
 import { DEMO_BOOK_ID, DEMO_BOOK_METADATA, DEMO_EPUB_PATH } from "~/lib/onboarding/demo-content";
-import { parsePdfEffect } from "~/lib/pdf/pdf-service";
+import { parsePdf } from "~/lib/pdf/pdf-service";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { BookService, type BookFormat, type BookMeta } from "~/lib/stores/book-store";
 import { evictCachedCover } from "~/lib/sw-cache";
@@ -65,48 +63,43 @@ interface ShareResolveResponse {
 }
 
 async function loadBooks() {
-  return AppRuntime.runPromise(BookService.pipe(Effect.andThen((service) => service.getBooks())));
+  return BookService.getBooks();
 }
 
-export function persistUploadedBookEffect(
+export async function persistUploadedBook(
   file: BookUploadFile,
   options: PersistUploadedBookOptions = {},
 ) {
-  return Effect.gen(function* () {
-    const arrayBuffer = yield* Effect.promise(() => file.arrayBuffer());
-    const fileHash = yield* Effect.promise(() => computeFileHash(arrayBuffer));
-    const bookService = yield* BookService;
-    const existing = yield* bookService.findByFileHash(fileHash);
-    if (existing) {
-      if (!options.existingPatch) return existing;
-      const updated = { ...existing, ...options.existingPatch };
-      yield* bookService.updateBookMeta(updated);
-      return updated;
-    }
+  const arrayBuffer = await file.arrayBuffer();
+  const fileHash = await computeFileHash(arrayBuffer);
+  const existing = await BookService.findByFileHash(fileHash);
+  if (existing) {
+    if (!options.existingPatch) return existing;
+    const updated = { ...existing, ...options.existingPatch };
+    await BookService.updateBookMeta(updated);
+    return updated;
+  }
 
-    const isPdf = file.name.toLowerCase().endsWith(".pdf");
-    const format: BookFormat = isPdf ? "pdf" : "epub";
-    const metadata = isPdf
-      ? yield* parsePdfEffect(arrayBuffer, file.name)
-      : yield* parseEpubEffect(arrayBuffer);
-    const provided = options.metadata;
-    const book: BookMeta = {
-      ...provided,
-      id: options.id ?? crypto.randomUUID(),
-      title: options.preferProvidedMetadata
-        ? (provided?.title ?? metadata.title)
-        : metadata.title || provided?.title || "Untitled",
-      author: options.preferProvidedMetadata
-        ? (provided?.author ?? metadata.author)
-        : metadata.author || provided?.author || "Unknown Author",
-      coverImage: metadata.coverImage,
-      format: provided?.format ?? format,
-      fileHash,
-    };
+  const isPdf = file.name.toLowerCase().endsWith(".pdf");
+  const format: BookFormat = isPdf ? "pdf" : "epub";
+  const metadata = isPdf ? await parsePdf(arrayBuffer, file.name) : await parseEpub(arrayBuffer);
+  const provided = options.metadata;
+  const book: BookMeta = {
+    ...provided,
+    id: options.id ?? crypto.randomUUID(),
+    title: options.preferProvidedMetadata
+      ? (provided?.title ?? metadata.title)
+      : metadata.title || provided?.title || "Untitled",
+    author: options.preferProvidedMetadata
+      ? (provided?.author ?? metadata.author)
+      : metadata.author || provided?.author || "Unknown Author",
+    coverImage: metadata.coverImage,
+    format: provided?.format ?? format,
+    fileHash,
+  };
 
-    yield* bookService.saveBook(book, arrayBuffer);
-    return book;
-  });
+  await BookService.saveBook(book, arrayBuffer);
+  return book;
 }
 
 function readApiError(response: Response) {
@@ -121,159 +114,106 @@ function readApiError(response: Response) {
     });
 }
 
-function importSharedBookEffect(request: SharedBookImportRequest) {
-  return Effect.gen(function* () {
-    const shareInfo = yield* Effect.tryPromise({
-      try: async () => {
-        const response = await fetch(`/api/share/${encodeURIComponent(request.shareId)}`);
-        if (!response.ok) throw new Error(await readApiError(response));
-        return (await response.json()) as ShareResolveResponse;
+async function importSharedBook(request: SharedBookImportRequest) {
+  const shareInfo = await (async () => {
+    const response = await fetch(`/api/share/${encodeURIComponent(request.shareId)}`);
+    if (!response.ok) throw new Error(await readApiError(response));
+    return (await response.json()) as ShareResolveResponse;
+  })().catch((cause) => {
+    throw cause instanceof Error ? cause : new Error("Failed to resolve share");
+  });
+  const data = await (async () => {
+    const response = await fetch(shareInfo.fileUrl);
+    if (!response.ok) throw new Error(await readApiError(response));
+    return response.arrayBuffer();
+  })().catch((cause) => {
+    throw cause instanceof Error ? cause : new Error("Failed to download shared book");
+  });
+  const format: BookFormat =
+    shareInfo.book.format === "pdf"
+      ? "pdf"
+      : shareInfo.book.format === "epub"
+        ? "epub"
+        : request.format;
+  const extension = format === "pdf" ? "pdf" : "epub";
+  return persistUploadedBook(
+    { name: `${request.title}.${extension}`, arrayBuffer: async () => data },
+    {
+      metadata: {
+        title: shareInfo.book.title ?? request.title,
+        author: shareInfo.book.author ?? request.author,
+        format,
+        sharedBy: shareInfo.sharerId,
+        shareId: request.shareId,
       },
-      catch: (cause) => (cause instanceof Error ? cause : new Error("Failed to resolve share")),
+      existingPatch: { sharedBy: shareInfo.sharerId, shareId: request.shareId },
+    },
+  );
+}
+
+export async function replacePersistedBook(request: BookReplacementRequest) {
+  const data = await request.file.arrayBuffer();
+  const fileHash = await computeFileHash(data);
+  const metadata = await parseEpub(data);
+  await BookService.replaceBookFile(request.bookId, data, {
+    coverImage: metadata.coverImage,
+    fileHash,
+  });
+  let book = await BookService.getBookIncludingDeleted(request.bookId);
+  await evictCachedCover(request.bookId, request.remoteCoverUrl);
+
+  if (request.syncActive) {
+    await request
+      .reloadBookFiles(request.bookId)
+      .catch((error) => console.error("Failed to reload replacement book files:", error));
+    book = await BookService.getBookIncludingDeleted(request.bookId).catch((error) => {
+      console.error("Failed to read synced replacement book:", error);
+      return book;
     });
-    const data = yield* Effect.tryPromise({
-      try: async () => {
-        const response = await fetch(shareInfo.fileUrl);
-        if (!response.ok) throw new Error(await readApiError(response));
-        return response.arrayBuffer();
-      },
-      catch: (cause) =>
-        cause instanceof Error ? cause : new Error("Failed to download shared book"),
-    });
-    const format: BookFormat =
-      shareInfo.book.format === "pdf"
-        ? "pdf"
-        : shareInfo.book.format === "epub"
-          ? "epub"
-          : request.format;
-    const extension = format === "pdf" ? "pdf" : "epub";
-    return yield* persistUploadedBookEffect(
-      { name: `${request.title}.${extension}`, arrayBuffer: async () => data },
-      {
-        metadata: {
-          title: shareInfo.book.title ?? request.title,
-          author: shareInfo.book.author ?? request.author,
-          format,
-          sharedBy: shareInfo.sharerId,
-          shareId: request.shareId,
-        },
-        existingPatch: { sharedBy: shareInfo.sharerId, shareId: request.shareId },
-      },
-    );
-  });
-}
-
-export function replacePersistedBookEffect(request: BookReplacementRequest) {
-  return Effect.gen(function* () {
-    const data = yield* Effect.promise(() => request.file.arrayBuffer());
-    const fileHash = yield* Effect.promise(() => computeFileHash(data));
-    const metadata = yield* parseEpubEffect(data);
-    const books = yield* BookService;
-    yield* books.replaceBookFile(request.bookId, data, {
-      coverImage: metadata.coverImage,
-      fileHash,
-    });
-    let book = yield* books.getBookIncludingDeleted(request.bookId);
-    yield* Effect.promise(() => evictCachedCover(request.bookId, request.remoteCoverUrl));
-
-    if (request.syncActive) {
-      yield* Effect.promise(() => request.reloadBookFiles(request.bookId)).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => console.error("Failed to reload replacement book files:", error)),
-        ),
-      );
-      book = yield* books.getBookIncludingDeleted(request.bookId).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to read synced replacement book:", error);
-            return book;
-          }),
-        ),
-      );
-      yield* Effect.promise(() => evictCachedCover(request.bookId, book.remoteCoverUrl));
-    }
-    return book;
-  });
-}
-
-function persistDemoBookEffect() {
-  return Effect.gen(function* () {
-    const data = yield* fetchDemoEpubEffect();
-    const book = yield* persistUploadedBookEffect(
-      { name: DEMO_EPUB_PATH, arrayBuffer: async () => data },
-      {
-        id: DEMO_BOOK_ID,
-        metadata: DEMO_BOOK_METADATA,
-        preferProvidedMetadata: true,
-      },
-    );
-    yield* provisionDemoContentEffect(book);
-    yield* Effect.sync(completeDemoOnboarding);
-    return book;
-  });
-}
-
-export function deletePersistedBookEffect(bookId: string) {
-  return Effect.gen(function* () {
-    const bookService = yield* BookService;
-    const annotationService = yield* AnnotationService;
-    const highlights = yield* annotationService.getHighlightsByBook(bookId);
-    yield* Effect.forEach(highlights, (highlight) =>
-      annotationService.deleteHighlight(highlight.id),
-    );
-    yield* bookService.deleteBook(bookId);
-  });
-}
-
-export function downloadBookForOpenEffect(bookId: string) {
-  return Effect.gen(function* () {
-    const bookService = yield* BookService;
-    yield* bookService.getBookData(bookId);
-    const books = yield* bookService.getBooks();
-    const book = books.find((candidate) => candidate.id === bookId);
-    if (!book?.hasLocalFile) {
-      return yield* Effect.fail(new Error(`Book ${bookId} did not become available locally`));
-    }
-    return book;
-  });
-}
-
-async function persistUploadedBook(file: BookUploadFile) {
-  return AppRuntime.runPromise(persistUploadedBookEffect(file));
-}
-
-async function persistSharedBook(request: SharedBookImportRequest) {
-  return AppRuntime.runPromise(importSharedBookEffect(request));
-}
-
-async function replacePersistedBook(request: BookReplacementRequest) {
-  return AppRuntime.runPromise(replacePersistedBookEffect(request));
+    await evictCachedCover(request.bookId, book.remoteCoverUrl);
+  }
+  return book;
 }
 
 async function persistDemoBook() {
-  return AppRuntime.runPromise(persistDemoBookEffect());
+  const data = await fetchDemoEpub();
+  const book = await persistUploadedBook(
+    { name: DEMO_EPUB_PATH, arrayBuffer: async () => data },
+    {
+      id: DEMO_BOOK_ID,
+      metadata: DEMO_BOOK_METADATA,
+      preferProvidedMetadata: true,
+    },
+  );
+  await provisionDemoContent(book);
+  completeDemoOnboarding();
+  return book;
+}
+
+export async function deletePersistedBook(bookId: string) {
+  const highlights = await AnnotationService.getHighlightsByBook(bookId);
+  await Promise.all(highlights.map((highlight) => AnnotationService.deleteHighlight(highlight.id)));
+  await BookService.deleteBook(bookId);
+}
+
+export async function downloadBookForOpen(bookId: string) {
+  await BookService.getBookData(bookId);
+  const books = await BookService.getBooks();
+  const book = books.find((candidate) => candidate.id === bookId);
+  if (!book?.hasLocalFile) {
+    throw new Error(`Book ${bookId} did not become available locally`);
+  }
+  return book;
 }
 
 async function adoptDemoBook(userId: string) {
   const result = await persistAdoptedDemoContent(userId);
-  const book = await AppRuntime.runPromise(
-    BookService.pipe(Effect.andThen((books) => books.getBookIncludingDeleted(result.bookId))),
-  );
+  const book = await BookService.getBookIncludingDeleted(result.bookId);
   return { result, book };
 }
 
-async function deletePersistedBook(bookId: string) {
-  return AppRuntime.runPromise(deletePersistedBookEffect(bookId));
-}
-
-async function downloadBookForOpen(bookId: string) {
-  return AppRuntime.runPromise(downloadBookForOpenEffect(bookId));
-}
-
 async function loadBookData(bookId: string) {
-  return AppRuntime.runPromise(
-    BookService.pipe(Effect.andThen((service) => service.getBookData(bookId))),
-  );
+  return BookService.getBookData(bookId);
 }
 
 function notifyBookAdded(callback: BookAddedCallback | undefined, book: BookMeta) {
@@ -359,7 +299,7 @@ export function* hydrateBooksSaga() {
 export function* importSharedBookSaga(action: ReturnType<typeof importSharedBookRequested>) {
   const [request, onCompleted, onFailed] = action.payload;
   try {
-    const book = yield* call(persistSharedBook, request);
+    const book = yield* call(importSharedBook, request);
     yield* put(bookAdded(book));
     yield* call(notifyBookMutationCompleted, onCompleted, book);
   } catch (error) {

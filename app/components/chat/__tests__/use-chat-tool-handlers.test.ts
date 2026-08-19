@@ -25,17 +25,17 @@ vi.mock("~/lib/context/workspace-context", () => ({
   }),
 }));
 
-// Mock effect runtime to avoid real IndexedDB
-vi.mock("~/lib/effect-runtime", () => ({
-  AppRuntime: {
-    runPromise: vi.fn().mockResolvedValue(undefined),
-  },
+const serviceMocks = vi.hoisted(() => ({
+  cacheNotebook: vi.fn().mockResolvedValue(undefined),
+  saveHighlight: vi.fn().mockResolvedValue(undefined),
+  getBookData: vi.fn(),
 }));
 
 vi.mock("~/lib/stores/annotations-store", () => ({
-  AnnotationService: {
-    pipe: vi.fn().mockReturnValue({ __tag: "annotation-effect" }),
-  },
+  AnnotationService: serviceMocks,
+}));
+vi.mock("~/lib/stores/book-store", () => ({
+  BookService: { getBookData: serviceMocks.getBookData },
 }));
 
 const fuzzySearchEpubForCfi = vi.fn();
@@ -43,7 +43,6 @@ vi.mock("~/lib/epub/epub-search", () => ({ fuzzySearchEpubForCfi }));
 
 // Must import AFTER mocks are set up
 const { useChatToolHandlers } = await import("../use-chat-tool-handlers");
-const { AppRuntime } = await import("~/lib/effect-runtime");
 import { renderHookSimple } from "./render-hook-simple";
 
 function makeAppendOutputMessage(
@@ -104,8 +103,9 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
     appendContentSpy = vi.fn();
     mockNotebookEditorCallbackMap.current.clear();
     mockNotebookContentChangeMap.current.clear();
-    (AppRuntime.runPromise as ReturnType<typeof vi.fn>).mockClear();
-    (AppRuntime.runPromise as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    serviceMocks.cacheNotebook.mockClear();
+    serviceMocks.cacheNotebook.mockResolvedValue(undefined);
+    serviceMocks.saveHighlight.mockClear();
   });
 
   function getOnFinish() {
@@ -215,7 +215,7 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
     onFinish({ message: msg });
 
     expect(appendContentSpy).not.toHaveBeenCalled();
-    expect(AppRuntime.runPromise).not.toHaveBeenCalled();
+    expect(serviceMocks.cacheNotebook).not.toHaveBeenCalled();
   });
 
   it("restores pre-preview content when a streamed append fails without a server snapshot", () => {
@@ -249,7 +249,7 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
 
     expect(setContentSpy).toHaveBeenCalledWith(originalContent);
     expect(streamedToolCallIdRef.current.has("tc-failed")).toBe(false);
-    expect(AppRuntime.runPromise).not.toHaveBeenCalled();
+    expect(serviceMocks.cacheNotebook).not.toHaveBeenCalled();
   });
 
   it("restores and caches the authoritative notebook when a streamed append loses an LWW race", async () => {
@@ -299,7 +299,7 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
       expect(streamedToolCallIdRef.current.has("tc-conflict")).toBe(false);
       expect(setContentSpy).toHaveBeenCalledWith(authoritativeContent);
       expect(seedSpy).toHaveBeenCalledWith(authoritativeContent);
-      expect(AppRuntime.runPromise).toHaveBeenCalledTimes(1);
+      expect(serviceMocks.cacheNotebook).toHaveBeenCalledTimes(1);
 
       await waitForMicrotasks();
       expect(events).toHaveLength(1);
@@ -342,8 +342,7 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
       expect(appendContentSpy).toHaveBeenCalledWith(appendedNodes);
       // lastContentRef was seeded before the event dispatched.
       expect(seedSpy).toHaveBeenCalledWith(updatedContent);
-      // Cache write was scheduled through AppRuntime.runPromise.
-      expect(AppRuntime.runPromise).toHaveBeenCalledTimes(1);
+      expect(serviceMocks.cacheNotebook).toHaveBeenCalledTimes(1);
 
       // Wait a macrotask so the .then() + queueMicrotask dispatches run.
       await waitForMicrotasks();
@@ -386,7 +385,7 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
       expect(appendContentSpy).not.toHaveBeenCalled();
       // IDB cache still happens.
       expect(seedSpy).toHaveBeenCalledWith(updatedContent);
-      expect(AppRuntime.runPromise).toHaveBeenCalledTimes(1);
+      expect(serviceMocks.cacheNotebook).toHaveBeenCalledTimes(1);
 
       await waitForMicrotasks();
       expect(events).toHaveLength(1);
@@ -454,7 +453,7 @@ describe("useChatToolHandlers – create_highlight", () => {
     const appendHighlight = vi.fn();
     mockNotebookCallbackMap.current.clear();
     mockNotebookCallbackMap.current.set("book-1", appendHighlight);
-    (AppRuntime.runPromise as ReturnType<typeof vi.fn>).mockClear();
+    serviceMocks.saveHighlight.mockClear();
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { onFinish } = renderHookSimple(() =>
       useChatToolHandlers({
@@ -488,7 +487,7 @@ describe("useChatToolHandlers – create_highlight", () => {
       await waitForMicrotasks();
 
       expect(fuzzySearchEpubForCfi).toHaveBeenCalled();
-      expect(AppRuntime.runPromise).not.toHaveBeenCalled();
+      expect(serviceMocks.saveHighlight).not.toHaveBeenCalled();
       expect(appendHighlight).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
@@ -503,8 +502,8 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
     streamedToolCallIdRef = { current: new Map<string, JSONContent>() };
     mockNotebookEditorCallbackMap.current.clear();
     mockNotebookContentChangeMap.current.clear();
-    (AppRuntime.runPromise as ReturnType<typeof vi.fn>).mockClear();
-    (AppRuntime.runPromise as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    serviceMocks.cacheNotebook.mockClear();
+    serviceMocks.cacheNotebook.mockResolvedValue(undefined);
   });
 
   function getOnFinish() {
@@ -561,7 +560,7 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
 
       expect(setContentSpy).toHaveBeenCalledWith(updatedContent);
       expect(seedSpy).toHaveBeenCalledWith(updatedContent);
-      expect(AppRuntime.runPromise).toHaveBeenCalledTimes(1);
+      expect(serviceMocks.cacheNotebook).toHaveBeenCalledTimes(1);
       // No client-side timestamp fabrication on the success path.
       expect(dateNowSpy).not.toHaveBeenCalled();
 
@@ -616,7 +615,7 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
       expect(setContentSpy).toHaveBeenCalledWith(updatedContent);
       expect(seedSpy).toHaveBeenCalledWith(updatedContent);
       // But NO IDB cache write and NO sync event — we don't fabricate freshness.
-      expect(AppRuntime.runPromise).not.toHaveBeenCalled();
+      expect(serviceMocks.cacheNotebook).not.toHaveBeenCalled();
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining("edit_notes: server returned executed:true without updatedAt"),
       );

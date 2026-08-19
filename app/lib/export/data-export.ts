@@ -1,7 +1,5 @@
-import { Effect } from "effect";
 import { strToU8, zipSync } from "fflate";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { ChatService, type ChatSession } from "~/lib/stores/chat-store";
@@ -54,23 +52,14 @@ function exportSessions(sessions: ChatSession[]) {
 
 export async function exportBookData(bookId: string): Promise<BookDataExport | null> {
   const isAllBooks = bookId === "all";
-  const bookData = await AppRuntime.runPromise(
-    Effect.gen(function* () {
-      const bookService = yield* BookService;
-      const annotationService = yield* AnnotationService;
-      const chatService = yield* ChatService;
-      const books = yield* bookService.getBooks();
-      const selectedBooks = isAllBooks ? books : books.filter((book) => book.id === bookId);
-      const gathered = [];
-
-      for (const book of selectedBooks) {
-        const notebook = yield* annotationService.getNotebook(book.id);
-        const sessions = yield* chatService.getSessionsByBook(book.id);
-        gathered.push({ book, notebook, sessions });
-      }
-
-      return gathered;
-    }),
+  const books = await BookService.getBooks();
+  const selectedBooks = isAllBooks ? books : books.filter((book) => book.id === bookId);
+  const bookData = await Promise.all(
+    selectedBooks.map(async (book) => ({
+      book,
+      notebook: await AnnotationService.getNotebook(book.id),
+      sessions: await ChatService.getSessionsByBook(book.id),
+    })),
   );
 
   const files: Record<string, Uint8Array> = {};

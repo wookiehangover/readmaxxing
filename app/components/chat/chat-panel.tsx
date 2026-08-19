@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UIMessage } from "@ai-sdk/react";
-import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { OnboardingDialog } from "~/components/onboarding/onboarding-dialog";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useAuth } from "~/lib/context/auth-context";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
@@ -182,12 +180,12 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
     const load = async () => {
       try {
-        const book = await AppRuntime.runPromise(
-          BookService.pipe(
-            Effect.andThen((service) => service.getBook(chatBookId)),
-            Effect.catchTag("BookNotFoundError", () => Effect.succeed(null)),
-          ),
-        );
+        const book = await BookService.getBook(chatBookId).catch((error: unknown) => {
+          if (error instanceof Error && "_tag" in error && error._tag === "BookNotFoundError") {
+            return null;
+          }
+          throw error;
+        });
         if (cancelled) return;
         if (!book) {
           setLoadError(
@@ -196,9 +194,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
           return;
         }
 
-        const bookData = await AppRuntime.runPromise(
-          BookService.pipe(Effect.andThen((service) => service.getBookData(chatBookId))),
-        );
+        const bookData = await BookService.getBookData(chatBookId);
         if (cancelled) return;
 
         let chapters: BookChapter[] = [];

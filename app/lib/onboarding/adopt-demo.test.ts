@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { del, get, set } from "idb-keyval";
-import { Effect } from "effect";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "./demo-content";
-import { AppRuntime } from "~/lib/effect-runtime";
 import type { ChatSession } from "~/lib/stores/chat-store";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import type { ChangeEntry, SyncPushResponse } from "~/lib/sync/types";
@@ -97,26 +95,20 @@ beforeEach(async () => {
     set(DEMO_BOOK_ID, [DEMO_CHAT_SESSION], getChatSessionStore()),
     set(DEMO_BOOK_ID, DEMO_CHAT_SESSION.id, getActiveSessionStore()),
   ]);
-  await AppRuntime.runPromise(
-    WorkspaceService.pipe(
-      Effect.andThen((service) =>
-        service.saveFocusedState({
-          order: [DEMO_BOOK_ID],
-          activeBookId: DEMO_BOOK_ID,
-          clusters: [
-            {
-              bookId: DEMO_BOOK_ID,
-              bookTitle: "The Great Gatsby",
-              bookFormat: "epub",
-              hasChat: true,
-              hasNotebook: true,
-              activeTab: "chat",
-            },
-          ],
-        }),
-      ),
-    ),
-  );
+  await WorkspaceService.saveFocusedState({
+    order: [DEMO_BOOK_ID],
+    activeBookId: DEMO_BOOK_ID,
+    clusters: [
+      {
+        bookId: DEMO_BOOK_ID,
+        bookTitle: "The Great Gatsby",
+        bookFormat: "epub",
+        hasChat: true,
+        hasNotebook: true,
+        activeTab: "chat",
+      },
+    ],
+  });
 });
 
 describe("adoptDemoContent", () => {
@@ -142,9 +134,7 @@ describe("adoptDemoContent", () => {
     expect(await get<Record<string, unknown>>(DEMO_BOOK_ID, getBookStore())).toHaveProperty(
       "deletedAt",
     );
-    const focusedState = await AppRuntime.runPromise(
-      WorkspaceService.pipe(Effect.andThen((service) => service.getFocusedState())),
-    );
+    const focusedState = await WorkspaceService.getFocusedState();
     expect(focusedState).toMatchObject({
       order: [ADOPTED_BOOK_ID],
       activeBookId: ADOPTED_BOOK_ID,
@@ -209,9 +199,7 @@ describe("adoptDemoContent", () => {
     expect(mocks.ensureChapters).toHaveBeenCalledWith(CANONICAL_BOOK_ID);
     const finalSessionChange = recorded.filter((entry) => entry.entity === "chat_session").at(-1);
     expect(finalSessionChange?.data).toMatchObject({ bookId: CANONICAL_BOOK_ID });
-    const focusedState = await AppRuntime.runPromise(
-      WorkspaceService.pipe(Effect.andThen((service) => service.getFocusedState())),
-    );
+    const focusedState = await WorkspaceService.getFocusedState();
     expect(focusedState?.activeBookId).toBe(CANONICAL_BOOK_ID);
   });
 });

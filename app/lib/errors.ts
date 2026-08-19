@@ -1,80 +1,104 @@
-import { Data } from "effect";
+type OperationProps = { readonly operation: string; readonly cause?: unknown };
 
-export class StorageError extends Data.TaggedError("StorageError")<{
-  readonly operation: string;
-  readonly cause?: unknown;
-}> {}
+class AppError<Tag extends string, Props extends object> extends Error {
+  readonly _tag: Tag;
 
-export class BookNotFoundError extends Data.TaggedError("BookNotFoundError")<{
-  readonly bookId: string;
-}> {}
+  constructor(tag: Tag, props: Props) {
+    const cause = "cause" in props ? props.cause : undefined;
+    super(tag, { cause });
+    this.name = tag;
+    this._tag = tag;
+    Object.assign(this, props);
+  }
+}
 
-export class EpubParseError extends Data.TaggedError("EpubParseError")<{
-  readonly operation: string;
-  readonly cause?: unknown;
-}> {}
+function operationError<Tag extends string>(tag: Tag) {
+  return class extends AppError<Tag, OperationProps> {
+    declare readonly operation: string;
+    declare readonly cause?: unknown;
 
-export class HighlightError extends Data.TaggedError("HighlightError")<{
-  readonly operation: string;
-  readonly highlightId?: string;
-  readonly cause?: unknown;
-}> {}
+    constructor(props: OperationProps) {
+      super(tag, props);
+    }
+  };
+}
 
-export class BookmarkError extends Data.TaggedError("BookmarkError")<{
-  readonly operation: string;
-  readonly bookmarkId?: string;
-  readonly cause?: unknown;
-}> {}
+export class StorageError extends operationError("StorageError") {}
 
-export class NotebookError extends Data.TaggedError("NotebookError")<{
-  readonly operation: string;
-  readonly bookId?: string;
-  readonly cause?: unknown;
-}> {}
+export class BookNotFoundError extends AppError<"BookNotFoundError", { readonly bookId: string }> {
+  declare readonly bookId: string;
 
-export class PositionError extends Data.TaggedError("PositionError")<{
-  readonly operation: string;
-  readonly bookId: string;
-  readonly cause?: unknown;
-}> {}
+  constructor(props: { readonly bookId: string }) {
+    super("BookNotFoundError", props);
+  }
+}
 
-export class ReadingHistoryError extends Data.TaggedError("ReadingHistoryError")<{
-  readonly operation: string;
-  readonly bookId: string;
-  readonly cause?: unknown;
-}> {}
+export class EpubParseError extends operationError("EpubParseError") {}
 
-export class WorkspaceError extends Data.TaggedError("WorkspaceError")<{
-  readonly operation: string;
-  readonly cause?: unknown;
-}> {}
+export class HighlightError extends AppError<
+  "HighlightError",
+  OperationProps & { readonly highlightId?: string }
+> {
+  declare readonly operation: string;
+  declare readonly highlightId?: string;
 
-export class StandardEbooksError extends Data.TaggedError("StandardEbooksError")<{
-  readonly operation: string;
-  readonly cause?: unknown;
-}> {}
+  constructor(props: OperationProps & { readonly highlightId?: string }) {
+    super("HighlightError", props);
+  }
+}
 
-export class ChatError extends Data.TaggedError("ChatError")<{
-  readonly operation: string;
-  readonly cause?: unknown;
-}> {}
+export class BookmarkError extends AppError<
+  "BookmarkError",
+  OperationProps & { readonly bookmarkId?: string }
+> {
+  declare readonly operation: string;
+  declare readonly bookmarkId?: string;
 
-export class PdfParseError extends Data.TaggedError("PdfParseError")<{
-  readonly operation: string;
-  readonly cause?: unknown;
-}> {}
+  constructor(props: OperationProps & { readonly bookmarkId?: string }) {
+    super("BookmarkError", props);
+  }
+}
 
-export class DecodeError extends Data.TaggedError("DecodeError")<{
-  readonly operation: string;
-  readonly cause?: unknown;
-}> {}
+export class NotebookError extends AppError<
+  "NotebookError",
+  OperationProps & { readonly bookId?: string }
+> {
+  declare readonly operation: string;
+  declare readonly bookId?: string;
 
-export class AuthError extends Data.TaggedError("AuthError")<{
-  readonly operation: string;
-  readonly cause?: unknown;
-}> {}
+  constructor(props: OperationProps & { readonly bookId?: string }) {
+    super("NotebookError", props);
+  }
+}
 
-export class SyncError extends Data.TaggedError("SyncError")<{
-  readonly operation: string;
-  readonly cause?: unknown;
-}> {}
+export class PositionError extends AppError<
+  "PositionError",
+  OperationProps & { readonly bookId: string }
+> {
+  declare readonly operation: string;
+  declare readonly bookId: string;
+
+  constructor(props: OperationProps & { readonly bookId: string }) {
+    super("PositionError", props);
+  }
+}
+
+export class ReadingHistoryError extends AppError<
+  "ReadingHistoryError",
+  OperationProps & { readonly bookId: string }
+> {
+  declare readonly operation: string;
+  declare readonly bookId: string;
+
+  constructor(props: OperationProps & { readonly bookId: string }) {
+    super("ReadingHistoryError", props);
+  }
+}
+
+export class WorkspaceError extends operationError("WorkspaceError") {}
+export class StandardEbooksError extends operationError("StandardEbooksError") {}
+export class ChatError extends operationError("ChatError") {}
+export class PdfParseError extends operationError("PdfParseError") {}
+export class DecodeError extends operationError("DecodeError") {}
+export class AuthError extends operationError("AuthError") {}
+export class SyncError extends operationError("SyncError") {}

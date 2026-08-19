@@ -1,9 +1,32 @@
 import { describe, it, expect, vi } from "vitest";
-import { Effect, Layer } from "effect";
 import { createStore, entries, get, set } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
-import { WorkspaceService, makeWorkspaceService } from "~/lib/stores/workspace-store";
+import {
+  WorkspaceService as LiveWorkspaceService,
+  makeWorkspaceService,
+} from "~/lib/stores/workspace-store";
 import type { SerializedDockview } from "dockview-react";
+
+type WorkspaceService = typeof LiveWorkspaceService;
+let currentService = LiveWorkspaceService;
+const WorkspaceService = {
+  pipe: <A>(operation: (service: WorkspaceService) => Promise<A>) => operation(currentService),
+};
+const Layer = {
+  succeed: (_tag: unknown, service: WorkspaceService) => {
+    currentService = service;
+    return undefined;
+  },
+};
+namespace Effect {
+  export type Effect<A, _E = never, _R = never> = Promise<A>;
+}
+const Effect = {
+  all: <A>(promises: Promise<A>[]) => Promise.all(promises),
+  andThen: <A>(operation: (service: WorkspaceService) => Promise<A>) => operation,
+  provide: <A>(promise: Promise<A>, _layer: unknown) => promise,
+  runPromise: <A>(promise: Promise<A>) => promise,
+};
 
 vi.mock("idb-keyval", async (importOriginal) => {
   const actual = await importOriginal<typeof import("idb-keyval")>();

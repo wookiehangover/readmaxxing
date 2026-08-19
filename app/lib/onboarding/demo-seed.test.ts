@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import { openPublication, openZipResourceProvider, resolveCfi } from "@readmaxxing/epub-successor";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { del, get, set } from "idb-keyval";
-import { Effect } from "effect";
 import {
   DEFAULT_DEMO_BOOK,
   DEMO_BOOK_ID,
@@ -16,7 +15,6 @@ import {
 } from "~/lib/onboarding/demo-content";
 import { spineIndexFromCfi } from "~/lib/epub/successor-reader-adapter";
 import { isFirstVisit } from "~/lib/onboarding/demo-seed";
-import { AppRuntime } from "~/lib/effect-runtime";
 import type { ChatSession } from "~/lib/stores/chat-store";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { booksSaga } from "~/lib/themis/books/books-sagas";
@@ -85,13 +83,7 @@ beforeEach(async () => {
     del(DEMO_BOOK_ID, getNotebookStore()),
     del(DEMO_BOOK_ID, getChatSessionStore()),
     del(DEMO_BOOK_ID, getActiveSessionStore()),
-    AppRuntime.runPromise(
-      WorkspaceService.pipe(
-        Effect.andThen((workspace) =>
-          Effect.all([workspace.clearLayout(), workspace.clearFocusedState()]),
-        ),
-      ),
-    ),
+    Promise.all([WorkspaceService.clearLayout(), WorkspaceService.clearFocusedState()]),
   ]);
 
   vi.stubGlobal(
@@ -204,30 +196,21 @@ describe("seedDemo", () => {
   });
 
   it("clears stale workspace state when provisioning the first-visit demo", async () => {
-    await AppRuntime.runPromise(
-      WorkspaceService.pipe(
-        Effect.andThen((workspace) =>
-          Effect.all([
-            workspace.saveLayout({ grid: {}, panels: { stale: {} } } as never),
-            workspace.saveFocusedState({
-              order: ["stale-book"],
-              activeBookId: "stale-book",
-              clusters: [],
-            }),
-          ]),
-        ),
-      ),
-    );
+    await Promise.all([
+      WorkspaceService.saveLayout({ grid: {}, panels: { stale: {} } } as never),
+      WorkspaceService.saveFocusedState({
+        order: ["stale-book"],
+        activeBookId: "stale-book",
+        clusters: [],
+      }),
+    ]);
 
     await seedDemoThroughSaga();
 
-    const [layout, focusedState] = await AppRuntime.runPromise(
-      WorkspaceService.pipe(
-        Effect.andThen((workspace) =>
-          Effect.all([workspace.getLayout(), workspace.getFocusedState()]),
-        ),
-      ),
-    );
+    const [layout, focusedState] = await Promise.all([
+      WorkspaceService.getLayout(),
+      WorkspaceService.getFocusedState(),
+    ]);
     expect(layout).toBeNull();
     expect(focusedState).toBeNull();
   });

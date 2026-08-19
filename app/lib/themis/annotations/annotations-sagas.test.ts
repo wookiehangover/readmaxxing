@@ -4,7 +4,18 @@ import type { Highlight, Notebook } from "~/lib/stores/annotations-store";
 
 const mocks = vi.hoisted(() => ({ runPromise: vi.fn() }));
 
-vi.mock("~/lib/effect-runtime", () => ({ AppRuntime: { runPromise: mocks.runPromise } }));
+vi.mock("~/lib/stores/annotations-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/stores/annotations-store")>();
+  return {
+    ...actual,
+    AnnotationService: new Proxy(actual.AnnotationService, {
+      get: () => mocks.runPromise,
+    }),
+  };
+});
+vi.mock("~/lib/annotations/append-highlight-to-notebook", () => ({
+  appendHighlightReferenceToNotebook: mocks.runPromise,
+}));
 
 import { annotationsSaga } from "~/lib/themis/annotations/annotations-sagas";
 import {
@@ -50,10 +61,10 @@ afterEach(() => {
 });
 
 describe("annotationsSaga", () => {
-  it("hydrates highlights and a notebook through AppRuntime", async () => {
+  it("hydrates highlights and a notebook from persistence", async () => {
     const highlight = makeHighlight();
     const notebook = makeNotebook();
-    mocks.runPromise.mockResolvedValueOnce({ highlights: [highlight], notebook });
+    mocks.runPromise.mockResolvedValueOnce([highlight]).mockResolvedValueOnce(notebook);
     const store = startStore();
 
     store.dispatch(hydrateAnnotationsRequested("book-1"));
@@ -66,7 +77,7 @@ describe("annotationsSaga", () => {
     expect(store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")).toEqual(
       notebook,
     );
-    expect(mocks.runPromise).toHaveBeenCalledOnce();
+    expect(mocks.runPromise).toHaveBeenCalledTimes(2);
   });
 
   it("adds and updates the collection only after persistence succeeds", async () => {
@@ -74,7 +85,11 @@ describe("annotationsSaga", () => {
     const updated = makeHighlight({ text: "Updated", updatedAt: 3 });
     const onAdded = vi.fn();
     const onUpdated = vi.fn();
-    mocks.runPromise.mockResolvedValueOnce(original).mockResolvedValueOnce(updated);
+    mocks.runPromise
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([original])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([updated]);
     const store = startStore();
 
     store.dispatch(addHighlightRequested(original, onAdded));
@@ -103,7 +118,10 @@ describe("annotationsSaga", () => {
   it("deletes a highlight only after persistence succeeds", async () => {
     const highlight = makeHighlight();
     const onCompleted = vi.fn();
-    mocks.runPromise.mockResolvedValueOnce(highlight).mockResolvedValueOnce(undefined);
+    mocks.runPromise
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([highlight])
+      .mockResolvedValueOnce(undefined);
     const store = startStore();
     store.dispatch(addHighlightRequested(highlight));
     await vi.waitFor(() =>

@@ -9,9 +9,10 @@ const mocks = vi.hoisted(() => ({
   focusedWorkspace: null as FocusedWorkspaceState | null,
 }));
 
-vi.mock("~/lib/effect-runtime", () => ({
-  AppRuntime: { runPromise: mocks.runPromise },
-}));
+vi.mock("~/lib/stores/book-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/stores/book-store")>();
+  return { ...actual, BookService: { ...actual.BookService, getBooks: mocks.runPromise } };
+});
 vi.mock("~/lib/themis/provider", () => ({
   useAppStore: () => ({
     workspaceRestoreSelectors: {

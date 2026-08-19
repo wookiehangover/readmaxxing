@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Ebook/PDF reader web app: React Router v7 (framework mode) + TypeScript, Tailwind v4, shadcn/ui (Base UI), `@readmaxxing/epub-successor` + pdfjs, dockview workspace, TipTap notebooks, Effect.ts, Postgres (`pg`), WebAuthn passkeys, Vercel Blob, local-first sync.
+Ebook/PDF reader web app: React Router v7 (framework mode) + TypeScript, Tailwind v4, shadcn/ui (Base UI), `@readmaxxing/epub-successor` + pdfjs, dockview workspace, TipTap notebooks, Themis, Postgres (`pg`), WebAuthn passkeys, Vercel Blob, local-first sync.
 
 ## Package Manager
 
@@ -36,7 +36,6 @@ Run `pnpm oxfmt .` and `pnpm oxlint` before committing; fix all warnings. Run `p
 | Need                                                   | File                                |
 | ------------------------------------------------------ | ----------------------------------- |
 | Architecture (workspace, storage, sync, chat, sharing) | `docs/architecture.md`              |
-| Effect.ts conventions (services, errors, runtime)      | `docs/effect-conventions.md`        |
 | EPUB engine package (API, security, support matrix)    | `packages/epub-successor/README.md` |
 | E2E fixture epub                                       | `e2e/fixtures/test-book.epub`       |
 

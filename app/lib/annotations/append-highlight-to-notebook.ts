@@ -1,11 +1,9 @@
-import { Effect } from "effect";
 import type { JSONContent } from "@tiptap/react";
 import { AnnotationService, type Notebook } from "~/lib/stores/annotations-store";
-import type { DecodeError, NotebookError } from "~/lib/errors";
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
 
 /**
- * Effect program that appends a highlightReference node (and a trailing empty
+ * Appends a highlightReference node (and a trailing empty
  * paragraph, mirroring `TiptapEditor.appendHighlightReference`) to the book's
  * notebook document in IndexedDB, creating the document if it does not yet
  * exist. This is the fallback used when the notebook editor is not currently
@@ -18,10 +16,9 @@ import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node
 export function appendHighlightReferenceToNotebook(
   bookId: string,
   attrs: HighlightReferenceAttrs,
-): Effect.Effect<Notebook, NotebookError | DecodeError, AnnotationService> {
-  return Effect.gen(function* () {
-    const svc = yield* AnnotationService;
-    const notebook = yield* svc.getNotebook(bookId);
+): Promise<Notebook> {
+  return (async () => {
+    const notebook = await AnnotationService.getNotebook(bookId);
     const existingContent: JSONContent[] = Array.isArray(notebook?.content?.content)
       ? (notebook!.content!.content as JSONContent[])
       : [];
@@ -36,7 +33,7 @@ export function appendHighlightReferenceToNotebook(
       content: updatedContent,
       updatedAt: Date.now(),
     };
-    yield* svc.saveNotebook(updatedNotebook);
+    await AnnotationService.saveNotebook(updatedNotebook);
     return updatedNotebook;
-  });
+  })();
 }

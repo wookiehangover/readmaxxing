@@ -1,7 +1,5 @@
 import { get, set } from "idb-keyval";
-import { Effect } from "effect";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "./demo-content";
-import { AppRuntime } from "~/lib/effect-runtime";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { ChatSession } from "~/lib/stores/chat-store";
 import type { PositionRecord } from "~/lib/stores/position-store";
@@ -146,27 +144,16 @@ function assertAccepted(result: SyncPushResponse | null, entries: ChangeEntry[])
 }
 
 async function remapSavedWorkspace(bookId: string): Promise<void> {
-  const state = await AppRuntime.runPromise(
-    WorkspaceService.pipe(
-      Effect.andThen((service) => service.getFocusedState()),
-      Effect.catchAll(() => Effect.succeed(null)),
-    ),
-  );
+  const state = await WorkspaceService.getFocusedState().catch(() => null);
   if (!state || !state.order.includes(DEMO_BOOK_ID)) return;
 
-  await AppRuntime.runPromise(
-    WorkspaceService.pipe(
-      Effect.andThen((service) =>
-        service.saveFocusedState({
-          order: state.order.map((id) => (id === DEMO_BOOK_ID ? bookId : id)),
-          activeBookId: state.activeBookId === DEMO_BOOK_ID ? bookId : state.activeBookId,
-          clusters: state.clusters.map((cluster) =>
-            cluster.bookId === DEMO_BOOK_ID ? { ...cluster, bookId } : cluster,
-          ),
-        }),
-      ),
+  await WorkspaceService.saveFocusedState({
+    order: state.order.map((id) => (id === DEMO_BOOK_ID ? bookId : id)),
+    activeBookId: state.activeBookId === DEMO_BOOK_ID ? bookId : state.activeBookId,
+    clusters: state.clusters.map((cluster) =>
+      cluster.bookId === DEMO_BOOK_ID ? { ...cluster, bookId } : cluster,
     ),
-  );
+  });
 }
 
 export async function persistAdoptedDemoContent(userId: string): Promise<AdoptedDemo> {

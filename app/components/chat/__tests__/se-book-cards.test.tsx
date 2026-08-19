@@ -5,8 +5,8 @@ import type { BookMeta } from "~/lib/stores/book-store";
 
 const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), runPromise: vi.fn(), onBookAdded: vi.fn() }));
 
-vi.mock("~/lib/effect-runtime", () => ({
-  AppRuntime: { runPromise: mocks.runPromise },
+vi.mock("~/lib/standard-ebooks", () => ({
+  StandardEbooksService: { downloadEpub: mocks.runPromise },
 }));
 vi.mock("~/lib/themis/provider", () => ({
   useAppStore: () => ({ dispatch: mocks.dispatch }),

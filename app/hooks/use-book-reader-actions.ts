@@ -6,8 +6,6 @@ import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adap
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { tokenizeSpeedreadText } from "~/lib/speedread";
 import { BookService } from "~/lib/stores/book-store";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { Effect } from "effect";
 import { useAppStore } from "~/lib/themis/provider";
 import { appendHighlightToNotebookRequested } from "~/lib/themis/annotations/annotations-slice";
 import {
@@ -147,17 +145,11 @@ export function useBookReaderActions({
   }, [clearSelection, dismissPopovers, selectionPopover]);
 
   const handleDownload = useCallback(() => {
-    AppRuntime.runPromise(
-      BookService.pipe(
-        Effect.andThen((service) => service.getBookData(book.id)),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to download book:", error);
-            return null as ArrayBuffer | null;
-          }),
-        ),
-      ),
-    )
+    BookService.getBookData(book.id)
+      .catch((error: unknown) => {
+        console.error("Failed to download book:", error);
+        return null;
+      })
       .then((data) => {
         if (!data) return;
         const format = book.format ?? "epub";

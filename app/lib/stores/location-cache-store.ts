@@ -1,6 +1,5 @@
 import { createStore, get, set } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
-import { Context, Effect, Layer } from "effect";
 import { StorageError } from "~/lib/errors";
 
 // --- idb-keyval store (lazy-initialized for SSR safety) ---
@@ -12,42 +11,31 @@ function getLocationsStore() {
   return _locationsStore;
 }
 
-// --- Effect Service ---
-
-export class LocationCacheService extends Context.Tag("LocationCacheService")<
-  LocationCacheService,
-  {
-    readonly saveLocations: (bookId: string, json: string) => Effect.Effect<void, StorageError>;
-    readonly getLocations: (bookId: string) => Effect.Effect<string | null, StorageError>;
-  }
->() {}
-
 export interface LocationCacheServiceStores {
   readonly locationsStore: UseStore;
 }
 
-export function makeLocationCacheService(
-  stores: LocationCacheServiceStores,
-): LocationCacheService["Type"] {
+export function makeLocationCacheService(stores: LocationCacheServiceStores) {
   const { locationsStore } = stores;
   return {
-    saveLocations: (bookId: string, json: string) =>
-      Effect.tryPromise({
-        try: () => set(bookId, json, locationsStore),
-        catch: (cause) => new StorageError({ operation: "saveLocations", cause }),
-      }),
+    async saveLocations(bookId: string, json: string) {
+      try {
+        await set(bookId, json, locationsStore);
+      } catch (cause) {
+        throw new StorageError({ operation: "saveLocations", cause });
+      }
+    },
 
-    getLocations: (bookId: string) =>
-      Effect.tryPromise({
-        try: async () => {
-          const json = await get<string>(bookId, locationsStore);
-          return json ?? null;
-        },
-        catch: (cause) => new StorageError({ operation: "getLocations", cause }),
-      }),
+    async getLocations(bookId: string) {
+      try {
+        return (await get<string>(bookId, locationsStore)) ?? null;
+      } catch (cause) {
+        throw new StorageError({ operation: "getLocations", cause });
+      }
+    },
   };
 }
 
-export const LocationCacheServiceLive = Layer.sync(LocationCacheService, () =>
-  makeLocationCacheService({ locationsStore: getLocationsStore() }),
-);
+export const LocationCacheService = makeLocationCacheService({
+  locationsStore: getLocationsStore(),
+});

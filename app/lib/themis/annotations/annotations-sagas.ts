@@ -1,8 +1,6 @@
-import { Effect } from "effect";
 import { call, cancel, delay, fork, put, take, takeEvery } from "typed-redux-saga";
 
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { AnnotationService, type Highlight, type Notebook } from "~/lib/stores/annotations-store";
 import {
   addHighlightRequested,
@@ -28,26 +26,17 @@ import type {
 } from "~/lib/themis/annotations/annotations-types";
 
 async function loadAnnotations(bookId: string) {
-  return AppRuntime.runPromise(
-    Effect.gen(function* () {
-      const service = yield* AnnotationService;
-      return yield* Effect.all({
-        highlights: service.getHighlightsByBook(bookId),
-        notebook: service.getNotebook(bookId),
-      });
-    }),
-  );
+  const [highlights, notebook] = await Promise.all([
+    AnnotationService.getHighlightsByBook(bookId),
+    AnnotationService.getNotebook(bookId),
+  ]);
+  return { highlights, notebook };
 }
 
 async function persistHighlight(highlight: Highlight) {
-  return AppRuntime.runPromise(
-    Effect.gen(function* () {
-      const service = yield* AnnotationService;
-      yield* service.saveHighlight(highlight);
-      const highlights = yield* service.getHighlightsByBook(highlight.bookId);
-      return highlights.find((candidate) => candidate.id === highlight.id) ?? highlight;
-    }),
-  );
+  await AnnotationService.saveHighlight(highlight);
+  const highlights = await AnnotationService.getHighlightsByBook(highlight.bookId);
+  return highlights.find((candidate) => candidate.id === highlight.id) ?? highlight;
 }
 
 async function persistHighlightUpdate(
@@ -55,28 +44,20 @@ async function persistHighlightUpdate(
   highlightId: string,
   updates: HighlightUpdate,
 ) {
-  return AppRuntime.runPromise(
-    Effect.gen(function* () {
-      const service = yield* AnnotationService;
-      yield* service.updateHighlight(highlightId, updates);
-      const highlights = yield* service.getHighlightsByBook(bookId);
-      const highlight = highlights.find((candidate) => candidate.id === highlightId);
-      return highlight ?? (yield* Effect.fail(new Error(`Highlight ${highlightId} was not found`)));
-    }),
-  );
+  await AnnotationService.updateHighlight(highlightId, updates);
+  const highlights = await AnnotationService.getHighlightsByBook(bookId);
+  const highlight = highlights.find((candidate) => candidate.id === highlightId);
+  if (!highlight) throw new Error(`Highlight ${highlightId} was not found`);
+  return highlight;
 }
 
 async function persistHighlightDeletion(highlightId: string) {
-  return AppRuntime.runPromise(
-    AnnotationService.pipe(Effect.andThen((service) => service.deleteHighlight(highlightId))),
-  );
+  return AnnotationService.deleteHighlight(highlightId);
 }
 
 async function persistNotebook(bookId: string, content: Notebook["content"]) {
   const notebook: Notebook = { bookId, content, updatedAt: Date.now() };
-  await AppRuntime.runPromise(
-    AnnotationService.pipe(Effect.andThen((service) => service.saveNotebook(notebook))),
-  );
+  await AnnotationService.saveNotebook(notebook);
   return notebook;
 }
 
@@ -84,7 +65,7 @@ async function persistHighlightAppend(
   bookId: string,
   attrs: Parameters<typeof appendHighlightReferenceToNotebook>[1],
 ) {
-  return AppRuntime.runPromise(appendHighlightReferenceToNotebook(bookId, attrs));
+  return appendHighlightReferenceToNotebook(bookId, attrs);
 }
 
 function errorMessage(error: unknown) {

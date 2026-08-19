@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Effect } from "effect";
 import { ArrowLeft, BookOpen, CloudUpload, RotateCcw } from "lucide-react";
 import type { Route } from "./+types/book-details";
 import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
 import { useSyncActions } from "~/lib/sync/use-sync";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
 import { Input } from "~/components/ui/input";
@@ -22,14 +20,12 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  const book = await AppRuntime.runPromise(
-    BookService.pipe(
-      Effect.andThen((s) => s.getBookIncludingDeleted(params.id)),
-      Effect.catchTag("BookNotFoundError", () =>
-        Effect.die(new Response("Book not found", { status: 404 })),
-      ),
-    ),
-  );
+  const book = await BookService.getBookIncludingDeleted(params.id).catch((error: unknown) => {
+    if (error instanceof Error && "_tag" in error && error._tag === "BookNotFoundError") {
+      throw new Response("Book not found", { status: 404 });
+    }
+    throw error;
+  });
   return { book };
 }
 
@@ -140,9 +136,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     setSaved(false);
     try {
       const updatedBook: BookMeta = { ...book, title, author, deletedAt };
-      await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))),
-      );
+      await BookService.updateBookMeta(updatedBook);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
@@ -161,9 +155,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
         author,
         deletedAt: undefined,
       };
-      await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))),
-      );
+      await BookService.updateBookMeta(updatedBook);
       setDeletedAt(undefined);
     } catch (err) {
       console.error("Failed to restore book:", err);

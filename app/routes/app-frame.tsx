@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from "react";
 import type { DockviewApi } from "dockview-react";
-import { Effect } from "effect";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import type { Route } from "./+types/app-frame";
 import { DropZone } from "~/components/drop-zone";
@@ -22,7 +21,6 @@ import {
 } from "~/hooks/use-workspace-panels";
 import { useWorkspaceShortcuts } from "~/hooks/use-workspace-shortcuts";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { activateReadingRoute, getBookReadingPath, getReadingBookId } from "~/lib/reading-route";
 import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
@@ -72,9 +70,7 @@ export function meta(_args: Route.MetaArgs) {
 }
 
 export async function clientLoader() {
-  const books = await AppRuntime.runPromise(
-    BookService.pipe(Effect.andThen((service) => service.getBooks())),
-  );
+  const books = await BookService.getBooks();
   return { books };
 }
 

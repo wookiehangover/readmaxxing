@@ -7,10 +7,32 @@ const mocks = vi.hoisted(() => ({
   runPromise: vi.fn(),
 }));
 
-vi.mock("~/lib/effect-runtime", () => ({ AppRuntime: { runPromise: mocks.runPromise } }));
 vi.mock("~/lib/stores/remote-position-store", () => ({
   getRemotePositionRecord: mocks.getRemotePositionRecord,
 }));
+vi.mock("~/lib/stores/position-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/stores/position-store")>();
+  return {
+    ...actual,
+    ReadingPositionService: new Proxy(actual.ReadingPositionService, {
+      get: () => mocks.runPromise,
+    }),
+  };
+});
+vi.mock("~/lib/stores/location-cache-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/stores/location-cache-store")>();
+  return {
+    ...actual,
+    LocationCacheService: new Proxy(actual.LocationCacheService, { get: () => mocks.runPromise }),
+  };
+});
+vi.mock("~/lib/stores/reading-history-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/stores/reading-history-store")>();
+  return {
+    ...actual,
+    ReadingHistoryService: new Proxy(actual.ReadingHistoryService, { get: () => mocks.runPromise }),
+  };
+});
 
 import { readingPositionsSaga } from "~/lib/themis/reading-positions/reading-positions-sagas";
 import {
@@ -40,7 +62,7 @@ afterEach(() => {
 });
 
 describe("readingPositionsSaga", () => {
-  it("hydrates book and panel positions through AppRuntime", async () => {
+  it("hydrates book and panel positions from persistence", async () => {
     mocks.runPromise
       .mockResolvedValueOnce({ cfi: "page:4", updatedAt: 1 })
       .mockResolvedValueOnce({ cfi: "page:6", updatedAt: 2 });
@@ -110,7 +132,10 @@ describe("readingPositionsSaga", () => {
       totalPages: 10,
       timestamp: 1,
     };
-    mocks.runPromise.mockResolvedValueOnce("cached-locations").mockResolvedValueOnce([entry]);
+    mocks.runPromise
+      .mockResolvedValueOnce("cached-locations")
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([entry]);
     const store = startStore();
 
     store.dispatch(hydrateLocationCacheRequested("book-1"));

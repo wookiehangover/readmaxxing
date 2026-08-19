@@ -1,6 +1,5 @@
 import { get, set } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
-import { Context, Effect, Layer } from "effect";
 import { PositionError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
 import { getPositionStore } from "~/lib/sync/stores";
@@ -47,8 +46,6 @@ function migratePosition(raw: unknown): PositionRecord | null {
   return null;
 }
 
-// --- Effect Service ---
-
 /**
  * Options for {@link ReadingPositionService.savePosition}.
  *
@@ -64,26 +61,11 @@ export interface SavePositionOptions {
   readonly spineIndex?: number;
 }
 
-export class ReadingPositionService extends Context.Tag("ReadingPositionService")<
-  ReadingPositionService,
-  {
-    readonly savePosition: (
-      bookId: string,
-      cfi: string,
-      options?: SavePositionOptions,
-    ) => Effect.Effect<void, PositionError>;
-    readonly getPosition: (bookId: string) => Effect.Effect<string | null, PositionError>;
-    readonly getPositionRecord: (
-      bookId: string,
-    ) => Effect.Effect<PositionRecord | null, PositionError>;
-  }
->() {}
-
 export interface PositionServiceStores {
   readonly positionStore: UseStore;
 }
 
-export function makePositionService(stores: PositionServiceStores): ReadingPositionService["Type"] {
+export function makePositionService(stores: PositionServiceStores) {
   const { positionStore } = stores;
   const pendingLocalOnlyChanges = new Map<string, PositionRecord>();
 
@@ -98,77 +80,74 @@ export function makePositionService(stores: PositionServiceStores): ReadingPosit
   };
 
   return {
-    savePosition: (bookId: string, cfi: string, options?: SavePositionOptions) =>
-      Effect.tryPromise({
-        try: async () => {
-          const shouldRecordChange = options?.recordChange !== false;
-          const localProgression =
-            typeof options?.localProgression === "number" &&
-            Number.isFinite(options.localProgression)
-              ? Math.min(1, Math.max(0, options.localProgression))
-              : undefined;
-          const spineIndex =
-            typeof options?.spineIndex === "number" &&
-            Number.isInteger(options.spineIndex) &&
-            options.spineIndex >= 0
-              ? options.spineIndex
-              : undefined;
-          // Short-circuit no-op writes: if the stored CFI (and layout fields)
-          // match exactly, skip the IDB write, and only record a sync changelog
-          // when this matches a pending local-only save.
-          const existing = migratePosition(await get<unknown>(bookId, positionStore));
-          if (
-            existing &&
-            existing.cfi === cfi &&
-            existing.localProgression === localProgression &&
-            existing.spineIndex === spineIndex
-          ) {
-            const pending = pendingLocalOnlyChanges.get(bookId);
-            if (shouldRecordChange && pending?.cfi === cfi) {
-              pendingLocalOnlyChanges.delete(bookId);
-              enqueuePositionChange(bookId, pending);
-            }
-            return;
-          }
-
-          const record: PositionRecord = {
-            cfi,
-            updatedAt: Date.now(),
-            ...(localProgression !== undefined ? { localProgression } : {}),
-            ...(spineIndex !== undefined ? { spineIndex } : {}),
-          };
-          await set(bookId, record, positionStore);
-          if (shouldRecordChange) {
+    async savePosition(bookId: string, cfi: string, options?: SavePositionOptions) {
+      try {
+        const shouldRecordChange = options?.recordChange !== false;
+        const localProgression =
+          typeof options?.localProgression === "number" && Number.isFinite(options.localProgression)
+            ? Math.min(1, Math.max(0, options.localProgression))
+            : undefined;
+        const spineIndex =
+          typeof options?.spineIndex === "number" &&
+          Number.isInteger(options.spineIndex) &&
+          options.spineIndex >= 0
+            ? options.spineIndex
+            : undefined;
+        // Short-circuit no-op writes: if the stored CFI (and layout fields)
+        // match exactly, skip the IDB write, and only record a sync changelog
+        // when this matches a pending local-only save.
+        const existing = migratePosition(await get<unknown>(bookId, positionStore));
+        if (
+          existing &&
+          existing.cfi === cfi &&
+          existing.localProgression === localProgression &&
+          existing.spineIndex === spineIndex
+        ) {
+          const pending = pendingLocalOnlyChanges.get(bookId);
+          if (shouldRecordChange && pending?.cfi === cfi) {
             pendingLocalOnlyChanges.delete(bookId);
-            enqueuePositionChange(bookId, record);
-          } else {
-            pendingLocalOnlyChanges.set(bookId, record);
+            enqueuePositionChange(bookId, pending);
           }
-        },
-        catch: (cause) => new PositionError({ operation: "savePosition", bookId, cause }),
-      }),
+          return;
+        }
 
-    getPosition: (bookId: string) =>
-      Effect.tryPromise({
-        try: async () => {
-          const raw = await get<unknown>(bookId, positionStore);
-          const record = migratePosition(raw);
-          return record?.cfi ?? null;
-        },
-        catch: (cause) => new PositionError({ operation: "getPosition", bookId, cause }),
-      }),
+        const record: PositionRecord = {
+          cfi,
+          updatedAt: Date.now(),
+          ...(localProgression !== undefined ? { localProgression } : {}),
+          ...(spineIndex !== undefined ? { spineIndex } : {}),
+        };
+        await set(bookId, record, positionStore);
+        if (shouldRecordChange) {
+          pendingLocalOnlyChanges.delete(bookId);
+          enqueuePositionChange(bookId, record);
+        } else {
+          pendingLocalOnlyChanges.set(bookId, record);
+        }
+      } catch (cause) {
+        throw new PositionError({ operation: "savePosition", bookId, cause });
+      }
+    },
 
-    getPositionRecord: (bookId: string) =>
-      Effect.tryPromise({
-        try: async () => {
-          const raw = await get<unknown>(bookId, positionStore);
-          return migratePosition(raw);
-        },
-        catch: (cause) => new PositionError({ operation: "getPositionRecord", bookId, cause }),
-      }),
+    async getPosition(bookId: string) {
+      try {
+        const raw = await get<unknown>(bookId, positionStore);
+        const record = migratePosition(raw);
+        return record?.cfi ?? null;
+      } catch (cause) {
+        throw new PositionError({ operation: "getPosition", bookId, cause });
+      }
+    },
+
+    async getPositionRecord(bookId: string) {
+      try {
+        const raw = await get<unknown>(bookId, positionStore);
+        return migratePosition(raw);
+      } catch (cause) {
+        throw new PositionError({ operation: "getPositionRecord", bookId, cause });
+      }
+    },
   };
 }
 
-export const ReadingPositionServiceLive = Layer.sync(ReadingPositionService, () =>
-  makePositionService({ positionStore: getPositionStore() }),
-);
+export const ReadingPositionService = makePositionService({ positionStore: getPositionStore() });

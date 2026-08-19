@@ -7,34 +7,29 @@ import type { BookMeta } from "~/lib/stores/book-store";
 const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), runPromise: vi.fn() }));
 
 const queryResult = vi.hoisted(() => ({
-  data: {
-    books: [
-      {
-        title: "Book One",
-        author: "Author One",
-        urlPath: "/ebooks/book-one",
-        coverUrl: null,
-      },
-      {
-        title: "Book Two",
-        author: "Author Two",
-        urlPath: "/ebooks/book-two",
-        coverUrl: null,
-      },
-    ],
-    currentPage: 1,
-    totalPages: 1,
+  books: [
+    {
+      title: "Book One",
+      author: "Author One",
+      urlPath: "/ebooks/book-one",
+      coverUrl: null,
+    },
+    {
+      title: "Book Two",
+      author: "Author Two",
+      urlPath: "/ebooks/book-two",
+      coverUrl: null,
+    },
+  ],
+  currentPage: 1,
+  totalPages: 1,
+}));
+
+vi.mock("~/lib/standard-ebooks", () => ({
+  StandardEbooksService: {
+    searchBooks: vi.fn().mockResolvedValue(queryResult),
+    downloadEpub: mocks.runPromise,
   },
-  error: undefined,
-  isLoading: false,
-}));
-
-vi.mock("~/hooks/use-effect-query", () => ({
-  useEffectQuery: () => queryResult,
-}));
-
-vi.mock("~/lib/effect-runtime", () => ({
-  AppRuntime: { runPromise: mocks.runPromise },
 }));
 
 vi.mock("~/lib/themis/provider", () => ({

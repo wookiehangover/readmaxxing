@@ -1,8 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
 import type { DockviewPanelApi } from "dockview-react";
 import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell";
@@ -204,7 +202,7 @@ export function usePdfWorkspacePanels({
   useEffect(() => {
     // Only load book data as fallback when pdfDocRef is not available
     if (pdfDocRef) return;
-    AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))))
+    BookService.getBookData(book.id)
       .then((data) => {
         bookDataRef.current = data;
       })

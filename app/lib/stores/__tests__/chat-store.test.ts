@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Effect, Layer } from "effect";
 import { createStore, set } from "idb-keyval";
 
 // Mock the sync changelog so we can assert on recordChange invocations
@@ -9,10 +8,7 @@ vi.mock("~/lib/sync/change-log", () => ({
 }));
 
 import { recordChange } from "~/lib/sync/change-log";
-import { ChatService, ChatServiceLive } from "../chat-store";
-
-const run = <A, E>(e: Effect.Effect<A, E, ChatService>) =>
-  Effect.runPromise(Effect.provide(e, ChatServiceLive as Layer.Layer<ChatService>));
+import { ChatService } from "../chat-store";
 
 let bookCounter = 0;
 function uniqueBookId(): string {
@@ -27,32 +23,22 @@ describe("ChatService.cacheServerMessages", () => {
   it("writes the messages array to IDB without bumping session.updatedAt", async () => {
     const bookId = uniqueBookId();
 
-    const session = await run(
-      ChatService.pipe(Effect.andThen((s) => s.createSession(bookId, "Original"))),
-    );
+    const session = await ChatService.createSession(bookId, "Original");
     const originalUpdatedAt = session.updatedAt;
 
     // Simulate clock advancing so a naive Date.now() bump would show up.
     await new Promise((resolve) => setTimeout(resolve, 5));
 
-    await run(
-      ChatService.pipe(
-        Effect.andThen((s) =>
-          s.cacheServerMessages(bookId, session.id, [
-            {
-              id: "m1",
-              role: "user",
-              content: "hello",
-              createdAt: Date.now(),
-            },
-          ]),
-        ),
-      ),
-    );
+    await ChatService.cacheServerMessages(bookId, session.id, [
+      {
+        id: "m1",
+        role: "user",
+        content: "hello",
+        createdAt: Date.now(),
+      },
+    ]);
 
-    const after = await run(
-      ChatService.pipe(Effect.andThen((s) => s.getSession(session.id, bookId))),
-    );
+    const after = await ChatService.getSession(session.id, bookId);
 
     expect(after).not.toBeNull();
     expect(after!.messages).toHaveLength(1);
@@ -65,19 +51,13 @@ describe("ChatService.cacheServerMessages", () => {
   it("does not enqueue a sync change for the cached messages", async () => {
     const bookId = uniqueBookId();
 
-    const session = await run(ChatService.pipe(Effect.andThen((s) => s.createSession(bookId))));
+    const session = await ChatService.createSession(bookId);
     // createSession enqueues one change; isolate cacheServerMessages below.
     vi.mocked(recordChange).mockClear();
 
-    await run(
-      ChatService.pipe(
-        Effect.andThen((s) =>
-          s.cacheServerMessages(bookId, session.id, [
-            { id: "m1", role: "assistant", content: "hi", createdAt: Date.now() },
-          ]),
-        ),
-      ),
-    );
+    await ChatService.cacheServerMessages(bookId, session.id, [
+      { id: "m1", role: "assistant", content: "hi", createdAt: Date.now() },
+    ]);
 
     expect(recordChange).not.toHaveBeenCalled();
   });
@@ -85,19 +65,11 @@ describe("ChatService.cacheServerMessages", () => {
   it("is a no-op when the sessionId does not exist", async () => {
     const bookId = uniqueBookId();
 
-    await run(
-      ChatService.pipe(
-        Effect.andThen((s) =>
-          s.cacheServerMessages(bookId, "does-not-exist", [
-            { id: "m1", role: "user", content: "hi", createdAt: Date.now() },
-          ]),
-        ),
-      ),
-    );
+    await ChatService.cacheServerMessages(bookId, "does-not-exist", [
+      { id: "m1", role: "user", content: "hi", createdAt: Date.now() },
+    ]);
 
-    const sessions = await run(
-      ChatService.pipe(Effect.andThen((s) => s.getSessionsByBook(bookId))),
-    );
+    const sessions = await ChatService.getSessionsByBook(bookId);
     expect(sessions).toHaveLength(0);
     expect(recordChange).not.toHaveBeenCalled();
   });
@@ -105,37 +77,23 @@ describe("ChatService.cacheServerMessages", () => {
   it("preserves a concurrent title edit that happened after the cache write", async () => {
     const bookId = uniqueBookId();
 
-    const session = await run(
-      ChatService.pipe(Effect.andThen((s) => s.createSession(bookId, "Before"))),
-    );
+    const session = await ChatService.createSession(bookId, "Before");
 
     // Simulate: another device's rename lands via sync and we record it
     // locally by calling updateSessionTitle.
-    await run(
-      ChatService.pipe(Effect.andThen((s) => s.updateSessionTitle(session.id, bookId, "Renamed"))),
-    );
-    const renamed = await run(
-      ChatService.pipe(Effect.andThen((s) => s.getSession(session.id, bookId))),
-    );
+    await ChatService.updateSessionTitle(session.id, bookId, "Renamed");
+    const renamed = await ChatService.getSession(session.id, bookId);
     const renamedUpdatedAt = renamed!.updatedAt;
 
     // Now message hydration fires. Previously this would bump updatedAt
     // past the rename's timestamp, making the rename "lose" LWW on the
     // next pull. After the fix, the rename's timestamp must stick.
     await new Promise((resolve) => setTimeout(resolve, 5));
-    await run(
-      ChatService.pipe(
-        Effect.andThen((s) =>
-          s.cacheServerMessages(bookId, session.id, [
-            { id: "m1", role: "user", content: "hi", createdAt: Date.now() },
-          ]),
-        ),
-      ),
-    );
+    await ChatService.cacheServerMessages(bookId, session.id, [
+      { id: "m1", role: "user", content: "hi", createdAt: Date.now() },
+    ]);
 
-    const after = await run(
-      ChatService.pipe(Effect.andThen((s) => s.getSession(session.id, bookId))),
-    );
+    const after = await ChatService.getSession(session.id, bookId);
     expect(after!.title).toBe("Renamed");
     expect(after!.updatedAt).toBe(renamedUpdatedAt);
   });
@@ -162,9 +120,7 @@ describe("ChatService migrateOldMessages", () => {
     );
 
     // Triggering migration via the public read path.
-    const sessions = await run(
-      ChatService.pipe(Effect.andThen((s) => s.getSessionsByBook(bookId))),
-    );
+    const sessions = await ChatService.getSessionsByBook(bookId);
 
     expect(sessions).toHaveLength(1);
     expect(sessions[0].messages).toHaveLength(2);
@@ -188,9 +144,7 @@ describe("ChatService migrateOldMessages", () => {
   it("does not enqueue any change when there are no legacy messages", async () => {
     const bookId = uniqueBookId();
 
-    const sessions = await run(
-      ChatService.pipe(Effect.andThen((s) => s.getSessionsByBook(bookId))),
-    );
+    const sessions = await ChatService.getSessionsByBook(bookId);
 
     expect(sessions).toHaveLength(0);
     expect(recordChange).not.toHaveBeenCalled();

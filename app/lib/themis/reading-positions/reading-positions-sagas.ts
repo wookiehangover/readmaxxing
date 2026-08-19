@@ -1,7 +1,5 @@
-import { Effect } from "effect";
 import { call, cancel, delay, fork, put, take, takeEvery } from "typed-redux-saga";
 
-import { AppRuntime } from "~/lib/effect-runtime";
 import { savePositionDualKey } from "~/lib/position-utils";
 import { LocationCacheService } from "~/lib/stores/location-cache-store";
 import { ReadingHistoryService } from "~/lib/stores/reading-history-store";
@@ -39,9 +37,7 @@ function toReadingPosition(key: string, record: PositionRecord): ReadingPosition
 async function loadReadingPositions(keys: string[]) {
   const records = await Promise.all(
     keys.map(async (key) => {
-      const record = await AppRuntime.runPromise(
-        ReadingPositionService.pipe(Effect.andThen((service) => service.getPositionRecord(key))),
-      );
+      const record = await ReadingPositionService.getPositionRecord(key);
       return record ? toReadingPosition(key, record) : null;
     }),
   );
@@ -53,12 +49,7 @@ async function persistReadingPosition(request: ReadingPositionSaveRequest, recor
     ...request,
     panelId: request.panelId,
     recordChange,
-    savePosition: (key, cfi, options) =>
-      AppRuntime.runPromise(
-        ReadingPositionService.pipe(
-          Effect.andThen((service) => service.savePosition(key, cfi, options)),
-        ),
-      ),
+    savePosition: (key, cfi, options) => ReadingPositionService.savePosition(key, cfi, options),
   });
   return loadReadingPositions(
     request.panelId === undefined ? [request.bookId] : [request.bookId, request.panelId],
@@ -66,37 +57,26 @@ async function persistReadingPosition(request: ReadingPositionSaveRequest, recor
 }
 
 async function loadLocationCache(bookId: string) {
-  return AppRuntime.runPromise(
-    LocationCacheService.pipe(Effect.andThen((service) => service.getLocations(bookId))),
-  );
+  return LocationCacheService.getLocations(bookId);
 }
 
 async function persistLocationCache(bookId: string, json: string) {
-  await AppRuntime.runPromise(
-    LocationCacheService.pipe(Effect.andThen((service) => service.saveLocations(bookId, json))),
-  );
+  await LocationCacheService.saveLocations(bookId, json);
   return { bookId, json };
 }
 
 async function persistReadingHistory(
   bookId: string,
-  data: Parameters<ReadingHistoryService["Type"]["recordVisit"]>[1],
+  data: Parameters<typeof ReadingHistoryService.recordVisit>[1],
 ) {
-  return AppRuntime.runPromise(
-    Effect.gen(function* () {
-      const service = yield* ReadingHistoryService;
-      yield* service.recordVisit(bookId, data);
-      return yield* service.getHistory(bookId);
-    }),
-  );
+  await ReadingHistoryService.recordVisit(bookId, data);
+  return ReadingHistoryService.getHistory(bookId);
 }
 
 async function checkRemotePosition(bookId: string) {
   const [remote, local] = await Promise.all([
     getRemotePositionRecord(bookId),
-    AppRuntime.runPromise(
-      ReadingPositionService.pipe(Effect.andThen((service) => service.getPositionRecord(bookId))),
-    ),
+    ReadingPositionService.getPositionRecord(bookId),
   ]);
   return { remote, local };
 }

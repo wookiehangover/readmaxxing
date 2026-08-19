@@ -1,7 +1,5 @@
-import { Effect } from "effect";
 import { call, put, takeEvery } from "typed-redux-saga";
 
-import { AppRuntime } from "~/lib/effect-runtime";
 import { ChatService, type ChatMessage, type ChatSession } from "~/lib/stores/chat-store";
 import {
   cacheChatMessagesRequested,
@@ -26,65 +24,43 @@ import type {
 } from "~/lib/themis/chat-sessions/chat-sessions-types";
 
 async function loadChatSessions(bookId: string, createIfMissing: boolean) {
-  return AppRuntime.runPromise(
-    Effect.gen(function* () {
-      const service = yield* ChatService;
-      let sessions = yield* service.getSessionsByBook(bookId);
-      let activeSessionId = yield* service.getActiveSessionId(bookId);
-      if (activeSessionId && !sessions.some((session) => session.id === activeSessionId)) {
-        activeSessionId = null;
-      }
-      if (!activeSessionId && sessions.length > 0) {
-        activeSessionId = sessions[sessions.length - 1].id;
-        yield* service.setActiveSessionId(bookId, activeSessionId);
-      } else if (!activeSessionId && createIfMissing) {
-        const session = yield* service.createSession(bookId);
-        sessions = [...sessions, session];
-        activeSessionId = session.id;
-      }
-      return { sessions, activeSessionId };
-    }),
-  );
+  let sessions = await ChatService.getSessionsByBook(bookId);
+  let activeSessionId = await ChatService.getActiveSessionId(bookId);
+  if (activeSessionId && !sessions.some((session) => session.id === activeSessionId)) {
+    activeSessionId = null;
+  }
+  if (!activeSessionId && sessions.length > 0) {
+    activeSessionId = sessions[sessions.length - 1].id;
+    await ChatService.setActiveSessionId(bookId, activeSessionId);
+  } else if (!activeSessionId && createIfMissing) {
+    const session = await ChatService.createSession(bookId);
+    sessions = [...sessions, session];
+    activeSessionId = session.id;
+  }
+  return { sessions, activeSessionId };
 }
 
 async function persistSessionCreation(bookId: string, title?: string) {
-  return AppRuntime.runPromise(
-    ChatService.pipe(Effect.andThen((service) => service.createSession(bookId, title))),
-  );
+  return ChatService.createSession(bookId, title);
 }
 
 async function persistSessionSelection(bookId: string, sessionId: string) {
-  return AppRuntime.runPromise(
-    Effect.gen(function* () {
-      const service = yield* ChatService;
-      const session = yield* service.getSession(sessionId, bookId);
-      if (!session) return yield* Effect.fail(new Error(`Chat session ${sessionId} was not found`));
-      yield* service.setActiveSessionId(bookId, sessionId);
-      return session;
-    }),
-  );
+  const session = await ChatService.getSession(sessionId, bookId);
+  if (!session) throw new Error(`Chat session ${sessionId} was not found`);
+  await ChatService.setActiveSessionId(bookId, sessionId);
+  return session;
 }
 
 async function persistSessionDeletion(bookId: string, sessionId: string) {
-  return AppRuntime.runPromise(
-    Effect.gen(function* () {
-      const service = yield* ChatService;
-      yield* service.deleteSession(sessionId, bookId);
-      return yield* service.getActiveSessionId(bookId);
-    }),
-  );
+  await ChatService.deleteSession(sessionId, bookId);
+  return ChatService.getActiveSessionId(bookId);
 }
 
 async function persistSessionTitle(bookId: string, sessionId: string, title: string) {
-  return AppRuntime.runPromise(
-    Effect.gen(function* () {
-      const service = yield* ChatService;
-      yield* service.updateSessionTitle(sessionId, bookId, title);
-      const session = yield* service.getSession(sessionId, bookId);
-      if (!session) return yield* Effect.fail(new Error(`Chat session ${sessionId} was not found`));
-      return session;
-    }),
-  );
+  await ChatService.updateSessionTitle(sessionId, bookId, title);
+  const session = await ChatService.getSession(sessionId, bookId);
+  if (!session) throw new Error(`Chat session ${sessionId} was not found`);
+  return session;
 }
 
 async function generateSessionTitle(
@@ -101,11 +77,7 @@ async function generateSessionTitle(
 }
 
 async function persistMessageCache(bookId: string, sessionId: string, messages: ChatMessage[]) {
-  await AppRuntime.runPromise(
-    ChatService.pipe(
-      Effect.andThen((service) => service.cacheServerMessages(bookId, sessionId, messages)),
-    ),
-  );
+  await ChatService.cacheServerMessages(bookId, sessionId, messages);
   return messages;
 }
 

@@ -1,11 +1,9 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
-import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
 import { HighlightPopover } from "~/components/highlight-popover";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { useAppStore } from "~/lib/themis/provider";
 import type { DockviewPanelApi } from "dockview-react";
 import { useIsMobile } from "~/hooks/use-mobile";
@@ -301,17 +299,11 @@ function WorkspacePdfReaderInner({
   }, [selectionPopover, dismissPopovers]);
 
   const handleDownload = useCallback(() => {
-    AppRuntime.runPromise(
-      BookService.pipe(
-        Effect.andThen((s) => s.getBookData(book.id)),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to download book:", error);
-            return null as ArrayBuffer | null;
-          }),
-        ),
-      ),
-    )
+    BookService.getBookData(book.id)
+      .catch((error: unknown) => {
+        console.error("Failed to download book:", error);
+        return null;
+      })
       .then((data) => {
         if (!data) return;
         const format = book.format ?? "pdf";

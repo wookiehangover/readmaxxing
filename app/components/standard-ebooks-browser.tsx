@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Effect } from "effect";
 import { Globe, Loader2, Plus, Check } from "lucide-react";
 import { StandardEbooksToolbar } from "~/components/standard-ebooks-toolbar";
 import { Button } from "~/components/ui/button";
@@ -9,8 +8,6 @@ import { LibraryHeaderControls } from "~/components/workspace/library-frame";
 import { useSettings } from "~/lib/settings";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
 import type { BookMeta } from "~/lib/stores/book-store";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { useEffectQuery } from "~/hooks/use-effect-query";
 import { uploadBooksRequested } from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
 
@@ -28,6 +25,11 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
   const [downloadingUrls, setDownloadingUrls] = useState<Set<string>>(new Set());
   const [addedUrls, setAddedUrls] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [searchResult, setSearchResult] = useState<Awaited<
+    ReturnType<typeof StandardEbooksService.searchBooks>
+  > | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -50,15 +52,24 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
   }, [query]);
 
   // Search books or load popular books (empty query = popular)
-  const {
-    data: searchResult,
-    error: loadError,
-    isLoading,
-  } = useEffectQuery(
-    () =>
-      StandardEbooksService.pipe(Effect.andThen((s) => s.searchBooks(debouncedQuery, searchPage))),
-    [debouncedQuery, searchPage],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    setLoadError(false);
+    StandardEbooksService.searchBooks(debouncedQuery, searchPage)
+      .then((result) => {
+        if (!cancelled) setSearchResult(result);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQuery, searchPage]);
 
   useEffect(() => {
     setBooks([]);
@@ -81,7 +92,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
   const isInitialLoading = isLoading && books.length === 0;
   const isLoadingMore = isLoading && books.length > 0;
   const hasMore =
-    searchResult !== undefined &&
+    searchResult !== null &&
     searchResult.currentPage === searchPage &&
     searchResult.currentPage < searchResult.totalPages;
 
@@ -109,11 +120,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
       setError(null);
 
       try {
-        const arrayBuffer = await AppRuntime.runPromise(
-          StandardEbooksService.pipe(
-            Effect.andThen((service) => service.downloadEpub(seBook.urlPath)),
-          ),
-        );
+        const arrayBuffer = await StandardEbooksService.downloadEpub(seBook.urlPath);
         const finishDownload = () => {
           setDownloadingUrls((prev) => {
             const next = new Set(prev);

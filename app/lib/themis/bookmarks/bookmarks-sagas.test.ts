@@ -4,7 +4,13 @@ import type { Bookmark } from "~/lib/stores/bookmark-store";
 
 const mocks = vi.hoisted(() => ({ runPromise: vi.fn() }));
 
-vi.mock("~/lib/effect-runtime", () => ({ AppRuntime: { runPromise: mocks.runPromise } }));
+vi.mock("~/lib/stores/bookmark-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/stores/bookmark-store")>();
+  return {
+    ...actual,
+    BookmarkService: new Proxy(actual.BookmarkService, { get: () => mocks.runPromise }),
+  };
+});
 
 import { bookmarksSaga } from "~/lib/themis/bookmarks/bookmarks-sagas";
 import {
@@ -41,7 +47,7 @@ afterEach(() => {
 });
 
 describe("bookmarksSaga", () => {
-  it("hydrates bookmarks through AppRuntime", async () => {
+  it("hydrates bookmarks from persistence", async () => {
     const bookmark = makeBookmark();
     mocks.runPromise.mockResolvedValueOnce([bookmark]);
     const store = startStore();
