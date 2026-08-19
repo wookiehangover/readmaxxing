@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Info, MoreHorizontal } from "lucide-react";
+import { Info, LogOut, MoreHorizontal } from "lucide-react";
 import { Link } from "react-router";
 import type { Route } from "./+types/settings";
 import { AppNavigation } from "~/components/app-navigation";
@@ -8,7 +8,6 @@ import { AppearanceSection } from "~/components/settings/appearance-section";
 import { BugReportsSection } from "~/components/settings/bug-reports-section";
 import { DataSection } from "~/components/settings/data-section";
 import { ReadingSection } from "~/components/settings/reading-section";
-import { SettingsFooter } from "~/components/settings/settings-footer";
 import { UpdatesSection } from "~/components/settings/updates-section";
 import { Button } from "~/components/ui/button";
 import {
@@ -18,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { useAuth } from "~/lib/context/auth-context";
 import { cn } from "~/lib/utils";
 
 export function meta(_args: Route.MetaArgs) {
@@ -67,6 +67,7 @@ function renderSection(section: SettingsSectionId) {
 }
 
 export default function SettingsPage() {
+  const { isAuthenticated, isLoading: isAuthLoading, logout } = useAuth();
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("appearance");
   const activeSectionLabel =
     sections.find((item) => item.id === activeSection)?.label ?? "Settings";
@@ -76,6 +77,11 @@ export default function SettingsPage() {
       <header className="flex shrink-0 py-5">
         <div className="min-w-0 flex-1" />
         <AppNavigation>
+          {!isAuthLoading && !isAuthenticated ? (
+            <Button variant="outline" size="xs" render={<Link to="/login" />} nativeButton={false}>
+              Login
+            </Button>
+          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger
               render={<Button variant="ghost" size="icon" title="More settings actions" />}
@@ -89,6 +95,12 @@ export default function SettingsPage() {
                   <Info />
                   About
                 </DropdownMenuItem>
+                {!isAuthLoading && isAuthenticated ? (
+                  <DropdownMenuItem onClick={() => void logout()}>
+                    <LogOut />
+                    Logout
+                  </DropdownMenuItem>
+                ) : null}
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -115,8 +127,6 @@ export default function SettingsPage() {
               </button>
             ))}
           </nav>
-
-          <SettingsFooter />
         </aside>
 
         <main

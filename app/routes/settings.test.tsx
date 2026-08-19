@@ -1,7 +1,15 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  auth: {
+    isAuthenticated: false as boolean,
+    isLoading: false,
+    logout: vi.fn(),
+  },
+}));
 
 vi.mock("~/components/settings/account-section", () => ({
   AccountSection: () => <div data-testid="account-section">Account content</div>,
@@ -22,7 +30,7 @@ vi.mock("~/components/settings/updates-section", () => ({
   UpdatesSection: () => <div data-testid="updates-section">Updates content</div>,
 }));
 vi.mock("~/lib/context/auth-context", () => ({
-  useAuth: () => ({ isAuthenticated: false, logout: vi.fn() }),
+  useAuth: () => mocks.auth,
 }));
 vi.mock("~/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
@@ -31,10 +39,17 @@ vi.mock("~/components/ui/dropdown-menu", () => ({
   DropdownMenuItem: ({
     children,
     render,
-  }: React.PropsWithChildren<{
+    ...props
+  }: React.ComponentProps<"button"> & {
     render?: React.ReactElement<{ children?: React.ReactNode }>;
-  }>) =>
-    render ? React.cloneElement(render, {}, children) : <button type="button">{children}</button>,
+  }) =>
+    render ? (
+      React.cloneElement(render, {}, children)
+    ) : (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
   DropdownMenuTrigger: ({
     children,
     render,
@@ -70,6 +85,12 @@ function renderSettings() {
   return container;
 }
 
+beforeEach(() => {
+  mocks.auth.isAuthenticated = false;
+  mocks.auth.isLoading = false;
+  mocks.auth.logout.mockReset();
+});
+
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
@@ -91,19 +112,43 @@ describe("SettingsPage", () => {
     expect((nav as HTMLElement).style.width).toBe("384px");
   });
 
-  it("shows About in the settings overflow while keeping Login in the footer", () => {
+  it("shows a header Login button and keeps About in the overflow when logged out", () => {
     const container = renderSettings();
     const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
     const overflow = nav.querySelector<HTMLButtonElement>('button[title="More settings actions"]');
     const aboutLink = nav.querySelector<HTMLAnchorElement>('a[href="/about"]');
-    const footer = container.querySelector("footer")!;
+    const loginLink = nav.querySelector<HTMLAnchorElement>('a[href="/login"]');
 
     expect(overflow?.dataset.slot).toBe("button");
     expect(overflow?.querySelector("svg")).not.toBeNull();
     expect(aboutLink?.textContent).toContain("About");
     expect(aboutLink?.querySelector("svg.lucide-info")).not.toBeNull();
-    expect(footer.querySelector('a[href="/about"]')).toBeNull();
-    expect(footer.querySelector('a[href="/login"]')?.textContent).toBe("Login");
+    expect(loginLink?.dataset.slot).toBe("button");
+    expect(loginLink?.className).toContain("border-border");
+    expect(nav.children[1]).toBe(loginLink);
+    expect(aboutLink?.parentElement?.querySelector('a[href="/login"]')).toBeNull();
+    expect(container.querySelector("footer")).toBeNull();
+  });
+
+  it("shows About above Logout in the overflow when logged in", () => {
+    mocks.auth.isAuthenticated = true;
+    const container = renderSettings();
+    const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
+    const aboutLink = nav.querySelector<HTMLAnchorElement>('a[href="/about"]')!;
+    const menuGroup = aboutLink.parentElement!;
+    const logoutButton = Array.from(menuGroup.querySelectorAll("button")).find(
+      (button) => button.textContent === "Logout",
+    );
+
+    expect(nav.querySelector('a[href="/login"]')).toBeNull();
+    expect(Array.from(menuGroup.children).map((item) => item.textContent)).toEqual([
+      "About",
+      "Logout",
+    ]);
+    expect(container.querySelector("footer")).toBeNull();
+
+    act(() => logoutButton?.click());
+    expect(mocks.auth.logout).toHaveBeenCalledOnce();
   });
 
   it("shows Appearance by default and lists sections in the approved order", () => {
