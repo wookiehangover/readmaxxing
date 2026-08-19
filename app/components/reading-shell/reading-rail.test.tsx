@@ -109,22 +109,57 @@ afterEach(() => {
 describe("ReadingRail", () => {
   it("mirrors the desktop rail in the mobile bottom row", () => {
     const container = renderMobileRail();
+    const rail = container.firstElementChild!;
     const tabList = container.querySelector("[aria-label='Reading sections']")!;
     const tabs = Array.from(tabList.querySelectorAll("button"));
     const bottomRow = tabList.parentElement!;
+    const indicator = tabList.querySelector("[role='presentation']");
 
     expect(tabs.map((tab) => tab.textContent)).toEqual(["Read", "Notes", "Discuss", "Outline"]);
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(rail.className).toContain("h-full");
+    expect(rail.lastElementChild).toBe(bottomRow);
     expect(tabList.className).toContain("gap-5");
     expect(tabList.className).not.toContain("grid");
     expect(bottomRow.className).not.toContain("border-t");
     expect(bottomRow.querySelector("#reading-rail-menu")).not.toBeNull();
-    expect(tabList.querySelector("[role='presentation']")?.className).toContain(
-      "left-[var(--active-tab-left)]",
-    );
+    expect(indicator?.className).toContain("left-[var(--active-tab-left)]");
+    expect(indicator?.className).toContain("h-px");
+    expect(indicator?.className).toContain("w-3");
+    expect(indicator?.className).toContain("transition-[left]");
   });
 
-  it("keeps the book mounted and opens reader actions in the matching mobile tab", async () => {
+  it("switches Read, Notes, Discuss, and Outline while keeping the book mounted", () => {
+    const container = renderMobileRail();
+    const bookSurface = container.querySelector("[data-testid='book-surface']");
+    const panelByTab = {
+      Notes: "notes-panel",
+      Discuss: "chat-panel",
+      Outline: "outline-panel",
+    } as const;
+
+    expect(bookSurface).not.toBeNull();
+    for (const tab of ["Notes", "Discuss", "Outline"] as const) {
+      clickTab(container, tab);
+      expect(
+        Array.from(container.querySelectorAll("button"))
+          .find((candidate) => candidate.textContent === tab)
+          ?.getAttribute("aria-selected"),
+      ).toBe("true");
+      expect(container.querySelector(`[data-testid='${panelByTab[tab]}']`)).not.toBeNull();
+      expect(container.querySelector("[data-testid='book-surface']")).toBe(bookSurface);
+    }
+
+    clickTab(container, "Read");
+    expect(
+      Array.from(container.querySelectorAll("button"))
+        .find((tab) => tab.textContent === "Read")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(container.querySelector("[data-testid='book-surface']")).toBe(bookSurface);
+  });
+
+  it("opens reader actions in the matching mobile tab", async () => {
     const container = renderMobileRail();
 
     openMobileReadingTab("Discuss");
@@ -135,7 +170,6 @@ describe("ReadingRail", () => {
         .find((tab) => tab.textContent === "Discuss")
         ?.getAttribute("aria-selected"),
     ).toBe("true");
-    expect(container.querySelector("[data-testid='book-surface']")).not.toBeNull();
   });
 
   it("keeps mobile tool panels and scroll viewports flush with the screen edge", () => {
