@@ -101,7 +101,9 @@ describe("SettingsPage", () => {
   it("renders the shared app navigation with Settings active", () => {
     const container = renderSettings();
     const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
-    const links = Array.from(nav.firstElementChild?.querySelectorAll("a") ?? []);
+    const links = Array.from(
+      nav.firstElementChild?.querySelectorAll('a:not([href="/login"])') ?? [],
+    );
 
     expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
       ["Library", "/library"],
@@ -126,7 +128,9 @@ describe("SettingsPage", () => {
     expect(aboutLink?.querySelector("svg.lucide-info")).not.toBeNull();
     expect(loginLink?.dataset.slot).toBe("button");
     expect(loginLink?.className).toContain("border-border");
-    expect(nav.children[1]).toBe(loginLink);
+    expect(loginLink?.className).toContain("translate-y-px");
+    expect(nav.firstElementChild?.lastElementChild).toBe(loginLink);
+    expect(nav.children[1]?.contains(overflow)).toBe(true);
     expect(aboutLink?.parentElement?.querySelector('a[href="/login"]')).toBeNull();
     expect(container.querySelector("footer")).toBeNull();
   });

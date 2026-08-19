@@ -36,18 +36,18 @@ export function AppNavigation({ children }: { readonly children?: ReactNode }) {
             {item.label}
           </NavLink>
         ))}
+        {!isAuthenticated ? (
+          <Button
+            variant="outline"
+            size="xs"
+            className={cn({ "translate-y-px": true })}
+            render={<Link to="/login" />}
+            nativeButton={false}
+          >
+            Login
+          </Button>
+        ) : null}
       </div>
-      {!isAuthenticated ? (
-        <Button
-          variant="outline"
-          size="xs"
-          className={cn({ "mr-2 translate-y-px": true })}
-          render={<Link to="/login" />}
-          nativeButton={false}
-        >
-          Login
-        </Button>
-      ) : null}
       {children}
     </nav>
   );

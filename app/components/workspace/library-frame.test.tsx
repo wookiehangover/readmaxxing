@@ -105,8 +105,10 @@ describe("LibraryFrame", () => {
     if (storedWidth) window.sessionStorage.setItem("reading-rail-width", storedWidth);
     const { container } = renderFrame("/library");
     const nav = container.querySelector<HTMLElement>('nav[aria-label="Library navigation"]')!;
-    const links = Array.from(nav.firstElementChild?.querySelectorAll("a") ?? []);
-    const linkGroup = links[0]!.parentElement!;
+    const links = Array.from(
+      nav.firstElementChild?.querySelectorAll('a:not([href="/login"])') ?? [],
+    );
+    const linkGroup = nav.firstElementChild!;
 
     expect(nav.style.width).toBe(expectedWidth);
     expect(nav.className).toContain("px-6");
@@ -141,12 +143,15 @@ describe("LibraryFrame", () => {
   ])("renders the slim shared navigation on %s", (pathname, activeHref) => {
     const { container } = renderFrame(pathname);
     const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
-    const links = Array.from(nav.firstElementChild?.querySelectorAll("a") ?? []);
+    const links = Array.from(
+      nav.firstElementChild?.querySelectorAll('a:not([href="/login"])') ?? [],
+    );
     const loginLink = nav.querySelector<HTMLAnchorElement>('a[href="/login"]');
 
     expect(links.map((link) => link.textContent)).toEqual(["Library", "Free ebooks", "Settings"]);
     expect(loginLink?.dataset.slot).toBe("button");
     expect(loginLink?.className).toContain("border-border");
+    expect(nav.firstElementChild?.lastElementChild).toBe(loginLink);
     const activeLink = nav.querySelector<HTMLAnchorElement>(`a[href="${activeHref}"]`)!;
     expect(activeLink.getAttribute("aria-current")).toBe("page");
     expect(activeLink.className).toContain("after:w-[15px]");
