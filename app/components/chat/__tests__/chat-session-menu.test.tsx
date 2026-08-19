@@ -1,10 +1,18 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ChatSession } from "~/lib/stores/chat-store";
 
-const runPromise = vi.hoisted(() => vi.fn());
+const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), sessions: [] as ChatSession[] }));
 
-vi.mock("~/lib/effect-runtime", () => ({ AppRuntime: { runPromise } }));
+vi.mock("~/lib/themis/provider", () => ({
+  useAppStore: () => ({
+    dispatch: mocks.dispatch,
+    chatSessionsSelectors: {
+      selectRecentSessionsByBook: { useValue: () => mocks.sessions },
+    },
+  }),
+}));
 vi.mock("~/components/ui/dropdown-menu", () => ({
   DropdownMenuGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DropdownMenuItem: ({ children, onClick, disabled }: React.ComponentProps<"button">) => (
@@ -23,21 +31,14 @@ let root: Root | null = null;
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
-  runPromise.mockReset();
+  mocks.dispatch.mockReset();
+  mocks.sessions = [];
   document.body.innerHTML = "";
 });
 
 describe("ChatRecentSessionsMenu", () => {
   it("sorts recent sessions and switches conversations", async () => {
-    runPromise.mockResolvedValue([
-      {
-        id: "session-1",
-        bookId: "book-1",
-        title: "Older chat",
-        messages: [],
-        createdAt: 1,
-        updatedAt: 1,
-      },
+    mocks.sessions = [
       {
         id: "session-2",
         bookId: "book-1",
@@ -46,7 +47,15 @@ describe("ChatRecentSessionsMenu", () => {
         createdAt: 2,
         updatedAt: 2,
       },
-    ]);
+      {
+        id: "session-1",
+        bookId: "book-1",
+        title: "Older chat",
+        messages: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
     const onSwitchSession = vi.fn();
     const container = document.body.appendChild(document.createElement("div"));
     root = createRoot(container);

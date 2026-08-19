@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
-import { Effect } from "effect";
+import { useCallback } from "react";
 import { Check, Trash2 } from "lucide-react";
 import { DropdownMenuGroup, DropdownMenuItem } from "~/components/ui/dropdown-menu";
-import { ChatService, type ChatSession } from "~/lib/stores/chat-store";
-import { AppRuntime } from "~/lib/effect-runtime";
+import { deleteChatSessionRequested } from "~/lib/themis/chat-sessions/chat-sessions-slice";
+import { useAppStore } from "~/lib/themis/provider";
 
 function formatRelativeTime(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -31,40 +30,24 @@ export function ChatRecentSessionsMenu({
   onSwitchSession,
   onNewSession,
 }: ChatRecentSessionsMenuProps) {
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-
-  const loadSessions = useCallback(() => {
-    AppRuntime.runPromise(ChatService.pipe(Effect.andThen((s) => s.getSessionsByBook(bookId))))
-      .then((result) => {
-        const sorted = [...result].sort((a, b) => b.updatedAt - a.updatedAt);
-        setSessions(sorted);
-      })
-      .catch(console.error);
-  }, [bookId]);
-
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+  const store = useAppStore();
+  const sessions = store.chatSessionsSelectors.selectRecentSessionsByBook.useValue(bookId);
 
   const handleDelete = useCallback(
     (event: React.MouseEvent, sessionId: string) => {
       event.stopPropagation();
-      AppRuntime.runPromise(
-        ChatService.pipe(Effect.andThen((service) => service.deleteSession(sessionId, bookId))),
-      )
-        .then(() => {
-          loadSessions();
-          if (sessionId !== activeSessionId) return;
-          return AppRuntime.runPromise(
-            ChatService.pipe(Effect.andThen((service) => service.getActiveSessionId(bookId))),
-          ).then((nextActiveId) => {
-            if (nextActiveId) onSwitchSession(nextActiveId);
-            else onNewSession();
-          });
-        })
-        .catch(console.error);
+      store.dispatch(
+        deleteChatSessionRequested(
+          bookId,
+          sessionId,
+          (nextActiveId) => {
+            if (sessionId === activeSessionId && !nextActiveId) onNewSession();
+          },
+          (error) => console.error("Failed to delete chat session:", error),
+        ),
+      );
     },
-    [activeSessionId, bookId, loadSessions, onNewSession, onSwitchSession],
+    [activeSessionId, bookId, onNewSession, store],
   );
 
   return (

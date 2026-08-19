@@ -9,6 +9,9 @@ import type { BookmarksState } from "~/lib/themis/bookmarks/bookmarks-types";
 import type { BooksState } from "~/lib/themis/books/books-slice";
 import { createBooksSelectors } from "~/lib/themis/books/books-selectors";
 import { booksReducer } from "~/lib/themis/books/books-slice";
+import { createChatSessionsSelectors } from "~/lib/themis/chat-sessions/chat-sessions-selectors";
+import { chatSessionsReducer } from "~/lib/themis/chat-sessions/chat-sessions-slice";
+import type { ChatSessionsState } from "~/lib/themis/chat-sessions/chat-sessions-types";
 import { createReadingPositionsSelectors } from "~/lib/themis/reading-positions/reading-positions-selectors";
 import { readingPositionsReducer } from "~/lib/themis/reading-positions/reading-positions-slice";
 import type { ReadingPositionsState } from "~/lib/themis/reading-positions/reading-positions-types";
@@ -21,6 +24,7 @@ export type AppStoreCore = ReactStore<
     annotations: AnnotationsState;
     bookmarks: BookmarksState;
     books: BooksState;
+    chatSessions: ChatSessionsState;
     readingPositions: ReadingPositionsState;
     workspaceRestore: WorkspaceRestoreState;
   },
@@ -28,6 +32,7 @@ export type AppStoreCore = ReactStore<
     annotations: typeof annotationsReducer;
     bookmarks: typeof bookmarksReducer;
     books: typeof booksReducer;
+    chatSessions: typeof chatSessionsReducer;
     readingPositions: typeof readingPositionsReducer;
     workspaceRestore: typeof workspaceRestoreReducer;
   }
@@ -38,6 +43,7 @@ export function createAppStore() {
     annotations: annotationsReducer,
     bookmarks: bookmarksReducer,
     books: booksReducer,
+    chatSessions: chatSessionsReducer,
     readingPositions: readingPositionsReducer,
     workspaceRestore: workspaceRestoreReducer,
   });
@@ -45,6 +51,7 @@ export function createAppStore() {
     annotationsSelectors: createAnnotationsSelectors(store),
     bookmarksSelectors: createBookmarksSelectors(store),
     booksSelectors: createBooksSelectors(store),
+    chatSessionsSelectors: createChatSessionsSelectors(store),
     readingPositionsSelectors: createReadingPositionsSelectors(store),
     workspaceRestoreSelectors: createWorkspaceRestoreSelectors(store),
   });
