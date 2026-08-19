@@ -1,12 +1,26 @@
-import { describe, expect, it, vi } from "vitest";
+import { act, createElement, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 
-const mocks = vi.hoisted(() => ({ runPromise: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  runPromise: vi.fn(),
+  restoreLoading: true,
+  focusedWorkspace: null as FocusedWorkspaceState | null,
+}));
 
 vi.mock("~/lib/effect-runtime", () => ({
   AppRuntime: { runPromise: mocks.runPromise },
 }));
+vi.mock("~/lib/themis/provider", () => ({
+  useAppStore: () => ({
+    workspaceRestoreSelectors: {
+      selectWorkspaceRestoreLoading: { useValue: () => mocks.restoreLoading },
+    },
+  }),
+}));
 
-import { clientLoader, createInitialFocusedState } from "~/routes/app-frame";
+import { clientLoader, createInitialFocusedState, WorkspaceRestoreGate } from "~/routes/app-frame";
 
 const books = [
   {
@@ -17,6 +31,12 @@ const books = [
     format: "epub" as const,
   },
 ];
+
+beforeEach(() => {
+  mocks.restoreLoading = true;
+  mocks.focusedWorkspace = null;
+  mocks.runPromise.mockReset();
+});
 
 describe("app-frame workspace restore", () => {
   it("keeps the client loader focused on its book-only boundary", async () => {
@@ -54,5 +74,50 @@ describe("app-frame workspace restore", () => {
       bookTitle: "Current title",
       activeTab: "chat",
     });
+  });
+
+  it("mounts the one-time focused initializer only after hydration", () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(container);
+    let initializerCalls = 0;
+
+    function SnapshotProbe() {
+      const [snapshot] = useState(() => {
+        initializerCalls += 1;
+        return mocks.focusedWorkspace;
+      });
+      return createElement("div", {
+        "data-active-book-id": snapshot?.activeBookId ?? "none",
+      });
+    }
+
+    const renderGate = () =>
+      createElement(WorkspaceRestoreGate, null, createElement(SnapshotProbe));
+
+    act(() => root.render(renderGate()));
+    expect(container.textContent).toContain("Loading workspace");
+    expect(initializerCalls).toBe(0);
+
+    mocks.focusedWorkspace = {
+      order: ["book-1"],
+      activeBookId: "book-1",
+      clusters: [],
+    };
+    mocks.restoreLoading = false;
+    act(() => root.render(renderGate()));
+    expect(container.firstElementChild?.getAttribute("data-active-book-id")).toBe("book-1");
+    expect(initializerCalls).toBe(1);
+
+    mocks.focusedWorkspace = {
+      order: ["book-2"],
+      activeBookId: "book-2",
+      clusters: [],
+    };
+    act(() => root.render(renderGate()));
+    expect(container.firstElementChild?.getAttribute("data-active-book-id")).toBe("book-1");
+    expect(initializerCalls).toBe(1);
+
+    act(() => root.unmount());
+    container.remove();
   });
 });

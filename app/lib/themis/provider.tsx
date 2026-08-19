@@ -10,6 +10,7 @@ const AppStoreContext = createContext<AppStore | null>(null);
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [store] = useState(() => (typeof window === "undefined" ? null : createAppStore()));
+  const [storeStarted, setStoreStarted] = useState(false);
 
   // React Router currently owns this client-only lifecycle here; moving init before render is a separate migration.
   // eslint-disable-next-line themis/react-component-lifecycle-boundary
@@ -20,6 +21,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     const cancelWorkspaceRestoreSaga = store.runSaga(workspaceRestoreSaga);
     store.dispatch(hydrateBooks());
     store.dispatch(hydrateWorkspaceRestore());
+    setStoreStarted(true);
 
     return () => {
       cancelWorkspaceRestoreSaga();
@@ -28,7 +30,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [store]);
 
-  return <AppStoreContext.Provider value={store}>{children}</AppStoreContext.Provider>;
+  return (
+    <AppStoreContext.Provider value={store}>
+      {storeStarted ? children : null}
+    </AppStoreContext.Provider>
+  );
 }
 
 export function useAppStore() {

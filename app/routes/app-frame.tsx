@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from "react";
 import type { DockviewApi } from "dockview-react";
 import { Effect } from "effect";
 import { Outlet, useLocation, useNavigate } from "react-router";
@@ -92,7 +92,21 @@ export function HydrateFallback() {
   return <WorkspaceLoadingOverlay />;
 }
 
-export default function AppFrame(_props: Route.ComponentProps) {
+export function WorkspaceRestoreGate({ children }: PropsWithChildren) {
+  const store = useAppStore();
+  const loading = store.workspaceRestoreSelectors.selectWorkspaceRestoreLoading.useValue();
+  return loading ? <WorkspaceLoadingOverlay /> : children;
+}
+
+export default function AppFrame() {
+  return (
+    <WorkspaceRestoreGate>
+      <AppFrameContent />
+    </WorkspaceRestoreGate>
+  );
+}
+
+function AppFrameContent() {
   const ws = useWorkspace();
   const store = useAppStore();
   const books = store.booksSelectors.selectAllBooks.useValue();
