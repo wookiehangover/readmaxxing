@@ -124,15 +124,17 @@ describe("SettingsPage", () => {
     expect(buttons[0]?.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("places the plain section rail before the main content without the boxed sidebar", () => {
+  it("places the content-width section rail before centered main content", () => {
     const container = renderSettings();
     const layout = container.querySelector('[data-slot="settings-layout"]')!;
     const main = container.querySelector('[data-slot="settings-main"]')!;
     const rail = container.querySelector<HTMLElement>('[data-slot="settings-rail"]')!;
+    const content = main.firstElementChild as HTMLElement;
 
     expect(Array.from(layout.children)).toEqual([rail, main]);
     expect(rail.style.width).toBe("");
     expect(rail.className).toContain("md:w-fit");
+    expect(content.className).toContain("mx-auto");
     expect(rail.className).not.toContain("bg-sidebar");
     expect(container.querySelector("aside.bg-sidebar")).toBeNull();
     expect(container.textContent).not.toContain("Home");
