@@ -13,6 +13,7 @@ export function createBooksSelectors(store: BooksStore) {
     ),
     selectBooksLoading: store.createSelector((state) => state.books.loading),
     selectBooksError: store.createSelector((state) => state.books.error),
+    selectSeededDemoBookId: store.createSelector((state) => state.books.seededDemoBookId),
     selectDownloadingBookIds: store.createSelector((state) => state.books.downloadingBookIds),
     selectBookDownloadError: store.createSelector(
       (state, bookId: string) => state.books.downloadErrors[bookId] ?? null,

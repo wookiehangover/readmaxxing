@@ -169,7 +169,7 @@ async function remapSavedWorkspace(bookId: string): Promise<void> {
   );
 }
 
-export async function adoptDemoContent(userId: string): Promise<AdoptedDemo> {
+export async function persistAdoptedDemoContent(userId: string): Promise<AdoptedDemo> {
   const original = await readSnapshot(DEMO_BOOK_ID);
   // Demo IDs are fixed and database primary keys are global, so both entities
   // must receive account-specific IDs before their first server push.

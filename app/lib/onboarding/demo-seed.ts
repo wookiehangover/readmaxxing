@@ -1,13 +1,9 @@
 import { get, set } from "idb-keyval";
 import { Effect } from "effect";
 import { AuthService } from "~/lib/auth-service";
-import { computeFileHash } from "~/lib/book-hash";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { ChatError, StorageError } from "~/lib/errors";
-import { parseEpubEffect } from "~/lib/epub/epub-service";
 import {
-  DEMO_BOOK_ID,
-  DEMO_BOOK_METADATA,
   DEMO_CHAT_SESSION,
   DEMO_EPUB_PATH,
   DEMO_NOTEBOOK_CONTENT,
@@ -43,7 +39,7 @@ export async function isFirstVisit(): Promise<boolean> {
   return AppRuntime.runPromise(check);
 }
 
-function fetchDemoEpub() {
+export function fetchDemoEpubEffect() {
   return Effect.tryPromise({
     try: async () => {
       const response = await fetch(DEMO_EPUB_PATH);
@@ -76,28 +72,8 @@ function saveDemoChat(bookId: string) {
   });
 }
 
-export async function seedDemo(): Promise<BookMeta | null> {
-  if (typeof window === "undefined") return null;
-
-  const program = Effect.gen(function* () {
-    const data = yield* fetchDemoEpub();
-    const fileHash = yield* Effect.promise(() => computeFileHash(data));
-    const books = yield* BookService;
-    let book = yield* books.findByFileHash(fileHash);
-
-    if (!book) {
-      const parsed = yield* parseEpubEffect(data);
-      book = {
-        ...DEMO_BOOK_METADATA,
-        id: DEMO_BOOK_ID,
-        coverImage: parsed.coverImage,
-        fileHash,
-      };
-      // BookService and saveNotebook always record changes. That is safe here because
-      // sync only runs while authenticated; the position and chat writes avoid them.
-      yield* books.saveBook(book, data);
-    }
-
+export function provisionDemoContentEffect(book: BookMeta) {
+  return Effect.gen(function* () {
     const positions = yield* ReadingPositionService;
     if ((yield* positions.getPosition(book.id)) === null) {
       yield* positions.savePosition(book.id, DEMO_POSITION_CFI, { recordChange: false });
@@ -117,8 +93,8 @@ export async function seedDemo(): Promise<BookMeta | null> {
     yield* Effect.all([workspace.clearLayout(), workspace.clearFocusedState()]);
     return book;
   });
+}
 
-  const book = await AppRuntime.runPromise(program);
+export function completeDemoOnboarding(): void {
   window.localStorage.setItem(ONBOARDING_FLAG, "complete");
-  return book;
 }

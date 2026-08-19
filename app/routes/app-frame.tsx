@@ -23,7 +23,6 @@ import {
 import { useWorkspaceShortcuts } from "~/hooks/use-workspace-shortcuts";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
-import { isFirstVisit, seedDemo } from "~/lib/onboarding/demo-seed";
 import { activateReadingRoute, getBookReadingPath, getReadingBookId } from "~/lib/reading-route";
 import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
@@ -73,7 +72,6 @@ export function meta(_args: Route.MetaArgs) {
 }
 
 export async function clientLoader() {
-  const demoBook = (await isFirstVisit()) ? await seedDemo() : null;
   const [books, focusedState] = await Promise.all([
     AppRuntime.runPromise(BookService.pipe(Effect.andThen((service) => service.getBooks()))),
     AppRuntime.runPromise(
@@ -83,7 +81,7 @@ export async function clientLoader() {
       ),
     ),
   ]);
-  return { books, focusedState, demoBook };
+  return { books, focusedState };
 }
 
 clientLoader.hydrate = true as const;
@@ -104,6 +102,8 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const ws = useWorkspace();
   const store = useAppStore();
   const books = store.booksSelectors.selectAllBooks.useValue();
+  const seededDemoBookId = store.booksSelectors.selectSeededDemoBookId.useValue();
+  const demoBook = store.booksSelectors.selectBookById.useValue(seededDemoBookId ?? "") ?? null;
   const location = useLocation();
   const navigate = useNavigate();
   const readingBookId = getReadingBookId(location.pathname);
@@ -232,7 +232,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   useWorkspaceShortcuts({ apiRef, collapsed, zenMode, updateSettings });
 
   const demoBootstrapReady = useDemoOnboarding({
-    demoBook: loaderData.demoBook,
+    demoBook,
     layoutReady: isWorkspaceRoute || layoutReady,
     sidebarCollapsed: collapsed,
     updateSettings,
@@ -240,7 +240,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     openChat,
     openNotebook,
   });
-  const workspaceReady = loaderData.demoBook ? demoBootstrapReady : isWorkspaceRoute || layoutReady;
+  const workspaceReady = demoBook ? demoBootstrapReady : isWorkspaceRoute || layoutReady;
   const frameReady = !isWorkspaceRoute || workspaceReady;
 
   const syncVersion = useSyncListener(["book"]);
@@ -299,7 +299,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
 
   return (
     <>
-      {loaderData.demoBook && isWorkspaceRoute && !workspaceReady && <WorkspaceLoadingOverlay />}
+      {demoBook && isWorkspaceRoute && !workspaceReady && <WorkspaceLoadingOverlay />}
       <DropZone onBookAdded={handleUploadedBookAdded}>
         <div
           className={cn("flex h-dvh", {

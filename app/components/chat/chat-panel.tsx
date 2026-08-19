@@ -9,11 +9,12 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
-import { adoptDemoContent } from "~/lib/onboarding/adopt-demo";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
 import { BookService } from "~/lib/stores/book-store";
 import { ChatService } from "~/lib/stores/chat-store";
 import { ensureBookChaptersUploaded } from "~/lib/sync/book-chapter-uploads";
+import { adoptDemoBookRequested } from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
 import { ChatPanelInner } from "./chat-panel-inner";
 import { resolvePendingChatMessage, type ChatIntent } from "./chat-intent";
 import { toUIMessages, uiMessagesToChatMessages } from "./chat-utils";
@@ -54,6 +55,7 @@ function messagesDiffer(current: UIMessage[], next: UIMessage[]): boolean {
 export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { pendingChatPromptMap } = useWorkspace();
+  const store = useAppStore();
   const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
   const [bookContext, setBookContext] = useState<{
     title: string;
@@ -343,32 +345,42 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       setResumeAfterAuth(false);
     }
   }, []);
-  const handleAuthenticated = useCallback(async (userId: string) => {
-    const typedText = textareaRef.current?.value.trim();
-    if (typedText) {
-      setPendingChatIntent((intent) =>
-        resolvePendingChatMessage(intent) ? intent : { type: "typed", text: typedText },
-      );
-    }
-    try {
-      const adopted = await adoptDemoContent(userId);
-      setAdoptedBookId(adopted.bookId);
-      setActiveSessionId(adopted.sessionId);
-      setAdoptionError(null);
-      setResumeAfterAuth(true);
-      setSessionKey((key) => key + 1);
-    } catch (error) {
-      console.error("Failed to adopt demo library:", error);
-      setAdoptionError(
-        "Your account is ready, but we couldn't finish setting up the demo library. Check your connection and reload to try again.",
-      );
-      setResumeAfterAuth(false);
-    } finally {
-      // Defer the close so the dialog's own async cleanup (setLoadingAction, etc.)
-      // commits before the dialog unmounts, avoiding a setState-on-unmounted warning.
-      queueMicrotask(() => setOnboardingOpen(false));
-    }
-  }, []);
+  const handleAuthenticated = useCallback(
+    (userId: string) => {
+      const typedText = textareaRef.current?.value.trim();
+      if (typedText) {
+        setPendingChatIntent((intent) =>
+          resolvePendingChatMessage(intent) ? intent : { type: "typed", text: typedText },
+        );
+      }
+      return new Promise<void>((resolve) => {
+        store.dispatch(
+          adoptDemoBookRequested(
+            userId,
+            (adopted) => {
+              setAdoptedBookId(adopted.bookId);
+              setActiveSessionId(adopted.sessionId);
+              setAdoptionError(null);
+              setResumeAfterAuth(true);
+              setSessionKey((key) => key + 1);
+              queueMicrotask(() => setOnboardingOpen(false));
+              resolve();
+            },
+            (error) => {
+              console.error("Failed to adopt demo library:", error);
+              setAdoptionError(
+                "Your account is ready, but we couldn't finish setting up the demo library. Check your connection and reload to try again.",
+              );
+              setResumeAfterAuth(false);
+              queueMicrotask(() => setOnboardingOpen(false));
+              resolve();
+            },
+          ),
+        );
+      });
+    },
+    [store],
+  );
   const handleResumeComplete = useCallback(() => {
     setPendingChatIntent({ type: "none" });
     setResumeAfterAuth(false);

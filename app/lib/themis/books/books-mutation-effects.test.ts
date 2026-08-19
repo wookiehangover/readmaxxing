@@ -29,20 +29,25 @@ function uploadLayer(options: {
       ? Effect.fail(new StorageError({ operation: "saveBook" }))
       : Effect.succeed(undefined),
   );
+  const updateBookMeta = vi.fn(() => Effect.succeed(undefined));
   const parseEpub = vi.fn(() =>
     options.parseFailure
       ? Effect.fail(new EpubParseError({ operation: "parseEpub" }))
       : Effect.succeed({ title: "Parsed", author: "Author", coverImage: null }),
   );
   const layer = Layer.mergeAll(
-    Layer.succeed(BookService, { findByFileHash, saveBook } as unknown as BookService["Type"]),
+    Layer.succeed(BookService, {
+      findByFileHash,
+      saveBook,
+      updateBookMeta,
+    } as unknown as BookService["Type"]),
     Layer.succeed(EpubService, { parseEpub }),
     Layer.succeed(PdfService, {
       parsePdf: () =>
         Effect.succeed({ title: "PDF", author: "Author", pageCount: 1, coverImage: null }),
     }),
   );
-  return { findByFileHash, saveBook, parseEpub, layer };
+  return { findByFileHash, saveBook, updateBookMeta, parseEpub, layer };
 }
 
 describe("book mutation effects", () => {
@@ -77,6 +82,32 @@ describe("book mutation effects", () => {
     );
 
     expect(book).toBe(existing);
+    expect(parseEpub).not.toHaveBeenCalled();
+    expect(saveBook).not.toHaveBeenCalled();
+  });
+
+  it("patches duplicate metadata for a shared import without parsing or saving", async () => {
+    const existing: BookMeta = {
+      id: "existing",
+      title: "Existing",
+      author: "Author",
+      coverImage: null,
+      format: "epub",
+      fileHash: "same-hash",
+    };
+    const { saveBook, updateBookMeta, parseEpub, layer } = uploadLayer({ existing });
+
+    const book = await Effect.runPromise(
+      Effect.provide(
+        persistUploadedBookEffect(makeFile(), {
+          existingPatch: { sharedBy: "reader", shareId: "share-1" },
+        }),
+        layer,
+      ),
+    );
+
+    expect(book).toMatchObject({ id: existing.id, sharedBy: "reader", shareId: "share-1" });
+    expect(updateBookMeta).toHaveBeenCalledWith(book);
     expect(parseEpub).not.toHaveBeenCalled();
     expect(saveBook).not.toHaveBeenCalled();
   });

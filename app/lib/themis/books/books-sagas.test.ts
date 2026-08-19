@@ -2,19 +2,37 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getItem } from "@augmentcode/themis/utils/collections/collection-utils";
 
 import type { BookMeta } from "~/lib/stores/book-store";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 
-const mocks = vi.hoisted(() => ({ runPromise: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  adoptDemo: vi.fn(),
+  isFirstVisit: vi.fn().mockResolvedValue(false),
+  runPromise: vi.fn(),
+}));
 
 vi.mock("~/lib/effect-runtime", () => ({
   AppRuntime: { runPromise: mocks.runPromise },
 }));
+vi.mock("~/lib/onboarding/adopt-demo", () => ({
+  persistAdoptedDemoContent: mocks.adoptDemo,
+}));
+vi.mock("~/lib/onboarding/demo-seed", () => ({
+  completeDemoOnboarding: vi.fn(),
+  fetchDemoEpubEffect: vi.fn(),
+  isFirstVisit: mocks.isFirstVisit,
+  provisionDemoContentEffect: vi.fn(),
+}));
 
 import { booksSaga } from "~/lib/themis/books/books-sagas";
 import {
+  adoptDemoBookRequested,
   bookAdded,
   deleteBookRequested,
   downloadBookForOpenRequested,
   hydrateBooks,
+  importSharedBookRequested,
+  replaceBookFileRequested,
+  seedDemoBookRequested,
   uploadBooksRequested,
   type BookUploadFile,
 } from "~/lib/themis/books/books-slice";
@@ -41,6 +59,8 @@ function startStore() {
 afterEach(() => {
   for (const store of stores.splice(0)) store.dispose();
   mocks.runPromise.mockReset();
+  mocks.adoptDemo.mockReset();
+  mocks.isFirstVisit.mockReset().mockResolvedValue(false);
 });
 
 describe("booksSaga", () => {
@@ -115,6 +135,89 @@ describe("booksSaga", () => {
     expect(onUploadFailed).toHaveBeenCalledWith("parse failed");
     expect(store.state.books.uploading).toBe(false);
     expect(store.booksSelectors.selectAllBooks.select(store.state)).toEqual([]);
+  });
+
+  it("adds a shared import before invoking its UI callback", async () => {
+    const book = { ...makeBook("shared"), sharedBy: "sharer", shareId: "share-1" };
+    const store = startStore();
+    const onCompleted = vi.fn(() => {
+      expect(store.booksSelectors.selectBookById.select(store.state, book.id)).toEqual(book);
+    });
+    mocks.runPromise.mockResolvedValueOnce(book);
+
+    store.dispatch(
+      importSharedBookRequested(
+        { shareId: "share-1", title: book.title, author: book.author, format: "epub" },
+        onCompleted,
+        vi.fn(),
+      ),
+    );
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(book));
+    expect(getItem(store.state.books.collection, book.id)).not.toHaveProperty("data");
+  });
+
+  it("updates replacement metadata before invoking its UI callback", async () => {
+    const original = makeBook("replace");
+    const replaced = { ...original, fileHash: "new-hash" };
+    const store = startStore();
+    const onCompleted = vi.fn(() => {
+      expect(store.booksSelectors.selectBookById.select(store.state, replaced.id)).toEqual(
+        replaced,
+      );
+    });
+    mocks.runPromise.mockResolvedValueOnce(replaced);
+    store.dispatch(bookAdded(original));
+
+    store.dispatch(
+      replaceBookFileRequested(
+        {
+          bookId: original.id,
+          file: makeFile(),
+          syncActive: false,
+          reloadBookFiles: vi.fn(),
+        },
+        onCompleted,
+        vi.fn(),
+      ),
+    );
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(replaced));
+    expect(getItem(store.state.books.collection, replaced.id)).not.toHaveProperty("data");
+  });
+
+  it("seeds only when the first-visit guard passes", async () => {
+    const demo = makeBook(DEMO_BOOK_ID);
+    const store = startStore();
+    mocks.isFirstVisit.mockResolvedValueOnce(true);
+    mocks.runPromise.mockResolvedValueOnce(demo);
+
+    store.dispatch(seedDemoBookRequested());
+
+    await vi.waitFor(() =>
+      expect(store.booksSelectors.selectSeededDemoBookId.select(store.state)).toBe(demo.id),
+    );
+    expect(store.booksSelectors.selectBookById.select(store.state, demo.id)).toEqual(demo);
+  });
+
+  it("replaces the demo collection entry after adoption before the callback", async () => {
+    const demo = makeBook(DEMO_BOOK_ID);
+    const adopted = makeBook("adopted-book");
+    const store = startStore();
+    const onCompleted = vi.fn(() => {
+      expect(store.booksSelectors.selectBookById.select(store.state, adopted.id)).toEqual(adopted);
+    });
+    mocks.adoptDemo.mockResolvedValueOnce({ bookId: adopted.id, sessionId: "session-1" });
+    mocks.runPromise.mockResolvedValueOnce(adopted);
+    store.dispatch(bookAdded(demo));
+
+    store.dispatch(adoptDemoBookRequested("user-1", onCompleted, vi.fn()));
+
+    await vi.waitFor(() =>
+      expect(onCompleted).toHaveBeenCalledWith({ bookId: adopted.id, sessionId: "session-1" }),
+    );
+    expect(store.booksSelectors.selectBookById.select(store.state, adopted.id)).toEqual(adopted);
+    expect(store.booksSelectors.selectBookById.select(store.state, DEMO_BOOK_ID)).toBeUndefined();
   });
 
   it("removes a book only after persisted deletion succeeds", async () => {

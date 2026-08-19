@@ -28,7 +28,7 @@ vi.mock("~/lib/sync/book-chapter-uploads", () => ({
 vi.mock("~/lib/sync/change-log", () => ({ recordChange: mocks.recordChange }));
 vi.mock("~/lib/sync/push", () => ({ pushChangesWithResult: mocks.push }));
 
-import { adoptDemoContent } from "./adopt-demo";
+import { persistAdoptedDemoContent } from "./adopt-demo";
 
 const CANONICAL_BOOK_ID = "11111111-1111-4111-8111-111111111111";
 const ADOPTED_BOOK_ID = "33333333-3333-4333-8333-333333333333";
@@ -130,7 +130,7 @@ describe("adoptDemoContent", () => {
       order.push("chapters");
     });
 
-    const adopted = await adoptDemoContent("user-1");
+    const adopted = await persistAdoptedDemoContent("user-1");
 
     expect(adopted).toEqual({ bookId: ADOPTED_BOOK_ID, sessionId: ADOPTED_SESSION_ID });
     expect(order).toEqual(["push", "push", "chapters"]);
@@ -168,7 +168,7 @@ describe("adoptDemoContent", () => {
     ]);
     mocks.push.mockImplementation(async () => acceptedSinceLastPush());
 
-    const adopted = await adoptDemoContent("user-2");
+    const adopted = await persistAdoptedDemoContent("user-2");
 
     expect(adopted.sessionId).toBe(USER_SESSION_ID);
     const savedSessions = await get<{ id: string; bookId: string }[]>(
@@ -203,7 +203,7 @@ describe("adoptDemoContent", () => {
       return acceptedSinceLastPush();
     });
 
-    const adopted = await adoptDemoContent("existing-user");
+    const adopted = await persistAdoptedDemoContent("existing-user");
 
     expect(adopted).toEqual({ bookId: CANONICAL_BOOK_ID, sessionId: ADOPTED_SESSION_ID });
     expect(mocks.ensureChapters).toHaveBeenCalledWith(CANONICAL_BOOK_ID);

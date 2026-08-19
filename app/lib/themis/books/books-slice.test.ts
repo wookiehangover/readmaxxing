@@ -11,6 +11,7 @@ import {
   booksHydrateFailed,
   booksHydrated,
   booksReducer,
+  demoBookSeeded,
   hydrateBooks,
   downloadBookForOpenRequested,
 } from "~/lib/themis/books/books-slice";
@@ -52,6 +53,12 @@ describe("booksReducer", () => {
 
     expect(failed.loading).toBe(false);
     expect(failed.error).toBe("IDB unavailable");
+  });
+
+  it("records the demo book seeded during this store lifetime", () => {
+    const seeded = booksReducer(undefined, demoBookSeeded("demo"));
+
+    expect(seeded.seededDemoBookId).toBe("demo");
   });
 
   it("tracks loading and errors for one downloaded book", () => {

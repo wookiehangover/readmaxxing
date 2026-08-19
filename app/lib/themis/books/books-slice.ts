@@ -14,12 +14,31 @@ export interface BookUploadFile {
   arrayBuffer: () => Promise<ArrayBuffer>;
 }
 
+export interface SharedBookImportRequest {
+  shareId: string;
+  title: string;
+  author: string;
+  format: "epub" | "pdf";
+}
+
+export interface BookReplacementRequest {
+  bookId: string;
+  file: BookUploadFile;
+  remoteCoverUrl?: string;
+  syncActive: boolean;
+  reloadBookFiles: (bookId: string) => Promise<void>;
+}
+
 export type BookAddedCallback = (book: BookMeta) => void;
 export type BookDeletedCallback = (bookId: string) => void;
 export type BookUploadCompletedCallback = () => void;
 export type BookUploadFailedCallback = (error: string) => void;
-export type BookDownloadCompletedCallback = (book: BookMeta) => void | Promise<void>;
-export type BookDownloadFailedCallback = (error: string) => void;
+export type BookMutationCompletedCallback = (book: BookMeta) => void | Promise<void>;
+export type BookMutationFailedCallback = (error: string) => void;
+export type DemoAdoptionCompletedCallback = (result: {
+  bookId: string;
+  sessionId: string;
+}) => void | Promise<void>;
 
 export interface BooksState {
   collection: Collection<BookMeta, "id">;
@@ -28,6 +47,7 @@ export interface BooksState {
   deletingBookIds: string[];
   downloadingBookIds: string[];
   downloadErrors: Record<string, string>;
+  seededDemoBookId: string | null;
   error: string | null;
 }
 
@@ -48,13 +68,32 @@ export const uploadBooksRequested =
   >("books/uploadRequested");
 export const booksUploadCompleted = createAction("books/uploadCompleted");
 export const booksUploadFailed = createAction<[error: string]>("books/uploadFailed");
+export const importSharedBookRequested = createAction<
+  [
+    request: SharedBookImportRequest,
+    onCompleted: BookMutationCompletedCallback,
+    onFailed: BookMutationFailedCallback,
+  ]
+>("books/importSharedRequested");
+export const replaceBookFileRequested = createAction<
+  [
+    request: BookReplacementRequest,
+    onCompleted: BookMutationCompletedCallback,
+    onFailed: BookMutationFailedCallback,
+  ]
+>("books/replaceFileRequested");
+export const seedDemoBookRequested = createAction("books/seedDemoRequested");
+export const demoBookSeeded = createAction<[bookId: string]>("books/demoSeeded");
+export const adoptDemoBookRequested = createAction<
+  [userId: string, onCompleted: DemoAdoptionCompletedCallback, onFailed: BookMutationFailedCallback]
+>("books/adoptDemoRequested");
 export const deleteBookRequested =
   createAction<[bookId: string, onBookDeleted?: BookDeletedCallback]>("books/deleteRequested");
 export const bookDeletionCompleted = createAction<[bookId: string]>("books/deleteCompleted");
 export const bookDeletionFailed =
   createAction<[bookId: string, error: string]>("books/deleteFailed");
 export const downloadBookForOpenRequested = createAction<
-  [bookId: string, onCompleted: BookDownloadCompletedCallback, onFailed: BookDownloadFailedCallback]
+  [bookId: string, onCompleted: BookMutationCompletedCallback, onFailed: BookMutationFailedCallback]
 >("books/downloadForOpenRequested");
 export const bookDownloadCompleted = createAction<[bookId: string]>("books/downloadCompleted");
 export const bookDownloadFailed =
@@ -67,6 +106,7 @@ export const booksInitialState: BooksState = {
   deletingBookIds: [],
   downloadingBookIds: [],
   downloadErrors: {},
+  seededDemoBookId: null,
   error: null,
 };
 
@@ -102,6 +142,10 @@ reducer.with(booksUploadFailed, (state, { payload: [error] }) => ({
   ...state,
   uploading: false,
   error,
+}));
+reducer.with(demoBookSeeded, (state, { payload: [bookId] }) => ({
+  ...state,
+  seededDemoBookId: bookId,
 }));
 reducer.with(deleteBookRequested, (state, { payload: [bookId] }) => ({
   ...state,

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { openPublication, openZipResourceProvider, resolveCfi } from "@readmaxxing/epub-successor";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { del, get, set } from "idb-keyval";
 import { Effect } from "effect";
 import {
@@ -15,10 +15,13 @@ import {
   DEMO_SUGGESTED_QUESTIONS,
 } from "~/lib/onboarding/demo-content";
 import { spineIndexFromCfi } from "~/lib/epub/successor-reader-adapter";
-import { isFirstVisit, seedDemo } from "~/lib/onboarding/demo-seed";
+import { isFirstVisit } from "~/lib/onboarding/demo-seed";
 import { AppRuntime } from "~/lib/effect-runtime";
 import type { ChatSession } from "~/lib/stores/chat-store";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
+import { booksSaga } from "~/lib/themis/books/books-sagas";
+import { seedDemoBookRequested } from "~/lib/themis/books/books-slice";
+import { createAppStore, type AppStore } from "~/lib/themis/store";
 import {
   getActiveSessionStore,
   getBookDataStore,
@@ -36,6 +39,25 @@ const OTHER_BOOK_ID = "onboarding-test-other-book";
 let demoEpub: ArrayBuffer;
 let authenticated = false;
 let demoFetchOk = true;
+const stores: AppStore[] = [];
+
+function startStore() {
+  const store = createAppStore();
+  stores.push(store);
+  store.init();
+  store.runSaga(booksSaga);
+  return store;
+}
+
+async function seedDemoThroughSaga() {
+  const store = startStore();
+  store.dispatch(seedDemoBookRequested());
+  await vi.waitFor(() => {
+    const seeded = store.booksSelectors.selectSeededDemoBookId.select(store.state);
+    if (seeded === null && store.state.books.error === null) throw new Error("Seed still pending");
+  });
+  return store;
+}
 
 beforeAll(async () => {
   const bytes = await readFile(`public${DEFAULT_DEMO_BOOK.epubPath}`);
@@ -46,6 +68,10 @@ beforeAll(async () => {
 });
 
 afterAll(() => vi.unstubAllGlobals());
+
+afterEach(() => {
+  for (const store of stores.splice(0)) store.dispose();
+});
 
 beforeEach(async () => {
   authenticated = false;
@@ -148,7 +174,8 @@ describe("seedDemo", () => {
   });
 
   it("provisions the demo content once and sets the first-visit flag", async () => {
-    const book = await seedDemo();
+    const store = await seedDemoThroughSaga();
+    const book = store.booksSelectors.selectBookById.select(store.state, DEMO_BOOK_ID);
 
     expect(book?.id).toBe(DEMO_BOOK_ID);
     expect(await get(DEMO_BOOK_ID, getBookStore())).toMatchObject({ id: DEMO_BOOK_ID });
@@ -164,13 +191,15 @@ describe("seedDemo", () => {
     expect(window.localStorage.getItem("demo-onboarding")).toBe("complete");
     expect(await isFirstVisit()).toBe(false);
 
-    await seedDemo();
+    store.dispatch(seedDemoBookRequested());
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
     expect(await get<ChatSession[]>(DEMO_BOOK_ID, getChatSessionStore())).toHaveLength(1);
   });
 
   it("does not set the flag when provisioning fails", async () => {
     demoFetchOk = false;
-    await expect(seedDemo()).rejects.toBeDefined();
+    const store = await seedDemoThroughSaga();
+    expect(store.state.books.error).not.toBeNull();
     expect(window.localStorage.getItem("demo-onboarding")).toBeNull();
   });
 
@@ -190,7 +219,7 @@ describe("seedDemo", () => {
       ),
     );
 
-    await seedDemo();
+    await seedDemoThroughSaga();
 
     const [layout, focusedState] = await AppRuntime.runPromise(
       WorkspaceService.pipe(
