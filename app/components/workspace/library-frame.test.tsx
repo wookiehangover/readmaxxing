@@ -81,10 +81,18 @@ describe("LibraryFrame", () => {
     const links = nav.querySelectorAll("a");
 
     expect(headerNavigation.style.getPropertyValue("--library-rail-width")).toBe(expectedWidth);
+    expect(headerNavigation.className).toContain("hidden");
+    expect(headerNavigation.className).toContain("md:flex");
     expect(headerNavigation.className).toContain("md:w-(--library-rail-width)");
     expect(headerNavigation.className).toContain("px-6");
     expect(headerNavigation.parentElement?.className).toContain("py-5");
     expect(nav.className).toContain("flex-1");
+    expect(nav.className).toContain("gap-5");
+    expect(Array.from(links).map((link) => link.textContent)).toEqual([
+      "Library",
+      "Free ebooks",
+      "Settings",
+    ]);
     expect(nav.contains(links.item(links.length - 1))).toBe(true);
     expect(
       nav.contains(headerNavigation.querySelector('button[title="More library actions"]')),
@@ -148,6 +156,14 @@ describe("LibraryFrame", () => {
     )!;
     const links = Array.from(mobileNav.querySelectorAll("a"));
     const activeLink = mobileNav.querySelector<HTMLAnchorElement>('a[href="/standard-ebooks"]')!;
+    const tablist = mobileNav.querySelector<HTMLElement>('[role="tablist"]')!;
+    const indicator = mobileNav.querySelector<HTMLElement>('[role="presentation"]')!;
+    const overflow = mobileNav.querySelector<HTMLButtonElement>(
+      'button[title="More library actions"]',
+    )!;
+    const headerNavigation = container.querySelector<HTMLElement>(
+      '[data-slot="library-header-navigation"]',
+    )!;
 
     expect(mobileNav.className).toContain("md:hidden");
     expect(mobileNav.className).not.toContain("border-t");
@@ -155,17 +171,17 @@ describe("LibraryFrame", () => {
     expect(links.map((link) => link.textContent)).toEqual(["Library", "Free ebooks", "Settings"]);
     expect(activeLink.getAttribute("aria-current")).toBe("page");
     expect(activeLink.className).toContain("text-foreground");
-    expect(mobileNav.querySelector('[role="tablist"]')?.className).toContain("gap-5");
-    expect(mobileNav.querySelector('[role="presentation"]')?.className).toContain(
-      "left-[var(--active-tab-left)]",
-    );
-    expect(mobileNav.querySelector('button[title="More library actions"]')).not.toBeNull();
-    expect(mobileNav.querySelector("svg")).not.toBeNull();
-    expect(
-      container.querySelector(
-        '[data-slot="library-header-navigation"] button[title="More library actions"]',
-      ),
-    ).not.toBeNull();
+    expect(tablist.className).toContain("gap-5");
+    expect(tablist.className).not.toContain("grid");
+    expect(tablist.className).not.toContain("justify-between");
+    expect(indicator.className).toContain("left-[var(--active-tab-left)]");
+    expect(indicator.className).toContain("h-px");
+    expect(indicator.className).toContain("w-3");
+    expect(indicator.className).toContain("transition-[left]");
+    expect(overflow.closest('[data-slot="library-mobile-navigation"]')).toBe(mobileNav);
+    expect(overflow.querySelector("svg")).not.toBeNull();
+    expect(headerNavigation.className).toContain("hidden");
+    expect(headerNavigation.className).toContain("md:flex");
   });
 
   it("keeps upload and bug report as the only overflow actions", () => {
@@ -174,17 +190,30 @@ describe("LibraryFrame", () => {
     const headerNavigation = container.querySelector<HTMLElement>(
       '[data-slot="library-header-navigation"]',
     )!;
+    const mobileNavigation = container.querySelector<HTMLElement>(
+      '[data-slot="library-mobile-navigation"]',
+    )!;
     const overflow = container.querySelectorAll('button[title="More library actions"]');
-    const actions = Array.from(headerNavigation.querySelectorAll("button")).filter(
+    const headerActions = Array.from(headerNavigation.querySelectorAll("button")).filter(
+      (button) => !button.title.includes("More library actions"),
+    );
+    const mobileActions = Array.from(mobileNavigation.querySelectorAll("button")).filter(
       (button) => !button.title.includes("More library actions"),
     );
 
     expect(overflow).toHaveLength(2);
-    expect(actions.map((button) => button.textContent)).toEqual(["Upload book", "Bug report"]);
-    act(() => actions[0]?.click());
+    expect(headerActions.map((button) => button.textContent)).toEqual([
+      "Upload book",
+      "Bug report",
+    ]);
+    expect(mobileActions.map((button) => button.textContent)).toEqual([
+      "Upload book",
+      "Bug report",
+    ]);
+    act(() => mobileActions[0]?.click());
     expect(inputClick).toHaveBeenCalledOnce();
 
-    act(() => actions[1]?.click());
+    act(() => mobileActions[1]?.click());
     expect(
       container.querySelector('[data-testid="bug-report-state"]')?.getAttribute("data-open"),
     ).toBe("true");
