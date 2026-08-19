@@ -3,7 +3,6 @@ import {
   useContext,
   useState,
   type ChangeEvent,
-  type CSSProperties,
   type MutableRefObject,
   type ReactNode,
 } from "react";
@@ -12,8 +11,8 @@ import { createPortal } from "react-dom";
 import { Bug, MoreHorizontal, Upload } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { Effect } from "effect";
+import { AppNavigation } from "~/components/app-navigation";
 import { BugReportDialog } from "~/components/bug-report-dialog";
-import { DEFAULT_RAIL_WIDTH } from "~/components/reading-shell/reading-rail-width";
 import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
@@ -122,30 +121,9 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
           />
           <div
             data-slot="library-header-navigation"
-            className="hidden max-w-full shrink-0 items-start gap-3 px-6 text-xs font-normal md:flex md:w-(--library-rail-width)"
-            style={{ "--library-rail-width": `${DEFAULT_RAIL_WIDTH}px` } as CSSProperties}
+            className="hidden max-w-full shrink-0 md:block"
           >
-            <nav
-              aria-label="Library navigation"
-              className="hidden h-7 min-w-0 flex-1 items-center gap-5 md:flex"
-            >
-              {NAV_ITEMS.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    cn("relative leading-[18px] text-muted-foreground hover:text-foreground", {
-                      "text-foreground": isActive,
-                      "after:absolute after:bottom-0 after:left-0 after:h-px after:w-[15px] after:bg-foreground":
-                        isActive,
-                    })
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
-            {renderActionsMenu()}
+            <AppNavigation>{renderActionsMenu()}</AppNavigation>
           </div>
         </header>
         <input
