@@ -28,17 +28,19 @@ function SortHeader({
   column,
   sort,
   onSort,
+  className,
 }: {
   label: string;
   column: SortColumn;
   sort: SortState;
   onSort: (column: SortColumn) => void;
+  className?: string;
 }) {
   const active = sort.column === column;
   const Icon = active ? (sort.direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
 
   return (
-    <TableHead>
+    <TableHead className={className}>
       <button
         type="button"
         onClick={() => onSort(column)}
@@ -80,13 +82,19 @@ export function StandardEbooksTable({
 
   return (
     <div className="h-full overflow-y-auto">
-      <Table>
+      <Table className="table-fixed md:table-auto">
         <TableHeader className="sticky top-0 bg-background">
           <TableRow>
             <TableHead className="w-12" />
             <SortHeader label="Title" column="title" sort={sort} onSort={handleSort} />
-            <SortHeader label="Author" column="author" sort={sort} onSort={handleSort} />
-            <TableHead className="w-36 text-right">Actions</TableHead>
+            <SortHeader
+              label="Author"
+              column="author"
+              sort={sort}
+              onSort={handleSort}
+              className="hidden md:table-cell"
+            />
+            <TableHead className="w-32 text-right md:w-36">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -119,8 +127,11 @@ export function StandardEbooksTable({
                   >
                     {book.title}
                   </a>
+                  <span className="block truncate text-xs font-normal text-muted-foreground md:hidden">
+                    {book.author}
+                  </span>
                 </TableCell>
-                <TableCell className="max-w-0 text-muted-foreground">
+                <TableCell className="hidden max-w-0 text-muted-foreground md:table-cell">
                   <span className="block truncate">{book.author}</span>
                 </TableCell>
                 <TableCell className="text-right">

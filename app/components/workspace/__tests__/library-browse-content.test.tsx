@@ -63,7 +63,10 @@ describe("LibraryBrowseContent", () => {
 
     const grid = container!.querySelector<HTMLElement>(".grid")!;
     expect(grid.classList.contains("max-w-6xl")).toBe(true);
-    expect(grid.classList.contains("grid-cols-[repeat(auto-fill,minmax(10rem,10rem))]")).toBe(true);
+    expect(grid.classList.contains("grid-cols-2")).toBe(true);
+    expect(grid.classList.contains("sm:grid-cols-[repeat(auto-fill,minmax(10rem,10rem))]")).toBe(
+      true,
+    );
     expect(grid.className).toContain("items-start");
     expect([...grid.children]).toHaveLength(3);
     expect([...grid.children].every((card) => card.classList.contains("max-w-40"))).toBe(true);
@@ -80,6 +83,7 @@ describe("LibraryBrowseContent", () => {
     const tableWrapper = container!.querySelector("table")?.closest(".max-w-6xl");
     expect(tableWrapper).not.toBeNull();
     expect(tableWrapper!.classList.contains("mx-auto")).toBe(true);
+    expect(container!.querySelector("table")?.className).toContain("table-fixed");
   });
 
   it("keeps search, sort, and layout together in order and still opens a book", async () => {

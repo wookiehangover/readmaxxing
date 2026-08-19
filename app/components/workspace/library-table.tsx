@@ -132,32 +132,38 @@ export function LibraryTable({
 
   return (
     <div className="h-full overflow-y-auto">
-      <Table>
+      <Table className="table-fixed md:table-auto">
         <TableHeader className="sticky top-0 bg-background">
           <TableRow>
             <TableHead className="w-12" />
             <SortHeader label="Title" column="title" sort={sort} onSort={handleSort} />
-            <SortHeader label="Author" column="author" sort={sort} onSort={handleSort} />
+            <SortHeader
+              label="Author"
+              column="author"
+              sort={sort}
+              onSort={handleSort}
+              className="hidden md:table-cell"
+            />
             <SortHeader
               label="Format"
               column="format"
               sort={sort}
               onSort={handleSort}
-              className="w-20"
+              className="hidden w-20 md:table-cell"
             />
             <SortHeader
               label="Last opened"
               column="lastOpened"
               sort={sort}
               onSort={handleSort}
-              className="w-32"
+              className="hidden w-32 md:table-cell"
             />
             <SortHeader
               label="Updated"
               column="updated"
               sort={sort}
               onSort={handleSort}
-              className="w-32"
+              className="hidden w-32 md:table-cell"
             />
             <TableHead className="w-10" />
           </TableRow>
@@ -207,15 +213,20 @@ export function LibraryTable({
                 </TableCell>
                 <TableCell className="max-w-0 font-medium">
                   <span className="block truncate">{book.title}</span>
+                  <span className="block truncate text-xs font-normal text-muted-foreground md:hidden">
+                    {book.author}
+                  </span>
                 </TableCell>
-                <TableCell className="max-w-0 text-muted-foreground">
+                <TableCell className="hidden max-w-0 text-muted-foreground md:table-cell">
                   <span className="block truncate">{book.author}</span>
                 </TableCell>
-                <TableCell className="uppercase text-muted-foreground">
+                <TableCell className="hidden uppercase text-muted-foreground md:table-cell">
                   {book.format ?? "epub"}
                 </TableCell>
-                <TableCell className="text-muted-foreground">{formatDate(lastOpened)}</TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="hidden text-muted-foreground md:table-cell">
+                  {formatDate(lastOpened)}
+                </TableCell>
+                <TableCell className="hidden text-muted-foreground md:table-cell">
                   {formatDate(book.updatedAt)}
                 </TableCell>
                 <TableCell
@@ -226,7 +237,7 @@ export function LibraryTable({
                 >
                   <DropdownMenu>
                     <DropdownMenuTrigger
-                      className="inline-flex size-7 items-center justify-center rounded-md hover:bg-accent"
+                      className="inline-flex size-9 items-center justify-center rounded-md hover:bg-accent md:size-7"
                       render={<button type="button" />}
                       aria-label="Book actions"
                     >

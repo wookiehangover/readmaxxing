@@ -42,7 +42,11 @@ export function ChatMessageList({
         "[&_[data-slot=scroll-area-viewport]]:scroll-fog-bottom": messages.length > 0,
       })}
     >
-      <div className="flex h-max min-h-full flex-col gap-3 pr-6">
+      <div
+        className={cn("flex h-max min-h-full flex-col gap-3 pr-6", {
+          "pl-6 md:pl-0": true,
+        })}
+      >
         {messages.length === 0 && (
           <ChatEmptyState
             bookId={bookId}

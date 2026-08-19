@@ -105,14 +105,19 @@ describe("LibraryFrame", () => {
     if (storedWidth) window.sessionStorage.setItem("reading-rail-width", storedWidth);
     const { container } = renderFrame("/library");
     const nav = container.querySelector<HTMLElement>('nav[aria-label="Library navigation"]')!;
+    const headerNavigation = container.querySelector<HTMLElement>(
+      '[data-slot="library-header-navigation"]',
+    )!;
     const links = Array.from(
       nav.firstElementChild?.querySelectorAll('a:not([href="/login"])') ?? [],
     );
     const linkGroup = nav.firstElementChild!;
 
     expect(nav.style.width).toBe(expectedWidth);
+    expect(headerNavigation.className).toContain("hidden");
+    expect(headerNavigation.className).toContain("md:block");
     expect(nav.className).toContain("px-6");
-    expect(nav.parentElement?.className).toContain("py-5");
+    expect(headerNavigation.parentElement?.className).toContain("py-5");
     expect(linkGroup.className).toContain("flex-1");
     expect(linkGroup.contains(links[links.length - 1]!)).toBe(true);
     expect(linkGroup.contains(nav.querySelector('button[title="More library actions"]'))).toBe(
@@ -131,10 +136,12 @@ describe("LibraryFrame", () => {
     const controls = container.querySelector('[data-testid="page-controls"]')!;
     const slot = container.querySelector('[data-slot="library-header-controls"]')!;
     const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
+    const headerNavigation = container.querySelector('[data-slot="library-header-navigation"]')!;
 
     expect(slot.contains(controls)).toBe(true);
     expect(header.children[0]).toBe(slot);
-    expect(header.children[1]).toBe(nav);
+    expect(header.children[1]).toBe(headerNavigation);
+    expect(headerNavigation.contains(nav)).toBe(true);
   });
 
   it.each([
@@ -171,7 +178,9 @@ describe("LibraryFrame", () => {
             link.className.includes("hover:text-foreground"),
         ),
     ).toBe(true);
-    const overflow = nav.querySelector<HTMLButtonElement>('button[title="More library actions"]');
+    const overflow = container.querySelector<HTMLButtonElement>(
+      '[data-slot="library-header-navigation"] button[title="More library actions"]',
+    );
     expect(overflow?.dataset.slot).toBe("button");
     expect(overflow?.className).toContain("size-8");
     expect(overflow?.className).toContain("hover:bg-muted");
@@ -179,8 +188,43 @@ describe("LibraryFrame", () => {
     expect(nav.textContent).not.toContain("…");
     expect(container.textContent).toContain("Browse body");
     expect(container.querySelector("aside")).toBeNull();
-    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(container.querySelector('[role="tablist"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Open sidebar"]')).toBeNull();
+  });
+
+  it("places the shared text navigation below the page content on mobile", () => {
+    const { container } = renderFrame("/standard-ebooks");
+    const mobileNav = container.querySelector<HTMLElement>(
+      '[data-slot="library-mobile-navigation"]',
+    )!;
+    const links = Array.from(mobileNav.querySelectorAll("a"));
+    const activeLink = mobileNav.querySelector<HTMLAnchorElement>('a[href="/standard-ebooks"]')!;
+    const tablist = mobileNav.querySelector<HTMLElement>('[role="tablist"]')!;
+    const indicator = mobileNav.querySelector<HTMLElement>('[role="presentation"]')!;
+    const overflow = mobileNav.querySelector<HTMLButtonElement>(
+      'button[title="More library actions"]',
+    )!;
+    const headerNavigation = container.querySelector<HTMLElement>(
+      '[data-slot="library-header-navigation"]',
+    )!;
+
+    expect(mobileNav.className).toContain("md:hidden");
+    expect(mobileNav.className).not.toContain("border-t");
+    expect(mobileNav.previousElementSibling?.textContent).toBe("Browse body");
+    expect(links.map((link) => link.textContent)).toEqual(["Library", "Free ebooks", "Settings"]);
+    expect(activeLink.getAttribute("aria-current")).toBe("page");
+    expect(activeLink.className).toContain("text-foreground");
+    expect(tablist.className).toContain("gap-5");
+    expect(tablist.className).not.toContain("grid");
+    expect(tablist.className).not.toContain("justify-between");
+    expect(indicator.className).toContain("left-[var(--active-tab-left)]");
+    expect(indicator.className).toContain("h-px");
+    expect(indicator.className).toContain("w-3");
+    expect(indicator.className).toContain("transition-[left]");
+    expect(overflow.closest('[data-slot="library-mobile-navigation"]')).toBe(mobileNav);
+    expect(overflow.querySelector("svg")).not.toBeNull();
+    expect(headerNavigation.className).toContain("hidden");
+    expect(headerNavigation.className).toContain("md:block");
   });
 
   it("hides Login when authenticated", () => {
@@ -194,20 +238,39 @@ describe("LibraryFrame", () => {
   it("shows iconed upload and bug report actions and omits an empty Recent section", () => {
     const inputClick = vi.spyOn(HTMLInputElement.prototype, "click");
     const { container } = renderFrame("/library");
-    const overflow = container.querySelector('button[title="More library actions"]');
-    const actions = Array.from(container.querySelectorAll("button")).filter(
-      (button) => button !== overflow,
+    const headerNavigation = container.querySelector<HTMLElement>(
+      '[data-slot="library-header-navigation"]',
+    )!;
+    const mobileNavigation = container.querySelector<HTMLElement>(
+      '[data-slot="library-mobile-navigation"]',
+    )!;
+    const overflow = container.querySelectorAll('button[title="More library actions"]');
+    const headerActions = Array.from(headerNavigation.querySelectorAll("button")).filter(
+      (button) => !button.title.includes("More library actions"),
+    );
+    const mobileActions = Array.from(mobileNavigation.querySelectorAll("button")).filter(
+      (button) => !button.title.includes("More library actions"),
     );
 
-    expect(actions.map((button) => button.textContent)).toEqual(["Upload book", "Bug report"]);
-    expect(actions[0]?.querySelector("svg.lucide-upload")).not.toBeNull();
-    expect(actions[1]?.querySelector("svg.lucide-bug")).not.toBeNull();
+    expect(overflow).toHaveLength(2);
+    expect(headerActions.map((button) => button.textContent)).toEqual([
+      "Upload book",
+      "Bug report",
+    ]);
+    expect(mobileActions.map((button) => button.textContent)).toEqual([
+      "Upload book",
+      "Bug report",
+    ]);
+    for (const actions of [headerActions, mobileActions]) {
+      expect(actions[0]?.querySelector("svg.lucide-upload")).not.toBeNull();
+      expect(actions[1]?.querySelector("svg.lucide-bug")).not.toBeNull();
+    }
     expect(container.textContent).not.toContain("Recent");
     expect(container.querySelector("hr")).toBeNull();
-    act(() => actions[0]?.click());
+    act(() => mobileActions[0]?.click());
     expect(inputClick).toHaveBeenCalledOnce();
 
-    act(() => actions[1]?.click());
+    act(() => mobileActions[1]?.click());
     expect(
       container.querySelector('[data-testid="bug-report-state"]')?.getAttribute("data-open"),
     ).toBe("true");
@@ -230,13 +293,16 @@ describe("LibraryFrame", () => {
       ["book-6", 400],
     ]);
     const { container } = renderFrame("/library", <LocationProbe />);
-    const recentLabel = Array.from(container.querySelectorAll("span")).find(
+    const headerNavigation = container.querySelector<HTMLElement>(
+      '[data-slot="library-header-navigation"]',
+    )!;
+    const recentLabel = Array.from(headerNavigation.querySelectorAll("span")).find(
       (span) => span.textContent === "Recent",
     );
     const recentGroup = recentLabel?.parentElement;
     const recentItems = Array.from(recentGroup?.querySelectorAll("button") ?? []);
 
-    expect(container.querySelectorAll("hr")).toHaveLength(1);
+    expect(headerNavigation.querySelectorAll("hr")).toHaveLength(1);
     expect(recentItems.map((button) => button.textContent)).toEqual([
       "Book 2",
       "Book 4",

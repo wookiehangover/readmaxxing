@@ -170,7 +170,8 @@ describe("ChatInput", () => {
     expect(form.classList.contains("px-4")).toBe(false);
     expect(form.classList.contains("py-3")).toBe(true);
     expect(form.classList.contains("pr-6")).toBe(true);
-    expect(form.classList.contains("pl-6")).toBe(false);
+    expect(form.classList.contains("pl-6")).toBe(true);
+    expect(form.classList.contains("md:pl-0")).toBe(true);
     act(() => changeTextarea(textarea, "Normal message"));
     expect(inputRef.current).toBe("Normal message");
 

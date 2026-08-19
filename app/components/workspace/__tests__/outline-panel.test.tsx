@@ -165,7 +165,8 @@ describe("OutlinePanel", () => {
       "[data-testid='outline-scroll-viewport']",
     )?.firstElementChild;
     expect(scrollContent?.classList.contains("pr-6")).toBe(true);
-    expect(scrollContent?.classList.contains("pl-6")).toBe(false);
+    expect(scrollContent?.classList.contains("pl-6")).toBe(true);
+    expect(scrollContent?.classList.contains("md:pl-0")).toBe(true);
   });
 
   it("mounts an editable outline after a successful fetch", async () => {

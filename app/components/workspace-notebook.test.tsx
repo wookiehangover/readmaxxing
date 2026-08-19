@@ -56,6 +56,7 @@ describe("WorkspaceNotebook", () => {
     ).toBe("If you're not writing, you're not reading");
     const scrollContent = container.querySelector("[data-testid='notebook-editor']")?.parentElement;
     expect(scrollContent?.classList.contains("pr-6")).toBe(true);
-    expect(scrollContent?.classList.contains("pl-6")).toBe(false);
+    expect(scrollContent?.classList.contains("pl-6")).toBe(true);
+    expect(scrollContent?.classList.contains("md:pl-0")).toBe(true);
   });
 });

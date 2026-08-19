@@ -217,7 +217,7 @@ export function WorkspaceOutlinePanel({
         </div>
       )}
       <ScrollArea className="min-h-0 flex-1">
-        <div className={cn("h-full", { "pr-6": chromeless })}>
+        <div className={cn("h-full", { "pr-6 pl-6 md:pl-0": chromeless })}>
           {state.status === "loading" ? (
             <div className={cn("flex h-full items-center justify-center", { "p-6": !chromeless })}>
               <p className="text-sm text-muted-foreground">Loading outline…</p>
