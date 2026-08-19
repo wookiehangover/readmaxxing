@@ -77,11 +77,6 @@ export default function SettingsPage() {
       <header className="flex shrink-0 py-5">
         <div className="min-w-0 flex-1" />
         <AppNavigation>
-          {!isAuthLoading && !isAuthenticated ? (
-            <Button variant="outline" size="xs" render={<Link to="/login" />} nativeButton={false}>
-              Login
-            </Button>
-          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger
               render={<Button variant="ghost" size="icon" title="More settings actions" />}

@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router";
+import { Link, NavLink } from "react-router";
 import { DEFAULT_RAIL_WIDTH } from "~/components/reading-shell/reading-rail-width";
+import { Button } from "~/components/ui/button";
+import { useAuth } from "~/lib/context/auth-context";
 import { cn } from "~/lib/utils";
 
 const NAV_ITEMS = [
@@ -10,6 +12,8 @@ const NAV_ITEMS = [
 ] as const;
 
 export function AppNavigation({ children }: { readonly children?: ReactNode }) {
+  const { isAuthenticated } = useAuth();
+
   return (
     <nav
       aria-label="Library navigation"
@@ -33,6 +37,11 @@ export function AppNavigation({ children }: { readonly children?: ReactNode }) {
           </NavLink>
         ))}
       </div>
+      {!isAuthenticated ? (
+        <Button variant="outline" size="xs" render={<Link to="/login" />} nativeButton={false}>
+          Login
+        </Button>
+      ) : null}
       {children}
     </nav>
   );

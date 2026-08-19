@@ -112,7 +112,8 @@ describe("SettingsPage", () => {
     expect((nav as HTMLElement).style.width).toBe("384px");
   });
 
-  it("shows a header Login button and keeps About in the overflow when logged out", () => {
+  it("shows a header Login button while logged-out auth is loading", () => {
+    mocks.auth.isLoading = true;
     const container = renderSettings();
     const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
     const overflow = nav.querySelector<HTMLButtonElement>('button[title="More settings actions"]');
