@@ -56,13 +56,22 @@ export function ReadingRail({
 
   const panels = book ? (
     <>
-      <Tabs.Panel value="Notes" className="min-h-0 flex-1 overflow-hidden outline-none">
+      <Tabs.Panel
+        value="Notes"
+        className={cn("min-h-0 flex-1 overflow-hidden outline-none", { "px-6": mobile })}
+      >
         <WorkspaceNotebookPanel bookId={book.id} bookTitle={book.title} chromeless />
       </Tabs.Panel>
-      <Tabs.Panel value="Discuss" className="min-h-0 flex-1 overflow-hidden outline-none">
+      <Tabs.Panel
+        value="Discuss"
+        className={cn("min-h-0 flex-1 overflow-hidden outline-none", { "px-6": mobile })}
+      >
         <ChatPanel bookId={book.id} bookTitle={book.title} />
       </Tabs.Panel>
-      <Tabs.Panel value="Outline" className="min-h-0 flex-1 overflow-hidden outline-none">
+      <Tabs.Panel
+        value="Outline"
+        className={cn("min-h-0 flex-1 overflow-hidden outline-none", { "px-6": mobile })}
+      >
         <WorkspaceOutlinePanel bookId={book.id} bookTitle={book.title} chromeless />
       </Tabs.Panel>
       <Tabs.Panel value="Review" className="min-h-0 flex-1 overflow-hidden outline-none">

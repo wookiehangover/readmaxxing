@@ -138,6 +138,21 @@ describe("ReadingRail", () => {
     expect(container.querySelector("[data-testid='book-surface']")).not.toBeNull();
   });
 
+  it("insets mobile tool panels without changing desktop panel padding", () => {
+    const container = renderMobileRail();
+
+    for (const [tab, testId] of [
+      ["Notes", "notes-panel"],
+      ["Discuss", "chat-panel"],
+      ["Outline", "outline-panel"],
+    ]) {
+      clickTab(container, tab);
+      expect(
+        container.querySelector(`[data-testid='${testId}']`)?.parentElement?.className,
+      ).toContain("px-6");
+    }
+  });
+
   it("keeps scroll viewports flush with the right edge while chrome owns its inset", () => {
     const container = renderRail();
     const rail = container.firstElementChild as HTMLElement;
