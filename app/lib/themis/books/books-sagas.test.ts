@@ -13,6 +13,7 @@ import { booksSaga } from "~/lib/themis/books/books-sagas";
 import {
   bookAdded,
   deleteBookRequested,
+  downloadBookForOpenRequested,
   hydrateBooks,
   uploadBooksRequested,
   type BookUploadFile,
@@ -143,5 +144,39 @@ describe("booksSaga", () => {
     await vi.waitFor(() => expect(store.state.books.error).toBe("delete failed"));
     expect(store.booksSelectors.selectBookById.select(store.state, book.id)).toEqual(book);
     expect(store.state.books.deletingBookIds).toEqual([]);
+  });
+
+  it("upserts downloaded metadata before opening the book", async () => {
+    const remoteBook = { ...makeBook("remote"), remoteFileUrl: "remote", hasLocalFile: false };
+    const downloadedBook = { ...remoteBook, hasLocalFile: true };
+    const store = startStore();
+    const onCompleted = vi.fn(() => {
+      expect(store.booksSelectors.selectBookById.select(store.state, remoteBook.id)).toEqual(
+        downloadedBook,
+      );
+    });
+    mocks.runPromise.mockResolvedValueOnce(downloadedBook);
+    store.dispatch(bookAdded(remoteBook));
+
+    store.dispatch(downloadBookForOpenRequested(remoteBook.id, onCompleted, vi.fn()));
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(downloadedBook));
+    expect(store.state.books.downloadingBookIds).toEqual([]);
+    expect(store.state.books.downloadErrors).toEqual({});
+    expect(getItem(store.state.books.collection, remoteBook.id)).not.toHaveProperty("data");
+  });
+
+  it("stores a per-book download failure and does not open", async () => {
+    const store = startStore();
+    const onCompleted = vi.fn();
+    const onFailed = vi.fn();
+    mocks.runPromise.mockRejectedValueOnce(new Error("download failed"));
+
+    store.dispatch(downloadBookForOpenRequested("remote", onCompleted, onFailed));
+
+    await vi.waitFor(() => expect(onFailed).toHaveBeenCalledWith("download failed"));
+    expect(onCompleted).not.toHaveBeenCalled();
+    expect(store.state.books.downloadingBookIds).toEqual([]);
+    expect(store.state.books.downloadErrors).toEqual({ remote: "download failed" });
   });
 });

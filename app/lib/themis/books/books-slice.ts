@@ -18,12 +18,16 @@ export type BookAddedCallback = (book: BookMeta) => void;
 export type BookDeletedCallback = (bookId: string) => void;
 export type BookUploadCompletedCallback = () => void;
 export type BookUploadFailedCallback = (error: string) => void;
+export type BookDownloadCompletedCallback = (book: BookMeta) => void | Promise<void>;
+export type BookDownloadFailedCallback = (error: string) => void;
 
 export interface BooksState {
   collection: Collection<BookMeta, "id">;
   loading: boolean;
   uploading: boolean;
   deletingBookIds: string[];
+  downloadingBookIds: string[];
+  downloadErrors: Record<string, string>;
   error: string | null;
 }
 
@@ -49,12 +53,20 @@ export const deleteBookRequested =
 export const bookDeletionCompleted = createAction<[bookId: string]>("books/deleteCompleted");
 export const bookDeletionFailed =
   createAction<[bookId: string, error: string]>("books/deleteFailed");
+export const downloadBookForOpenRequested = createAction<
+  [bookId: string, onCompleted: BookDownloadCompletedCallback, onFailed: BookDownloadFailedCallback]
+>("books/downloadForOpenRequested");
+export const bookDownloadCompleted = createAction<[bookId: string]>("books/downloadCompleted");
+export const bookDownloadFailed =
+  createAction<[bookId: string, error: string]>("books/downloadFailed");
 
 export const booksInitialState: BooksState = {
   collection: createCollection<BookMeta, "id">("id"),
   loading: false,
   uploading: false,
   deletingBookIds: [],
+  downloadingBookIds: [],
+  downloadErrors: {},
   error: null,
 };
 
@@ -106,6 +118,25 @@ reducer.with(bookDeletionFailed, (state, { payload: [bookId, error] }) => ({
   ...state,
   deletingBookIds: state.deletingBookIds.filter((id) => id !== bookId),
   error,
+}));
+reducer.with(downloadBookForOpenRequested, (state, { payload: [bookId] }) => {
+  const { [bookId]: _, ...downloadErrors } = state.downloadErrors;
+  return {
+    ...state,
+    downloadingBookIds: state.downloadingBookIds.includes(bookId)
+      ? state.downloadingBookIds
+      : [...state.downloadingBookIds, bookId],
+    downloadErrors,
+  };
+});
+reducer.with(bookDownloadCompleted, (state, { payload: [bookId] }) => ({
+  ...state,
+  downloadingBookIds: state.downloadingBookIds.filter((id) => id !== bookId),
+}));
+reducer.with(bookDownloadFailed, (state, { payload: [bookId, error] }) => ({
+  ...state,
+  downloadingBookIds: state.downloadingBookIds.filter((id) => id !== bookId),
+  downloadErrors: { ...state.downloadErrors, [bookId]: error },
 }));
 
 export const booksReducer = reducer;

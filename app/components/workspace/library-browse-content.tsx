@@ -38,7 +38,7 @@ import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
 import { filterBooks, sortBooks } from "~/lib/workspace-utils";
 import { useAuth } from "~/lib/context/auth-context";
 import { useEffectQuery } from "~/hooks/use-effect-query";
-import { ensureLocalThenOpen, refreshBooksCache } from "~/lib/library-book-open";
+import { ensureLocalThenOpen } from "~/lib/library-book-open";
 import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
 import { Link } from "react-router";
@@ -83,15 +83,15 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
   const store = useAppStore();
   const { isAuthenticated } = useAuth();
   const books = store.booksSelectors.selectAllBooks.useValue();
+  const downloadingBookIds = store.booksSelectors.selectDownloadingBookIds.useValue();
   const [searchQuery, setSearchQuery] = useState("");
   const [librarySortBy, setLibrarySortBy] = useState<WorkspaceSortBy>(() =>
     getStoredLibrarySortBy(),
   );
   const [shareBook, setShareBook] = useState<BookMeta | null>(null);
-  const [downloadingBookIds, setDownloadingBookIds] = useState<ReadonlySet<string>>(new Set());
   const [settings] = useSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const downloadingBookIdsRef = useRef(new Set<string>());
+  const pendingOpenControllerRef = useRef<AbortController | null>(null);
   const lastRefreshedAtRef = useRef(0);
   const { data: lastOpenedMap } = useEffectQuery(
     () => WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())),
@@ -101,12 +101,10 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
   const handleOpenBook = useCallback(
     async (book: BookMeta) => {
       const needsDownload = bookNeedsDownload(book);
-      if (needsDownload && downloadingBookIdsRef.current.has(book.id)) return;
-
-      if (needsDownload) {
-        downloadingBookIdsRef.current.add(book.id);
-        setDownloadingBookIds(new Set(downloadingBookIdsRef.current));
-      }
+      if (needsDownload && store.state.books.downloadingBookIds.includes(book.id)) return;
+      pendingOpenControllerRef.current?.abort();
+      const controller = new AbortController();
+      pendingOpenControllerRef.current = controller;
 
       try {
         if (onOpenBook) {
@@ -114,7 +112,8 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
           return;
         }
         await ensureLocalThenOpen(book, {
-          refreshBooks: (freshBooks) => refreshBooksCache(store, freshBooks),
+          store,
+          signal: controller.signal,
           openBook: (localBook) => {
             ws.openBookRef.current?.(localBook);
             panelApi?.close();
@@ -123,14 +122,16 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
       } catch (error) {
         console.error("Failed to download book before opening:", error);
         toast.error(`Could not download “${book.title}”. Please try again.`);
-      } finally {
-        if (needsDownload) {
-          downloadingBookIdsRef.current.delete(book.id);
-          setDownloadingBookIds(new Set(downloadingBookIdsRef.current));
-        }
       }
     },
     [onOpenBook, panelApi, store, ws],
+  );
+
+  useEffect(
+    () => () => {
+      pendingOpenControllerRef.current?.abort();
+    },
+    [],
   );
 
   const handleOpenNotebook = useCallback(
@@ -302,7 +303,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
                   onDeleteBook={handleDeleteBook}
                   onReloadBook={handleReloadBook}
                   syncActive={syncActive}
-                  downloadingBookIds={downloadingBookIds}
+                  downloadingBookIds={new Set(downloadingBookIds)}
                 />
               </div>
             </div>
@@ -322,7 +323,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
                       handleShareBook={handleShareBook}
                       isAuthenticated={isAuthenticated}
                       syncActive={syncActive}
-                      isDownloading={downloadingBookIds.has(book.id)}
+                      isDownloading={downloadingBookIds.includes(book.id)}
                     />
                   );
                 })}

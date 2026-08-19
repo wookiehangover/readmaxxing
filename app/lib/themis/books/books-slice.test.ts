@@ -5,11 +5,14 @@ import type { BookMeta } from "~/lib/stores/book-store";
 import {
   bookAdded,
   bookDeleted,
+  bookDownloadCompleted,
+  bookDownloadFailed,
   bookUpdated,
   booksHydrateFailed,
   booksHydrated,
   booksReducer,
   hydrateBooks,
+  downloadBookForOpenRequested,
 } from "~/lib/themis/books/books-slice";
 
 function makeBook(id: string, title = `Book ${id}`): BookMeta {
@@ -49,5 +52,31 @@ describe("booksReducer", () => {
 
     expect(failed.loading).toBe(false);
     expect(failed.error).toBe("IDB unavailable");
+  });
+
+  it("tracks loading and errors for one downloaded book", () => {
+    const requested = booksReducer(
+      undefined,
+      downloadBookForOpenRequested(
+        "one",
+        async () => {},
+        () => {},
+      ),
+    );
+    const failed = booksReducer(requested, bookDownloadFailed("one", "network unavailable"));
+    const retried = booksReducer(
+      failed,
+      downloadBookForOpenRequested(
+        "one",
+        async () => {},
+        () => {},
+      ),
+    );
+    const completed = booksReducer(retried, bookDownloadCompleted("one"));
+
+    expect(requested.downloadingBookIds).toEqual(["one"]);
+    expect(failed.downloadErrors).toEqual({ one: "network unavailable" });
+    expect(retried.downloadErrors).toEqual({});
+    expect(completed.downloadingBookIds).toEqual([]);
   });
 });

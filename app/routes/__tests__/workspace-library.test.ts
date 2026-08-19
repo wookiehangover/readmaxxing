@@ -15,6 +15,9 @@ vi.mock("~/lib/context/workspace-context", () => ({
 vi.mock("~/components/workspace/library-browse-content", () => ({
   LibraryBrowseContent: () => "Existing library page",
 }));
+vi.mock("~/lib/themis/provider", () => ({
+  useAppStore: () => ({ dispatch: vi.fn() }),
+}));
 
 import WorkspaceLibraryRoute, { openBookInWorkspace } from "~/routes/workspace-library";
 

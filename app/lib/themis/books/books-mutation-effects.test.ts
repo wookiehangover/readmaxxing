@@ -8,6 +8,7 @@ import { AnnotationService, type Highlight } from "~/lib/stores/annotations-stor
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import {
   deletePersistedBookEffect,
+  downloadBookForOpenEffect,
   persistUploadedBookEffect,
 } from "~/lib/themis/books/books-sagas";
 import type { BookUploadFile } from "~/lib/themis/books/books-slice";
@@ -120,5 +121,37 @@ describe("book mutation effects", () => {
     );
 
     expect(operations).toEqual(["highlight:one", "highlight:two", "book:book-1"]);
+  });
+
+  it("downloads through BookService and returns refreshed local metadata", async () => {
+    const operations: string[] = [];
+    const downloaded: BookMeta = {
+      id: "book-1",
+      title: "Downloaded",
+      author: "Author",
+      coverImage: null,
+      format: "epub",
+      hasLocalFile: true,
+    };
+    const layer = Layer.succeed(BookService, {
+      getBookData: () =>
+        Effect.sync(() => {
+          operations.push("data");
+          return new ArrayBuffer(4);
+        }),
+      getBooks: () =>
+        Effect.sync(() => {
+          operations.push("books");
+          return [downloaded];
+        }),
+    } as unknown as BookService["Type"]);
+
+    const result = await Effect.runPromise(
+      Effect.provide(downloadBookForOpenEffect("book-1"), layer),
+    );
+
+    expect(operations).toEqual(["data", "books"]);
+    expect(result).toBe(downloaded);
+    expect(result).not.toHaveProperty("data");
   });
 });

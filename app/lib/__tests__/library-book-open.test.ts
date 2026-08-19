@@ -5,7 +5,7 @@ import {
   refreshWorkspaceBooks,
 } from "~/lib/library-book-open";
 import type { BookMeta } from "~/lib/stores/book-store";
-import { booksHydrated } from "~/lib/themis/books/books-slice";
+import { booksHydrated, downloadBookForOpenRequested } from "~/lib/themis/books/books-slice";
 import type { AppStore } from "~/lib/themis/store";
 
 const localBook: BookMeta = {
@@ -25,69 +25,83 @@ const remoteBook: BookMeta = {
 };
 
 describe("ensureLocalThenOpen", () => {
-  it("downloads and refreshes metadata before opening a remote book", async () => {
+  it("dispatches a download and opens the downloaded metadata on success", async () => {
     const order: string[] = [];
     const downloadedBook = { ...remoteBook, hasLocalFile: true };
+    const store = {
+      dispatch: vi.fn((action: ReturnType<typeof downloadBookForOpenRequested>) => {
+        order.push("dispatch");
+        void action.payload[1](downloadedBook);
+        return action;
+      }),
+    } as unknown as Pick<AppStore, "dispatch">;
 
     await ensureLocalThenOpen(remoteBook, {
-      downloadBook: async () => {
-        order.push("download");
-        return { book: downloadedBook, books: [downloadedBook] };
-      },
-      refreshBooks: () => order.push("refresh"),
+      store,
       openBook: (book) => {
         order.push("open");
         expect(book).toBe(downloadedBook);
       },
     });
 
-    expect(order).toEqual(["download", "refresh", "open"]);
+    expect(order).toEqual(["dispatch", "open"]);
+    expect(store.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: expect.any(Array) }),
+    );
+    expect((store.dispatch as ReturnType<typeof vi.fn>).mock.calls[0][0].payload[0]).toBe(
+      remoteBook.id,
+    );
   });
 
-  it("opens an already-local book without downloading or refreshing", async () => {
-    const downloadBook = vi.fn();
-    const refreshBooks = vi.fn();
+  it("opens an already-local book without dispatching a download", async () => {
+    const store = { dispatch: vi.fn() } as unknown as Pick<AppStore, "dispatch">;
     const openBook = vi.fn();
 
-    await ensureLocalThenOpen(localBook, { downloadBook, refreshBooks, openBook });
+    await ensureLocalThenOpen(localBook, { store, openBook });
 
-    expect(downloadBook).not.toHaveBeenCalled();
-    expect(refreshBooks).not.toHaveBeenCalled();
+    expect(store.dispatch).not.toHaveBeenCalled();
     expect(openBook).toHaveBeenCalledWith(localBook);
   });
 
-  it("does not refresh or open when the download fails", async () => {
-    const refreshBooks = vi.fn();
+  it("rejects and does not open when the download fails", async () => {
+    const store = {
+      dispatch: vi.fn((action: ReturnType<typeof downloadBookForOpenRequested>) => {
+        action.payload[2]("network unavailable");
+        return action;
+      }),
+    } as unknown as Pick<AppStore, "dispatch">;
     const openBook = vi.fn();
 
     await expect(
       ensureLocalThenOpen(remoteBook, {
-        downloadBook: async () => {
-          throw new Error("network unavailable");
-        },
-        refreshBooks,
+        store,
         openBook,
       }),
     ).rejects.toThrow("network unavailable");
 
-    expect(refreshBooks).not.toHaveBeenCalled();
     expect(openBook).not.toHaveBeenCalled();
   });
 
-  it("does not open when the request is cancelled during download", async () => {
+  it("does not open when unmount aborts a pending download", async () => {
     const controller = new AbortController();
     const downloadedBook = { ...remoteBook, hasLocalFile: true };
     const openBook = vi.fn();
+    let completeDownload: ((book: BookMeta) => void | Promise<void>) | undefined;
+    const store = {
+      dispatch: vi.fn((action: ReturnType<typeof downloadBookForOpenRequested>) => {
+        completeDownload = action.payload[1];
+        return action;
+      }),
+    } as unknown as Pick<AppStore, "dispatch">;
 
-    await ensureLocalThenOpen(remoteBook, {
+    const pendingOpen = ensureLocalThenOpen(remoteBook, {
+      store,
       signal: controller.signal,
-      downloadBook: async () => {
-        controller.abort();
-        return { book: downloadedBook, books: [downloadedBook] };
-      },
-      refreshBooks: vi.fn(),
       openBook,
     });
+    controller.abort();
+    await pendingOpen;
+    await completeDownload?.(downloadedBook);
 
     expect(openBook).not.toHaveBeenCalled();
   });

@@ -10,6 +10,9 @@ import { BookService, type BookFormat, type BookMeta } from "~/lib/stores/book-s
 import {
   bookAdded,
   bookDeleted,
+  bookDownloadCompleted,
+  bookDownloadFailed,
+  bookUpdated,
   bookDeletionCompleted,
   bookDeletionFailed,
   booksHydrateFailed,
@@ -17,10 +20,13 @@ import {
   booksUploadCompleted,
   booksUploadFailed,
   deleteBookRequested,
+  downloadBookForOpenRequested,
   hydrateBooks,
   uploadBooksRequested,
   type BookAddedCallback,
   type BookDeletedCallback,
+  type BookDownloadCompletedCallback,
+  type BookDownloadFailedCallback,
   type BookUploadCompletedCallback,
   type BookUploadFailedCallback,
   type BookUploadFile,
@@ -69,12 +75,29 @@ export function deletePersistedBookEffect(bookId: string) {
   });
 }
 
+export function downloadBookForOpenEffect(bookId: string) {
+  return Effect.gen(function* () {
+    const bookService = yield* BookService;
+    yield* bookService.getBookData(bookId);
+    const books = yield* bookService.getBooks();
+    const book = books.find((candidate) => candidate.id === bookId);
+    if (!book?.hasLocalFile) {
+      return yield* Effect.fail(new Error(`Book ${bookId} did not become available locally`));
+    }
+    return book;
+  });
+}
+
 async function persistUploadedBook(file: BookUploadFile) {
   return AppRuntime.runPromise(persistUploadedBookEffect(file));
 }
 
 async function deletePersistedBook(bookId: string) {
   return AppRuntime.runPromise(deletePersistedBookEffect(bookId));
+}
+
+async function downloadBookForOpen(bookId: string) {
+  return AppRuntime.runPromise(downloadBookForOpenEffect(bookId));
 }
 
 function notifyBookAdded(callback: BookAddedCallback | undefined, book: BookMeta) {
@@ -106,6 +129,25 @@ function notifyUploadFailed(callback: BookUploadFailedCallback | undefined, erro
     callback?.(error);
   } catch (callbackError) {
     console.error("Failed to handle book upload failure:", callbackError);
+  }
+}
+
+async function notifyBookDownloadCompleted(
+  callback: BookDownloadCompletedCallback,
+  book: BookMeta,
+) {
+  try {
+    await callback(book);
+  } catch (error) {
+    console.error("Failed to handle downloaded book:", error);
+  }
+}
+
+function notifyBookDownloadFailed(callback: BookDownloadFailedCallback, error: string) {
+  try {
+    callback(error);
+  } catch (callbackError) {
+    console.error("Failed to handle book download failure:", callbackError);
   }
 }
 
@@ -151,8 +193,23 @@ export function* deleteBookSaga(action: ReturnType<typeof deleteBookRequested>) 
   }
 }
 
+export function* downloadBookForOpenSaga(action: ReturnType<typeof downloadBookForOpenRequested>) {
+  const [bookId, onCompleted, onFailed] = action.payload;
+  try {
+    const book = yield* call(downloadBookForOpen, bookId);
+    yield* put(bookUpdated(book));
+    yield* put(bookDownloadCompleted(bookId));
+    yield* call(notifyBookDownloadCompleted, onCompleted, book);
+  } catch (error) {
+    const message = errorMessage(error);
+    yield* put(bookDownloadFailed(bookId, message));
+    yield* call(notifyBookDownloadFailed, onFailed, message);
+  }
+}
+
 export function* booksSaga() {
   yield* takeLatest(hydrateBooks, hydrateBooksSaga);
   yield* takeEvery(uploadBooksRequested, uploadBooksSaga);
   yield* takeEvery(deleteBookRequested, deleteBookSaga);
+  yield* takeEvery(downloadBookForOpenRequested, downloadBookForOpenSaga);
 }

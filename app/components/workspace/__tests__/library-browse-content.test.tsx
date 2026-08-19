@@ -15,7 +15,11 @@ vi.mock("~/hooks/use-effect-query", () => ({
 vi.mock("~/lib/themis/provider", () => ({
   useAppStore: () => ({
     dispatch: themisMocks.dispatch,
-    booksSelectors: { selectAllBooks: { useValue: () => themisMocks.books } },
+    state: { books: { downloadingBookIds: [] } },
+    booksSelectors: {
+      selectAllBooks: { useValue: () => themisMocks.books },
+      selectDownloadingBookIds: { useValue: () => [] },
+    },
   }),
 }));
 

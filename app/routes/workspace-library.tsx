@@ -4,9 +4,10 @@ import { toast } from "sonner";
 import type { Route } from "./+types/workspace-library";
 import { LibraryBrowseContent } from "~/components/workspace/library-browse-content";
 import { useWorkspace, type WorkspaceContextValue } from "~/lib/context/workspace-context";
-import { ensureLocalThenOpen, refreshWorkspaceBooks } from "~/lib/library-book-open";
+import { ensureLocalThenOpen } from "~/lib/library-book-open";
 import { getBookReadingPath, getReadingBookId } from "~/lib/reading-route";
 import type { BookMeta } from "~/lib/stores/book-store";
+import { useAppStore } from "~/lib/themis/provider";
 
 type WorkspaceBookRefs = Pick<WorkspaceContextValue, "openBookRef">;
 type Navigate = (path: string) => void | Promise<void>;
@@ -28,6 +29,7 @@ export function openBookInWorkspace(
 
 export default function WorkspaceLibraryRoute() {
   const ws = useWorkspace();
+  const store = useAppStore();
   const navigate = useNavigate();
   const pendingOpenControllerRef = useRef<AbortController | null>(null);
 
@@ -50,7 +52,7 @@ export default function WorkspaceLibraryRoute() {
       try {
         await ensureLocalThenOpen(book, {
           signal: controller.signal,
-          refreshBooks: (books) => refreshWorkspaceBooks(ws, books),
+          store,
           openBook: (localBook) => {
             openBookInWorkspace(localBook, ws, navigate, controller.signal);
           },
@@ -60,7 +62,7 @@ export default function WorkspaceLibraryRoute() {
         toast.error(`Could not download “${book.title}”. Please try again.`);
       }
     },
-    [navigate, ws],
+    [navigate, store, ws],
   );
 
   return <LibraryBrowseContent onOpenBook={handleOpenBook} />;
