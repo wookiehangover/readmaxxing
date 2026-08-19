@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { TocList } from "~/components/book-list";
 import { ChatPanel } from "~/components/chat/chat-panel";
@@ -11,10 +11,17 @@ import { WorkspaceNotebookPanel } from "~/components/workspace/panel-components"
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { cn } from "~/lib/utils";
 
-const tabs = ["Notes", "Discuss", "Outline"] as const;
-type ReadingRailTab = (typeof tabs)[number];
+const desktopTabs = ["Notes", "Discuss", "Outline"] as const;
+const mobileTabs = ["Read", ...desktopTabs] as const;
+type ReadingRailTab = (typeof mobileTabs)[number];
 
-export function ReadingRail() {
+export function ReadingRail({
+  mobile = false,
+  bookSurface,
+}: {
+  mobile?: boolean;
+  bookSurface?: ReactNode;
+}) {
   const workspace = useWorkspace();
   const activeBookId = useSyncExternalStore(
     workspace.subscribeClusterChanges,
@@ -26,13 +33,74 @@ export function ReadingRail() {
     () => workspace.getReadingLocation(activeBookId),
     () => null,
   );
-  const [activeTab, setActiveTab] = useState<ReadingRailTab>("Notes");
+  const [activeTab, setActiveTab] = useState<ReadingRailTab>(mobile ? "Read" : "Notes");
   const [tocOpen, setTocOpen] = useState(false);
   const book = workspace.booksRef.current.find((candidate) => candidate.id === activeBookId);
   const toc = activeBookId ? workspace.findTocForBook(activeBookId) : undefined;
   const navigateToToc = activeBookId ? workspace.findTocNavigationForBook(activeBookId) : undefined;
   const chapterLabel = location?.chapterLabel;
   const hasTocShortcut = Boolean(chapterLabel && toc?.length && navigateToToc);
+
+  const panels = book ? (
+    <>
+      <Tabs.Panel value="Notes" className="min-h-0 flex-1 overflow-hidden outline-none">
+        <WorkspaceNotebookPanel bookId={book.id} bookTitle={book.title} chromeless />
+      </Tabs.Panel>
+      <Tabs.Panel value="Discuss" className="min-h-0 flex-1 overflow-hidden outline-none">
+        <ChatPanel bookId={book.id} bookTitle={book.title} />
+      </Tabs.Panel>
+      <Tabs.Panel value="Outline" className="min-h-0 flex-1 overflow-hidden outline-none">
+        <WorkspaceOutlinePanel bookId={book.id} bookTitle={book.title} chromeless />
+      </Tabs.Panel>
+      <Tabs.Panel value="Review" className="min-h-0 flex-1 overflow-hidden outline-none">
+        <Empty className="h-full pr-6">
+          <EmptyHeader>
+            <EmptyTitle>Nothing to review yet.</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      </Tabs.Panel>
+    </>
+  ) : null;
+
+  if (mobile) {
+    return (
+      <Tabs.Root
+        className="flex h-full min-h-0 flex-col bg-background"
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as ReadingRailTab)}
+        data-testid="mobile-reading-tabs"
+      >
+        <Tabs.Panel
+          value="Read"
+          keepMounted
+          aria-label="Book surface"
+          className="min-h-0 flex-1 overflow-hidden outline-none"
+        >
+          {bookSurface}
+        </Tabs.Panel>
+        {panels}
+        <Tabs.List
+          aria-label="Reading sections"
+          className="grid shrink-0 grid-cols-4 border-t border-border bg-background px-2 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+        >
+          {mobileTabs.map((tab) => (
+            <Tabs.Tab
+              key={tab}
+              value={tab}
+              className={cn(
+                "min-h-7 bg-transparent px-1 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                {
+                  "text-foreground": activeTab === tab,
+                },
+              )}
+            >
+              {tab}
+            </Tabs.Tab>
+          ))}
+        </Tabs.List>
+      </Tabs.Root>
+    );
+  }
 
   return (
     <Tabs.Root
@@ -45,7 +113,7 @@ export function ReadingRail() {
           aria-label="Reading tools"
           className="relative flex min-w-0 flex-1 items-center gap-5"
         >
-          {tabs.map((tab) => (
+          {desktopTabs.map((tab) => (
             <Tabs.Tab
               key={tab}
               value={tab}
@@ -118,26 +186,7 @@ export function ReadingRail() {
         ) : null}
       </div>
 
-      {book ? (
-        <>
-          <Tabs.Panel value="Notes" className="min-h-0 flex-1 overflow-hidden outline-none">
-            <WorkspaceNotebookPanel bookId={book.id} bookTitle={book.title} chromeless />
-          </Tabs.Panel>
-          <Tabs.Panel value="Discuss" className="min-h-0 flex-1 overflow-hidden outline-none">
-            <ChatPanel bookId={book.id} bookTitle={book.title} />
-          </Tabs.Panel>
-          <Tabs.Panel value="Outline" className="min-h-0 flex-1 overflow-hidden outline-none">
-            <WorkspaceOutlinePanel bookId={book.id} bookTitle={book.title} chromeless />
-          </Tabs.Panel>
-          <Tabs.Panel value="Review" className="min-h-0 flex-1 overflow-hidden outline-none">
-            <Empty className="h-full pr-6">
-              <EmptyHeader>
-                <EmptyTitle>Nothing to review yet.</EmptyTitle>
-              </EmptyHeader>
-            </Empty>
-          </Tabs.Panel>
-        </>
-      ) : null}
+      {panels}
     </Tabs.Root>
   );
 }

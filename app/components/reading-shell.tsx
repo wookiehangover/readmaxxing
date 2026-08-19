@@ -3,11 +3,13 @@ import { ReadingRail } from "~/components/reading-shell/reading-rail";
 import { ReadingSplit } from "~/components/reading-shell/reading-split";
 import { WorkspaceBookReader } from "~/components/workspace-book-reader";
 import { WorkspacePdfReader } from "~/components/workspace-pdf-reader";
+import { useIsMobile } from "~/hooks/use-mobile";
 import { ReadingChatMenuProvider } from "~/lib/context/reading-chat-menu-context";
 import { useWorkspace } from "~/lib/context/workspace-context";
 
 export function ReadingShell() {
   const workspace = useWorkspace();
+  const isMobile = useIsMobile();
   const activeBookId = useSyncExternalStore(
     workspace.subscribeClusterChanges,
     () => workspace.activeClusterBookIdRef.current,
@@ -29,7 +31,11 @@ export function ReadingShell() {
 
   return (
     <ReadingChatMenuProvider>
-      <ReadingSplit book={bookSurface} rail={<ReadingRail />} />
+      {isMobile === true ? (
+        <ReadingRail mobile bookSurface={bookSurface} />
+      ) : (
+        <ReadingSplit book={bookSurface} rail={<ReadingRail />} />
+      )}
     </ReadingChatMenuProvider>
   );
 }
