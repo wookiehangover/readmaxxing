@@ -1,0 +1,119 @@
+import { call, put, takeEvery, takeLatest } from "typed-redux-saga";
+
+import { authService } from "~/lib/auth-service";
+import {
+  addPasskeyRequested,
+  authSessionCleared,
+  authSessionFailed,
+  authSessionResolved,
+  generateMagicLinkRequested,
+  listPasskeysRequested,
+  logoutRequested,
+  registerRequested,
+  removePasskeyRequested,
+  renamePasskeyRequested,
+  refreshAuthSessionRequested,
+  signInRequested,
+} from "~/lib/themis/auth-session/auth-session-slice";
+
+export function* refreshAuthSessionSaga() {
+  try {
+    const session = yield* call(authService.getSession);
+    yield* put(authSessionResolved(session.user));
+  } catch {
+    yield* put(authSessionFailed());
+  }
+}
+
+export function* logoutSaga(action: ReturnType<typeof logoutRequested>) {
+  const [onCompleted, onFailed] = action.payload;
+  try {
+    yield* call(authService.logout);
+    yield* put(authSessionCleared());
+    yield* call(onCompleted);
+  } catch (cause) {
+    yield* call(onFailed, cause);
+  }
+}
+
+export function* registerSaga(action: ReturnType<typeof registerRequested>) {
+  const [displayName, onCompleted, onFailed] = action.payload;
+  try {
+    const result = yield* call(authService.register, displayName);
+    yield* call(onCompleted, result);
+  } catch (cause) {
+    yield* call(onFailed, cause);
+  }
+}
+
+export function* signInSaga(action: ReturnType<typeof signInRequested>) {
+  const [onCompleted, onFailed] = action.payload;
+  try {
+    const result = yield* call(authService.signIn);
+    yield* call(onCompleted, result);
+  } catch (cause) {
+    yield* call(onFailed, cause);
+  }
+}
+
+export function* generateMagicLinkSaga(action: ReturnType<typeof generateMagicLinkRequested>) {
+  const [onCompleted, onFailed] = action.payload;
+  try {
+    const result = yield* call(authService.generateMagicLink);
+    yield* call(onCompleted, result);
+  } catch (cause) {
+    yield* call(onFailed, cause);
+  }
+}
+
+export function* listPasskeysSaga(action: ReturnType<typeof listPasskeysRequested>) {
+  const [onCompleted, onFailed] = action.payload;
+  try {
+    const result = yield* call(authService.listPasskeys);
+    yield* call(onCompleted, result);
+  } catch (cause) {
+    yield* call(onFailed, cause);
+  }
+}
+
+export function* addPasskeySaga(action: ReturnType<typeof addPasskeyRequested>) {
+  const [onCompleted, onFailed] = action.payload;
+  try {
+    const result = yield* call(authService.addPasskey);
+    yield* call(onCompleted, result);
+  } catch (cause) {
+    yield* call(onFailed, cause);
+  }
+}
+
+export function* renamePasskeySaga(action: ReturnType<typeof renamePasskeyRequested>) {
+  const [id, name, onCompleted, onFailed] = action.payload;
+  try {
+    yield* call(authService.renamePasskey, id, name);
+    yield* call(onCompleted);
+  } catch (cause) {
+    yield* call(onFailed, cause);
+  }
+}
+
+export function* removePasskeySaga(action: ReturnType<typeof removePasskeyRequested>) {
+  const [id, onCompleted, onFailed] = action.payload;
+  try {
+    yield* call(authService.removePasskey, id);
+    yield* call(onCompleted);
+  } catch (cause) {
+    yield* call(onFailed, cause);
+  }
+}
+
+export function* authSessionSaga() {
+  yield* takeLatest(refreshAuthSessionRequested, refreshAuthSessionSaga);
+  yield* takeEvery(logoutRequested, logoutSaga);
+  yield* takeEvery(registerRequested, registerSaga);
+  yield* takeEvery(signInRequested, signInSaga);
+  yield* takeEvery(generateMagicLinkRequested, generateMagicLinkSaga);
+  yield* takeEvery(listPasskeysRequested, listPasskeysSaga);
+  yield* takeEvery(addPasskeyRequested, addPasskeySaga);
+  yield* takeEvery(renamePasskeyRequested, renamePasskeySaga);
+  yield* takeEvery(removePasskeyRequested, removePasskeySaga);
+}

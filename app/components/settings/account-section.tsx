@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Effect } from "effect";
 import { Link } from "react-router";
 import { toast } from "sonner";
 import { Button } from "~/components/ui/button";
@@ -22,12 +21,19 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui/table";
-import { AuthService, type AuthPasskey, type MagicLinkResponse } from "~/lib/auth-service";
+import type { AuthPasskey, MagicLinkResponse } from "~/lib/auth-service";
 import { useAuth } from "~/lib/context/auth-context";
-import { AppRuntime } from "~/lib/effect-runtime";
 
 export function AccountSection() {
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const {
+    isAuthenticated,
+    isLoading: isAuthLoading,
+    listPasskeys,
+    addPasskey,
+    renamePasskey,
+    removePasskey,
+    generateMagicLink,
+  } = useAuth();
   const [passkeys, setPasskeys] = useState<AuthPasskey[]>([]);
   const [isLoadingPasskeys, setIsLoadingPasskeys] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -48,7 +54,7 @@ export function AccountSection() {
     let active = true;
     setIsLoadingPasskeys(true);
 
-    loadPasskeys()
+    listPasskeys()
       .then((loadedPasskeys) => {
         if (active) setPasskeys(loadedPasskeys);
       })
@@ -63,15 +69,13 @@ export function AccountSection() {
     return () => {
       active = false;
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, listPasskeys]);
 
   async function handleAddPasskey() {
     setIsAdding(true);
     try {
-      await AppRuntime.runPromise(
-        AuthService.pipe(Effect.andThen((service) => service.addPasskey())),
-      );
-      setPasskeys(await loadPasskeys());
+      await addPasskey();
+      setPasskeys(await listPasskeys());
       toast.success("Passkey added");
     } catch (cause) {
       console.error("Failed to add passkey:", cause);
@@ -91,9 +95,7 @@ export function AccountSection() {
     const name = nameDraft.trim() || null;
     setIsRenaming(true);
     try {
-      await AppRuntime.runPromise(
-        AuthService.pipe(Effect.andThen((service) => service.renamePasskey(passkey.id, name))),
-      );
+      await renamePasskey(passkey.id, name);
       setPasskeys((current) =>
         current.map((item) => (item.id === passkey.id ? { ...item, name } : item)),
       );
@@ -112,9 +114,7 @@ export function AccountSection() {
     setIsRemoving(true);
     setRemoveError(null);
     try {
-      await AppRuntime.runPromise(
-        AuthService.pipe(Effect.andThen((service) => service.removePasskey(passkeyToRemove.id))),
-      );
+      await removePasskey(passkeyToRemove.id);
       setPasskeys((current) => current.filter((item) => item.id !== passkeyToRemove.id));
       setPasskeyToRemove(null);
       toast.success("Passkey removed");
@@ -130,9 +130,7 @@ export function AccountSection() {
     setIsGenerating(true);
     setMagicLink(null);
     try {
-      const result = await AppRuntime.runPromise(
-        AuthService.pipe(Effect.andThen((service) => service.generateMagicLink())),
-      );
+      const result = await generateMagicLink();
       setMagicLink(result);
     } catch (cause) {
       console.error("Failed to generate magic link:", cause);
@@ -347,12 +345,6 @@ export function AccountSection() {
 
 function StateMessage({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
-}
-
-function loadPasskeys() {
-  return AppRuntime.runPromise(
-    AuthService.pipe(Effect.andThen((service) => service.listPasskeys())),
-  );
 }
 
 function formatCreatedAt(createdAt: string) {

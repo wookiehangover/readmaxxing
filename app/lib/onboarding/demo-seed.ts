@@ -1,6 +1,6 @@
 import { get, set } from "idb-keyval";
 import { Effect } from "effect";
-import { AuthService } from "~/lib/auth-service";
+import { authService } from "~/lib/auth-service";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { ChatError, StorageError } from "~/lib/errors";
 import {
@@ -27,16 +27,18 @@ export async function isFirstVisit(): Promise<boolean> {
     return false;
   }
 
-  const check = Effect.gen(function* () {
-    const auth = yield* AuthService;
-    const session = yield* auth.getSession();
+  try {
+    const session = await authService.getSession();
     if (session.user !== null) return false;
-
-    const books = yield* BookService;
-    return (yield* books.getBooks()).length === 0;
-  }).pipe(Effect.catchAll(() => Effect.succeed(false)));
-
-  return AppRuntime.runPromise(check);
+    return AppRuntime.runPromise(
+      Effect.gen(function* () {
+        const books = yield* BookService;
+        return (yield* books.getBooks()).length === 0;
+      }).pipe(Effect.catchAll(() => Effect.succeed(false))),
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function fetchDemoEpubEffect() {

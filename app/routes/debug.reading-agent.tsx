@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { Activity, ArrowLeft, CircleAlert, Clock3, Database, Inbox, Server } from "lucide-react";
 import { Link, redirect } from "react-router";
 import { LastIncrementCard } from "~/components/reading-agent/last-increment-card";
@@ -36,8 +35,7 @@ import {
   type ReadingAgentUnitStatus,
   useReadingAgentStatus,
 } from "~/hooks/use-reading-agent-status";
-import { AuthService } from "~/lib/auth-service";
-import { AppRuntime } from "~/lib/effect-runtime";
+import { authService } from "~/lib/auth-service";
 import { readingAgentActionAvailability } from "~/lib/reading-agent/actions-client";
 import { cn } from "~/lib/utils";
 
@@ -46,9 +44,7 @@ export function meta() {
 }
 
 export async function clientLoader() {
-  const session = await AppRuntime.runPromise(
-    AuthService.pipe(Effect.andThen((service) => service.getSession())),
-  );
+  const session = await authService.getSession();
   if (!session.user) throw redirect("/login");
   return {};
 }

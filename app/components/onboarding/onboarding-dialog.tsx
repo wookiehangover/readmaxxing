@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Cause, Effect, Runtime } from "effect";
 import { Loader2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import {
@@ -11,23 +10,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import { AuthService } from "~/lib/auth-service";
 import { useAuth } from "~/lib/context/auth-context";
-import { AppRuntime } from "~/lib/effect-runtime";
 
 function extractErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && Runtime.FiberFailureCauseId in error) {
-    const cause = (error as any)[Runtime.FiberFailureCauseId];
-    const failure = cause ? Array.from(Cause.failures(cause))[0] : null;
-    if (failure && typeof failure === "object" && "cause" in failure) {
-      const original = (failure as { cause: unknown }).cause;
-      if (original instanceof Error) return original.message;
-      if (typeof original === "string") return original;
-    }
-    if (failure instanceof Error) return failure.message;
+  if (error && typeof error === "object" && "cause" in error) {
+    const cause = error.cause;
+    if (cause instanceof Error) return cause.message;
+    if (typeof cause === "string") return cause;
   }
-  if (error instanceof Error && error.cause instanceof Error) return error.cause.message;
-  if (error instanceof Error && error.message !== "An error has occurred") return error.message;
+  if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string") return error;
   return fallback;
 }
@@ -41,7 +32,7 @@ export function OnboardingDialog({
   onOpenChange: (open: boolean) => void;
   onAuthenticated?: (userId: string) => void | Promise<void>;
 }) {
-  const { refreshAuth } = useAuth();
+  const { refreshAuth, register, signIn } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState<"register" | "signin" | "setup" | null>(null);
   const isLoading = loadingAction !== null;
@@ -61,9 +52,7 @@ export function OnboardingDialog({
     setError(null);
     setLoadingAction("register");
     try {
-      const result = await AppRuntime.runPromise(
-        AuthService.pipe(Effect.andThen((service) => service.register("Reader"))),
-      );
+      const result = await register("Reader");
       await finishAuth(result.userId);
     } catch (authError: unknown) {
       console.error("Register failed:", authError);
@@ -77,9 +66,7 @@ export function OnboardingDialog({
     setError(null);
     setLoadingAction("signin");
     try {
-      const result = await AppRuntime.runPromise(
-        AuthService.pipe(Effect.andThen((service) => service.signIn())),
-      );
+      const result = await signIn();
       if (!result.user) throw new Error("Sign-in completed without a user account.");
       await finishAuth(result.user.id);
     } catch (authError: unknown) {

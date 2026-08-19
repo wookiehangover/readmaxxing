@@ -4,17 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   refreshAuth: vi.fn(),
-  runPromise: vi.fn(),
+  register: vi.fn(),
+  signIn: vi.fn(),
 }));
 
 vi.mock("~/lib/context/auth-context", () => ({
-  useAuth: () => ({ refreshAuth: mocks.refreshAuth }),
-}));
-vi.mock("~/lib/effect-runtime", () => ({
-  AppRuntime: { runPromise: mocks.runPromise },
-}));
-vi.mock("~/lib/auth-service", () => ({
-  AuthService: { pipe: vi.fn(() => ({ type: "register" })) },
+  useAuth: () => ({
+    refreshAuth: mocks.refreshAuth,
+    register: mocks.register,
+    signIn: mocks.signIn,
+  }),
 }));
 
 import { OnboardingDialog } from "./onboarding-dialog";
@@ -25,7 +24,8 @@ let root: Root | null = null;
 
 beforeEach(() => {
   mocks.refreshAuth.mockReset();
-  mocks.runPromise.mockReset();
+  mocks.register.mockReset();
+  mocks.signIn.mockReset();
   document.body.innerHTML = "";
 });
 
@@ -42,7 +42,7 @@ describe("OnboardingDialog", () => {
     const adoption = new Promise<void>((resolve) => {
       finishAdoption = resolve;
     });
-    mocks.runPromise.mockImplementation(async () => {
+    mocks.register.mockImplementation(async () => {
       order.push("auth");
       return { verified: true, userId: "user-1" };
     });

@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { annotationsSaga } from "~/lib/themis/annotations/annotations-sagas";
+import { authSessionSaga } from "~/lib/themis/auth-session/auth-session-sagas";
+import { refreshAuthSessionRequested } from "~/lib/themis/auth-session/auth-session-slice";
 import { bookmarksSaga } from "~/lib/themis/bookmarks/bookmarks-sagas";
 import { booksSaga } from "~/lib/themis/books/books-sagas";
 import { hydrateBooks } from "~/lib/themis/books/books-slice";
@@ -22,11 +24,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     if (!store) return;
     const disposeStore = store.init();
     const cancelAnnotationsSaga = store.runSaga(annotationsSaga);
+    const cancelAuthSessionSaga = store.runSaga(authSessionSaga);
     const cancelBookmarksSaga = store.runSaga(bookmarksSaga);
     const cancelBooksSaga = store.runSaga(booksSaga);
     const cancelChatSessionsSaga = store.runSaga(chatSessionsSaga);
     const cancelReadingPositionsSaga = store.runSaga(readingPositionsSaga);
     const cancelWorkspaceRestoreSaga = store.runSaga(workspaceRestoreSaga);
+    store.dispatch(refreshAuthSessionRequested());
     store.dispatch(hydrateBooks());
     store.dispatch(hydrateWorkspaceRestore());
     setStoreStarted(true);
@@ -37,6 +41,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       cancelChatSessionsSaga();
       cancelBooksSaga();
       cancelBookmarksSaga();
+      cancelAuthSessionSaga();
       cancelAnnotationsSaga();
       disposeStore();
     };

@@ -4,21 +4,26 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  addPasskey: vi.fn(),
   auth: { isAuthenticated: false, isLoading: false },
-  runPromise: vi.fn(),
+  generateMagicLink: vi.fn(),
+  listPasskeys: vi.fn(),
+  removePasskey: vi.fn(),
+  renamePasskey: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
   writeText: vi.fn(),
 }));
 
 vi.mock("~/lib/context/auth-context", () => ({
-  useAuth: () => mocks.auth,
-}));
-vi.mock("~/lib/effect-runtime", () => ({
-  AppRuntime: { runPromise: mocks.runPromise },
-}));
-vi.mock("~/lib/auth-service", () => ({
-  AuthService: { pipe: vi.fn(() => ({ type: "generateMagicLink" })) },
+  useAuth: () => ({
+    ...mocks.auth,
+    addPasskey: mocks.addPasskey,
+    generateMagicLink: mocks.generateMagicLink,
+    listPasskeys: mocks.listPasskeys,
+    removePasskey: mocks.removePasskey,
+    renamePasskey: mocks.renamePasskey,
+  }),
 }));
 vi.mock("sonner", () => ({
   toast: { error: mocks.toastError, success: mocks.toastSuccess },
@@ -42,7 +47,11 @@ const firstPasskey = {
 beforeEach(() => {
   mocks.auth.isAuthenticated = false;
   mocks.auth.isLoading = false;
-  mocks.runPromise.mockReset();
+  mocks.addPasskey.mockReset();
+  mocks.generateMagicLink.mockReset();
+  mocks.listPasskeys.mockReset();
+  mocks.removePasskey.mockReset();
+  mocks.renamePasskey.mockReset();
   mocks.toastError.mockReset();
   mocks.toastSuccess.mockReset();
   mocks.writeText.mockReset();
@@ -73,7 +82,7 @@ function renderSection() {
 
 async function renderSignedIn(passkeys = [firstPasskey]) {
   mocks.auth.isAuthenticated = true;
-  mocks.runPromise.mockResolvedValueOnce(passkeys);
+  mocks.listPasskeys.mockResolvedValueOnce(passkeys);
   renderSection();
   await flushAsyncWork();
 }
@@ -122,7 +131,7 @@ describe("AccountSection", () => {
 
   it("generates and copies a magic link for signed-in users", async () => {
     await renderSignedIn();
-    mocks.runPromise.mockResolvedValueOnce({
+    mocks.generateMagicLink.mockResolvedValueOnce({
       url: "https://example.com/api/auth/magic-link/token",
       expiresAt: new Date(Date.now() + 7 * 60_000).toISOString(),
     });
@@ -143,7 +152,7 @@ describe("AccountSection", () => {
 
   it("shows a toast when generation fails", async () => {
     await renderSignedIn();
-    mocks.runPromise.mockRejectedValueOnce(new Error("request failed"));
+    mocks.generateMagicLink.mockRejectedValueOnce(new Error("request failed"));
 
     await click(findButton("Generate magic link"));
 
@@ -162,12 +171,11 @@ describe("AccountSection", () => {
 
   it("adds a passkey and refreshes the list", async () => {
     await renderSignedIn();
-    mocks.runPromise
-      .mockResolvedValueOnce({ verified: true })
-      .mockResolvedValueOnce([
-        firstPasskey,
-        { ...firstPasskey, id: "credential-2", name: "Phone", backedUp: false },
-      ]);
+    mocks.addPasskey.mockResolvedValueOnce({ verified: true });
+    mocks.listPasskeys.mockResolvedValueOnce([
+      firstPasskey,
+      { ...firstPasskey, id: "credential-2", name: "Phone", backedUp: false },
+    ]);
 
     await click(findButton("Add passkey"));
 
@@ -183,7 +191,7 @@ describe("AccountSection", () => {
     const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Passkey name"]');
     expect(input).not.toBeNull();
     act(() => setInputValue(input!, "Work laptop"));
-    mocks.runPromise.mockResolvedValueOnce(undefined);
+    mocks.renamePasskey.mockResolvedValueOnce(undefined);
 
     await click(findButton("Save"));
 
@@ -197,7 +205,7 @@ describe("AccountSection", () => {
     await click(findButton("Remove"));
 
     const dialog = document.body.querySelector('[data-slot="dialog-content"]');
-    mocks.runPromise.mockResolvedValueOnce(undefined);
+    mocks.removePasskey.mockResolvedValueOnce(undefined);
     await click(findButton("Remove", dialog!));
 
     expect(document.body.textContent).not.toContain("Laptop");
@@ -210,7 +218,7 @@ describe("AccountSection", () => {
     await click(findButton("Remove"));
 
     const dialog = document.body.querySelector('[data-slot="dialog-content"]');
-    mocks.runPromise.mockRejectedValueOnce({
+    mocks.removePasskey.mockRejectedValueOnce({
       cause: new Error("Cannot remove the last passkey"),
     });
     await click(findButton("Remove", dialog!));

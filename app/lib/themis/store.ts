@@ -3,6 +3,9 @@ import { ReactStore } from "@augmentcode/themis/react-store";
 import { createAnnotationsSelectors } from "~/lib/themis/annotations/annotations-selectors";
 import { annotationsReducer } from "~/lib/themis/annotations/annotations-slice";
 import type { AnnotationsState } from "~/lib/themis/annotations/annotations-types";
+import { createAuthSessionSelectors } from "~/lib/themis/auth-session/auth-session-selectors";
+import { authSessionReducer } from "~/lib/themis/auth-session/auth-session-slice";
+import type { AuthSessionState } from "~/lib/themis/auth-session/auth-session-types";
 import { createBookmarksSelectors } from "~/lib/themis/bookmarks/bookmarks-selectors";
 import { bookmarksReducer } from "~/lib/themis/bookmarks/bookmarks-slice";
 import type { BookmarksState } from "~/lib/themis/bookmarks/bookmarks-types";
@@ -22,6 +25,7 @@ import type { WorkspaceRestoreState } from "~/lib/themis/workspace-restore/works
 export type AppStoreCore = ReactStore<
   {
     annotations: AnnotationsState;
+    authSession: AuthSessionState;
     bookmarks: BookmarksState;
     books: BooksState;
     chatSessions: ChatSessionsState;
@@ -30,6 +34,7 @@ export type AppStoreCore = ReactStore<
   },
   {
     annotations: typeof annotationsReducer;
+    authSession: typeof authSessionReducer;
     bookmarks: typeof bookmarksReducer;
     books: typeof booksReducer;
     chatSessions: typeof chatSessionsReducer;
@@ -41,6 +46,7 @@ export type AppStoreCore = ReactStore<
 export function createAppStore() {
   const store = new ReactStore({
     annotations: annotationsReducer,
+    authSession: authSessionReducer,
     bookmarks: bookmarksReducer,
     books: booksReducer,
     chatSessions: chatSessionsReducer,
@@ -49,6 +55,7 @@ export function createAppStore() {
   });
   return Object.assign(store, {
     annotationsSelectors: createAnnotationsSelectors(store),
+    authSessionSelectors: createAuthSessionSelectors(store),
     bookmarksSelectors: createBookmarksSelectors(store),
     booksSelectors: createBooksSelectors(store),
     chatSessionsSelectors: createChatSessionsSelectors(store),
