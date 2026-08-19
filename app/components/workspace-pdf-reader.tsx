@@ -5,7 +5,6 @@ import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
 import { HighlightPopover } from "~/components/highlight-popover";
-import { useEffectQuery } from "~/hooks/use-effect-query";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { useAppStore } from "~/lib/themis/provider";
 import type { DockviewPanelApi } from "dockview-react";
@@ -18,9 +17,13 @@ import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { usePdfWorkspacePanels } from "~/hooks/use-pdf-workspace-panels";
 import type { PanelTypographyParams } from "~/components/workspace-book-reader";
-import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { PdfReaderView } from "~/components/workspace-pdf-reader/pdf-reader-view";
+import {
+  addBookmarkRequested,
+  deleteBookmarkRequested,
+  hydrateBookmarksRequested,
+} from "~/lib/themis/bookmarks/bookmarks-slice";
 
 interface WorkspacePdfReaderProps {
   bookId: string;
@@ -106,7 +109,6 @@ function WorkspacePdfReaderInner({
   );
 
   const [tocOpen, setTocOpen] = useState(false);
-  const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
 
   // Ref-based callback so usePdfHighlights always calls the latest handleOpenNotebook
@@ -166,19 +168,12 @@ function WorkspacePdfReaderInner({
   useReadingLocation(book.id, currentChapterLabel, currentPage, totalPages);
 
   const bookmarkSyncVersion = useSyncListener(["bookmark"]);
-  const { data: bookmarks } = useEffectQuery(
-    () =>
-      BookmarkService.pipe(
-        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to load bookmarks:", error);
-            return [] as BookmarkRecord[];
-          }),
-        ),
-      ),
-    [book.id, bookmarkVersion, bookmarkSyncVersion],
-  );
+  const store = useAppStore();
+  const bookmarks = store.bookmarksSelectors.selectBookmarksByBook.useValue(book.id);
+
+  useEffect(() => {
+    store.dispatch(hydrateBookmarksRequested(book.id));
+  }, [book.id, bookmarkSyncVersion, store]);
 
   // Load highlights once after initial render
   const highlightsLoadedRef = useRef(false);
@@ -334,36 +329,26 @@ function WorkspacePdfReaderInner({
       .catch(console.error);
   }, [book.id, book.title, book.format]);
 
-  const currentBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+  const currentBookmark = bookmarks.find((bookmark) => bookmark.pageNumber === currentPage);
 
-  const handleBookmarkPage = useCallback(async () => {
+  const handleBookmarkPage = useCallback(() => {
     if (currentPage < 1) return;
-    const existingBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+    const existingBookmark = bookmarks.find((bookmark) => bookmark.pageNumber === currentPage);
     const now = Date.now();
 
-    await AppRuntime.runPromise(
-      BookmarkService.pipe(
-        Effect.andThen((s) =>
-          existingBookmark
-            ? s.deleteBookmark(existingBookmark.id)
-            : s.saveBookmark({
-                id: `bookmark:${book.id}:page:${currentPage}`,
-                bookId: book.id,
-                pageNumber: currentPage,
-                label: `Page ${currentPage}`,
-                createdAt: now,
-                updatedAt: now,
-              }),
-        ),
-      ),
+    store.dispatch(
+      existingBookmark
+        ? deleteBookmarkRequested(book.id, existingBookmark.id)
+        : addBookmarkRequested({
+            id: `bookmark:${book.id}:page:${currentPage}`,
+            bookId: book.id,
+            pageNumber: currentPage,
+            label: `Page ${currentPage}`,
+            createdAt: now,
+            updatedAt: now,
+          }),
     );
-    setBookmarkVersion((version) => version + 1);
-    queueMicrotask(() => {
-      window.dispatchEvent(
-        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
-      );
-    });
-  }, [book.id, bookmarks, currentPage]);
+  }, [book.id, bookmarks, currentPage, store]);
 
   // Keep goToPage in sync for navigation map
   useEffect(() => {
