@@ -1,5 +1,6 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const readingLocation = {
@@ -31,31 +32,62 @@ const workspace = vi.hoisted(() => ({
   findTocNavigationForBook: () => navigateToToc,
 }));
 
-vi.mock("~/lib/context/workspace-context", () => ({ useWorkspace: () => workspace }));
+vi.mock("~/lib/context/workspace-context", () => ({
+  useWorkspace: () => workspace,
+  useOptionalWorkspace: () => null,
+}));
+vi.mock("~/lib/context/auth-context", () => ({
+  useAuth: () => ({ isAuthenticated: false }),
+}));
+vi.mock("~/lib/context/reading-chat-menu-context", () => ({
+  useReadingChatMenuActions: () => null,
+}));
+vi.mock("~/components/share-dialog", () => ({ ShareDialog: () => null }));
 vi.mock("~/components/workspace/panel-components", () => ({
   WorkspaceNotebookPanel: ({ chromeless }: { chromeless?: boolean }) => (
     <div data-testid="notes-panel" data-chromeless={chromeless}>
-      <div data-testid="notes-scroll-viewport">Notes panel</div>
+      <div data-testid="notes-scroll-area" className="min-h-0 flex-1">
+        <div data-testid="notes-scroll-viewport" className="size-full">
+          <div data-testid="notes-scroll-content" className="pr-6 pl-6 md:pl-0">
+            Notes panel
+          </div>
+        </div>
+      </div>
     </div>
   ),
 }));
 vi.mock("~/components/chat/chat-panel", () => ({
   ChatPanel: () => (
     <div data-testid="chat-panel">
-      <div data-testid="discuss-scroll-viewport">Chat panel</div>
+      <div data-testid="discuss-scroll-area" className="min-h-0 flex-1">
+        <div data-testid="discuss-scroll-viewport" className="size-full">
+          <div data-testid="discuss-scroll-content" className="pr-6 pl-6 md:pl-0">
+            Chat panel
+          </div>
+        </div>
+      </div>
     </div>
   ),
 }));
 vi.mock("~/components/workspace/outline-panel", () => ({
   WorkspaceOutlinePanel: ({ chromeless }: { chromeless?: boolean }) => (
     <div data-testid="outline-panel" data-chromeless={chromeless}>
-      <div data-testid="outline-scroll-viewport">Outline panel</div>
+      <div data-testid="outline-scroll-area" className="min-h-0 flex-1">
+        <div data-testid="outline-scroll-viewport" className="size-full">
+          <div data-testid="outline-scroll-content" className="pr-6 pl-6 md:pl-0">
+            Outline panel
+          </div>
+        </div>
+      </div>
     </div>
   ),
 }));
 
+import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { ReadingRail } from "~/components/reading-shell/reading-rail";
 import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
+import { ReadingRailMenuPortal } from "~/components/reading-shell/reading-rail-menu-portal";
+import { getSettings } from "~/lib/settings";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -73,7 +105,18 @@ function renderMobileRail() {
   root = createRoot(container);
   act(() =>
     root?.render(
-      <ReadingRail mobile bookSurface={<div data-testid="book-surface">Book surface</div>} />,
+      <MemoryRouter>
+        <ReadingRail mobile bookSurface={<div data-testid="book-surface">Book surface</div>} />
+        <ReadingRailMenuPortal>
+          <ReaderSettingsMenu
+            settings={getSettings()}
+            onUpdateSettings={vi.fn()}
+            book={workspace.booksRef.current[0]}
+            onDownload={vi.fn()}
+            onBookmarkPage={vi.fn()}
+          />
+        </ReadingRailMenuPortal>
+      </MemoryRouter>,
     ),
   );
   return container;
@@ -122,7 +165,10 @@ describe("ReadingRail", () => {
     expect(tabList.className).toContain("gap-5");
     expect(tabList.className).not.toContain("grid");
     expect(bottomRow.className).not.toContain("border-t");
-    expect(bottomRow.querySelector("#reading-rail-menu")).not.toBeNull();
+    const menuSlot = bottomRow.querySelector("#reading-rail-menu");
+    const menuButton = menuSlot?.querySelector<HTMLButtonElement>("button[title='Reader menu']");
+    expect(menuButton?.textContent).toContain("Reader menu");
+    expect(menuButton?.querySelector("svg")).not.toBeNull();
     expect(indicator?.className).toContain("left-[var(--active-tab-left)]");
     expect(indicator?.className).toContain("h-px");
     expect(indicator?.className).toContain("w-3");
@@ -132,6 +178,7 @@ describe("ReadingRail", () => {
   it("switches Read, Notes, Discuss, and Outline while keeping the book mounted", () => {
     const container = renderMobileRail();
     const bookSurface = container.querySelector("[data-testid='book-surface']");
+    const readPanel = bookSurface?.closest<HTMLElement>("[role='tabpanel']");
     const panelByTab = {
       Notes: "notes-panel",
       Discuss: "chat-panel",
@@ -139,6 +186,7 @@ describe("ReadingRail", () => {
     } as const;
 
     expect(bookSurface).not.toBeNull();
+    expect(readPanel?.hidden).toBe(false);
     for (const tab of ["Notes", "Discuss", "Outline"] as const) {
       clickTab(container, tab);
       expect(
@@ -146,8 +194,13 @@ describe("ReadingRail", () => {
           .find((candidate) => candidate.textContent === tab)
           ?.getAttribute("aria-selected"),
       ).toBe("true");
-      expect(container.querySelector(`[data-testid='${panelByTab[tab]}']`)).not.toBeNull();
+      const activePanel = container.querySelector(
+        `[data-testid='${panelByTab[tab]}']`,
+      )?.parentElement;
+      expect(activePanel?.hidden).toBe(false);
       expect(container.querySelector("[data-testid='book-surface']")).toBe(bookSurface);
+      expect(readPanel?.hidden).toBe(true);
+      expect(readPanel?.hasAttribute("data-hidden")).toBe(true);
     }
 
     clickTab(container, "Read");
@@ -157,6 +210,8 @@ describe("ReadingRail", () => {
         ?.getAttribute("aria-selected"),
     ).toBe("true");
     expect(container.querySelector("[data-testid='book-surface']")).toBe(bookSurface);
+    expect(readPanel?.hidden).toBe(false);
+    expect(readPanel?.hasAttribute("data-hidden")).toBe(false);
   });
 
   it("opens reader actions in the matching mobile tab", async () => {
@@ -176,22 +231,29 @@ describe("ReadingRail", () => {
     const container = renderMobileRail();
     const rail = container.firstElementChild as HTMLElement;
 
-    for (const [tab, panelTestId, viewportTestId] of [
-      ["Notes", "notes-panel", "notes-scroll-viewport"],
-      ["Discuss", "chat-panel", "discuss-scroll-viewport"],
-      ["Outline", "outline-panel", "outline-scroll-viewport"],
+    for (const [tab, panelTestId, scrollId] of [
+      ["Notes", "notes-panel", "notes"],
+      ["Discuss", "chat-panel", "discuss"],
+      ["Outline", "outline-panel", "outline"],
     ]) {
       clickTab(container, tab);
       const panel = container.querySelector(`[data-testid='${panelTestId}']`)?.parentElement;
       expect(panel?.className).toBe("min-h-0 flex-1 overflow-hidden outline-none");
+      expect(panel?.classList.contains("px-6")).toBe(false);
 
-      let ancestor = container.querySelector(`[data-testid='${viewportTestId}']`)?.parentElement;
-      while (ancestor) {
-        expect(ancestor.classList.contains("px-6")).toBe(false);
-        expect(ancestor.classList.contains("pr-6")).toBe(false);
-        if (ancestor === rail) break;
-        ancestor = ancestor.parentElement;
+      for (const surface of ["area", "viewport"]) {
+        const scroller = container.querySelector(`[data-testid='${scrollId}-scroll-${surface}']`);
+        expect(scroller?.classList.contains("px-6")).toBe(false);
+        expect(scroller?.classList.contains("pl-6")).toBe(false);
+        expect(scroller?.classList.contains("pr-6")).toBe(false);
       }
+
+      const content = container.querySelector(`[data-testid='${scrollId}-scroll-content']`);
+      expect(content?.classList.contains("pr-6")).toBe(true);
+      expect(content?.classList.contains("pl-6")).toBe(true);
+      expect(content?.classList.contains("md:pl-0")).toBe(true);
+
+      expect(rail.contains(content)).toBe(true);
     }
   });
 
