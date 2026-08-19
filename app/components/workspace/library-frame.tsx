@@ -8,10 +8,10 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Bug, MoreHorizontal, Upload } from "lucide-react";
-import { NavLink, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { Effect } from "effect";
+import { AppNavigation } from "~/components/app-navigation";
 import { BugReportDialog } from "~/components/bug-report-dialog";
-import { DEFAULT_RAIL_WIDTH } from "~/components/reading-shell/reading-rail-width";
 import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
@@ -26,14 +26,7 @@ import { useEffectQuery } from "~/hooks/use-effect-query";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 import { getBookReadingPath } from "~/lib/reading-route";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
-import { cn } from "~/lib/utils";
 import { sortBooks } from "~/lib/workspace-utils";
-
-const NAV_ITEMS = [
-  { label: "Library", to: "/library" },
-  { label: "Free ebooks", to: "/standard-ebooks" },
-  { label: "Settings", to: "/settings" },
-] as const;
 
 const LibraryHeaderControlsContext = createContext<HTMLElement | null | undefined>(undefined);
 
@@ -76,28 +69,7 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
             data-slot="library-header-controls"
             className="flex min-w-0 flex-1 items-center"
           />
-          <nav
-            aria-label="Library navigation"
-            className="flex shrink-0 items-start gap-3 px-6 text-xs font-normal"
-            style={{ width: DEFAULT_RAIL_WIDTH, maxWidth: "100%" }}
-          >
-            <div className="flex h-7 min-w-0 flex-1 items-center gap-5">
-              {NAV_ITEMS.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    cn("relative leading-[18px] text-muted-foreground hover:text-foreground", {
-                      "text-foreground": isActive,
-                      "after:absolute after:bottom-0 after:left-0 after:h-px after:w-[15px] after:bg-foreground":
-                        isActive,
-                    })
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
+          <AppNavigation>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button variant="ghost" size="icon" title="More library actions" />}
@@ -136,7 +108,7 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
                 ) : null}
               </DropdownMenuContent>
             </DropdownMenu>
-          </nav>
+          </AppNavigation>
         </header>
         <input
           ref={fileInputRef}

@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Link } from "react-router";
-import { ArrowLeft } from "lucide-react";
 import type { Route } from "./+types/settings";
+import { AppNavigation } from "~/components/app-navigation";
+import { DEFAULT_RAIL_WIDTH } from "~/components/reading-shell/reading-rail-width";
 import { AccountSection } from "~/components/settings/account-section";
 import { AppearanceSection } from "~/components/settings/appearance-section";
 import { BugReportsSection } from "~/components/settings/bug-reports-section";
@@ -32,8 +32,8 @@ export function HydrateFallback() {
 type SettingsSectionId = "account" | "appearance" | "reading" | "bug-reports" | "updates" | "data";
 
 const sections: { id: SettingsSectionId; label: string }[] = [
-  { id: "account", label: "Account" },
   { id: "appearance", label: "Appearance" },
+  { id: "account", label: "Account" },
   { id: "reading", label: "Reading" },
   { id: "bug-reports", label: "Bug reports" },
   { id: "updates", label: "Updates" },
@@ -63,46 +63,46 @@ export default function SettingsPage() {
     sections.find((item) => item.id === activeSection)?.label ?? "Settings";
 
   return (
-    <div className="min-h-dvh bg-background">
-      <div className="flex min-h-dvh w-full flex-col md:flex-row">
-        <aside className="flex shrink-0 flex-col border-b bg-sidebar px-4 py-4 md:sticky md:top-0 md:h-dvh md:w-64 md:border-r md:border-b-0 md:px-5">
-          <Link
-            to="/"
-            className="inline-flex w-fit items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" />
-            Home
-          </Link>
+    <div className="flex h-dvh min-w-0 flex-col bg-background">
+      <header className="flex shrink-0 py-5">
+        <div className="min-w-0 flex-1" />
+        <AppNavigation />
+      </header>
+      <div data-slot="settings-layout" className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <main
+          data-slot="settings-main"
+          className="min-w-0 flex-1 overflow-y-auto px-4 pb-8 md:px-8"
+        >
+          <div className="mx-auto flex max-w-3xl flex-col gap-8">
+            <h1 className="text-xl font-semibold tracking-tight">{activeSectionLabel}</h1>
+            {renderSection(activeSection)}
+          </div>
+        </main>
 
-          <nav className="mt-6 flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible md:pb-0">
+        <aside
+          data-slot="settings-rail"
+          className="flex shrink-0 flex-col px-6 pb-6"
+          style={{ width: DEFAULT_RAIL_WIDTH, maxWidth: "100%" }}
+        >
+          <nav aria-label="Settings sections" className="flex flex-col items-start gap-3">
             {sections.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setActiveSection(item.id)}
-                className={cn(
-                  "shrink-0 rounded-lg px-3 py-2 text-left text-sm transition-colors md:w-full",
-                  {
-                    "bg-sidebar-foreground/10 text-sidebar-foreground": activeSection === item.id,
-                    "text-muted-foreground hover:bg-accent/60 hover:text-foreground":
-                      activeSection !== item.id,
-                  },
-                )}
+                aria-pressed={activeSection === item.id}
+                className={cn("text-left text-sm leading-5 transition-colors", {
+                  "text-foreground": activeSection === item.id,
+                  "text-muted-foreground hover:text-foreground": activeSection !== item.id,
+                })}
               >
-                <span className="block font-medium">{item.label}</span>
+                {item.label}
               </button>
             ))}
           </nav>
 
           <SettingsFooter />
         </aside>
-
-        <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 md:h-dvh md:px-8 md:py-10">
-          <div className="mx-auto flex max-w-3xl flex-col gap-8">
-            <h1 className="text-xl font-semibold tracking-tight">{activeSectionLabel}</h1>
-            {renderSection(activeSection)}
-          </div>
-        </main>
       </div>
     </div>
   );
