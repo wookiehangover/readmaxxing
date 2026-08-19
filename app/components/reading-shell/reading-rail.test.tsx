@@ -11,6 +11,8 @@ const readingLocation = {
 
 const tocEntries = [{ label: "Chapter One", href: "chapter-1.xhtml" }];
 const navigateToToc = vi.hoisted(() => vi.fn());
+const runPromise = vi.hoisted(() => vi.fn());
+const runtimeResults = vi.hoisted(() => [] as unknown[]);
 
 const workspace = vi.hoisted(() => ({
   activeClusterBookIdRef: { current: "book-1" as string | null },
@@ -30,58 +32,108 @@ const workspace = vi.hoisted(() => ({
   getReadingLocation: () => readingLocation,
   findTocForBook: () => tocEntries,
   findTocNavigationForBook: () => navigateToToc,
+  pendingChatPromptMap: { current: new Map() },
+  notebookEditorCallbackMap: { current: new Map() },
+  notebookContentChangeMap: { current: new Map() },
+  notebookCallbackMap: { current: new Map() },
+  chatContextMap: { current: new Map() },
+  pendingHighlightPillMap: { current: new Map() },
+  removeHighlightAnnotationForBook: vi.fn(),
+  dockviewApi: { current: null },
+  navigateInCluster: vi.fn(),
 }));
 
 vi.mock("~/lib/context/workspace-context", () => ({
   useWorkspace: () => workspace,
-  useOptionalWorkspace: () => null,
+  useOptionalWorkspace: () => workspace,
 }));
 vi.mock("~/lib/context/auth-context", () => ({
-  useAuth: () => ({ isAuthenticated: false }),
+  useAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));
 vi.mock("~/lib/context/reading-chat-menu-context", () => ({
   useReadingChatMenuActions: () => null,
+  useReadingChatMenuRegistration: () => null,
 }));
 vi.mock("~/components/share-dialog", () => ({ ShareDialog: () => null }));
-vi.mock("~/components/workspace/panel-components", () => ({
-  WorkspaceNotebookPanel: ({ chromeless }: { chromeless?: boolean }) => (
-    <div data-testid="notes-panel" data-chromeless={chromeless}>
-      <div data-testid="notes-scroll-area" className="min-h-0 flex-1">
-        <div data-testid="notes-scroll-viewport" className="size-full">
-          <div data-testid="notes-scroll-content" className="pr-6 pl-6 md:pl-0">
-            Notes panel
-          </div>
-        </div>
-      </div>
+vi.mock("~/hooks/use-effect-query", () => ({
+  useEffectQuery: () => ({
+    data: {
+      title: "The Power Broker",
+      author: "Robert Caro",
+      content: { type: "doc", content: [] },
+    },
+    isLoading: false,
+  }),
+}));
+vi.mock("~/hooks/use-sync-listener", () => ({ useSyncListener: () => 0 }));
+vi.mock("~/lib/effect-runtime", () => ({ AppRuntime: { runPromise } }));
+vi.mock("~/components/ui/scroll-area", () => ({
+  ScrollArea: ({ children, className }: { children: React.ReactNode; className?: string }) => (
+    <div data-slot="scroll-area" className={className}>
+      <div data-slot="scroll-area-viewport">{children}</div>
     </div>
   ),
 }));
-vi.mock("~/components/chat/chat-panel", () => ({
-  ChatPanel: () => (
-    <div data-testid="chat-panel">
-      <div data-testid="discuss-scroll-area" className="min-h-0 flex-1">
-        <div data-testid="discuss-scroll-viewport" className="size-full">
-          <div data-testid="discuss-scroll-content" className="pr-6 pl-6 md:pl-0">
-            Chat panel
-          </div>
-        </div>
-      </div>
-    </div>
-  ),
+vi.mock("~/components/tiptap-editor", async () => {
+  const ReactModule = await vi.importActual<typeof import("react")>("react");
+  return {
+    TiptapEditor: ReactModule.forwardRef(function MockTiptapEditor(
+      { compact }: { compact?: boolean },
+      ref: React.ForwardedRef<unknown>,
+    ) {
+      ReactModule.useImperativeHandle(ref, () => ({ setContent() {} }));
+      return <div data-testid="production-editor" data-compact={compact} />;
+    }),
+  };
+});
+vi.mock("~/lib/reading-agent/artifacts-client", async () => {
+  const actual = await vi.importActual<typeof import("~/lib/reading-agent/artifacts-client")>(
+    "~/lib/reading-agent/artifacts-client",
+  );
+  return {
+    ...actual,
+    fetchReadingArtifacts: vi.fn(() => new Promise(() => {})),
+    saveReadingOutline: vi.fn(),
+  };
+});
+vi.mock("~/lib/epub/epub-text-extract", () => ({ extractBookChapters: vi.fn(async () => []) }));
+vi.mock("~/lib/pdf/pdf-text-extract", () => ({ extractPdfChapters: vi.fn(async () => []) }));
+vi.mock("~/lib/sync/book-chapter-uploads", () => ({
+  ensureBookChaptersUploaded: vi.fn(async () => {}),
 }));
-vi.mock("~/components/workspace/outline-panel", () => ({
-  WorkspaceOutlinePanel: ({ chromeless }: { chromeless?: boolean }) => (
-    <div data-testid="outline-panel" data-chromeless={chromeless}>
-      <div data-testid="outline-scroll-area" className="min-h-0 flex-1">
-        <div data-testid="outline-scroll-viewport" className="size-full">
-          <div data-testid="outline-scroll-content" className="pr-6 pl-6 md:pl-0">
-            Outline panel
-          </div>
-        </div>
-      </div>
-    </div>
-  ),
+vi.mock("~/components/chat/chat-utils", async () => {
+  const actual = await vi.importActual<typeof import("~/components/chat/chat-utils")>(
+    "~/components/chat/chat-utils",
+  );
+  return {
+    ...actual,
+    createChatTransport: () => ({}),
+    createDemoIntroChat: () => null,
+    toUIMessages: () => [],
+    uiMessagesToChatMessages: () => [],
+  };
+});
+vi.mock("@ai-sdk/react", () => ({
+  useChat: ({ messages = [] }: { messages?: unknown[] }) => ({
+    messages,
+    regenerate: vi.fn(async () => {}),
+    sendMessage: vi.fn(async () => {}),
+    setMessages: vi.fn(),
+    status: "ready",
+    stop: vi.fn(),
+  }),
 }));
+vi.mock("~/components/chat/chat-empty-state", () => ({
+  ChatEmptyState: () => null,
+  SuggestedPrompts: () => null,
+}));
+vi.mock("~/components/chat/chat-message", () => ({ ChatMessage: () => null }));
+vi.mock("~/components/chat/use-chat-tool-handlers", () => ({
+  useChatToolHandlers: () => ({ onToolCall: vi.fn(), onFinish: vi.fn() }),
+}));
+vi.mock("~/components/chat/use-open-books", () => ({ useOpenBooks: () => [] }));
+vi.mock("~/components/chat/use-resume-message", () => ({ useResumeMessage: () => {} }));
+vi.mock("~/components/chat/use-streaming-append", () => ({ useStreamingAppend: () => {} }));
 
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { ReadingRail } from "~/components/reading-shell/reading-rail";
@@ -129,6 +181,20 @@ function clickTab(container: HTMLElement, label: string) {
   act(() => button?.click());
 }
 
+function visiblePanel(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>("[role='tabpanel']")).find(
+    (panel) => !panel.hidden,
+  );
+}
+
+async function flushAsyncWork() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 beforeEach(() => {
   workspace.activeClusterBookIdRef.current = "book-1";
   workspace.booksRef.current[0].title = "The Power Broker";
@@ -141,12 +207,27 @@ beforeEach(() => {
     href: "chapter-1.xhtml",
   });
   navigateToToc.mockReset();
+  runPromise.mockReset();
+  runtimeResults.splice(
+    0,
+    runtimeResults.length,
+    workspace.booksRef.current[0],
+    [],
+    new ArrayBuffer(8),
+    "session-1",
+  );
+  runPromise.mockImplementation(() => Promise.resolve(runtimeResults.shift()));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({ ok: false })),
+  );
 });
 
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
   document.body.innerHTML = "";
+  vi.unstubAllGlobals();
 });
 
 describe("ReadingRail", () => {
@@ -179,11 +260,6 @@ describe("ReadingRail", () => {
     const container = renderMobileRail();
     const bookSurface = container.querySelector("[data-testid='book-surface']");
     const readPanel = bookSurface?.closest<HTMLElement>("[role='tabpanel']");
-    const panelByTab = {
-      Notes: "notes-panel",
-      Discuss: "chat-panel",
-      Outline: "outline-panel",
-    } as const;
 
     expect(bookSurface).not.toBeNull();
     expect(readPanel?.hidden).toBe(false);
@@ -194,10 +270,9 @@ describe("ReadingRail", () => {
           .find((candidate) => candidate.textContent === tab)
           ?.getAttribute("aria-selected"),
       ).toBe("true");
-      const activePanel = container.querySelector(
-        `[data-testid='${panelByTab[tab]}']`,
-      )?.parentElement;
+      const activePanel = visiblePanel(container);
       expect(activePanel?.hidden).toBe(false);
+      expect(activePanel).not.toBe(readPanel);
       expect(container.querySelector("[data-testid='book-surface']")).toBe(bookSurface);
       expect(readPanel?.hidden).toBe(true);
       expect(readPanel?.hasAttribute("data-hidden")).toBe(true);
@@ -227,37 +302,42 @@ describe("ReadingRail", () => {
     ).toBe("true");
   });
 
-  it("keeps mobile tool panels and scroll viewports flush with the screen edge", () => {
+  it("keeps padding on production tool content inside flush mobile scrollers", async () => {
     const container = renderMobileRail();
     const rail = container.firstElementChild as HTMLElement;
 
-    for (const [tab, panelTestId, scrollId] of [
-      ["Notes", "notes-panel", "notes"],
-      ["Discuss", "chat-panel", "discuss"],
-      ["Outline", "outline-panel", "outline"],
-    ]) {
+    for (const tab of ["Notes", "Discuss", "Outline"]) {
       clickTab(container, tab);
-      const panel = container.querySelector(`[data-testid='${panelTestId}']`)?.parentElement;
+      if (tab === "Discuss") await flushAsyncWork();
+
+      const panel = visiblePanel(container);
       expect(panel?.className).toBe("min-h-0 flex-1 overflow-hidden outline-none");
       expect(panel?.classList.contains("px-6")).toBe(false);
 
-      for (const surface of ["area", "viewport"]) {
-        const scroller = container.querySelector(`[data-testid='${scrollId}-scroll-${surface}']`);
+      const scrollArea = panel?.querySelector("[data-slot='scroll-area']");
+      const viewport = scrollArea?.querySelector("[data-slot='scroll-area-viewport']");
+      for (const scroller of [scrollArea, viewport]) {
         expect(scroller?.classList.contains("px-6")).toBe(false);
         expect(scroller?.classList.contains("pl-6")).toBe(false);
         expect(scroller?.classList.contains("pr-6")).toBe(false);
       }
 
-      const content = container.querySelector(`[data-testid='${scrollId}-scroll-content']`);
+      const content = viewport?.firstElementChild ?? null;
       expect(content?.classList.contains("pr-6")).toBe(true);
       expect(content?.classList.contains("pl-6")).toBe(true);
       expect(content?.classList.contains("md:pl-0")).toBe(true);
-
       expect(rail.contains(content)).toBe(true);
+
+      if (tab === "Discuss") {
+        const input = panel?.querySelector("form");
+        expect(input?.classList.contains("pr-6")).toBe(true);
+        expect(input?.classList.contains("pl-6")).toBe(true);
+        expect(input?.classList.contains("md:pl-0")).toBe(true);
+      }
     }
   });
 
-  it("keeps scroll viewports flush with the right edge while chrome owns its inset", () => {
+  it("keeps scroll viewports flush with the right edge while chrome owns its inset", async () => {
     const container = renderRail();
     const rail = container.firstElementChild as HTMLElement;
 
@@ -269,42 +349,27 @@ describe("ReadingRail", () => {
       container.querySelector("[aria-label='Reading tools']")?.parentElement?.className,
     ).toContain("pr-6");
 
-    for (const testId of [
-      "notes-scroll-viewport",
-      "discuss-scroll-viewport",
-      "outline-scroll-viewport",
-    ]) {
-      clickTab(
-        container,
-        testId === "notes-scroll-viewport"
-          ? "Notes"
-          : testId === "discuss-scroll-viewport"
-            ? "Discuss"
-            : "Outline",
-      );
-      let ancestor = container.querySelector(`[data-testid='${testId}']`)?.parentElement;
-      while (ancestor) {
-        expect(ancestor.classList.contains("px-6")).toBe(false);
-        expect(ancestor.classList.contains("pr-6")).toBe(false);
-        if (ancestor === rail) break;
-        ancestor = ancestor.parentElement;
-      }
+    for (const tab of ["Notes", "Discuss", "Outline"]) {
+      clickTab(container, tab);
+      if (tab === "Discuss") await flushAsyncWork();
+      const panel = visiblePanel(container);
+      const scrollArea = panel?.querySelector("[data-slot='scroll-area']");
+      const viewport = scrollArea?.querySelector("[data-slot='scroll-area-viewport']");
+      expect(panel?.classList.contains("px-6")).toBe(false);
+      expect(scrollArea?.classList.contains("pr-6")).toBe(false);
+      expect(viewport?.classList.contains("pr-6")).toBe(false);
     }
   });
 
   it("switches Notes, Discuss, and Outline in place", () => {
     const container = renderRail();
-    expect(
-      container.querySelector("[data-testid='notes-panel']")?.getAttribute("data-chromeless"),
-    ).toBe("true");
+    expect(container.querySelector("[data-testid='production-editor']")).not.toBeNull();
 
     clickTab(container, "Discuss");
-    expect(container.querySelector("[data-testid='chat-panel']")).not.toBeNull();
+    expect(visiblePanel(container)?.textContent).toContain("Loading chat");
 
     clickTab(container, "Outline");
-    expect(
-      container.querySelector("[data-testid='outline-panel']")?.getAttribute("data-chromeless"),
-    ).toBe("true");
+    expect(visiblePanel(container)?.textContent).toContain("Loading outline");
   });
 
   it("uses one sliding underline left-aligned with the active tab label", () => {
@@ -333,7 +398,7 @@ describe("ReadingRail", () => {
 
     expect(tabs.map((tab) => tab.textContent)).toEqual(["Notes", "Discuss", "Outline"]);
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
-    expect(container.querySelector("[data-testid='notes-panel']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='production-editor']")).not.toBeNull();
     expect(container.textContent).not.toContain("Nothing to review yet.");
   });
 
