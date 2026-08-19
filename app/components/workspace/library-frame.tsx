@@ -7,9 +7,10 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from "react";
+import { Tabs } from "@base-ui/react/tabs";
 import { createPortal } from "react-dom";
 import { MoreHorizontal } from "lucide-react";
-import { NavLink } from "react-router";
+import { NavLink, useLocation } from "react-router";
 import { BugReportDialog } from "~/components/bug-report-dialog";
 import { DEFAULT_RAIL_WIDTH } from "~/components/reading-shell/reading-rail-width";
 import { Button } from "~/components/ui/button";
@@ -45,6 +46,26 @@ interface LibraryFrameProps {
 export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFrameProps) {
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [headerControlsElement, setHeaderControlsElement] = useState<HTMLDivElement | null>(null);
+  const { pathname } = useLocation();
+
+  const renderActionsMenu = () => (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<Button variant="ghost" size="icon" title="More library actions" />}
+      >
+        <MoreHorizontal />
+        <span className="sr-only">More library actions</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-36 text-xs">
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+            Upload book
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setBugReportOpen(true)}>Bug report</DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   return (
     <LibraryHeaderControlsContext.Provider value={headerControlsElement}>
@@ -57,7 +78,7 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
           />
           <div
             data-slot="library-header-navigation"
-            className="flex max-w-full shrink-0 items-start gap-3 px-4 text-xs font-normal md:w-(--library-rail-width) md:px-6"
+            className="hidden max-w-full shrink-0 items-start gap-3 px-6 text-xs font-normal md:flex md:w-(--library-rail-width)"
             style={{ "--library-rail-width": `${DEFAULT_RAIL_WIDTH}px` } as CSSProperties}
           >
             <nav
@@ -79,24 +100,7 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
                 </NavLink>
               ))}
             </nav>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={<Button variant="ghost" size="icon" title="More library actions" />}
-              >
-                <MoreHorizontal />
-                <span className="sr-only">More library actions</span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-36 text-xs">
-                <DropdownMenuGroup>
-                  <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-                    Upload book
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setBugReportOpen(true)}>
-                    Bug report
-                  </DropdownMenuItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {renderActionsMenu()}
           </div>
         </header>
         <input
@@ -111,24 +115,30 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
         <nav
           aria-label="Library navigation"
           data-slot="library-mobile-navigation"
-          className="grid shrink-0 grid-cols-3 border-t border-border bg-background px-2 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-xs font-normal md:hidden"
+          className="shrink-0 bg-background px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:hidden"
         >
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                cn(
-                  "flex min-h-7 items-center justify-center bg-transparent px-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                  {
-                    "text-foreground": isActive,
-                  },
-                )
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
+          <Tabs.Root value={pathname} className="flex min-w-0 items-start gap-3">
+            <Tabs.List className="relative flex min-w-0 flex-1 items-center gap-5">
+              {NAV_ITEMS.map((item) => (
+                <Tabs.Tab
+                  key={item.to}
+                  value={item.to}
+                  nativeButton={false}
+                  render={<NavLink to={item.to} />}
+                  className={cn(
+                    "relative h-7 shrink-0 bg-transparent p-0 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                    {
+                      "text-foreground": pathname === item.to,
+                    },
+                  )}
+                >
+                  {item.label}
+                </Tabs.Tab>
+              ))}
+              <Tabs.Indicator className="absolute bottom-0 left-[var(--active-tab-left)] h-px w-3 bg-foreground transition-[left] duration-200 ease-out motion-reduce:transition-none" />
+            </Tabs.List>
+            <div className="flex min-h-7 shrink-0 items-center">{renderActionsMenu()}</div>
+          </Tabs.Root>
         </nav>
         <BugReportDialog open={bugReportOpen} onOpenChange={setBugReportOpen} hideTrigger />
       </div>

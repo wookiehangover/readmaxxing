@@ -82,7 +82,7 @@ describe("LibraryFrame", () => {
 
     expect(headerNavigation.style.getPropertyValue("--library-rail-width")).toBe(expectedWidth);
     expect(headerNavigation.className).toContain("md:w-(--library-rail-width)");
-    expect(headerNavigation.className).toContain("md:px-6");
+    expect(headerNavigation.className).toContain("px-6");
     expect(headerNavigation.parentElement?.className).toContain("py-5");
     expect(nav.className).toContain("flex-1");
     expect(nav.contains(links.item(links.length - 1))).toBe(true);
@@ -137,7 +137,7 @@ describe("LibraryFrame", () => {
     expect(nav.textContent).not.toContain("…");
     expect(container.textContent).toContain("Browse body");
     expect(container.querySelector("aside")).toBeNull();
-    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(container.querySelector('[role="tablist"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Open sidebar"]')).toBeNull();
   });
 
@@ -150,14 +150,17 @@ describe("LibraryFrame", () => {
     const activeLink = mobileNav.querySelector<HTMLAnchorElement>('a[href="/standard-ebooks"]')!;
 
     expect(mobileNav.className).toContain("md:hidden");
-    expect(mobileNav.className).toContain("border-t");
+    expect(mobileNav.className).not.toContain("border-t");
     expect(mobileNav.previousElementSibling?.textContent).toBe("Browse body");
     expect(links.map((link) => link.textContent)).toEqual(["Library", "Free ebooks", "Settings"]);
     expect(activeLink.getAttribute("aria-current")).toBe("page");
     expect(activeLink.className).toContain("text-foreground");
-    expect(mobileNav.className).toContain("grid-cols-3");
-    expect(mobileNav.querySelector("svg")).toBeNull();
-    expect(mobileNav.querySelector("button")).toBeNull();
+    expect(mobileNav.querySelector('[role="tablist"]')?.className).toContain("gap-5");
+    expect(mobileNav.querySelector('[role="presentation"]')?.className).toContain(
+      "left-[var(--active-tab-left)]",
+    );
+    expect(mobileNav.querySelector('button[title="More library actions"]')).not.toBeNull();
+    expect(mobileNav.querySelector("svg")).not.toBeNull();
     expect(
       container.querySelector(
         '[data-slot="library-header-navigation"] button[title="More library actions"]',
@@ -168,11 +171,15 @@ describe("LibraryFrame", () => {
   it("keeps upload and bug report as the only overflow actions", () => {
     const inputClick = vi.spyOn(HTMLInputElement.prototype, "click");
     const { container } = renderFrame("/library");
-    const overflow = container.querySelector('button[title="More library actions"]');
-    const actions = Array.from(container.querySelectorAll("button")).filter(
-      (button) => button !== overflow,
+    const headerNavigation = container.querySelector<HTMLElement>(
+      '[data-slot="library-header-navigation"]',
+    )!;
+    const overflow = container.querySelectorAll('button[title="More library actions"]');
+    const actions = Array.from(headerNavigation.querySelectorAll("button")).filter(
+      (button) => !button.title.includes("More library actions"),
     );
 
+    expect(overflow).toHaveLength(2);
     expect(actions.map((button) => button.textContent)).toEqual(["Upload book", "Bug report"]);
     act(() => actions[0]?.click());
     expect(inputClick).toHaveBeenCalledOnce();
