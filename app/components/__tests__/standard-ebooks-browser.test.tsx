@@ -82,7 +82,8 @@ describe("StandardEbooksBrowser", () => {
 
     const grid = container!.querySelector<HTMLElement>(".grid");
     expect(grid?.classList.contains("max-w-6xl")).toBe(true);
-    expect(grid?.classList.contains("grid-cols-[repeat(auto-fill,minmax(10rem,10rem))]")).toBe(
+    expect(grid?.classList.contains("grid-cols-2")).toBe(true);
+    expect(grid?.classList.contains("sm:grid-cols-[repeat(auto-fill,minmax(10rem,10rem))]")).toBe(
       true,
     );
     expect(grid?.className).toContain("sm:gap-6");
@@ -112,6 +113,7 @@ describe("StandardEbooksBrowser", () => {
     expect(grid?.classList.contains("grid")).toBe(false);
     expect(container!.querySelectorAll("tbody tr")).toHaveLength(2);
     expect(container!.querySelector("table")?.closest(".max-w-6xl")).not.toBeNull();
+    expect(container!.querySelector("table")?.className).toContain("table-fixed");
   });
 
   it("downloads an EPUB then dispatches it through the shared upload saga", async () => {

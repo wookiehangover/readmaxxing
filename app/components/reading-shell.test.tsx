@@ -8,6 +8,10 @@ const epubReaderProps = vi.hoisted(() => ({
     panelTypography?: { readerLayout?: string };
   },
 }));
+const mobileViewport = vi.hoisted(() => ({ current: false }));
+const readingRailProps = vi.hoisted(() => ({
+  current: null as null | { mobile?: boolean; bookSurface?: React.ReactNode },
+}));
 
 vi.mock("~/components/workspace-book-reader", () => ({
   WorkspaceBookReader: (props: { bookId: string; panelTypography?: { readerLayout?: string } }) => {
@@ -20,8 +24,17 @@ vi.mock("~/components/workspace-pdf-reader", () => ({
     <div data-testid="pdf-reader">{bookId}</div>
   ),
 }));
+vi.mock("~/hooks/use-mobile", () => ({ useIsMobile: () => mobileViewport.current }));
 vi.mock("~/components/reading-shell/reading-rail", () => ({
-  ReadingRail: () => <div data-testid="reading-rail">Rail</div>,
+  ReadingRail: (props: { mobile?: boolean; bookSurface?: React.ReactNode }) => {
+    readingRailProps.current = props;
+    return (
+      <div data-testid="reading-rail">
+        Rail
+        {props.bookSurface}
+      </div>
+    );
+  },
 }));
 vi.mock("~/lib/themis/provider", () => ({
   useAppStore: () => ({
@@ -59,6 +72,8 @@ const books: BookMeta[] = [
 beforeEach(() => {
   activeBookId = "epub-book";
   epubReaderProps.current = null;
+  mobileViewport.current = false;
+  readingRailProps.current = null;
   window.sessionStorage.clear();
   document.title = "Readmaxxing";
 });
@@ -140,6 +155,19 @@ describe("ReadingShell", () => {
     expect(document.body.querySelector("[aria-label='Book surface']")).not.toBeNull();
     expect(document.body.querySelector("[aria-label='Reading rail']")).not.toBeNull();
     expect(document.body.querySelector("[data-testid='reading-rail']")).not.toBeNull();
+    expect(readingRailProps.current?.mobile).not.toBe(true);
+    expect(document.body.querySelector("[role='separator']")).not.toBeNull();
+  });
+
+  it("uses the full-screen mobile rail with the existing book surface", () => {
+    mobileViewport.current = true;
+    renderShell();
+
+    expect(readingRailProps.current?.mobile).toBe(true);
+    expect(readingRailProps.current?.bookSurface).toBeDefined();
+    expect(document.body.querySelectorAll("[data-testid='epub-reader']")).toHaveLength(1);
+    expect(document.body.querySelector("[role='separator']")).toBeNull();
+    expect(document.body.querySelector("[aria-label='Reading rail']")).toBeNull();
   });
 
   it("defaults the shell EPUB reader to a spread without dockview chrome", () => {

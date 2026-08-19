@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 describe("ChatMessageList", () => {
-  it("uses ScrollArea while content owns the right inset", () => {
+  it("uses ScrollArea while content owns the mobile inset", () => {
     const container = document.body.appendChild(document.createElement("div"));
     root = createRoot(container);
     act(() =>
@@ -58,6 +58,7 @@ describe("ChatMessageList", () => {
     expect(scrollArea.classList.contains("pr-6")).toBe(false);
     expect(viewport.classList.contains("pr-6")).toBe(false);
     expect(content.classList.contains("pr-6")).toBe(true);
-    expect(content.classList.contains("pl-6")).toBe(false);
+    expect(content.classList.contains("pl-6")).toBe(true);
+    expect(content.classList.contains("md:pl-0")).toBe(true);
   });
 });

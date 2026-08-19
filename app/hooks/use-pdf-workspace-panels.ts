@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
+import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
 import type { DockviewPanelApi } from "dockview-react";
 import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell";
 import { useAppStore } from "~/lib/themis/provider";
@@ -147,6 +148,7 @@ export function usePdfWorkspacePanels({
         text: highlight.text,
         pageLabel: `p${currentPage}`,
       });
+      openMobileReadingTab("Discuss");
       ws.openChatRef.current?.(book);
       dismissPopovers();
       window.getSelection()?.removeAllRanges();
@@ -173,6 +175,7 @@ export function usePdfWorkspacePanels({
       .map((line) => `> ${line}`)
       .join("\n")}`;
     ws.pendingChatPromptMap.current.set(book.id, message);
+    openMobileReadingTab("Discuss");
     ws.openChatRef.current?.(book);
     queueMicrotask(() => {
       window.dispatchEvent(
@@ -186,6 +189,7 @@ export function usePdfWorkspacePanels({
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
+    openMobileReadingTab("Notes");
     ws.openNotebookRef.current?.(book);
   }, [ws, book]);
 
@@ -193,6 +197,7 @@ export function usePdfWorkspacePanels({
   handleOpenNotebookRef.current = handleOpenNotebook;
 
   const handleOpenChat = useCallback(() => {
+    openMobileReadingTab("Discuss");
     ws.openChatRef.current?.(book);
   }, [ws, book]);
 

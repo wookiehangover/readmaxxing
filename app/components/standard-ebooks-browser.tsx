@@ -210,7 +210,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
         {isInitialLoading ? (
           settings.standardEbooksView === "grid" ? (
-            <div className="grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
+            <div className="grid max-w-6xl grid-cols-2 items-start gap-4 sm:grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] sm:gap-6">
               {Array.from({ length: 12 }).map((_, i) => (
                 <SkeletonCard key={i} />
               ))}
@@ -225,7 +225,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
             </p>
           </div>
         ) : settings.standardEbooksView === "grid" ? (
-          <div className="mx-auto grid max-w-6xl grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] items-start gap-4 sm:gap-6">
+          <div className="mx-auto grid max-w-6xl grid-cols-2 items-start gap-4 sm:grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] sm:gap-6">
             {books.map((book) => (
               <SEBookCard
                 key={book.urlPath}

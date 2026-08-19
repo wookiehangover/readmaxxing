@@ -1,7 +1,11 @@
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { TocList } from "~/components/book-list";
 import { ChatPanel } from "~/components/chat/chat-panel";
+import {
+  MOBILE_READING_TAB_EVENT,
+  type MobileReadingTab,
+} from "~/components/reading-shell/mobile-reading-tabs";
 import { READING_RAIL_MENU_ID } from "~/components/reading-shell/reading-rail-menu-portal";
 import {
   useReadingRailTab,
@@ -16,9 +20,16 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 
-const tabs = ["Notes", "Discuss", "Outline"] as const;
+const desktopTabs = ["Notes", "Discuss", "Outline"] as const;
+const mobileTabs = ["Read", ...desktopTabs] as const;
 
-export function ReadingRail() {
+export function ReadingRail({
+  mobile = false,
+  bookSurface,
+}: {
+  mobile?: boolean;
+  bookSurface?: ReactNode;
+}) {
   const workspace = useWorkspace();
   const store = useAppStore();
   const { activeTab, setActiveTab } = useReadingRailTab();
@@ -39,6 +50,81 @@ export function ReadingRail() {
   const chapterLabel = location?.chapterLabel;
   const hasTocShortcut = Boolean(chapterLabel && toc?.length && navigateToToc);
 
+  useEffect(() => {
+    if (!mobile) return;
+    setActiveTab("Read");
+    const handleOpenTab = (event: Event) => {
+      setActiveTab((event as CustomEvent<MobileReadingTab>).detail);
+    };
+    window.addEventListener(MOBILE_READING_TAB_EVENT, handleOpenTab);
+    return () => window.removeEventListener(MOBILE_READING_TAB_EVENT, handleOpenTab);
+  }, [mobile, setActiveTab]);
+
+  const panels = book ? (
+    <>
+      <Tabs.Panel value="Notes" className="min-h-0 flex-1 overflow-hidden outline-none">
+        <WorkspaceNotebookPanel bookId={book.id} bookTitle={book.title} chromeless />
+      </Tabs.Panel>
+      <Tabs.Panel value="Discuss" className="min-h-0 flex-1 overflow-hidden outline-none">
+        <ChatPanel bookId={book.id} bookTitle={book.title} />
+      </Tabs.Panel>
+      <Tabs.Panel value="Outline" className="min-h-0 flex-1 overflow-hidden outline-none">
+        <WorkspaceOutlinePanel bookId={book.id} bookTitle={book.title} chromeless />
+      </Tabs.Panel>
+      <Tabs.Panel value="Review" className="min-h-0 flex-1 overflow-hidden outline-none">
+        <Empty className="h-full pr-6">
+          <EmptyHeader>
+            <EmptyTitle>Nothing to review yet.</EmptyTitle>
+          </EmptyHeader>
+        </Empty>
+      </Tabs.Panel>
+    </>
+  ) : null;
+
+  if (mobile) {
+    return (
+      <Tabs.Root
+        className="flex h-full min-h-0 flex-col bg-background"
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as ReadingRailTab)}
+        data-testid="mobile-reading-tabs"
+      >
+        <Tabs.Panel
+          value="Read"
+          keepMounted
+          aria-label="Book surface"
+          className="min-h-0 flex-1 overflow-hidden outline-none"
+        >
+          {bookSurface}
+        </Tabs.Panel>
+        {panels}
+        <div className="flex shrink-0 items-start gap-3 bg-background px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <Tabs.List
+            aria-label="Reading sections"
+            className="relative flex min-w-0 flex-1 items-center gap-5"
+          >
+            {mobileTabs.map((tab) => (
+              <Tabs.Tab
+                key={tab}
+                value={tab}
+                className={cn(
+                  "relative h-7 shrink-0 bg-transparent p-0 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                  {
+                    "text-foreground": activeTab === tab,
+                  },
+                )}
+              >
+                {tab}
+              </Tabs.Tab>
+            ))}
+            <Tabs.Indicator className="absolute bottom-0 left-[var(--active-tab-left)] h-px w-3 bg-foreground transition-[left] duration-200 ease-out motion-reduce:transition-none" />
+          </Tabs.List>
+          <div id={READING_RAIL_MENU_ID} className="flex min-h-7 shrink-0 items-center" />
+        </div>
+      </Tabs.Root>
+    );
+  }
+
   return (
     <Tabs.Root
       className="flex h-full min-h-0 flex-col pl-6 py-5"
@@ -50,7 +136,7 @@ export function ReadingRail() {
           aria-label="Reading tools"
           className="relative flex min-w-0 flex-1 items-center gap-5"
         >
-          {tabs.map((tab) => (
+          {desktopTabs.map((tab) => (
             <Tabs.Tab
               key={tab}
               value={tab}
@@ -123,26 +209,7 @@ export function ReadingRail() {
         ) : null}
       </div>
 
-      {book ? (
-        <>
-          <Tabs.Panel value="Notes" className="min-h-0 flex-1 overflow-hidden outline-none">
-            <WorkspaceNotebookPanel bookId={book.id} bookTitle={book.title} chromeless />
-          </Tabs.Panel>
-          <Tabs.Panel value="Discuss" className="min-h-0 flex-1 overflow-hidden outline-none">
-            <ChatPanel bookId={book.id} bookTitle={book.title} />
-          </Tabs.Panel>
-          <Tabs.Panel value="Outline" className="min-h-0 flex-1 overflow-hidden outline-none">
-            <WorkspaceOutlinePanel bookId={book.id} bookTitle={book.title} chromeless />
-          </Tabs.Panel>
-          <Tabs.Panel value="Review" className="min-h-0 flex-1 overflow-hidden outline-none">
-            <Empty className="h-full pr-6">
-              <EmptyHeader>
-                <EmptyTitle>Nothing to review yet.</EmptyTitle>
-              </EmptyHeader>
-            </Empty>
-          </Tabs.Panel>
-        </>
-      ) : null}
+      {panels}
     </Tabs.Root>
   );
 }

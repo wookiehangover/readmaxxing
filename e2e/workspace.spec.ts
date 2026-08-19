@@ -13,19 +13,21 @@ async function uploadTestBook(page: Page) {
   await fileInput.setInputFiles(TEST_EPUB);
 
   const readingShell = page.getByTestId("reading-shell");
+  const mobileReadingTabs = page.getByTestId("mobile-reading-tabs");
   const libraryBook = page.getByRole("button", { name: "Open Test Book for E2E" });
+  const readerIsVisible = async () =>
+    (await readingShell.isVisible().catch(() => false)) ||
+    (await mobileReadingTabs.isVisible().catch(() => false));
   await expect
     .poll(
-      async () =>
-        (await readingShell.isVisible().catch(() => false)) ||
-        (await libraryBook.isVisible().catch(() => false)),
+      async () => (await readerIsVisible()) || (await libraryBook.isVisible().catch(() => false)),
       { timeout: 20_000 },
     )
     .toBe(true);
 
-  if (!(await readingShell.isVisible().catch(() => false))) {
+  if (!(await readerIsVisible())) {
     await libraryBook.click({ force: true, timeout: 5_000 }).catch(() => {});
-    await expect(readingShell).toBeVisible({ timeout: 20_000 });
+    await expect.poll(readerIsVisible, { timeout: 20_000 }).toBe(true);
   }
 }
 
@@ -84,6 +86,40 @@ test.describe("Workspace route", () => {
     await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
       timeout: 10_000,
     });
+  });
+
+  test("mobile reader switches every full-screen tab and keeps the book mounted", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await uploadAndOpenBook(page);
+
+    const mobileReader = page.getByTestId("mobile-reading-tabs");
+    const tabs = mobileReader.getByRole("tablist", { name: "Reading sections" });
+    const bookSurface = mobileReader.locator(":scope > [aria-label='Book surface']");
+    const iframe = bookSurface.locator("iframe").first();
+
+    await expect(tabs).toBeVisible();
+    await expect(tabs.getByRole("tab")).toHaveText(["Read", "Notes", "Discuss", "Outline"]);
+    await expect(tabs.getByRole("tab", { name: "Read", exact: true })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(bookSurface).toBeVisible();
+    await expect(iframe).toBeAttached();
+    await iframe.evaluate((element) => element.setAttribute("data-mobile-reader-test", "mounted"));
+
+    for (const name of ["Notes", "Discuss", "Outline"]) {
+      const tab = tabs.getByRole("tab", { name, exact: true });
+      await tab.click();
+      await expect(tab).toHaveAttribute("aria-selected", "true");
+      await expect(bookSurface).toBeAttached();
+      await expect(iframe).toHaveAttribute("data-mobile-reader-test", "mounted");
+    }
+
+    await tabs.getByRole("tab", { name: "Read", exact: true }).click();
+    await expect(bookSurface).toBeVisible();
+    await expect(iframe).toHaveAttribute("data-mobile-reader-test", "mounted");
   });
 
   test("reader has navigation buttons", async ({ page }) => {

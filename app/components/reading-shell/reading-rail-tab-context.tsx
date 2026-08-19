@@ -6,8 +6,9 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
+import type { MobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
 
-export type ReadingRailTab = "Notes" | "Discuss" | "Outline";
+export type ReadingRailTab = MobileReadingTab;
 
 interface ReadingRailTabContextValue {
   activeTab: ReadingRailTab;
