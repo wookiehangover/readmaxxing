@@ -55,6 +55,7 @@ vi.mock("~/components/workspace/outline-panel", () => ({
 }));
 
 import { ReadingRail } from "~/components/reading-shell/reading-rail";
+import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -64,6 +65,17 @@ function renderRail() {
   const container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
   act(() => root?.render(<ReadingRail />));
+  return container;
+}
+
+function renderMobileRail() {
+  const container = document.body.appendChild(document.createElement("div"));
+  root = createRoot(container);
+  act(() =>
+    root?.render(
+      <ReadingRail mobile bookSurface={<div data-testid="book-surface">Book surface</div>} />,
+    ),
+  );
   return container;
 }
 
@@ -95,6 +107,37 @@ afterEach(() => {
 });
 
 describe("ReadingRail", () => {
+  it("mirrors the desktop rail in the mobile bottom row", () => {
+    const container = renderMobileRail();
+    const tabList = container.querySelector("[aria-label='Reading sections']")!;
+    const tabs = Array.from(tabList.querySelectorAll("button"));
+    const bottomRow = tabList.parentElement!;
+
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Read", "Notes", "Discuss", "Outline"]);
+    expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
+    expect(tabList.className).toContain("gap-5");
+    expect(tabList.className).not.toContain("grid");
+    expect(bottomRow.className).not.toContain("border-t");
+    expect(bottomRow.querySelector("#reading-rail-menu")).not.toBeNull();
+    expect(tabList.querySelector("[role='presentation']")?.className).toContain(
+      "left-[var(--active-tab-left)]",
+    );
+  });
+
+  it("keeps the book mounted and opens reader actions in the matching mobile tab", async () => {
+    const container = renderMobileRail();
+
+    openMobileReadingTab("Discuss");
+    await act(async () => Promise.resolve());
+
+    expect(
+      Array.from(container.querySelectorAll("button"))
+        .find((tab) => tab.textContent === "Discuss")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(container.querySelector("[data-testid='book-surface']")).not.toBeNull();
+  });
+
   it("keeps scroll viewports flush with the right edge while chrome owns its inset", () => {
     const container = renderRail();
     const rail = container.firstElementChild as HTMLElement;

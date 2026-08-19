@@ -1,7 +1,11 @@
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { TocList } from "~/components/book-list";
 import { ChatPanel } from "~/components/chat/chat-panel";
+import {
+  MOBILE_READING_TAB_EVENT,
+  type MobileReadingTab,
+} from "~/components/reading-shell/mobile-reading-tabs";
 import { READING_RAIL_MENU_ID } from "~/components/reading-shell/reading-rail-menu-portal";
 import { Button } from "~/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "~/components/ui/empty";
@@ -13,7 +17,7 @@ import { cn } from "~/lib/utils";
 
 const desktopTabs = ["Notes", "Discuss", "Outline"] as const;
 const mobileTabs = ["Read", ...desktopTabs] as const;
-type ReadingRailTab = (typeof mobileTabs)[number];
+type ReadingRailTab = MobileReadingTab;
 
 export function ReadingRail({
   mobile = false,
@@ -40,6 +44,15 @@ export function ReadingRail({
   const navigateToToc = activeBookId ? workspace.findTocNavigationForBook(activeBookId) : undefined;
   const chapterLabel = location?.chapterLabel;
   const hasTocShortcut = Boolean(chapterLabel && toc?.length && navigateToToc);
+
+  useEffect(() => {
+    if (!mobile) return;
+    const handleOpenTab = (event: Event) => {
+      setActiveTab((event as CustomEvent<MobileReadingTab>).detail);
+    };
+    window.addEventListener(MOBILE_READING_TAB_EVENT, handleOpenTab);
+    return () => window.removeEventListener(MOBILE_READING_TAB_EVENT, handleOpenTab);
+  }, [mobile]);
 
   const panels = book ? (
     <>
@@ -79,25 +92,29 @@ export function ReadingRail({
           {bookSurface}
         </Tabs.Panel>
         {panels}
-        <Tabs.List
-          aria-label="Reading sections"
-          className="grid shrink-0 grid-cols-4 border-t border-border bg-background px-2 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
-        >
-          {mobileTabs.map((tab) => (
-            <Tabs.Tab
-              key={tab}
-              value={tab}
-              className={cn(
-                "min-h-7 bg-transparent px-1 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                {
-                  "text-foreground": activeTab === tab,
-                },
-              )}
-            >
-              {tab}
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
+        <div className="flex shrink-0 items-start gap-3 bg-background px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <Tabs.List
+            aria-label="Reading sections"
+            className="relative flex min-w-0 flex-1 items-center gap-5"
+          >
+            {mobileTabs.map((tab) => (
+              <Tabs.Tab
+                key={tab}
+                value={tab}
+                className={cn(
+                  "relative h-7 shrink-0 bg-transparent p-0 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                  {
+                    "text-foreground": activeTab === tab,
+                  },
+                )}
+              >
+                {tab}
+              </Tabs.Tab>
+            ))}
+            <Tabs.Indicator className="absolute bottom-0 left-[var(--active-tab-left)] h-px w-3 bg-foreground transition-[left] duration-200 ease-out motion-reduce:transition-none" />
+          </Tabs.List>
+          <div id={READING_RAIL_MENU_ID} className="flex min-h-7 shrink-0 items-center" />
+        </div>
       </Tabs.Root>
     );
   }
