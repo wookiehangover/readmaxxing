@@ -17,25 +17,26 @@ async function uploadTestPdf(page: Page) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_PDF);
 
-  const readingShell = page.getByTestId("reading-shell");
+  const pdfContainer = page.getByTestId("pdf-container");
   const libraryBook = page.getByRole("button", { name: "Open Test PDF for E2E" });
   await expect
     .poll(
       async () =>
-        (await readingShell.isVisible().catch(() => false)) ||
+        (await pdfContainer.isVisible().catch(() => false)) ||
         (await libraryBook.isVisible().catch(() => false)),
       { timeout: 20_000 },
     )
     .toBe(true);
 
-  if (!(await readingShell.isVisible().catch(() => false))) {
+  if (!(await pdfContainer.isVisible().catch(() => false))) {
     await libraryBook.click({ force: true, timeout: 5_000 }).catch(() => {});
-    await expect(readingShell).toBeVisible({ timeout: 20_000 });
+    await expect(pdfContainer).toBeVisible({ timeout: 20_000 });
   }
 }
 
 test.describe("PDF support", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
     await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
 
     // Clear IndexedDB + storage to isolate each test.
