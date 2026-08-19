@@ -7,6 +7,9 @@ import type { BookMeta } from "~/lib/stores/book-store";
 const mocks = vi.hoisted(() => ({
   books: [] as BookMeta[],
   lastOpenedMap: new Map<string, number>(),
+  auth: {
+    isAuthenticated: false as boolean,
+  },
 }));
 
 vi.mock("~/hooks/use-effect-query", () => ({
@@ -15,6 +18,10 @@ vi.mock("~/hooks/use-effect-query", () => ({
 
 vi.mock("~/lib/context/workspace-context", () => ({
   useOptionalWorkspace: () => ({ booksRef: { current: mocks.books } }),
+}));
+
+vi.mock("~/lib/context/auth-context", () => ({
+  useAuth: () => mocks.auth,
 }));
 
 vi.mock("~/components/ui/dropdown-menu", () => ({
@@ -80,6 +87,7 @@ beforeEach(() => {
   window.sessionStorage.clear();
   mocks.books = [];
   mocks.lastOpenedMap = new Map();
+  mocks.auth.isAuthenticated = false;
 });
 
 afterEach(() => {
@@ -97,14 +105,16 @@ describe("LibraryFrame", () => {
     if (storedWidth) window.sessionStorage.setItem("reading-rail-width", storedWidth);
     const { container } = renderFrame("/library");
     const nav = container.querySelector<HTMLElement>('nav[aria-label="Library navigation"]')!;
-    const links = nav.querySelectorAll("a");
-    const linkGroup = links.item(0).parentElement!;
+    const links = Array.from(
+      nav.firstElementChild?.querySelectorAll('a:not([href="/login"])') ?? [],
+    );
+    const linkGroup = nav.firstElementChild!;
 
     expect(nav.style.width).toBe(expectedWidth);
     expect(nav.className).toContain("px-6");
     expect(nav.parentElement?.className).toContain("py-5");
     expect(linkGroup.className).toContain("flex-1");
-    expect(linkGroup.contains(links.item(links.length - 1))).toBe(true);
+    expect(linkGroup.contains(links[links.length - 1]!)).toBe(true);
     expect(linkGroup.contains(nav.querySelector('button[title="More library actions"]'))).toBe(
       false,
     );
@@ -133,9 +143,15 @@ describe("LibraryFrame", () => {
   ])("renders the slim shared navigation on %s", (pathname, activeHref) => {
     const { container } = renderFrame(pathname);
     const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
-    const links = Array.from(nav.querySelectorAll("a"));
+    const links = Array.from(
+      nav.firstElementChild?.querySelectorAll('a:not([href="/login"])') ?? [],
+    );
+    const loginLink = nav.querySelector<HTMLAnchorElement>('a[href="/login"]');
 
     expect(links.map((link) => link.textContent)).toEqual(["Library", "Free ebooks", "Settings"]);
+    expect(loginLink?.dataset.slot).toBe("button");
+    expect(loginLink?.className).toContain("border-border");
+    expect(nav.firstElementChild?.lastElementChild).toBe(loginLink);
     const activeLink = nav.querySelector<HTMLAnchorElement>(`a[href="${activeHref}"]`)!;
     expect(activeLink.getAttribute("aria-current")).toBe("page");
     expect(activeLink.className).toContain("after:w-[15px]");
@@ -165,6 +181,14 @@ describe("LibraryFrame", () => {
     expect(container.querySelector("aside")).toBeNull();
     expect(container.querySelector('[role="tablist"]')).toBeNull();
     expect(container.querySelector('[aria-label="Open sidebar"]')).toBeNull();
+  });
+
+  it("hides Login when authenticated", () => {
+    mocks.auth.isAuthenticated = true;
+    const { container } = renderFrame("/library");
+    const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
+
+    expect(nav.querySelector('a[href="/login"]')).toBeNull();
   });
 
   it("shows iconed upload and bug report actions and omits an empty Recent section", () => {
