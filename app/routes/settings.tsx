@@ -69,16 +69,6 @@ export default function SettingsPage() {
         <AppNavigation />
       </header>
       <div data-slot="settings-layout" className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <main
-          data-slot="settings-main"
-          className="min-w-0 flex-1 overflow-y-auto px-4 pb-8 md:px-8"
-        >
-          <div className="mx-auto flex max-w-3xl flex-col gap-8">
-            <h1 className="text-xl font-semibold tracking-tight">{activeSectionLabel}</h1>
-            {renderSection(activeSection)}
-          </div>
-        </main>
-
         <aside
           data-slot="settings-rail"
           className="flex shrink-0 flex-col px-6 pb-6"
@@ -103,6 +93,16 @@ export default function SettingsPage() {
 
           <SettingsFooter />
         </aside>
+
+        <main
+          data-slot="settings-main"
+          className="min-w-0 flex-1 overflow-y-auto px-4 pb-8 md:px-8"
+        >
+          <div className="mx-auto flex max-w-3xl flex-col gap-8">
+            <h1 className="text-xl font-semibold tracking-tight">{activeSectionLabel}</h1>
+            {renderSection(activeSection)}
+          </div>
+        </main>
       </div>
     </div>
   );

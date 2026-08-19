@@ -87,13 +87,13 @@ describe("SettingsPage", () => {
     expect(buttons[0]?.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("places the plain section rail after the main content without the boxed sidebar", () => {
+  it("places the plain section rail before the main content without the boxed sidebar", () => {
     const container = renderSettings();
     const layout = container.querySelector('[data-slot="settings-layout"]')!;
     const main = container.querySelector('[data-slot="settings-main"]')!;
     const rail = container.querySelector<HTMLElement>('[data-slot="settings-rail"]')!;
 
-    expect(Array.from(layout.children)).toEqual([main, rail]);
+    expect(Array.from(layout.children)).toEqual([rail, main]);
     expect(rail.style.width).toBe("384px");
     expect(rail.className).not.toContain("bg-sidebar");
     expect(container.querySelector("aside.bg-sidebar")).toBeNull();
@@ -102,7 +102,7 @@ describe("SettingsPage", () => {
     expect(container.textContent).toContain("About");
   });
 
-  it("switches the main settings section from the right rail", () => {
+  it("switches the main settings section from the left rail", () => {
     const container = renderSettings();
     const accountButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>('nav[aria-label="Settings sections"] button'),
