@@ -9,9 +9,19 @@ import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
 import type { BookMeta } from "~/lib/stores/book-store";
 
+export interface BookUploadFile {
+  name: string;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+}
+
+export type BookAddedCallback = (book: BookMeta) => void;
+export type BookDeletedCallback = (bookId: string) => void;
+
 export interface BooksState {
   collection: Collection<BookMeta, "id">;
   loading: boolean;
+  uploading: boolean;
+  deletingBookIds: string[];
   error: string | null;
 }
 
@@ -21,10 +31,21 @@ export const bookAdded = createAction<[book: BookMeta]>("books/bookAdded");
 export const bookUpdated = createAction<[book: BookMeta]>("books/bookUpdated");
 export const bookDeleted = createAction<[bookId: string]>("books/bookDeleted");
 export const booksHydrateFailed = createAction<[error: string]>("books/hydrateFailed");
+export const uploadBooksRequested =
+  createAction<[files: BookUploadFile[], onBookAdded?: BookAddedCallback]>("books/uploadRequested");
+export const booksUploadCompleted = createAction("books/uploadCompleted");
+export const booksUploadFailed = createAction<[error: string]>("books/uploadFailed");
+export const deleteBookRequested =
+  createAction<[bookId: string, onBookDeleted?: BookDeletedCallback]>("books/deleteRequested");
+export const bookDeletionCompleted = createAction<[bookId: string]>("books/deleteCompleted");
+export const bookDeletionFailed =
+  createAction<[bookId: string, error: string]>("books/deleteFailed");
 
 export const booksInitialState: BooksState = {
   collection: createCollection<BookMeta, "id">("id"),
   loading: false,
+  uploading: false,
+  deletingBookIds: [],
   error: null,
 };
 
@@ -52,6 +73,29 @@ reducer.with(bookDeleted, (state, { payload: [bookId] }) => ({
 reducer.with(booksHydrateFailed, (state, { payload: [error] }) => ({
   ...state,
   loading: false,
+  error,
+}));
+reducer.with(uploadBooksRequested, (state) => ({ ...state, uploading: true, error: null }));
+reducer.with(booksUploadCompleted, (state) => ({ ...state, uploading: false }));
+reducer.with(booksUploadFailed, (state, { payload: [error] }) => ({
+  ...state,
+  uploading: false,
+  error,
+}));
+reducer.with(deleteBookRequested, (state, { payload: [bookId] }) => ({
+  ...state,
+  deletingBookIds: state.deletingBookIds.includes(bookId)
+    ? state.deletingBookIds
+    : [...state.deletingBookIds, bookId],
+  error: null,
+}));
+reducer.with(bookDeletionCompleted, (state, { payload: [bookId] }) => ({
+  ...state,
+  deletingBookIds: state.deletingBookIds.filter((id) => id !== bookId),
+}));
+reducer.with(bookDeletionFailed, (state, { payload: [bookId, error] }) => ({
+  ...state,
+  deletingBookIds: state.deletingBookIds.filter((id) => id !== bookId),
   error,
 }));
 

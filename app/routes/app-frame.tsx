@@ -29,7 +29,7 @@ import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 import { useAppStore } from "~/lib/themis/provider";
-import { bookAdded, bookDeleted, hydrateBooks } from "~/lib/themis/books/books-slice";
+import { bookAdded, hydrateBooks } from "~/lib/themis/books/books-slice";
 import { cn } from "~/lib/utils";
 
 function createInitialFocusedState(
@@ -249,24 +249,30 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     store.dispatch(hydrateBooks());
   }, [store, syncVersion]);
 
-  const handleBookAdded = useCallback(
+  const handleUploadedBookAdded = useCallback(
     (book: BookMeta) => {
-      store.dispatch(bookAdded(book));
       openBook(book);
       navigate(getBookReadingPath(book.id));
     },
-    [navigate, openBook, store],
+    [navigate, openBook],
+  );
+
+  const handleBookAdded = useCallback(
+    (book: BookMeta) => {
+      store.dispatch(bookAdded(book));
+      handleUploadedBookAdded(book);
+    },
+    [handleUploadedBookAdded, store],
   );
 
   const handleBookDeleted = useCallback(
     (bookId: string) => {
       closeBookPanels(bookId);
-      store.dispatch(bookDeleted(bookId));
     },
-    [closeBookPanels, store],
+    [closeBookPanels],
   );
 
-  const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
+  const { handleFileInput } = useBookUpload({ onBookAdded: handleUploadedBookAdded });
 
   useEffect(() => {
     ws.openBookRef.current = openBook;

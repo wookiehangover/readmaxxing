@@ -162,9 +162,9 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
 
   const handleBookAdded = useCallback(
     (book: BookMeta) => {
-      ws.onBookAddedRef.current?.(book);
+      void handleOpenBook(book);
     },
-    [ws],
+    [handleOpenBook],
   );
 
   const handleBookDeleted = useCallback(
