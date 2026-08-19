@@ -3,7 +3,6 @@ import { Info, MoreHorizontal } from "lucide-react";
 import { Link } from "react-router";
 import type { Route } from "./+types/settings";
 import { AppNavigation } from "~/components/app-navigation";
-import { DEFAULT_RAIL_WIDTH } from "~/components/reading-shell/reading-rail-width";
 import { AccountSection } from "~/components/settings/account-section";
 import { AppearanceSection } from "~/components/settings/appearance-section";
 import { BugReportsSection } from "~/components/settings/bug-reports-section";
@@ -98,8 +97,7 @@ export default function SettingsPage() {
       <div data-slot="settings-layout" className="flex min-h-0 flex-1 flex-col md:flex-row">
         <aside
           data-slot="settings-rail"
-          className="flex shrink-0 flex-col px-6 pb-6"
-          style={{ width: DEFAULT_RAIL_WIDTH, maxWidth: "100%" }}
+          className="flex w-full shrink-0 flex-col px-6 pb-6 md:w-fit"
         >
           <nav aria-label="Settings sections" className="flex flex-col items-start gap-3">
             {sections.map((item) => (

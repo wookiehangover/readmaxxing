@@ -88,6 +88,7 @@ describe("SettingsPage", () => {
       ["Settings", "/settings"],
     ]);
     expect(nav.querySelector('a[href="/settings"]')?.getAttribute("aria-current")).toBe("page");
+    expect((nav as HTMLElement).style.width).toBe("384px");
   });
 
   it("shows About in the settings overflow while keeping Login in the footer", () => {
@@ -130,7 +131,8 @@ describe("SettingsPage", () => {
     const rail = container.querySelector<HTMLElement>('[data-slot="settings-rail"]')!;
 
     expect(Array.from(layout.children)).toEqual([rail, main]);
-    expect(rail.style.width).toBe("384px");
+    expect(rail.style.width).toBe("");
+    expect(rail.className).toContain("md:w-fit");
     expect(rail.className).not.toContain("bg-sidebar");
     expect(container.querySelector("aside.bg-sidebar")).toBeNull();
     expect(container.textContent).not.toContain("Home");
