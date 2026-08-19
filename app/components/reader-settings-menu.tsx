@@ -13,7 +13,6 @@ import {
   Type,
   Zap,
   ClipboardCopyIcon,
-  FileText,
   History,
 } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -44,6 +43,7 @@ import { useReadingChatMenuActions } from "~/lib/context/reading-chat-menu-conte
 import { ChatBookSelectorMenu } from "~/components/chat/chat-book-selector";
 import { ChatRecentSessionsMenu } from "~/components/chat/chat-session-menu";
 import { ReaderFormattingStepper } from "~/components/reader-formatting-stepper";
+import { useReadingRailTab } from "~/components/reading-shell/reading-rail-tab-context";
 import { Button } from "./ui/button";
 
 interface ReaderFormattingMenuProps {
@@ -362,6 +362,7 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
   const { isAuthenticated, shareOpen, setShareOpen, handleShare } = useReaderActionState(book);
   const registeredChatActions = useReadingChatMenuActions();
   const chatActions = registeredChatActions?.bookId === book?.id ? registeredChatActions : null;
+  const { activeTab } = useReadingRailTab();
 
   useEffect(() => {
     if (!workspace || !bookId || !props.onNavigateToToc) return;
@@ -429,14 +430,10 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
               Settings
             </DropdownMenuItem>
           </DropdownMenuGroup>
-          {book ? (
+          {book && activeTab === "Notes" ? (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => navigate(`/books/${book.id}/details`)}>
-                  <FileText className="size-4" />
-                  Details
-                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => {
                     void exportNotebookMarkdown(book.id, book.title).catch(console.error);

@@ -139,16 +139,32 @@ import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { ReadingRail } from "~/components/reading-shell/reading-rail";
 import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
 import { ReadingRailMenuPortal } from "~/components/reading-shell/reading-rail-menu-portal";
+import {
+  ReadingRailTabProvider,
+  useReadingRailTab,
+} from "~/components/reading-shell/reading-rail-tab-context";
 import { getSettings } from "~/lib/settings";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let root: Root | null = null;
 
+function ActiveTabProbe() {
+  const { activeTab } = useReadingRailTab();
+  return <output data-testid="active-rail-tab">{activeTab}</output>;
+}
+
 function renderRail() {
   const container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
-  act(() => root?.render(<ReadingRail />));
+  act(() =>
+    root?.render(
+      <ReadingRailTabProvider>
+        <ReadingRail />
+        <ActiveTabProbe />
+      </ReadingRailTabProvider>,
+    ),
+  );
   return container;
 }
 
@@ -157,18 +173,20 @@ function renderMobileRail() {
   root = createRoot(container);
   act(() =>
     root?.render(
-      <MemoryRouter>
-        <ReadingRail mobile bookSurface={<div data-testid="book-surface">Book surface</div>} />
-        <ReadingRailMenuPortal>
-          <ReaderSettingsMenu
-            settings={getSettings()}
-            onUpdateSettings={vi.fn()}
-            book={workspace.booksRef.current[0]}
-            onDownload={vi.fn()}
-            onBookmarkPage={vi.fn()}
-          />
-        </ReadingRailMenuPortal>
-      </MemoryRouter>,
+      <ReadingRailTabProvider>
+        <MemoryRouter>
+          <ReadingRail mobile bookSurface={<div data-testid="book-surface">Book surface</div>} />
+          <ReadingRailMenuPortal>
+            <ReaderSettingsMenu
+              settings={getSettings()}
+              onUpdateSettings={vi.fn()}
+              book={workspace.booksRef.current[0]}
+              onDownload={vi.fn()}
+              onBookmarkPage={vi.fn()}
+            />
+          </ReadingRailMenuPortal>
+        </MemoryRouter>
+      </ReadingRailTabProvider>,
     ),
   );
   return container;
@@ -367,9 +385,11 @@ describe("ReadingRail", () => {
 
     clickTab(container, "Discuss");
     expect(visiblePanel(container)?.textContent).toContain("Loading chat");
+    expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Discuss");
 
     clickTab(container, "Outline");
     expect(visiblePanel(container)?.textContent).toContain("Loading outline");
+    expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Outline");
   });
 
   it("uses one sliding underline left-aligned with the active tab label", () => {
