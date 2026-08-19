@@ -9,7 +9,7 @@
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc",
     "lint": "oxlint .",
-    "lint:themis": "eslint \"app/lib/themis/**/*.{ts,tsx}\"",
+    "lint:themis": "oxlint app/lib/themis",
     "format": "oxfmt --write app/",
     "test": "vitest",
     "e2e": "playwright test"
