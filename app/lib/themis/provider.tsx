@@ -3,6 +3,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { booksSaga } from "~/lib/themis/books/books-sagas";
 import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { createAppStore, type AppStore } from "~/lib/themis/store";
+import { workspaceRestoreSaga } from "~/lib/themis/workspace-restore/workspace-restore-sagas";
+import { hydrateWorkspaceRestore } from "~/lib/themis/workspace-restore/workspace-restore-slice";
 
 const AppStoreContext = createContext<AppStore | null>(null);
 
@@ -15,9 +17,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     if (!store) return;
     const disposeStore = store.init();
     const cancelBooksSaga = store.runSaga(booksSaga);
+    const cancelWorkspaceRestoreSaga = store.runSaga(workspaceRestoreSaga);
     store.dispatch(hydrateBooks());
+    store.dispatch(hydrateWorkspaceRestore());
 
     return () => {
+      cancelWorkspaceRestoreSaga();
       cancelBooksSaga();
       disposeStore();
     };

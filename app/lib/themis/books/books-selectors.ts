@@ -1,11 +1,8 @@
-import type { ReactStore } from "@augmentcode/themis/react-store";
 import { getItem, getItems } from "@augmentcode/themis/utils/collections/collection-utils";
 
-import { booksReducer, type BooksState } from "~/lib/themis/books/books-slice";
+import type { AppStoreCore } from "~/lib/themis/store";
 
-type BooksStore = ReactStore<{ books: BooksState }, { books: typeof booksReducer }>;
-
-export function createBooksSelectors(store: BooksStore) {
+export function createBooksSelectors(store: AppStoreCore) {
   return {
     selectAllBooks: store.createSelector((state) => getItems(state.books.collection)),
     selectBookById: store.createSelector((state, bookId: string) =>
