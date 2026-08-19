@@ -38,7 +38,13 @@ export function AppNavigation({ children }: { readonly children?: ReactNode }) {
         ))}
       </div>
       {!isAuthenticated ? (
-        <Button variant="outline" size="xs" render={<Link to="/login" />} nativeButton={false}>
+        <Button
+          variant="outline"
+          size="xs"
+          className={cn({ "mr-2 translate-y-px": true })}
+          render={<Link to="/login" />}
+          nativeButton={false}
+        >
           Login
         </Button>
       ) : null}
