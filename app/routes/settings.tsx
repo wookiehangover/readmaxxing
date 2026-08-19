@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Info, MoreHorizontal } from "lucide-react";
+import { Link } from "react-router";
 import type { Route } from "./+types/settings";
 import { AppNavigation } from "~/components/app-navigation";
 import { DEFAULT_RAIL_WIDTH } from "~/components/reading-shell/reading-rail-width";
@@ -9,6 +11,14 @@ import { DataSection } from "~/components/settings/data-section";
 import { ReadingSection } from "~/components/settings/reading-section";
 import { SettingsFooter } from "~/components/settings/settings-footer";
 import { UpdatesSection } from "~/components/settings/updates-section";
+import { Button } from "~/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { cn } from "~/lib/utils";
 
 export function meta(_args: Route.MetaArgs) {
@@ -66,7 +76,24 @@ export default function SettingsPage() {
     <div className="flex h-dvh min-w-0 flex-col bg-background">
       <header className="flex shrink-0 py-5">
         <div className="min-w-0 flex-1" />
-        <AppNavigation />
+        <AppNavigation>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button variant="ghost" size="icon" title="More settings actions" />}
+            >
+              <MoreHorizontal />
+              <span className="sr-only">More settings actions</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-36 text-xs">
+              <DropdownMenuGroup>
+                <DropdownMenuItem render={<Link to="/about" />}>
+                  <Info />
+                  About
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </AppNavigation>
       </header>
       <div data-slot="settings-layout" className="flex min-h-0 flex-1 flex-col md:flex-row">
         <aside

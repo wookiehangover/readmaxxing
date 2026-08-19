@@ -21,13 +21,34 @@ vi.mock("~/components/settings/reading-section", () => ({
 vi.mock("~/components/settings/updates-section", () => ({
   UpdatesSection: () => <div data-testid="updates-section">Updates content</div>,
 }));
-vi.mock("~/components/settings/settings-footer", () => ({
-  SettingsFooter: () => (
-    <footer>
-      <a href="/login">Login</a>
-      <a href="/about">About</a>
-    </footer>
-  ),
+vi.mock("~/lib/context/auth-context", () => ({
+  useAuth: () => ({ isAuthenticated: false, logout: vi.fn() }),
+}));
+vi.mock("~/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  DropdownMenuGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  DropdownMenuItem: ({
+    children,
+    render,
+  }: React.PropsWithChildren<{
+    render?: React.ReactElement<{ children?: React.ReactNode }>;
+  }>) =>
+    render ? React.cloneElement(render, {}, children) : <button type="button">{children}</button>,
+  DropdownMenuTrigger: ({
+    children,
+    render,
+    ...props
+  }: React.ComponentProps<"button"> & {
+    render?: React.ReactElement<React.ComponentProps<"button">>;
+  }) =>
+    render ? (
+      React.cloneElement(render, props, children)
+    ) : (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
 }));
 
 import SettingsPage from "~/routes/settings";
@@ -59,7 +80,7 @@ describe("SettingsPage", () => {
   it("renders the shared app navigation with Settings active", () => {
     const container = renderSettings();
     const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
-    const links = Array.from(nav.querySelectorAll("a"));
+    const links = Array.from(nav.firstElementChild?.querySelectorAll("a") ?? []);
 
     expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
       ["Library", "/library"],
@@ -67,6 +88,21 @@ describe("SettingsPage", () => {
       ["Settings", "/settings"],
     ]);
     expect(nav.querySelector('a[href="/settings"]')?.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("shows About in the settings overflow while keeping Login in the footer", () => {
+    const container = renderSettings();
+    const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
+    const overflow = nav.querySelector<HTMLButtonElement>('button[title="More settings actions"]');
+    const aboutLink = nav.querySelector<HTMLAnchorElement>('a[href="/about"]');
+    const footer = container.querySelector("footer")!;
+
+    expect(overflow?.dataset.slot).toBe("button");
+    expect(overflow?.querySelector("svg")).not.toBeNull();
+    expect(aboutLink?.textContent).toContain("About");
+    expect(aboutLink?.querySelector("svg.lucide-info")).not.toBeNull();
+    expect(footer.querySelector('a[href="/about"]')).toBeNull();
+    expect(footer.querySelector('a[href="/login"]')?.textContent).toBe("Login");
   });
 
   it("shows Appearance by default and lists sections in the approved order", () => {
@@ -99,7 +135,6 @@ describe("SettingsPage", () => {
     expect(container.querySelector("aside.bg-sidebar")).toBeNull();
     expect(container.textContent).not.toContain("Home");
     expect(container.textContent).toContain("Login");
-    expect(container.textContent).toContain("About");
   });
 
   it("switches the main settings section from the left rail", () => {

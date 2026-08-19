@@ -23,12 +23,6 @@ export function SettingsFooter() {
             Login
           </Link>
         )}
-        <Link
-          to="/about"
-          className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-        >
-          About
-        </Link>
       </div>
     </footer>
   );
