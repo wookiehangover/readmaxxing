@@ -75,17 +75,20 @@ describe("LibraryFrame", () => {
     if (storedWidth) window.sessionStorage.setItem("reading-rail-width", storedWidth);
     const { container } = renderFrame("/library");
     const nav = container.querySelector<HTMLElement>('nav[aria-label="Library navigation"]')!;
+    const headerNavigation = container.querySelector<HTMLElement>(
+      '[data-slot="library-header-navigation"]',
+    )!;
     const links = nav.querySelectorAll("a");
-    const linkGroup = links.item(0).parentElement!;
 
-    expect(nav.style.width).toBe(expectedWidth);
-    expect(nav.className).toContain("px-6");
-    expect(nav.parentElement?.className).toContain("py-5");
-    expect(linkGroup.className).toContain("flex-1");
-    expect(linkGroup.contains(links.item(links.length - 1))).toBe(true);
-    expect(linkGroup.contains(nav.querySelector('button[title="More library actions"]'))).toBe(
-      false,
-    );
+    expect(headerNavigation.style.getPropertyValue("--library-rail-width")).toBe(expectedWidth);
+    expect(headerNavigation.className).toContain("md:w-(--library-rail-width)");
+    expect(headerNavigation.className).toContain("md:px-6");
+    expect(headerNavigation.parentElement?.className).toContain("py-5");
+    expect(nav.className).toContain("flex-1");
+    expect(nav.contains(links.item(links.length - 1))).toBe(true);
+    expect(
+      nav.contains(headerNavigation.querySelector('button[title="More library actions"]')),
+    ).toBe(false);
   });
 
   it("renders page controls to the left of the rail-width navigation", () => {
@@ -99,10 +102,12 @@ describe("LibraryFrame", () => {
     const controls = container.querySelector('[data-testid="page-controls"]')!;
     const slot = container.querySelector('[data-slot="library-header-controls"]')!;
     const nav = container.querySelector('nav[aria-label="Library navigation"]')!;
+    const headerNavigation = container.querySelector('[data-slot="library-header-navigation"]')!;
 
     expect(slot.contains(controls)).toBe(true);
     expect(header.children[0]).toBe(slot);
-    expect(header.children[1]).toBe(nav);
+    expect(header.children[1]).toBe(headerNavigation);
+    expect(headerNavigation.contains(nav)).toBe(true);
   });
 
   it.each([
@@ -122,7 +127,9 @@ describe("LibraryFrame", () => {
         .filter((link) => link !== activeLink)
         .every((link) => !link.className.includes("after:w-[15px]")),
     ).toBe(true);
-    const overflow = nav.querySelector<HTMLButtonElement>('button[title="More library actions"]');
+    const overflow = container.querySelector<HTMLButtonElement>(
+      '[data-slot="library-header-navigation"] button[title="More library actions"]',
+    );
     expect(overflow?.dataset.slot).toBe("button");
     expect(overflow?.className).toContain("size-8");
     expect(overflow?.className).toContain("hover:bg-muted");
@@ -132,6 +139,30 @@ describe("LibraryFrame", () => {
     expect(container.querySelector("aside")).toBeNull();
     expect(container.querySelector('[role="tablist"]')).toBeNull();
     expect(container.querySelector('[aria-label="Open sidebar"]')).toBeNull();
+  });
+
+  it("places the shared text navigation below the page content on mobile", () => {
+    const { container } = renderFrame("/standard-ebooks");
+    const mobileNav = container.querySelector<HTMLElement>(
+      '[data-slot="library-mobile-navigation"]',
+    )!;
+    const links = Array.from(mobileNav.querySelectorAll("a"));
+    const activeLink = mobileNav.querySelector<HTMLAnchorElement>('a[href="/standard-ebooks"]')!;
+
+    expect(mobileNav.className).toContain("md:hidden");
+    expect(mobileNav.className).toContain("border-t");
+    expect(mobileNav.previousElementSibling?.textContent).toBe("Browse body");
+    expect(links.map((link) => link.textContent)).toEqual(["Library", "Free ebooks", "Settings"]);
+    expect(activeLink.getAttribute("aria-current")).toBe("page");
+    expect(activeLink.className).toContain("text-foreground");
+    expect(mobileNav.className).toContain("grid-cols-3");
+    expect(mobileNav.querySelector("svg")).toBeNull();
+    expect(mobileNav.querySelector("button")).toBeNull();
+    expect(
+      container.querySelector(
+        '[data-slot="library-header-navigation"] button[title="More library actions"]',
+      ),
+    ).not.toBeNull();
   });
 
   it("keeps upload and bug report as the only overflow actions", () => {

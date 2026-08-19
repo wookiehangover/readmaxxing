@@ -3,6 +3,7 @@ import {
   useContext,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type MutableRefObject,
   type ReactNode,
 } from "react";
@@ -54,12 +55,15 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
             data-slot="library-header-controls"
             className="flex min-w-0 flex-1 items-center"
           />
-          <nav
-            aria-label="Library navigation"
-            className="flex shrink-0 items-start gap-3 px-6 text-xs font-normal"
-            style={{ width: DEFAULT_RAIL_WIDTH, maxWidth: "100%" }}
+          <div
+            data-slot="library-header-navigation"
+            className="flex max-w-full shrink-0 items-start gap-3 px-4 text-xs font-normal md:w-(--library-rail-width) md:px-6"
+            style={{ "--library-rail-width": `${DEFAULT_RAIL_WIDTH}px` } as CSSProperties}
           >
-            <div className="flex h-7 min-w-0 flex-1 items-center gap-5">
+            <nav
+              aria-label="Library navigation"
+              className="hidden h-7 min-w-0 flex-1 items-center gap-5 md:flex"
+            >
               {NAV_ITEMS.map((item) => (
                 <NavLink
                   key={item.to}
@@ -74,7 +78,7 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
                   {item.label}
                 </NavLink>
               ))}
-            </div>
+            </nav>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button variant="ghost" size="icon" title="More library actions" />}
@@ -93,7 +97,7 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-          </nav>
+          </div>
         </header>
         <input
           ref={fileInputRef}
@@ -104,6 +108,28 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
           onChange={onFileInput}
         />
         <div className="min-h-0 flex-1">{children}</div>
+        <nav
+          aria-label="Library navigation"
+          data-slot="library-mobile-navigation"
+          className="grid shrink-0 grid-cols-3 border-t border-border bg-background px-2 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-xs font-normal md:hidden"
+        >
+          {NAV_ITEMS.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                cn(
+                  "flex min-h-7 items-center justify-center bg-transparent px-1 text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                  {
+                    "text-foreground": isActive,
+                  },
+                )
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
         <BugReportDialog open={bugReportOpen} onOpenChange={setBugReportOpen} hideTrigger />
       </div>
     </LibraryHeaderControlsContext.Provider>
