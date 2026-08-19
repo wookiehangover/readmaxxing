@@ -22,6 +22,7 @@ import { WorkspaceProvider } from "~/lib/context/workspace-context";
 import { useSync, SyncContext } from "~/lib/sync/use-sync";
 import { COLOR_THEMES } from "~/lib/color-themes";
 import { setSWRegistration } from "~/lib/sw-registry";
+import { AppStoreProvider } from "~/lib/themis/provider";
 
 export async function loader() {
   if (import.meta.env.DEV) {
@@ -284,17 +285,19 @@ function ServiceWorkerRefreshToast() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <SyncProvider>
-        <WorkspaceProvider>
-          <SettingsShortcut />
-          <ServiceWorkerRefreshToast />
-          <CommandBar />
-          <Outlet />
-          <Toaster />
-        </WorkspaceProvider>
-      </SyncProvider>
-    </AuthProvider>
+    <AppStoreProvider>
+      <AuthProvider>
+        <SyncProvider>
+          <WorkspaceProvider>
+            <SettingsShortcut />
+            <ServiceWorkerRefreshToast />
+            <CommandBar />
+            <Outlet />
+            <Toaster />
+          </WorkspaceProvider>
+        </SyncProvider>
+      </AuthProvider>
+    </AppStoreProvider>
   );
 }
 

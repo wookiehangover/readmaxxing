@@ -20,6 +20,9 @@ importers:
       '@ai-sdk/react':
         specifier: ^4.0.23
         version: 4.0.23(react@19.2.7)(zod@4.4.3)
+      '@augmentcode/themis':
+        specifier: ^0.2.2
+        version: 0.2.2(@preact/signals-react@3.12.0(react@19.2.7))(react@19.2.7)
       '@base-ui/react':
         specifier: ^1.6.0
         version: 1.6.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -29,6 +32,9 @@ importers:
       '@orama/orama':
         specifier: ^3.1.18
         version: 3.1.18
+      '@preact/signals-react':
+        specifier: ^3.12.0
+        version: 3.12.0(react@19.2.7)
       '@react-router/node':
         specifier: ^8
         version: 8.2.0(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@7.0.2)
@@ -139,7 +145,7 @@ importers:
         version: 2.2.12
       shadcn:
         specifier: ^4.13.0
-        version: 4.13.0(@cfworker/json-schema@4.1.1)(typescript@7.0.2)
+        version: 4.13.0(@cfworker/json-schema@4.1.1)(babel-plugin-macros@3.1.0)(typescript@7.0.2)
       sonner:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -170,7 +176,7 @@ importers:
         version: 1.61.1
       '@react-router/dev':
         specifier: ^8
-        version: 8.2.0(@react-router/serve@8.2.0(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@7.0.2))(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@7.0.2)(vite@8.1.4(@types/node@22.19.19)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))
+        version: 8.2.0(@react-router/serve@8.2.0(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@7.0.2))(babel-plugin-macros@3.1.0)(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@7.0.2)(vite@8.1.4(@types/node@22.19.19)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))
       '@tailwindcss/vite':
         specifier: ^4.3.2
         version: 4.3.2(vite@8.1.4(@types/node@22.19.19)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))
@@ -270,6 +276,21 @@ packages:
     engines: {node: '>=10'}
     peerDependencies:
       ajv: '>=8'
+
+  '@augmentcode/themis@0.2.2':
+    resolution: {integrity: sha512-CP6HBbyHnVdIF0wPVPrLeaftUveXLb41l+PZLU7eGiHkJBUMumwzarm7OyYWwwqwB4odfoevxpcXBJ8vpzkRLQ==}
+    hasBin: true
+    peerDependencies:
+      '@preact/signals-react': ^3.10.1
+      react: ^18.0.0 || ^19.0.0
+      svelte: ^5.0.0
+    peerDependenciesMeta:
+      '@preact/signals-react':
+        optional: true
+      react:
+        optional: true
+      svelte:
+        optional: true
 
   '@aws-sdk/core@3.977.7':
     resolution: {integrity: sha512-I88Iov89NVmjSmJLKSv7Cn9M2J+a2942OkA8nZCbz+sl4ZeY4zEOcoLOrbt1GRfQ8zEQKnjAJdXixA3J/p1fDQ==}
@@ -1935,6 +1956,14 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
+  '@preact/signals-core@1.14.4':
+    resolution: {integrity: sha512-HNB6HYeYKhQbJ1aKl+YRjrS4+QWHLKX6qKoUsfS/m0vqzsVaEBiZiaKbG/e+NKk2ch5ALQr/ihWaMHxiCuuWHA==}
+
+  '@preact/signals-react@3.12.0':
+    resolution: {integrity: sha512-o3zBSekC/RPcsHOYTLagjw6JX0ih5eMMFZE0AICEeuk7p3MrYOyEXxM7bmT1Uqi0jPy2pbuDQZTFXYe55IAFVg==}
+    peerDependencies:
+      react: ^16.14.0 || 17.x || 18.x || 19.x
+
   '@radix-ui/primitive@1.1.3':
     resolution: {integrity: sha512-JTF99U/6XIjCBo0wqkU5sK10glYe27MRRsfwoiq5zzOEZLHU3A3KCMa5X/azekYRCJ0HlwI0crAXS/5dEHTzDg==}
 
@@ -2215,6 +2244,24 @@ packages:
     engines: {node: '>= 20.0.0'}
     peerDependencies:
       '@redis/client': ^6.1.0
+
+  '@redux-saga/core@1.5.1':
+    resolution: {integrity: sha512-Yh/eO0YBawlK5qAVXh9vSS0BDMWyFe6qIcVcKa8JtPOo3IFwRly33ZYBrsCwxu7jdSQT9QUJHChAU8fil5dRZQ==}
+
+  '@redux-saga/deferred@1.3.1':
+    resolution: {integrity: sha512-0YZ4DUivWojXBqLB/TmuRRpDDz7tyq1I0AuDV7qi01XlLhM5m51W7+xYtIckH5U2cMlv9eAuicsfRAi1XHpXIg==}
+
+  '@redux-saga/delay-p@1.3.1':
+    resolution: {integrity: sha512-597I7L5MXbD/1i3EmcaOOjL/5suxJD7p5tnbV1PiWnE28c2cYiIHqmSMK2s7us2/UrhOL2KTNBiD0qBg6KnImg==}
+
+  '@redux-saga/is@1.2.1':
+    resolution: {integrity: sha512-x3aWtX3GmQfEvn8dh0ovPbsXgK9JjpiR24wKztpGbZP8JZUWWvUgKrvnWZ/T/4iphOBftyVc9VrIwhAnsM+OFA==}
+
+  '@redux-saga/symbols@1.2.1':
+    resolution: {integrity: sha512-3dh+uDvpBXi7EUp/eO+N7eFM4xKaU4yuGBXc50KnZGzIrR/vlvkTFQsX13zsY8PB6sCFYAgROfPSRUj8331QSA==}
+
+  '@redux-saga/types@1.4.1':
+    resolution: {integrity: sha512-GSOGLWvJIjA63ywISJZr4skTjTnyQdu2WZbUeVguYNMyinEa9yTflBlVOFuBZxmyMR1dQodCE3PiKDu0BvyAHg==}
 
   '@remix-run/node-fetch-server@0.13.3':
     resolution: {integrity: sha512-UfjOXed/DQteaM5VyTfqTeGpHwyL2J5aoRGY6cydip4tt1ehNNeSwuXCC7AEGE0RWBs/7bgKxYkL/B/+UDe4AA==}
@@ -2832,6 +2879,9 @@ packages:
   '@types/node@22.19.19':
     resolution: {integrity: sha512-dyh/xO2Fh5bYrfWaaqGrRQQGkNdmYw6AmaAUvYeUMNTWQtvb796ikLdmTchRmOlOiIJ1TDXfWgVx1QkUlQ6Hew==}
 
+  '@types/parse-json@4.0.2':
+    resolution: {integrity: sha512-dISoDXWWQwUquiKsyZ4Ng+HX2KsPL7LyHKHQwgGFEA3IaKac4Obd+h2a/a6waisAoepJlBcx9paWqjA8/HVjCw==}
+
   '@types/pg@8.20.0':
     resolution: {integrity: sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow==}
 
@@ -3148,6 +3198,10 @@ packages:
   babel-dead-code-elimination@1.0.12:
     resolution: {integrity: sha512-GERT7L2TiYcYDtYk1IpD+ASAYXjKbLTDPhBtYj7X1NuRMDTMtAx9kyBenub1Ev41lo91OHCKdmP+egTDmfQ7Ig==}
 
+  babel-plugin-macros@3.1.0:
+    resolution: {integrity: sha512-Cg7TFGpIr01vOQNODXOOaGz2NpCU5gl8x1qJFbb6hbZxR7XrcE2vtbAsTAbJ7/xwJtUuJEw8K8Zr/AE0LHlesg==}
+    engines: {node: '>=10', npm: '>=6'}
+
   babel-plugin-polyfill-corejs2@0.4.17:
     resolution: {integrity: sha512-aTyf30K/rqAsNwN76zYrdtx8obu0E4KoUME29B1xj+B3WxgvWkp943vYQ+z8Mv3lw9xHXMHpvSPOBxzAkIa94w==}
     peerDependencies:
@@ -3400,6 +3454,10 @@ packages:
 
   cose-base@2.2.0:
     resolution: {integrity: sha512-AzlgcsCbUMymkADOJtQm3wO9S3ltPfYOFD5033keQn9NJzIbtnZj+UdBJe7DYml/8TdbtHJW3j58SOnKhWY/5g==}
+
+  cosmiconfig@7.1.0:
+    resolution: {integrity: sha512-AdmX6xUzdNASswsFtmwSt7Vj8po9IuqXm0UXz7QKPuEUmPB4XyjGfaAr2PSuELMwkRMVH1EpIkX5bTZGRB3eCA==}
+    engines: {node: '>=10'}
 
   cosmiconfig@9.0.1:
     resolution: {integrity: sha512-hr4ihw+DBqcvrsEDioRO31Z17x71pUYoNe/4h6Z0wB72p7MU7/9gH8Q3s12NFhHPfYBBOV3qyfUxmr/Yn3shnQ==}
@@ -3917,6 +3975,10 @@ packages:
 
   fast-equals@5.4.0:
     resolution: {integrity: sha512-jt2DW/aNFNwke7AUd+Z+e6pz39KO5rzdbbFCg2sGafS4mk13MI7Z8O5z9cADNn5lhGODIgLwug6TZO2ctf7kcw==}
+    engines: {node: '>=6.0.0'}
+
+  fast-equals@6.0.2:
+    resolution: {integrity: sha512-sAjhj9ZhOxYCGiNMnZLaucOqf5ZeFnHNoKoAZiD9thhJ0N8RP85qJK759/97C/3L7NzzmGVB5uiX9AUpySZmUQ==}
     engines: {node: '>=6.0.0'}
 
   fast-glob@3.3.3:
@@ -4501,6 +4563,9 @@ packages:
   katex@0.16.45:
     resolution: {integrity: sha512-pQpZbdBu7wCTmQUh7ufPmLr0pFoObnGUoL/yhtwJDgmmQpbkg/0HSVti25Fu4rmd1oCR6NGWe9vqTWuWv3GcNA==}
     hasBin: true
+
+  kefir@3.8.8:
+    resolution: {integrity: sha512-xWga7QCZsR2Wjy2vNL3Kq/irT+IwxwItEWycRRlT5yhqHZK2fmEhziP+LzcJBWSTAMranGKtGTQ6lFpyJS3+jA==}
 
   khroma@2.1.0:
     resolution: {integrity: sha512-Ls993zuzfayK269Svk9hzpeGUKob/sIgZzyHYdjQoAdQetRKpOLj+k/QQQ/6Qi0Yz65mlROrfd+Ev+1+7dz9Kw==}
@@ -5090,6 +5155,10 @@ packages:
   path-to-regexp@8.4.2:
     resolution: {integrity: sha512-qRcuIdP69NPm4qbACK+aDogI5CBDMi1jKe0ry5rSQJz8JVLsC7jV8XpiJjGRLLol3N+R5ihGYcrPLTno6pAdBA==}
 
+  path-type@4.0.0:
+    resolution: {integrity: sha512-gDKb8aZMDeD/tZWs9P6+q0J9Mwkdl6xMV8TjnGP3qJVJ06bdMgkbBlLU8IdfOsIsFz2BW1rNVT3XuNEl8zPAvw==}
+    engines: {node: '>=8'}
+
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
 
@@ -5395,6 +5464,12 @@ packages:
   redis@6.1.0:
     resolution: {integrity: sha512-0kvUPM8RHP/ZMa0xYaDTcG5e8tIGW6kz6MToVT0V8iOnk6bkXp2jncGRGe2bZEk41lZwiDspUqjZCSk5ohjcKw==}
     engines: {node: '>= 20.0.0'}
+
+  redux-saga@1.5.1:
+    resolution: {integrity: sha512-ZwnV/p+ABHoaDzyBrZshmIG/axRQG6AQJre8p9t1bPI/i6UzE5C9jGG9wgSKi8ojLMVyFLwmiDwFtuaul9c3wQ==}
+
+  redux@5.0.1:
+    resolution: {integrity: sha512-M9/ELqF6fy8FwmkpnF0S3YKOqMyoWJ4+CS5Efg2ct3oY9daQvd/Pc71FpGZsVsbl3Cpb+IIcjBDUnnyBdQbq4w==}
 
   reflect-metadata@0.2.2:
     resolution: {integrity: sha512-urBwgfrvVP/eAyXx4hluJivBKzuEbSQs9rKWCrCkbSxNv8mxPcUZKeuoF3Uy4mJl3Lwprp6yy5/39VWigZ4K6Q==}
@@ -5918,6 +5993,12 @@ packages:
     resolution: {integrity: sha512-phPGCwqr2+Qo0fwniCE8e4pKnGu/yFb5nD5Y8bf0EEeiI5GklnACYA9GFy/DrAeRrKHXvHn+1SUsOWgJp6RO+g==}
     engines: {node: '>= 0.4'}
 
+  typed-redux-saga@1.5.0:
+    resolution: {integrity: sha512-XHKliNtRNUegYAAztbVDb5Q+FMqYNQPaed6Xq2N8kz8AOmiOCVxW3uIj7TEptR1/ms6M9u3HEDfJr4qqz/PYrw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      redux-saga: ^1.1.3
+
   typescript@7.0.2:
     resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
     engines: {node: '>=16.20.0'}
@@ -6344,6 +6425,10 @@ packages:
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
 
+  yaml@1.10.3:
+    resolution: {integrity: sha512-vIYeF1u3CjlhAFekPPAk2h/Kv4T3mAkMox5OymRiJQB0spDP10LHvt+K7G9Ny6NuuMAb25/6n1qyUjAcGNf/AA==}
+    engines: {node: '>= 6'}
+
   yaml@2.9.0:
     resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
     engines: {node: '>= 14.6'}
@@ -6438,6 +6523,19 @@ snapshots:
       ajv: 8.20.0
       jsonpointer: 5.0.1
       leven: 3.1.0
+
+  '@augmentcode/themis@0.2.2(@preact/signals-react@3.12.0(react@19.2.7))(react@19.2.7)':
+    dependencies:
+      fast-equals: 6.0.2
+      kefir: 3.8.8
+      redux: 5.0.1
+      redux-saga: 1.5.1
+      typed-redux-saga: 1.5.0(redux-saga@1.5.1)
+    optionalDependencies:
+      '@preact/signals-react': 3.12.0(react@19.2.7)
+      react: 19.2.7
+    transitivePeerDependencies:
+      - supports-color
 
   '@aws-sdk/core@3.977.7':
     dependencies:
@@ -8111,6 +8209,14 @@ snapshots:
     dependencies:
       playwright: 1.61.1
 
+  '@preact/signals-core@1.14.4': {}
+
+  '@preact/signals-react@3.12.0(react@19.2.7)':
+    dependencies:
+      '@preact/signals-core': 1.14.4
+      react: 19.2.7
+      use-sync-external-store: 1.6.0(react@19.2.7)
+
   '@radix-ui/primitive@1.1.3': {}
 
   '@radix-ui/react-compose-refs@1.1.2(@types/react@19.2.17)(react@19.2.7)':
@@ -8270,7 +8376,7 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.17
 
-  '@react-router/dev@8.2.0(@react-router/serve@8.2.0(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@7.0.2))(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@7.0.2)(vite@8.1.4(@types/node@22.19.19)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))':
+  '@react-router/dev@8.2.0(@react-router/serve@8.2.0(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@7.0.2))(babel-plugin-macros@3.1.0)(react-router@8.2.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(typescript@7.0.2)(vite@8.1.4(@types/node@22.19.19)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(yaml@2.9.0))':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/generator': 7.29.7
@@ -8283,7 +8389,7 @@ snapshots:
       '@remix-run/node-fetch-server': 0.13.3
       babel-dead-code-elimination: 1.0.12
       chokidar: 5.0.0
-      dedent: 1.7.2
+      dedent: 1.7.2(babel-plugin-macros@3.1.0)
       es-module-lexer: 2.1.0
       exit-hook: 5.1.0
       isbot: 5.2.0
@@ -8357,6 +8463,30 @@ snapshots:
   '@redis/time-series@6.1.0(@redis/client@6.1.0(@opentelemetry/api@1.9.0))':
     dependencies:
       '@redis/client': 6.1.0(@opentelemetry/api@1.9.0)
+
+  '@redux-saga/core@1.5.1':
+    dependencies:
+      '@babel/runtime': 7.29.7
+      '@redux-saga/deferred': 1.3.1
+      '@redux-saga/delay-p': 1.3.1
+      '@redux-saga/is': 1.2.1
+      '@redux-saga/symbols': 1.2.1
+      '@redux-saga/types': 1.4.1
+
+  '@redux-saga/deferred@1.3.1': {}
+
+  '@redux-saga/delay-p@1.3.1':
+    dependencies:
+      '@redux-saga/symbols': 1.2.1
+
+  '@redux-saga/is@1.2.1':
+    dependencies:
+      '@redux-saga/symbols': 1.2.1
+      '@redux-saga/types': 1.4.1
+
+  '@redux-saga/symbols@1.2.1': {}
+
+  '@redux-saga/types@1.4.1': {}
 
   '@remix-run/node-fetch-server@0.13.3': {}
 
@@ -8954,6 +9084,9 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/parse-json@4.0.2':
+    optional: true
+
   '@types/pg@8.20.0':
     dependencies:
       '@types/node': 22.19.19
@@ -9229,6 +9362,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  babel-plugin-macros@3.1.0:
+    dependencies:
+      '@babel/runtime': 7.29.7
+      cosmiconfig: 7.1.0
+      resolve: 1.22.12
+    optional: true
+
   babel-plugin-polyfill-corejs2@0.4.17(@babel/core@7.29.7):
     dependencies:
       '@babel/compat-data': 7.29.7
@@ -9480,6 +9620,15 @@ snapshots:
     dependencies:
       layout-base: 2.0.1
 
+  cosmiconfig@7.1.0:
+    dependencies:
+      '@types/parse-json': 4.0.2
+      import-fresh: 3.3.1
+      parse-json: 5.2.0
+      path-type: 4.0.0
+      yaml: 1.10.3
+    optional: true
+
   cosmiconfig@9.0.1(typescript@7.0.2):
     dependencies:
       env-paths: 2.2.1
@@ -9729,7 +9878,9 @@ snapshots:
     dependencies:
       character-entities: 2.0.2
 
-  dedent@1.7.2: {}
+  dedent@1.7.2(babel-plugin-macros@3.1.0):
+    optionalDependencies:
+      babel-plugin-macros: 3.1.0
 
   deepmerge@4.3.1: {}
 
@@ -10102,6 +10253,8 @@ snapshots:
   fast-deep-equal@3.1.3: {}
 
   fast-equals@5.4.0: {}
+
+  fast-equals@6.0.2: {}
 
   fast-glob@3.3.3:
     dependencies:
@@ -10702,6 +10855,8 @@ snapshots:
   katex@0.16.45:
     dependencies:
       commander: 8.3.0
+
+  kefir@3.8.8: {}
 
   khroma@2.1.0: {}
 
@@ -11557,6 +11712,9 @@ snapshots:
 
   path-to-regexp@8.4.2: {}
 
+  path-type@4.0.0:
+    optional: true
+
   pathe@2.0.3: {}
 
   pdfjs-dist@6.1.200:
@@ -11880,6 +12038,13 @@ snapshots:
       - '@node-rs/xxhash'
       - '@opentelemetry/api'
 
+  redux-saga@1.5.1:
+    dependencies:
+      '@babel/runtime': 7.29.7
+      '@redux-saga/core': 1.5.1
+
+  redux@5.0.1: {}
+
   reflect-metadata@0.2.2: {}
 
   reflect.getprototypeof@1.0.10:
@@ -12147,7 +12312,7 @@ snapshots:
 
   setprototypeof@1.2.0: {}
 
-  shadcn@4.13.0(@cfworker/json-schema@4.1.1)(typescript@7.0.2):
+  shadcn@4.13.0(@cfworker/json-schema@4.1.1)(babel-plugin-macros@3.1.0)(typescript@7.0.2):
     dependencies:
       '@babel/core': 7.29.0
       '@babel/parser': 7.29.7
@@ -12159,7 +12324,7 @@ snapshots:
       browserslist: 4.28.2
       commander: 14.0.3
       cosmiconfig: 9.0.1(typescript@7.0.2)
-      dedent: 1.7.2
+      dedent: 1.7.2(babel-plugin-macros@3.1.0)
       deepmerge: 4.3.1
       diff: 8.0.4
       execa: 9.6.1
@@ -12552,6 +12717,15 @@ snapshots:
       is-typed-array: 1.1.15
       possible-typed-array-names: 1.1.0
       reflect.getprototypeof: 1.0.10
+
+  typed-redux-saga@1.5.0(redux-saga@1.5.1):
+    dependencies:
+      redux-saga: 1.5.1
+    optionalDependencies:
+      '@babel/helper-module-imports': 7.29.7
+      babel-plugin-macros: 3.1.0
+    transitivePeerDependencies:
+      - supports-color
 
   typescript@7.0.2:
     optionalDependencies:
@@ -13007,6 +13181,9 @@ snapshots:
     optional: true
 
   yallist@3.1.1: {}
+
+  yaml@1.10.3:
+    optional: true
 
   yaml@2.9.0: {}
 
