@@ -28,6 +28,8 @@ import { activateReadingRoute, getBookReadingPath, getReadingBookId } from "~/li
 import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
+import { useAppStore } from "~/lib/themis/provider";
+import { bookAdded, bookDeleted, hydrateBooks } from "~/lib/themis/books/books-slice";
 import { cn } from "~/lib/utils";
 
 function createInitialFocusedState(
@@ -100,6 +102,8 @@ export function HydrateFallback() {
 
 export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const ws = useWorkspace();
+  const store = useAppStore();
+  const books = store.booksSelectors.selectAllBooks.useValue();
   const location = useLocation();
   const navigate = useNavigate();
   const readingBookId = getReadingBookId(location.pathname);
@@ -110,7 +114,6 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const isMobile = useIsMobile();
   const isMobileRef = useRef(isMobile);
   isMobileRef.current = isMobile;
-  const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
   const [initialFocusedState] = useState(() =>
     createInitialFocusedState(loaderData.books, loaderData.focusedState),
   );
@@ -210,6 +213,8 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     });
   }, [books, isWorkspaceRoute, navigate, openBook, readingBookId, ws]);
 
+  // Deprecated compatibility mirror for reader/chat consumers that have not
+  // moved to Themis yet. The slice remains the source of truth.
   ws.booksRef.current = books;
 
   useEffect(() => {
@@ -238,44 +243,27 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const workspaceReady = loaderData.demoBook ? demoBootstrapReady : isWorkspaceRoute || layoutReady;
   const frameReady = !isWorkspaceRoute || workspaceReady;
 
-  const updateBooks = useCallback(
-    (updater: (previous: BookMeta[]) => BookMeta[]) => {
-      let next: BookMeta[] | undefined;
-      setBooks((previous) => {
-        next = updater(previous);
-        return next;
-      });
-      queueMicrotask(() => {
-        if (next !== undefined) ws.booksRef.current = next;
-        ws.booksChangeListener.current?.();
-      });
-    },
-    [ws],
-  );
-
   const syncVersion = useSyncListener(["book"]);
   useEffect(() => {
     if (syncVersion === 0) return;
-    AppRuntime.runPromise(BookService.pipe(Effect.andThen((service) => service.getBooks())))
-      .then((freshBooks) => updateBooks(() => freshBooks))
-      .catch(console.error);
-  }, [syncVersion, updateBooks]);
+    store.dispatch(hydrateBooks());
+  }, [store, syncVersion]);
 
   const handleBookAdded = useCallback(
     (book: BookMeta) => {
-      updateBooks((previous) => [...previous, book]);
+      store.dispatch(bookAdded(book));
       openBook(book);
       navigate(getBookReadingPath(book.id));
     },
-    [navigate, openBook, updateBooks],
+    [navigate, openBook, store],
   );
 
   const handleBookDeleted = useCallback(
     (bookId: string) => {
       closeBookPanels(bookId);
-      updateBooks((previous) => previous.filter((book) => book.id !== bookId));
+      store.dispatch(bookDeleted(bookId));
     },
-    [closeBookPanels, updateBooks],
+    [closeBookPanels, store],
   );
 
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });

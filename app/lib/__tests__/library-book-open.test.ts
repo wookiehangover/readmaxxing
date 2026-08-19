@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { ensureLocalThenOpen } from "~/lib/library-book-open";
+import {
+  ensureLocalThenOpen,
+  refreshBooksCache,
+  refreshWorkspaceBooks,
+} from "~/lib/library-book-open";
 import type { BookMeta } from "~/lib/stores/book-store";
+import { booksHydrated } from "~/lib/themis/books/books-slice";
+import type { AppStore } from "~/lib/themis/store";
 
 const localBook: BookMeta = {
   id: "book-1",
@@ -84,5 +90,31 @@ describe("ensureLocalThenOpen", () => {
     });
 
     expect(openBook).not.toHaveBeenCalled();
+  });
+});
+
+describe("book list refresh", () => {
+  it("replaces the Themis cache with downloaded metadata", () => {
+    const dispatch = vi.fn();
+
+    refreshBooksCache({ dispatch } as Pick<AppStore, "dispatch">, [localBook]);
+
+    expect(dispatch).toHaveBeenCalledWith(booksHydrated([localBook]));
+  });
+
+  it("keeps the deprecated ref mirror current and requests a hydrate", async () => {
+    const workspace = { booksRef: { current: [] as BookMeta[] } };
+    const listener = vi.fn();
+    window.addEventListener("sync:entity-updated", listener);
+
+    try {
+      refreshWorkspaceBooks(workspace, [localBook]);
+      await Promise.resolve();
+
+      expect(workspace.booksRef.current).toEqual([localBook]);
+      expect(listener).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener("sync:entity-updated", listener);
+    }
   });
 });

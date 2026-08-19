@@ -4,13 +4,24 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BookMeta } from "~/lib/stores/book-store";
 
+const themisMocks = vi.hoisted(() => ({
+  books: [] as BookMeta[],
+  dispatch: vi.fn(),
+}));
+
 vi.mock("~/hooks/use-effect-query", () => ({
   useEffectQuery: () => ({ data: new Map(), error: undefined, isLoading: false }),
+}));
+vi.mock("~/lib/themis/provider", () => ({
+  useAppStore: () => ({
+    dispatch: themisMocks.dispatch,
+    booksSelectors: { selectAllBooks: { useValue: () => themisMocks.books } },
+  }),
 }));
 
 import { LibraryBrowseContent } from "~/components/workspace/library-browse-content";
 import { LibraryFrame } from "~/components/workspace/library-frame";
-import { useWorkspace, WorkspaceProvider } from "~/lib/context/workspace-context";
+import { WorkspaceProvider } from "~/lib/context/workspace-context";
 
 const book: BookMeta = {
   id: "book-1",
@@ -25,6 +36,8 @@ let root: Root | undefined;
 
 beforeEach(() => {
   localStorage.clear();
+  themisMocks.books = [];
+  themisMocks.dispatch.mockReset();
   container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
 });
@@ -37,18 +50,14 @@ afterEach(() => {
 });
 
 function renderLibrary(onOpenBook = vi.fn(), books: BookMeta[] = [book]) {
-  function Harness() {
-    const workspace = useWorkspace();
-    workspace.booksRef.current = books;
-    return <LibraryBrowseContent onOpenBook={onOpenBook} />;
-  }
+  themisMocks.books = books;
 
   act(() => {
     root!.render(
       <MemoryRouter>
         <WorkspaceProvider>
           <LibraryFrame fileInputRef={createRef<HTMLInputElement>()} onFileInput={vi.fn()}>
-            <Harness />
+            <LibraryBrowseContent onOpenBook={onOpenBook} />
           </LibraryFrame>
         </WorkspaceProvider>
       </MemoryRouter>,

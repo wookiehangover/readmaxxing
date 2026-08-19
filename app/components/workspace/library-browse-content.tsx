@@ -38,7 +38,9 @@ import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
 import { filterBooks, sortBooks } from "~/lib/workspace-utils";
 import { useAuth } from "~/lib/context/auth-context";
 import { useEffectQuery } from "~/hooks/use-effect-query";
-import { ensureLocalThenOpen, refreshWorkspaceBooks } from "~/lib/library-book-open";
+import { ensureLocalThenOpen, refreshBooksCache } from "~/lib/library-book-open";
+import { hydrateBooks } from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
 import { Link } from "react-router";
 
 interface LibraryBrowseContentProps {
@@ -78,8 +80,9 @@ function saveLibrarySortBy(sortBy: WorkspaceSortBy): void {
 
 export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseContentProps = {}) {
   const ws = useWorkspace();
+  const store = useAppStore();
   const { isAuthenticated } = useAuth();
-  const [books, setBooks] = useState<BookMeta[]>(ws.booksRef.current);
+  const books = store.booksSelectors.selectAllBooks.useValue();
   const [searchQuery, setSearchQuery] = useState("");
   const [librarySortBy, setLibrarySortBy] = useState<WorkspaceSortBy>(() =>
     getStoredLibrarySortBy(),
@@ -94,14 +97,6 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
     () => WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())),
     [],
   );
-
-  useEffect(() => {
-    const prev = ws.booksChangeListener.current;
-    ws.booksChangeListener.current = () => setBooks([...ws.booksRef.current]);
-    return () => {
-      ws.booksChangeListener.current = prev;
-    };
-  }, [ws]);
 
   const handleOpenBook = useCallback(
     async (book: BookMeta) => {
@@ -119,7 +114,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
           return;
         }
         await ensureLocalThenOpen(book, {
-          refreshBooks: (freshBooks) => refreshWorkspaceBooks(ws, freshBooks),
+          refreshBooks: (freshBooks) => refreshBooksCache(store, freshBooks),
           openBook: (localBook) => {
             ws.openBookRef.current?.(localBook);
             panelApi?.close();
@@ -135,7 +130,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
         }
       }
     },
-    [onOpenBook, panelApi, ws],
+    [onOpenBook, panelApi, store, ws],
   );
 
   const handleOpenNotebook = useCallback(
@@ -197,10 +192,8 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
   );
 
   // When the library panel becomes visible/active in dockview, trigger a
-  // sync and refresh the book list (throttled to avoid thrashing on rapid
-  // panel switching). Dispatching `sync:entity-updated` {book} piggybacks
-  // on the workspace's existing listener which calls BookService.getBooks
-  // and propagates the result through booksRef + booksChangeListener.
+  // sync and refresh the Themis books cache (throttled to avoid thrashing on
+  // rapid panel switching).
   useEffect(() => {
     if (!panelApi) return;
 
@@ -211,13 +204,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
 
       if (syncActive) triggerSync();
 
-      queueMicrotask(() => {
-        window.dispatchEvent(
-          new CustomEvent("sync:entity-updated", {
-            detail: { entity: "book" },
-          }),
-        );
-      });
+      store.dispatch(hydrateBooks());
     };
 
     const visDisposable = panelApi.onDidVisibilityChange((e) => {
@@ -231,7 +218,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
       visDisposable.dispose();
       activeDisposable.dispose();
     };
-  }, [panelApi, syncActive, triggerSync]);
+  }, [panelApi, store, syncActive, triggerSync]);
 
   const filteredBooks = useMemo(
     () => (searchQuery ? filterBooks(books, searchQuery) : books),

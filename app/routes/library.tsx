@@ -1,17 +1,17 @@
 import { useState, useCallback, useEffect } from "react";
-import { Effect } from "effect";
 import { Link, Outlet, useLocation } from "react-router";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { Menu, PanelsTopLeft, Settings } from "lucide-react";
 import type { Route } from "./+types/library";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import { AppRuntime } from "~/lib/effect-runtime";
+import type { BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import { DropZone } from "~/components/drop-zone";
 import { BookList } from "~/components/book-list";
 import { ThemeToggle } from "~/components/theme-toggle";
 import { ReaderNavigationProvider } from "~/lib/context/reader-context";
 import { useIsMobile } from "~/hooks/use-mobile";
+import { bookAdded, hydrateBooks } from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
 import {
   Sheet,
   SheetContent,
@@ -31,13 +31,6 @@ export function meta(_args: Route.MetaArgs) {
   ];
 }
 
-export async function clientLoader() {
-  const books = await AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())));
-  return { books };
-}
-
-clientLoader.hydrate = true as const;
-
 export function HydrateFallback() {
   return (
     <div className="flex h-dvh items-center justify-center">
@@ -46,17 +39,21 @@ export function HydrateFallback() {
   );
 }
 
-export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
-  const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
+export default function LibraryLayout() {
+  const store = useAppStore();
+  const books = store.booksSelectors.selectAllBooks.useValue();
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
   const isMobile = useIsMobile();
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
-  const handleBookAdded = useCallback((book: BookMeta) => {
-    setBooks((prev) => [...prev, book]);
-  }, []);
+  const handleBookAdded = useCallback(
+    (book: BookMeta) => {
+      store.dispatch(bookAdded(book));
+    },
+    [store],
+  );
 
   useEffect(() => {
     setMobileOpen(false);
@@ -66,10 +63,8 @@ export default function LibraryLayout({ loaderData }: Route.ComponentProps) {
   const syncVersion = useSyncListener(["book"]);
   useEffect(() => {
     if (syncVersion === 0) return;
-    AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())))
-      .then(setBooks)
-      .catch(console.error);
-  }, [syncVersion]);
+    store.dispatch(hydrateBooks());
+  }, [store, syncVersion]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {

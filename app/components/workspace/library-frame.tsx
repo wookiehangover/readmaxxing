@@ -23,9 +23,9 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { useEffectQuery } from "~/hooks/use-effect-query";
-import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 import { getBookReadingPath } from "~/lib/reading-route";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
+import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 import { sortBooks } from "~/lib/workspace-utils";
 
@@ -50,7 +50,8 @@ interface LibraryFrameProps {
 }
 
 export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFrameProps) {
-  const workspace = useOptionalWorkspace();
+  const store = useAppStore();
+  const books = store.booksSelectors.selectAllBooks.useValue();
   const navigate = useNavigate();
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [headerControlsElement, setHeaderControlsElement] = useState<HTMLDivElement | null>(null);
@@ -59,9 +60,9 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
     [],
   );
   const recentBooks =
-    workspace && lastOpenedMap instanceof Map
+    lastOpenedMap instanceof Map
       ? sortBooks(
-          workspace.booksRef.current.filter((book) => lastOpenedMap.has(book.id)),
+          books.filter((book) => lastOpenedMap.has(book.id)),
           "recent",
           lastOpenedMap,
         ).slice(0, 5)

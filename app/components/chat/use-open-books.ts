@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
+import { useAppStore } from "~/lib/themis/provider";
 
 /** Derives currently-open books from the workspace's authoritative open-book set. */
 export function useOpenBooks(workspace: ReturnType<typeof useOptionalWorkspace>): BookMeta[] {
+  const store = useAppStore();
+  const books = store.booksSelectors.selectAllBooks.useValue();
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
@@ -15,6 +18,6 @@ export function useOpenBooks(workspace: ReturnType<typeof useOptionalWorkspace>)
     if (!workspace) return [];
     void version;
     const openIds = workspace.openBookIdsRef.current;
-    return workspace.booksRef.current.filter((book) => openIds.has(book.id));
-  }, [workspace, version]);
+    return books.filter((book) => openIds.has(book.id));
+  }, [books, workspace, version]);
 }

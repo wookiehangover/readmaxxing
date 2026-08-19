@@ -2,6 +2,8 @@ import { Effect } from "effect";
 import type { WorkspaceContextValue } from "~/lib/context/workspace-context";
 import { AppRuntime } from "~/lib/effect-runtime";
 import { BookService, bookNeedsDownload, type BookMeta } from "~/lib/stores/book-store";
+import { booksHydrated } from "~/lib/themis/books/books-slice";
+import type { AppStore } from "~/lib/themis/store";
 
 interface DownloadResult {
   book: BookMeta;
@@ -15,7 +17,8 @@ interface EnsureLocalThenOpenOptions {
   signal?: AbortSignal;
 }
 
-type WorkspaceBookListRefs = Pick<WorkspaceContextValue, "booksRef" | "booksChangeListener">;
+type BooksCache = Pick<AppStore, "dispatch">;
+type WorkspaceBookListRef = Pick<WorkspaceContextValue, "booksRef">;
 
 async function downloadBookForOpen(book: BookMeta): Promise<DownloadResult> {
   const books = await AppRuntime.runPromise(
@@ -32,9 +35,20 @@ async function downloadBookForOpen(book: BookMeta): Promise<DownloadResult> {
   return { book: downloadedBook, books };
 }
 
-export function refreshWorkspaceBooks(workspace: WorkspaceBookListRefs, books: BookMeta[]): void {
+export function refreshBooksCache(cache: BooksCache, books: BookMeta[]): void {
+  cache.dispatch(booksHydrated(books));
+}
+
+/** @deprecated Use refreshBooksCache. Kept for the untouched workspace route caller. */
+export function refreshWorkspaceBooks(workspace: WorkspaceBookListRef, books: BookMeta[]): void {
   workspace.booksRef.current = books;
-  workspace.booksChangeListener.current?.();
+  queueMicrotask(() => {
+    window.dispatchEvent(
+      new CustomEvent("sync:entity-updated", {
+        detail: { entity: "book" },
+      }),
+    );
+  });
 }
 
 export async function ensureLocalThenOpen(
