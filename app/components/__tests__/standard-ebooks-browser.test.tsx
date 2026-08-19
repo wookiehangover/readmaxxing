@@ -41,6 +41,7 @@ vi.mock("~/lib/themis/provider", () => ({
   useAppStore: () => ({
     dispatch: mocks.dispatch,
     booksSelectors: { selectAllBooks: { useValue: () => [] } },
+    workspaceRestoreSelectors: { selectLastOpenedMap: { useValue: () => new Map() } },
   }),
 }));
 

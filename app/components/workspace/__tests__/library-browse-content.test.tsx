@@ -6,12 +6,10 @@ import type { BookMeta } from "~/lib/stores/book-store";
 
 const themisMocks = vi.hoisted(() => ({
   books: [] as BookMeta[],
+  lastOpenedMap: new Map<string, number>(),
   dispatch: vi.fn(),
 }));
 
-vi.mock("~/hooks/use-effect-query", () => ({
-  useEffectQuery: () => ({ data: new Map(), error: undefined, isLoading: false }),
-}));
 vi.mock("~/lib/themis/provider", () => ({
   useAppStore: () => ({
     dispatch: themisMocks.dispatch,
@@ -19,6 +17,9 @@ vi.mock("~/lib/themis/provider", () => ({
     booksSelectors: {
       selectAllBooks: { useValue: () => themisMocks.books },
       selectDownloadingBookIds: { useValue: () => [] },
+    },
+    workspaceRestoreSelectors: {
+      selectLastOpenedMap: { useValue: () => themisMocks.lastOpenedMap },
     },
   }),
 }));
@@ -41,6 +42,7 @@ let root: Root | undefined;
 beforeEach(() => {
   localStorage.clear();
   themisMocks.books = [];
+  themisMocks.lastOpenedMap = new Map();
   themisMocks.dispatch.mockReset();
   container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);

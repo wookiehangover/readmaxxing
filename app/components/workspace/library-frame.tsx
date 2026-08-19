@@ -9,7 +9,6 @@ import {
 import { createPortal } from "react-dom";
 import { Bug, MoreHorizontal, Upload } from "lucide-react";
 import { NavLink, useNavigate } from "react-router";
-import { Effect } from "effect";
 import { BugReportDialog } from "~/components/bug-report-dialog";
 import { DEFAULT_RAIL_WIDTH } from "~/components/reading-shell/reading-rail-width";
 import { Button } from "~/components/ui/button";
@@ -22,9 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import { useEffectQuery } from "~/hooks/use-effect-query";
 import { getBookReadingPath } from "~/lib/reading-route";
-import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 import { sortBooks } from "~/lib/workspace-utils";
@@ -55,18 +52,12 @@ export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFra
   const navigate = useNavigate();
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [headerControlsElement, setHeaderControlsElement] = useState<HTMLDivElement | null>(null);
-  const { data: lastOpenedMap } = useEffectQuery(
-    () => WorkspaceService.pipe(Effect.andThen((service) => service.getLastOpenedMap())),
-    [],
-  );
-  const recentBooks =
-    lastOpenedMap instanceof Map
-      ? sortBooks(
-          books.filter((book) => lastOpenedMap.has(book.id)),
-          "recent",
-          lastOpenedMap,
-        ).slice(0, 5)
-      : [];
+  const lastOpenedMap = store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
+  const recentBooks = sortBooks(
+    books.filter((book) => lastOpenedMap.has(book.id)),
+    "recent",
+    lastOpenedMap,
+  ).slice(0, 5);
 
   return (
     <LibraryHeaderControlsContext.Provider value={headerControlsElement}>

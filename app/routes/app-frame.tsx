@@ -26,12 +26,12 @@ import { AppRuntime } from "~/lib/effect-runtime";
 import { activateReadingRoute, getBookReadingPath, getReadingBookId } from "~/lib/reading-route";
 import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
+import type { FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 import { useAppStore } from "~/lib/themis/provider";
 import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { cn } from "~/lib/utils";
 
-function createInitialFocusedState(
+export function createInitialFocusedState(
   books: BookMeta[],
   state: FocusedWorkspaceState | null,
 ): FocusedModeInitialState {
@@ -72,16 +72,10 @@ export function meta(_args: Route.MetaArgs) {
 }
 
 export async function clientLoader() {
-  const [books, focusedState] = await Promise.all([
-    AppRuntime.runPromise(BookService.pipe(Effect.andThen((service) => service.getBooks()))),
-    AppRuntime.runPromise(
-      WorkspaceService.pipe(
-        Effect.andThen((service) => service.getFocusedState()),
-        Effect.catchAll(() => Effect.succeed(null)),
-      ),
-    ),
-  ]);
-  return { books, focusedState };
+  const books = await AppRuntime.runPromise(
+    BookService.pipe(Effect.andThen((service) => service.getBooks())),
+  );
+  return { books };
 }
 
 clientLoader.hydrate = true as const;
@@ -98,10 +92,11 @@ export function HydrateFallback() {
   return <WorkspaceLoadingOverlay />;
 }
 
-export default function AppFrame({ loaderData }: Route.ComponentProps) {
+export default function AppFrame(_props: Route.ComponentProps) {
   const ws = useWorkspace();
   const store = useAppStore();
   const books = store.booksSelectors.selectAllBooks.useValue();
+  const focusedWorkspace = store.workspaceRestoreSelectors.selectFocusedWorkspace.useValue();
   const seededDemoBookId = store.booksSelectors.selectSeededDemoBookId.useValue();
   const demoBook = store.booksSelectors.selectBookById.useValue(seededDemoBookId ?? "") ?? null;
   const location = useLocation();
@@ -114,9 +109,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const isMobile = useIsMobile();
   const isMobileRef = useRef(isMobile);
   isMobileRef.current = isMobile;
-  const [initialFocusedState] = useState(() =>
-    createInitialFocusedState(loaderData.books, loaderData.focusedState),
-  );
+  const [initialFocusedState] = useState(() => createInitialFocusedState(books, focusedWorkspace));
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
   const zenMode = settings.zenMode;

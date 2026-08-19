@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState } from "react";
-import { Effect } from "effect";
 import {
   ArrowUp,
   ArrowDown,
@@ -31,10 +30,9 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
-import { WorkspaceService } from "~/lib/stores/workspace-store";
-import { useEffectQuery } from "~/hooks/use-effect-query";
 import { sortBooksForTable, type SortDirection, type TableSortColumn } from "~/lib/workspace-utils";
 import { useAuth } from "~/lib/context/auth-context";
+import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 
 interface LibraryTableProps {
@@ -99,11 +97,9 @@ export function LibraryTable({
   syncActive,
   downloadingBookIds,
 }: LibraryTableProps) {
+  const store = useAppStore();
   const { isAuthenticated } = useAuth();
-  const { data: lastOpenedMap } = useEffectQuery(
-    () => WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())),
-    [],
-  );
+  const lastOpenedMap = store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
 
   const [sort, setSort] = useState<SortState>({ column: "lastOpened", direction: "desc" });
   const [shareBook, setShareBook] = useState<BookMeta | null>(null);

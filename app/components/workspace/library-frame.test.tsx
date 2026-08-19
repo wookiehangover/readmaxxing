@@ -9,13 +9,12 @@ const mocks = vi.hoisted(() => ({
   lastOpenedMap: new Map<string, number>(),
 }));
 
-vi.mock("~/hooks/use-effect-query", () => ({
-  useEffectQuery: () => ({ data: mocks.lastOpenedMap, error: undefined, isLoading: false }),
-}));
-
 vi.mock("~/lib/themis/provider", () => ({
   useAppStore: () => ({
     booksSelectors: { selectAllBooks: { useValue: () => mocks.books } },
+    workspaceRestoreSelectors: {
+      selectLastOpenedMap: { useValue: () => mocks.lastOpenedMap },
+    },
   }),
 }));
 

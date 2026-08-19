@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { DockviewPanelApi } from "dockview-react";
-import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import {
   MessageSquare,
@@ -29,7 +28,6 @@ import { LibraryToolbar } from "~/components/workspace/library-toolbar";
 import { LibraryHeaderControls } from "~/components/workspace/library-frame";
 import { LibraryTable } from "~/components/workspace/library-table";
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
-import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { useBookUpload } from "~/hooks/use-book-upload";
 import { useBookDeletion } from "~/hooks/use-book-deletion";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -37,7 +35,6 @@ import { useSyncActions } from "~/lib/sync/use-sync";
 import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
 import { filterBooks, sortBooks } from "~/lib/workspace-utils";
 import { useAuth } from "~/lib/context/auth-context";
-import { useEffectQuery } from "~/hooks/use-effect-query";
 import { ensureLocalThenOpen } from "~/lib/library-book-open";
 import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
@@ -93,10 +90,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingOpenControllerRef = useRef<AbortController | null>(null);
   const lastRefreshedAtRef = useRef(0);
-  const { data: lastOpenedMap } = useEffectQuery(
-    () => WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())),
-    [],
-  );
+  const lastOpenedMap = store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
 
   const handleOpenBook = useCallback(
     async (book: BookMeta) => {
