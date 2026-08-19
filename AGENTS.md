@@ -24,6 +24,12 @@ Ebook/PDF reader web app: React Router v7 (framework mode) + TypeScript, Tailwin
 
 Run `pnpm oxfmt .` and `pnpm oxlint` before committing; fix all warnings. Run `pnpm e2e` after structural refactors.
 
+## Themis State Management
+
+- Before store, saga, or selector work, read `.agents/skills/themis/SKILL.md`, `.agents/skills/themis/react/SKILL.md`, and `.agents/skills/themis/core/SKILL.md`, then load the applicable leaf skills.
+- This React app uses `ReactStore` as its only Store family. Do not apply Svelte `Store` or `StreamingStore` guidance.
+- Keep oxlint as the default linter and use `pnpm oxlint`; do not add ESLint outside the dedicated lint migration task.
+
 ## External References
 
 | Need                                                   | File                                |
