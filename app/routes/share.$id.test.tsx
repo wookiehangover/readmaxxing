@@ -132,8 +132,13 @@ describe("SharePage", () => {
     renderPage();
 
     const banner = container.querySelector("[data-testid='share-banner']");
-    expect(banner?.textContent).toContain("Shared by Sam");
+    expect(banner?.textContent).toContain("Readmaxxing");
+    expect(banner?.textContent).toContain("Shared Book");
     expect(banner?.textContent).toContain("Add to Library");
+    expect(banner?.textContent).not.toContain("Shared by");
+    expect(banner?.textContent).not.toContain("Sam");
+    expect(banner?.textContent).not.toContain("Reader");
+    expect(banner?.querySelectorAll(":scope > p")).toHaveLength(1);
     expect(container.querySelector("[data-testid='share-reading-shell']")).not.toBeNull();
     expect(container.querySelector("[data-testid='share-book-surface']")).not.toBeNull();
     const discussRail = container.querySelector("[data-testid='share-discuss-rail']");

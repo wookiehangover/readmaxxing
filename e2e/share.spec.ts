@@ -185,8 +185,10 @@ async function openShareInNewContext(browser: Browser, shareUrl: string) {
 
 async function expectShareReadingShell(page: Page) {
   const banner = page.getByTestId("share-banner");
+  await expect(banner).toContainText("Readmaxxing", { timeout: 15_000 });
   await expect(banner).toContainText(BOOK_TITLE, { timeout: 15_000 });
-  await expect(banner).toContainText(BOOK_AUTHOR);
+  await expect(banner).not.toContainText("Shared by");
+  await expect(banner).not.toContainText(BOOK_AUTHOR);
   await expect(page.getByTestId("share-reading-shell")).toBeVisible();
   await expect(page.getByRole("region", { name: "Book surface" })).toBeVisible();
 

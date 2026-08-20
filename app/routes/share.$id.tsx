@@ -210,7 +210,6 @@ export default function SharePage({ loaderData }: ComponentProps) {
   const [state, setState] = useState<"idle" | "importing" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const canImport = loaderData.status === "available" && !!loaderData.book;
-  const sharerName = loaderData.sharer?.displayName ?? "A Readmaxxing reader";
 
   function handleImport() {
     if (!loaderData.book) return;
@@ -253,16 +252,17 @@ export default function SharePage({ loaderData }: ComponentProps) {
   return (
     <main className="flex h-dvh min-h-dvh flex-col overflow-hidden bg-background text-foreground">
       <header
-        className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b bg-background px-3 py-2 sm:px-4"
+        className="flex h-10 shrink-0 items-center justify-between gap-3 border-b bg-background px-3 sm:px-4"
         data-testid="share-banner"
         data-status={error ? "error" : state}
       >
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">Shared by {sharerName}</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {loaderData.book.title} · {loaderData.book.author}
-          </p>
-        </div>
+        <p className="flex min-w-0 items-center gap-2 overflow-hidden text-sm">
+          <span className="shrink-0 font-medium">Readmaxxing</span>
+          <span aria-hidden="true" className="text-muted-foreground">
+            ·
+          </span>
+          <span className="truncate text-muted-foreground">{loaderData.book.title}</span>
+        </p>
         <div className="flex shrink-0 items-center gap-2">
           {error && (
             <p
@@ -275,7 +275,8 @@ export default function SharePage({ loaderData }: ComponentProps) {
           )}
           <Button
             type="button"
-            size="sm"
+            variant="ghost"
+            size="xs"
             disabled={!canImport || state === "importing" || state === "done"}
             onClick={handleImport}
           >
