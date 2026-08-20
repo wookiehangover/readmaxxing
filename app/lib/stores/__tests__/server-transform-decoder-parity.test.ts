@@ -122,11 +122,19 @@ describe("server transform and handwritten decoder parity", () => {
     await set("book-1", notebook, notebookStore);
     await expect(service.getNotebook("book-1")).resolves.toEqual(notebook);
     await set("invalid-book", { ...notebook, bookId: undefined }, notebookStore);
+    await set("missing-content", { ...notebook, content: undefined }, notebookStore);
+    await set("invalid-content", { ...notebook, content: "invalid" }, notebookStore);
     await set("invalid-time", { ...notebook, updatedAt: "invalid" }, notebookStore);
     await expect(service.getNotebook("invalid-book")).rejects.toMatchObject({
       _tag: "DecodeError",
     });
     await expect(service.getNotebook("invalid-time")).rejects.toMatchObject({
+      _tag: "DecodeError",
+    });
+    await expect(service.getNotebook("missing-content")).rejects.toMatchObject({
+      _tag: "DecodeError",
+    });
+    await expect(service.getNotebook("invalid-content")).rejects.toMatchObject({
       _tag: "DecodeError",
     });
   });

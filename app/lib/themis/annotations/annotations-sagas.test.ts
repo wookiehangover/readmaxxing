@@ -1,6 +1,11 @@
+import { createStore } from "idb-keyval";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Highlight, Notebook } from "~/lib/stores/annotations-store";
+import {
+  makeAnnotationService,
+  type Highlight,
+  type Notebook,
+} from "~/lib/stores/annotations-store";
 
 const mocks = vi.hoisted(() => ({ cacheNotebook: vi.fn(), runPromise: vi.fn() }));
 
@@ -249,6 +254,51 @@ describe("annotationsSaga", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("keeps the latest persisted notebook when an older in-flight save resolves last", async () => {
+    const olderGate = deferred<void>();
+    const olderFinished = deferred<void>();
+    const suffix = crypto.randomUUID();
+    const service = makeAnnotationService({
+      highlightStore: createStore(`highlight-race-${suffix}`, "highlights"),
+      notebookStore: createStore(`notebook-race-${suffix}`, "notebooks"),
+    });
+    mocks.runPromise
+      .mockImplementationOnce(async (notebook: Notebook) => {
+        await olderGate.promise;
+        const persisted = await service.saveNotebook(notebook);
+        olderFinished.resolve();
+        return persisted;
+      })
+      .mockImplementationOnce((notebook: Notebook) => service.saveNotebook(notebook));
+    const store = startStore();
+    vi.spyOn(Date, "now").mockReturnValue(2).mockReturnValueOnce(1);
+    const olderContent = { type: "doc", content: [{ type: "paragraph", attrs: { id: "older" } }] };
+    const latestContent = {
+      type: "doc",
+      content: [{ type: "paragraph", attrs: { id: "latest" } }],
+    };
+
+    store.dispatch(updateNotebookRequested("book-1", olderContent, true));
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledOnce());
+    store.dispatch(updateNotebookRequested("book-1", latestContent, true));
+    await vi.waitFor(() =>
+      expect(
+        store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")?.content,
+      ).toEqual(latestContent),
+    );
+
+    olderGate.resolve();
+    await olderFinished.promise;
+    const selected = store.annotationsSelectors.selectNotebookByBookId.select(
+      store.state,
+      "book-1",
+    );
+    const persisted = await service.getNotebook("book-1");
+    expect(selected).toEqual(persisted);
+    expect(persisted?.content).toEqual(latestContent);
+    expect(selected?.content).toEqual(latestContent);
   });
 
   it("caches a server-authoritative notebook without using the change-recording save path", async () => {
