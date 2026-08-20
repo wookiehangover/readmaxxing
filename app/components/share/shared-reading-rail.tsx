@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Tabs } from "@base-ui/react/tabs";
-import { AlertCircle, FileText, ListTree, MessageCircle } from "lucide-react";
+import { AlertCircle, ListTree, MessageCircle } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { READING_RAIL_MENU_ID } from "~/components/reading-shell/reading-rail-menu-portal";
 import {
@@ -124,25 +124,7 @@ function MarkdownPanel({ content, label }: { content: string; label: string }) {
   );
 }
 
-function NotesPanel({ shareId, included, active }: RailPanelProps) {
-  const state = useSharedEndpoint<{ markdown: string }>(
-    `/api/share/${encodeURIComponent(shareId)}/notebook`,
-    included && active,
-  );
-
-  if (!included) {
-    return (
-      <Empty className="h-full rounded-none border-0 pr-6">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <FileText />
-          </EmptyMedia>
-          <EmptyTitle>Notes not included</EmptyTitle>
-          <EmptyDescription>Notes were not included with this share link.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
-  }
+function NotesPanel({ state }: { state: LoadState<{ markdown: string }> }) {
   if (state.status === "idle" || state.status === "loading") {
     return <LoadingState label="Loading shared notes" />;
   }
@@ -150,17 +132,7 @@ function NotesPanel({ shareId, included, active }: RailPanelProps) {
     return <ErrorState title="Could not load shared notes" message={state.error} />;
   }
   if (!state.data.markdown.trim()) {
-    return (
-      <Empty className="h-full rounded-none border-0 pr-6">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <FileText />
-          </EmptyMedia>
-          <EmptyTitle>No shared notes</EmptyTitle>
-          <EmptyDescription>There are no notes for this book yet.</EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    );
+    return null;
   }
   return <MarkdownPanel content={state.data.markdown} label="Shared notes" />;
 }
@@ -211,7 +183,8 @@ function DiscussPanel({ shareId, included, active }: RailPanelProps) {
   if (state.status === "error") {
     return <ErrorState title="Could not load shared chats" message={state.error} />;
   }
-  if (state.data.sessions.length === 0) {
+  const session = state.data.sessions[0];
+  if (!session) {
     return (
       <Empty className="h-full rounded-none border-0 pr-6">
         <EmptyHeader>
@@ -230,26 +203,22 @@ function DiscussPanel({ shareId, included, active }: RailPanelProps) {
       <MessageScroller>
         <MessageScrollerViewport>
           <MessageScrollerContent className="flex flex-col gap-5 pr-6">
-            {state.data.sessions.map((session) => (
-              <section key={session.id} className="flex min-w-0 flex-col gap-3">
-                <div>
-                  <h3 className="text-sm font-medium">{session.title || "Untitled chat"}</h3>
-                  <p className="text-xs text-muted-foreground">
-                    {session.messages.length} messages
-                  </p>
-                </div>
-                <div className="flex min-w-0 flex-col gap-3">
-                  {session.messages.map((message, index) => {
-                    const messageId = `${session.id}-${message.createdAt}-${index}`;
-                    return (
-                      <MessageScrollerItem key={messageId} messageId={messageId}>
-                        <SharedChatBubble message={message} />
-                      </MessageScrollerItem>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
+            <section className="flex min-w-0 flex-col gap-3">
+              <div>
+                <h3 className="text-sm font-medium">{session.title || "Untitled chat"}</h3>
+                <p className="text-xs text-muted-foreground">{session.messages.length} messages</p>
+              </div>
+              <div className="flex min-w-0 flex-col gap-3">
+                {session.messages.map((message, index) => {
+                  const messageId = `${session.id}-${message.createdAt}-${index}`;
+                  return (
+                    <MessageScrollerItem key={messageId} messageId={messageId}>
+                      <SharedChatBubble message={message} />
+                    </MessageScrollerItem>
+                  );
+                })}
+              </div>
+            </section>
           </MessageScrollerContent>
         </MessageScrollerViewport>
       </MessageScroller>
@@ -303,11 +272,40 @@ export function SharedReadingRail({
   included: boolean;
 }) {
   const { activeTab, setActiveTab } = useReadingRailTab();
+  const notebookState = useSharedEndpoint<{ markdown: string }>(
+    `/api/share/${encodeURIComponent(shareId)}/notebook`,
+    included,
+  );
+  const waitingForNotebook =
+    included && (notebookState.status === "idle" || notebookState.status === "loading");
+  const showNotes =
+    included &&
+    (notebookState.status === "error" ||
+      (notebookState.status === "ready" && Boolean(notebookState.data.markdown.trim())));
+  const availableTabs = showNotes ? tabs : tabs.filter((tab) => tab !== "Notes");
+  const resolvedActiveTab = !showNotes && activeTab === "Notes" ? "Discuss" : activeTab;
+
+  useEffect(() => {
+    if (!waitingForNotebook && !showNotes && activeTab === "Notes") {
+      setActiveTab("Discuss");
+    }
+  }, [activeTab, setActiveTab, showNotes, waitingForNotebook]);
+
+  if (waitingForNotebook) {
+    return (
+      <div className="flex h-full min-h-0 flex-col py-5 pl-6" data-testid="share-reading-rail">
+        <div className="min-h-12 py-3 pr-6 text-xs">
+          <p className="truncate text-foreground">{bookTitle}</p>
+        </div>
+        <LoadingState label="Loading shared notes" />
+      </div>
+    );
+  }
 
   return (
     <Tabs.Root
       className="flex h-full min-h-0 flex-col py-5 pl-6"
-      value={activeTab}
+      value={resolvedActiveTab}
       onValueChange={(value) => setActiveTab(value as ReadingRailTab)}
       data-testid="share-reading-rail"
     >
@@ -316,13 +314,13 @@ export function SharedReadingRail({
           aria-label="Reading tools"
           className="relative flex min-w-0 flex-1 items-center gap-5"
         >
-          {tabs.map((tab) => (
+          {availableTabs.map((tab) => (
             <Tabs.Tab
               key={tab}
               value={tab}
               className={cn(
                 "relative h-7 shrink-0 bg-transparent p-0 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
-                { "text-foreground": activeTab === tab },
+                { "text-foreground": resolvedActiveTab === tab },
               )}
             >
               {tab}
@@ -338,22 +336,32 @@ export function SharedReadingRail({
       <div className="min-h-12 py-3 pr-6 text-xs">
         <p className="truncate text-foreground">{bookTitle}</p>
       </div>
-      <Tabs.Panel value="Notes" keepMounted className="min-h-0 flex-1 overflow-hidden outline-none">
-        <NotesPanel shareId={shareId} included={included} active={activeTab === "Notes"} />
-      </Tabs.Panel>
+      {showNotes ? (
+        <Tabs.Panel
+          value="Notes"
+          keepMounted
+          className="min-h-0 flex-1 overflow-hidden outline-none"
+        >
+          <NotesPanel state={notebookState} />
+        </Tabs.Panel>
+      ) : null}
       <Tabs.Panel
         value="Discuss"
         keepMounted
         className="min-h-0 flex-1 overflow-hidden outline-none"
       >
-        <DiscussPanel shareId={shareId} included={included} active={activeTab === "Discuss"} />
+        <DiscussPanel
+          shareId={shareId}
+          included={included}
+          active={resolvedActiveTab === "Discuss"}
+        />
       </Tabs.Panel>
       <Tabs.Panel
         value="Outline"
         keepMounted
         className="min-h-0 flex-1 overflow-hidden outline-none"
       >
-        <OutlinePanel shareId={shareId} active={activeTab === "Outline"} />
+        <OutlinePanel shareId={shareId} active={resolvedActiveTab === "Outline"} />
       </Tabs.Panel>
     </Tabs.Root>
   );

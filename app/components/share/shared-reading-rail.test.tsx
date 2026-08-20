@@ -51,6 +51,13 @@ function responseFor(input: RequestInfo | URL): Response {
             { role: "assistant", content: "**The narrator.**", createdAt: "2026-01-02" },
           ],
         },
+        {
+          id: "session-older",
+          title: "Earlier discussion",
+          messages: [
+            { role: "user", content: "This should not be shown", createdAt: "2025-12-01" },
+          ],
+        },
       ],
     });
   }
@@ -116,6 +123,8 @@ describe("SharedReadingRail", () => {
     expect(container.querySelector("[data-testid='assistant-markdown']")?.textContent).toBe(
       "**The narrator.**",
     );
+    expect(container.textContent).not.toContain("Earlier discussion");
+    expect(container.textContent).not.toContain("This should not be shown");
 
     await selectTab("Outline");
     expect(fetchMock).toHaveBeenCalledWith("/api/share/share%2F1/artifacts", {
@@ -132,24 +141,53 @@ describe("SharedReadingRail", () => {
     expect(container.querySelector("textarea, input, form")).toBeNull();
   });
 
-  it("does not request excluded notes or chats and still exposes the empty outline", async () => {
+  it("omits excluded Notes, defaults to Discuss, and still exposes the empty outline", async () => {
     fetchMock.mockImplementation(async (input) => {
       if (String(input).endsWith("/artifacts")) return Response.json({ artifact: null });
       throw new Error(`Unexpected request: ${String(input)}`);
     });
 
     await renderRail(false);
-    expect(container.textContent).toContain("Notes were not included with this share link.");
-    expect(fetchMock).not.toHaveBeenCalled();
-
-    await selectTab("Discuss");
+    expect(
+      Array.from(container.querySelectorAll("[role='tab']"), (tab) => tab.textContent),
+    ).toEqual(["Discuss", "Outline"]);
     expect(container.textContent).toContain(
       "Chat sessions were not included with this share link.",
     );
+    expect(container.textContent).not.toContain("Notes not included");
     expect(fetchMock).not.toHaveBeenCalled();
 
     await selectTab("Outline");
     expect(container.textContent).toContain("No outline yet");
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("omits Notes with empty markdown and opens the most recent discussion", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input).endsWith("/notebook")) return Response.json({ markdown: "  \n " });
+      return responseFor(input);
+    });
+
+    await renderRail(true);
+
+    expect(
+      Array.from(container.querySelectorAll("[role='tab']"), (tab) => tab.textContent),
+    ).toEqual(["Discuss", "Outline"]);
+    expect(container.textContent).toContain("Chapter questions");
+    expect(container.textContent).not.toContain("No shared notes");
+    expect(container.textContent).not.toContain("Earlier discussion");
+  });
+
+  it("keeps the existing empty Discuss state when there are no sessions", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      if (String(input).endsWith("/notebook")) return Response.json({ markdown: "" });
+      if (String(input).endsWith("/chats")) return Response.json({ sessions: [] });
+      return responseFor(input);
+    });
+
+    await renderRail(true);
+
+    expect(container.textContent).toContain("No shared chats");
+    expect(container.textContent).toContain("There are no chat sessions for this book yet.");
   });
 });
