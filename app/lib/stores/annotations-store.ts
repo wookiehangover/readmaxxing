@@ -245,7 +245,22 @@ export function makeAnnotationService(stores: AnnotationServiceStores) {
 
     async cacheNotebook(notebook: Notebook) {
       try {
-        await set(notebook.bookId, notebook, notebookStore);
+        let persisted = notebook;
+        await update<unknown>(
+          notebook.bookId,
+          (raw) => {
+            if (raw !== undefined) {
+              const existing = decodeNotebook(raw);
+              if (existing.updatedAt > notebook.updatedAt) {
+                persisted = existing;
+                return existing;
+              }
+            }
+            return notebook;
+          },
+          notebookStore,
+        );
+        return persisted;
       } catch (cause) {
         throw new NotebookError({ operation: "cacheNotebook", bookId: notebook.bookId, cause });
       }

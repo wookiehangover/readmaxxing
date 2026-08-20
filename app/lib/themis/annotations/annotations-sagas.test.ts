@@ -6,6 +6,7 @@ import {
   type Highlight,
   type Notebook,
 } from "~/lib/stores/annotations-store";
+import { clearSyncedChanges, getUnsyncedChanges, markSynced } from "~/lib/sync/change-log";
 
 const mocks = vi.hoisted(() => ({
   cacheNotebook: vi.fn(),
@@ -389,7 +390,7 @@ describe("annotationsSaga", () => {
   it("caches a server-authoritative notebook without using the change-recording save path", async () => {
     const notebook = makeNotebook();
     const onCompleted = vi.fn();
-    mocks.cacheNotebook.mockResolvedValueOnce(undefined);
+    mocks.cacheNotebook.mockResolvedValueOnce(notebook);
     const store = startStore();
 
     store.dispatch(cacheNotebookRequested(notebook, onCompleted));
@@ -400,6 +401,48 @@ describe("annotationsSaga", () => {
     expect(store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")).toEqual(
       notebook,
     );
+  });
+
+  it("publishes the newer IndexedDB notebook when an older cache snapshot loses LWW", async () => {
+    const pre = await getUnsyncedChanges();
+    if (pre.length > 0) {
+      await markSynced(pre.map((change) => change.id));
+      await clearSyncedChanges();
+    }
+    const suffix = crypto.randomUUID();
+    const service = makeAnnotationService({
+      highlightStore: createStore(`highlight-cache-lww-${suffix}`, "highlights"),
+      notebookStore: createStore(`notebook-cache-lww-${suffix}`, "notebooks"),
+    });
+    const newer = {
+      ...makeNotebook(),
+      content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "newer" } }] },
+      updatedAt: 2,
+    };
+    const older = {
+      ...makeNotebook(),
+      content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "older" } }] },
+      updatedAt: 1,
+    };
+    await service.cacheNotebook(newer);
+    mocks.service = service;
+    const onCompleted = vi.fn();
+    const store = startStore();
+
+    store.dispatch(cacheNotebookRequested(older, onCompleted));
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(newer));
+    const selected = store.annotationsSelectors.selectNotebookByBookId.select(
+      store.state,
+      "book-1",
+    );
+    const persisted = await service.getNotebook("book-1");
+    expect(selected).toEqual(persisted);
+    expect(selected).toEqual(newer);
+    const unsynced = await getUnsyncedChanges();
+    expect(
+      unsynced.filter((change) => change.entity === "notebook" && change.entityId === "book-1"),
+    ).toHaveLength(0);
   });
 
   it("keeps a failed server-authoritative notebook cache out of the collection", async () => {

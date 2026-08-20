@@ -63,8 +63,7 @@ async function persistNotebook(bookId: string, content: Notebook["content"]) {
 }
 
 async function persistCachedNotebook(notebook: Notebook) {
-  await AnnotationService.cacheNotebook(notebook);
-  return notebook;
+  return AnnotationService.cacheNotebook(notebook);
 }
 
 async function persistHighlightAppend(
