@@ -1,5 +1,6 @@
-import { call, put, takeEvery } from "typed-redux-saga";
+import { call, fork, put, take, takeEvery } from "typed-redux-saga";
 
+import { toTaggedError } from "~/lib/errors";
 import { ChatService, type ChatMessage, type ChatSession } from "~/lib/stores/chat-store";
 import {
   cacheChatMessagesRequested,
@@ -81,10 +82,6 @@ async function persistMessageCache(bookId: string, sessionId: string, messages: 
   return messages;
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function notifySession(callback: ChatSessionCompletedCallback | undefined, session: ChatSession) {
   return callback?.(session);
 }
@@ -115,9 +112,9 @@ export function* hydrateChatSessionsSaga(action: ReturnType<typeof hydrateChatSe
       sessions.find((session) => session.id === activeSessionId) ?? null,
     );
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(chatSessionsFailed(bookId, message));
-    yield* call(notifyFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(chatSessionsFailed(bookId, taggedError));
+    yield* call(notifyFailed, onFailed, taggedError.message);
   }
 }
 
@@ -128,9 +125,9 @@ export function* createChatSessionSaga(action: ReturnType<typeof createChatSessi
     yield* put(chatSessionCreated(session));
     yield* call(notifySession, onCompleted, session);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(chatSessionsFailed(bookId, message));
-    yield* call(notifyFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(chatSessionsFailed(bookId, taggedError));
+    yield* call(notifyFailed, onFailed, taggedError.message);
   }
 }
 
@@ -141,9 +138,9 @@ export function* selectChatSessionSaga(action: ReturnType<typeof selectChatSessi
     yield* put(chatSessionSelected(bookId, sessionId));
     yield* call(notifySession, onCompleted, session);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(chatSessionsFailed(bookId, message));
-    yield* call(notifyFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(chatSessionsFailed(bookId, taggedError));
+    yield* call(notifyFailed, onFailed, taggedError.message);
   }
 }
 
@@ -154,9 +151,9 @@ export function* deleteChatSessionSaga(action: ReturnType<typeof deleteChatSessi
     yield* put(chatSessionDeleted(bookId, sessionId, nextActiveSessionId));
     yield* call(notifyDeleted, onCompleted, nextActiveSessionId);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(chatSessionsFailed(bookId, message));
-    yield* call(notifyFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(chatSessionsFailed(bookId, taggedError));
+    yield* call(notifyFailed, onFailed, taggedError.message);
   }
 }
 
@@ -170,7 +167,7 @@ export function* generateChatSessionTitleSaga(
     const session = yield* call(persistSessionTitle, bookId, sessionId, title);
     yield* put(chatSessionUpdated(session));
   } catch (error) {
-    yield* put(chatSessionsFailed(bookId, errorMessage(error)));
+    yield* put(chatSessionsFailed(bookId, toTaggedError(error)));
   }
 }
 
@@ -180,12 +177,49 @@ export function* cacheChatMessagesSaga(action: ReturnType<typeof cacheChatMessag
     const persisted = yield* call(persistMessageCache, bookId, sessionId, messages);
     yield* put(chatMessagesCached(sessionId, persisted));
   } catch (error) {
-    yield* put(chatSessionsFailed(bookId, errorMessage(error)));
+    yield* put(chatSessionsFailed(bookId, toTaggedError(error)));
+  }
+}
+
+type ChatSessionsHydrateAction = ReturnType<typeof hydrateChatSessionsRequested>;
+
+type ChatSessionsHydrateQueue = {
+  actions: ChatSessionsHydrateAction[];
+};
+
+function* processChatSessionHydrateQueue(
+  bookId: string,
+  queue: ChatSessionsHydrateQueue,
+  pendingByBookId: Map<string, ChatSessionsHydrateQueue>,
+) {
+  try {
+    while (queue.actions.length > 0) {
+      const action = queue.actions.shift();
+      if (action) yield* call(hydrateChatSessionsSaga, action);
+    }
+  } finally {
+    pendingByBookId.delete(bookId);
+  }
+}
+
+export function* watchChatSessionHydrates() {
+  const pendingByBookId = new Map<string, ChatSessionsHydrateQueue>();
+  while (true) {
+    const action = yield* take(hydrateChatSessionsRequested);
+    const [bookId] = action.payload;
+    const pending = pendingByBookId.get(bookId);
+    if (pending) {
+      pending.actions.push(action);
+      continue;
+    }
+    const queue = { actions: [action] };
+    pendingByBookId.set(bookId, queue);
+    yield* fork(processChatSessionHydrateQueue, bookId, queue, pendingByBookId);
   }
 }
 
 export function* chatSessionsSaga() {
-  yield* takeEvery(hydrateChatSessionsRequested, hydrateChatSessionsSaga);
+  yield* fork(watchChatSessionHydrates);
   yield* takeEvery(createChatSessionRequested, createChatSessionSaga);
   yield* takeEvery(selectChatSessionRequested, selectChatSessionSaga);
   yield* takeEvery(deleteChatSessionRequested, deleteChatSessionSaga);

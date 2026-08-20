@@ -137,6 +137,7 @@ export function makeBookService(stores: BookServiceStores) {
           data: stamped,
           timestamp: stamped.updatedAt,
         }).catch(console.error);
+        return stamped;
       });
     },
 

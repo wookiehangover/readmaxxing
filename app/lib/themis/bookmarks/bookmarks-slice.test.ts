@@ -5,8 +5,10 @@ import type { Bookmark } from "~/lib/stores/bookmark-store";
 import {
   bookmarkAdded,
   bookmarkDeleted,
+  bookmarksHydrateFailed,
   bookmarksHydrated,
   bookmarksReducer,
+  hydrateBookmarksRequested,
 } from "~/lib/themis/bookmarks/bookmarks-slice";
 
 function makeBookmark(id: string, bookId = "book-1"): Bookmark {
@@ -32,6 +34,20 @@ describe("bookmarksReducer", () => {
 
     expect(getItem(added.collection, "one")).toEqual(makeBookmark("one"));
     expect(getItem(deleted.collection, "one")).toBeUndefined();
+  });
+
+  it("marks only successful hydrates as loaded", () => {
+    const loading = bookmarksReducer(undefined, hydrateBookmarksRequested("book-1"));
+    const failed = bookmarksReducer(
+      loading,
+      bookmarksHydrateFailed("book-1", { _tag: "Error", message: "IDB unavailable" }),
+    );
+    const hydrated = bookmarksReducer(failed, bookmarksHydrated("book-1", []));
+
+    expect(loading.loadingBookIds).toEqual(["book-1"]);
+    expect(failed.loadingBookIds).toEqual([]);
+    expect(failed.loadedBookIds).toEqual([]);
+    expect(hydrated.loadedBookIds).toEqual(["book-1"]);
   });
 
   it("preserves unknown-action identity", () => {

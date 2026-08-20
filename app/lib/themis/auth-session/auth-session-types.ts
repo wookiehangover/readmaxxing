@@ -6,10 +6,12 @@ import type {
   AuthUser,
   MagicLinkResponse,
 } from "~/lib/auth-service";
+import type { TaggedError } from "~/lib/errors";
 
 export interface AuthSessionState {
   user: AuthUser | null;
   loading: boolean;
+  error: TaggedError | null;
 }
 
 export type AuthLogoutCompletedCallback = () => void;

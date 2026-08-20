@@ -8,6 +8,7 @@ import {
 import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
+import type { TaggedError } from "~/lib/errors";
 import type { ReadingHistoryEntry } from "~/lib/stores/reading-history-store";
 import type {
   LocationCacheRecord,
@@ -63,7 +64,7 @@ export const remoteReadingPositionChecked = createAction<
   [bookId: string, position: RemoteReadingPositionRecord | null]
 >("readingPositions/remotePositionChecked");
 export const readingPositionsFailed =
-  createAction<[keys: string[], error: string]>("readingPositions/failed");
+  createAction<[keys: string[], error: TaggedError]>("readingPositions/failed");
 
 export const readingPositionsInitialState: ReadingPositionsState = {
   positions: createCollection<ReadingPositionRecord, "key">("key"),

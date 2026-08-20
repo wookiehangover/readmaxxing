@@ -41,14 +41,17 @@ describe("BookmarkService", () => {
 
   it("saves and retrieves non-deleted bookmarks for a book", async () => {
     const service = makeTestService();
+    const bookmark = makeBookmark({ displayPage: 12, updatedAt: undefined });
 
-    await service.saveBookmark(makeBookmark({ displayPage: 12 }));
+    const stamped = await service.saveBookmark(bookmark);
     await service.saveBookmark(makeBookmark({ id: "bookmark-2", bookId: "book-2" }));
 
     const bookmarks = await service.getBookmarksByBook("book-1");
     expect(bookmarks).toHaveLength(1);
+    expect(bookmarks[0]).toEqual(stamped);
     expect(bookmarks[0].id).toBe("bookmark-1");
     expect(bookmarks[0].displayPage).toBe(12);
+    expect(stamped.updatedAt).toEqual(expect.any(Number));
   });
 
   it("soft-deletes bookmarks and records the delete change", async () => {

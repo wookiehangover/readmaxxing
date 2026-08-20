@@ -6,6 +6,8 @@ import { clampFocusedSplitRatio, type Settings } from "~/lib/settings";
 import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { useWorkspace } from "~/lib/context/workspace-context";
+import { useAppStore } from "~/lib/themis/provider";
+import { saveFocusedWorkspace } from "~/lib/themis/workspace-restore/workspace-restore-slice";
 
 const LAYOUT_SAVE_DEBOUNCE_MS = 500;
 const FOCUSED_STATE_SAVE_DEBOUNCE_MS = 300;
@@ -82,6 +84,7 @@ export function useWorkspaceLayout({
   updateSettings,
   setOpenBookIds,
 }: UseWorkspaceLayoutParams): UseWorkspaceLayoutResult {
+  const store = useAppStore();
   const [layoutReady, setLayoutReady] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusedStateSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,8 +115,8 @@ export function useWorkspaceLayout({
 
   const flushFocusedState = useCallback(() => {
     if (!mountedRef.current) return;
-    WorkspaceService.saveFocusedState(serializeFocusedState()).catch(console.error);
-  }, [serializeFocusedState]);
+    store.dispatch(saveFocusedWorkspace(serializeFocusedState()));
+  }, [serializeFocusedState, store]);
 
   const saveFocusedState = useCallback(() => {
     if (focusedStateSaveTimerRef.current) clearTimeout(focusedStateSaveTimerRef.current);

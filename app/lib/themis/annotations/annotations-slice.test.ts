@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Highlight, Notebook } from "~/lib/stores/annotations-store";
 import {
+  annotationsHydrateFailed,
   annotationsHydrated,
   annotationsReducer,
   highlightAdded,
@@ -55,6 +56,17 @@ describe("annotationsReducer", () => {
 
     expect(getItem(updated.highlights, "one")).toEqual(updatedHighlight);
     expect(getItem(deleted.highlights, "one")).toBeUndefined();
+  });
+
+  it("does not mark a failed hydrate as loaded", () => {
+    const loading = annotationsReducer(undefined, hydrateAnnotationsRequested("book-1"));
+    const failed = annotationsReducer(
+      loading,
+      annotationsHydrateFailed("book-1", { _tag: "Error", message: "IDB unavailable" }),
+    );
+
+    expect(failed.loadingBookIds).toEqual([]);
+    expect(failed.loadedBookIds).toEqual([]);
   });
 
   it("upserts notebook documents and preserves unknown-action identity", () => {

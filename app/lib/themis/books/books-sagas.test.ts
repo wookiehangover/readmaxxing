@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { StorageError } from "~/lib/errors";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { BookUploadFile } from "~/lib/themis/books/books-slice";
 
@@ -92,10 +93,17 @@ describe("booksSaga", () => {
   });
 
   it("stores a hydrate failure", async () => {
-    mocks.getBooks.mockRejectedValueOnce(new Error("IDB unavailable"));
+    mocks.getBooks.mockRejectedValueOnce(new StorageError({ operation: "getBooks" }));
     const store = startStore();
     store.dispatch(hydrateBooks());
-    await vi.waitFor(() => expect(store.state.books.error).toBe("IDB unavailable"));
+    await vi.waitFor(() =>
+      expect(store.booksSelectors.selectBooksError.select(store.state)).toEqual({
+        _tag: "StorageError",
+        message: "StorageError",
+        operation: "getBooks",
+      }),
+    );
+    expect(JSON.parse(JSON.stringify(store.state.books.error))).toEqual(store.state.books.error);
   });
 
   it("loads reader binary without storing it in Redux", async () => {
@@ -117,7 +125,11 @@ describe("booksSaga", () => {
       author: "Author",
       coverImage: null,
     });
-    mocks.saveBook.mockResolvedValueOnce(undefined);
+    let persistedBook: BookMeta | undefined;
+    mocks.saveBook.mockImplementationOnce(async (book: BookMeta) => {
+      persistedBook = { ...book, hasLocalFile: true, updatedAt: 1_234 };
+      return persistedBook;
+    });
     const completed = vi.fn();
     const store = startStore();
 
@@ -126,18 +138,25 @@ describe("booksSaga", () => {
     await vi.waitFor(() => expect(completed).toHaveBeenCalledOnce());
     const [book] = completed.mock.calls[0];
     expect(mocks.saveBook).toHaveBeenCalledOnce();
-    expect(store.booksSelectors.selectBookById.select(store.state, book.id)).toEqual(book);
+    expect(book).toBe(persistedBook);
+    expect(book).toMatchObject({ hasLocalFile: true, updatedAt: 1_234 });
+    expect(store.booksSelectors.selectBookById.select(store.state, book.id)).toEqual(persistedBook);
   });
 
-  it("keeps failed uploads out of the collection", async () => {
+  it("keeps failed persists out of the collection", async () => {
     mocks.findByFileHash.mockResolvedValueOnce(null);
-    mocks.parseEpub.mockRejectedValueOnce(new Error("parse failed"));
+    mocks.parseEpub.mockResolvedValueOnce({
+      title: "Uploaded",
+      author: "Author",
+      coverImage: null,
+    });
+    mocks.saveBook.mockRejectedValueOnce(new Error("IDB unavailable"));
     const failed = vi.fn();
     const store = startStore();
 
     store.dispatch(uploadBooksRequested([makeFile()], undefined, undefined, failed));
 
-    await vi.waitFor(() => expect(failed).toHaveBeenCalledWith("parse failed"));
+    await vi.waitFor(() => expect(failed).toHaveBeenCalledWith("IDB unavailable"));
     expect(store.booksSelectors.selectAllBooks.select(store.state)).toEqual([]);
   });
 
@@ -165,8 +184,37 @@ describe("booksSaga", () => {
     expect(selected?.updatedAt).toBe(persisted.updatedAt);
   });
 
+  it("leaves existing metadata unchanged when persistence fails", async () => {
+    const original = { ...makeBook("edit-failure"), updatedAt: 100 };
+    const failed = vi.fn();
+    const store = startStore();
+    store.dispatch(bookAdded(original));
+    mocks.updateBookMeta.mockRejectedValueOnce(new Error("IDB unavailable"));
+
+    store.dispatch(
+      updateBookMetadataRequested(
+        { ...original, title: "Must not publish" },
+        "update",
+        vi.fn(),
+        failed,
+      ),
+    );
+
+    await vi.waitFor(() => expect(failed).toHaveBeenCalledWith("IDB unavailable"));
+    expect(store.booksSelectors.selectBookById.select(store.state, original.id)).toBe(original);
+  });
+
   it("persists restored metadata before adding the missing book to the collection", async () => {
-    const restored = makeBook("restore-me");
+    const softDeleted = {
+      ...makeBook("restore-me"),
+      title: "Restored title",
+      remoteCoverUrl: "https://example.com/cover.jpg",
+      remoteFileUrl: "https://example.com/book.epub",
+      fileHash: "restored-hash",
+      hasLocalFile: true,
+      deletedAt: 4_321,
+    };
+    const restored = { ...softDeleted, deletedAt: undefined };
     const persisted = { ...restored, updatedAt: 5_678 };
     const completed = vi.fn();
     const store = startStore();
@@ -183,6 +231,14 @@ describe("booksSaga", () => {
     expect(completed.mock.calls[0]?.[0]).toBe(persisted);
     expect(selected).toEqual(persisted);
     expect(selected?.updatedAt).toBe(persisted.updatedAt);
+    expect(selected).toMatchObject({
+      title: "Restored title",
+      remoteCoverUrl: restored.remoteCoverUrl,
+      remoteFileUrl: restored.remoteFileUrl,
+      fileHash: restored.fileHash,
+      hasLocalFile: true,
+      deletedAt: undefined,
+    });
   });
 
   it("deletes persisted data before removing collection metadata", async () => {

@@ -1,6 +1,7 @@
 import { call, cancel, delay, fork, put, take, takeEvery } from "typed-redux-saga";
 
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
+import { toTaggedError } from "~/lib/errors";
 import { AnnotationService, type Highlight, type Notebook } from "~/lib/stores/annotations-store";
 import {
   addHighlightRequested,
@@ -8,6 +9,7 @@ import {
   annotationsHydrateFailed,
   annotationsHydrated,
   appendHighlightToNotebookRequested,
+  cacheNotebookRequested,
   deleteHighlightRequested,
   highlightAdded,
   highlightDeleted,
@@ -57,8 +59,11 @@ async function persistHighlightDeletion(highlightId: string) {
 
 async function persistNotebook(bookId: string, content: Notebook["content"]) {
   const notebook: Notebook = { bookId, content, updatedAt: Date.now() };
-  await AnnotationService.saveNotebook(notebook);
-  return notebook;
+  return AnnotationService.saveNotebook(notebook);
+}
+
+async function persistCachedNotebook(notebook: Notebook) {
+  return AnnotationService.cacheNotebook(notebook);
 }
 
 async function persistHighlightAppend(
@@ -66,10 +71,6 @@ async function persistHighlightAppend(
   attrs: Parameters<typeof appendHighlightReferenceToNotebook>[1],
 ) {
   return appendHighlightReferenceToNotebook(bookId, attrs);
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function notifyHighlightCompleted(
@@ -100,7 +101,7 @@ export function* hydrateAnnotationsSaga(action: ReturnType<typeof hydrateAnnotat
     const { highlights, notebook } = yield* call(loadAnnotations, bookId);
     yield* put(annotationsHydrated(bookId, highlights, notebook));
   } catch (error) {
-    yield* put(annotationsHydrateFailed(bookId, errorMessage(error)));
+    yield* put(annotationsHydrateFailed(bookId, toTaggedError(error)));
   }
 }
 
@@ -111,9 +112,9 @@ export function* addHighlightSaga(action: ReturnType<typeof addHighlightRequeste
     yield* put(highlightAdded(saved));
     yield* call(notifyHighlightCompleted, onCompleted, saved);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(annotationMutationFailed(highlight.bookId, message));
-    yield* call(notifyFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(annotationMutationFailed(highlight.bookId, taggedError));
+    yield* call(notifyFailed, onFailed, taggedError.message);
   }
 }
 
@@ -124,9 +125,9 @@ export function* updateHighlightSaga(action: ReturnType<typeof updateHighlightRe
     yield* put(highlightUpdated(saved));
     yield* call(notifyHighlightCompleted, onCompleted, saved);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(annotationMutationFailed(bookId, message));
-    yield* call(notifyFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(annotationMutationFailed(bookId, taggedError));
+    yield* call(notifyFailed, onFailed, taggedError.message);
   }
 }
 
@@ -137,9 +138,9 @@ export function* deleteHighlightSaga(action: ReturnType<typeof deleteHighlightRe
     yield* put(highlightDeleted(highlightId));
     yield* call(notifyDeleteCompleted, onCompleted);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(annotationMutationFailed(bookId, message));
-    yield* call(notifyFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(annotationMutationFailed(bookId, taggedError));
+    yield* call(notifyFailed, onFailed, taggedError.message);
   }
 }
 
@@ -151,9 +152,22 @@ export function* updateNotebookSaga(action: ReturnType<typeof updateNotebookRequ
     yield* put(notebookSaved(notebook));
     yield* call(notifyNotebookCompleted, onCompleted, notebook);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(annotationMutationFailed(bookId, message));
-    yield* call(notifyFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(annotationMutationFailed(bookId, taggedError));
+    yield* call(notifyFailed, onFailed, taggedError.message);
+  }
+}
+
+export function* cacheNotebookSaga(action: ReturnType<typeof cacheNotebookRequested>) {
+  const [notebook, onCompleted, onFailed] = action.payload;
+  try {
+    const cached = yield* call(persistCachedNotebook, notebook);
+    yield* put(notebookSaved(cached));
+    yield* call(notifyNotebookCompleted, onCompleted, cached);
+  } catch (error) {
+    const taggedError = toTaggedError(error);
+    yield* put(annotationMutationFailed(notebook.bookId, taggedError));
+    yield* call(notifyFailed, onFailed, taggedError.message);
   }
 }
 
@@ -166,9 +180,9 @@ export function* appendHighlightToNotebookSaga(
     yield* put(notebookSaved(notebook));
     yield* call(notifyNotebookCompleted, onCompleted, notebook);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(annotationMutationFailed(bookId, message));
-    yield* call(notifyFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(annotationMutationFailed(bookId, taggedError));
+    yield* call(notifyFailed, onFailed, taggedError.message);
   }
 }
 
@@ -190,11 +204,30 @@ export function* watchNotebookUpdates() {
   }
 }
 
+type AnnotationHydrateTask =
+  ReturnType<
+    typeof fork<Parameters<typeof hydrateAnnotationsSaga>, typeof hydrateAnnotationsSaga>
+  > extends Generator<unknown, infer Task, unknown>
+    ? Task
+    : never;
+
+export function* watchAnnotationHydrates() {
+  const pendingByBookId = new Map<string, AnnotationHydrateTask>();
+  while (true) {
+    const action = yield* take(hydrateAnnotationsRequested);
+    const [bookId] = action.payload;
+    const pending = pendingByBookId.get(bookId);
+    if (pending) yield* cancel(pending);
+    pendingByBookId.set(bookId, yield* fork(hydrateAnnotationsSaga, action));
+  }
+}
+
 export function* annotationsSaga() {
-  yield* takeEvery(hydrateAnnotationsRequested, hydrateAnnotationsSaga);
+  yield* fork(watchAnnotationHydrates);
   yield* takeEvery(addHighlightRequested, addHighlightSaga);
   yield* takeEvery(updateHighlightRequested, updateHighlightSaga);
   yield* takeEvery(deleteHighlightRequested, deleteHighlightSaga);
+  yield* takeEvery(cacheNotebookRequested, cacheNotebookSaga);
   yield* takeEvery(appendHighlightToNotebookRequested, appendHighlightToNotebookSaga);
   yield* fork(watchNotebookUpdates);
 }

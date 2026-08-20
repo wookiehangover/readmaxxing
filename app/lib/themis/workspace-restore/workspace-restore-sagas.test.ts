@@ -104,9 +104,9 @@ describe("workspaceRestoreSaga", () => {
     store.dispatch(saveFocusedWorkspace(focusedWorkspace));
 
     await vi.waitFor(() =>
-      expect(store.workspaceRestoreSelectors.selectWorkspaceRestoreError.select(store.state)).toBe(
-        "IDB unavailable",
-      ),
+      expect(
+        store.workspaceRestoreSelectors.selectWorkspaceRestoreError.select(store.state),
+      ).toEqual({ _tag: "Error", message: "IDB unavailable" }),
     );
     expect(store.workspaceRestoreSelectors.selectFocusedWorkspace.select(store.state)).toBeNull();
   });

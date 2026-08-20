@@ -79,11 +79,16 @@ describe("BookService", () => {
       const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
         Effect.runPromise(Effect.provide(e, bookLayer));
       const book = makeBook();
-      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book, book.data))));
+      const stamped = await run(
+        BookService.pipe(Effect.andThen((s) => s.saveBook(book, book.data))),
+      );
       const books = await run(BookService.pipe(Effect.andThen((s) => s.getBooks())));
       expect(books).toHaveLength(1);
+      expect(books[0]).toEqual(stamped);
       expect(books[0].id).toBe("book-1");
       expect(books[0].title).toBe("Test Book");
+      expect(stamped.hasLocalFile).toBe(true);
+      expect(stamped.updatedAt).toEqual(expect.any(Number));
     });
 
     it("returns empty array when no books", async () => {

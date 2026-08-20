@@ -1,6 +1,7 @@
 import type { Collection } from "@augmentcode/themis/utils/collections/collection-utils";
 import type { JSONContent } from "@tiptap/react";
 
+import type { TaggedError } from "~/lib/errors";
 import type { Highlight, Notebook } from "~/lib/stores/annotations-store";
 
 export type HighlightUpdate = Partial<Omit<Highlight, "id" | "bookId" | "createdAt">>;
@@ -14,7 +15,7 @@ export interface AnnotationsState {
   notebooks: Collection<Notebook, "bookId">;
   loadingBookIds: string[];
   loadedBookIds: string[];
-  errorsByBookId: Record<string, string>;
+  errorsByBookId: Record<string, TaggedError>;
 }
 
 export interface NotebookUpdateRequest {

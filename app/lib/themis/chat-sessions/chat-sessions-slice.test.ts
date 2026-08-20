@@ -4,8 +4,10 @@ import type { ChatMessage, ChatSession } from "~/lib/stores/chat-store";
 import {
   chatMessagesCached,
   chatSessionDeleted,
+  chatSessionsFailed,
   chatSessionsHydrated,
   chatSessionsReducer,
+  hydrateChatSessionsRequested,
 } from "~/lib/themis/chat-sessions/chat-sessions-slice";
 import { createAppStore } from "~/lib/themis/store";
 
@@ -81,5 +83,16 @@ describe("chatSessionsReducer", () => {
     expect(deleted.activeSessionIdsByBook["book-1"]).toBeUndefined();
     expect(chatSessionsReducer(deleted, { type: "unknown" })).toBe(deleted);
     dispose();
+  });
+
+  it("does not mark a failed hydrate as loaded", () => {
+    const loading = chatSessionsReducer(undefined, hydrateChatSessionsRequested("book-1"));
+    const failed = chatSessionsReducer(
+      loading,
+      chatSessionsFailed("book-1", { _tag: "Error", message: "IDB unavailable" }),
+    );
+
+    expect(failed.loadingBookIds).toEqual([]);
+    expect(failed.loadedBookIds).toEqual([]);
   });
 });

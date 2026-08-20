@@ -168,6 +168,7 @@ function WorkspacePdfReaderInner({
   const bookmarkSyncVersion = useSyncListener(["bookmark"]);
   const store = useAppStore();
   const bookmarks = store.bookmarksSelectors.selectBookmarksByBook.useValue(book.id);
+  const bookmarksLoaded = store.bookmarksSelectors.selectBookmarksLoaded.useValue(book.id);
 
   useEffect(() => {
     store.dispatch(hydrateBookmarksRequested(book.id));
@@ -324,6 +325,7 @@ function WorkspacePdfReaderInner({
   const currentBookmark = bookmarks.find((bookmark) => bookmark.pageNumber === currentPage);
 
   const handleBookmarkPage = useCallback(() => {
+    if (!bookmarksLoaded) return;
     if (currentPage < 1) return;
     const existingBookmark = bookmarks.find((bookmark) => bookmark.pageNumber === currentPage);
     const now = Date.now();
@@ -340,7 +342,7 @@ function WorkspacePdfReaderInner({
             updatedAt: now,
           }),
     );
-  }, [book.id, bookmarks, currentPage, store]);
+  }, [book.id, bookmarks, bookmarksLoaded, currentPage, store]);
 
   // Keep goToPage in sync for navigation map
   useEffect(() => {
@@ -379,6 +381,7 @@ function WorkspacePdfReaderInner({
         onDownload={handleDownload}
         onBookmarkPage={handleBookmarkPage}
         isBookmarked={Boolean(currentBookmark)}
+        bookmarksLoaded={bookmarksLoaded}
         searchOpen={searchOpen}
         searchQuery={searchQuery}
         searchResultCount={searchResultCount}

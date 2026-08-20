@@ -10,8 +10,15 @@ import {
   type UseWorkspacePanelsResult,
 } from "~/hooks/use-workspace-panels";
 import type { BookMeta } from "~/lib/stores/book-store";
+import { recordBookOpened } from "~/lib/themis/workspace-restore/workspace-restore-slice";
+
+const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), getNotebook: vi.fn() }));
 
 vi.mock("react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("~/lib/themis/provider", () => ({ useAppStore: () => ({ dispatch: mocks.dispatch }) }));
+vi.mock("~/lib/stores/annotations-store", () => ({
+  AnnotationService: { getNotebook: mocks.getNotebook },
+}));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -31,7 +38,11 @@ function renderWorkspacePanels(api: DockviewApi): UseWorkspacePanelsResult {
   roots.push(root);
   const params = {
     apiRef: { current: api },
-    ws: {} as UseWorkspacePanelsParams["ws"],
+    ws: {
+      activeClusterBookIdRef: { current: null },
+      openNotebookRef: { current: null },
+      setActiveCluster: vi.fn(),
+    } as unknown as UseWorkspacePanelsParams["ws"],
     isMobileRef: { current: false },
     focusedClustersRef: { current: new Map() },
     focusedOrderRef: { current: [] },
@@ -54,6 +65,19 @@ afterEach(() => {
   for (const root of roots) act(() => root.unmount());
   roots.length = 0;
   document.body.innerHTML = "";
+  mocks.dispatch.mockReset();
+  mocks.getNotebook.mockReset();
+});
+
+describe("openBook", () => {
+  it("records the open through the workspace restore saga action", () => {
+    mocks.getNotebook.mockResolvedValue(null);
+    const api = { panels: [], groups: [], addPanel: vi.fn() } as unknown as DockviewApi;
+
+    renderWorkspacePanels(api).openBook(book);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(recordBookOpened(book.id));
+  });
 });
 
 describe("openOutline", () => {

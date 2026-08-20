@@ -1,5 +1,6 @@
 import { call, put, takeEvery, takeLatest } from "typed-redux-saga";
 
+import { toTaggedError } from "~/lib/errors";
 import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 import {
   bookOpenedRecorded,
@@ -30,16 +31,12 @@ async function persistFocusedWorkspace(focusedWorkspace: FocusedWorkspaceState |
     : WorkspaceService.clearFocusedState();
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
 export function* hydrateWorkspaceRestoreSaga() {
   try {
     const { lastOpenedByBookId, focusedWorkspace } = yield* call(loadWorkspaceRestore);
     yield* put(workspaceRestoreHydrated(lastOpenedByBookId, focusedWorkspace));
   } catch (error) {
-    yield* put(workspaceRestoreHydrateFailed(errorMessage(error)));
+    yield* put(workspaceRestoreHydrateFailed(toTaggedError(error)));
   }
 }
 
@@ -50,7 +47,7 @@ export function* recordBookOpenedSaga(action: ReturnType<typeof recordBookOpened
     yield* call(persistLastOpened, bookId, timestamp);
     yield* put(bookOpenedRecorded(bookId, timestamp));
   } catch (error) {
-    yield* put(workspaceRestoreUpdateFailed(errorMessage(error)));
+    yield* put(workspaceRestoreUpdateFailed(toTaggedError(error)));
   }
 }
 
@@ -60,7 +57,7 @@ export function* saveFocusedWorkspaceSaga(action: ReturnType<typeof saveFocusedW
     yield* call(persistFocusedWorkspace, focusedWorkspace);
     yield* put(focusedWorkspaceSaved(focusedWorkspace));
   } catch (error) {
-    yield* put(workspaceRestoreUpdateFailed(errorMessage(error)));
+    yield* put(workspaceRestoreUpdateFailed(toTaggedError(error)));
   }
 }
 

@@ -8,6 +8,7 @@ import {
 import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
+import type { TaggedError } from "~/lib/errors";
 import type { Bookmark } from "~/lib/stores/bookmark-store";
 import type { BookmarksState } from "~/lib/themis/bookmarks/bookmarks-types";
 
@@ -17,7 +18,7 @@ export const hydrateBookmarksRequested = createAction<[bookId: string]>(
 export const bookmarksHydrated =
   createAction<[bookId: string, bookmarks: Bookmark[]]>("bookmarks/hydrated");
 export const bookmarksHydrateFailed =
-  createAction<[bookId: string, error: string]>("bookmarks/hydrateFailed");
+  createAction<[bookId: string, error: TaggedError]>("bookmarks/hydrateFailed");
 export const addBookmarkRequested = createAction<[bookmark: Bookmark]>("bookmarks/addRequested");
 export const bookmarkAdded = createAction<[bookmark: Bookmark]>("bookmarks/bookmarkAdded");
 export const deleteBookmarkRequested = createAction<[bookId: string, bookmarkId: string]>(
@@ -26,12 +27,14 @@ export const deleteBookmarkRequested = createAction<[bookId: string, bookmarkId:
 export const bookmarkDeleted = createAction<[bookId: string, bookmarkId: string]>(
   "bookmarks/bookmarkDeleted",
 );
-export const bookmarkMutationFailed = createAction<[bookId: string, error: string]>(
+export const bookmarkMutationFailed = createAction<[bookId: string, error: TaggedError]>(
   "bookmarks/mutationFailed",
 );
 
 export const bookmarksInitialState: BookmarksState = {
   collection: createCollection<Bookmark, "id">("id"),
+  loadingBookIds: [],
+  loadedBookIds: [],
   errorsByBookId: {},
 };
 
@@ -39,7 +42,13 @@ const reducer = createReducer<BookmarksState>(bookmarksInitialState);
 
 reducer.with(hydrateBookmarksRequested, (state, { payload: [bookId] }) => {
   const { [bookId]: _, ...errorsByBookId } = state.errorsByBookId;
-  return { ...state, errorsByBookId };
+  return {
+    ...state,
+    loadingBookIds: state.loadingBookIds.includes(bookId)
+      ? state.loadingBookIds
+      : [...state.loadingBookIds, bookId],
+    errorsByBookId,
+  };
 });
 reducer.with(bookmarksHydrated, (state, { payload: [bookId, bookmarks] }) => {
   const otherBookmarks = filterCollection(
@@ -50,11 +59,16 @@ reducer.with(bookmarksHydrated, (state, { payload: [bookId, bookmarks] }) => {
   return {
     ...state,
     collection: addItems(otherBookmarks, bookmarks),
+    loadingBookIds: state.loadingBookIds.filter((id) => id !== bookId),
+    loadedBookIds: state.loadedBookIds.includes(bookId)
+      ? state.loadedBookIds
+      : [...state.loadedBookIds, bookId],
     errorsByBookId,
   };
 });
 reducer.with(bookmarksHydrateFailed, (state, { payload: [bookId, error] }) => ({
   ...state,
+  loadingBookIds: state.loadingBookIds.filter((id) => id !== bookId),
   errorsByBookId: { ...state.errorsByBookId, [bookId]: error },
 }));
 reducer.with(bookmarkAdded, (state, { payload: [bookmark] }) => {
