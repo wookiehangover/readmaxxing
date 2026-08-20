@@ -307,7 +307,7 @@ function AppFrameContent() {
       {demoBook && isWorkspaceRoute && !workspaceReady && <WorkspaceLoadingOverlay />}
       <DropZone onBookAdded={handleUploadedBookAdded}>
         <div
-          className={cn("flex h-dvh", {
+          className={cn("app-frame flex h-dvh", {
             "animate-in fade-in-0 duration-300": frameReady,
             "opacity-0": !frameReady,
           })}

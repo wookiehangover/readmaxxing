@@ -12,6 +12,7 @@ export interface StoredReadingPosition {
 }
 
 export interface PositionAcceptanceContext {
+  readonly layoutHasSize: boolean;
   readonly layoutChangeInProgress: boolean;
   readonly navigationInProgress: boolean;
 }
@@ -23,15 +24,17 @@ function isSectionStartCfi(cfi: string): boolean {
 }
 
 /**
- * Reject section-start and large backward relocations while layout is settling.
- * Explicit navigation and small scroll deltas remain accepted.
+ * Reject hidden-layout relocations, plus section-start and large backward
+ * relocations while layout is settling. Explicit navigation remains accepted.
  */
 export function shouldAcceptReadingPosition(
   current: StoredReadingPosition | null,
   candidate: StoredReadingPosition,
   context: PositionAcceptanceContext,
 ): boolean {
-  if (!current || context.navigationInProgress || !context.layoutChangeInProgress) return true;
+  if (!current || context.navigationInProgress) return true;
+  if (!context.layoutHasSize) return false;
+  if (!context.layoutChangeInProgress) return true;
   if (candidate.cfi !== current.cfi && isSectionStartCfi(candidate.cfi)) return false;
   if (
     current.spineIndex !== undefined &&

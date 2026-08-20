@@ -25,9 +25,20 @@ describe("booksReducer", () => {
     const loading = booksReducer(undefined, hydrateBooks());
     const hydrated = booksReducer(loading, booksHydrated([]));
 
+    expect(loading.loading).toBe(true);
     expect(getItems(hydrated.collection)).toEqual([]);
     expect(hydrated.loading).toBe(false);
     expect(hydrated.error).toBeNull();
+  });
+
+  it("keeps hydrated books visible while refreshing their metadata", () => {
+    const hydrated = booksReducer(undefined, booksHydrated([makeBook("one", "Original")]));
+    const refreshing = booksReducer(hydrated, hydrateBooks());
+    const refreshed = booksReducer(refreshing, booksHydrated([makeBook("one", "Synced")]));
+
+    expect(refreshing.loading).toBe(false);
+    expect(getItem(refreshing.collection, "one")?.title).toBe("Original");
+    expect(getItem(refreshed.collection, "one")?.title).toBe("Synced");
   });
 
   it("hydrates several books keyed by id", () => {

@@ -111,18 +111,25 @@ function frameViewport(frame: HTMLIFrameElement, container: HTMLElement) {
   const frameRect = frame.getBoundingClientRect();
   const containerRect = container.getBoundingClientRect();
   return {
-    width:
-      frameRect.width || frame.clientWidth || containerRect.width || container.clientWidth || 1,
+    width: frameRect.width || frame.clientWidth || containerRect.width || container.clientWidth,
     height:
-      frameRect.height || frame.clientHeight || containerRect.height || container.clientHeight || 1,
+      frameRect.height || frame.clientHeight || containerRect.height || container.clientHeight,
   };
 }
 
 function fitPaginatedFrame(frame: HTMLIFrameElement, container: HTMLElement) {
+  const containerRect = container.getBoundingClientRect();
+  if (
+    (containerRect.width || container.clientWidth) <= 0 ||
+    (containerRect.height || container.clientHeight) <= 0
+  )
+    return undefined;
   frame.style.width = "100%";
   const viewport = frameViewport(frame, container);
-  frame.style.width = `${Math.max(1, Math.floor(viewport.width))}px`;
-  return frameViewport(frame, container);
+  if (viewport.width <= 0 || viewport.height <= 0) return undefined;
+  frame.style.width = `${Math.floor(viewport.width)}px`;
+  const fitted = frameViewport(frame, container);
+  return fitted.width > 0 && fitted.height > 0 ? fitted : undefined;
 }
 
 export async function settleSection(
@@ -159,6 +166,7 @@ export async function settleSection(
 
   while (true) {
     const viewport = fitPaginatedFrame(options.frame, options.container);
+    if (!viewport) return undefined;
     const pagesPerSpread = effectivePagesPerSpread(
       viewport.width,
       options.preferences.spread,
@@ -187,6 +195,7 @@ export async function settleSection(
     else snapToSpread(pagination);
     await nextAnimationFrame(scheduler, options.signal);
     const liveViewport = fitPaginatedFrame(options.frame, options.container);
+    if (!liveViewport) return pagination;
     const livePagesPerSpread = effectivePagesPerSpread(
       liveViewport.width,
       options.preferences.spread,
