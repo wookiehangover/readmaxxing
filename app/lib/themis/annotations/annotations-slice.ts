@@ -68,6 +68,9 @@ export const updateNotebookRequested = createAction<
     onFailed?: AnnotationFailedCallback,
   ]
 >("annotations/updateNotebookRequested");
+export const cacheNotebookRequested = createAction<
+  [notebook: Notebook, onCompleted?: NotebookCompletedCallback, onFailed?: AnnotationFailedCallback]
+>("annotations/cacheNotebookRequested");
 export const appendHighlightToNotebookRequested = createAction<
   [
     bookId: string,

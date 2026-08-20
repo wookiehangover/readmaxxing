@@ -8,6 +8,7 @@ import {
   annotationsHydrateFailed,
   annotationsHydrated,
   appendHighlightToNotebookRequested,
+  cacheNotebookRequested,
   deleteHighlightRequested,
   highlightAdded,
   highlightDeleted,
@@ -58,6 +59,11 @@ async function persistHighlightDeletion(highlightId: string) {
 async function persistNotebook(bookId: string, content: Notebook["content"]) {
   const notebook: Notebook = { bookId, content, updatedAt: Date.now() };
   await AnnotationService.saveNotebook(notebook);
+  return notebook;
+}
+
+async function persistCachedNotebook(notebook: Notebook) {
+  await AnnotationService.cacheNotebook(notebook);
   return notebook;
 }
 
@@ -157,6 +163,19 @@ export function* updateNotebookSaga(action: ReturnType<typeof updateNotebookRequ
   }
 }
 
+export function* cacheNotebookSaga(action: ReturnType<typeof cacheNotebookRequested>) {
+  const [notebook, onCompleted, onFailed] = action.payload;
+  try {
+    const cached = yield* call(persistCachedNotebook, notebook);
+    yield* put(notebookSaved(cached));
+    yield* call(notifyNotebookCompleted, onCompleted, cached);
+  } catch (error) {
+    const message = errorMessage(error);
+    yield* put(annotationMutationFailed(notebook.bookId, message));
+    yield* call(notifyFailed, onFailed, message);
+  }
+}
+
 export function* appendHighlightToNotebookSaga(
   action: ReturnType<typeof appendHighlightToNotebookRequested>,
 ) {
@@ -195,6 +214,7 @@ export function* annotationsSaga() {
   yield* takeEvery(addHighlightRequested, addHighlightSaga);
   yield* takeEvery(updateHighlightRequested, updateHighlightSaga);
   yield* takeEvery(deleteHighlightRequested, deleteHighlightSaga);
+  yield* takeEvery(cacheNotebookRequested, cacheNotebookSaga);
   yield* takeEvery(appendHighlightToNotebookRequested, appendHighlightToNotebookSaga);
   yield* fork(watchNotebookUpdates);
 }

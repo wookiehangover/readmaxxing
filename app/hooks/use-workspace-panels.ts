@@ -2,12 +2,13 @@ import { useCallback } from "react";
 import { useNavigate } from "react-router";
 import type { AddPanelPositionOptions, DockviewApi } from "dockview-react";
 import type { FocusedCluster } from "~/hooks/use-focused-mode";
-import { WorkspaceService } from "~/lib/stores/workspace-store";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { getBookReadingPath } from "~/lib/reading-route";
 import { truncateTitle } from "~/lib/workspace-utils";
 import type { useWorkspace } from "~/lib/context/workspace-context";
 import { AnnotationService } from "~/lib/stores/annotations-store";
+import { useAppStore } from "~/lib/themis/provider";
+import { recordBookOpened } from "~/lib/themis/workspace-restore/workspace-restore-slice";
 
 type WorkspaceContext = ReturnType<typeof useWorkspace>;
 
@@ -95,6 +96,7 @@ export function useWorkspacePanels({
   isWorkspaceRouteRef,
 }: UseWorkspacePanelsParams): UseWorkspacePanelsResult {
   const navigate = useNavigate();
+  const store = useAppStore();
   const openBook = useCallback(
     (book: BookMeta) => {
       if (
@@ -108,7 +110,7 @@ export function useWorkspacePanels({
         return;
       }
 
-      WorkspaceService.saveLastOpened(book.id, Date.now()).catch(console.error);
+      store.dispatch(recordBookOpened(book.id));
 
       const openPanels = () => {
         if (!focusedClustersRef.current.has(book.id)) {
@@ -154,6 +156,7 @@ export function useWorkspacePanels({
       layoutReadyRef,
       navigate,
       pendingOpenBookRef,
+      store,
       ws,
     ],
   );

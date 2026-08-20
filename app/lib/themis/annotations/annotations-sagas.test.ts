@@ -2,14 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Highlight, Notebook } from "~/lib/stores/annotations-store";
 
-const mocks = vi.hoisted(() => ({ runPromise: vi.fn() }));
+const mocks = vi.hoisted(() => ({ cacheNotebook: vi.fn(), runPromise: vi.fn() }));
 
 vi.mock("~/lib/stores/annotations-store", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/stores/annotations-store")>();
   return {
     ...actual,
     AnnotationService: new Proxy(actual.AnnotationService, {
-      get: () => mocks.runPromise,
+      get: (_target, property) =>
+        property === "cacheNotebook" ? mocks.cacheNotebook : mocks.runPromise,
     }),
   };
 });
@@ -21,6 +22,7 @@ import { annotationsSaga } from "~/lib/themis/annotations/annotations-sagas";
 import {
   addHighlightRequested,
   appendHighlightToNotebookRequested,
+  cacheNotebookRequested,
   deleteHighlightRequested,
   hydrateAnnotationsRequested,
   updateHighlightRequested,
@@ -56,6 +58,7 @@ function startStore() {
 
 afterEach(() => {
   for (const store of stores.splice(0)) store.dispose();
+  mocks.cacheNotebook.mockReset();
   mocks.runPromise.mockReset();
   vi.restoreAllMocks();
 });
@@ -169,5 +172,38 @@ describe("annotationsSaga", () => {
         store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1"),
       ).toEqual(appended),
     );
+  });
+
+  it("caches a server-authoritative notebook without using the change-recording save path", async () => {
+    const notebook = makeNotebook();
+    const onCompleted = vi.fn();
+    mocks.cacheNotebook.mockResolvedValueOnce(undefined);
+    const store = startStore();
+
+    store.dispatch(cacheNotebookRequested(notebook, onCompleted));
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(notebook));
+    expect(mocks.cacheNotebook).toHaveBeenCalledWith(notebook);
+    expect(mocks.runPromise).not.toHaveBeenCalled();
+    expect(store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")).toEqual(
+      notebook,
+    );
+  });
+
+  it("keeps a failed server-authoritative notebook cache out of the collection", async () => {
+    const notebook = makeNotebook();
+    mocks.cacheNotebook.mockRejectedValueOnce(new Error("Cache unavailable"));
+    const store = startStore();
+
+    store.dispatch(cacheNotebookRequested(notebook));
+
+    await vi.waitFor(() =>
+      expect(store.annotationsSelectors.selectAnnotationsError.select(store.state, "book-1")).toBe(
+        "Cache unavailable",
+      ),
+    );
+    expect(
+      store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1"),
+    ).toBeUndefined();
   });
 });
