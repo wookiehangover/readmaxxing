@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { AlertCircle, ListTree, MessageCircle } from "lucide-react";
 import { Streamdown } from "streamdown";
@@ -268,10 +268,14 @@ export function SharedReadingRail({
   shareId,
   bookTitle,
   included,
+  mobile = false,
+  bookSurface,
 }: {
   shareId: string;
   bookTitle: string;
   included: boolean;
+  mobile?: boolean;
+  bookSurface?: ReactNode;
 }) {
   const { activeTab, setActiveTab } = useReadingRailTab();
   const notebookState = useSharedEndpoint<{ markdown: string }>(
@@ -283,13 +287,102 @@ export function SharedReadingRail({
   const showNotes =
     included && notebookState.status === "ready" && Boolean(notebookState.data.markdown.trim());
   const availableTabs = showNotes ? tabs : tabs.filter((tab) => tab !== "Notes");
-  const resolvedActiveTab = !showNotes && activeTab === "Notes" ? "Discuss" : activeTab;
+  const mobileTabs = ["Read", ...availableTabs] as const;
+  const resolvedActiveTab = mobile
+    ? !showNotes && activeTab === "Notes"
+      ? "Read"
+      : activeTab
+    : activeTab === "Read" || (!showNotes && activeTab === "Notes")
+      ? "Discuss"
+      : activeTab;
 
   useEffect(() => {
-    if (!waitingForNotebook && !showNotes && activeTab === "Notes") {
+    if (mobile) setActiveTab("Read");
+  }, [mobile, setActiveTab]);
+
+  useEffect(() => {
+    if (
+      !mobile &&
+      !waitingForNotebook &&
+      (activeTab === "Read" || (!showNotes && activeTab === "Notes"))
+    ) {
       setActiveTab("Discuss");
     }
-  }, [activeTab, setActiveTab, showNotes, waitingForNotebook]);
+  }, [activeTab, mobile, setActiveTab, showNotes, waitingForNotebook]);
+
+  const panels = (
+    <>
+      {showNotes ? (
+        <Tabs.Panel
+          value="Notes"
+          keepMounted
+          className="min-h-0 flex-1 overflow-hidden outline-none"
+        >
+          <NotesPanel state={notebookState} />
+        </Tabs.Panel>
+      ) : null}
+      <Tabs.Panel
+        value="Discuss"
+        keepMounted
+        className="min-h-0 flex-1 overflow-hidden outline-none"
+      >
+        <DiscussPanel
+          shareId={shareId}
+          included={included}
+          active={resolvedActiveTab === "Discuss"}
+        />
+      </Tabs.Panel>
+      <Tabs.Panel
+        value="Outline"
+        keepMounted
+        className="min-h-0 flex-1 overflow-hidden outline-none"
+      >
+        <OutlinePanel shareId={shareId} active={resolvedActiveTab === "Outline"} />
+      </Tabs.Panel>
+    </>
+  );
+
+  if (mobile) {
+    return (
+      <Tabs.Root
+        className="flex h-full min-h-0 flex-col bg-background"
+        value={resolvedActiveTab}
+        onValueChange={(value) => setActiveTab(value as ReadingRailTab)}
+        data-testid="mobile-reading-tabs"
+      >
+        <Tabs.Panel
+          value="Read"
+          keepMounted
+          aria-label="Book surface"
+          className="min-h-0 flex-1 overflow-hidden outline-none"
+        >
+          {bookSurface}
+        </Tabs.Panel>
+        {panels}
+        <div className="flex shrink-0 items-start gap-3 bg-background px-6 pt-3 pb-3">
+          <Tabs.List
+            aria-label="Reading sections"
+            className="relative flex min-w-0 flex-1 items-center gap-5"
+          >
+            {mobileTabs.map((tab) => (
+              <Tabs.Tab
+                key={tab}
+                value={tab}
+                className={cn(
+                  "relative h-7 shrink-0 bg-transparent p-0 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                  { "text-foreground": resolvedActiveTab === tab },
+                )}
+              >
+                {tab}
+              </Tabs.Tab>
+            ))}
+            <Tabs.Indicator className="absolute bottom-0 left-[var(--active-tab-left)] h-px w-3 bg-foreground transition-[left] duration-200 ease-out motion-reduce:transition-none" />
+          </Tabs.List>
+          <div id={READING_RAIL_MENU_ID} className="flex min-h-7 shrink-0 items-center" />
+        </div>
+      </Tabs.Root>
+    );
+  }
 
   return (
     <Tabs.Root
@@ -325,33 +418,7 @@ export function SharedReadingRail({
       <div className="min-h-12 py-3 pr-6 text-xs">
         <p className="truncate text-foreground">{bookTitle}</p>
       </div>
-      {showNotes ? (
-        <Tabs.Panel
-          value="Notes"
-          keepMounted
-          className="min-h-0 flex-1 overflow-hidden outline-none"
-        >
-          <NotesPanel state={notebookState} />
-        </Tabs.Panel>
-      ) : null}
-      <Tabs.Panel
-        value="Discuss"
-        keepMounted
-        className="min-h-0 flex-1 overflow-hidden outline-none"
-      >
-        <DiscussPanel
-          shareId={shareId}
-          included={included}
-          active={resolvedActiveTab === "Discuss"}
-        />
-      </Tabs.Panel>
-      <Tabs.Panel
-        value="Outline"
-        keepMounted
-        className="min-h-0 flex-1 overflow-hidden outline-none"
-      >
-        <OutlinePanel shareId={shareId} active={resolvedActiveTab === "Outline"} />
-      </Tabs.Panel>
+      {panels}
     </Tabs.Root>
   );
 }

@@ -1,6 +1,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ReadingRailMenuPortal } from "~/components/reading-shell/reading-rail-menu-portal";
 import { ReadingRailTabProvider } from "~/components/reading-shell/reading-rail-tab-context";
 import { SharedReadingRail } from "./shared-reading-rail";
 
@@ -81,6 +82,29 @@ async function renderRail(included: boolean, strict = false) {
   });
 }
 
+async function renderMobileRail(included: boolean) {
+  await act(async () => {
+    root.render(
+      <ReadingRailTabProvider>
+        <SharedReadingRail
+          mobile
+          bookSurface={
+            <div data-testid="book-surface">
+              Book surface
+              <ReadingRailMenuPortal>
+                <button type="button">Reader settings</button>
+              </ReadingRailMenuPortal>
+            </div>
+          }
+          shareId="share/1"
+          bookTitle="Shared Book"
+          included={included}
+        />
+      </ReadingRailTabProvider>,
+    );
+  });
+}
+
 async function selectTab(name: string) {
   const tab = Array.from(container.querySelectorAll("[role='tab']")).find(
     (candidate) => candidate.textContent === name,
@@ -102,6 +126,22 @@ afterEach(async () => {
 });
 
 describe("SharedReadingRail", () => {
+  it("switches the mobile Read and shared tabs while keeping reader settings reachable", async () => {
+    await renderMobileRail(false);
+
+    expect(
+      Array.from(container.querySelectorAll("[role='tab']"), (tab) => tab.textContent),
+    ).toEqual(["Read", "Discuss", "Outline"]);
+    expect(container.querySelector("[role='tab'][aria-selected='true']")?.textContent).toBe("Read");
+    expect(container.querySelector("#reading-rail-menu")?.textContent).toContain("Reader settings");
+    const bookSurface = container.querySelector("[data-testid='book-surface']");
+
+    await selectTab("Outline");
+
+    expect(container.querySelector("[data-testid='book-surface']")).toBe(bookSurface);
+    expect(bookSurface?.closest<HTMLElement>("[role='tabpanel']")?.hidden).toBe(true);
+  });
+
   it("renders read-only shared Notes, Discuss, and Outline tabs", async () => {
     await renderRail(true);
 

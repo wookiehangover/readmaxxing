@@ -189,13 +189,14 @@ async function expectShareReadingShell(page: Page) {
   await expect(banner).toContainText(BOOK_TITLE, { timeout: 15_000 });
   await expect(banner).not.toContainText("Shared by");
   await expect(banner).not.toContainText(BOOK_AUTHOR);
-  await expect(page.getByTestId("share-reading-shell")).toBeVisible();
+  await expect(page.getByTestId("reading-shell")).toBeVisible();
   await expect(page.getByRole("region", { name: "Book surface" })).toBeVisible();
 
-  const discussRail = page.getByRole("complementary", { name: "Discuss" });
-  await expect(discussRail).toBeVisible();
-  await expect(discussRail.getByRole("tab", { name: "Discuss" })).toBeVisible();
-  await expect(discussRail.getByRole("tab")).toHaveCount(1);
+  const readingRail = page.getByRole("complementary", { name: "Reading rail" });
+  await expect(readingRail).toBeVisible();
+  await expect(readingRail.getByRole("tab", { name: "Discuss" })).toBeVisible();
+  await expect(readingRail.getByRole("tab", { name: "Outline" })).toBeVisible();
+  await expect(readingRail.getByRole("tab")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Add to Library" })).toBeEnabled();
 }
 
@@ -285,7 +286,7 @@ test.describe("Share", () => {
       await expect(
         secondRecipient.page.getByText("This share link has reached its use limit."),
       ).toBeVisible({ timeout: 15_000 });
-      await expect(secondRecipient.page.getByTestId("share-reading-shell")).toHaveCount(0);
+      await expect(secondRecipient.page.getByTestId("reading-shell")).toHaveCount(0);
       await expect(
         secondRecipient.page.getByRole("button", { name: "Add to Library" }),
       ).toHaveCount(0);

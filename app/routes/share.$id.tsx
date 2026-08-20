@@ -7,6 +7,7 @@ import { ReadingRailTabProvider } from "~/components/reading-shell/reading-rail-
 import { ReadingSplit } from "~/components/reading-shell/reading-split";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
+import { useIsMobile } from "~/hooks/use-mobile";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { getPositionsByUser } from "~/lib/database/book/reading-position";
 import { getShareLink, type ShareLinkRow } from "~/lib/database/share/share-link";
@@ -205,6 +206,7 @@ function SharedBookSurface({
 export default function SharePage({ loaderData }: ComponentProps) {
   const navigate = useNavigate();
   const store = useAppStore();
+  const isMobile = useIsMobile();
   const [state, setState] = useState<"idle" | "importing" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const canImport = loaderData.status === "available" && !!loaderData.book;
@@ -247,6 +249,14 @@ export default function SharePage({ loaderData }: ComponentProps) {
     );
   }
 
+  const bookSurface = (
+    <SharedBookSurface
+      shareId={loaderData.id}
+      book={loaderData.book}
+      fileUrl={loaderData.fileUrl}
+    />
+  );
+
   return (
     <main className="flex h-dvh min-h-dvh flex-col overflow-hidden bg-background text-foreground">
       <header
@@ -287,22 +297,26 @@ export default function SharePage({ loaderData }: ComponentProps) {
       </header>
       <div className="min-h-0 flex-1">
         <ReadingRailTabProvider>
-          <ReadingSplit
-            book={
-              <SharedBookSurface
-                shareId={loaderData.id}
-                book={loaderData.book}
-                fileUrl={loaderData.fileUrl}
-              />
-            }
-            rail={
-              <SharedReadingRail
-                shareId={loaderData.id}
-                bookTitle={loaderData.book.title}
-                included={loaderData.shareChats}
-              />
-            }
-          />
+          {isMobile === true ? (
+            <SharedReadingRail
+              mobile
+              bookSurface={bookSurface}
+              shareId={loaderData.id}
+              bookTitle={loaderData.book.title}
+              included={loaderData.shareChats}
+            />
+          ) : (
+            <ReadingSplit
+              book={bookSurface}
+              rail={
+                <SharedReadingRail
+                  shareId={loaderData.id}
+                  bookTitle={loaderData.book.title}
+                  included={loaderData.shareChats}
+                />
+              }
+            />
+          )}
         </ReadingRailTabProvider>
       </div>
     </main>

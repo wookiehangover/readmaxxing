@@ -3,7 +3,15 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), sharedReader: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  sharedReader: vi.fn(),
+  mobileViewport: { current: false },
+}));
+
+vi.mock("~/hooks/use-mobile", () => ({
+  useIsMobile: () => mocks.mobileViewport.current,
+}));
 
 vi.mock("~/lib/themis/provider", () => ({
   useAppStore: () => ({ dispatch: mocks.dispatch }),
@@ -71,6 +79,7 @@ function renderPage(
 beforeEach(() => {
   mocks.dispatch.mockReset();
   mocks.sharedReader.mockReset();
+  mocks.mobileViewport.current = false;
   container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
 });
@@ -144,15 +153,24 @@ describe("SharePage", () => {
     expect(container.querySelector("[data-testid='share-book-surface']")).not.toBeNull();
     const readingRail = container.querySelector("[data-testid='share-reading-rail']");
     const tabs = readingRail?.querySelectorAll("[role='tab']");
-    expect(tabs).toHaveLength(3);
-    expect(Array.from(tabs ?? [], (tab) => tab.textContent)).toEqual([
-      "Notes",
-      "Discuss",
-      "Outline",
-    ]);
+    expect(tabs).toHaveLength(2);
+    expect(Array.from(tabs ?? [], (tab) => tab.textContent)).toEqual(["Discuss", "Outline"]);
     expect(readingRail?.textContent).not.toContain("Review");
     expect(container.textContent).not.toContain("Shared on Readmaxxing");
     expect(container.querySelector("img[alt='Cover for Shared Book']")).toBeNull();
+  });
+
+  it("uses the full-screen shared rail on mobile", () => {
+    mocks.mobileViewport.current = true;
+    renderPage();
+
+    const mobileRail = container.querySelector("[data-testid='mobile-reading-tabs']");
+    expect(mobileRail).not.toBeNull();
+    expect(container.querySelector("[data-testid='reading-shell']")).toBeNull();
+    expect(
+      Array.from(mobileRail?.querySelectorAll("[role='tab']") ?? [], (tab) => tab.textContent),
+    ).toEqual(["Read", "Discuss", "Outline"]);
+    expect(container.querySelectorAll("[data-testid='shared-pdf-reader']")).toHaveLength(1);
   });
 
   it("does not mount reading chrome for unavailable shares", () => {
