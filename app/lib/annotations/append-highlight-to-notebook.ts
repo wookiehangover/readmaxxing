@@ -33,7 +33,6 @@ export function appendHighlightReferenceToNotebook(
       content: updatedContent,
       updatedAt: Date.now(),
     };
-    await AnnotationService.saveNotebook(updatedNotebook);
-    return updatedNotebook;
+    return AnnotationService.saveNotebook(updatedNotebook);
   })();
 }

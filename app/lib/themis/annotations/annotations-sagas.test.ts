@@ -7,21 +7,27 @@ import {
   type Notebook,
 } from "~/lib/stores/annotations-store";
 
-const mocks = vi.hoisted(() => ({ cacheNotebook: vi.fn(), runPromise: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  cacheNotebook: vi.fn(),
+  runPromise: vi.fn(),
+  service: null as object | null,
+}));
 
 vi.mock("~/lib/stores/annotations-store", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/stores/annotations-store")>();
   return {
     ...actual,
     AnnotationService: new Proxy(actual.AnnotationService, {
-      get: (_target, property) =>
-        property === "cacheNotebook" ? mocks.cacheNotebook : mocks.runPromise,
+      get: (_target, property) => {
+        if (mocks.service && Reflect.has(mocks.service, property)) {
+          const value = Reflect.get(mocks.service, property);
+          return typeof value === "function" ? value.bind(mocks.service) : value;
+        }
+        return property === "cacheNotebook" ? mocks.cacheNotebook : mocks.runPromise;
+      },
     }),
   };
 });
-vi.mock("~/lib/annotations/append-highlight-to-notebook", () => ({
-  appendHighlightReferenceToNotebook: mocks.runPromise,
-}));
 
 import { annotationsSaga } from "~/lib/themis/annotations/annotations-sagas";
 import {
@@ -73,6 +79,7 @@ afterEach(() => {
   for (const store of stores.splice(0)) store.dispose();
   mocks.cacheNotebook.mockReset();
   mocks.runPromise.mockReset();
+  mocks.service = null;
   vi.restoreAllMocks();
 });
 
@@ -195,6 +202,7 @@ describe("annotationsSaga", () => {
     };
     mocks.runPromise
       .mockImplementationOnce(async (persisted: Notebook) => persisted)
+      .mockResolvedValueOnce(notebook)
       .mockResolvedValueOnce(appended);
     const store = startStore();
 
@@ -220,6 +228,45 @@ describe("annotationsSaga", () => {
         store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1"),
       ).toEqual(appended),
     );
+  });
+
+  it("publishes the retained notebook when a highlight append loses LWW", async () => {
+    const suffix = crypto.randomUUID();
+    const service = makeAnnotationService({
+      highlightStore: createStore(`highlight-append-lww-${suffix}`, "highlights"),
+      notebookStore: createStore(`notebook-append-lww-${suffix}`, "notebooks"),
+    });
+    const newer = {
+      ...makeNotebook(),
+      content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "newer" } }] },
+      updatedAt: 2,
+    };
+    await service.saveNotebook(newer);
+    mocks.service = service;
+    vi.spyOn(Date, "now").mockReturnValue(1);
+    const onCompleted = vi.fn();
+    const store = startStore();
+
+    store.dispatch(
+      appendHighlightToNotebookRequested(
+        "book-1",
+        {
+          highlightId: "highlight-1",
+          cfiRange: "epubcfi(/6/4)",
+          text: "Passage",
+        },
+        onCompleted,
+      ),
+    );
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(newer));
+    const selected = store.annotationsSelectors.selectNotebookByBookId.select(
+      store.state,
+      "book-1",
+    );
+    const persisted = await service.getNotebook("book-1");
+    expect(selected).toEqual(persisted);
+    expect(selected).toEqual(newer);
   });
 
   it("cancels a stale debounced notebook save before it persists or publishes", async () => {
