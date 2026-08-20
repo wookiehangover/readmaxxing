@@ -183,19 +183,27 @@ async function openShareInNewContext(browser: Browser, shareUrl: string) {
   return { context, page };
 }
 
-async function expectShareLandingPage(page: Page) {
-  await expect(page.getByRole("heading", { name: BOOK_TITLE })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(`by ${BOOK_AUTHOR}`)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add to Library & Read" })).toBeEnabled();
+async function expectShareReadingShell(page: Page) {
+  const banner = page.getByTestId("share-banner");
+  await expect(banner).toContainText(BOOK_TITLE, { timeout: 15_000 });
+  await expect(banner).toContainText(BOOK_AUTHOR);
+  await expect(page.getByTestId("share-reading-shell")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Book surface" })).toBeVisible();
+
+  const discussRail = page.getByRole("complementary", { name: "Discuss" });
+  await expect(discussRail).toBeVisible();
+  await expect(discussRail.getByRole("tab", { name: "Discuss" })).toBeVisible();
+  await expect(discussRail.getByRole("tab")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Add to Library" })).toBeEnabled();
 }
 
 async function importSharedBook(page: Page) {
   await Promise.all([
-    page.waitForURL((url) => url.pathname === "/library", {
+    page.waitForURL((url) => /^\/books\/[^/]+$/.test(url.pathname), {
       timeout: 30_000,
       waitUntil: "commit",
     }),
-    page.getByRole("button", { name: "Add to Library & Read" }).click(),
+    page.getByRole("button", { name: "Add to Library" }).click(),
   ]);
   await waitForAppHydration(page);
 
@@ -251,7 +259,7 @@ test.describe("Share", () => {
     const recipient = await openShareInNewContext(browser, shareUrl);
 
     try {
-      await expectShareLandingPage(recipient.page);
+      await expectShareReadingShell(recipient.page);
       await importSharedBook(recipient.page);
     } finally {
       await recipient.context.close();
@@ -263,7 +271,7 @@ test.describe("Share", () => {
     const firstRecipient = await openShareInNewContext(browser, shareUrl);
 
     try {
-      await expectShareLandingPage(firstRecipient.page);
+      await expectShareReadingShell(firstRecipient.page);
       await importSharedBook(firstRecipient.page);
     } finally {
       await firstRecipient.context.close();
@@ -272,15 +280,13 @@ test.describe("Share", () => {
     const secondRecipient = await openShareInNewContext(browser, shareUrl);
 
     try {
-      await expect(secondRecipient.page.getByRole("heading", { name: BOOK_TITLE })).toBeVisible({
-        timeout: 15_000,
-      });
       await expect(
         secondRecipient.page.getByText("This share link has reached its use limit."),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(secondRecipient.page.getByTestId("share-reading-shell")).toHaveCount(0);
       await expect(
-        secondRecipient.page.getByRole("button", { name: "Add to Library & Read" }),
-      ).toBeDisabled();
+        secondRecipient.page.getByRole("button", { name: "Add to Library" }),
+      ).toHaveCount(0);
     } finally {
       await secondRecipient.context.close();
     }

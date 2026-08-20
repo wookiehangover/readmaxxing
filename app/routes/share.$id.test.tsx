@@ -131,14 +131,16 @@ describe("SharePage", () => {
   it("renders the full-viewport reading chrome instead of the landing-page layout", () => {
     renderPage();
 
-    expect(container.querySelector("[data-testid='share-banner']")?.textContent).toContain(
-      "Shared by Sam",
-    );
+    const banner = container.querySelector("[data-testid='share-banner']");
+    expect(banner?.textContent).toContain("Shared by Sam");
+    expect(banner?.textContent).toContain("Add to Library");
     expect(container.querySelector("[data-testid='share-reading-shell']")).not.toBeNull();
     expect(container.querySelector("[data-testid='share-book-surface']")).not.toBeNull();
-    expect(container.querySelector("[data-testid='share-discuss-rail']")?.textContent).toContain(
-      "Discuss",
-    );
+    const discussRail = container.querySelector("[data-testid='share-discuss-rail']");
+    const tabs = discussRail?.querySelectorAll("[role='tab']");
+    expect(tabs).toHaveLength(1);
+    expect(tabs?.[0]?.textContent).toBe("Discuss");
+    expect(discussRail?.textContent).not.toMatch(/Notes|Outline|Review/);
     expect(container.textContent).not.toContain("Shared on Readmaxxing");
     expect(container.querySelector("img[alt='Cover for Shared Book']")).toBeNull();
   });
