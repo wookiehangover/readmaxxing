@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { SharedBookReader } from "~/components/share/shared-book-reader";
-import { SharedDiscussRail } from "~/components/share/shared-discuss-rail";
+import { SharedReadingRail } from "~/components/share/shared-reading-rail";
 import { ReadingRailTabProvider } from "~/components/reading-shell/reading-rail-tab-context";
 import { ReadingSplit } from "~/components/reading-shell/reading-split";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
@@ -299,7 +299,13 @@ export default function SharePage({ loaderData }: ComponentProps) {
                 fileUrl={loaderData.fileUrl}
               />
             }
-            rail={<SharedDiscussRail shareId={loaderData.id} included={loaderData.shareChats} />}
+            rail={
+              <SharedReadingRail
+                shareId={loaderData.id}
+                bookTitle={loaderData.book.title}
+                included={loaderData.shareChats}
+              />
+            }
           />
         </ReadingRailTabProvider>
       </div>

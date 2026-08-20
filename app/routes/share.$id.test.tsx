@@ -142,11 +142,15 @@ describe("SharePage", () => {
     expect(container.querySelector("[data-testid='reading-shell']")).not.toBeNull();
     expect(container.querySelector("[data-testid='share-reading-shell']")).toBeNull();
     expect(container.querySelector("[data-testid='share-book-surface']")).not.toBeNull();
-    const discussRail = container.querySelector("[data-testid='share-discuss-rail']");
-    const tabs = discussRail?.querySelectorAll("[role='tab']");
-    expect(tabs).toHaveLength(1);
-    expect(tabs?.[0]?.textContent).toBe("Discuss");
-    expect(discussRail?.textContent).not.toMatch(/Notes|Outline|Review/);
+    const readingRail = container.querySelector("[data-testid='share-reading-rail']");
+    const tabs = readingRail?.querySelectorAll("[role='tab']");
+    expect(tabs).toHaveLength(3);
+    expect(Array.from(tabs ?? [], (tab) => tab.textContent)).toEqual([
+      "Notes",
+      "Discuss",
+      "Outline",
+    ]);
+    expect(readingRail?.textContent).not.toContain("Review");
     expect(container.textContent).not.toContain("Shared on Readmaxxing");
     expect(container.querySelector("img[alt='Cover for Shared Book']")).toBeNull();
   });
