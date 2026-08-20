@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getBookData: vi.fn(),
   findByFileHash: vi.fn(),
   saveBook: vi.fn(),
+  updateBookMeta: vi.fn(),
   deleteBook: vi.fn(),
   getHighlightsByBook: vi.fn(),
   deleteHighlight: vi.fn(),
@@ -45,6 +46,7 @@ import {
   downloadBookForOpenRequested,
   hydrateBooks,
   loadBookDataRequested,
+  updateBookMetadataRequested,
   uploadBooksRequested,
 } from "~/lib/themis/books/books-slice";
 import { createAppStore, type AppStore } from "~/lib/themis/store";
@@ -137,6 +139,40 @@ describe("booksSaga", () => {
 
     await vi.waitFor(() => expect(failed).toHaveBeenCalledWith("parse failed"));
     expect(store.booksSelectors.selectAllBooks.select(store.state)).toEqual([]);
+  });
+
+  it("persists metadata before updating the existing collection entry", async () => {
+    const original = makeBook("edit-me");
+    const updated = { ...original, title: "Edited title" };
+    const completed = vi.fn();
+    const store = startStore();
+    store.dispatch(bookAdded(original));
+    mocks.updateBookMeta.mockImplementationOnce(async () => {
+      expect(store.booksSelectors.selectBookById.select(store.state, original.id)).toEqual(
+        original,
+      );
+    });
+
+    store.dispatch(updateBookMetadataRequested(updated, "update", completed, vi.fn()));
+
+    await vi.waitFor(() => expect(completed).toHaveBeenCalledWith(updated));
+    expect(mocks.updateBookMeta).toHaveBeenCalledWith(updated);
+    expect(store.booksSelectors.selectBookById.select(store.state, updated.id)).toEqual(updated);
+  });
+
+  it("persists restored metadata before adding the missing book to the collection", async () => {
+    const restored = makeBook("restore-me");
+    const completed = vi.fn();
+    const store = startStore();
+    mocks.updateBookMeta.mockImplementationOnce(async () => {
+      expect(store.booksSelectors.selectBookById.select(store.state, restored.id)).toBeUndefined();
+    });
+
+    store.dispatch(updateBookMetadataRequested(restored, "restore", completed, vi.fn()));
+
+    await vi.waitFor(() => expect(completed).toHaveBeenCalledWith(restored));
+    expect(mocks.updateBookMeta).toHaveBeenCalledWith(restored);
+    expect(store.booksSelectors.selectBookById.select(store.state, restored.id)).toEqual(restored);
   });
 
   it("deletes persisted data before removing collection metadata", async () => {

@@ -36,6 +36,7 @@ export type BookUploadFailedCallback = (error: string) => void;
 export type BookMutationCompletedCallback = (book: BookMeta) => void | Promise<void>;
 export type BookMutationFailedCallback = (error: string) => void;
 export type BookDataLoadedCallback = (data: ArrayBuffer) => void;
+export type BookMetadataMutation = "update" | "restore";
 export type DemoAdoptionCompletedCallback = (result: {
   bookId: string;
   sessionId: string;
@@ -103,6 +104,14 @@ export const loadBookDataRequested =
   createAction<
     [bookId: string, onCompleted: BookDataLoadedCallback, onFailed: BookMutationFailedCallback]
   >("books/loadDataRequested");
+export const updateBookMetadataRequested = createAction<
+  [
+    book: BookMeta,
+    mutation: BookMetadataMutation,
+    onCompleted: BookMutationCompletedCallback,
+    onFailed: BookMutationFailedCallback,
+  ]
+>("books/updateMetadataRequested");
 
 export const booksInitialState: BooksState = {
   collection: createCollection<BookMeta, "id">("id"),

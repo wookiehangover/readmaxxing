@@ -35,6 +35,7 @@ import {
   loadBookDataRequested,
   replaceBookFileRequested,
   seedDemoBookRequested,
+  updateBookMetadataRequested,
   uploadBooksRequested,
   type BookAddedCallback,
   type BookDeletedCallback,
@@ -214,6 +215,11 @@ async function adoptDemoBook(userId: string) {
 
 async function loadBookData(bookId: string) {
   return BookService.getBookData(bookId);
+}
+
+async function persistBookMetadata(book: BookMeta) {
+  await BookService.updateBookMeta(book);
+  return book;
 }
 
 function notifyBookAdded(callback: BookAddedCallback | undefined, book: BookMeta) {
@@ -400,6 +406,17 @@ export function* loadBookDataSaga(action: ReturnType<typeof loadBookDataRequeste
   }
 }
 
+export function* updateBookMetadataSaga(action: ReturnType<typeof updateBookMetadataRequested>) {
+  const [book, mutation, onCompleted, onFailed] = action.payload;
+  try {
+    const persistedBook = yield* call(persistBookMetadata, book);
+    yield* put(mutation === "restore" ? bookAdded(persistedBook) : bookUpdated(persistedBook));
+    yield* call(notifyBookMutationCompleted, onCompleted, persistedBook);
+  } catch (error) {
+    yield* call(notifyBookMutationFailed, onFailed, errorMessage(error));
+  }
+}
+
 export function* booksSaga() {
   yield* takeLatest(hydrateBooks, hydrateBooksSaga);
   yield* takeEvery(uploadBooksRequested, uploadBooksSaga);
@@ -410,4 +427,5 @@ export function* booksSaga() {
   yield* takeEvery(deleteBookRequested, deleteBookSaga);
   yield* takeEvery(downloadBookForOpenRequested, downloadBookForOpenSaga);
   yield* takeEvery(loadBookDataRequested, loadBookDataSaga);
+  yield* takeEvery(updateBookMetadataRequested, updateBookMetadataSaga);
 }

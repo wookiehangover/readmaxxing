@@ -35,7 +35,10 @@ vi.mock("~/lib/themis/provider", () => ({
 }));
 
 import BookDetailsRoute from "./book-details";
-import { replaceBookFileRequested } from "~/lib/themis/books/books-slice";
+import {
+  replaceBookFileRequested,
+  updateBookMetadataRequested,
+} from "~/lib/themis/books/books-slice";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -56,6 +59,63 @@ afterEach(() => {
 });
 
 describe("BookDetailsRoute", () => {
+  it("dispatches metadata saves to the books saga", () => {
+    const props = {
+      loaderData: {
+        book: {
+          id: "book-1",
+          title: "Book",
+          author: "Author",
+          coverImage: null,
+          format: "epub" as const,
+        },
+      },
+    } as unknown as Parameters<typeof BookDetailsRoute>[0];
+    act(() => {
+      root.render(<BookDetailsRoute {...props} />);
+    });
+
+    const saveButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    )!;
+    act(() => saveButton.click());
+
+    const action = mocks.dispatch.mock.calls
+      .map(([dispatched]) => dispatched as ReturnType<typeof updateBookMetadataRequested>)
+      .find((dispatched) => dispatched.type === updateBookMetadataRequested.type)!;
+    expect(action.payload[0]).toMatchObject({ id: "book-1", title: "Book", author: "Author" });
+    expect(action.payload[1]).toBe("update");
+  });
+
+  it("dispatches restores to the books saga as collection additions", () => {
+    const props = {
+      loaderData: {
+        book: {
+          id: "book-1",
+          title: "Book",
+          author: "Author",
+          coverImage: null,
+          format: "epub" as const,
+          deletedAt: 123,
+        },
+      },
+    } as unknown as Parameters<typeof BookDetailsRoute>[0];
+    act(() => {
+      root.render(<BookDetailsRoute {...props} />);
+    });
+
+    const restoreButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Restore",
+    )!;
+    act(() => restoreButton.click());
+
+    const action = mocks.dispatch.mock.calls
+      .map(([dispatched]) => dispatched as ReturnType<typeof updateBookMetadataRequested>)
+      .find((dispatched) => dispatched.type === updateBookMetadataRequested.type)!;
+    expect(action.payload[0]).toMatchObject({ id: "book-1", deletedAt: undefined });
+    expect(action.payload[1]).toBe("restore");
+  });
+
   it("dispatches replacement files to the books saga", () => {
     const props = {
       loaderData: {

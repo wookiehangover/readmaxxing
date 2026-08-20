@@ -8,7 +8,10 @@ import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
-import { replaceBookFileRequested } from "~/lib/themis/books/books-slice";
+import {
+  replaceBookFileRequested,
+  updateBookMetadataRequested,
+} from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 import { hydrateAnnotationsRequested } from "~/lib/themis/annotations/annotations-slice";
@@ -131,38 +134,50 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     };
   }, []);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(() => {
     setSaving(true);
     setSaved(false);
-    try {
-      const updatedBook: BookMeta = { ...book, title, author, deletedAt };
-      await BookService.updateBookMeta(updatedBook);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      console.error("Failed to save book:", err);
-    } finally {
-      setSaving(false);
-    }
-  }, [book, title, author, deletedAt]);
+    const updatedBook: BookMeta = { ...book, title, author, deletedAt };
+    store.dispatch(
+      updateBookMetadataRequested(
+        updatedBook,
+        "update",
+        () => {
+          setSaved(true);
+          setSaving(false);
+          setTimeout(() => setSaved(false), 2000);
+        },
+        (error) => {
+          console.error("Failed to save book:", error);
+          setSaving(false);
+        },
+      ),
+    );
+  }, [book, title, author, deletedAt, store]);
 
-  const handleRestore = useCallback(async () => {
+  const handleRestore = useCallback(() => {
     setRestoring(true);
-    try {
-      const updatedBook: BookMeta = {
-        ...book,
-        title,
-        author,
-        deletedAt: undefined,
-      };
-      await BookService.updateBookMeta(updatedBook);
-      setDeletedAt(undefined);
-    } catch (err) {
-      console.error("Failed to restore book:", err);
-    } finally {
-      setRestoring(false);
-    }
-  }, [book, title, author]);
+    const updatedBook: BookMeta = {
+      ...book,
+      title,
+      author,
+      deletedAt: undefined,
+    };
+    store.dispatch(
+      updateBookMetadataRequested(
+        updatedBook,
+        "restore",
+        () => {
+          setDeletedAt(undefined);
+          setRestoring(false);
+        },
+        (error) => {
+          console.error("Failed to restore book:", error);
+          setRestoring(false);
+        },
+      ),
+    );
+  }, [book, title, author, store]);
 
   const handlePush = useCallback(async () => {
     if (pushFeedbackTimerRef.current) clearTimeout(pushFeedbackTimerRef.current);
