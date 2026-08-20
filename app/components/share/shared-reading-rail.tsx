@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { AlertCircle, ListTree, MessageCircle } from "lucide-react";
 import { Streamdown } from "streamdown";
@@ -63,12 +63,10 @@ async function readApiError(response: Response): Promise<string> {
 }
 
 function useSharedEndpoint<T>(url: string, enabled: boolean): LoadState<T> {
-  const attemptedUrl = useRef<string | null>(null);
   const [state, setState] = useState<LoadState<T>>({ status: "idle", data: null, error: null });
 
   useEffect(() => {
-    if (!enabled || attemptedUrl.current === url) return;
-    attemptedUrl.current = url;
+    if (!enabled) return;
     const controller = new AbortController();
     setState({ status: "loading", data: null, error: null });
     void fetch(url, { signal: controller.signal })
@@ -76,7 +74,11 @@ function useSharedEndpoint<T>(url: string, enabled: boolean): LoadState<T> {
         if (!response.ok) throw new Error(await readApiError(response));
         return (await response.json()) as T;
       })
-      .then((data) => setState({ status: "ready", data, error: null }))
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setState({ status: "ready", data, error: null });
+        }
+      })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted) {
           setState({
@@ -279,9 +281,7 @@ export function SharedReadingRail({
   const waitingForNotebook =
     included && (notebookState.status === "idle" || notebookState.status === "loading");
   const showNotes =
-    included &&
-    (notebookState.status === "error" ||
-      (notebookState.status === "ready" && Boolean(notebookState.data.markdown.trim())));
+    included && notebookState.status === "ready" && Boolean(notebookState.data.markdown.trim());
   const availableTabs = showNotes ? tabs : tabs.filter((tab) => tab !== "Notes");
   const resolvedActiveTab = !showNotes && activeTab === "Notes" ? "Discuss" : activeTab;
 
@@ -290,17 +290,6 @@ export function SharedReadingRail({
       setActiveTab("Discuss");
     }
   }, [activeTab, setActiveTab, showNotes, waitingForNotebook]);
-
-  if (waitingForNotebook) {
-    return (
-      <div className="flex h-full min-h-0 flex-col py-5 pl-6" data-testid="share-reading-rail">
-        <div className="min-h-12 py-3 pr-6 text-xs">
-          <p className="truncate text-foreground">{bookTitle}</p>
-        </div>
-        <LoadingState label="Loading shared notes" />
-      </div>
-    );
-  }
 
   return (
     <Tabs.Root

@@ -70,13 +70,14 @@ function responseFor(input: RequestInfo | URL): Response {
   });
 }
 
-async function renderRail(included: boolean) {
+async function renderRail(included: boolean, strict = false) {
+  const rail = (
+    <ReadingRailTabProvider>
+      <SharedReadingRail shareId="share/1" bookTitle="Shared Book" included={included} />
+    </ReadingRailTabProvider>
+  );
   await act(async () => {
-    root.render(
-      <ReadingRailTabProvider>
-        <SharedReadingRail shareId="share/1" bookTitle="Shared Book" included={included} />
-      </ReadingRailTabProvider>,
-    );
+    root.render(strict ? <React.StrictMode>{rail}</React.StrictMode> : rail);
   });
 }
 
@@ -176,6 +177,43 @@ describe("SharedReadingRail", () => {
     expect(container.textContent).toContain("Chapter questions");
     expect(container.textContent).not.toContain("No shared notes");
     expect(container.textContent).not.toContain("Earlier discussion");
+  });
+
+  it("retries an aborted notebook request without hiding Discuss and Outline", async () => {
+    let notebookAttempts = 0;
+    let firstNotebookAborted = false;
+    fetchMock.mockImplementation((input, init) => {
+      if (String(input).endsWith("/notebook")) {
+        notebookAttempts += 1;
+        if (notebookAttempts === 1) {
+          return new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                firstNotebookAborted = true;
+                reject(new Error("Aborted"));
+              },
+              { once: true },
+            );
+          });
+        }
+        return Promise.resolve(Response.json({ markdown: "" }));
+      }
+      if (String(input).endsWith("/chats")) {
+        return Promise.resolve(Response.json({ sessions: [] }));
+      }
+      return Promise.resolve(responseFor(input));
+    });
+
+    await renderRail(true, true);
+
+    expect(firstNotebookAborted).toBe(true);
+    expect(notebookAttempts).toBe(2);
+    expect(
+      Array.from(container.querySelectorAll("[role='tab']"), (tab) => tab.textContent),
+    ).toEqual(["Discuss", "Outline"]);
+    expect(container.textContent).toContain("No shared chats");
+    expect(container.textContent).not.toContain("Loading shared notes");
   });
 
   it("keeps the existing empty Discuss state when there are no sessions", async () => {
