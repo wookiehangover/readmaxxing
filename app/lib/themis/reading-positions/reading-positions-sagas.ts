@@ -1,5 +1,6 @@
 import { call, cancel, delay, fork, put, take, takeEvery } from "typed-redux-saga";
 
+import { toTaggedError } from "~/lib/errors";
 import { savePositionDualKey } from "~/lib/position-utils";
 import { LocationCacheService } from "~/lib/stores/location-cache-store";
 import { ReadingHistoryService } from "~/lib/stores/reading-history-store";
@@ -81,10 +82,6 @@ async function checkRemotePosition(bookId: string) {
   return { remote, local };
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function notifyCompleted(callback: ReadingPositionsHydratedCallback | undefined) {
   callback?.();
 }
@@ -95,16 +92,28 @@ function notifyFailed(callback: ReadingPositionsFailedCallback | undefined, erro
 
 export function* hydrateReadingPositionsSaga(
   action: ReturnType<typeof hydrateReadingPositionsRequested>,
+  latestVersionByKey: ReadonlyMap<string, number>,
+  requestVersion: number,
 ) {
   const [keys, onCompleted, onFailed] = action.payload;
   try {
     const positions = yield* call(loadReadingPositions, keys);
-    yield* put(readingPositionsHydrated(keys, positions));
+    const freshKeys = keys.filter((key) => latestVersionByKey.get(key) === requestVersion);
+    if (freshKeys.length > 0) {
+      const freshKeySet = new Set(freshKeys);
+      yield* put(
+        readingPositionsHydrated(
+          freshKeys,
+          positions.filter((position) => freshKeySet.has(position.key)),
+        ),
+      );
+    }
     yield* call(notifyCompleted, onCompleted);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(readingPositionsFailed(keys, message));
-    yield* call(notifyFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    const freshKeys = keys.filter((key) => latestVersionByKey.get(key) === requestVersion);
+    if (freshKeys.length > 0) yield* put(readingPositionsFailed(freshKeys, taggedError));
+    yield* call(notifyFailed, onFailed, taggedError.message);
   }
 }
 
@@ -114,7 +123,7 @@ function* persistReadingPositionSaga(request: ReadingPositionSaveRequest, record
     yield* put(readingPositionsSaved(positions));
   } catch (error) {
     const keys = request.panelId ? [request.bookId, request.panelId] : [request.bookId];
-    yield* put(readingPositionsFailed(keys, errorMessage(error)));
+    yield* put(readingPositionsFailed(keys, toTaggedError(error)));
   }
 }
 
@@ -157,7 +166,7 @@ export function* hydrateLocationCacheSaga(
     const json = yield* call(loadLocationCache, bookId);
     yield* put(locationCacheHydrated(bookId, json));
   } catch (error) {
-    yield* put(readingPositionsFailed([bookId], errorMessage(error)));
+    yield* put(readingPositionsFailed([bookId], toTaggedError(error)));
     yield* put(locationCacheHydrated(bookId, null));
   }
   yield* call(notifyCompleted, onCompleted);
@@ -169,7 +178,7 @@ export function* saveLocationCacheSaga(action: ReturnType<typeof saveLocationCac
     const cache = yield* call(persistLocationCache, bookId, json);
     yield* put(locationCacheSaved(cache));
   } catch (error) {
-    yield* put(readingPositionsFailed([bookId], errorMessage(error)));
+    yield* put(readingPositionsFailed([bookId], toTaggedError(error)));
   }
 }
 
@@ -181,7 +190,7 @@ export function* recordReadingHistorySaga(
     const history = yield* call(persistReadingHistory, bookId, data);
     yield* put(readingHistoryHydrated(bookId, history));
   } catch (error) {
-    yield* put(readingPositionsFailed([bookId], errorMessage(error)));
+    yield* put(readingPositionsFailed([bookId], toTaggedError(error)));
   }
 }
 
@@ -192,12 +201,24 @@ export function* checkPositionNudgeSaga(action: ReturnType<typeof checkPositionN
     if (local) yield* put(readingPositionsSaved([toReadingPosition(bookId, local)]));
     yield* put(remoteReadingPositionChecked(bookId, remote ? { bookId, ...remote } : null));
   } catch (error) {
-    yield* put(readingPositionsFailed([bookId], errorMessage(error)));
+    yield* put(readingPositionsFailed([bookId], toTaggedError(error)));
+  }
+}
+
+export function* watchReadingPositionHydrates() {
+  const latestVersionByKey = new Map<string, number>();
+  let nextVersion = 0;
+  while (true) {
+    const action = yield* take(hydrateReadingPositionsRequested);
+    const [keys] = action.payload;
+    const requestVersion = ++nextVersion;
+    for (const key of keys) latestVersionByKey.set(key, requestVersion);
+    yield* fork(hydrateReadingPositionsSaga, action, latestVersionByKey, requestVersion);
   }
 }
 
 export function* readingPositionsSaga() {
-  yield* takeEvery(hydrateReadingPositionsRequested, hydrateReadingPositionsSaga);
+  yield* fork(watchReadingPositionHydrates);
   yield* fork(watchReadingPositionChanges);
   yield* takeEvery(flushReadingPositionRequested, flushReadingPositionSaga);
   yield* takeEvery(hydrateLocationCacheRequested, hydrateLocationCacheSaga);

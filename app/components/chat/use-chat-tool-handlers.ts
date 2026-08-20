@@ -1,34 +1,16 @@
 import { useCallback } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import type { JSONContent } from "@tiptap/react";
-import { AnnotationService } from "~/lib/stores/annotations-store";
 import { BookService } from "~/lib/stores/book-store";
-import { useWorkspace, type NotebookEditorCallbacks } from "~/lib/context/workspace-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import { normalizeCfiRange } from "~/lib/chat/highlight-tools";
+import { useAppStore } from "~/lib/themis/provider";
+import {
+  addHighlightRequested,
+  cacheNotebookRequested,
+} from "~/lib/themis/annotations/annotations-slice";
 import { getToolInfo } from "./chat-utils";
-
-function cacheNotebookSnapshot(
-  bookId: string,
-  content: JSONContent,
-  updatedAt: number,
-  editorCallbacks?: NotebookEditorCallbacks,
-): void {
-  editorCallbacks?.seedLastContent(content);
-  AnnotationService.cacheNotebook({
-    bookId,
-    content,
-    updatedAt,
-  })
-    .then(() => {
-      queueMicrotask(() => {
-        window.dispatchEvent(
-          new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-        );
-      });
-    })
-    .catch(console.error);
-}
 
 interface UseChatToolHandlersOptions {
   bookId: string;
@@ -48,12 +30,32 @@ export function useChatToolHandlers({
   bookDataRef,
   streamedToolCallIdRef,
 }: UseChatToolHandlersOptions) {
+  const store = useAppStore();
   const {
     navigateInCluster,
     applyTempHighlightForBook,
     notebookCallbackMap,
     notebookEditorCallbackMap,
   } = useWorkspace();
+
+  const cacheNotebookSnapshot = useCallback(
+    (targetBookId: string, content: JSONContent, updatedAt: number): void => {
+      store.dispatch(
+        cacheNotebookRequested(
+          { bookId: targetBookId, content, updatedAt },
+          () => {
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
+              );
+            });
+          },
+          console.error,
+        ),
+      );
+    },
+    [store],
+  );
 
   // onToolCall fires as soon as each tool call has its input parsed. All
   // notebook tools (append_to_notes, edit_notes) now run on the server; their
@@ -127,11 +129,11 @@ export function useChatToolHandlers({
           // to the content captured before the preview began.
           if (authoritativeSnapshot) {
             editorCbs?.setContent(authoritativeSnapshot.content);
+            editorCbs?.seedLastContent(authoritativeSnapshot.content);
             cacheNotebookSnapshot(
               targetBookId,
               authoritativeSnapshot.content,
               authoritativeSnapshot.updatedAt,
-              editorCbs,
             );
           } else if (previewSnapshot) {
             editorCbs?.setContent(previewSnapshot);
@@ -151,11 +153,11 @@ export function useChatToolHandlers({
         // Write-through to IndexedDB is independent of editor state — even if
         // the editor isn't open we still want IDB to reflect the new notes.
         if (authoritativeSnapshot) {
+          editorCbs?.seedLastContent(authoritativeSnapshot.content);
           cacheNotebookSnapshot(
             targetBookId,
             authoritativeSnapshot.content,
             authoritativeSnapshot.updatedAt,
-            editorCbs,
           );
         }
       }
@@ -208,19 +210,7 @@ export function useChatToolHandlers({
         // Use cacheNotebook (not saveNotebook) because the server has already
         // persisted this notebook state. saveNotebook would recordChange and
         // echo the same value back to the server on the next sync push.
-        AnnotationService.cacheNotebook({
-          bookId: targetBookId,
-          content: updatedContent,
-          updatedAt: nextUpdatedAt,
-        })
-          .then(() => {
-            queueMicrotask(() => {
-              window.dispatchEvent(
-                new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-              );
-            });
-          })
-          .catch(console.error);
+        cacheNotebookSnapshot(targetBookId, updatedContent, nextUpdatedAt);
       }
 
       // Handle create_highlight tool calls
@@ -298,7 +288,15 @@ export function useChatToolHandlers({
                     color: "rgba(255, 213, 79, 0.4)",
                     createdAt: Date.now(),
                   };
-                  await AnnotationService.saveHighlight(highlight);
+                  await new Promise<void>((resolve, reject) => {
+                    store.dispatch(
+                      addHighlightRequested(
+                        highlight,
+                        () => resolve(),
+                        (error) => reject(new Error(error)),
+                      ),
+                    );
+                  });
                   // Don't navigate when AI creates highlights - preserves reading position
                   // User can navigate to highlights via the notebook panel
 
@@ -355,7 +353,15 @@ export function useChatToolHandlers({
                 ...(serverHighlight?.note ? { note: serverHighlight.note } : {}),
               };
 
-              await AnnotationService.saveHighlight(highlight);
+              await new Promise<void>((resolve, reject) => {
+                store.dispatch(
+                  addHighlightRequested(
+                    highlight,
+                    () => resolve(),
+                    (error) => reject(new Error(error)),
+                  ),
+                );
+              });
 
               // Don't navigate when AI creates highlights - preserves reading position
               // User can navigate to highlights via the notebook panel
@@ -382,11 +388,13 @@ export function useChatToolHandlers({
       bookId,
       bookFormat,
       bookDataRef,
+      cacheNotebookSnapshot,
       navigateInCluster,
       applyTempHighlightForBook,
       notebookCallbackMap,
       notebookEditorCallbackMap,
       streamedToolCallIdRef,
+      store,
     ],
   );
 

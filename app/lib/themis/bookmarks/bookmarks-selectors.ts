@@ -11,6 +11,12 @@ export function createBookmarksSelectors(store: AppStoreCore) {
         (bookmark): bookmark is Bookmark => bookmark.bookId === bookId,
       ),
     ),
+    selectBookmarksLoading: store.createSelector((state, bookId: string) =>
+      state.bookmarks.loadingBookIds.includes(bookId),
+    ),
+    selectBookmarksLoaded: store.createSelector((state, bookId: string) =>
+      state.bookmarks.loadedBookIds.includes(bookId),
+    ),
     selectBookmarksError: store.createSelector(
       (state, bookId: string) => state.bookmarks.errorsByBookId[bookId] ?? null,
     ),

@@ -19,6 +19,7 @@ type HighlightsState = ReturnType<typeof useHighlights>;
 interface UseBookReaderActionsOptions {
   book: BookMeta;
   bookmarks: BookmarkRecord[];
+  bookmarksLoaded: boolean;
   currentChapterLabel: string | null;
   currentPage: number | null;
   latestCfiRef: React.MutableRefObject<string | null>;
@@ -33,6 +34,7 @@ interface UseBookReaderActionsOptions {
 export function useBookReaderActions({
   book,
   bookmarks,
+  bookmarksLoaded,
   currentChapterLabel,
   currentPage,
   latestCfiRef,
@@ -203,6 +205,7 @@ export function useBookReaderActions({
 
   const currentBookmark = bookmarks.find((bookmark) => bookmark.cfi === getCurrentCfi());
   const handleBookmarkPage = useCallback(() => {
+    if (!bookmarksLoaded) return;
     const cfi = getCurrentCfi();
     if (!cfi) return;
     const existingBookmark = bookmarks.find((bookmark) => bookmark.cfi === cfi);
@@ -220,7 +223,7 @@ export function useBookReaderActions({
             updatedAt: now,
           }),
     );
-  }, [book.id, bookmarks, currentChapterLabel, currentPage, getCurrentCfi, store]);
+  }, [book.id, bookmarks, bookmarksLoaded, currentChapterLabel, currentPage, getCurrentCfi, store]);
 
   const handleOpenNotebook = useCallback(() => {
     openMobileReadingTab("Notes");

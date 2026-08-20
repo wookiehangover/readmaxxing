@@ -35,6 +35,7 @@ interface PdfReaderViewProps {
   onDownload: () => void;
   onBookmarkPage: () => void | Promise<void>;
   isBookmarked: boolean;
+  bookmarksLoaded?: boolean;
   searchOpen: boolean;
   searchQuery: string;
   searchResultCount: number;
@@ -70,6 +71,7 @@ export function PdfReaderView({
   onDownload,
   onBookmarkPage,
   isBookmarked,
+  bookmarksLoaded = true,
   searchOpen,
   searchQuery,
   searchResultCount,
@@ -107,6 +109,7 @@ export function PdfReaderView({
             onDownload={onDownload}
             onBookmarkPage={onBookmarkPage}
             isBookmarked={isBookmarked}
+            bookmarksLoaded={bookmarksLoaded}
             toc={toc}
             onNavigateToToc={(href) => {
               try {
@@ -278,6 +281,7 @@ export function PdfReaderView({
                 onDownload={onDownload}
                 onBookmarkPage={onBookmarkPage}
                 isBookmarked={isBookmarked}
+                bookmarksLoaded={bookmarksLoaded}
               />
             </>
           )}

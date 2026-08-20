@@ -60,10 +60,11 @@ describe("booksReducer", () => {
 
   it("records hydrate failures", () => {
     const loading = booksReducer(undefined, hydrateBooks());
-    const failed = booksReducer(loading, booksHydrateFailed("IDB unavailable"));
+    const error = { _tag: "StorageError", message: "StorageError", operation: "getBooks" };
+    const failed = booksReducer(loading, booksHydrateFailed(error));
 
     expect(failed.loading).toBe(false);
-    expect(failed.error).toBe("IDB unavailable");
+    expect(failed.error).toBe(error);
   });
 
   it("records the demo book seeded during this store lifetime", () => {
@@ -81,7 +82,8 @@ describe("booksReducer", () => {
         () => {},
       ),
     );
-    const failed = booksReducer(requested, bookDownloadFailed("one", "network unavailable"));
+    const error = { _tag: "Error", message: "network unavailable" };
+    const failed = booksReducer(requested, bookDownloadFailed("one", error));
     const retried = booksReducer(
       failed,
       downloadBookForOpenRequested(
@@ -93,7 +95,7 @@ describe("booksReducer", () => {
     const completed = booksReducer(retried, bookDownloadCompleted("one"));
 
     expect(requested.downloadingBookIds).toEqual(["one"]);
-    expect(failed.downloadErrors).toEqual({ one: "network unavailable" });
+    expect(failed.downloadErrors).toEqual({ one: error });
     expect(retried.downloadErrors).toEqual({});
     expect(completed.downloadingBookIds).toEqual([]);
   });

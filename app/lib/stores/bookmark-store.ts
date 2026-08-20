@@ -89,6 +89,7 @@ export function makeBookmarkService(stores: BookmarkServiceStores) {
           data: stamped,
           timestamp: stamped.updatedAt,
         }).catch(console.error);
+        return stamped;
       } catch (cause) {
         throw new BookmarkError({ operation: "saveBookmark", bookmarkId: bookmark.id, cause });
       }

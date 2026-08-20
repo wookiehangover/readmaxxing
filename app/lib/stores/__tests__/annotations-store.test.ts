@@ -315,12 +315,13 @@ describe("AnnotationService", () => {
           content: [{ type: "paragraph", content: [{ type: "text", text: "server truth" }] }],
         },
       });
-      await run(AnnotationService.pipe(Effect.andThen((s) => s.cacheNotebook(nb))));
+      const cached = await run(AnnotationService.pipe(Effect.andThen((s) => s.cacheNotebook(nb))));
 
       // IDB should have the notebook row so warm-start matches server state.
       const stored = await run(
         AnnotationService.pipe(Effect.andThen((s) => s.getNotebook("book-1"))),
       );
+      expect(cached).toEqual(nb);
       expect(stored).not.toBeNull();
       expect((stored!.content as any).content[0].content[0].text).toBe("server truth");
 
@@ -329,6 +330,40 @@ describe("AnnotationService", () => {
       const unsynced = await getUnsyncedChanges();
       const echoed = unsynced.filter((c) => c.entity === "notebook" && c.entityId === "book-1");
       expect(echoed).toHaveLength(0);
+    });
+
+    it("cacheNotebook retains a newer IndexedDB notebook without recording a sync change", async () => {
+      const layer = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, AnnotationService>) =>
+        Effect.runPromise(Effect.provide(e, layer));
+      const pre = await getUnsyncedChanges();
+      if (pre.length > 0) {
+        await markSynced(pre.map((change) => change.id));
+        await clearSyncedChanges();
+      }
+      const newer = makeNotebook({
+        content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "newer" } }] },
+        updatedAt: 2,
+      });
+      const older = makeNotebook({
+        content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "older" } }] },
+        updatedAt: 1,
+      });
+      await run(AnnotationService.pipe(Effect.andThen((service) => service.cacheNotebook(newer))));
+
+      const cached = await run(
+        AnnotationService.pipe(Effect.andThen((service) => service.cacheNotebook(older))),
+      );
+      const stored = await run(
+        AnnotationService.pipe(Effect.andThen((service) => service.getNotebook("book-1"))),
+      );
+
+      expect(cached).toEqual(newer);
+      expect(stored).toEqual(newer);
+      const unsynced = await getUnsyncedChanges();
+      expect(
+        unsynced.filter((change) => change.entity === "notebook" && change.entityId === "book-1"),
+      ).toHaveLength(0);
     });
 
     it("edit_notes reads real content from IndexedDB when editor is not ready", async () => {

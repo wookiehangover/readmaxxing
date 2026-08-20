@@ -1,8 +1,10 @@
 import { call, put, takeEvery, takeLatest } from "typed-redux-saga";
 
 import { authService } from "~/lib/auth-service";
+import { toTaggedError } from "~/lib/errors";
 import {
   addPasskeyRequested,
+  authOperationFailed,
   authSessionCleared,
   authSessionFailed,
   authSessionResolved,
@@ -20,8 +22,8 @@ export function* refreshAuthSessionSaga() {
   try {
     const session = yield* call(authService.getSession);
     yield* put(authSessionResolved(session.user));
-  } catch {
-    yield* put(authSessionFailed());
+  } catch (cause) {
+    yield* put(authSessionFailed(toTaggedError(cause)));
   }
 }
 
@@ -32,6 +34,7 @@ export function* logoutSaga(action: ReturnType<typeof logoutRequested>) {
     yield* put(authSessionCleared());
     yield* call(onCompleted);
   } catch (cause) {
+    yield* put(authOperationFailed(toTaggedError(cause)));
     yield* call(onFailed, cause);
   }
 }
@@ -42,6 +45,7 @@ export function* registerSaga(action: ReturnType<typeof registerRequested>) {
     const result = yield* call(authService.register, displayName);
     yield* call(onCompleted, result);
   } catch (cause) {
+    yield* put(authOperationFailed(toTaggedError(cause)));
     yield* call(onFailed, cause);
   }
 }
@@ -52,6 +56,7 @@ export function* signInSaga(action: ReturnType<typeof signInRequested>) {
     const result = yield* call(authService.signIn);
     yield* call(onCompleted, result);
   } catch (cause) {
+    yield* put(authOperationFailed(toTaggedError(cause)));
     yield* call(onFailed, cause);
   }
 }
@@ -62,6 +67,7 @@ export function* generateMagicLinkSaga(action: ReturnType<typeof generateMagicLi
     const result = yield* call(authService.generateMagicLink);
     yield* call(onCompleted, result);
   } catch (cause) {
+    yield* put(authOperationFailed(toTaggedError(cause)));
     yield* call(onFailed, cause);
   }
 }
@@ -72,6 +78,7 @@ export function* listPasskeysSaga(action: ReturnType<typeof listPasskeysRequeste
     const result = yield* call(authService.listPasskeys);
     yield* call(onCompleted, result);
   } catch (cause) {
+    yield* put(authOperationFailed(toTaggedError(cause)));
     yield* call(onFailed, cause);
   }
 }
@@ -82,6 +89,7 @@ export function* addPasskeySaga(action: ReturnType<typeof addPasskeyRequested>) 
     const result = yield* call(authService.addPasskey);
     yield* call(onCompleted, result);
   } catch (cause) {
+    yield* put(authOperationFailed(toTaggedError(cause)));
     yield* call(onFailed, cause);
   }
 }
@@ -92,6 +100,7 @@ export function* renamePasskeySaga(action: ReturnType<typeof renamePasskeyReques
     yield* call(authService.renamePasskey, id, name);
     yield* call(onCompleted);
   } catch (cause) {
+    yield* put(authOperationFailed(toTaggedError(cause)));
     yield* call(onFailed, cause);
   }
 }
@@ -102,6 +111,7 @@ export function* removePasskeySaga(action: ReturnType<typeof removePasskeyReques
     yield* call(authService.removePasskey, id);
     yield* call(onCompleted);
   } catch (cause) {
+    yield* put(authOperationFailed(toTaggedError(cause)));
     yield* call(onFailed, cause);
   }
 }

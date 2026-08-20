@@ -152,6 +152,7 @@ interface EpubReaderToolbarProps {
   onOpenSpeedread: () => void;
   onBookmarkPage: () => void | Promise<void>;
   isBookmarked: boolean;
+  bookmarksLoaded?: boolean;
 }
 
 export function EpubReaderToolbar({
@@ -182,6 +183,7 @@ export function EpubReaderToolbar({
   onOpenSpeedread,
   onBookmarkPage,
   isBookmarked,
+  bookmarksLoaded = true,
 }: EpubReaderToolbarProps) {
   if (!panelApi) {
     return (
@@ -195,6 +197,7 @@ export function EpubReaderToolbar({
           onOpenSpeedread={onOpenSpeedread}
           onBookmarkPage={onBookmarkPage}
           isBookmarked={isBookmarked}
+          bookmarksLoaded={bookmarksLoaded}
           toc={toc}
           onNavigateToToc={navigateToTocHref}
         />
@@ -311,6 +314,7 @@ export function EpubReaderToolbar({
             onOpenSpeedread={onOpenSpeedread}
             onBookmarkPage={onBookmarkPage}
             isBookmarked={isBookmarked}
+            bookmarksLoaded={bookmarksLoaded}
           />
         </div>
       </div>

@@ -390,7 +390,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   if (loadError || (chatSessionsError && !activeSession)) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">{loadError ?? chatSessionsError}</p>
+        <p className="text-muted-foreground">{loadError ?? chatSessionsError?.message}</p>
       </div>
     );
   }

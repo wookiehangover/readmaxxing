@@ -2,6 +2,7 @@ import { createCollection } from "@augmentcode/themis/utils/collections/collecti
 import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
+import type { TaggedError } from "~/lib/errors";
 import type { FocusedWorkspaceCluster, FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 import type { WorkspaceRestoreState } from "~/lib/themis/workspace-restore/workspace-restore-types";
 
@@ -9,7 +10,7 @@ export const hydrateWorkspaceRestore = createAction("workspaceRestore/hydrate");
 export const workspaceRestoreHydrated = createAction<
   [lastOpenedByBookId: Record<string, number>, focusedWorkspace: FocusedWorkspaceState | null]
 >("workspaceRestore/hydrated");
-export const workspaceRestoreHydrateFailed = createAction<[error: string]>(
+export const workspaceRestoreHydrateFailed = createAction<[error: TaggedError]>(
   "workspaceRestore/hydrateFailed",
 );
 export const recordBookOpened = createAction<[bookId: string]>("workspaceRestore/recordBookOpened");
@@ -22,7 +23,7 @@ export const saveFocusedWorkspace = createAction<[focusedWorkspace: FocusedWorks
 export const focusedWorkspaceSaved = createAction<[focusedWorkspace: FocusedWorkspaceState | null]>(
   "workspaceRestore/focusedWorkspaceSaved",
 );
-export const workspaceRestoreUpdateFailed = createAction<[error: string]>(
+export const workspaceRestoreUpdateFailed = createAction<[error: TaggedError]>(
   "workspaceRestore/updateFailed",
 );
 

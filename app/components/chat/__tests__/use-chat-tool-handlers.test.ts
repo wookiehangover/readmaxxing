@@ -30,12 +30,16 @@ const serviceMocks = vi.hoisted(() => ({
   saveHighlight: vi.fn().mockResolvedValue(undefined),
   getBookData: vi.fn(),
 }));
+const storeMocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
 
 vi.mock("~/lib/stores/annotations-store", () => ({
   AnnotationService: serviceMocks,
 }));
 vi.mock("~/lib/stores/book-store", () => ({
   BookService: { getBookData: serviceMocks.getBookData },
+}));
+vi.mock("~/lib/themis/provider", () => ({
+  useAppStore: () => ({ dispatch: storeMocks.dispatch }),
 }));
 
 const fuzzySearchEpubForCfi = vi.fn();
@@ -93,6 +97,21 @@ function makeEditorCallbacks(
 function waitForMicrotasks() {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
+
+beforeEach(() => {
+  storeMocks.dispatch.mockReset();
+  storeMocks.dispatch.mockImplementation((action) => {
+    const [record, onCompleted, onFailed] = action.payload;
+    const persist =
+      action.type === "annotations/cacheNotebookRequested"
+        ? serviceMocks.cacheNotebook(record)
+        : action.type === "annotations/addHighlightRequested"
+          ? serviceMocks.saveHighlight(record)
+          : Promise.resolve();
+    void persist.then(() => onCompleted?.(record), onFailed);
+    return action;
+  });
+});
 
 describe("useChatToolHandlers – append_to_notes (server-authoritative)", () => {
   let streamedToolCallIdRef: { current: Map<string, JSONContent> };

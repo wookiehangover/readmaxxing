@@ -10,6 +10,7 @@ import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type { UIMessage } from "@ai-sdk/react";
 
+import type { TaggedError } from "~/lib/errors";
 import type { ChatMessage, ChatSession } from "~/lib/stores/chat-store";
 import type {
   ChatSessionCompletedCallback,
@@ -73,7 +74,7 @@ export const chatMessagesCached = createAction<[sessionId: string, messages: Cha
   "chatSessions/messagesCached",
 );
 export const chatSessionsFailed =
-  createAction<[bookId: string, error: string]>("chatSessions/failed");
+  createAction<[bookId: string, error: TaggedError]>("chatSessions/failed");
 
 export const chatSessionsInitialState: ChatSessionsState = {
   collection: createCollection<ChatSession, "id">("id"),
@@ -156,9 +157,6 @@ reducer.with(chatMessagesCached, (state, { payload: [sessionId, messages] }) => 
 reducer.with(chatSessionsFailed, (state, { payload: [bookId, error] }) => ({
   ...state,
   loadingBookIds: state.loadingBookIds.filter((id) => id !== bookId),
-  loadedBookIds: state.loadedBookIds.includes(bookId)
-    ? state.loadedBookIds
-    : [...state.loadedBookIds, bookId],
   errorsByBookId: { ...state.errorsByBookId, [bookId]: error },
 }));
 

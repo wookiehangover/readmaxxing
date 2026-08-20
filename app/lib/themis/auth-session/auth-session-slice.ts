@@ -2,6 +2,7 @@ import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
 import type { AuthUser } from "~/lib/auth-service";
+import type { TaggedError } from "~/lib/errors";
 import type {
   AuthLogoutCompletedCallback,
   AuthOperationFailedCallback,
@@ -15,7 +16,10 @@ import type {
 
 export const refreshAuthSessionRequested = createAction("authSession/refreshRequested");
 export const authSessionResolved = createAction<[user: AuthUser | null]>("authSession/resolved");
-export const authSessionFailed = createAction("authSession/failed");
+export const authSessionFailed = createAction<[error: TaggedError]>("authSession/failed");
+export const authOperationFailed = createAction<[error: TaggedError]>(
+  "authSession/operationFailed",
+);
 export const logoutRequested = createAction<
   [onCompleted: AuthLogoutCompletedCallback, onFailed: AuthOperationFailedCallback]
 >("authSession/logoutRequested");
@@ -54,18 +58,28 @@ export const removePasskeyRequested = createAction<
 export const authSessionInitialState: AuthSessionState = {
   user: null,
   loading: true,
+  error: null,
 };
 
 const reducer = createReducer<AuthSessionState>(authSessionInitialState);
 
 reducer.with(authSessionResolved, (state, { payload: [user] }) =>
-  state.user === user && !state.loading ? state : { user, loading: false },
+  state.user === user && !state.loading && state.error === null
+    ? state
+    : { user, loading: false, error: null },
 );
-reducer.with(authSessionFailed, (state) =>
-  state.user === null && !state.loading ? state : { user: null, loading: false },
+reducer.with(authSessionFailed, (state, { payload: [error] }) =>
+  state.user === null && !state.loading && state.error === error
+    ? state
+    : { user: null, loading: false, error },
+);
+reducer.with(authOperationFailed, (state, { payload: [error] }) =>
+  state.error === error ? state : { ...state, error },
 );
 reducer.with(authSessionCleared, (state) =>
-  state.user === null && !state.loading ? state : { user: null, loading: false },
+  state.user === null && !state.loading && state.error === null
+    ? state
+    : { user: null, loading: false, error: null },
 );
 
 export const authSessionReducer = reducer;

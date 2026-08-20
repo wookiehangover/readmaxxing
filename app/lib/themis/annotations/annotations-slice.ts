@@ -10,6 +10,7 @@ import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 import type { JSONContent } from "@tiptap/react";
 
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
+import type { TaggedError } from "~/lib/errors";
 import type { Highlight, Notebook } from "~/lib/stores/annotations-store";
 import type {
   AnnotationFailedCallback,
@@ -27,7 +28,7 @@ export const annotationsHydrated =
   createAction<[bookId: string, highlights: Highlight[], notebook: Notebook | null]>(
     "annotations/hydrated",
   );
-export const annotationsHydrateFailed = createAction<[bookId: string, error: string]>(
+export const annotationsHydrateFailed = createAction<[bookId: string, error: TaggedError]>(
   "annotations/hydrateFailed",
 );
 export const addHighlightRequested = createAction<
@@ -68,6 +69,9 @@ export const updateNotebookRequested = createAction<
     onFailed?: AnnotationFailedCallback,
   ]
 >("annotations/updateNotebookRequested");
+export const cacheNotebookRequested = createAction<
+  [notebook: Notebook, onCompleted?: NotebookCompletedCallback, onFailed?: AnnotationFailedCallback]
+>("annotations/cacheNotebookRequested");
 export const appendHighlightToNotebookRequested = createAction<
   [
     bookId: string,
@@ -77,7 +81,7 @@ export const appendHighlightToNotebookRequested = createAction<
   ]
 >("annotations/appendHighlightToNotebookRequested");
 export const notebookSaved = createAction<[notebook: Notebook]>("annotations/notebookSaved");
-export const annotationMutationFailed = createAction<[bookId: string, error: string]>(
+export const annotationMutationFailed = createAction<[bookId: string, error: TaggedError]>(
   "annotations/mutationFailed",
 );
 
@@ -123,9 +127,6 @@ reducer.with(annotationsHydrated, (state, { payload: [bookId, highlights, notebo
 reducer.with(annotationsHydrateFailed, (state, { payload: [bookId, error] }) => ({
   ...state,
   loadingBookIds: state.loadingBookIds.filter((id) => id !== bookId),
-  loadedBookIds: state.loadedBookIds.includes(bookId)
-    ? state.loadedBookIds
-    : [...state.loadedBookIds, bookId],
   errorsByBookId: { ...state.errorsByBookId, [bookId]: error },
 }));
 reducer.with(highlightAdded, (state, { payload: [highlight] }) => ({

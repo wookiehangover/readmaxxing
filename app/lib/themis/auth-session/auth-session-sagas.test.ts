@@ -67,6 +67,10 @@ describe("authSessionSaga", () => {
       expect(store.authSessionSelectors.selectAuthLoading.select(store.state)).toBe(false),
     );
     expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(false);
+    expect(store.authSessionSelectors.selectAuthError.select(store.state)).toEqual({
+      _tag: "Error",
+      message: "offline",
+    });
   });
 
   it("clears the session and completes logout after the request succeeds", async () => {
@@ -96,6 +100,10 @@ describe("authSessionSaga", () => {
     await vi.waitFor(() => expect(onFailed).toHaveBeenCalledWith(error));
     expect(onCompleted).not.toHaveBeenCalled();
     expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(true);
+    expect(store.authSessionSelectors.selectAuthError.select(store.state)).toEqual({
+      _tag: "Error",
+      message: "offline",
+    });
   });
 
   it("runs registration and passkey commands through the async auth module", async () => {

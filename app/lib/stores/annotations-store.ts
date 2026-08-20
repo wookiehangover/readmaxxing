@@ -1,4 +1,4 @@
-import { get, set, entries } from "idb-keyval";
+import { entries, get, set, update } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import type { JSONContent } from "@tiptap/react";
 import { HighlightError, NotebookError, DecodeError } from "~/lib/errors";
@@ -70,7 +70,13 @@ export interface Notebook {
 const decodeNotebook = (raw: unknown): Notebook => {
   if (!raw || typeof raw !== "object") throw new Error("Invalid notebook");
   const value = raw as Record<string, unknown>;
-  if (typeof value.bookId !== "string" || typeof value.updatedAt !== "number") {
+  if (
+    typeof value.bookId !== "string" ||
+    !value.content ||
+    typeof value.content !== "object" ||
+    Array.isArray(value.content) ||
+    typeof value.updatedAt !== "number"
+  ) {
     throw new Error("Invalid notebook");
   }
   return value as unknown as Notebook;
@@ -208,7 +214,22 @@ export function makeAnnotationService(stores: AnnotationServiceStores) {
 
     async saveNotebook(notebook: Notebook) {
       try {
-        await set(notebook.bookId, notebook, notebookStore);
+        let persisted = notebook;
+        await update<unknown>(
+          notebook.bookId,
+          (raw) => {
+            if (raw !== undefined) {
+              const existing = decodeNotebook(raw);
+              if (existing.updatedAt > notebook.updatedAt) {
+                persisted = existing;
+                return existing;
+              }
+            }
+            return notebook;
+          },
+          notebookStore,
+        );
+        if (persisted !== notebook) return persisted;
         recordChange({
           entity: "notebook",
           entityId: notebook.bookId,
@@ -216,6 +237,7 @@ export function makeAnnotationService(stores: AnnotationServiceStores) {
           data: notebook,
           timestamp: notebook.updatedAt,
         }).catch(console.error);
+        return notebook;
       } catch (cause) {
         throw new NotebookError({ operation: "saveNotebook", bookId: notebook.bookId, cause });
       }
@@ -223,7 +245,22 @@ export function makeAnnotationService(stores: AnnotationServiceStores) {
 
     async cacheNotebook(notebook: Notebook) {
       try {
-        await set(notebook.bookId, notebook, notebookStore);
+        let persisted = notebook;
+        await update<unknown>(
+          notebook.bookId,
+          (raw) => {
+            if (raw !== undefined) {
+              const existing = decodeNotebook(raw);
+              if (existing.updatedAt > notebook.updatedAt) {
+                persisted = existing;
+                return existing;
+              }
+            }
+            return notebook;
+          },
+          notebookStore,
+        );
+        return persisted;
       } catch (cause) {
         throw new NotebookError({ operation: "cacheNotebook", bookId: notebook.bookId, cause });
       }
