@@ -116,6 +116,11 @@ function bounded(value: number): number {
   return Math.min(1, Math.max(0, Number.isFinite(value) ? value : 0));
 }
 
+function hasLayoutSize(element: HTMLElement): boolean {
+  const rect = element.getBoundingClientRect();
+  return (rect.width || element.clientWidth) > 0 && (rect.height || element.clientHeight) > 0;
+}
+
 function withoutFragment(href: string): string {
   const index = href.indexOf("#");
   return index < 0 ? href : href.slice(0, index);
@@ -169,7 +174,10 @@ export class Navigator extends EventTarget {
 
     const ResizeObserverConstructor = options.container.ownerDocument.defaultView?.ResizeObserver;
     if (ResizeObserverConstructor) {
-      this.#resizeObserver = new ResizeObserverConstructor(() => this.#scheduleResizeSettle());
+      this.#resizeObserver = new ResizeObserverConstructor((entries) => {
+        const size = entries.find((entry) => entry.target === this.#container)?.contentRect;
+        this.#scheduleResizeSettle(size);
+      });
       this.#resizeObserver.observe(options.container);
     }
   }
@@ -648,7 +656,8 @@ export class Navigator extends EventTarget {
     }
   }
 
-  #scheduleResizeSettle(): void {
+  #scheduleResizeSettle(size?: Pick<DOMRectReadOnly, "width" | "height">): void {
+    if ((size && (size.width <= 0 || size.height <= 0)) || !hasLayoutSize(this.#container)) return;
     this.#cancelPageMove(true);
     if (this.#resizeQueued || this.#destroyed || !this.#active || this.#state !== "settled") return;
     this.#resizeQueued = true;
@@ -656,7 +665,8 @@ export class Navigator extends EventTarget {
       this.#resizeQueued = false;
       const mount = this.#active;
       const signal = this.#operation?.signal;
-      if (!mount || !signal || signal.aborted || this.#destroyed) return;
+      if (!mount || !signal || signal.aborted || this.#destroyed || !hasLayoutSize(this.#container))
+        return;
       const anchor =
         mount.visibleAnchor ??
         (mount.frame.contentDocument

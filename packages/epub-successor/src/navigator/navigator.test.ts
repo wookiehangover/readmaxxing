@@ -665,6 +665,66 @@ describe("paginated Navigator", () => {
     await expect(turn).resolves.toBe(true);
   });
 
+  it("ignores a zero-size resize and settles a later real size from the last page", async () => {
+    let resizeCallback!: ResizeObserverCallback;
+    const observer = {
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+      disconnect: vi.fn(),
+    } as unknown as ResizeObserver;
+    function MockResizeObserver(callback: ResizeObserverCallback): ResizeObserver {
+      resizeCallback = callback;
+      return observer;
+    }
+    vi.spyOn(document.defaultView!, "ResizeObserver").mockImplementation(MockResizeObserver);
+    const { container, navigator } = setupPaginated();
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    const frame = container.querySelector("iframe")!;
+    const scrolling =
+      frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
+    navigator.restoreProgression(0.5);
+    const previousScroll = scrolling.scrollLeft;
+    const previousWidth = frame.style.width;
+    const previousRelocation = navigator.currentRelocation;
+
+    Object.defineProperties(container, {
+      clientWidth: { configurable: true, value: 0 },
+      clientHeight: { configurable: true, value: 0 },
+    });
+    Object.defineProperties(frame, {
+      clientWidth: { configurable: true, value: 0 },
+      clientHeight: { configurable: true, value: 0 },
+    });
+    resizeCallback(
+      [{ target: container, contentRect: { width: 0, height: 0 } } as ResizeObserverEntry],
+      observer,
+    );
+    await Promise.resolve();
+
+    expect(frame.style.width).toBe(previousWidth);
+    expect(scrolling.scrollLeft).toBe(previousScroll);
+    expect(navigator.currentRelocation).toBe(previousRelocation);
+
+    Object.defineProperties(container, {
+      clientWidth: { configurable: true, value: 600 },
+      clientHeight: { configurable: true, value: 600 },
+    });
+    Object.defineProperties(frame, {
+      clientWidth: { configurable: true, value: 600 },
+      clientHeight: { configurable: true, value: 600 },
+    });
+    resizeCallback(
+      [{ target: container, contentRect: { width: 600, height: 600 } } as ResizeObserverEntry],
+      observer,
+    );
+
+    await vi.waitFor(() => expect(frame.style.width).toBe("600px"));
+    await vi.waitFor(() => expect(navigator.state).toBe("settled"));
+    expect(scrolling.scrollLeft).toBeGreaterThan(0);
+    expect(navigator.currentRelocation?.localProgression).toBeGreaterThan(0);
+    navigator.destroy();
+  });
+
   it("cancels an active turn without snapping when destroyed", async () => {
     const { container, navigator } = setupPaginated({ pageTurnAnimation: "slide" });
     await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
