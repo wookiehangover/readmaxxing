@@ -42,13 +42,14 @@ export async function upsertNotebook(
   return result.rows[0];
 }
 
-export async function getNotebooksByUser(userId: string): Promise<NotebookRow[]> {
+export async function getNotebooksByUser(userId: string, limit?: number): Promise<NotebookRow[]> {
   const pool = getPool();
   const result = await pool.query<NotebookRow>(sql`
     SELECT ${NOTEBOOK_COLUMNS}
     FROM readmax.notebook
     WHERE user_id = ${userId}
     ORDER BY updated_at DESC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }
@@ -56,14 +57,20 @@ export async function getNotebooksByUser(userId: string): Promise<NotebookRow[]>
 export async function getNotebooksByUserSince(
   userId: string,
   cursor: Date,
+  limit?: number,
+  cursorId?: string | null,
 ): Promise<NotebookRow[]> {
   const pool = getPool();
   const result = await pool.query<NotebookRow>(sql`
     SELECT ${NOTEBOOK_COLUMNS}
     FROM readmax.notebook
     WHERE user_id = ${userId}
-      AND updated_at > ${cursor.toISOString()}
-    ORDER BY updated_at ASC
+      AND (
+        updated_at > ${cursor.toISOString()}
+        OR (${cursorId ?? null} IS NOT NULL AND updated_at = ${cursor.toISOString()} AND book_id > ${cursorId ?? null})
+      )
+    ORDER BY updated_at ASC, book_id ASC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }

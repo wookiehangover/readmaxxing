@@ -6,7 +6,7 @@ import { getBooksByUserSince } from "~/lib/database/book/book";
 import { getPositionsByUserSince } from "~/lib/database/book/reading-position";
 import { getSessionsByUserSince, getMessagesByUserSince } from "~/lib/database/chat/chat-session";
 import { getSettingsSince } from "~/lib/database/settings/user-settings";
-import { parseCursorsParam } from "~/lib/sync/sync-cursors";
+import { encodePullCursor, parseCursorsParam } from "~/lib/sync/sync-cursors";
 import type { EntityType, SyncPullResponse } from "~/lib/sync/types";
 
 const SUPPORTED_ENTITY_TYPES: EntityType[] = [
@@ -20,6 +20,40 @@ const SUPPORTED_ENTITY_TYPES: EntityType[] = [
   "settings",
 ];
 
+const DEFAULT_PULL_LIMIT = 250;
+const MAX_PULL_LIMIT = 1000;
+
+function parseLimit(value: string | null): number {
+  if (!value) return DEFAULT_PULL_LIMIT;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return DEFAULT_PULL_LIMIT;
+  return Math.min(parsed, MAX_PULL_LIMIT);
+}
+
+function appendBatch<T extends { updatedAt?: Date; createdAt?: Date }>(
+  changes: SyncPullResponse["changes"],
+  entity: EntityType,
+  rows: T[],
+  limit: number,
+  cursorField: "updatedAt" | "createdAt",
+  idOf: (record: T) => string,
+) {
+  if (rows.length === 0) return;
+
+  const hasMore = rows.length > limit;
+  const records = hasMore ? rows.slice(0, limit) : rows;
+  const lastRecord = records[records.length - 1];
+  const cursor = lastRecord?.[cursorField];
+  if (!cursor || !lastRecord) return;
+
+  changes.push({
+    entity,
+    records,
+    cursor: encodePullCursor(cursor, idOf(lastRecord)),
+    hasMore,
+  });
+}
+
 export async function loader({ request }: { request: Request }) {
   if (!process.env.DATABASE_URL) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
@@ -30,12 +64,18 @@ export async function loader({ request }: { request: Request }) {
   const url = new URL(request.url);
   const cursorsParam = url.searchParams.get("cursors");
   const entityTypeParam = url.searchParams.get("entityType");
+  const limit = parseLimit(url.searchParams.get("limit"));
+  const queryLimit = limit + 1;
 
   // Per-entity cursors: each entity has its own `since` so one entity's lag
   // does not force the others to re-scan. Entities missing from the payload
   // default to epoch (pull from the beginning), preserving fresh-device
   // behavior.
-  const { cursorsByEntity, error: cursorsError } = parseCursorsParam(cursorsParam);
+  const {
+    cursorsByEntity,
+    cursorIdsByEntity,
+    error: cursorsError,
+  } = parseCursorsParam(cursorsParam);
   if (cursorsError) {
     return Response.json({ error: cursorsError }, { status: 400 });
   }
@@ -52,100 +92,95 @@ export async function loader({ request }: { request: Request }) {
     const since = cursorsByEntity[entityType];
     switch (entityType) {
       case "book": {
-        const books = await getBooksByUserSince(userId, since);
-        if (books.length > 0) {
-          const latestUpdatedAt = books[books.length - 1].updatedAt;
-          changes.push({
-            entity: "book",
-            records: books,
-            cursor: latestUpdatedAt.toISOString(),
-            hasMore: false,
-          });
-        }
+        const books = await getBooksByUserSince(userId, since, queryLimit, cursorIdsByEntity.book);
+        appendBatch(changes, "book", books, limit, "updatedAt", (book) => book.id);
         break;
       }
 
       case "position": {
-        const positions = await getPositionsByUserSince(userId, since);
-        if (positions.length > 0) {
-          const latestUpdatedAt = positions[positions.length - 1].updatedAt;
-          changes.push({
-            entity: "position",
-            records: positions,
-            cursor: latestUpdatedAt.toISOString(),
-            hasMore: false,
-          });
-        }
+        const positions = await getPositionsByUserSince(
+          userId,
+          since,
+          queryLimit,
+          cursorIdsByEntity.position,
+        );
+        appendBatch(
+          changes,
+          "position",
+          positions,
+          limit,
+          "updatedAt",
+          (position) => position.bookId,
+        );
         break;
       }
 
       case "highlight": {
-        const highlights = await getHighlightsByUserSince(userId, since);
-        if (highlights.length > 0) {
-          const latestUpdatedAt = highlights[highlights.length - 1].updatedAt;
-          changes.push({
-            entity: "highlight",
-            records: highlights,
-            cursor: latestUpdatedAt.toISOString(),
-            hasMore: false,
-          });
-        }
+        const highlights = await getHighlightsByUserSince(
+          userId,
+          since,
+          queryLimit,
+          cursorIdsByEntity.highlight,
+        );
+        appendBatch(
+          changes,
+          "highlight",
+          highlights,
+          limit,
+          "updatedAt",
+          (highlight) => highlight.id,
+        );
         break;
       }
 
       case "bookmark": {
-        const bookmarks = await getBookmarksByUser(userId, since);
-        if (bookmarks.length > 0) {
-          const latestUpdatedAt = bookmarks[bookmarks.length - 1].updatedAt;
-          changes.push({
-            entity: "bookmark",
-            records: bookmarks,
-            cursor: latestUpdatedAt.toISOString(),
-            hasMore: false,
-          });
-        }
+        const bookmarks = await getBookmarksByUser(
+          userId,
+          since,
+          queryLimit,
+          cursorIdsByEntity.bookmark,
+        );
+        appendBatch(changes, "bookmark", bookmarks, limit, "updatedAt", (bookmark) => bookmark.id);
         break;
       }
 
       case "notebook": {
-        const notebooks = await getNotebooksByUserSince(userId, since);
-        if (notebooks.length > 0) {
-          const latestUpdatedAt = notebooks[notebooks.length - 1].updatedAt;
-          changes.push({
-            entity: "notebook",
-            records: notebooks,
-            cursor: latestUpdatedAt.toISOString(),
-            hasMore: false,
-          });
-        }
+        const notebooks = await getNotebooksByUserSince(
+          userId,
+          since,
+          queryLimit,
+          cursorIdsByEntity.notebook,
+        );
+        appendBatch(
+          changes,
+          "notebook",
+          notebooks,
+          limit,
+          "updatedAt",
+          (notebook) => notebook.bookId,
+        );
         break;
       }
 
       case "chat_session": {
-        const sessions = await getSessionsByUserSince(userId, since);
-        if (sessions.length > 0) {
-          const latestUpdatedAt = sessions[sessions.length - 1].updatedAt;
-          changes.push({
-            entity: "chat_session",
-            records: sessions,
-            cursor: latestUpdatedAt.toISOString(),
-            hasMore: false,
-          });
-        }
+        const sessions = await getSessionsByUserSince(
+          userId,
+          since,
+          queryLimit,
+          cursorIdsByEntity.chat_session,
+        );
+        appendBatch(changes, "chat_session", sessions, limit, "updatedAt", (session) => session.id);
         break;
       }
 
       case "chat_message": {
-        const messages = await getMessagesByUserSince(userId, since);
-        if (messages.length > 0) {
-          const latestCreatedAt = messages[messages.length - 1].createdAt;
-          changes.push({
-            entity: "chat_message",
-            records: messages,
-            cursor: latestCreatedAt.toISOString(),
-            hasMore: false,
-          });
-        }
+        const messages = await getMessagesByUserSince(
+          userId,
+          since,
+          queryLimit,
+          cursorIdsByEntity.chat_message,
+        );
+        appendBatch(changes, "chat_message", messages, limit, "createdAt", (message) => message.id);
         break;
       }
 
