@@ -67,26 +67,22 @@ describe("chatSessionsSaga", () => {
     ).toEqual(session);
   });
 
-  it("keeps the latest overlapping hydrate result for a book", async () => {
+  it("publishes the latest queued hydrate result for a book", async () => {
     const older = makeSession("older");
     const newer = makeSession("newer");
     const olderSessions = deferred<ChatSession[]>();
     mocks.runPromise
       .mockReturnValueOnce(olderSessions.promise)
+      .mockResolvedValueOnce(older.id)
       .mockResolvedValueOnce([newer])
-      .mockResolvedValueOnce(newer.id)
-      .mockResolvedValueOnce(older.id);
+      .mockResolvedValueOnce(newer.id);
     const store = startStore();
 
     store.dispatch(hydrateChatSessionsRequested("book-1"));
     await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledOnce());
     store.dispatch(hydrateChatSessionsRequested("book-1"));
 
-    await vi.waitFor(() =>
-      expect(
-        store.chatSessionsSelectors.selectActiveSessionByBook.select(store.state, "book-1"),
-      ).toEqual(newer),
-    );
+    expect(mocks.runPromise).toHaveBeenCalledOnce();
     olderSessions.resolve([older]);
     await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledTimes(4));
     expect(

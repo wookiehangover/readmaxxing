@@ -1,4 +1,4 @@
-import { call, cancel, fork, put, take, takeEvery } from "typed-redux-saga";
+import { call, fork, put, take, takeEvery } from "typed-redux-saga";
 
 import { toTaggedError } from "~/lib/errors";
 import { ChatService, type ChatMessage, type ChatSession } from "~/lib/stores/chat-store";
@@ -181,21 +181,40 @@ export function* cacheChatMessagesSaga(action: ReturnType<typeof cacheChatMessag
   }
 }
 
-type ChatSessionsHydrateTask =
-  ReturnType<
-    typeof fork<Parameters<typeof hydrateChatSessionsSaga>, typeof hydrateChatSessionsSaga>
-  > extends Generator<unknown, infer Task, unknown>
-    ? Task
-    : never;
+type ChatSessionsHydrateAction = ReturnType<typeof hydrateChatSessionsRequested>;
+
+type ChatSessionsHydrateQueue = {
+  actions: ChatSessionsHydrateAction[];
+};
+
+function* processChatSessionHydrateQueue(
+  bookId: string,
+  queue: ChatSessionsHydrateQueue,
+  pendingByBookId: Map<string, ChatSessionsHydrateQueue>,
+) {
+  try {
+    while (queue.actions.length > 0) {
+      const action = queue.actions.shift();
+      if (action) yield* call(hydrateChatSessionsSaga, action);
+    }
+  } finally {
+    pendingByBookId.delete(bookId);
+  }
+}
 
 export function* watchChatSessionHydrates() {
-  const pendingByBookId = new Map<string, ChatSessionsHydrateTask>();
+  const pendingByBookId = new Map<string, ChatSessionsHydrateQueue>();
   while (true) {
     const action = yield* take(hydrateChatSessionsRequested);
     const [bookId] = action.payload;
     const pending = pendingByBookId.get(bookId);
-    if (pending) yield* cancel(pending);
-    pendingByBookId.set(bookId, yield* fork(hydrateChatSessionsSaga, action));
+    if (pending) {
+      pending.actions.push(action);
+      continue;
+    }
+    const queue = { actions: [action] };
+    pendingByBookId.set(bookId, queue);
+    yield* fork(processChatSessionHydrateQueue, bookId, queue, pendingByBookId);
   }
 }
 
