@@ -696,7 +696,9 @@ describe("paginated Navigator", () => {
       clientHeight: { configurable: true, value: 0 },
     });
     resizeCallback(
-      [{ target: container, contentRect: { width: 0, height: 0 } } as ResizeObserverEntry],
+      [
+        { target: container, contentRect: { width: 0, height: 0 } } as unknown as ResizeObserverEntry,
+      ],
       observer,
     );
     await Promise.resolve();
@@ -714,7 +716,12 @@ describe("paginated Navigator", () => {
       clientHeight: { configurable: true, value: 600 },
     });
     resizeCallback(
-      [{ target: container, contentRect: { width: 600, height: 600 } } as ResizeObserverEntry],
+      [
+        {
+          target: container,
+          contentRect: { width: 600, height: 600 },
+        } as unknown as ResizeObserverEntry,
+      ],
       observer,
     );
 
