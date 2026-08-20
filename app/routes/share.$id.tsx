@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { AlertCircle, BookOpen, Check, Loader2, MessageCircle } from "lucide-react";
+import { AlertCircle, BookOpen, Check, Loader2 } from "lucide-react";
+import { SharedDiscussRail } from "~/components/share/shared-discuss-rail";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
 import {
@@ -194,33 +195,6 @@ function SharedBookSurface({ book }: { book: ShareBookData }) {
   );
 }
 
-function SharedDiscussRail({ included }: { included: boolean }) {
-  return (
-    <aside
-      className="flex min-h-[40dvh] min-w-0 flex-col border-t bg-background md:min-h-0 md:border-t-0 md:border-l"
-      aria-label="Discuss"
-      data-testid="share-discuss-rail"
-    >
-      <header className="flex h-12 shrink-0 items-center border-b px-5">
-        <h2 className="text-sm font-medium">Discuss</h2>
-      </header>
-      <Empty className="rounded-none border-0">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <MessageCircle />
-          </EmptyMedia>
-          <EmptyTitle>{included ? "Shared discussion" : "Discussion not included"}</EmptyTitle>
-          <EmptyDescription>
-            {included
-              ? "The read-only shared conversation renders here."
-              : "Chat sessions were not included with this share link."}
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
-    </aside>
-  );
-}
-
 export default function SharePage({ loaderData }: ComponentProps) {
   const navigate = useNavigate();
   const store = useAppStore();
@@ -308,7 +282,7 @@ export default function SharePage({ loaderData }: ComponentProps) {
         data-testid="share-reading-shell"
       >
         <SharedBookSurface book={loaderData.book} />
-        <SharedDiscussRail included={loaderData.shareChats} />
+        <SharedDiscussRail shareId={loaderData.id} included={loaderData.shareChats} />
       </div>
     </main>
   );
