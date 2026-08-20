@@ -6,6 +6,7 @@ import type { FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 const mocks = vi.hoisted(() => ({
   runPromise: vi.fn(),
   restoreLoading: true,
+  booksLoading: true,
   focusedWorkspace: null as FocusedWorkspaceState | null,
 }));
 
@@ -15,6 +16,9 @@ vi.mock("~/lib/stores/book-store", async (importOriginal) => {
 });
 vi.mock("~/lib/themis/provider", () => ({
   useAppStore: () => ({
+    booksSelectors: {
+      selectBooksLoading: { useValue: () => mocks.booksLoading },
+    },
     workspaceRestoreSelectors: {
       selectWorkspaceRestoreLoading: { useValue: () => mocks.restoreLoading },
     },
@@ -35,6 +39,7 @@ const books = [
 
 beforeEach(() => {
   mocks.restoreLoading = true;
+  mocks.booksLoading = true;
   mocks.focusedWorkspace = null;
   mocks.runPromise.mockReset();
 });
@@ -77,7 +82,7 @@ describe("app-frame workspace restore", () => {
     });
   });
 
-  it("mounts the one-time focused initializer only after hydration", () => {
+  it("mounts the one-time focused initializer only after workspace and books hydration", () => {
     const container = document.body.appendChild(document.createElement("div"));
     const root = createRoot(container);
     let initializerCalls = 0;
@@ -105,6 +110,11 @@ describe("app-frame workspace restore", () => {
       clusters: [],
     };
     mocks.restoreLoading = false;
+    act(() => root.render(renderGate()));
+    expect(container.textContent).toContain("Loading workspace");
+    expect(initializerCalls).toBe(0);
+
+    mocks.booksLoading = false;
     act(() => root.render(renderGate()));
     expect(container.firstElementChild?.getAttribute("data-active-book-id")).toBe("book-1");
     expect(initializerCalls).toBe(1);

@@ -90,8 +90,10 @@ export function HydrateFallback() {
 
 export function WorkspaceRestoreGate({ children }: PropsWithChildren) {
   const store = useAppStore();
-  const loading = store.workspaceRestoreSelectors.selectWorkspaceRestoreLoading.useValue();
-  return loading ? <WorkspaceLoadingOverlay /> : children;
+  const workspaceRestoreLoading =
+    store.workspaceRestoreSelectors.selectWorkspaceRestoreLoading.useValue();
+  const booksLoading = store.booksSelectors.selectBooksLoading.useValue();
+  return workspaceRestoreLoading || booksLoading ? <WorkspaceLoadingOverlay /> : children;
 }
 
 export default function AppFrame() {
