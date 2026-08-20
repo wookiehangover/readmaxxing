@@ -146,12 +146,12 @@ interface EpubReaderToolbarProps {
   navigateToTocHref: (href: string) => void;
   localSettings: Settings;
   onUpdateSettings: (update: Partial<Settings>) => void;
-  book: BookMeta;
-  onDownload: () => void;
-  onCopyPageAsMarkdown: () => void;
-  onOpenSpeedread: () => void;
-  onBookmarkPage: () => void | Promise<void>;
-  isBookmarked: boolean;
+  book?: BookMeta;
+  onDownload?: () => void;
+  onCopyPageAsMarkdown?: () => void;
+  onOpenSpeedread?: () => void;
+  onBookmarkPage?: () => void | Promise<void>;
+  isBookmarked?: boolean;
 }
 
 export function EpubReaderToolbar({

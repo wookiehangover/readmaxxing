@@ -19,6 +19,7 @@ import {
   MessageScrollerViewport,
 } from "~/components/ui/message-scroller";
 import { Skeleton } from "~/components/ui/skeleton";
+import { READING_RAIL_MENU_ID } from "~/components/reading-shell/reading-rail-menu-portal";
 
 interface SharedChatMessage {
   role: string;
@@ -127,11 +128,11 @@ export function SharedDiscussRail({ shareId, included }: { shareId: string; incl
 
   return (
     <aside
-      className="flex min-h-[40dvh] min-w-0 flex-col border-t bg-background md:min-h-0 md:border-t-0 md:border-l"
+      className="flex h-full min-h-[40dvh] min-w-0 flex-col border-t bg-background md:min-h-0 md:border-t-0 md:border-l"
       aria-label="Discuss"
       data-testid="share-discuss-rail"
     >
-      <header className="flex h-12 shrink-0 items-center border-b px-5" role="tablist">
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b px-5" role="tablist">
         <div
           id="share-discuss-tab"
           className="text-sm font-medium"
@@ -141,6 +142,7 @@ export function SharedDiscussRail({ shareId, included }: { shareId: string; incl
         >
           Discuss
         </div>
+        <div id={READING_RAIL_MENU_ID} className="ml-auto flex min-h-7 shrink-0 items-center" />
       </header>
       <div
         id="share-discuss-panel"

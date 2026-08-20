@@ -3,6 +3,8 @@ import { useNavigate } from "react-router";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { SharedBookReader } from "~/components/share/shared-book-reader";
 import { SharedDiscussRail } from "~/components/share/shared-discuss-rail";
+import { ReadingRailTabProvider } from "~/components/reading-shell/reading-rail-tab-context";
+import { ReadingSplit } from "~/components/reading-shell/reading-split";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
 import { getBookByIdForUser } from "~/lib/database/book/book";
@@ -178,7 +180,7 @@ function SharedBookSurface({
 }) {
   return (
     <section
-      className="min-h-[55dvh] min-w-0 bg-muted/30 md:min-h-0"
+      className="h-full min-w-0 bg-muted/30"
       aria-label="Book surface"
       data-testid="share-book-surface"
     >
@@ -190,7 +192,7 @@ function SharedBookSurface({
           currentCfi={book.currentCfi}
         />
       ) : (
-        <div className="flex h-full min-h-[55dvh] items-center justify-center p-6 md:min-h-0">
+        <div className="flex h-full items-center justify-center p-6">
           <Alert variant="destructive" className="max-w-lg">
             <AlertCircle />
             <AlertTitle>Shared book file unavailable</AlertTitle>
@@ -287,16 +289,19 @@ export default function SharePage({ loaderData }: ComponentProps) {
           </Button>
         </div>
       </header>
-      <div
-        className="grid min-h-0 flex-1 grid-rows-[auto_auto] overflow-y-auto md:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] md:grid-rows-1 md:overflow-hidden"
-        data-testid="share-reading-shell"
-      >
-        <SharedBookSurface
-          shareId={loaderData.id}
-          book={loaderData.book}
-          fileUrl={loaderData.fileUrl}
-        />
-        <SharedDiscussRail shareId={loaderData.id} included={loaderData.shareChats} />
+      <div className="min-h-0 flex-1">
+        <ReadingRailTabProvider>
+          <ReadingSplit
+            book={
+              <SharedBookSurface
+                shareId={loaderData.id}
+                book={loaderData.book}
+                fileUrl={loaderData.fileUrl}
+              />
+            }
+            rail={<SharedDiscussRail shareId={loaderData.id} included={loaderData.shareChats} />}
+          />
+        </ReadingRailTabProvider>
       </div>
     </main>
   );

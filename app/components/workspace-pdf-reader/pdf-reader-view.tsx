@@ -31,10 +31,10 @@ interface PdfReaderViewProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
   localSettings: Settings;
   onUpdateSettings: (update: Partial<Settings>) => void;
-  book: BookMeta;
-  onDownload: () => void;
-  onBookmarkPage: () => void | Promise<void>;
-  isBookmarked: boolean;
+  book?: BookMeta;
+  onDownload?: () => void;
+  onBookmarkPage?: () => void | Promise<void>;
+  isBookmarked?: boolean;
   searchOpen: boolean;
   searchQuery: string;
   searchResultCount: number;
@@ -53,8 +53,8 @@ interface PdfReaderViewProps {
   totalPages: number;
   currentPage: number;
   bookProgress: number;
-  onOpenNotebook: () => void;
-  onOpenChat: () => void;
+  onOpenNotebook?: () => void;
+  onOpenChat?: () => void;
   toc: TocEntry[];
   tocOpen: boolean;
   setTocOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -222,14 +222,18 @@ export function PdfReaderView({
                 <Search className="size-4" />
                 <span className="sr-only">Search in book</span>
               </Button>
-              <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
-                <Notebook className="size-4" />
-                <span className="sr-only">Open Notebook</span>
-              </Button>
-              <Button variant="ghost" size="icon" onClick={onOpenChat} title="Open Chat">
-                <MessageCircle className="size-4" />
-                <span className="sr-only">Open Chat</span>
-              </Button>
+              {onOpenNotebook ? (
+                <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
+                  <Notebook className="size-4" />
+                  <span className="sr-only">Open Notebook</span>
+                </Button>
+              ) : null}
+              {onOpenChat ? (
+                <Button variant="ghost" size="icon" onClick={onOpenChat} title="Open Chat">
+                  <MessageCircle className="size-4" />
+                  <span className="sr-only">Open Chat</span>
+                </Button>
+              ) : null}
             </>
           )}
           {toc.length > 0 && (

@@ -138,7 +138,13 @@ function renderMenu({
   withChatActions = false,
   isPdf = false,
   remoteFileUrl,
-}: { withChatActions?: boolean; isPdf?: boolean; remoteFileUrl?: string } = {}) {
+  guest = false,
+}: {
+  withChatActions?: boolean;
+  isPdf?: boolean;
+  remoteFileUrl?: string;
+  guest?: boolean;
+} = {}) {
   const onUpdateSettings = vi.fn();
   const onNavigateToToc = vi.fn();
   const onNewSession = vi.fn();
@@ -167,18 +173,22 @@ function renderMenu({
             settings={settings}
             onUpdateSettings={onUpdateSettings}
             isPdf={isPdf}
-            book={{
-              id: "book-1",
-              title: "Book",
-              author: "Author",
-              coverImage: null,
-              format: "epub",
-              remoteFileUrl,
-            }}
-            onDownload={vi.fn()}
-            onBookmarkPage={vi.fn()}
-            onCopyPageAsMarkdown={vi.fn()}
-            onOpenSpeedread={vi.fn()}
+            book={
+              guest
+                ? undefined
+                : {
+                    id: "book-1",
+                    title: "Book",
+                    author: "Author",
+                    coverImage: null,
+                    format: "epub",
+                    remoteFileUrl,
+                  }
+            }
+            onDownload={guest ? undefined : vi.fn()}
+            onBookmarkPage={guest ? undefined : vi.fn()}
+            onCopyPageAsMarkdown={guest ? undefined : vi.fn()}
+            onOpenSpeedread={guest ? undefined : vi.fn()}
             toc={[{ label: "Chapter One", href: "chapter-1.xhtml" }]}
             onNavigateToToc={onNavigateToToc}
           />
@@ -342,6 +352,16 @@ describe("ReaderSettingsMenu", () => {
     expect(rendered.container.textContent).toContain("Download");
     expect(rendered.container.textContent).toContain("Bookmark page");
     expect(rendered.container.textContent).not.toContain("Outline");
+  });
+
+  it("hides library-bound actions for guest readers", () => {
+    const rendered = renderMenu({ guest: true });
+
+    expect(rendered.container.textContent).toContain("Formatting");
+    expect(rendered.container.textContent).toContain("Table of Contents");
+    expect(rendered.container.textContent).not.toContain("Actions");
+    expect(rendered.container.textContent).not.toContain("Share");
+    expect(rendered.container.textContent).not.toContain("Bookmark page");
   });
 
   it("includes the book table of contents and navigates chapters", () => {

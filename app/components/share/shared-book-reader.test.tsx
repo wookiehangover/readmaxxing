@@ -6,13 +6,34 @@ const mocks = vi.hoisted(() => ({
   epubLifecycle: vi.fn(),
   pdfLifecycle: vi.fn(),
   updateSettings: vi.fn(),
+  epubToolbar: vi.fn(),
+  pdfView: vi.fn(),
 }));
 
 vi.mock("~/hooks/use-epub-lifecycle", () => ({ useEpubLifecycle: mocks.epubLifecycle }));
 vi.mock("~/hooks/use-pdf-lifecycle", () => ({ usePdfLifecycle: mocks.pdfLifecycle }));
-vi.mock("~/components/reader-settings-menu", () => ({ ReaderFormattingMenu: () => null }));
 vi.mock("~/components/workspace-book-reader/epub-reader-chrome", () => ({
   EpubReaderSurface: () => <div data-testid="epub-surface" />,
+  EpubReaderToolbar: (props: unknown) => {
+    mocks.epubToolbar(props);
+    return <div data-testid="epub-reader-toolbar" />;
+  },
+}));
+vi.mock("~/components/workspace-pdf-reader/pdf-reader-view", () => ({
+  PdfReaderView: (props: unknown) => {
+    mocks.pdfView(props);
+    return <div data-testid="pdf-reader-view" />;
+  },
+}));
+vi.mock("~/hooks/use-mobile", () => ({ useIsMobile: () => false }));
+vi.mock("~/hooks/use-toolbar-auto-hide", () => ({
+  useToolbarAutoHide: () => ({
+    toolbarVisible: true,
+    showToolbar: vi.fn(),
+    showToolbarPersistent: vi.fn(),
+    toggleToolbar: vi.fn(),
+    resetToolbarTimer: vi.fn(),
+  }),
 }));
 vi.mock("~/lib/settings", () => ({
   useResolvedTheme: () => "dark",
@@ -52,6 +73,7 @@ beforeEach(() => {
     navigateToTocHref: vi.fn(),
     navigationInProgressRef: { current: false },
     markNavigationInProgress: vi.fn(),
+    currentChapterLabel: "Chapter One",
   });
   mocks.pdfLifecycle.mockReset().mockReturnValue({
     toc: [],
@@ -61,7 +83,10 @@ beforeEach(() => {
     goToPage: vi.fn(),
     goNext: vi.fn(),
     goPrev: vi.fn(),
+    bookProgress: 10,
   });
+  mocks.epubToolbar.mockReset();
+  mocks.pdfView.mockReset();
   container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
 });
@@ -99,6 +124,11 @@ describe("SharedBookReader", () => {
     });
     await expect(config.loadData()).resolves.toBe(arrayBuffer);
     expect(fetchMock).toHaveBeenCalledWith("/signed/epub");
+    expect(mocks.epubToolbar).toHaveBeenCalledOnce();
+    const toolbarProps = mocks.epubToolbar.mock.calls[0]![0];
+    expect(toolbarProps).toMatchObject({ localSettings: { readerLayout: "spread" } });
+    expect(toolbarProps).not.toHaveProperty("book");
+    expect(toolbarProps).not.toHaveProperty("onBookmarkPage");
   });
 
   it("opens PDF shares at the shared page without persisting viewer positions", async () => {
@@ -126,5 +156,12 @@ describe("SharedBookReader", () => {
     });
     await expect(config.loadData()).resolves.toBe(arrayBuffer);
     expect(fetchMock).toHaveBeenCalledWith("/signed/pdf");
+    expect(mocks.pdfView).toHaveBeenCalledOnce();
+    const viewProps = mocks.pdfView.mock.calls[0]![0];
+    expect(viewProps).toMatchObject({ localSettings: { pdfLayout: "fit-height" } });
+    expect(viewProps).not.toHaveProperty("book");
+    expect(viewProps).not.toHaveProperty("onBookmarkPage");
+    expect(viewProps).not.toHaveProperty("onOpenNotebook");
+    expect(viewProps).not.toHaveProperty("onOpenChat");
   });
 });

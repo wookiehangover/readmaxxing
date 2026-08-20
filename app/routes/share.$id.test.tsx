@@ -139,7 +139,8 @@ describe("SharePage", () => {
     expect(banner?.textContent).not.toContain("Sam");
     expect(banner?.textContent).not.toContain("Reader");
     expect(banner?.querySelectorAll(":scope > p")).toHaveLength(1);
-    expect(container.querySelector("[data-testid='share-reading-shell']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='reading-shell']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='share-reading-shell']")).toBeNull();
     expect(container.querySelector("[data-testid='share-book-surface']")).not.toBeNull();
     const discussRail = container.querySelector("[data-testid='share-discuss-rail']");
     const tabs = discussRail?.querySelectorAll("[role='tab']");
@@ -160,7 +161,7 @@ describe("SharePage", () => {
     });
 
     expect(container.textContent).toContain("This share link has expired.");
-    expect(container.querySelector("[data-testid='share-reading-shell']")).toBeNull();
+    expect(container.querySelector("[data-testid='reading-shell']")).toBeNull();
     expect(container.querySelector("[data-testid='share-book-surface']")).toBeNull();
   });
 
