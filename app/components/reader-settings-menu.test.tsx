@@ -6,11 +6,16 @@ import type { Settings } from "~/lib/settings";
 const auth = vi.hoisted(() => ({ isAuthenticated: true }));
 const navigate = vi.hoisted(() => vi.fn());
 const exportNotebookMarkdown = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const toastWarning = vi.hoisted(() => vi.fn());
 
 vi.mock("react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("~/lib/context/auth-context", () => ({ useAuth: () => auth }));
 vi.mock("~/lib/editor/export-notebook-markdown", () => ({ exportNotebookMarkdown }));
-vi.mock("~/components/share-dialog", () => ({ ShareDialog: () => null }));
+vi.mock("sonner", () => ({ toast: { warning: toastWarning } }));
+vi.mock("~/components/share-dialog", () => ({
+  ShareDialog: ({ book, open }: { book: { title: string } | null; open: boolean }) =>
+    open ? <div role="dialog">Share {book?.title}</div> : null,
+}));
 vi.mock("~/components/chat/chat-book-selector", () => ({
   ChatBookSelectorMenu: () => <div>Books in this chat</div>,
 }));
@@ -132,7 +137,8 @@ function RailTabControls() {
 function renderMenu({
   withChatActions = false,
   isPdf = false,
-}: { withChatActions?: boolean; isPdf?: boolean } = {}) {
+  remoteFileUrl,
+}: { withChatActions?: boolean; isPdf?: boolean; remoteFileUrl?: string } = {}) {
   const onUpdateSettings = vi.fn();
   const onNavigateToToc = vi.fn();
   const onNewSession = vi.fn();
@@ -167,6 +173,7 @@ function renderMenu({
               author: "Author",
               coverImage: null,
               format: "epub",
+              remoteFileUrl,
             }}
             onDownload={vi.fn()}
             onBookmarkPage={vi.fn()}
@@ -186,6 +193,7 @@ beforeEach(() => {
   auth.isAuthenticated = true;
   navigate.mockReset();
   exportNotebookMarkdown.mockClear();
+  toastWarning.mockClear();
 });
 
 afterEach(() => {
@@ -215,6 +223,46 @@ describe("ReaderSettingsMenu", () => {
 
     expect(navigate).toHaveBeenNthCalledWith(1, "/library");
     expect(navigate).toHaveBeenNthCalledWith(2, "/settings");
+  });
+
+  it("shows Share at the top level for signed-in users and opens the share dialog", () => {
+    const rendered = renderMenu({ remoteFileUrl: "https://example.com/book.epub" });
+    const items = Array.from(rendered.container.querySelectorAll<HTMLElement>("[role='menuitem']"));
+    const shareItems = items.filter((item) => item.textContent?.trim() === "Share");
+    const libraryItem = items.find((item) => item.textContent?.includes("Library"));
+    const topLevelShare = shareItems.find(
+      (item) => item.parentElement === libraryItem?.parentElement,
+    );
+
+    expect(shareItems).toHaveLength(2);
+    expect(topLevelShare).toBeDefined();
+    act(() => topLevelShare?.click());
+    expect(rendered.container.querySelector("[role='dialog']")?.textContent).toBe("Share Book");
+  });
+
+  it("warns instead of opening the share dialog for an unsynced book", () => {
+    const rendered = renderMenu();
+    const items = Array.from(rendered.container.querySelectorAll<HTMLElement>("[role='menuitem']"));
+    const libraryItem = items.find((item) => item.textContent?.includes("Library"));
+    const topLevelShare = items.find(
+      (item) =>
+        item.textContent?.trim() === "Share" && item.parentElement === libraryItem?.parentElement,
+    );
+
+    act(() => topLevelShare?.click());
+    expect(toastWarning).toHaveBeenCalledWith("Sign in and sync this book before sharing it.");
+    expect(rendered.container.querySelector("[role='dialog']")).toBeNull();
+  });
+
+  it("hides Share when signed out", () => {
+    auth.isAuthenticated = false;
+    const signedOut = renderMenu();
+
+    expect(
+      Array.from(signedOut.container.querySelectorAll<HTMLElement>("[role='menuitem']")).filter(
+        (item) => item.textContent?.trim() === "Share",
+      ),
+    ).toHaveLength(0);
   });
 
   it("shows notebook export only on Notes and never shows Details", async () => {

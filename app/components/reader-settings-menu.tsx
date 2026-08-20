@@ -421,6 +421,12 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
+            {isAuthenticated && book ? (
+              <DropdownMenuItem onClick={handleShare}>
+                <Share2 className="size-4" />
+                Share
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onClick={() => navigate("/library")}>
               <Library className="size-4" />
               Library
