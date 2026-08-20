@@ -20,6 +20,13 @@ const themis = vi.hoisted(() => {
       coverImage: null,
       format: "epub" as "epub" | "pdf",
     },
+    {
+      id: "book-2",
+      title: "Middlemarch",
+      author: "George Eliot",
+      coverImage: null,
+      format: "epub" as "epub" | "pdf",
+    },
   ];
   const activeSession = {
     id: "session-1",
@@ -193,28 +200,40 @@ function renderRail() {
   return container;
 }
 
+function MobileRailHarness({ mobile = true }: { mobile?: boolean }) {
+  return (
+    <ReadingRailTabProvider>
+      <MemoryRouter>
+        <ReadingRail
+          mobile={mobile}
+          bookSurface={<div data-testid="book-surface">Book surface</div>}
+        />
+        <ReadingRailMenuPortal>
+          <ReaderSettingsMenu
+            settings={getSettings()}
+            onUpdateSettings={vi.fn()}
+            book={themis.books[0]}
+            onDownload={vi.fn()}
+            onBookmarkPage={vi.fn()}
+          />
+        </ReadingRailMenuPortal>
+      </MemoryRouter>
+    </ReadingRailTabProvider>
+  );
+}
+
 function renderMobileRail() {
   const container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
-  act(() =>
-    root?.render(
-      <ReadingRailTabProvider>
-        <MemoryRouter>
-          <ReadingRail mobile bookSurface={<div data-testid="book-surface">Book surface</div>} />
-          <ReadingRailMenuPortal>
-            <ReaderSettingsMenu
-              settings={getSettings()}
-              onUpdateSettings={vi.fn()}
-              book={themis.books[0]}
-              onDownload={vi.fn()}
-              onBookmarkPage={vi.fn()}
-            />
-          </ReadingRailMenuPortal>
-        </MemoryRouter>
-      </ReadingRailTabProvider>,
-    ),
-  );
+  act(() => root?.render(<MobileRailHarness />));
   return container;
+}
+
+function remountMobileRail() {
+  act(() => root?.unmount());
+  root = null;
+  document.body.innerHTML = "";
+  return renderMobileRail();
 }
 
 function clickTab(container: HTMLElement, label: string) {
@@ -251,6 +270,7 @@ beforeEach(() => {
   });
   navigateToToc.mockReset();
   themis.store.dispatch.mockReset();
+  window.sessionStorage.clear();
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({ ok: false })),
@@ -280,6 +300,8 @@ describe("ReadingRail", () => {
     expect(tabList.className).toContain("gap-5");
     expect(tabList.className).not.toContain("grid");
     expect(bottomRow.className).not.toContain("border-t");
+    expect(bottomRow.className).toContain("pb-3");
+    expect(bottomRow.className).not.toContain("safe-area-inset-bottom");
     const menuSlot = bottomRow.querySelector("#reading-rail-menu");
     const menuButton = menuSlot?.querySelector<HTMLButtonElement>("button[title='Reader menu']");
     expect(menuButton?.textContent).toContain("Reader menu");
@@ -332,6 +354,63 @@ describe("ReadingRail", () => {
     expect(
       Array.from(container.querySelectorAll("button"))
         .find((tab) => tab.textContent === "Discuss")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+
+    const remounted = remountMobileRail();
+    expect(
+      Array.from(remounted.querySelectorAll("button"))
+        .find((tab) => tab.textContent === "Discuss")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("does not force Read when the mobile effect reruns or the rail remounts", () => {
+    let container = renderMobileRail();
+    clickTab(container, "Outline");
+
+    act(() => root?.render(<MobileRailHarness mobile={false} />));
+    act(() => root?.render(<MobileRailHarness />));
+    expect(
+      Array.from(container.querySelectorAll("button"))
+        .find((tab) => tab.textContent === "Outline")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+
+    container = remountMobileRail();
+    expect(
+      Array.from(container.querySelectorAll("button"))
+        .find((tab) => tab.textContent === "Outline")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("remembers the last mobile tab independently for each book", () => {
+    let container = renderMobileRail();
+    clickTab(container, "Discuss");
+
+    workspace.activeClusterBookIdRef.current = "book-2";
+    container = remountMobileRail();
+    expect(
+      Array.from(container.querySelectorAll("button"))
+        .find((tab) => tab.textContent === "Read")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+    clickTab(container, "Notes");
+
+    workspace.activeClusterBookIdRef.current = "book-1";
+    container = remountMobileRail();
+    expect(
+      Array.from(container.querySelectorAll("button"))
+        .find((tab) => tab.textContent === "Discuss")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+
+    workspace.activeClusterBookIdRef.current = "book-2";
+    container = remountMobileRail();
+    expect(
+      Array.from(container.querySelectorAll("button"))
+        .find((tab) => tab.textContent === "Notes")
         ?.getAttribute("aria-selected"),
     ).toBe("true");
   });

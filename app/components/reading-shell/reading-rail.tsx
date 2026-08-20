@@ -22,6 +22,17 @@ import { cn } from "~/lib/utils";
 
 const desktopTabs = ["Notes", "Discuss", "Outline"] as const;
 const mobileTabs = ["Read", ...desktopTabs] as const;
+const mobileTabStorageKeyPrefix = "reading-shell:mobile-tab:";
+
+function getRememberedMobileTab(bookId: string | null) {
+  if (!bookId) return null;
+  const tab = window.sessionStorage.getItem(`${mobileTabStorageKeyPrefix}${bookId}`);
+  return mobileTabs.find((candidate) => candidate === tab) ?? null;
+}
+
+function rememberMobileTab(bookId: string | null, tab: MobileReadingTab) {
+  if (bookId) window.sessionStorage.setItem(`${mobileTabStorageKeyPrefix}${bookId}`, tab);
+}
 
 export function ReadingRail({
   mobile = false,
@@ -52,13 +63,15 @@ export function ReadingRail({
 
   useEffect(() => {
     if (!mobile) return;
-    setActiveTab("Read");
+    setActiveTab(getRememberedMobileTab(activeBookId) ?? "Read");
     const handleOpenTab = (event: Event) => {
-      setActiveTab((event as CustomEvent<MobileReadingTab>).detail);
+      const tab = (event as CustomEvent<MobileReadingTab>).detail;
+      rememberMobileTab(activeBookId, tab);
+      setActiveTab(tab);
     };
     window.addEventListener(MOBILE_READING_TAB_EVENT, handleOpenTab);
     return () => window.removeEventListener(MOBILE_READING_TAB_EVENT, handleOpenTab);
-  }, [mobile, setActiveTab]);
+  }, [activeBookId, mobile, setActiveTab]);
 
   const panels = book ? (
     <>
@@ -86,7 +99,11 @@ export function ReadingRail({
       <Tabs.Root
         className="flex h-full min-h-0 flex-col bg-background"
         value={activeTab}
-        onValueChange={(value) => setActiveTab(value as ReadingRailTab)}
+        onValueChange={(value) => {
+          const tab = value as MobileReadingTab;
+          rememberMobileTab(activeBookId, tab);
+          setActiveTab(tab);
+        }}
         data-testid="mobile-reading-tabs"
       >
         <Tabs.Panel
@@ -98,7 +115,7 @@ export function ReadingRail({
           {bookSurface}
         </Tabs.Panel>
         {panels}
-        <div className="flex shrink-0 items-start gap-3 bg-background px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className="flex shrink-0 items-start gap-3 bg-background px-6 pt-3 pb-3">
           <Tabs.List
             aria-label="Reading sections"
             className="relative flex min-w-0 flex-1 items-center gap-5"
