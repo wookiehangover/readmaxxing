@@ -179,11 +179,7 @@ function SharedBookSurface({
   fileUrl: string | null | undefined;
 }) {
   return (
-    <section
-      className="h-full min-w-0 bg-muted/30"
-      aria-label="Book surface"
-      data-testid="share-book-surface"
-    >
+    <section className="h-full min-w-0" aria-label="Book surface" data-testid="share-book-surface">
       {fileUrl ? (
         <SharedBookReader
           shareId={shareId}
