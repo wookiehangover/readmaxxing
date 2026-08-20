@@ -81,7 +81,7 @@ export function EpubReaderSurface({
       <div
         ref={containerRef}
         className={cn("h-full overflow-hidden", {
-          "px-6 pt-6 pb-2 md:px-16 md:pt-10 md:pb-4": readerLayout,
+          "px-4 pt-6 pb-2 md:px-16 md:pt-10 md:pb-4": readerLayout,
         })}
       />
       {loadError && (
