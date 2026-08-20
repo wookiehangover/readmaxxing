@@ -17,8 +17,7 @@ async function loadBookmarks(bookId: string) {
 }
 
 async function persistBookmark(bookmark: Bookmark) {
-  await BookmarkService.saveBookmark(bookmark);
-  return bookmark;
+  return BookmarkService.saveBookmark(bookmark);
 }
 
 async function persistBookmarkDeletion(bookmarkId: string) {

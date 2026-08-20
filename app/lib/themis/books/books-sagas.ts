@@ -77,8 +77,7 @@ export async function persistUploadedBook(
   if (existing) {
     if (!options.existingPatch) return existing;
     const updated = { ...existing, ...options.existingPatch };
-    await BookService.updateBookMeta(updated);
-    return updated;
+    return BookService.updateBookMeta(updated);
   }
 
   const isPdf = file.name.toLowerCase().endsWith(".pdf");
@@ -99,8 +98,7 @@ export async function persistUploadedBook(
     fileHash,
   };
 
-  await BookService.saveBook(book, arrayBuffer);
-  return book;
+  return BookService.saveBook(book, arrayBuffer);
 }
 
 function readApiError(response: Response) {

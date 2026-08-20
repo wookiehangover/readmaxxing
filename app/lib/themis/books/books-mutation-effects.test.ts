@@ -52,13 +52,19 @@ describe("book mutation persistence", () => {
   it("parses, hashes, and saves a new upload", async () => {
     mocks.findByFileHash.mockResolvedValueOnce(null);
     mocks.parseEpub.mockResolvedValueOnce({ title: "Parsed", author: "Author", coverImage: null });
-    mocks.saveBook.mockResolvedValueOnce(undefined);
+    let persistedBook: BookMeta | undefined;
+    mocks.saveBook.mockImplementationOnce(async (book: BookMeta) => {
+      persistedBook = { ...book, hasLocalFile: true, updatedAt: 1_234 };
+      return persistedBook;
+    });
 
     const book = await persistUploadedBook(makeFile());
 
     expect(mocks.parseEpub).toHaveBeenCalledOnce();
     expect(mocks.saveBook).toHaveBeenCalledOnce();
+    expect(book).toBe(persistedBook);
     expect(book).toMatchObject({ title: "Parsed", author: "Author", format: "epub" });
+    expect(book).toMatchObject({ hasLocalFile: true, updatedAt: 1_234 });
     expect(book.fileHash).toMatch(/^[0-9a-f]{64}$/);
   });
 
@@ -73,6 +79,27 @@ describe("book mutation persistence", () => {
     mocks.findByFileHash.mockResolvedValueOnce(existing);
 
     await expect(persistUploadedBook(makeFile())).resolves.toBe(existing);
+    expect(mocks.parseEpub).not.toHaveBeenCalled();
+    expect(mocks.saveBook).not.toHaveBeenCalled();
+  });
+
+  it("returns the stamped metadata when patching a duplicate upload", async () => {
+    const existing: BookMeta = {
+      id: "existing",
+      title: "Existing",
+      author: "Author",
+      coverImage: null,
+      format: "epub",
+      updatedAt: 1,
+    };
+    const persisted = { ...existing, shareId: "share-1", updatedAt: 2 };
+    mocks.findByFileHash.mockResolvedValueOnce(existing);
+    mocks.updateBookMeta.mockResolvedValueOnce(persisted);
+
+    await expect(
+      persistUploadedBook(makeFile(), { existingPatch: { shareId: "share-1" } }),
+    ).resolves.toBe(persisted);
+    expect(mocks.updateBookMeta).toHaveBeenCalledWith({ ...existing, shareId: "share-1" });
     expect(mocks.parseEpub).not.toHaveBeenCalled();
     expect(mocks.saveBook).not.toHaveBeenCalled();
   });

@@ -117,7 +117,11 @@ describe("booksSaga", () => {
       author: "Author",
       coverImage: null,
     });
-    mocks.saveBook.mockResolvedValueOnce(undefined);
+    let persistedBook: BookMeta | undefined;
+    mocks.saveBook.mockImplementationOnce(async (book: BookMeta) => {
+      persistedBook = { ...book, hasLocalFile: true, updatedAt: 1_234 };
+      return persistedBook;
+    });
     const completed = vi.fn();
     const store = startStore();
 
@@ -126,18 +130,25 @@ describe("booksSaga", () => {
     await vi.waitFor(() => expect(completed).toHaveBeenCalledOnce());
     const [book] = completed.mock.calls[0];
     expect(mocks.saveBook).toHaveBeenCalledOnce();
-    expect(store.booksSelectors.selectBookById.select(store.state, book.id)).toEqual(book);
+    expect(book).toBe(persistedBook);
+    expect(book).toMatchObject({ hasLocalFile: true, updatedAt: 1_234 });
+    expect(store.booksSelectors.selectBookById.select(store.state, book.id)).toEqual(persistedBook);
   });
 
-  it("keeps failed uploads out of the collection", async () => {
+  it("keeps failed persists out of the collection", async () => {
     mocks.findByFileHash.mockResolvedValueOnce(null);
-    mocks.parseEpub.mockRejectedValueOnce(new Error("parse failed"));
+    mocks.parseEpub.mockResolvedValueOnce({
+      title: "Uploaded",
+      author: "Author",
+      coverImage: null,
+    });
+    mocks.saveBook.mockRejectedValueOnce(new Error("IDB unavailable"));
     const failed = vi.fn();
     const store = startStore();
 
     store.dispatch(uploadBooksRequested([makeFile()], undefined, undefined, failed));
 
-    await vi.waitFor(() => expect(failed).toHaveBeenCalledWith("parse failed"));
+    await vi.waitFor(() => expect(failed).toHaveBeenCalledWith("IDB unavailable"));
     expect(store.booksSelectors.selectAllBooks.select(store.state)).toEqual([]);
   });
 

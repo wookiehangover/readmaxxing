@@ -63,16 +63,20 @@ describe("bookmarksSaga", () => {
   });
 
   it("adds and deletes only after persistence succeeds", async () => {
-    const bookmark = makeBookmark();
-    mocks.runPromise.mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
+    const bookmark = { ...makeBookmark(), updatedAt: undefined };
+    const persisted = { ...bookmark, updatedAt: 1_234 };
+    mocks.runPromise.mockResolvedValueOnce(persisted).mockResolvedValueOnce(undefined);
     const store = startStore();
 
     store.dispatch(addBookmarkRequested(bookmark));
     await vi.waitFor(() =>
       expect(store.bookmarksSelectors.selectBookmarksByBook.select(store.state, "book-1")).toEqual([
-        bookmark,
+        persisted,
       ]),
     );
+    const [selected] = store.bookmarksSelectors.selectBookmarksByBook.select(store.state, "book-1");
+    expect(selected).toBe(persisted);
+    expect(selected.updatedAt).toBe(1_234);
 
     store.dispatch(deleteBookmarkRequested("book-1", bookmark.id));
     await vi.waitFor(() =>
