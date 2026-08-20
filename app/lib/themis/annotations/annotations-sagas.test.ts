@@ -193,7 +193,9 @@ describe("annotationsSaga", () => {
       ...notebook,
       content: { type: "doc", content: [{ type: "highlightReference" }] },
     };
-    mocks.runPromise.mockResolvedValueOnce(undefined).mockResolvedValueOnce(appended);
+    mocks.runPromise
+      .mockImplementationOnce(async (persisted: Notebook) => persisted)
+      .mockResolvedValueOnce(appended);
     const store = startStore();
 
     store.dispatch(updateNotebookRequested("book-1", notebook.content, true));
@@ -231,7 +233,7 @@ describe("annotationsSaga", () => {
         type: "doc",
         content: [{ type: "paragraph", attrs: { id: "latest" } }],
       };
-      mocks.runPromise.mockResolvedValueOnce(undefined);
+      mocks.runPromise.mockImplementationOnce(async (persisted: Notebook) => persisted);
       const store = startStore();
 
       store.dispatch(updateNotebookRequested("book-1", staleContent, false));
@@ -254,6 +256,42 @@ describe("annotationsSaga", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("publishes newer persisted notebook when an active older save loses LWW", async () => {
+    const suffix = crypto.randomUUID();
+    const service = makeAnnotationService({
+      highlightStore: createStore(`highlight-lww-${suffix}`, "highlights"),
+      notebookStore: createStore(`notebook-lww-${suffix}`, "notebooks"),
+    });
+    const newer = {
+      ...makeNotebook(),
+      content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "newer" } }] },
+      updatedAt: 2,
+    };
+    await service.saveNotebook(newer);
+    mocks.runPromise.mockImplementationOnce((notebook: Notebook) => service.saveNotebook(notebook));
+    const onCompleted = vi.fn();
+    const store = startStore();
+    vi.spyOn(Date, "now").mockReturnValue(1);
+
+    store.dispatch(
+      updateNotebookRequested(
+        "book-1",
+        { type: "doc", content: [{ type: "paragraph", attrs: { id: "older" } }] },
+        true,
+        onCompleted,
+      ),
+    );
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(newer));
+    const selected = store.annotationsSelectors.selectNotebookByBookId.select(
+      store.state,
+      "book-1",
+    );
+    const persisted = await service.getNotebook("book-1");
+    expect(selected).toEqual(persisted);
+    expect(selected).toEqual(newer);
   });
 
   it("keeps the latest persisted notebook when an older in-flight save resolves last", async () => {

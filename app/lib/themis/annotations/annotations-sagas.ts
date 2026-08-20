@@ -59,8 +59,7 @@ async function persistHighlightDeletion(highlightId: string) {
 
 async function persistNotebook(bookId: string, content: Notebook["content"]) {
   const notebook: Notebook = { bookId, content, updatedAt: Date.now() };
-  await AnnotationService.saveNotebook(notebook);
-  return notebook;
+  return AnnotationService.saveNotebook(notebook);
 }
 
 async function persistCachedNotebook(notebook: Notebook) {
