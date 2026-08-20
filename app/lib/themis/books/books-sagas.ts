@@ -218,8 +218,7 @@ async function loadBookData(bookId: string) {
 }
 
 async function persistBookMetadata(book: BookMeta) {
-  await BookService.updateBookMeta(book);
-  return book;
+  return BookService.updateBookMeta(book);
 }
 
 function notifyBookAdded(callback: BookAddedCallback | undefined, book: BookMeta) {

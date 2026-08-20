@@ -144,6 +144,7 @@ describe("booksSaga", () => {
   it("persists metadata before updating the existing collection entry", async () => {
     const original = makeBook("edit-me");
     const updated = { ...original, title: "Edited title" };
+    const persisted = { ...updated, updatedAt: 1_234 };
     const completed = vi.fn();
     const store = startStore();
     store.dispatch(bookAdded(original));
@@ -151,28 +152,37 @@ describe("booksSaga", () => {
       expect(store.booksSelectors.selectBookById.select(store.state, original.id)).toEqual(
         original,
       );
+      return persisted;
     });
 
     store.dispatch(updateBookMetadataRequested(updated, "update", completed, vi.fn()));
 
-    await vi.waitFor(() => expect(completed).toHaveBeenCalledWith(updated));
+    await vi.waitFor(() => expect(completed).toHaveBeenCalledWith(persisted));
     expect(mocks.updateBookMeta).toHaveBeenCalledWith(updated);
-    expect(store.booksSelectors.selectBookById.select(store.state, updated.id)).toEqual(updated);
+    const selected = store.booksSelectors.selectBookById.select(store.state, updated.id);
+    expect(completed.mock.calls[0]?.[0]).toBe(persisted);
+    expect(selected).toEqual(persisted);
+    expect(selected?.updatedAt).toBe(persisted.updatedAt);
   });
 
   it("persists restored metadata before adding the missing book to the collection", async () => {
     const restored = makeBook("restore-me");
+    const persisted = { ...restored, updatedAt: 5_678 };
     const completed = vi.fn();
     const store = startStore();
     mocks.updateBookMeta.mockImplementationOnce(async () => {
       expect(store.booksSelectors.selectBookById.select(store.state, restored.id)).toBeUndefined();
+      return persisted;
     });
 
     store.dispatch(updateBookMetadataRequested(restored, "restore", completed, vi.fn()));
 
-    await vi.waitFor(() => expect(completed).toHaveBeenCalledWith(restored));
+    await vi.waitFor(() => expect(completed).toHaveBeenCalledWith(persisted));
     expect(mocks.updateBookMeta).toHaveBeenCalledWith(restored);
-    expect(store.booksSelectors.selectBookById.select(store.state, restored.id)).toEqual(restored);
+    const selected = store.booksSelectors.selectBookById.select(store.state, restored.id);
+    expect(completed.mock.calls[0]?.[0]).toBe(persisted);
+    expect(selected).toEqual(persisted);
+    expect(selected?.updatedAt).toBe(persisted.updatedAt);
   });
 
   it("deletes persisted data before removing collection metadata", async () => {

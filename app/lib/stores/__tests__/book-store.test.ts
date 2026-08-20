@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createStore, set, get } from "idb-keyval";
 import { BookService as LiveBookService, makeBookService } from "~/lib/stores/book-store";
-import type { Book } from "~/lib/stores/book-store";
+import type { Book, BookMeta } from "~/lib/stores/book-store";
 import {
   ReadingPositionService as LiveReadingPositionService,
   makePositionService,
@@ -119,6 +119,30 @@ describe("BookService", () => {
       if (exit._tag === "Failure") {
         expect((exit.cause as any).error?._tag).toBe("BookNotFoundError");
       }
+    });
+  });
+
+  describe("updateBookMeta", () => {
+    it("returns the exact timestamp persisted to storage", async () => {
+      const suffix = `test-${++testCounter}-${Date.now()}`;
+      const bookStore = createStore(`book-db-${suffix}`, "books");
+      const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
+      const service = makeBookService({ bookStore, bookDataStore });
+      const updated: BookMeta = {
+        id: "book-1",
+        title: "Updated",
+        author: "Test Author",
+        coverImage: null,
+        format: "epub",
+        updatedAt: 1,
+      };
+
+      const stamped = await service.updateBookMeta(updated);
+      const persisted = await get<BookMeta>(updated.id, bookStore);
+
+      expect(stamped.updatedAt).not.toBe(updated.updatedAt);
+      expect(persisted).toEqual(stamped);
+      expect(persisted?.updatedAt).toBe(stamped.updatedAt);
     });
   });
 
