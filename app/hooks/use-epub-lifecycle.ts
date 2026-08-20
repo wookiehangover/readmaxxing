@@ -65,6 +65,11 @@ export type { TocNavigationTarget } from "~/lib/epub/successor-toc";
 
 const LAYOUT_POSITION_GUARD_MS = 4000;
 
+function hasLayoutSize(element: HTMLElement): boolean {
+  const rect = element.getBoundingClientRect();
+  return (rect.width || element.clientWidth) > 0 && (rect.height || element.clientHeight) > 0;
+}
+
 interface CfiDisplayTarget {
   display(
     target?: string | number,
@@ -343,9 +348,21 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     let positions: readonly PersistentLocator[] = [];
     let publisherPages: PublisherPageMap | null = null;
     let layoutRestoreInProgress = false;
+    let mobileLayoutObserver: ResizeObserver | null = null;
     registerActiveReader(bookId);
     setHasRestoredPosition(false);
     setLoadError(false);
+
+    if (configRef.current.panelId === undefined && typeof ResizeObserver !== "undefined") {
+      let layoutWasVisible = hasLayoutSize(container);
+      mobileLayoutObserver = new ResizeObserver(() => {
+        const layoutIsVisible = hasLayoutSize(container);
+        if (layoutIsVisible === layoutWasVisible) return;
+        layoutWasVisible = layoutIsVisible;
+        markLayoutChangeInProgress();
+      });
+      mobileLayoutObserver.observe(container);
+    }
 
     const saveRelocation = (cfi: string, relocation: Relocation) => {
       latestLayoutRef.current = {
@@ -469,6 +486,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
             spineIndex: latestLayoutRef.current.spineIndex,
           }
         : null;
+      const layoutHasSize = hasLayoutSize(container);
       const restoreTarget = getReadingPositionRestoreTarget(
         currentPosition,
         {
@@ -477,12 +495,13 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           spineIndex: relocation.spineIndex,
         },
         {
+          layoutHasSize,
           layoutChangeInProgress: Date.now() < layoutPositionGuardUntilRef.current,
           navigationInProgress,
         },
       );
       if (restoreTarget) {
-        void restoreLastGoodPosition(restoreTarget, relocation.spineIndex);
+        if (layoutHasSize) void restoreLastGoodPosition(restoreTarget, relocation.spineIndex);
         return;
       }
       latestCfiRef.current = cfi;
@@ -654,6 +673,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       setCurrentChapterLabel(null);
       configRef.current.onReadingUnitChange?.(null);
       configRef.current.onCleanupToc?.();
+      mobileLayoutObserver?.disconnect();
       rendition?.destroy();
       provider?.close();
       navigatorRef.current = null;

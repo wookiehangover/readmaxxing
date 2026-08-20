@@ -19,7 +19,7 @@ describe("shouldAcceptReadingPosition", () => {
       shouldAcceptReadingPosition(
         current,
         { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
-        { layoutChangeInProgress: true, navigationInProgress: false },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: false },
       ),
     ).toBe(false);
   });
@@ -29,7 +29,7 @@ describe("shouldAcceptReadingPosition", () => {
       shouldAcceptReadingPosition(
         current,
         { cfi: "epubcfi(/6/4!/4/2/4:10)", localProgression: 0.3, spineIndex: 1 },
-        { layoutChangeInProgress: true, navigationInProgress: false },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: false },
       ),
     ).toBe(false);
   });
@@ -39,7 +39,7 @@ describe("shouldAcceptReadingPosition", () => {
       shouldAcceptReadingPosition(
         current,
         { cfi: "epubcfi(/6/4!/4/2/8:10)", localProgression: 0.58, spineIndex: 1 },
-        { layoutChangeInProgress: true, navigationInProgress: false },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: false },
       ),
     ).toBe(true);
   });
@@ -49,7 +49,7 @@ describe("shouldAcceptReadingPosition", () => {
       shouldAcceptReadingPosition(
         current,
         { cfi: "epubcfi(/6/2!/4)", localProgression: 0, spineIndex: 0 },
-        { layoutChangeInProgress: true, navigationInProgress: false },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: false },
       ),
     ).toBe(false);
   });
@@ -59,7 +59,7 @@ describe("shouldAcceptReadingPosition", () => {
       shouldAcceptReadingPosition(
         current,
         { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
-        { layoutChangeInProgress: true, navigationInProgress: true },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: true },
       ),
     ).toBe(true);
   });
@@ -69,7 +69,7 @@ describe("shouldAcceptReadingPosition", () => {
       shouldAcceptReadingPosition(
         current,
         { cfi: "epubcfi(/6/4!/4/2/4:10)", localProgression: 0.3, spineIndex: 1 },
-        { layoutChangeInProgress: false, navigationInProgress: false },
+        { layoutHasSize: true, layoutChangeInProgress: false, navigationInProgress: false },
       ),
     ).toBe(true);
   });
@@ -79,7 +79,7 @@ describe("shouldAcceptReadingPosition", () => {
       getReadingPositionRestoreTarget(
         current,
         { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
-        { layoutChangeInProgress: true, navigationInProgress: false },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: false },
       ),
     ).toBe(current);
   });
@@ -89,9 +89,19 @@ describe("shouldAcceptReadingPosition", () => {
       getReadingPositionRestoreTarget(
         current,
         { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
-        { layoutChangeInProgress: true, navigationInProgress: true },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: true },
       ),
     ).toBeNull();
+  });
+
+  it("restores the last-good position instead of accepting a zero-size relocation", () => {
+    expect(
+      getReadingPositionRestoreTarget(
+        current,
+        { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
+        { layoutHasSize: false, layoutChangeInProgress: false, navigationInProgress: false },
+      ),
+    ).toBe(current);
   });
 });
 

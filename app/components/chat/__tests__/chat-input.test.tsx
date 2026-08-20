@@ -166,6 +166,8 @@ describe("ChatInput", () => {
 
     const textarea = textareaRef.current!;
     expect(textarea.placeholder).toBe("Ask about this book...");
+    expect(textarea.classList.contains("text-base")).toBe(true);
+    expect(textarea.classList.contains("md:text-sm")).toBe(true);
     const form = container.querySelector("form")!;
     expect(form.classList.contains("px-4")).toBe(false);
     expect(form.classList.contains("py-3")).toBe(true);
