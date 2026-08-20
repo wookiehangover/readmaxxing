@@ -1,16 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { AlertCircle, BookOpen, Check, Loader2 } from "lucide-react";
+import { AlertCircle, Check, Loader2 } from "lucide-react";
+import { SharedBookReader } from "~/components/share/shared-book-reader";
 import { SharedDiscussRail } from "~/components/share/shared-discuss-rail";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "~/components/ui/empty";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { getPositionsByUser } from "~/lib/database/book/reading-position";
 import { getShareLink, type ShareLinkRow } from "~/lib/database/share/share-link";
@@ -173,24 +167,39 @@ export function meta({ data }: { data?: ShareLoaderData }) {
   ];
 }
 
-function SharedBookSurface({ book }: { book: ShareBookData }) {
+function SharedBookSurface({
+  shareId,
+  book,
+  fileUrl,
+}: {
+  shareId: string;
+  book: ShareBookData;
+  fileUrl: string | null | undefined;
+}) {
   return (
     <section
-      className="flex min-h-[55dvh] min-w-0 bg-muted/30 md:min-h-0"
+      className="min-h-[55dvh] min-w-0 bg-muted/30 md:min-h-0"
       aria-label="Book surface"
       data-testid="share-book-surface"
     >
-      <Empty className="rounded-none border-0">
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <BookOpen />
-          </EmptyMedia>
-          <EmptyTitle>Read {book.title}</EmptyTitle>
-          <EmptyDescription>
-            The shared {book.format.toUpperCase()} reader renders here.
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+      {fileUrl ? (
+        <SharedBookReader
+          shareId={shareId}
+          fileUrl={fileUrl}
+          format={book.format}
+          currentCfi={book.currentCfi}
+        />
+      ) : (
+        <div className="flex h-full min-h-[55dvh] items-center justify-center p-6 md:min-h-0">
+          <Alert variant="destructive" className="max-w-lg">
+            <AlertCircle />
+            <AlertTitle>Shared book file unavailable</AlertTitle>
+            <AlertDescription>
+              The reader could not open this shared file. Ask the sharer to create a new link.
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
     </section>
   );
 }
@@ -281,7 +290,11 @@ export default function SharePage({ loaderData }: ComponentProps) {
         className="grid min-h-0 flex-1 grid-rows-[auto_auto] overflow-y-auto md:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] md:grid-rows-1 md:overflow-hidden"
         data-testid="share-reading-shell"
       >
-        <SharedBookSurface book={loaderData.book} />
+        <SharedBookSurface
+          shareId={loaderData.id}
+          book={loaderData.book}
+          fileUrl={loaderData.fileUrl}
+        />
         <SharedDiscussRail shareId={loaderData.id} included={loaderData.shareChats} />
       </div>
     </main>

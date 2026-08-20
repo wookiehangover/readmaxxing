@@ -3,10 +3,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn() }));
+const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), sharedReader: vi.fn() }));
 
 vi.mock("~/lib/themis/provider", () => ({
   useAppStore: () => ({ dispatch: mocks.dispatch }),
+}));
+
+vi.mock("~/components/share/shared-book-reader", () => ({
+  SharedBookReader: (props: { format: "epub" | "pdf" }) => {
+    mocks.sharedReader(props);
+    return <div data-testid={`shared-${props.format}-reader`} />;
+  },
 }));
 
 import SharePage from "./share.$id";
@@ -17,17 +24,26 @@ import { importSharedBookRequested } from "~/lib/themis/books/books-slice";
 let container: HTMLDivElement;
 let root: Root;
 
-function availableShare(): ComponentProps<typeof SharePage>["loaderData"] {
+function availableShare({
+  format = "pdf",
+  fileUrl = "https://example.com/shared-book",
+  currentCfi = null,
+}: {
+  format?: "epub" | "pdf";
+  fileUrl?: string | null;
+  currentCfi?: string | null;
+} = {}): ComponentProps<typeof SharePage>["loaderData"] {
   return {
     status: "available",
     id: "share-1",
     shareChats: false,
+    fileUrl,
     book: {
       title: "Shared Book",
       author: "Reader",
       coverUrl: "https://example.com/cover.jpg",
-      format: "pdf",
-      currentCfi: null,
+      format,
+      currentCfi,
     },
     sharer: { id: "user-1", displayName: "Sam" },
   };
@@ -54,6 +70,7 @@ function renderPage(
 
 beforeEach(() => {
   mocks.dispatch.mockReset();
+  mocks.sharedReader.mockReset();
   container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
 });
@@ -64,6 +81,34 @@ afterEach(() => {
 });
 
 describe("SharePage", () => {
+  it.each([
+    ["EPUB", "epub", "epubcfi(/6/4!/4/2)", "shared-epub-reader"],
+    ["PDF", "pdf", "page:12", "shared-pdf-reader"],
+  ] as const)(
+    "renders an available shared %s with the real reader",
+    (_, format, currentCfi, testId) => {
+      renderPage(availableShare({ format, currentCfi }));
+
+      expect(container.querySelector(`[data-testid='${testId}']`)).not.toBeNull();
+      expect(mocks.sharedReader).toHaveBeenCalledWith({
+        shareId: "share-1",
+        fileUrl: "https://example.com/shared-book",
+        format,
+        currentCfi,
+      });
+    },
+  );
+
+  it.each(["epub", "pdf"] as const)(
+    "does not mount the %s reader when the signed file URL is missing",
+    (format) => {
+      renderPage(availableShare({ format, fileUrl: null }));
+
+      expect(container.textContent).toContain("Shared book file unavailable");
+      expect(mocks.sharedReader).not.toHaveBeenCalled();
+    },
+  );
+
   it("dispatches a shared-book import request instead of saving directly", () => {
     renderPage();
 
