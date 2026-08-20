@@ -100,9 +100,18 @@ vi.mock("~/lib/stores/book-store", () => ({
   },
 }));
 vi.mock("~/components/ui/scroll-area", () => ({
-  ScrollArea: ({ children, className }: { children: React.ReactNode; className?: string }) => (
+  ScrollArea: ({
+    children,
+    className,
+    hideScrollbar,
+  }: {
+    children: React.ReactNode;
+    className?: string;
+    hideScrollbar?: boolean;
+  }) => (
     <div data-slot="scroll-area" className={className}>
       <div data-slot="scroll-area-viewport">{children}</div>
+      {!hideScrollbar && <div data-slot="scroll-area-scrollbar" />}
     </div>
   ),
 }));
@@ -448,6 +457,15 @@ describe("ReadingRail", () => {
         expect(input?.classList.contains("md:pl-0")).toBe(true);
       }
     }
+  });
+
+  it("hides Notes scrollbar chrome without removing its scroll viewport", () => {
+    const container = renderMobileRail();
+    clickTab(container, "Notes");
+
+    const panel = visiblePanel(container);
+    expect(panel?.querySelector("[data-slot='scroll-area-viewport']")).not.toBeNull();
+    expect(panel?.querySelector("[data-slot='scroll-area-scrollbar']")).toBeNull();
   });
 
   it("keeps scroll viewports flush with the right edge while chrome owns its inset", async () => {

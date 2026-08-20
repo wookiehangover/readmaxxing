@@ -220,7 +220,7 @@ export function WorkspaceNotebook({
         </div>
       )}
 
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1" hideScrollbar={chromeless}>
         <div className={cn("h-full", { "pr-6 pl-6 md:pl-0": chromeless })}>
           {loaded && (
             <TiptapEditor
