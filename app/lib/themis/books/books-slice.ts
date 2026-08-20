@@ -44,6 +44,7 @@ export type DemoAdoptionCompletedCallback = (result: {
 
 export interface BooksState {
   collection: Collection<BookMeta, "id">;
+  initialHydrationComplete: boolean;
   loading: boolean;
   uploading: boolean;
   deletingBookIds: string[];
@@ -115,6 +116,7 @@ export const updateBookMetadataRequested = createAction<
 
 export const booksInitialState: BooksState = {
   collection: createCollection<BookMeta, "id">("id"),
+  initialHydrationComplete: false,
   loading: false,
   uploading: false,
   deletingBookIds: [],
@@ -126,10 +128,15 @@ export const booksInitialState: BooksState = {
 
 const reducer = createReducer<BooksState>(booksInitialState);
 
-reducer.with(hydrateBooks, (state) => ({ ...state, loading: true, error: null }));
+reducer.with(hydrateBooks, (state) => ({
+  ...state,
+  loading: !state.initialHydrationComplete,
+  error: null,
+}));
 reducer.with(booksHydrated, (state, { payload: [books] }) => ({
   ...state,
   collection: createCollection<BookMeta, "id">("id", books),
+  initialHydrationComplete: true,
   loading: false,
   error: null,
 }));
@@ -147,6 +154,7 @@ reducer.with(bookDeleted, (state, { payload: [bookId] }) => ({
 }));
 reducer.with(booksHydrateFailed, (state, { payload: [error] }) => ({
   ...state,
+  initialHydrationComplete: true,
   loading: false,
   error,
 }));
