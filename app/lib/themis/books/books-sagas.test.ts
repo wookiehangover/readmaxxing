@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { StorageError } from "~/lib/errors";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { BookUploadFile } from "~/lib/themis/books/books-slice";
 
@@ -92,10 +93,17 @@ describe("booksSaga", () => {
   });
 
   it("stores a hydrate failure", async () => {
-    mocks.getBooks.mockRejectedValueOnce(new Error("IDB unavailable"));
+    mocks.getBooks.mockRejectedValueOnce(new StorageError({ operation: "getBooks" }));
     const store = startStore();
     store.dispatch(hydrateBooks());
-    await vi.waitFor(() => expect(store.state.books.error).toBe("IDB unavailable"));
+    await vi.waitFor(() =>
+      expect(store.booksSelectors.selectBooksError.select(store.state)).toEqual({
+        _tag: "StorageError",
+        message: "StorageError",
+        operation: "getBooks",
+      }),
+    );
+    expect(JSON.parse(JSON.stringify(store.state.books.error))).toEqual(store.state.books.error);
   });
 
   it("loads reader binary without storing it in Redux", async () => {

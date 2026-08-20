@@ -2,6 +2,7 @@ import { call, put, takeEvery, takeLatest, takeLeading } from "typed-redux-saga"
 
 import { computeFileHash } from "~/lib/book-hash";
 import { parseEpub } from "~/lib/epub/epub-service";
+import { toTaggedError } from "~/lib/errors";
 import {
   completeDemoOnboarding,
   fetchDemoEpub,
@@ -20,6 +21,7 @@ import {
   bookDeleted,
   bookDownloadCompleted,
   bookDownloadFailed,
+  bookMutationFailed,
   bookUpdated,
   bookDeletionCompleted,
   bookDeletionFailed,
@@ -285,17 +287,13 @@ async function notifyDemoAdoptionCompleted(
   }
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
 export function* hydrateBooksSaga() {
   try {
     const books = yield* call(loadBooks);
     yield* put(booksHydrated(books));
     yield* put(seedDemoBookRequested());
   } catch (error) {
-    yield* put(booksHydrateFailed(errorMessage(error)));
+    yield* put(booksHydrateFailed(toTaggedError(error)));
   }
 }
 
@@ -306,9 +304,9 @@ export function* importSharedBookSaga(action: ReturnType<typeof importSharedBook
     yield* put(bookAdded(book));
     yield* call(notifyBookMutationCompleted, onCompleted, book);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(booksUploadFailed(message));
-    yield* call(notifyBookMutationFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(booksUploadFailed(taggedError));
+    yield* call(notifyBookMutationFailed, onFailed, taggedError.message);
   }
 }
 
@@ -319,9 +317,9 @@ export function* replaceBookFileSaga(action: ReturnType<typeof replaceBookFileRe
     yield* put(bookUpdated(book));
     yield* call(notifyBookMutationCompleted, onCompleted, book);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(booksUploadFailed(message));
-    yield* call(notifyBookMutationFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(booksUploadFailed(taggedError));
+    yield* call(notifyBookMutationFailed, onFailed, taggedError.message);
   }
 }
 
@@ -332,7 +330,7 @@ export function* seedDemoBookSaga() {
     yield* put(bookAdded(book));
     yield* put(demoBookSeeded(book.id));
   } catch (error) {
-    yield* put(booksUploadFailed(errorMessage(error)));
+    yield* put(booksUploadFailed(toTaggedError(error)));
   }
 }
 
@@ -344,9 +342,9 @@ export function* adoptDemoBookSaga(action: ReturnType<typeof adoptDemoBookReques
     yield* put(bookDeleted(DEMO_BOOK_ID));
     yield* call(notifyDemoAdoptionCompleted, onCompleted, result);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(booksUploadFailed(message));
-    yield* call(notifyBookMutationFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(booksUploadFailed(taggedError));
+    yield* call(notifyBookMutationFailed, onFailed, taggedError.message);
   }
 }
 
@@ -361,9 +359,9 @@ export function* uploadBooksSaga(action: ReturnType<typeof uploadBooksRequested>
     yield* put(booksUploadCompleted());
     yield* call(notifyUploadCompleted, onUploadCompleted);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(booksUploadFailed(message));
-    yield* call(notifyUploadFailed, onUploadFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(booksUploadFailed(taggedError));
+    yield* call(notifyUploadFailed, onUploadFailed, taggedError.message);
   }
 }
 
@@ -375,7 +373,7 @@ export function* deleteBookSaga(action: ReturnType<typeof deleteBookRequested>) 
     yield* put(bookDeletionCompleted(bookId));
     yield* call(notifyBookDeleted, onBookDeleted, bookId);
   } catch (error) {
-    yield* put(bookDeletionFailed(bookId, errorMessage(error)));
+    yield* put(bookDeletionFailed(bookId, toTaggedError(error)));
   }
 }
 
@@ -387,9 +385,9 @@ export function* downloadBookForOpenSaga(action: ReturnType<typeof downloadBookF
     yield* put(bookDownloadCompleted(bookId));
     yield* call(notifyBookMutationCompleted, onCompleted, book);
   } catch (error) {
-    const message = errorMessage(error);
-    yield* put(bookDownloadFailed(bookId, message));
-    yield* call(notifyBookMutationFailed, onFailed, message);
+    const taggedError = toTaggedError(error);
+    yield* put(bookDownloadFailed(bookId, taggedError));
+    yield* call(notifyBookMutationFailed, onFailed, taggedError.message);
   }
 }
 
@@ -399,7 +397,9 @@ export function* loadBookDataSaga(action: ReturnType<typeof loadBookDataRequeste
     const data = yield* call(loadBookData, bookId);
     yield* call(notifyBookDataLoaded, onCompleted, data);
   } catch (error) {
-    yield* call(notifyBookMutationFailed, onFailed, errorMessage(error));
+    const taggedError = toTaggedError(error);
+    yield* put(bookMutationFailed(taggedError));
+    yield* call(notifyBookMutationFailed, onFailed, taggedError.message);
   }
 }
 
@@ -410,7 +410,9 @@ export function* updateBookMetadataSaga(action: ReturnType<typeof updateBookMeta
     yield* put(mutation === "restore" ? bookAdded(persistedBook) : bookUpdated(persistedBook));
     yield* call(notifyBookMutationCompleted, onCompleted, persistedBook);
   } catch (error) {
-    yield* call(notifyBookMutationFailed, onFailed, errorMessage(error));
+    const taggedError = toTaggedError(error);
+    yield* put(bookMutationFailed(taggedError));
+    yield* call(notifyBookMutationFailed, onFailed, taggedError.message);
   }
 }
 

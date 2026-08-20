@@ -7,6 +7,7 @@ import {
 import { createAction } from "@augmentcode/themis/utils/store/create-action";
 import { createReducer } from "@augmentcode/themis/utils/store/create-reducer";
 
+import type { TaggedError } from "~/lib/errors";
 import type { BookMeta } from "~/lib/stores/book-store";
 
 export interface BookUploadFile {
@@ -48,9 +49,9 @@ export interface BooksState {
   uploading: boolean;
   deletingBookIds: string[];
   downloadingBookIds: string[];
-  downloadErrors: Record<string, string>;
+  downloadErrors: Record<string, TaggedError>;
   seededDemoBookId: string | null;
-  error: string | null;
+  error: TaggedError | null;
 }
 
 export const hydrateBooks = createAction("books/hydrate");
@@ -58,7 +59,7 @@ export const booksHydrated = createAction<[books: BookMeta[]]>("books/hydrated")
 export const bookAdded = createAction<[book: BookMeta]>("books/bookAdded");
 export const bookUpdated = createAction<[book: BookMeta]>("books/bookUpdated");
 export const bookDeleted = createAction<[bookId: string]>("books/bookDeleted");
-export const booksHydrateFailed = createAction<[error: string]>("books/hydrateFailed");
+export const booksHydrateFailed = createAction<[error: TaggedError]>("books/hydrateFailed");
 export const uploadBooksRequested =
   createAction<
     [
@@ -69,7 +70,8 @@ export const uploadBooksRequested =
     ]
   >("books/uploadRequested");
 export const booksUploadCompleted = createAction("books/uploadCompleted");
-export const booksUploadFailed = createAction<[error: string]>("books/uploadFailed");
+export const booksUploadFailed = createAction<[error: TaggedError]>("books/uploadFailed");
+export const bookMutationFailed = createAction<[error: TaggedError]>("books/mutationFailed");
 export const importSharedBookRequested = createAction<
   [
     request: SharedBookImportRequest,
@@ -93,13 +95,13 @@ export const deleteBookRequested =
   createAction<[bookId: string, onBookDeleted?: BookDeletedCallback]>("books/deleteRequested");
 export const bookDeletionCompleted = createAction<[bookId: string]>("books/deleteCompleted");
 export const bookDeletionFailed =
-  createAction<[bookId: string, error: string]>("books/deleteFailed");
+  createAction<[bookId: string, error: TaggedError]>("books/deleteFailed");
 export const downloadBookForOpenRequested = createAction<
   [bookId: string, onCompleted: BookMutationCompletedCallback, onFailed: BookMutationFailedCallback]
 >("books/downloadForOpenRequested");
 export const bookDownloadCompleted = createAction<[bookId: string]>("books/downloadCompleted");
 export const bookDownloadFailed =
-  createAction<[bookId: string, error: string]>("books/downloadFailed");
+  createAction<[bookId: string, error: TaggedError]>("books/downloadFailed");
 export const loadBookDataRequested =
   createAction<
     [bookId: string, onCompleted: BookDataLoadedCallback, onFailed: BookMutationFailedCallback]
@@ -157,6 +159,7 @@ reducer.with(booksUploadFailed, (state, { payload: [error] }) => ({
   uploading: false,
   error,
 }));
+reducer.with(bookMutationFailed, (state, { payload: [error] }) => ({ ...state, error }));
 reducer.with(demoBookSeeded, (state, { payload: [bookId] }) => ({
   ...state,
   seededDemoBookId: bookId,
