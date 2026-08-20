@@ -215,6 +215,42 @@ describe("annotationsSaga", () => {
     );
   });
 
+  it("cancels a stale debounced notebook save before it persists or publishes", async () => {
+    vi.useFakeTimers();
+    try {
+      const staleContent = {
+        type: "doc",
+        content: [{ type: "paragraph", attrs: { id: "stale" } }],
+      };
+      const latestContent = {
+        type: "doc",
+        content: [{ type: "paragraph", attrs: { id: "latest" } }],
+      };
+      mocks.runPromise.mockResolvedValueOnce(undefined);
+      const store = startStore();
+
+      store.dispatch(updateNotebookRequested("book-1", staleContent, false));
+      await vi.advanceTimersByTimeAsync(0);
+      store.dispatch(updateNotebookRequested("book-1", latestContent, true));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mocks.runPromise).toHaveBeenCalledOnce();
+      const persisted = mocks.runPromise.mock.calls[0]?.[0] as Notebook;
+      expect(persisted.content).toEqual(latestContent);
+      expect(store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")).toBe(
+        persisted,
+      );
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.runPromise).toHaveBeenCalledOnce();
+      expect(store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")).toBe(
+        persisted,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("caches a server-authoritative notebook without using the change-recording save path", async () => {
     const notebook = makeNotebook();
     const onCompleted = vi.fn();

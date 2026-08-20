@@ -184,8 +184,37 @@ describe("booksSaga", () => {
     expect(selected?.updatedAt).toBe(persisted.updatedAt);
   });
 
+  it("leaves existing metadata unchanged when persistence fails", async () => {
+    const original = { ...makeBook("edit-failure"), updatedAt: 100 };
+    const failed = vi.fn();
+    const store = startStore();
+    store.dispatch(bookAdded(original));
+    mocks.updateBookMeta.mockRejectedValueOnce(new Error("IDB unavailable"));
+
+    store.dispatch(
+      updateBookMetadataRequested(
+        { ...original, title: "Must not publish" },
+        "update",
+        vi.fn(),
+        failed,
+      ),
+    );
+
+    await vi.waitFor(() => expect(failed).toHaveBeenCalledWith("IDB unavailable"));
+    expect(store.booksSelectors.selectBookById.select(store.state, original.id)).toBe(original);
+  });
+
   it("persists restored metadata before adding the missing book to the collection", async () => {
-    const restored = makeBook("restore-me");
+    const softDeleted = {
+      ...makeBook("restore-me"),
+      title: "Restored title",
+      remoteCoverUrl: "https://example.com/cover.jpg",
+      remoteFileUrl: "https://example.com/book.epub",
+      fileHash: "restored-hash",
+      hasLocalFile: true,
+      deletedAt: 4_321,
+    };
+    const restored = { ...softDeleted, deletedAt: undefined };
     const persisted = { ...restored, updatedAt: 5_678 };
     const completed = vi.fn();
     const store = startStore();
@@ -202,6 +231,14 @@ describe("booksSaga", () => {
     expect(completed.mock.calls[0]?.[0]).toBe(persisted);
     expect(selected).toEqual(persisted);
     expect(selected?.updatedAt).toBe(persisted.updatedAt);
+    expect(selected).toMatchObject({
+      title: "Restored title",
+      remoteCoverUrl: restored.remoteCoverUrl,
+      remoteFileUrl: restored.remoteFileUrl,
+      fileHash: restored.fileHash,
+      hasLocalFile: true,
+      deletedAt: undefined,
+    });
   });
 
   it("deletes persisted data before removing collection metadata", async () => {
