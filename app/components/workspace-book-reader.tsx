@@ -311,6 +311,7 @@ function WorkspaceBookReaderInner({
   const bookmarkSyncVersion = useSyncListener(["bookmark"]);
   const store = useAppStore();
   const bookmarks = store.bookmarksSelectors.selectBookmarksByBook.useValue(book.id);
+  const bookmarksLoaded = store.bookmarksSelectors.selectBookmarksLoaded.useValue(book.id);
 
   useEffect(() => {
     store.dispatch(hydrateBookmarksRequested(book.id));
@@ -382,6 +383,7 @@ function WorkspaceBookReaderInner({
   } = useBookReaderActions({
     book,
     bookmarks,
+    bookmarksLoaded,
     currentChapterLabel,
     currentPage,
     latestCfiRef,
@@ -445,6 +447,7 @@ function WorkspaceBookReaderInner({
           onOpenSpeedread={handleOpenSpeedread}
           onBookmarkPage={handleBookmarkPage}
           isBookmarked={Boolean(currentBookmark)}
+          bookmarksLoaded={bookmarksLoaded}
         />
         {/* Portal popovers to document.body to escape dockview's CSS transforms,
             which create a new containing block and break position:fixed */}

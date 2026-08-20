@@ -1,5 +1,6 @@
 import type { Collection } from "@augmentcode/themis/utils/collections/collection-utils";
 
+import type { TaggedError } from "~/lib/errors";
 import type {
   ReadingHistoryEntry,
   ReadingHistoryVisitData,
@@ -41,7 +42,7 @@ export interface ReadingPositionsState {
   locationCaches: Collection<LocationCacheRecord, "bookId">;
   history: Collection<ReadingHistoryEntry, "id">;
   remotePositions: Collection<RemoteReadingPositionRecord, "bookId">;
-  errorsByKey: Record<string, string>;
+  errorsByKey: Record<string, TaggedError>;
 }
 
 export type { ReadingHistoryVisitData, SavePositionOptions };

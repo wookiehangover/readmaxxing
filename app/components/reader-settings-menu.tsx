@@ -59,6 +59,7 @@ interface ReaderActionsMenuProps {
   onCopyPageAsMarkdown?: () => void;
   onOpenSpeedread?: () => void;
   isBookmarked?: boolean;
+  bookmarksLoaded?: boolean;
 }
 
 interface ReaderSettingsMenuProps extends ReaderFormattingMenuProps, ReaderActionsMenuProps {
@@ -273,6 +274,7 @@ function ReaderActionItems({
   onCopyPageAsMarkdown,
   onOpenSpeedread,
   isBookmarked,
+  bookmarksLoaded = true,
   isAuthenticated,
   onShare,
 }: ReaderActionsMenuProps & { isAuthenticated: boolean; onShare: () => void }) {
@@ -307,12 +309,17 @@ function ReaderActionItems({
         Download
       </DropdownMenuItem>
       <DropdownMenuItem
+        disabled={!bookmarksLoaded}
         onClick={() => {
           void Promise.resolve(onBookmarkPage()).catch(console.error);
         }}
       >
         <BookmarkIcon className="size-4" />
-        {isBookmarked ? "Remove bookmark" : "Bookmark page"}
+        {!bookmarksLoaded
+          ? "Loading bookmarks…"
+          : isBookmarked
+            ? "Remove bookmark"
+            : "Bookmark page"}
       </DropdownMenuItem>
     </DropdownMenuGroup>
   );

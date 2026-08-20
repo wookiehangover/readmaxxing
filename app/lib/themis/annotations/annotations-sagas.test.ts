@@ -32,6 +32,14 @@ import { createAppStore, type AppStore } from "~/lib/themis/store";
 
 const stores: AppStore[] = [];
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 function makeHighlight(overrides: Partial<Highlight> = {}): Highlight {
   return {
     id: "highlight-1",
@@ -81,6 +89,39 @@ describe("annotationsSaga", () => {
       notebook,
     );
     expect(mocks.runPromise).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the latest overlapping hydrate result for a book", async () => {
+    const olderHighlight = makeHighlight({ id: "older" });
+    const newerHighlight = makeHighlight({ id: "newer" });
+    const olderHighlights = deferred<Highlight[]>();
+    const olderNotebook = deferred<Notebook | null>();
+    const newerNotebook = { ...makeNotebook(), updatedAt: 3 };
+    mocks.runPromise
+      .mockReturnValueOnce(olderHighlights.promise)
+      .mockReturnValueOnce(olderNotebook.promise)
+      .mockResolvedValueOnce([newerHighlight])
+      .mockResolvedValueOnce(newerNotebook);
+    const store = startStore();
+
+    store.dispatch(hydrateAnnotationsRequested("book-1"));
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledTimes(2));
+    store.dispatch(hydrateAnnotationsRequested("book-1"));
+
+    await vi.waitFor(() =>
+      expect(
+        store.annotationsSelectors.selectHighlightsByBook.select(store.state, "book-1"),
+      ).toEqual([newerHighlight]),
+    );
+    olderHighlights.resolve([olderHighlight]);
+    olderNotebook.resolve(makeNotebook());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.annotationsSelectors.selectHighlightsByBook.select(store.state, "book-1")).toEqual(
+      [newerHighlight],
+    );
+    expect(store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")).toEqual(
+      newerNotebook,
+    );
   });
 
   it("adds and updates the collection only after persistence succeeds", async () => {
@@ -198,9 +239,9 @@ describe("annotationsSaga", () => {
     store.dispatch(cacheNotebookRequested(notebook));
 
     await vi.waitFor(() =>
-      expect(store.annotationsSelectors.selectAnnotationsError.select(store.state, "book-1")).toBe(
-        "Cache unavailable",
-      ),
+      expect(
+        store.annotationsSelectors.selectAnnotationsError.select(store.state, "book-1"),
+      ).toEqual({ _tag: "Error", message: "Cache unavailable" }),
     );
     expect(
       store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1"),

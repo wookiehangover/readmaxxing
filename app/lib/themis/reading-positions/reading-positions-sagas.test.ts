@@ -47,6 +47,14 @@ import { createAppStore, type AppStore } from "~/lib/themis/store";
 
 const stores: AppStore[] = [];
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 function startStore() {
   const store = createAppStore();
   stores.push(store);
@@ -77,6 +85,29 @@ describe("readingPositionsSaga", () => {
     );
     expect(store.readingPositionsSelectors.selectPosition.select(store.state, "panel-1")?.cfi).toBe(
       "page:6",
+    );
+  });
+
+  it("keeps the latest overlapping hydrate result for a key", async () => {
+    const olderPosition = deferred<{ cfi: string; updatedAt: number }>();
+    mocks.runPromise
+      .mockReturnValueOnce(olderPosition.promise)
+      .mockResolvedValueOnce({ cfi: "page:9", updatedAt: 2 });
+    const store = startStore();
+
+    store.dispatch(hydrateReadingPositionsRequested(["book-1"]));
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledOnce());
+    store.dispatch(hydrateReadingPositionsRequested(["book-1"]));
+
+    await vi.waitFor(() =>
+      expect(
+        store.readingPositionsSelectors.selectPosition.select(store.state, "book-1")?.cfi,
+      ).toBe("page:9"),
+    );
+    olderPosition.resolve({ cfi: "page:2", updatedAt: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.readingPositionsSelectors.selectPosition.select(store.state, "book-1")?.cfi).toBe(
+      "page:9",
     );
   });
 

@@ -26,6 +26,14 @@ import { createAppStore, type AppStore } from "~/lib/themis/store";
 
 const stores: AppStore[] = [];
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 function makeSession(id: string, title = ""): ChatSession {
   return { id, bookId: "book-1", title, messages: [], createdAt: 1, updatedAt: 1 };
 }
@@ -57,6 +65,33 @@ describe("chatSessionsSaga", () => {
     expect(
       store.chatSessionsSelectors.selectActiveSessionByBook.select(store.state, "book-1"),
     ).toEqual(session);
+  });
+
+  it("keeps the latest overlapping hydrate result for a book", async () => {
+    const older = makeSession("older");
+    const newer = makeSession("newer");
+    const olderSessions = deferred<ChatSession[]>();
+    mocks.runPromise
+      .mockReturnValueOnce(olderSessions.promise)
+      .mockResolvedValueOnce([newer])
+      .mockResolvedValueOnce(newer.id)
+      .mockResolvedValueOnce(older.id);
+    const store = startStore();
+
+    store.dispatch(hydrateChatSessionsRequested("book-1"));
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledOnce());
+    store.dispatch(hydrateChatSessionsRequested("book-1"));
+
+    await vi.waitFor(() =>
+      expect(
+        store.chatSessionsSelectors.selectActiveSessionByBook.select(store.state, "book-1"),
+      ).toEqual(newer),
+    );
+    olderSessions.resolve([older]);
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledTimes(4));
+    expect(
+      store.chatSessionsSelectors.selectActiveSessionByBook.select(store.state, "book-1"),
+    ).toEqual(newer);
   });
 
   it("persists create, select, and delete before updating the collection", async () => {

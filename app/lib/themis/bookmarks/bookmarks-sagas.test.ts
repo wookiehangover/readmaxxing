@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { BookmarkError } from "~/lib/errors";
 import type { Bookmark } from "~/lib/stores/bookmark-store";
 
 const mocks = vi.hoisted(() => ({ runPromise: vi.fn() }));
@@ -21,6 +22,14 @@ import {
 import { createAppStore, type AppStore } from "~/lib/themis/store";
 
 const stores: AppStore[] = [];
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
 
 function makeBookmark(): Bookmark {
   return {
@@ -62,6 +71,29 @@ describe("bookmarksSaga", () => {
     expect(mocks.runPromise).toHaveBeenCalledOnce();
   });
 
+  it("keeps the latest overlapping hydrate result for a book", async () => {
+    const older = { ...makeBookmark(), id: "older" };
+    const newer = { ...makeBookmark(), id: "newer" };
+    const olderRequest = deferred<Bookmark[]>();
+    mocks.runPromise.mockReturnValueOnce(olderRequest.promise).mockResolvedValueOnce([newer]);
+    const store = startStore();
+
+    store.dispatch(hydrateBookmarksRequested("book-1"));
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledOnce());
+    store.dispatch(hydrateBookmarksRequested("book-1"));
+
+    await vi.waitFor(() =>
+      expect(store.bookmarksSelectors.selectBookmarksByBook.select(store.state, "book-1")).toEqual([
+        newer,
+      ]),
+    );
+    olderRequest.resolve([older]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.bookmarksSelectors.selectBookmarksByBook.select(store.state, "book-1")).toEqual([
+      newer,
+    ]);
+  });
+
   it("adds and deletes only after persistence succeeds", async () => {
     const bookmark = { ...makeBookmark(), updatedAt: undefined };
     const persisted = { ...bookmark, updatedAt: 1_234 };
@@ -87,15 +119,20 @@ describe("bookmarksSaga", () => {
   });
 
   it("keeps failed writes out of the collection", async () => {
-    mocks.runPromise.mockRejectedValueOnce(new Error("IDB unavailable"));
+    mocks.runPromise.mockRejectedValueOnce(
+      new BookmarkError({ operation: "saveBookmark", bookmarkId: "bookmark-1" }),
+    );
     const store = startStore();
 
     store.dispatch(addBookmarkRequested(makeBookmark()));
 
     await vi.waitFor(() =>
-      expect(store.bookmarksSelectors.selectBookmarksError.select(store.state, "book-1")).toBe(
-        "IDB unavailable",
-      ),
+      expect(store.bookmarksSelectors.selectBookmarksError.select(store.state, "book-1")).toEqual({
+        _tag: "BookmarkError",
+        message: "BookmarkError",
+        operation: "saveBookmark",
+        bookmarkId: "bookmark-1",
+      }),
     );
     expect(store.bookmarksSelectors.selectBookmarksByBook.select(store.state, "book-1")).toEqual(
       [],
