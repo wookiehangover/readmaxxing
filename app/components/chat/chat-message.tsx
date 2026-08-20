@@ -6,6 +6,7 @@ import { Bubble, BubbleContent } from "~/components/ui/bubble";
 import { Message, MessageContent } from "~/components/ui/message";
 import type { SEBook } from "~/lib/standard-ebooks";
 import { useWorkspace } from "~/lib/context/workspace-context";
+import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 import { getToolInfo, joinTextParts, stripSuggestedPrompts } from "./chat-utils";
 import { SEBookCardsInChat } from "./se-book-cards";
@@ -47,7 +48,9 @@ function ChatMessageImpl({
   isStreaming?: boolean;
 }) {
   const isUser = message.role === "user";
-  const { navigateInCluster, findTocForBook, applyTempHighlightForBook, booksRef } = useWorkspace();
+  const { navigateInCluster, findTocForBook, applyTempHighlightForBook } = useWorkspace();
+  const store = useAppStore();
+  const books = store.booksSelectors.selectAllBooks.useValue();
 
   // Resolve a book id to its title via the workspace books list. Falls back to
   // the chat's own/primary book when the id is absent (back-compat with the
@@ -55,14 +58,14 @@ function ChatMessageImpl({
   const resolveBookTitle = useCallback(
     (id: string | undefined): string | undefined => {
       const targetId = id ?? bookId;
-      return booksRef.current.find((b) => b.id === targetId)?.title;
+      return books.find((book) => book.id === targetId)?.title;
     },
-    [booksRef, bookId],
+    [bookId, books],
   );
 
   // Whether more than one book is currently in the workspace. When only one
   // book is in play the per-search book label can stay subtle/omitted.
-  const hasMultipleBooks = booksRef.current.length > 1;
+  const hasMultipleBooks = books.length > 1;
 
   const textParts =
     message.parts?.filter((p): p is { type: "text"; text: string } => p.type === "text") ?? [];

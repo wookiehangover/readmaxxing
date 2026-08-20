@@ -6,7 +6,6 @@ import {
   openZipResourceProvider,
   type ZipResourceProvider,
 } from "@readmaxxing/epub-successor";
-import { Effect } from "effect";
 import { AlertCircle, BookOpen, Check, Loader2 } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { Button } from "~/components/ui/button";
@@ -15,13 +14,11 @@ import { getBookByIdForUser } from "~/lib/database/book/book";
 import { getPositionsByUser } from "~/lib/database/book/reading-position";
 import { getShareLink, type ShareLinkRow } from "~/lib/database/share/share-link";
 import { getUser } from "~/lib/database/user/user";
-import { parseEpubEffect } from "~/lib/epub/epub-service";
 import { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
-import { parsePdfEffect } from "~/lib/pdf/pdf-service";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { computeFileHash } from "~/lib/book-hash";
 import { signDownloadToken } from "~/lib/share-download-token";
-import { BookService, type BookFormat, type BookMeta } from "~/lib/stores/book-store";
+import type { BookFormat } from "~/lib/stores/book-store";
+import { importSharedBookRequested } from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 
 type ShareStatus = "available" | "expired" | "exhausted" | "not_found" | "unavailable";
@@ -47,16 +44,6 @@ interface ShareLoaderData {
   };
 }
 
-interface ShareResolveResponse {
-  book: {
-    title: string | null;
-    author: string | null;
-    format: string | null;
-  };
-  fileUrl: string;
-  sharerId: string;
-}
-
 type SharedChatMessage = { role: string; content: string; createdAt: string };
 
 type SharedChatSession = { id: string; title: string | null; messages: SharedChatMessage[] };
@@ -68,13 +55,6 @@ interface LoaderArgs {
 
 interface ComponentProps {
   loaderData: ShareLoaderData;
-}
-
-class ShareImportError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ShareImportError";
-  }
 }
 
 function isExpired(shareLink: ShareLinkRow): boolean {
@@ -89,84 +69,11 @@ function normalizeFormat(format: string | null | undefined): BookFormat {
   return format === "pdf" ? "pdf" : "epub";
 }
 
-function getBookFileName(book: ShareBookData): string {
-  const extension = book.format === "pdf" ? "pdf" : "epub";
-  return `${book.title}.${extension}`;
-}
-
 async function readApiError(response: Response): Promise<string> {
   const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
   return typeof body?.error === "string"
     ? body.error
     : `Request failed with ${response.status} ${response.statusText}`;
-}
-
-function fetchShareFile(shareId: string) {
-  return Effect.tryPromise({
-    try: async () => {
-      const infoResponse = await fetch(`/api/share/${encodeURIComponent(shareId)}`);
-      if (!infoResponse.ok) {
-        throw new ShareImportError(await readApiError(infoResponse));
-      }
-
-      const shareInfo = (await infoResponse.json()) as ShareResolveResponse;
-      const fileResponse = await fetch(shareInfo.fileUrl);
-      if (!fileResponse.ok) {
-        throw new ShareImportError(await readApiError(fileResponse));
-      }
-
-      return {
-        shareInfo,
-        arrayBuffer: await fileResponse.arrayBuffer(),
-      };
-    },
-    catch: (cause) =>
-      cause instanceof ShareImportError
-        ? cause
-        : new ShareImportError(cause instanceof Error ? cause.message : "Failed to download book"),
-  });
-}
-
-function importSharedBook(loaderData: ShareLoaderData) {
-  return Effect.gen(function* () {
-    if (loaderData.status !== "available" || !loaderData.book) {
-      return yield* Effect.fail(new ShareImportError("This share link is not available."));
-    }
-
-    const { shareInfo, arrayBuffer } = yield* fetchShareFile(loaderData.id);
-    const format = normalizeFormat(shareInfo.book.format ?? loaderData.book.format);
-    const fileHash = yield* Effect.tryPromise({
-      try: () => computeFileHash(arrayBuffer),
-      catch: (cause) =>
-        new ShareImportError(cause instanceof Error ? cause.message : "Failed to hash book file"),
-    });
-
-    const service = yield* BookService;
-    const existing = yield* service.findByFileHash(fileHash);
-    if (existing) {
-      const updated = { ...existing, sharedBy: shareInfo.sharerId, shareId: loaderData.id };
-      yield* service.updateBookMeta(updated);
-      return updated;
-    }
-
-    const metadata =
-      format === "pdf"
-        ? yield* parsePdfEffect(arrayBuffer, getBookFileName(loaderData.book))
-        : yield* parseEpubEffect(arrayBuffer);
-
-    const book: BookMeta = {
-      id: crypto.randomUUID(),
-      title: metadata.title || shareInfo.book.title || loaderData.book.title,
-      author: metadata.author || shareInfo.book.author || loaderData.book.author,
-      coverImage: metadata.coverImage,
-      format,
-      fileHash,
-      sharedBy: shareInfo.sharerId,
-      shareId: loaderData.id,
-    };
-    yield* service.saveBook(book, arrayBuffer);
-    return book;
-  });
 }
 
 export async function loader({ request, params }: LoaderArgs): Promise<ShareLoaderData> {
@@ -551,31 +458,34 @@ function SharedReadingSection({
 
 export default function SharePage({ loaderData }: ComponentProps) {
   const navigate = useNavigate();
+  const store = useAppStore();
   const [state, setState] = useState<"idle" | "importing" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const canImport = loaderData.status === "available" && !!loaderData.book;
   const sharerName = loaderData.sharer?.displayName ?? "A Readmaxxing reader";
 
-  async function handleImport() {
+  function handleImport() {
+    if (!loaderData.book) return;
     setError(null);
     setState("importing");
-    const result = await AppRuntime.runPromise(
-      importSharedBook(loaderData).pipe(
-        Effect.match({
-          onFailure: (cause) => ({ ok: false as const, error: cause }),
-          onSuccess: (book) => ({ ok: true as const, book }),
-        }),
+    store.dispatch(
+      importSharedBookRequested(
+        {
+          shareId: loaderData.id,
+          title: loaderData.book.title,
+          author: loaderData.book.author,
+          format: loaderData.book.format,
+        },
+        (book) => {
+          setState("done");
+          navigate("/", { replace: true, state: { importedBookId: book.id } });
+        },
+        (message) => {
+          setState("idle");
+          setError(message);
+        },
       ),
     );
-
-    if (!result.ok) {
-      setState("idle");
-      setError(result.error.message);
-      return;
-    }
-
-    setState("done");
-    navigate("/", { replace: true, state: { importedBookId: result.book.id } });
   }
 
   return (

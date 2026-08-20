@@ -1,19 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UIMessage } from "@ai-sdk/react";
-import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import { OnboardingDialog } from "~/components/onboarding/onboarding-dialog";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useAuth } from "~/lib/context/auth-context";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
-import { adoptDemoContent } from "~/lib/onboarding/adopt-demo";
 import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
 import { BookService } from "~/lib/stores/book-store";
-import { ChatService } from "~/lib/stores/chat-store";
 import { ensureBookChaptersUploaded } from "~/lib/sync/book-chapter-uploads";
+import { adoptDemoBookRequested } from "~/lib/themis/books/books-slice";
+import {
+  cacheChatMessagesRequested,
+  createChatSessionRequested,
+  hydrateChatSessionsRequested,
+  selectChatSessionRequested,
+} from "~/lib/themis/chat-sessions/chat-sessions-slice";
+import { useAppStore } from "~/lib/themis/provider";
 import { ChatPanelInner } from "./chat-panel-inner";
 import { resolvePendingChatMessage, type ChatIntent } from "./chat-intent";
 import { toUIMessages, uiMessagesToChatMessages } from "./chat-utils";
@@ -54,7 +58,7 @@ function messagesDiffer(current: UIMessage[], next: UIMessage[]): boolean {
 export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { pendingChatPromptMap } = useWorkspace();
-  const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
+  const store = useAppStore();
   const [bookContext, setBookContext] = useState<{
     title: string;
     author: string;
@@ -62,8 +66,6 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   } | null>(null);
   const [bookFormat, setBookFormat] = useState<string>();
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [sessionKey, setSessionKey] = useState(0);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [pendingChatIntent, setPendingChatIntent] = useState<ChatIntent>({ type: "none" });
   const [resumeAfterAuth, setResumeAfterAuth] = useState(false);
@@ -77,6 +79,16 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const explanationInFlightRef = useRef<{ bookId: string; message: string } | null>(null);
 
   const chatBookId = adoptedBookId ?? bookId;
+  const activeSession = store.chatSessionsSelectors.selectActiveSessionByBook.useValue(chatBookId);
+  const activeSessionId = activeSession?.id ?? null;
+  const chatSessionsLoaded =
+    store.chatSessionsSelectors.selectChatSessionsLoaded.useValue(chatBookId);
+  const chatSessionsError =
+    store.chatSessionsSelectors.selectChatSessionsError.useValue(chatBookId);
+  const initialMessages = useMemo(
+    () => toUIMessages(activeSession?.messages ?? []),
+    [activeSession?.messages],
+  );
 
   const explanationScopeRef = useRef({ active: false, bookId: chatBookId });
   useEffect(() => {
@@ -90,23 +102,28 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const startExplanationSession = useCallback(
     (message: string) => {
       const scope = explanationScopeRef.current;
-      return AppRuntime.runPromise(
-        ChatService.pipe(Effect.andThen((service) => service.createSession(chatBookId))),
-      )
-        .then((session) => {
-          if (!scope.active || scope.bookId !== chatBookId) return false;
-          setActiveSessionId(session.id);
-          setInitialMessages([]);
-          setSessionKey((key) => key + 1);
-          setExplainPrompt(message);
-          return true;
-        })
-        .catch((error) => {
-          console.error("Failed to start explanation chat:", error);
-          return false;
-        });
+      return new Promise<boolean>((resolve) => {
+        store.dispatch(
+          createChatSessionRequested(
+            chatBookId,
+            undefined,
+            () => {
+              if (!scope.active || scope.bookId !== chatBookId) {
+                resolve(false);
+                return;
+              }
+              setExplainPrompt(message);
+              resolve(true);
+            },
+            (error) => {
+              console.error("Failed to start explanation chat:", error);
+              resolve(false);
+            },
+          ),
+        );
+      });
     },
-    [chatBookId],
+    [chatBookId, store],
   );
 
   const consumePendingExplanation = useCallback(
@@ -133,7 +150,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   );
 
   const chatReady =
-    isAuthenticated && initialMessages !== null && bookContext !== null && activeSessionId !== null;
+    isAuthenticated && chatSessionsLoaded && bookContext !== null && activeSessionId !== null;
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -158,15 +175,17 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   useEffect(() => {
     if (!isAuthenticated && chatBookId !== DEMO_BOOK_ID) return;
     let cancelled = false;
+    setLoadError(null);
+    store.dispatch(hydrateChatSessionsRequested(chatBookId, isAuthenticated));
 
     const load = async () => {
       try {
-        const book = await AppRuntime.runPromise(
-          BookService.pipe(
-            Effect.andThen((service) => service.getBook(chatBookId)),
-            Effect.catchTag("BookNotFoundError", () => Effect.succeed(null)),
-          ),
-        );
+        const book = await BookService.getBook(chatBookId).catch((error: unknown) => {
+          if (error instanceof Error && "_tag" in error && error._tag === "BookNotFoundError") {
+            return null;
+          }
+          throw error;
+        });
         if (cancelled) return;
         if (!book) {
           setLoadError(
@@ -175,29 +194,8 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
           return;
         }
 
-        const [savedMessages, bookData] = await Promise.all([
-          AppRuntime.runPromise(
-            ChatService.pipe(Effect.andThen((service) => service.getMessages(chatBookId))),
-          ),
-          AppRuntime.runPromise(
-            BookService.pipe(Effect.andThen((service) => service.getBookData(chatBookId))),
-          ),
-        ]);
+        const bookData = await BookService.getBookData(chatBookId);
         if (cancelled) return;
-
-        const activeId = await AppRuntime.runPromise(
-          ChatService.pipe(Effect.andThen((service) => service.getActiveSessionId(chatBookId))),
-        );
-        if (cancelled) return;
-        if (activeId) {
-          setActiveSessionId(activeId);
-        } else if (isAuthenticated) {
-          const session = await AppRuntime.runPromise(
-            ChatService.pipe(Effect.andThen((service) => service.createSession(chatBookId))),
-          );
-          if (cancelled) return;
-          setActiveSessionId(session.id);
-        }
 
         let chapters: BookChapter[] = [];
         try {
@@ -222,7 +220,6 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         if (cancelled) return;
 
         setBookContext({ title: book.title, author: book.author, chapters });
-        setInitialMessages(toUIMessages(savedMessages));
       } catch (error) {
         if (!cancelled) {
           console.error("Failed to load chat data:", error);
@@ -235,10 +232,21 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [chatBookId, isAuthenticated]);
+  }, [chatBookId, isAuthenticated, store]);
 
   const initialMessagesRef = useRef(initialMessages);
-  initialMessagesRef.current = initialMessages;
+  const renderedSessionIdRef = useRef(activeSessionId);
+
+  useEffect(() => {
+    if (renderedSessionIdRef.current !== activeSessionId) {
+      renderedSessionIdRef.current = activeSessionId;
+      initialMessagesRef.current = initialMessages;
+      return;
+    }
+    if (!messagesDiffer(initialMessagesRef.current, initialMessages)) return;
+    setChatMessagesRef.current?.(initialMessages);
+    initialMessagesRef.current = initialMessages;
+  }, [activeSessionId, initialMessages]);
 
   useEffect(() => {
     if (!isAuthenticated || !activeSessionId) return;
@@ -257,79 +265,46 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         if (setChatMessagesRef.current) {
           setChatMessagesRef.current(serverMessages);
           initialMessagesRef.current = serverMessages;
-        } else {
-          setInitialMessages(serverMessages);
-          initialMessagesRef.current = serverMessages;
         }
-        AppRuntime.runPromise(
-          ChatService.pipe(
-            Effect.andThen((service) =>
-              service.cacheServerMessages(
-                chatBookId,
-                activeSessionId,
-                uiMessagesToChatMessages(serverMessages),
-              ),
-            ),
+        store.dispatch(
+          cacheChatMessagesRequested(
+            chatBookId,
+            activeSessionId,
+            uiMessagesToChatMessages(serverMessages),
           ),
-        ).catch(console.error);
+        );
       })
       .catch(console.error);
     return () => {
       cancelled = true;
     };
-  }, [chatBookId, activeSessionId, isAuthenticated]);
+  }, [activeSessionId, chatBookId, isAuthenticated, store]);
 
-  const messageSyncVersion = useSyncListener(["chat_message"]);
+  const chatSyncVersion = useSyncListener(["chat_message", "chat_session"]);
 
   useEffect(() => {
-    if (messageSyncVersion === 0 || !activeSessionId) return;
-    AppRuntime.runPromise(
-      ChatService.pipe(
-        Effect.andThen((service) => service.getSession(activeSessionId, chatBookId)),
-      ),
-    )
-      .then((session) => {
-        if (!session) return;
-        const newMessages = toUIMessages(session.messages);
-        const currentMessages = initialMessagesRef.current ?? [];
-        if (!messagesDiffer(currentMessages, newMessages)) return;
-        if (setChatMessagesRef.current) {
-          setChatMessagesRef.current(newMessages);
-          initialMessagesRef.current = newMessages;
-        } else {
-          setInitialMessages(newMessages);
-          setSessionKey((key) => key + 1);
-        }
-      })
-      .catch(console.error);
-  }, [chatBookId, activeSessionId, messageSyncVersion]);
+    if (chatSyncVersion === 0 || !activeSessionId) return;
+    store.dispatch(hydrateChatSessionsRequested(chatBookId));
+  }, [activeSessionId, chatBookId, chatSyncVersion, store]);
 
   const handleSwitchSession = useCallback(
-    async (sessionId: string) => {
-      await AppRuntime.runPromise(
-        ChatService.pipe(
-          Effect.andThen((service) => service.setActiveSessionId(chatBookId, sessionId)),
+    (sessionId: string) => {
+      store.dispatch(
+        selectChatSessionRequested(chatBookId, sessionId, undefined, (error) =>
+          console.error("Failed to switch chat session:", error),
         ),
       );
-      const session = await AppRuntime.runPromise(
-        ChatService.pipe(Effect.andThen((service) => service.getSession(sessionId, chatBookId))),
-      );
-      if (!session) return;
-      setActiveSessionId(sessionId);
-      setInitialMessages(toUIMessages(session.messages));
-      setSessionKey((key) => key + 1);
     },
-    [chatBookId],
+    [chatBookId, store],
   );
 
-  const handleNewSession = useCallback(async () => {
-    const session = await AppRuntime.runPromise(
-      ChatService.pipe(Effect.andThen((service) => service.createSession(chatBookId))),
+  const handleNewSession = useCallback(() => {
+    store.dispatch(
+      createChatSessionRequested(chatBookId, undefined, undefined, (error) =>
+        console.error("Failed to create chat session:", error),
+      ),
     );
-    setActiveSessionId(session.id);
-    setInitialMessages([]);
-    setSessionKey((key) => key + 1);
-  }, [chatBookId]);
+  }, [chatBookId, store]);
 
   const openOnboarding = useCallback((intent: ChatIntent) => {
     setPendingChatIntent(intent);
@@ -343,32 +318,41 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
       setResumeAfterAuth(false);
     }
   }, []);
-  const handleAuthenticated = useCallback(async (userId: string) => {
-    const typedText = textareaRef.current?.value.trim();
-    if (typedText) {
-      setPendingChatIntent((intent) =>
-        resolvePendingChatMessage(intent) ? intent : { type: "typed", text: typedText },
-      );
-    }
-    try {
-      const adopted = await adoptDemoContent(userId);
-      setAdoptedBookId(adopted.bookId);
-      setActiveSessionId(adopted.sessionId);
-      setAdoptionError(null);
-      setResumeAfterAuth(true);
-      setSessionKey((key) => key + 1);
-    } catch (error) {
-      console.error("Failed to adopt demo library:", error);
-      setAdoptionError(
-        "Your account is ready, but we couldn't finish setting up the demo library. Check your connection and reload to try again.",
-      );
-      setResumeAfterAuth(false);
-    } finally {
-      // Defer the close so the dialog's own async cleanup (setLoadingAction, etc.)
-      // commits before the dialog unmounts, avoiding a setState-on-unmounted warning.
-      queueMicrotask(() => setOnboardingOpen(false));
-    }
-  }, []);
+  const handleAuthenticated = useCallback(
+    (userId: string) => {
+      const typedText = textareaRef.current?.value.trim();
+      if (typedText) {
+        setPendingChatIntent((intent) =>
+          resolvePendingChatMessage(intent) ? intent : { type: "typed", text: typedText },
+        );
+      }
+      return new Promise<void>((resolve) => {
+        store.dispatch(
+          adoptDemoBookRequested(
+            userId,
+            (adopted) => {
+              setAdoptedBookId(adopted.bookId);
+              store.dispatch(hydrateChatSessionsRequested(adopted.bookId, true));
+              setAdoptionError(null);
+              setResumeAfterAuth(true);
+              queueMicrotask(() => setOnboardingOpen(false));
+              resolve();
+            },
+            (error) => {
+              console.error("Failed to adopt demo library:", error);
+              setAdoptionError(
+                "Your account is ready, but we couldn't finish setting up the demo library. Check your connection and reload to try again.",
+              );
+              setResumeAfterAuth(false);
+              queueMicrotask(() => setOnboardingOpen(false));
+              resolve();
+            },
+          ),
+        );
+      });
+    },
+    [store],
+  );
   const handleResumeComplete = useCallback(() => {
     setPendingChatIntent({ type: "none" });
     setResumeAfterAuth(false);
@@ -403,10 +387,10 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     );
   }
 
-  if (loadError) {
+  if (loadError || (chatSessionsError && !activeSession)) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">{loadError}</p>
+        <p className="text-muted-foreground">{loadError ?? chatSessionsError}</p>
       </div>
     );
   }
@@ -419,7 +403,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     );
   }
 
-  if (!initialMessages || !bookContext || (isAuthenticated && !activeSessionId)) {
+  if (!chatSessionsLoaded || !bookContext || (isAuthenticated && !activeSessionId)) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Loading chat…</p>
@@ -445,7 +429,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   return (
     <>
       <ChatPanelInner
-        key={sessionKey}
+        key={activeSessionId}
         bookId={chatBookId}
         bookTitle={bookTitle}
         bookFormat={bookFormat}

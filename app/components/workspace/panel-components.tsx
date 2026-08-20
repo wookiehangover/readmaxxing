@@ -1,5 +1,4 @@
 import { useCallback } from "react";
-import { Effect } from "effect";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   WorkspaceBookReader,
@@ -9,8 +8,8 @@ import { WorkspacePdfReader } from "~/components/workspace-pdf-reader";
 import { WorkspaceNotebook } from "~/components/workspace-notebook";
 import { ChatPanel as ChatPanelComponent } from "~/components/chat/chat-panel";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { AnnotationService } from "~/lib/stores/annotations-store";
-import { AppRuntime } from "~/lib/effect-runtime";
+import { useAppStore } from "~/lib/themis/provider";
+import { deleteHighlightRequested } from "~/lib/themis/annotations/annotations-slice";
 
 export function BookReaderPanel({
   params,
@@ -62,6 +61,7 @@ export function WorkspaceNotebookPanel({
 }) {
   const { navigateInCluster, notebookCallbackMap, removeHighlightAnnotationForBook } =
     useWorkspace();
+  const store = useAppStore();
 
   const handleNavigateToCfi = useCallback(
     async (cfi: string) => {
@@ -89,14 +89,16 @@ export function WorkspaceNotebookPanel({
 
   const handleDeleteHighlight = useCallback(
     (highlightId: string, cfiRange: string) => {
-      const deleteProgram = Effect.gen(function* () {
-        const svc = yield* AnnotationService;
-        yield* svc.deleteHighlight(highlightId);
-      });
-      AppRuntime.runPromise(deleteProgram).catch(console.error);
-      removeHighlightAnnotationForBook(bookId, cfiRange);
+      store.dispatch(
+        deleteHighlightRequested(
+          bookId,
+          highlightId,
+          () => removeHighlightAnnotationForBook(bookId, cfiRange),
+          (error) => console.error("Failed to delete highlight:", error),
+        ),
+      );
     },
-    [bookId, removeHighlightAnnotationForBook],
+    [bookId, removeHighlightAnnotationForBook, store],
   );
 
   return (

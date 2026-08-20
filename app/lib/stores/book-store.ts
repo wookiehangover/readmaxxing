@@ -1,48 +1,55 @@
 import { get, set, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
-import { Context, Effect, Layer, Schema } from "effect";
 import { StorageError, BookNotFoundError, DecodeError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
 import { getBookStore, getBookDataStore } from "~/lib/sync/stores";
 
-// --- Schema ---
+export type BookFormat = "epub" | "pdf";
 
-export const BookFormatSchema = Schema.Literal("epub", "pdf");
-export type BookFormat = typeof BookFormatSchema.Type;
-
-export const BookMetaSchema = Schema.Struct({
-  id: Schema.String,
-  title: Schema.String,
-  author: Schema.String,
-  coverImage: Schema.NullOr(Schema.instanceOf(Blob)),
-  format: Schema.optionalWith(BookFormatSchema, { default: () => "epub" as const }),
+export interface BookMeta {
+  id: string;
+  title: string;
+  author: string;
+  coverImage: Blob | null;
+  format: BookFormat;
   /** Vercel Blob URL for cover image (set during sync upload). */
-  remoteCoverUrl: Schema.optional(Schema.String),
+  remoteCoverUrl?: string;
   /** Vercel Blob URL for epub/pdf file (set during sync upload). */
-  remoteFileUrl: Schema.optional(Schema.String),
+  remoteFileUrl?: string;
   /** SHA-256 hash of the file data, used for deduplication during sync. */
-  fileHash: Schema.optional(Schema.String),
+  fileHash?: string;
   /** User ID of the person who shared this book, if imported via share link. */
-  sharedBy: Schema.optional(Schema.String),
+  sharedBy?: string;
   /** Share link ID used to import this book, if imported via share link. */
-  shareId: Schema.optional(Schema.String),
+  shareId?: string;
   /** Timestamp of last mutation (creation or update). Used for LWW sync. */
-  updatedAt: Schema.optional(Schema.Number),
+  updatedAt?: number;
   /** Soft-delete timestamp. When set, the book is considered deleted. */
-  deletedAt: Schema.optional(Schema.Number),
+  deletedAt?: number;
   /** Whether this device has the epub/pdf file locally in IDB. */
-  hasLocalFile: Schema.optional(Schema.Boolean),
-});
-
-/** Metadata-only book record (no binary epub data). */
-export type BookMeta = typeof BookMetaSchema.Type;
+  hasLocalFile?: boolean;
+}
 
 /** Returns true if the book was synced from another device and hasn't been downloaded yet. */
 export function bookNeedsDownload(book: BookMeta): boolean {
   return !!book.remoteFileUrl && !book.hasLocalFile;
 }
 
-const decodeBookMeta = Schema.decodeUnknownSync(BookMetaSchema);
+const decodeBookMeta = (raw: unknown): BookMeta => {
+  if (!raw || typeof raw !== "object") throw new Error("Invalid book metadata");
+  const book = raw as Record<string, unknown>;
+  const format = book.format ?? "epub";
+  if (
+    typeof book.id !== "string" ||
+    typeof book.title !== "string" ||
+    typeof book.author !== "string" ||
+    (book.coverImage !== null && !(book.coverImage instanceof Blob)) ||
+    (format !== "epub" && format !== "pdf")
+  ) {
+    throw new Error("Invalid book metadata");
+  }
+  return { ...book, format } as unknown as BookMeta;
+};
 
 function isBookStoreEntry(entry: unknown): entry is [IDBValidKey, unknown] {
   // Legacy or corrupted IndexedDB iterations can surface missing tuple entries;
@@ -87,340 +94,255 @@ async function ensureMigrated() {
   await migrateHasLocalFile();
 }
 
-// --- Effect Service ---
-
-export class BookService extends Context.Tag("BookService")<
-  BookService,
-  {
-    readonly saveBook: (meta: BookMeta, data: ArrayBuffer) => Effect.Effect<void, StorageError>;
-    readonly updateBookMeta: (meta: BookMeta) => Effect.Effect<void, StorageError>;
-    readonly replaceBookFile: (
-      id: string,
-      data: ArrayBuffer,
-      meta: { coverImage: Blob | null; fileHash: string },
-    ) => Effect.Effect<void, BookNotFoundError | StorageError | DecodeError>;
-    readonly getBooks: () => Effect.Effect<BookMeta[], StorageError | DecodeError>;
-    readonly getBook: (
-      id: string,
-    ) => Effect.Effect<BookMeta, BookNotFoundError | StorageError | DecodeError>;
-    readonly getBookIncludingDeleted: (
-      id: string,
-    ) => Effect.Effect<BookMeta, BookNotFoundError | StorageError | DecodeError>;
-    readonly getBookData: (
-      id: string,
-    ) => Effect.Effect<ArrayBuffer, BookNotFoundError | StorageError | DecodeError>;
-    readonly deleteBook: (id: string) => Effect.Effect<void, StorageError | DecodeError>;
-    readonly findByFileHash: (
-      hash: string,
-    ) => Effect.Effect<BookMeta | null, StorageError | DecodeError>;
-  }
->() {}
-
 export interface BookServiceStores {
   readonly bookStore: UseStore;
   readonly bookDataStore: UseStore;
 }
 
-export function makeBookService(stores: BookServiceStores): BookService["Type"] {
+async function storage<T>(operation: string, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (cause) {
+    throw new StorageError({ operation, cause });
+  }
+}
+
+function decode(operation: string, raw: unknown): BookMeta {
+  try {
+    return decodeBookMeta(raw);
+  } catch (cause) {
+    throw new DecodeError({ operation, cause });
+  }
+}
+
+export function makeBookService(stores: BookServiceStores) {
   const { bookStore, bookDataStore } = stores;
+
+  const readBook = async (id: string, operation: string) => {
+    const raw = await storage(operation, () => get<unknown>(id, bookStore));
+    if (!raw) throw new BookNotFoundError({ bookId: id });
+    return decode(operation, raw);
+  };
+
   return {
-    saveBook: (meta: BookMeta, data: ArrayBuffer) =>
-      Effect.tryPromise({
-        try: async () => {
-          const stamped = { ...meta, hasLocalFile: true, updatedAt: meta.updatedAt ?? Date.now() };
-          await set(meta.id, stamped, bookStore);
-          await set(meta.id, data, bookDataStore);
-          recordChange({
-            entity: "book",
-            entityId: meta.id,
-            operation: "put",
-            data: stamped,
-            timestamp: stamped.updatedAt,
-          }).catch(console.error);
-        },
-        catch: (cause) => new StorageError({ operation: "saveBook", cause }),
-      }),
+    async saveBook(meta: BookMeta, data: ArrayBuffer) {
+      return storage("saveBook", async () => {
+        const stamped = { ...meta, hasLocalFile: true, updatedAt: meta.updatedAt ?? Date.now() };
+        await set(meta.id, stamped, bookStore);
+        await set(meta.id, data, bookDataStore);
+        recordChange({
+          entity: "book",
+          entityId: meta.id,
+          operation: "put",
+          data: stamped,
+          timestamp: stamped.updatedAt,
+        }).catch(console.error);
+      });
+    },
 
-    updateBookMeta: (meta: BookMeta) =>
-      Effect.tryPromise({
-        try: async () => {
-          const stamped = { ...meta, updatedAt: Date.now() };
-          await set(meta.id, stamped, bookStore);
-          recordChange({
-            entity: "book",
-            entityId: meta.id,
-            operation: "put",
-            data: stamped,
-            timestamp: stamped.updatedAt,
-          }).catch(console.error);
-        },
-        catch: (cause) => new StorageError({ operation: "updateBookMeta", cause }),
-      }),
+    async updateBookMeta(meta: BookMeta) {
+      return storage("updateBookMeta", async () => {
+        const stamped = { ...meta, updatedAt: Date.now() };
+        await set(meta.id, stamped, bookStore);
+        recordChange({
+          entity: "book",
+          entityId: meta.id,
+          operation: "put",
+          data: stamped,
+          timestamp: stamped.updatedAt,
+        }).catch(console.error);
+        return stamped;
+      });
+    },
 
-    replaceBookFile: (id, data, meta) =>
-      Effect.gen(function* () {
-        const raw = yield* Effect.tryPromise({
-          try: () => get<unknown>(id, bookStore),
-          catch: (cause) => new StorageError({ operation: "replaceBookFile.read", cause }),
-        });
-        if (!raw) {
-          return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
+    async replaceBookFile(
+      id: string,
+      data: ArrayBuffer,
+      meta: { coverImage: Blob | null; fileHash: string },
+    ) {
+      const raw = await storage("replaceBookFile.read", () => get<unknown>(id, bookStore));
+      if (!raw) throw new BookNotFoundError({ bookId: id });
+      const existing = decode("replaceBookFile.decode", raw);
+      const stamped = {
+        ...existing,
+        coverImage: meta.coverImage,
+        fileHash: meta.fileHash,
+        remoteCoverUrl: undefined,
+        remoteFileUrl: undefined,
+        hasLocalFile: true,
+        updatedAt: Date.now(),
+      };
+
+      await storage("replaceBookFile.write", async () => {
+        await set(id, data, bookDataStore);
+        await set(id, stamped, bookStore);
+        recordChange({
+          entity: "book",
+          entityId: id,
+          operation: "put",
+          data: stamped,
+          timestamp: stamped.updatedAt,
+        }).catch(console.error);
+      });
+    },
+
+    async getBooks() {
+      await storage("getBooks.migrateHasLocalFile", ensureMigrated);
+      const allEntries = await storage("getBooks", () => entries<string, unknown>(bookStore));
+      const books: BookMeta[] = [];
+      for (const entry of allEntries) {
+        if (!isBookStoreEntry(entry)) continue;
+        const [key, raw] = entry;
+        if (raw == null || typeof raw !== "object") continue;
+        try {
+          const meta = decodeBookMeta(raw);
+          if (meta.deletedAt === undefined) books.push(meta);
+        } catch (err) {
+          console.warn(`[book-store] Skipping malformed book record (key=${String(key)})`, err);
         }
+      }
+      return books;
+    },
 
-        const existing = yield* Effect.try({
-          try: () => decodeBookMeta(raw),
-          catch: (cause) => new DecodeError({ operation: "replaceBookFile.decode", cause }),
-        });
-        const stamped = {
-          ...existing,
-          coverImage: meta.coverImage,
-          fileHash: meta.fileHash,
-          remoteCoverUrl: undefined,
-          remoteFileUrl: undefined,
-          hasLocalFile: true,
-          updatedAt: Date.now(),
-        };
-
-        yield* Effect.tryPromise({
-          try: async () => {
-            await set(id, data, bookDataStore);
-            await set(id, stamped, bookStore);
-            recordChange({
-              entity: "book",
-              entityId: id,
-              operation: "put",
-              data: stamped,
-              timestamp: stamped.updatedAt,
-            }).catch(console.error);
-          },
-          catch: (cause) => new StorageError({ operation: "replaceBookFile.write", cause }),
-        });
-      }),
-
-    getBooks: () =>
-      Effect.gen(function* () {
-        yield* Effect.tryPromise({
-          try: () => ensureMigrated(),
-          catch: (cause) => new StorageError({ operation: "getBooks.migrateHasLocalFile", cause }),
-        });
-        const allEntries = yield* Effect.tryPromise({
-          try: () => entries<string, unknown>(bookStore),
-          catch: (cause) => new StorageError({ operation: "getBooks", cause }),
-        });
-        return yield* Effect.try({
-          try: () => {
-            const books: BookMeta[] = [];
-            for (const entry of allEntries) {
-              if (!isBookStoreEntry(entry)) continue;
-              const [key, raw] = entry;
-              if (raw == null || typeof raw !== "object") continue;
-              try {
-                const meta = decodeBookMeta(raw);
-                if (meta.deletedAt === undefined) books.push(meta);
-              } catch (err) {
-                console.warn(
-                  `[book-store] Skipping malformed book record (key=${String(key)})`,
-                  err,
-                );
-              }
-            }
-            return books;
-          },
-          catch: (cause) => new DecodeError({ operation: "getBooks", cause }),
-        });
-      }),
-
-    getBook: (id: string) =>
-      Effect.gen(function* () {
-        const raw = yield* Effect.tryPromise({
-          try: () => get<unknown>(id, bookStore),
-          catch: (cause) => new StorageError({ operation: "getBook", cause }),
-        });
-        if (!raw) {
-          return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
-        }
-        return yield* Effect.try({
-          try: () => decodeBookMeta(raw),
-          catch: (cause) => new DecodeError({ operation: "getBook", cause }),
-        });
-      }),
+    getBook: (id: string) => readBook(id, "getBook"),
 
     // Same as getBook, but explicitly returns the record even when soft-deleted
     // (deletedAt set). Used by the power-user details editor so a soft-deleted
     // book can still be inspected and restored.
-    getBookIncludingDeleted: (id: string) =>
-      Effect.gen(function* () {
-        const raw = yield* Effect.tryPromise({
-          try: () => get<unknown>(id, bookStore),
-          catch: (cause) => new StorageError({ operation: "getBookIncludingDeleted", cause }),
+    getBookIncludingDeleted: (id: string) => readBook(id, "getBookIncludingDeleted"),
+
+    async getBookData(id: string) {
+      const data = await storage("getBookData", () => get<ArrayBuffer>(id, bookDataStore));
+      if (data) return data;
+
+      // Lazy migration: check old-format record in bookStore for inline `data` field
+      const raw = await storage("getBookData.migrate.read", () =>
+        get<Record<string, unknown>>(id, bookStore),
+      );
+      if (raw?.data && raw.data instanceof ArrayBuffer) {
+        const migratedData = raw.data as ArrayBuffer;
+
+        // Move binary data to the dedicated store and strip it from the metadata record
+        await storage("getBookData.migrate.write", async () => {
+          await set(id, migratedData, bookDataStore);
+          const { data: _, ...metaOnly } = raw;
+          await set(id, metaOnly, bookStore);
         });
-        if (!raw) {
-          return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
-        }
-        return yield* Effect.try({
-          try: () => decodeBookMeta(raw),
-          catch: (cause) => new DecodeError({ operation: "getBookIncludingDeleted", cause }),
-        });
-      }),
 
-    getBookData: (id: string) =>
-      Effect.gen(function* () {
-        const data = yield* Effect.tryPromise({
-          try: () => get<ArrayBuffer>(id, bookDataStore),
-          catch: (cause) => new StorageError({ operation: "getBookData", cause }),
-        });
-        if (data) return data;
+        return migratedData;
+      }
 
-        // Lazy migration: check old-format record in bookStore for inline `data` field
-        const raw = yield* Effect.tryPromise({
-          try: () => get<Record<string, unknown>>(id, bookStore),
-          catch: (cause) => new StorageError({ operation: "getBookData.migrate.read", cause }),
-        });
-        if (raw?.data && raw.data instanceof ArrayBuffer) {
-          const migratedData = raw.data as ArrayBuffer;
+      // On-demand download: if the book has a remote file URL, fetch and cache it
+      const meta = raw ? decode("getBookData.decodeMeta", raw) : null;
 
-          // Move binary data to the dedicated store and strip it from the metadata record
-          yield* Effect.tryPromise({
-            try: async () => {
-              await set(id, migratedData, bookDataStore);
-              const { data: _, ...metaOnly } = raw;
-              await set(id, metaOnly, bookStore);
-            },
-            catch: (cause) => new StorageError({ operation: "getBookData.migrate.write", cause }),
-          });
-
-          return migratedData;
-        }
-
-        // On-demand download: if the book has a remote file URL, fetch and cache it
-        const meta = raw
-          ? yield* Effect.try({
-              try: () => decodeBookMeta(raw),
-              catch: (cause) => new DecodeError({ operation: "getBookData.decodeMeta", cause }),
-            })
-          : null;
-
-        if (meta?.remoteFileUrl) {
-          const downloaded = yield* Effect.tryPromise({
-            try: async () => {
-              const res = await fetch(
-                `/api/sync/files/download?bookId=${encodeURIComponent(id)}&type=file`,
-                { credentials: "include" },
-              );
-              if (!res.ok) {
-                throw new Error(`Download failed: ${res.status} ${res.statusText}`);
-              }
-              return res.arrayBuffer();
-            },
-            catch: (cause) => new StorageError({ operation: "getBookData.download", cause }),
-          });
-
-          // Cache the downloaded file locally
-          yield* Effect.tryPromise({
-            try: () => set(id, downloaded, bookDataStore),
-            catch: (cause) => new StorageError({ operation: "getBookData.cacheFile", cause }),
-          });
-
-          // Mark book as having local file data
-          yield* Effect.tryPromise({
-            try: () => set(id, { ...meta, hasLocalFile: true }, bookStore),
-            catch: (cause) => new StorageError({ operation: "getBookData.markLocal", cause }),
-          });
-
-          // Also download and cache the cover image if available
-          if (meta.remoteCoverUrl && !meta.coverImage) {
-            yield* Effect.tryPromise({
-              try: async () => {
-                const coverRes = await fetch(
-                  `/api/sync/files/download?bookId=${encodeURIComponent(id)}&type=cover`,
-                  { credentials: "include" },
-                );
-                if (coverRes.ok) {
-                  const coverBlob = await coverRes.blob();
-                  const updated = { ...meta, coverImage: coverBlob, hasLocalFile: true };
-                  await set(id, updated, bookStore);
-                }
-              },
-              catch: () => {
-                /* cover caching is best-effort, ignore errors */
-              },
-            }).pipe(Effect.catchAll(() => Effect.void));
+      if (meta?.remoteFileUrl) {
+        const downloaded = await storage("getBookData.download", async () => {
+          const res = await fetch(
+            `/api/sync/files/download?bookId=${encodeURIComponent(id)}&type=file`,
+            { credentials: "include" },
+          );
+          if (!res.ok) {
+            throw new Error(`Download failed: ${res.status} ${res.statusText}`);
           }
-
-          // Notify library views that a download completed
-          if (typeof window !== "undefined") {
-            queueMicrotask(() => {
-              window.dispatchEvent(
-                new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }),
-              );
-            });
-          }
-
-          return downloaded;
-        }
-
-        return yield* Effect.fail(new BookNotFoundError({ bookId: id }));
-      }),
-
-    findByFileHash: (hash: string) =>
-      Effect.gen(function* () {
-        const allEntries = yield* Effect.tryPromise({
-          try: () => entries<string, unknown>(bookStore),
-          catch: (cause) => new StorageError({ operation: "findByFileHash", cause }),
+          return res.arrayBuffer();
         });
-        return yield* Effect.try({
-          try: () => {
-            for (const entry of allEntries) {
-              if (!isBookStoreEntry(entry)) continue;
-              const [key, raw] = entry;
-              if (raw == null || typeof raw !== "object") continue;
-              try {
-                const meta = decodeBookMeta(raw);
-                if (meta.deletedAt !== undefined) continue;
-                if (meta.fileHash === hash) return meta;
-              } catch (err) {
-                console.warn(
-                  `[book-store] Skipping malformed book record (key=${String(key)})`,
-                  err,
-                );
-              }
+
+        // Cache the downloaded file locally
+        await storage("getBookData.cacheFile", () => set(id, downloaded, bookDataStore));
+
+        // Mark book as having local file data
+        await storage("getBookData.markLocal", () =>
+          set(id, { ...meta, hasLocalFile: true }, bookStore),
+        );
+
+        // Also download and cache the cover image if available
+        if (meta.remoteCoverUrl && !meta.coverImage) {
+          try {
+            const coverRes = await fetch(
+              `/api/sync/files/download?bookId=${encodeURIComponent(id)}&type=cover`,
+              { credentials: "include" },
+            );
+            if (coverRes.ok) {
+              const coverBlob = await coverRes.blob();
+              const updated = { ...meta, coverImage: coverBlob, hasLocalFile: true };
+              await set(id, updated, bookStore);
             }
-            return null;
-          },
-          catch: (cause) => new DecodeError({ operation: "findByFileHash", cause }),
-        });
-      }),
-
-    deleteBook: (id: string) =>
-      Effect.gen(function* () {
-        const raw = yield* Effect.tryPromise({
-          try: () => get<unknown>(id, bookStore),
-          catch: (cause) => new StorageError({ operation: "deleteBook.read", cause }),
-        });
-        if (raw) {
-          // Soft-delete: set deletedAt timestamp, keep data for sync
-          const existing = yield* Effect.try({
-            try: () => decodeBookMeta(raw),
-            catch: (cause) => new DecodeError({ operation: "deleteBook.decode", cause }),
-          });
-          const now = Date.now();
-          const tombstone = { ...existing, deletedAt: now, updatedAt: now };
-          yield* Effect.tryPromise({
-            try: () => set(id, tombstone, bookStore),
-            catch: (cause) => new StorageError({ operation: "deleteBook.write", cause }),
-          });
-          recordChange({
-            entity: "book",
-            entityId: id,
-            operation: "delete",
-            data: tombstone,
-            timestamp: now,
-          }).catch(console.error);
+          } catch {
+            // Cover caching is best-effort.
+          }
         }
-      }),
+
+        // Notify library views that a download completed
+        if (typeof window !== "undefined") {
+          queueMicrotask(() => {
+            window.dispatchEvent(
+              new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }),
+            );
+          });
+        }
+
+        return downloaded;
+      }
+
+      throw new BookNotFoundError({ bookId: id });
+    },
+
+    async findByFileHash(hash: string) {
+      const allEntries = await storage("findByFileHash", () => entries<string, unknown>(bookStore));
+      for (const entry of allEntries) {
+        if (!isBookStoreEntry(entry)) continue;
+        const [key, raw] = entry;
+        if (raw == null || typeof raw !== "object") continue;
+        try {
+          const meta = decodeBookMeta(raw);
+          if (meta.deletedAt !== undefined) continue;
+          if (meta.fileHash === hash) return meta;
+        } catch (err) {
+          console.warn(`[book-store] Skipping malformed book record (key=${String(key)})`, err);
+        }
+      }
+      return null;
+    },
+
+    async deleteBook(id: string) {
+      const raw = await storage("deleteBook.read", () => get<unknown>(id, bookStore));
+      if (raw) {
+        // Soft-delete: set deletedAt timestamp, keep data for sync
+        const existing = decode("deleteBook.decode", raw);
+        const now = Date.now();
+        const tombstone = { ...existing, deletedAt: now, updatedAt: now };
+        await storage("deleteBook.write", () => set(id, tombstone, bookStore));
+        recordChange({
+          entity: "book",
+          entityId: id,
+          operation: "delete",
+          data: tombstone,
+          timestamp: now,
+        }).catch(console.error);
+      }
+    },
   };
 }
 
-export const BookServiceLive = Layer.sync(BookService, () =>
-  makeBookService({ bookStore: getBookStore(), bookDataStore: getBookDataStore() }),
-);
+type BookServiceApi = ReturnType<typeof makeBookService>;
+let defaultService: BookServiceApi | undefined;
+
+function getDefaultService(): BookServiceApi {
+  defaultService ??= makeBookService({
+    bookStore: getBookStore(),
+    bookDataStore: getBookDataStore(),
+  });
+  return defaultService;
+}
+
+export const BookService: BookServiceApi = {
+  saveBook: (...args) => getDefaultService().saveBook(...args),
+  updateBookMeta: (...args) => getDefaultService().updateBookMeta(...args),
+  replaceBookFile: (...args) => getDefaultService().replaceBookFile(...args),
+  getBooks: (...args) => getDefaultService().getBooks(...args),
+  getBook: (...args) => getDefaultService().getBook(...args),
+  getBookIncludingDeleted: (...args) => getDefaultService().getBookIncludingDeleted(...args),
+  getBookData: (...args) => getDefaultService().getBookData(...args),
+  deleteBook: (...args) => getDefaultService().deleteBook(...args),
+  findByFileHash: (...args) => getDefaultService().findByFileHash(...args),
+};

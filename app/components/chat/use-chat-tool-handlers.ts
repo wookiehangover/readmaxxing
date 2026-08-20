@@ -1,10 +1,8 @@
 import { useCallback } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import type { JSONContent } from "@tiptap/react";
-import { Effect } from "effect";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { BookService } from "~/lib/stores/book-store";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { useWorkspace, type NotebookEditorCallbacks } from "~/lib/context/workspace-context";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import { normalizeCfiRange } from "~/lib/chat/highlight-tools";
@@ -17,17 +15,11 @@ function cacheNotebookSnapshot(
   editorCallbacks?: NotebookEditorCallbacks,
 ): void {
   editorCallbacks?.seedLastContent(content);
-  AppRuntime.runPromise(
-    AnnotationService.pipe(
-      Effect.andThen((svc) =>
-        svc.cacheNotebook({
-          bookId,
-          content,
-          updatedAt,
-        }),
-      ),
-    ),
-  )
+  AnnotationService.cacheNotebook({
+    bookId,
+    content,
+    updatedAt,
+  })
     .then(() => {
       queueMicrotask(() => {
         window.dispatchEvent(
@@ -216,17 +208,11 @@ export function useChatToolHandlers({
         // Use cacheNotebook (not saveNotebook) because the server has already
         // persisted this notebook state. saveNotebook would recordChange and
         // echo the same value back to the server on the next sync push.
-        AppRuntime.runPromise(
-          AnnotationService.pipe(
-            Effect.andThen((svc) =>
-              svc.cacheNotebook({
-                bookId: targetBookId,
-                content: updatedContent,
-                updatedAt: nextUpdatedAt,
-              }),
-            ),
-          ),
-        )
+        AnnotationService.cacheNotebook({
+          bookId: targetBookId,
+          content: updatedContent,
+          updatedAt: nextUpdatedAt,
+        })
           .then(() => {
             queueMicrotask(() => {
               window.dispatchEvent(
@@ -288,9 +274,7 @@ export function useChatToolHandlers({
           try {
             const data = isPrimaryTarget
               ? bookDataRef.current
-              : await AppRuntime.runPromise(
-                  BookService.pipe(Effect.andThen((s) => s.getBookData(targetBookId))),
-                );
+              : await BookService.getBookData(targetBookId);
             if (!data) return;
 
             if (targetFormat === "pdf") {
@@ -314,12 +298,7 @@ export function useChatToolHandlers({
                     color: "rgba(255, 213, 79, 0.4)",
                     createdAt: Date.now(),
                   };
-                  await AppRuntime.runPromise(
-                    Effect.gen(function* () {
-                      const svc = yield* AnnotationService;
-                      yield* svc.saveHighlight(highlight);
-                    }),
-                  );
+                  await AnnotationService.saveHighlight(highlight);
                   // Don't navigate when AI creates highlights - preserves reading position
                   // User can navigate to highlights via the notebook panel
 
@@ -333,9 +312,7 @@ export function useChatToolHandlers({
                   if (appendFn) {
                     appendFn(attrs);
                   } else {
-                    AppRuntime.runPromise(
-                      appendHighlightReferenceToNotebook(targetBookId, attrs),
-                    ).catch(console.error);
+                    appendHighlightReferenceToNotebook(targetBookId, attrs).catch(console.error);
                   }
                 } else {
                   console.warn(
@@ -378,12 +355,7 @@ export function useChatToolHandlers({
                 ...(serverHighlight?.note ? { note: serverHighlight.note } : {}),
               };
 
-              await AppRuntime.runPromise(
-                Effect.gen(function* () {
-                  const svc = yield* AnnotationService;
-                  yield* svc.saveHighlight(highlight);
-                }),
-              );
+              await AnnotationService.saveHighlight(highlight);
 
               // Don't navigate when AI creates highlights - preserves reading position
               // User can navigate to highlights via the notebook panel
@@ -397,9 +369,7 @@ export function useChatToolHandlers({
               if (appendFn) {
                 appendFn(attrs);
               } else {
-                AppRuntime.runPromise(
-                  appendHighlightReferenceToNotebook(targetBookId, attrs),
-                ).catch(console.error);
+                appendHighlightReferenceToNotebook(targetBookId, attrs).catch(console.error);
               }
             }
           } catch (err) {

@@ -1,29 +1,24 @@
-import { Effect } from "effect";
 import type { JSONContent } from "@tiptap/react";
-import { AnnotationService } from "~/lib/stores/annotations-store";
-import type { DecodeError, NotebookError } from "~/lib/errors";
+import { AnnotationService, type Notebook } from "~/lib/stores/annotations-store";
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
 
 /**
- * Effect program that appends a highlightReference node (and a trailing empty
+ * Appends a highlightReference node (and a trailing empty
  * paragraph, mirroring `TiptapEditor.appendHighlightReference`) to the book's
  * notebook document in IndexedDB, creating the document if it does not yet
  * exist. This is the fallback used when the notebook editor is not currently
  * mounted to receive an imperative append — without it, a freshly-created
  * highlight would have no notebook node and therefore no UI for deletion.
  *
- * Callers that need other UI (e.g. `AnnotationsPanel`'s `useEffectQuery`) to
- * observe the write should dispatch `sync:entity-updated` {notebook} after
- * `runPromise` resolves; this helper intentionally stays side-effect-free
- * beyond the IndexedDB write so it can be composed with other effects.
+ * The annotations saga uses the returned notebook to update the normalized
+ * collection after persistence. Legacy chat callers ignore the return value.
  */
 export function appendHighlightReferenceToNotebook(
   bookId: string,
   attrs: HighlightReferenceAttrs,
-): Effect.Effect<void, NotebookError | DecodeError, AnnotationService> {
-  return Effect.gen(function* () {
-    const svc = yield* AnnotationService;
-    const notebook = yield* svc.getNotebook(bookId);
+): Promise<Notebook> {
+  return (async () => {
+    const notebook = await AnnotationService.getNotebook(bookId);
     const existingContent: JSONContent[] = Array.isArray(notebook?.content?.content)
       ? (notebook!.content!.content as JSONContent[])
       : [];
@@ -33,10 +28,12 @@ export function appendHighlightReferenceToNotebook(
       type: "doc",
       content: [...existingContent, highlightNode, trailingParagraph],
     };
-    yield* svc.saveNotebook({
+    const updatedNotebook: Notebook = {
       bookId,
       content: updatedContent,
       updatedAt: Date.now(),
-    });
-  });
+    };
+    await AnnotationService.saveNotebook(updatedNotebook);
+    return updatedNotebook;
+  })();
 }

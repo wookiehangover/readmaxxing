@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import type { JSONContent } from "@tiptap/react";
-import { Effect } from "effect";
-import { AppRuntime } from "~/lib/effect-runtime";
 import {
   useOptionalWorkspace,
   type NotebookEditorCallbacks,
 } from "~/lib/context/workspace-context";
-import { ChatService } from "~/lib/stores/chat-store";
 import { useReadingChatMenuRegistration } from "~/lib/context/reading-chat-menu-context";
+import { generateChatSessionTitleRequested } from "~/lib/themis/chat-sessions/chat-sessions-slice";
+import { useAppStore } from "~/lib/themis/provider";
 import { ChatInput } from "./chat-input";
 import type { ChatIntent } from "./chat-intent";
 import { ChatMessageList, type BookAnnotation } from "./chat-message-list";
@@ -51,6 +50,8 @@ export function ChatPanelInner({
   resumeMessage?: string;
   onResumeComplete?: () => void;
 }) {
+  const store = useAppStore();
+  const activeSession = store.chatSessionsSelectors.selectActiveSessionByBook.useValue(bookId);
   const workspace = useOptionalWorkspace();
   const fallbackChatContextMap = useRef(
     new Map<
@@ -219,37 +220,10 @@ export function ChatPanelInner({
       }
       titleGeneratedRef.current = true;
 
-      const generateTitle = async () => {
-        const session = await AppRuntime.runPromise(
-          Effect.gen(function* () {
-            const service = yield* ChatService;
-            const activeId = yield* service.getActiveSessionId(bookId);
-            if (!activeId) return null;
-            return yield* service.getSession(activeId, bookId);
-          }),
-        );
-        if (!session || session.title) return;
-
-        const response = await fetch("/api/chat-title", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: currentMessages }),
-        });
-        if (!response.ok) return;
-        const { title } = (await response.json()) as { title: string };
-        if (!title) return;
-
-        await AppRuntime.runPromise(
-          ChatService.pipe(
-            Effect.andThen((service) =>
-              service.updateSessionTitle(session.id, session.bookId, title),
-            ),
-          ),
-        );
-      };
-      generateTitle().catch(console.error);
+      if (!activeSession || activeSession.title) return;
+      store.dispatch(generateChatSessionTitleRequested(bookId, activeSessionId, currentMessages));
     },
-    [simulateDemoStream, onToolFinish, bookId],
+    [activeSession, activeSessionId, bookId, onToolFinish, simulateDemoStream, store],
   );
 
   const chatInitialMessages = useMemo(

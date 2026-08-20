@@ -1,59 +1,28 @@
 import { useState } from "react";
 import { redirect, useNavigate, useSearchParams } from "react-router";
-import { Cause, Effect, Runtime } from "effect";
 import { Loader2 } from "lucide-react";
 import type { Route } from "./+types/login";
 import { Button } from "~/components/ui/button";
-import { AuthService } from "~/lib/auth-service";
+import { authService } from "~/lib/auth-service";
 import { useAuth } from "~/lib/context/auth-context";
-import { AppRuntime } from "~/lib/effect-runtime";
 
 export function meta(_args: Route.MetaArgs) {
   return [{ title: "Log in — Readmaxxing" }];
 }
 
-/**
- * Extract the real error message from Effect's FiberFailure wrapper.
- *
- * When `AppRuntime.runPromise` rejects, the thrown value is a FiberFailure
- * whose `.message` is the generic "An error has occurred". The actual error
- * is buried inside the Cause chain. This walks that chain to surface the
- * original message (e.g. from a DOMException thrown by the WebAuthn API).
- */
 function extractErrorMessage(err: unknown, fallback: string): string {
-  // Effect FiberFailure — dig into the Cause to find our AuthError
-  if (err instanceof Error && Runtime.FiberFailureCauseId in err) {
-    const cause = (err as any)[Runtime.FiberFailureCauseId];
-    if (cause) {
-      const failures = Array.from(Cause.failures(cause));
-      if (failures.length > 0) {
-        const authErr = failures[0];
-        // AuthError has a 'cause' field holding the original error
-        if (authErr && typeof authErr === "object" && "cause" in authErr) {
-          const original = (authErr as any).cause;
-          if (original instanceof Error) return original.message;
-          if (typeof original === "string") return original;
-        }
-        // Fallback to the AuthError's own message
-        if (authErr instanceof Error) return authErr.message;
-      }
-    }
+  if (err && typeof err === "object" && "cause" in err) {
+    const cause = err.cause;
+    if (cause instanceof Error) return cause.message;
+    if (typeof cause === "string") return cause;
   }
-  // Simple nested cause (non-Effect errors)
-  if (err instanceof Error && err.cause instanceof Error) {
-    return err.cause.message;
-  }
-  if (err instanceof Error && err.message && err.message !== "An error has occurred") {
-    return err.message;
-  }
+  if (err instanceof Error && err.message) return err.message;
   if (typeof err === "string") return err;
   return fallback;
 }
 
 export async function clientLoader() {
-  const session = await AppRuntime.runPromise(
-    AuthService.pipe(Effect.andThen((s) => s.getSession())),
-  );
+  const session = await authService.getSession();
   if (session.user) {
     throw redirect("/");
   }
@@ -73,7 +42,7 @@ export function HydrateFallback() {
 export default function LoginRoute() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { refreshAuth } = useAuth();
+  const { refreshAuth, register, signIn } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState<"register" | "signin" | null>(null);
 
@@ -81,7 +50,7 @@ export default function LoginRoute() {
     setError(null);
     setLoadingAction("register");
     try {
-      await AppRuntime.runPromise(AuthService.pipe(Effect.andThen((s) => s.register("Reader"))));
+      await register("Reader");
       refreshAuth();
       navigate("/", { replace: true });
     } catch (err: unknown) {
@@ -97,7 +66,7 @@ export default function LoginRoute() {
     setError(null);
     setLoadingAction("signin");
     try {
-      await AppRuntime.runPromise(AuthService.pipe(Effect.andThen((s) => s.signIn())));
+      await signIn();
       refreshAuth();
       navigate("/", { replace: true });
     } catch (err: unknown) {

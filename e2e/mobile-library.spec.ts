@@ -14,6 +14,7 @@ async function resetLibrary(page: Page) {
       if (database.name) indexedDB.deleteDatabase(database.name);
     }
     localStorage.clear();
+    localStorage.setItem("demo-onboarding", "complete");
   });
   await page.goto("/library");
   await expect(page.locator('[data-slot="library-mobile-navigation"]')).toBeVisible();

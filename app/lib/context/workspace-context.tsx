@@ -51,13 +51,15 @@ export interface WorkspaceContextValue {
   >;
   /** Listener notified when tocMap changes (triggers React re-render) */
   tocChangeListener: React.MutableRefObject<(() => void) | null>;
-  /** Listener notified when booksRef changes */
-  booksChangeListener: React.MutableRefObject<(() => void) | null>;
   /** DockviewApi instance */
   dockviewApi: React.MutableRefObject<DockviewApi | null>;
   /** File input element for triggering uploads */
   fileInputRef: React.MutableRefObject<HTMLInputElement | null>;
-  /** Current books list */
+  /**
+   * @deprecated Compatibility mirror of the Themis books slice, kept only for
+   * chat consumers (`chat-message.tsx`) that have not migrated to selectors.
+   * No migrated book UI reads this ref.
+   */
   booksRef: React.MutableRefObject<BookMeta[]>;
   /**
    * IDs of books that currently have an open panel. This is the full
@@ -163,7 +165,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     new Map<string, (attrs: { highlightId: string; cfiRange: string; text: string }) => void>(),
   );
   const tocChangeListener = useRef<(() => void) | null>(null);
-  const booksChangeListener = useRef<(() => void) | null>(null);
   const dockviewApi = useRef<DockviewApi | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const booksRef = useRef<BookMeta[]>([]);
@@ -379,7 +380,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       tocNavigationMap,
       notebookCallbackMap,
       tocChangeListener,
-      booksChangeListener,
       dockviewApi,
       fileInputRef,
       booksRef,

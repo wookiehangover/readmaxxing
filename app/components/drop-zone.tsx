@@ -1,11 +1,7 @@
 import { useState, useCallback, useEffect, type DragEvent } from "react";
-import { Effect } from "effect";
-import { parseEpubEffect } from "~/lib/epub/epub-service";
-import { parsePdfEffect } from "~/lib/pdf/pdf-service";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import type { BookFormat } from "~/lib/stores/book-store";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { computeFileHash } from "~/lib/book-hash";
+import type { BookMeta } from "~/lib/stores/book-store";
+import { uploadBooksRequested } from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 
 interface DropZoneProps {
@@ -14,6 +10,7 @@ interface DropZoneProps {
 }
 
 export function DropZone({ onBookAdded, children }: DropZoneProps) {
+  const store = useAppStore();
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [dragCounter, setDragCounter] = useState(0);
@@ -47,7 +44,7 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
   }, []);
 
   const handleDrop = useCallback(
-    async (e: DragEvent) => {
+    (e: DragEvent) => {
       // Only handle file drops, not internal DOM drags (e.g. dockview tabs)
       if (!e.dataTransfer?.types.includes("Files")) return;
 
@@ -63,55 +60,19 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
       if (files.length === 0) return;
 
       setIsProcessing(true);
-
-      const processFiles = Effect.gen(function* () {
-        for (const file of files) {
-          const arrayBuffer = yield* Effect.promise(() => file.arrayBuffer());
-          const fileHash = yield* Effect.promise(() => computeFileHash(arrayBuffer));
-
-          const existing = yield* BookService.pipe(
-            Effect.andThen((s) => s.findByFileHash(fileHash)),
-          );
-          if (existing) {
-            onBookAdded?.(existing);
-            continue;
-          }
-
-          const isPdf = file.name.toLowerCase().endsWith(".pdf");
-          const format: BookFormat = isPdf ? "pdf" : "epub";
-
-          const metadata = isPdf
-            ? yield* parsePdfEffect(arrayBuffer, file.name)
-            : yield* parseEpubEffect(arrayBuffer);
-
-          const book: BookMeta = {
-            id: crypto.randomUUID(),
-            title: metadata.title,
-            author: metadata.author,
-            coverImage: metadata.coverImage,
-            format,
-            fileHash,
-          };
-
-          yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
-          onBookAdded?.(book);
-        }
-      }).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
+      store.dispatch(
+        uploadBooksRequested(
+          files,
+          onBookAdded,
+          () => setIsProcessing(false),
+          (error) => {
             console.error("Failed to process file:", error);
-          }),
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
             setIsProcessing(false);
-          }),
+          },
         ),
       );
-
-      await AppRuntime.runPromise(processFiles);
     },
-    [onBookAdded],
+    [onBookAdded, store],
   );
 
   return (

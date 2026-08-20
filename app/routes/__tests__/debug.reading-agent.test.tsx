@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReadingAgentStatus } from "~/hooks/use-reading-agent-status";
 
 const mocks = vi.hoisted(() => ({ session: vi.fn() }));
-vi.mock("~/lib/effect-runtime", () => ({ AppRuntime: { runPromise: mocks.session } }));
+vi.mock("~/lib/auth-service", () => ({ authService: { getSession: mocks.session } }));
 
 import ReadingAgentDebugPage, { clientLoader } from "~/routes/debug.reading-agent";
 

@@ -1,48 +1,27 @@
 import { useCallback } from "react";
-import { Effect } from "effect";
-import { BookService } from "~/lib/stores/book-store";
-import { AnnotationService } from "~/lib/stores/annotations-store";
-import { AppRuntime } from "~/lib/effect-runtime";
+import { useAppStore } from "~/lib/themis/provider";
+import { deleteBookRequested } from "~/lib/themis/books/books-slice";
 
 interface UseBookDeletionOptions {
-  /** Called after the book and its highlights have been deleted from IndexedDB. */
+  /** UI side effect called after the saga deletes the persisted book. */
   onBookDeleted: (bookId: string) => void;
 }
 
 /**
- * Shared hook that handles book deletion with confirmation and highlight cleanup.
+ * Shared hook that confirms deletion before dispatching to the books saga.
  *
- * Returns a handler that prompts for confirmation, deletes all highlights for the book,
- * deletes the book itself, then calls `onBookDeleted`.
+ * The saga deletes highlights and the book, then calls `onBookDeleted`.
  */
 export function useBookDeletion({ onBookDeleted }: UseBookDeletionOptions) {
+  const store = useAppStore();
   const handleDeleteBook = useCallback(
-    async (bookId: string) => {
+    (bookId: string) => {
       const confirmed = window.confirm("Are you sure you want to delete this book?");
       if (!confirmed) return;
 
-      const program = Effect.gen(function* () {
-        const bookSvc = yield* BookService;
-        const annotationSvc = yield* AnnotationService;
-
-        // Delete all highlights for this book
-        const highlights = yield* annotationSvc.getHighlightsByBook(bookId);
-        yield* Effect.forEach(highlights, (hl) => annotationSvc.deleteHighlight(hl.id));
-
-        // Delete the book itself
-        yield* bookSvc.deleteBook(bookId);
-      }).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to delete book:", error);
-          }),
-        ),
-      );
-
-      await AppRuntime.runPromise(program);
-      onBookDeleted(bookId);
+      store.dispatch(deleteBookRequested(bookId, onBookDeleted));
     },
-    [onBookDeleted],
+    [onBookDeleted, store],
   );
 
   return { handleDeleteBook };

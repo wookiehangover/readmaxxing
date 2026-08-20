@@ -1,6 +1,4 @@
-import { Effect } from "effect";
 import type { JSONContent } from "@tiptap/react";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { AnnotationService } from "~/lib/stores/annotations-store";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 
@@ -18,8 +16,6 @@ export function downloadNotebookMarkdown(content: JSONContent, bookTitle?: strin
 }
 
 export async function exportNotebookMarkdown(bookId: string, bookTitle?: string) {
-  const notebook = await AppRuntime.runPromise(
-    AnnotationService.pipe(Effect.andThen((service) => service.getNotebook(bookId))),
-  );
+  const notebook = await AnnotationService.getNotebook(bookId);
   if (notebook?.content) downloadNotebookMarkdown(notebook.content, bookTitle);
 }

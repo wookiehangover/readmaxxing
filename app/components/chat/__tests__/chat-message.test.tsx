@@ -9,7 +9,11 @@ vi.mock("~/lib/context/workspace-context", () => ({
     navigateInCluster: vi.fn(),
     findTocForBook: vi.fn(),
     applyTempHighlightForBook: vi.fn(),
-    booksRef: { current: [] },
+  }),
+}));
+vi.mock("~/lib/themis/provider", () => ({
+  useAppStore: () => ({
+    booksSelectors: { selectAllBooks: { useValue: () => [] } },
   }),
 }));
 

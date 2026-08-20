@@ -1,21 +1,21 @@
 import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Effect } from "effect";
 import { ArrowLeft, BookOpen, CloudUpload, RotateCcw } from "lucide-react";
 import type { Route } from "./+types/book-details";
 import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
-import { AnnotationService } from "~/lib/stores/annotations-store";
 import { useSyncActions } from "~/lib/sync/use-sync";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { parseEpubEffect } from "~/lib/epub/epub-service";
-import { computeFileHash } from "~/lib/book-hash";
-import { evictCachedCover } from "~/lib/sw-cache";
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
-import { useEffectQuery } from "~/hooks/use-effect-query";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
+import {
+  replaceBookFileRequested,
+  updateBookMetadataRequested,
+} from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
+import { hydrateAnnotationsRequested } from "~/lib/themis/annotations/annotations-slice";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
 export function meta({ loaderData }: Route.MetaArgs) {
   const title = loaderData?.book?.title ?? "Readmaxxing";
@@ -23,14 +23,12 @@ export function meta({ loaderData }: Route.MetaArgs) {
 }
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  const book = await AppRuntime.runPromise(
-    BookService.pipe(
-      Effect.andThen((s) => s.getBookIncludingDeleted(params.id)),
-      Effect.catchTag("BookNotFoundError", () =>
-        Effect.die(new Response("Book not found", { status: 404 })),
-      ),
-    ),
-  );
+  const book = await BookService.getBookIncludingDeleted(params.id).catch((error: unknown) => {
+    if (error instanceof Error && "_tag" in error && error._tag === "BookNotFoundError") {
+      throw new Response("Book not found", { status: 404 });
+    }
+    throw error;
+  });
   return { book };
 }
 
@@ -96,6 +94,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const { book } = loaderData;
   const navigate = useNavigate();
   const revalidator = useRevalidator();
+  const store = useAppStore();
 
   const { triggerSync, isActive, reloadBookFiles } = useSyncActions();
 
@@ -111,13 +110,15 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
 
   const isDeleted = deletedAt !== undefined;
 
-  // Load notebook for this book
-  const { data: notebook, isLoading: notebookLoading } = useEffectQuery(
-    () => AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(book.id))),
-    [book.id],
-  );
+  const notebook = store.annotationsSelectors.selectNotebookByBookId.useValue(book.id);
+  const annotationsLoaded = store.annotationsSelectors.selectAnnotationsLoaded.useValue(book.id);
+  const notebookSyncVersion = useSyncListener(["notebook"]);
   const notebookContent = notebook?.content ?? null;
-  const hasNotebook = !notebookLoading && notebookContent !== null;
+  const hasNotebook = annotationsLoaded && notebookContent !== null;
+
+  useEffect(() => {
+    store.dispatch(hydrateAnnotationsRequested(book.id));
+  }, [book.id, notebookSyncVersion, store]);
 
   // Debounced notebook save
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -133,42 +134,50 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     };
   }, []);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(() => {
     setSaving(true);
     setSaved(false);
-    try {
-      const updatedBook: BookMeta = { ...book, title, author, deletedAt };
-      await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))),
-      );
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      console.error("Failed to save book:", err);
-    } finally {
-      setSaving(false);
-    }
-  }, [book, title, author, deletedAt]);
+    const updatedBook: BookMeta = { ...book, title, author, deletedAt };
+    store.dispatch(
+      updateBookMetadataRequested(
+        updatedBook,
+        "update",
+        () => {
+          setSaved(true);
+          setSaving(false);
+          setTimeout(() => setSaved(false), 2000);
+        },
+        (error) => {
+          console.error("Failed to save book:", error);
+          setSaving(false);
+        },
+      ),
+    );
+  }, [book, title, author, deletedAt, store]);
 
-  const handleRestore = useCallback(async () => {
+  const handleRestore = useCallback(() => {
     setRestoring(true);
-    try {
-      const updatedBook: BookMeta = {
-        ...book,
-        title,
-        author,
-        deletedAt: undefined,
-      };
-      await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))),
-      );
-      setDeletedAt(undefined);
-    } catch (err) {
-      console.error("Failed to restore book:", err);
-    } finally {
-      setRestoring(false);
-    }
-  }, [book, title, author]);
+    const updatedBook: BookMeta = {
+      ...book,
+      title,
+      author,
+      deletedAt: undefined,
+    };
+    store.dispatch(
+      updateBookMetadataRequested(
+        updatedBook,
+        "restore",
+        () => {
+          setDeletedAt(undefined);
+          setRestoring(false);
+        },
+        (error) => {
+          console.error("Failed to restore book:", error);
+          setRestoring(false);
+        },
+      ),
+    );
+  }, [book, title, author, store]);
 
   const handlePush = useCallback(async () => {
     if (pushFeedbackTimerRef.current) clearTimeout(pushFeedbackTimerRef.current);
@@ -201,7 +210,7 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   }, []);
 
   const handleReplaceFile = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
+    (event: ChangeEvent<HTMLInputElement>) => {
       const input = event.currentTarget;
       const file = input.files?.[0];
       if (!file) return;
@@ -213,72 +222,29 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
       }
 
       setReplacing(true);
-      const program = Effect.gen(function* () {
-        const arrayBuffer = yield* Effect.tryPromise({
-          try: () => file.arrayBuffer(),
-          catch: (cause) => new Error("Failed to read replacement epub file", { cause }),
-        });
-        const fileHash = yield* Effect.tryPromise({
-          try: () => computeFileHash(arrayBuffer),
-          catch: (cause) => new Error("Failed to hash replacement epub file", { cause }),
-        });
-        const metadata = yield* parseEpubEffect(arrayBuffer);
-
-        yield* BookService.pipe(
-          Effect.andThen((s) =>
-            s.replaceBookFile(book.id, arrayBuffer, {
-              coverImage: metadata.coverImage,
-              fileHash,
-            }),
-          ),
-        );
-        yield* Effect.tryPromise({
-          try: () => evictCachedCover(book.id, book.remoteCoverUrl),
-          catch: (cause) => new Error("Failed to evict stale cover cache", { cause }),
-        });
-
-        if (isActive) {
-          yield* Effect.tryPromise({
-            try: () => reloadBookFiles(book.id),
-            catch: (cause) => new Error("Failed to reload replacement book files", { cause }),
-          }).pipe(
-            Effect.catchAll((error) =>
-              Effect.sync(() => console.error("Failed to reload replacement book files:", error)),
-            ),
-          );
-          const syncedBook = yield* BookService.pipe(
-            Effect.andThen((s) => s.getBookIncludingDeleted(book.id)),
-            Effect.catchAll((error) =>
-              Effect.sync(() => {
-                console.error("Failed to read synced replacement book:", error);
-                return null;
-              }),
-            ),
-          );
-          yield* Effect.tryPromise({
-            try: () => evictCachedCover(book.id, syncedBook?.remoteCoverUrl),
-            catch: (cause) => new Error("Failed to evict refreshed cover cache", { cause }),
-          });
-        }
-
-        yield* Effect.sync(() => revalidator.revalidate());
-      }).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => console.error("Failed to replace book file:", error)),
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
+      store.dispatch(
+        replaceBookFileRequested(
+          {
+            bookId: book.id,
+            file,
+            remoteCoverUrl: book.remoteCoverUrl,
+            syncActive: isActive,
+            reloadBookFiles,
+          },
+          () => {
+            revalidator.revalidate();
             setReplacing(false);
             input.value = "";
-          }),
+          },
+          (error) => {
+            console.error("Failed to replace book file:", error);
+            setReplacing(false);
+            input.value = "";
+          },
         ),
       );
-
-      await AppRuntime.runPromise(program).catch((error) =>
-        console.error("Failed to replace book file:", error),
-      );
     },
-    [book.id, book.remoteCoverUrl, isActive, reloadBookFiles, revalidator],
+    [book.id, book.remoteCoverUrl, isActive, reloadBookFiles, revalidator, store],
   );
 
   return (

@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Effect } from "effect";
 import type { DockviewApi, DockviewReadyEvent } from "dockview-react";
 import type { FocusedCluster } from "~/hooks/use-focused-mode";
 import { restoreDockviewLayout } from "~/hooks/workspace-layout-restore";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { clampFocusedSplitRatio, type Settings } from "~/lib/settings";
 import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
 import type { BookMeta } from "~/lib/stores/book-store";
@@ -114,9 +112,7 @@ export function useWorkspaceLayout({
 
   const flushFocusedState = useCallback(() => {
     if (!mountedRef.current) return;
-    AppRuntime.runPromise(
-      WorkspaceService.pipe(Effect.andThen((s) => s.saveFocusedState(serializeFocusedState()))),
-    ).catch(console.error);
+    WorkspaceService.saveFocusedState(serializeFocusedState()).catch(console.error);
   }, [serializeFocusedState]);
 
   const saveFocusedState = useCallback(() => {
@@ -135,9 +131,7 @@ export function useWorkspaceLayout({
     if (!mountedRef.current) return;
     const api = apiRef.current;
     if (!api) return;
-    AppRuntime.runPromise(
-      WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(api.toJSON()))),
-    ).catch(console.error);
+    WorkspaceService.saveLayout(api.toJSON()).catch(console.error);
   }, [apiRef]);
 
   const saveLayout = useCallback(() => {
@@ -237,12 +231,8 @@ export function useWorkspaceLayout({
       ws.dockviewApi.current = event.api;
 
       const restoreToken = ++restoreTokenRef.current;
-      AppRuntime.runPromise(
-        WorkspaceService.pipe(
-          Effect.andThen((s) => s.getLayout()),
-          Effect.catchAll(() => Effect.succeed(null)),
-        ),
-      )
+      WorkspaceService.getLayout()
+        .catch(() => null)
         .then(async (layout) => {
           if (!mountedRef.current || restoreToken !== restoreTokenRef.current) {
             return;
@@ -250,9 +240,7 @@ export function useWorkspaceLayout({
           const hasFocusedRestore = focusedOrderRef.current.length > 0;
           if (layout && !hasFocusedRestore) {
             await restoreDockviewLayout(event.api, layout, existingBookIdsRef.current, () =>
-              AppRuntime.runPromise(
-                WorkspaceService.pipe(Effect.andThen((service) => service.clearLayout())),
-              ),
+              WorkspaceService.clearLayout(),
             );
           }
           if (!mountedRef.current || restoreToken !== restoreTokenRef.current) {

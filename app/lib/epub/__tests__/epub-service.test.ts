@@ -1,10 +1,9 @@
 import { readFile } from "node:fs/promises";
 
 import * as successor from "@readmaxxing/epub-successor";
-import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
-import { EpubServiceLive, parseEpubEffect } from "~/lib/epub/epub-service";
+import { parseEpub } from "~/lib/epub/epub-service";
 
 async function fixtureData(): Promise<ArrayBuffer> {
   const bytes = await readFile("e2e/fixtures/test-book.epub");
@@ -13,9 +12,7 @@ async function fixtureData(): Promise<ArrayBuffer> {
 
 describe("EpubService", () => {
   it("extracts import metadata from the e2e EPUB fixture", async () => {
-    const metadata = await Effect.runPromise(
-      parseEpubEffect(await fixtureData()).pipe(Effect.provide(EpubServiceLive)),
-    );
+    const metadata = await parseEpub(await fixtureData());
 
     expect(metadata).toEqual({
       title: "Test Book for E2E",
@@ -49,9 +46,7 @@ describe("EpubService", () => {
     const closeSpy = vi.spyOn(successor.ZipResourceProvider.prototype, "close");
 
     try {
-      const metadata = await Effect.runPromise(
-        parseEpubEffect(data).pipe(Effect.provide(EpubServiceLive)),
-      );
+      const metadata = await parseEpub(data);
 
       expect(metadata.author).toBe("First Author, Second Author");
       expect(metadata.coverImage).toBeInstanceOf(Blob);
@@ -64,9 +59,7 @@ describe("EpubService", () => {
   });
 
   it("reports invalid EPUB data as an EpubParseError", async () => {
-    const error = await Effect.runPromise(
-      parseEpubEffect(new ArrayBuffer(0)).pipe(Effect.provide(EpubServiceLive), Effect.flip),
-    );
+    const error = await parseEpub(new ArrayBuffer(0)).catch((cause: unknown) => cause);
 
     expect(error).toMatchObject({
       _tag: "EpubParseError",

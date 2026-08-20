@@ -11,22 +11,51 @@ const readingLocation = {
 
 const tocEntries = [{ label: "Chapter One", href: "chapter-1.xhtml" }];
 const navigateToToc = vi.hoisted(() => vi.fn());
-const runPromise = vi.hoisted(() => vi.fn());
-const runtimeResults = vi.hoisted(() => [] as unknown[]);
+const themis = vi.hoisted(() => {
+  const books = [
+    {
+      id: "book-1",
+      title: "The Power Broker",
+      author: "Robert Caro",
+      coverImage: null,
+      format: "epub" as "epub" | "pdf",
+    },
+  ];
+  const activeSession = {
+    id: "session-1",
+    bookId: "book-1",
+    title: "New chat",
+    messages: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  return {
+    books,
+    store: {
+      dispatch: vi.fn(),
+      booksSelectors: {
+        selectBookById: {
+          useValue: (bookId: string) => books.find((book) => book.id === bookId),
+        },
+      },
+      annotationsSelectors: {
+        selectNotebookByBookId: {
+          useValue: () => ({ content: { type: "doc", content: [] } }),
+        },
+        selectAnnotationsLoaded: { useValue: () => true },
+      },
+      chatSessionsSelectors: {
+        selectActiveSessionByBook: { useValue: () => activeSession },
+        selectChatSessionsLoaded: { useValue: () => true },
+        selectChatSessionsError: { useValue: () => null },
+        selectRecentSessionsByBook: { useValue: () => [activeSession] },
+      },
+    },
+  };
+});
 
 const workspace = vi.hoisted(() => ({
   activeClusterBookIdRef: { current: "book-1" as string | null },
-  booksRef: {
-    current: [
-      {
-        id: "book-1",
-        title: "The Power Broker",
-        author: "Robert Caro",
-        coverImage: null,
-        format: "epub" as "epub" | "pdf",
-      },
-    ],
-  },
   subscribeClusterChanges: () => () => {},
   subscribeReadingLocations: () => () => {},
   getReadingLocation: () => readingLocation,
@@ -47,6 +76,7 @@ vi.mock("~/lib/context/workspace-context", () => ({
   useWorkspace: () => workspace,
   useOptionalWorkspace: () => workspace,
 }));
+vi.mock("~/lib/themis/provider", () => ({ useAppStore: () => themis.store }));
 vi.mock("~/lib/context/auth-context", () => ({
   useAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));
@@ -55,18 +85,13 @@ vi.mock("~/lib/context/reading-chat-menu-context", () => ({
   useReadingChatMenuRegistration: () => null,
 }));
 vi.mock("~/components/share-dialog", () => ({ ShareDialog: () => null }));
-vi.mock("~/hooks/use-effect-query", () => ({
-  useEffectQuery: () => ({
-    data: {
-      title: "The Power Broker",
-      author: "Robert Caro",
-      content: { type: "doc", content: [] },
-    },
-    isLoading: false,
-  }),
-}));
 vi.mock("~/hooks/use-sync-listener", () => ({ useSyncListener: () => 0 }));
-vi.mock("~/lib/effect-runtime", () => ({ AppRuntime: { runPromise } }));
+vi.mock("~/lib/stores/book-store", () => ({
+  BookService: {
+    getBook: vi.fn(async (bookId: string) => themis.books.find((book) => book.id === bookId)),
+    getBookData: vi.fn(async () => new ArrayBuffer(8)),
+  },
+}));
 vi.mock("~/components/ui/scroll-area", () => ({
   ScrollArea: ({ children, className }: { children: React.ReactNode; className?: string }) => (
     <div data-slot="scroll-area" className={className}>
@@ -180,7 +205,7 @@ function renderMobileRail() {
             <ReaderSettingsMenu
               settings={getSettings()}
               onUpdateSettings={vi.fn()}
-              book={workspace.booksRef.current[0]}
+              book={themis.books[0]}
               onDownload={vi.fn()}
               onBookmarkPage={vi.fn()}
             />
@@ -215,8 +240,8 @@ async function flushAsyncWork() {
 
 beforeEach(() => {
   workspace.activeClusterBookIdRef.current = "book-1";
-  workspace.booksRef.current[0].title = "The Power Broker";
-  workspace.booksRef.current[0].format = "epub";
+  themis.books[0].title = "The Power Broker";
+  themis.books[0].format = "epub";
   readingLocation.chapterLabel = "Part III, Chapter VII";
   readingLocation.currentPage = 283;
   readingLocation.totalPages = 1164;
@@ -225,16 +250,7 @@ beforeEach(() => {
     href: "chapter-1.xhtml",
   });
   navigateToToc.mockReset();
-  runPromise.mockReset();
-  runtimeResults.splice(
-    0,
-    runtimeResults.length,
-    workspace.booksRef.current[0],
-    [],
-    new ArrayBuffer(8),
-    "session-1",
-  );
-  runPromise.mockImplementation(() => Promise.resolve(runtimeResults.shift()));
+  themis.store.dispatch.mockReset();
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({ ok: false })),
@@ -482,8 +498,8 @@ describe("ReadingRail", () => {
   });
 
   it("shows a PDF bookmark title in the rail metadata", () => {
-    workspace.booksRef.current[0].title = "Designing Data-Intensive Applications";
-    workspace.booksRef.current[0].format = "pdf";
+    themis.books[0].title = "Designing Data-Intensive Applications";
+    themis.books[0].format = "pdf";
     readingLocation.chapterLabel = "Part II: Distributed Data";
     readingLocation.currentPage = 167;
     readingLocation.totalPages = 616;

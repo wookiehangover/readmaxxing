@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Effect } from "effect";
 import { Globe, Loader2, Plus, Check } from "lucide-react";
 import { StandardEbooksToolbar } from "~/components/standard-ebooks-toolbar";
 import { Button } from "~/components/ui/button";
@@ -8,17 +7,16 @@ import { StandardEbooksTable } from "~/components/workspace/standard-ebooks-tabl
 import { LibraryHeaderControls } from "~/components/workspace/library-frame";
 import { useSettings } from "~/lib/settings";
 import { StandardEbooksService, type SEBook } from "~/lib/standard-ebooks";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import { parseEpubEffect } from "~/lib/epub/epub-service";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { computeFileHash } from "~/lib/book-hash";
-import { useEffectQuery } from "~/hooks/use-effect-query";
+import type { BookMeta } from "~/lib/stores/book-store";
+import { uploadBooksRequested } from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
 
 interface StandardEbooksBrowserProps {
   onBookAdded: (book: BookMeta) => void;
 }
 
 export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProps) {
+  const store = useAppStore();
   const [settings] = useSettings();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -27,6 +25,11 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
   const [downloadingUrls, setDownloadingUrls] = useState<Set<string>>(new Set());
   const [addedUrls, setAddedUrls] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [searchResult, setSearchResult] = useState<Awaited<
+    ReturnType<typeof StandardEbooksService.searchBooks>
+  > | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -49,15 +52,24 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
   }, [query]);
 
   // Search books or load popular books (empty query = popular)
-  const {
-    data: searchResult,
-    error: loadError,
-    isLoading,
-  } = useEffectQuery(
-    () =>
-      StandardEbooksService.pipe(Effect.andThen((s) => s.searchBooks(debouncedQuery, searchPage))),
-    [debouncedQuery, searchPage],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    setLoadError(false);
+    StandardEbooksService.searchBooks(debouncedQuery, searchPage)
+      .then((result) => {
+        if (!cancelled) setSearchResult(result);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedQuery, searchPage]);
 
   useEffect(() => {
     setBooks([]);
@@ -80,7 +92,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
   const isInitialLoading = isLoading && books.length === 0;
   const isLoadingMore = isLoading && books.length > 0;
   const hasMore =
-    searchResult !== undefined &&
+    searchResult !== null &&
     searchResult.currentPage === searchPage &&
     searchResult.currentPage < searchResult.totalPages;
 
@@ -107,35 +119,34 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
       setDownloadingUrls((prev) => new Set(prev).add(seBook.urlPath));
       setError(null);
 
-      const program = Effect.gen(function* () {
-        const seSvc = yield* StandardEbooksService;
-        const arrayBuffer = yield* seSvc.downloadEpub(seBook.urlPath);
-        const fileHash = yield* Effect.promise(() => computeFileHash(arrayBuffer));
-
-        const existing = yield* BookService.pipe(Effect.andThen((s) => s.findByFileHash(fileHash)));
-        if (existing) return existing;
-
-        const metadata = yield* parseEpubEffect(arrayBuffer);
-        const book: BookMeta = {
-          id: crypto.randomUUID(),
-          title: metadata.title,
-          author: metadata.author,
-          coverImage: metadata.coverImage,
-          format: "epub" as const,
-          fileHash,
-        };
-        yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
-        return book;
-      });
-
       try {
-        const book = await AppRuntime.runPromise(program);
-        setAddedUrls((prev) => new Set(prev).add(seBook.urlPath));
-        onBookAdded(book);
+        const arrayBuffer = await StandardEbooksService.downloadEpub(seBook.urlPath);
+        const finishDownload = () => {
+          setDownloadingUrls((prev) => {
+            const next = new Set(prev);
+            next.delete(seBook.urlPath);
+            return next;
+          });
+        };
+        store.dispatch(
+          uploadBooksRequested(
+            [{ name: `${seBook.title}.epub`, arrayBuffer: async () => arrayBuffer }],
+            (book) => {
+              setAddedUrls((prev) => new Set(prev).add(seBook.urlPath));
+              finishDownload();
+              onBookAdded(book);
+            },
+            undefined,
+            (uploadError) => {
+              console.error("Failed to import book:", uploadError);
+              setError(`Failed to import "${seBook.title}". Please try again.`);
+              finishDownload();
+            },
+          ),
+        );
       } catch (err) {
         console.error("Failed to import book:", err);
         setError(`Failed to import "${seBook.title}". Please try again.`);
-      } finally {
         setDownloadingUrls((prev) => {
           const next = new Set(prev);
           next.delete(seBook.urlPath);
@@ -143,7 +154,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
         });
       }
     },
-    [downloadingUrls, addedUrls, onBookAdded],
+    [downloadingUrls, addedUrls, onBookAdded, store],
   );
   const isBookDownloading = useCallback(
     (book: SEBook) => downloadingUrls.has(book.urlPath),

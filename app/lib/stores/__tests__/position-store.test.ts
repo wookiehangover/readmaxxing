@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createStore, set as idbSet } from "idb-keyval";
-import { Effect } from "effect";
+
+const Effect = { runPromise: <A>(promise: Promise<A>) => promise };
 
 // Mock the sync changelog so we can assert on recordChange invocations
 // without touching the real changelog IDB store.

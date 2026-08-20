@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type PropsWithChildren } from "react";
 import type { DockviewApi } from "dockview-react";
-import { Effect } from "effect";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import type { Route } from "./+types/app-frame";
 import { DropZone } from "~/components/drop-zone";
@@ -22,15 +21,15 @@ import {
 } from "~/hooks/use-workspace-panels";
 import { useWorkspaceShortcuts } from "~/hooks/use-workspace-shortcuts";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { isFirstVisit, seedDemo } from "~/lib/onboarding/demo-seed";
 import { activateReadingRoute, getBookReadingPath, getReadingBookId } from "~/lib/reading-route";
 import { clampFocusedSplitRatio, useSettings } from "~/lib/settings";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import { WorkspaceService, type FocusedWorkspaceState } from "~/lib/stores/workspace-store";
+import type { FocusedWorkspaceState } from "~/lib/stores/workspace-store";
+import { useAppStore } from "~/lib/themis/provider";
+import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { cn } from "~/lib/utils";
 
-function createInitialFocusedState(
+export function createInitialFocusedState(
   books: BookMeta[],
   state: FocusedWorkspaceState | null,
 ): FocusedModeInitialState {
@@ -71,17 +70,8 @@ export function meta(_args: Route.MetaArgs) {
 }
 
 export async function clientLoader() {
-  const demoBook = (await isFirstVisit()) ? await seedDemo() : null;
-  const [books, focusedState] = await Promise.all([
-    AppRuntime.runPromise(BookService.pipe(Effect.andThen((service) => service.getBooks()))),
-    AppRuntime.runPromise(
-      WorkspaceService.pipe(
-        Effect.andThen((service) => service.getFocusedState()),
-        Effect.catchAll(() => Effect.succeed(null)),
-      ),
-    ),
-  ]);
-  return { books, focusedState, demoBook };
+  const books = await BookService.getBooks();
+  return { books };
 }
 
 clientLoader.hydrate = true as const;
@@ -98,8 +88,29 @@ export function HydrateFallback() {
   return <WorkspaceLoadingOverlay />;
 }
 
-export default function AppFrame({ loaderData }: Route.ComponentProps) {
+export function WorkspaceRestoreGate({ children }: PropsWithChildren) {
+  const store = useAppStore();
+  const workspaceRestoreLoading =
+    store.workspaceRestoreSelectors.selectWorkspaceRestoreLoading.useValue();
+  const booksLoading = store.booksSelectors.selectBooksLoading.useValue();
+  return workspaceRestoreLoading || booksLoading ? <WorkspaceLoadingOverlay /> : children;
+}
+
+export default function AppFrame() {
+  return (
+    <WorkspaceRestoreGate>
+      <AppFrameContent />
+    </WorkspaceRestoreGate>
+  );
+}
+
+function AppFrameContent() {
   const ws = useWorkspace();
+  const store = useAppStore();
+  const books = store.booksSelectors.selectAllBooks.useValue();
+  const focusedWorkspace = store.workspaceRestoreSelectors.selectFocusedWorkspace.useValue();
+  const seededDemoBookId = store.booksSelectors.selectSeededDemoBookId.useValue();
+  const demoBook = store.booksSelectors.selectBookById.useValue(seededDemoBookId ?? "") ?? null;
   const location = useLocation();
   const navigate = useNavigate();
   const readingBookId = getReadingBookId(location.pathname);
@@ -110,10 +121,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   const isMobile = useIsMobile();
   const isMobileRef = useRef(isMobile);
   isMobileRef.current = isMobile;
-  const [books, setBooks] = useState<BookMeta[]>(loaderData.books);
-  const [initialFocusedState] = useState(() =>
-    createInitialFocusedState(loaderData.books, loaderData.focusedState),
-  );
+  const [initialFocusedState] = useState(() => createInitialFocusedState(books, focusedWorkspace));
   const [settings, updateSettings] = useSettings();
   const collapsed = settings.sidebarCollapsed;
   const zenMode = settings.zenMode;
@@ -210,6 +218,8 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     });
   }, [books, isWorkspaceRoute, navigate, openBook, readingBookId, ws]);
 
+  // Deprecated compatibility mirror for out-of-scope chat consumers.
+  // The slice remains the source of truth for migrated book UI.
   ws.booksRef.current = books;
 
   useEffect(() => {
@@ -227,7 +237,7 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
   useWorkspaceShortcuts({ apiRef, collapsed, zenMode, updateSettings });
 
   const demoBootstrapReady = useDemoOnboarding({
-    demoBook: loaderData.demoBook,
+    demoBook,
     layoutReady: isWorkspaceRoute || layoutReady,
     sidebarCollapsed: collapsed,
     updateSettings,
@@ -235,50 +245,31 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     openChat,
     openNotebook,
   });
-  const workspaceReady = loaderData.demoBook ? demoBootstrapReady : isWorkspaceRoute || layoutReady;
+  const workspaceReady = demoBook ? demoBootstrapReady : isWorkspaceRoute || layoutReady;
   const frameReady = !isWorkspaceRoute || workspaceReady;
-
-  const updateBooks = useCallback(
-    (updater: (previous: BookMeta[]) => BookMeta[]) => {
-      let next: BookMeta[] | undefined;
-      setBooks((previous) => {
-        next = updater(previous);
-        return next;
-      });
-      queueMicrotask(() => {
-        if (next !== undefined) ws.booksRef.current = next;
-        ws.booksChangeListener.current?.();
-      });
-    },
-    [ws],
-  );
 
   const syncVersion = useSyncListener(["book"]);
   useEffect(() => {
     if (syncVersion === 0) return;
-    AppRuntime.runPromise(BookService.pipe(Effect.andThen((service) => service.getBooks())))
-      .then((freshBooks) => updateBooks(() => freshBooks))
-      .catch(console.error);
-  }, [syncVersion, updateBooks]);
+    store.dispatch(hydrateBooks());
+  }, [store, syncVersion]);
 
-  const handleBookAdded = useCallback(
+  const handleUploadedBookAdded = useCallback(
     (book: BookMeta) => {
-      updateBooks((previous) => [...previous, book]);
       openBook(book);
       navigate(getBookReadingPath(book.id));
     },
-    [navigate, openBook, updateBooks],
+    [navigate, openBook],
   );
 
   const handleBookDeleted = useCallback(
     (bookId: string) => {
       closeBookPanels(bookId);
-      updateBooks((previous) => previous.filter((book) => book.id !== bookId));
     },
-    [closeBookPanels, updateBooks],
+    [closeBookPanels],
   );
 
-  const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
+  const { handleFileInput } = useBookUpload({ onBookAdded: handleUploadedBookAdded });
 
   useEffect(() => {
     ws.openBookRef.current = openBook;
@@ -286,11 +277,11 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
     ws.openChatRef.current = openChat;
     ws.openBookmarksRef.current = openBookmarks;
     ws.openStandardEbooksRef.current = openStandardEbooks;
-    ws.onBookAddedRef.current = handleBookAdded;
+    ws.onBookAddedRef.current = handleUploadedBookAdded;
     ws.onBookDeletedRef.current = handleBookDeleted;
   }, [
-    handleBookAdded,
     handleBookDeleted,
+    handleUploadedBookAdded,
     openBook,
     openBookmarks,
     openChat,
@@ -313,8 +304,8 @@ export default function AppFrame({ loaderData }: Route.ComponentProps) {
 
   return (
     <>
-      {loaderData.demoBook && isWorkspaceRoute && !workspaceReady && <WorkspaceLoadingOverlay />}
-      <DropZone onBookAdded={handleBookAdded}>
+      {demoBook && isWorkspaceRoute && !workspaceReady && <WorkspaceLoadingOverlay />}
+      <DropZone onBookAdded={handleUploadedBookAdded}>
         <div
           className={cn("flex h-dvh", {
             "animate-in fade-in-0 duration-300": frameReady,

@@ -1,11 +1,8 @@
 import { useEffect } from "react";
-import { Effect } from "effect";
 import { toast } from "sonner";
 import { useSyncListener } from "~/hooks/use-sync-listener";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { isFurtherAlong } from "~/lib/position-compare";
-import { getRemotePositionRecord } from "~/lib/stores/remote-position-store";
-import { ReadingPositionService } from "~/lib/stores/position-store";
+import { useAppStore } from "~/lib/themis/provider";
+import { checkPositionNudgeRequested } from "~/lib/themis/reading-positions/reading-positions-slice";
 
 const shownRemoteRecords = new Set<string>();
 
@@ -21,41 +18,24 @@ export function usePositionNudge({
   navigateToPosition,
 }: UsePositionNudgeConfig): void {
   const positionSyncVersion = useSyncListener(["position"]);
+  const store = useAppStore();
+  const nudge = store.readingPositionsSelectors.selectPositionNudge.useValue(bookId);
 
   useEffect(() => {
     if (!enabled) return;
+    store.dispatch(checkPositionNudgeRequested(bookId));
+  }, [bookId, enabled, positionSyncVersion, store]);
 
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const [remote, local] = await Promise.all([
-          getRemotePositionRecord(bookId),
-          AppRuntime.runPromise(
-            ReadingPositionService.pipe(Effect.andThen((s) => s.getPositionRecord(bookId))),
-          ),
-        ]);
-        if (cancelled || !remote || !local) return;
-        if (remote.updatedAt <= local.updatedAt) return;
-        if (!isFurtherAlong(remote.cfi, local.cfi)) return;
-
-        const recordKey = `${bookId}:${remote.updatedAt}`;
-        if (shownRemoteRecords.has(recordKey)) return;
-        shownRemoteRecords.add(recordKey);
-
-        toast("You were further along on another device", {
-          action: {
-            label: "Go to furthest position",
-            onClick: () => navigateToPosition(remote.cfi),
-          },
-        });
-      } catch (error) {
-        console.warn("Failed to check remote reading position:", error);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [bookId, enabled, navigateToPosition, positionSyncVersion]);
+  useEffect(() => {
+    if (!enabled || !nudge) return;
+    const recordKey = `${bookId}:${nudge.updatedAt}`;
+    if (shownRemoteRecords.has(recordKey)) return;
+    shownRemoteRecords.add(recordKey);
+    toast("You were further along on another device", {
+      action: {
+        label: "Go to furthest position",
+        onClick: () => navigateToPosition(nudge.cfi),
+      },
+    });
+  }, [bookId, enabled, navigateToPosition, nudge]);
 }

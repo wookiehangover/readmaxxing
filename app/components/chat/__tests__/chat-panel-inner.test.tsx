@@ -13,6 +13,14 @@ vi.mock("@ai-sdk/react", () => ({
   }),
 }));
 vi.mock("~/lib/context/workspace-context", () => ({ useOptionalWorkspace: () => null }));
+vi.mock("~/lib/themis/provider", () => ({
+  useAppStore: () => ({
+    dispatch: vi.fn(),
+    chatSessionsSelectors: {
+      selectActiveSessionByBook: { useValue: () => null },
+    },
+  }),
+}));
 vi.mock("~/components/chat/chat-message-list", () => ({
   ChatMessageList: () => <div data-testid="messages" />,
 }));

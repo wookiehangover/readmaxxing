@@ -1,20 +1,18 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import { useReaderSearch } from "~/hooks/use-reader-search";
-import { Effect } from "effect";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
+import type { BookMeta } from "~/lib/stores/book-store";
+import { useAppStore } from "~/lib/themis/provider";
 import { useResolvedTheme, useSettings } from "~/lib/settings";
 import type { FontWeight, PdfLayout, ReaderLayout } from "~/lib/settings";
 import { SpeedreadPopout } from "~/components/speedread-popout";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
-import { useEffectQuery } from "~/hooks/use-effect-query";
 import type { DockviewPanelApi } from "dockview-react";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import type {
   SuccessorBookAdapter,
@@ -29,6 +27,7 @@ import {
   EpubReaderSurface,
   EpubReaderToolbar,
 } from "~/components/workspace-book-reader/epub-reader-chrome";
+import { hydrateBookmarksRequested } from "~/lib/themis/bookmarks/bookmarks-slice";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -114,21 +113,13 @@ export function WorkspaceBookReader({
     }
   }, []);
 
-  // Load book data via useEffectQuery
-  const {
-    data: book,
-    error,
-    isLoading,
-  } = useEffectQuery(
-    () =>
-      BookService.pipe(
-        Effect.andThen((s) => s.getBook(bookId)),
-        Effect.catchTag("BookNotFoundError", () => Effect.succeed(null as BookMeta | null)),
-      ),
-    [bookId],
-  );
+  // Look up book metadata from the Themis books collection. Populated at app
+  // startup by the books hydrate saga, so this is a synchronous read.
+  const store = useAppStore();
+  const booksLoading = store.booksSelectors.selectBooksLoading.useValue();
+  const book = store.booksSelectors.selectBookById.useValue(bookId);
 
-  if (isLoading) {
+  if (!book && booksLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Loading book…</p>
@@ -136,7 +127,7 @@ export function WorkspaceBookReader({
     );
   }
 
-  if (error || !book) {
+  if (!book) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Book not found.</p>
@@ -207,7 +198,6 @@ function WorkspaceBookReaderInner({
   });
 
   const [tocOpen, setTocOpen] = useState(false);
-  const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const [speedreadWords, setSpeedreadWords] = useState<string[]>([]);
   const [speedreadOpen, setSpeedreadOpen] = useState(false);
   const [readingDwellUnit, setReadingDwellUnit] = useState<ReadingDwellUnit | null>(null);
@@ -319,19 +309,12 @@ function WorkspaceBookReaderInner({
   });
 
   const bookmarkSyncVersion = useSyncListener(["bookmark"]);
-  const { data: bookmarks } = useEffectQuery(
-    () =>
-      BookmarkService.pipe(
-        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to load bookmarks:", error);
-            return [] as BookmarkRecord[];
-          }),
-        ),
-      ),
-    [book.id, bookmarkVersion, bookmarkSyncVersion],
-  );
+  const store = useAppStore();
+  const bookmarks = store.bookmarksSelectors.selectBookmarksByBook.useValue(book.id);
+
+  useEffect(() => {
+    store.dispatch(hydrateBookmarksRequested(book.id));
+  }, [book.id, bookmarkSyncVersion, store]);
 
   useEffect(() => {
     const id = panelApi?.id ?? book.id;
@@ -406,7 +389,6 @@ function WorkspaceBookReaderInner({
     selectionPopover,
     saveHighlightFromPopover,
     dismissPopovers,
-    setBookmarkVersion,
     setSpeedreadWords,
     setSpeedreadOpen,
   });

@@ -10,7 +10,6 @@ import { Tabs } from "@base-ui/react/tabs";
 import { createPortal } from "react-dom";
 import { Bug, MoreHorizontal, Upload } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router";
-import { Effect } from "effect";
 import { AppNavigation } from "~/components/app-navigation";
 import { BugReportDialog } from "~/components/bug-report-dialog";
 import { Button } from "~/components/ui/button";
@@ -23,10 +22,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
-import { useEffectQuery } from "~/hooks/use-effect-query";
-import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 import { getBookReadingPath } from "~/lib/reading-route";
-import { WorkspaceService } from "~/lib/stores/workspace-store";
+import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 import { sortBooks } from "~/lib/workspace-utils";
 
@@ -51,23 +48,18 @@ interface LibraryFrameProps {
 }
 
 export function LibraryFrame({ children, fileInputRef, onFileInput }: LibraryFrameProps) {
-  const workspace = useOptionalWorkspace();
+  const store = useAppStore();
+  const books = store.booksSelectors.selectAllBooks.useValue();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [headerControlsElement, setHeaderControlsElement] = useState<HTMLDivElement | null>(null);
-  const { pathname } = useLocation();
-  const { data: lastOpenedMap } = useEffectQuery(
-    () => WorkspaceService.pipe(Effect.andThen((service) => service.getLastOpenedMap())),
-    [],
-  );
-  const recentBooks =
-    workspace && lastOpenedMap instanceof Map
-      ? sortBooks(
-          workspace.booksRef.current.filter((book) => lastOpenedMap.has(book.id)),
-          "recent",
-          lastOpenedMap,
-        ).slice(0, 5)
-      : [];
+  const lastOpenedMap = store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
+  const recentBooks = sortBooks(
+    books.filter((book) => lastOpenedMap.has(book.id)),
+    "recent",
+    lastOpenedMap,
+  ).slice(0, 5);
 
   const renderActionsMenu = () => (
     <DropdownMenu>

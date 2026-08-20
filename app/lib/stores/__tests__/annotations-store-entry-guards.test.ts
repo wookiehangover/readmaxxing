@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { Effect, Layer } from "effect";
 import { createStore } from "idb-keyval";
-import {
-  AnnotationService,
-  makeAnnotationService,
-  type Highlight,
-} from "~/lib/stores/annotations-store";
+import { makeAnnotationService, type Highlight } from "~/lib/stores/annotations-store";
 
 const entriesMock = vi.hoisted(() => vi.fn());
 
@@ -42,23 +37,13 @@ describe("AnnotationService entry guards", () => {
     ]);
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const layer = Layer.succeed(
-      AnnotationService,
-      makeAnnotationService({
-        highlightStore: createStore("annotation-entry-guards-highlights", "highlights"),
-        notebookStore: createStore("annotation-entry-guards-notebooks", "notebooks"),
-      }),
-    );
+    const service = makeAnnotationService({
+      highlightStore: createStore("annotation-entry-guards-highlights", "highlights"),
+      notebookStore: createStore("annotation-entry-guards-notebooks", "notebooks"),
+    });
 
     try {
-      const highlights = await Effect.runPromise(
-        Effect.provide(
-          AnnotationService.pipe(
-            Effect.andThen((service) => service.getHighlightsByBook("book-1")),
-          ),
-          layer,
-        ),
-      );
+      const highlights = await service.getHighlightsByBook("book-1");
 
       expect(highlights).toEqual([validHighlight]);
       expect(warnSpy).toHaveBeenCalledOnce();

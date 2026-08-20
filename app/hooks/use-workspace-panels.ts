@@ -1,10 +1,8 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router";
-import { Effect } from "effect";
 import type { AddPanelPositionOptions, DockviewApi } from "dockview-react";
 import type { FocusedCluster } from "~/hooks/use-focused-mode";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
-import { AppRuntime } from "~/lib/effect-runtime";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { getBookReadingPath } from "~/lib/reading-route";
 import { truncateTitle } from "~/lib/workspace-utils";
@@ -110,9 +108,7 @@ export function useWorkspacePanels({
         return;
       }
 
-      AppRuntime.runPromise(
-        WorkspaceService.pipe(Effect.andThen((s) => s.saveLastOpened(book.id, Date.now()))),
-      ).catch(console.error);
+      WorkspaceService.saveLastOpened(book.id, Date.now()).catch(console.error);
 
       const openPanels = () => {
         if (!focusedClustersRef.current.has(book.id)) {
@@ -129,7 +125,7 @@ export function useWorkspacePanels({
         ws.setActiveCluster(book.id);
 
         // Check if book has notes and auto-open notebook if it does
-        AppRuntime.runPromise(AnnotationService.pipe(Effect.andThen((s) => s.getNotebook(book.id))))
+        AnnotationService.getNotebook(book.id)
           .then((notebook) => {
             if (!notebook) return;
             // Check if notebook has content (not just an empty doc)

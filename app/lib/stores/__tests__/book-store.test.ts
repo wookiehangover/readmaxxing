@@ -1,9 +1,47 @@
 import { describe, it, expect, vi } from "vitest";
-import { Effect, Layer } from "effect";
 import { createStore, set, get } from "idb-keyval";
-import { BookService, makeBookService } from "~/lib/stores/book-store";
-import type { Book } from "~/lib/stores/book-store";
-import { ReadingPositionService, makePositionService } from "~/lib/stores/position-store";
+import { BookService as LiveBookService, makeBookService } from "~/lib/stores/book-store";
+import type { Book, BookMeta } from "~/lib/stores/book-store";
+import {
+  ReadingPositionService as LiveReadingPositionService,
+  makePositionService,
+} from "~/lib/stores/position-store";
+
+function serviceTag<Service>(initial: Service) {
+  let service = initial;
+  return {
+    pipe: <A>(operation: (value: Service) => Promise<A>) => operation(service),
+    set: (value: Service) => {
+      service = value;
+    },
+  };
+}
+
+type BookService = typeof LiveBookService;
+const BookService = serviceTag(LiveBookService);
+type ReadingPositionService = typeof LiveReadingPositionService;
+const ReadingPositionService = serviceTag(LiveReadingPositionService);
+const Layer = {
+  succeed: <Service>(tag: { set: (service: Service) => void }, service: Service) => {
+    tag.set(service);
+    return undefined;
+  },
+};
+namespace Effect {
+  export type Effect<A, _E = never, _R = never> = Promise<A>;
+}
+const Effect = {
+  andThen: <Service, A>(operation: (service: Service) => Promise<A>) => operation,
+  provide: <A>(promise: Promise<A>, _layer: unknown) => promise,
+  runPromise: <A>(promise: Promise<A>) => promise,
+  runPromiseExit: async <A>(promise: Promise<A>) => {
+    try {
+      return { _tag: "Success" as const, value: await promise };
+    } catch (error) {
+      return { _tag: "Failure" as const, cause: { error } };
+    }
+  },
+};
 
 function makeBook(overrides: Partial<Book> = {}): Book {
   return {
@@ -81,6 +119,30 @@ describe("BookService", () => {
       if (exit._tag === "Failure") {
         expect((exit.cause as any).error?._tag).toBe("BookNotFoundError");
       }
+    });
+  });
+
+  describe("updateBookMeta", () => {
+    it("returns the exact timestamp persisted to storage", async () => {
+      const suffix = `test-${++testCounter}-${Date.now()}`;
+      const bookStore = createStore(`book-db-${suffix}`, "books");
+      const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
+      const service = makeBookService({ bookStore, bookDataStore });
+      const updated: BookMeta = {
+        id: "book-1",
+        title: "Updated",
+        author: "Test Author",
+        coverImage: null,
+        format: "epub",
+        updatedAt: 1,
+      };
+
+      const stamped = await service.updateBookMeta(updated);
+      const persisted = await get<BookMeta>(updated.id, bookStore);
+
+      expect(stamped.updatedAt).not.toBe(updated.updatedAt);
+      expect(persisted).toEqual(stamped);
+      expect(persisted?.updatedAt).toBe(stamped.updatedAt);
     });
   });
 

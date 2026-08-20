@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { DockviewPanelApi } from "dockview-react";
-import { Effect } from "effect";
 import { Button } from "~/components/ui/button";
 import {
   MessageSquare,
@@ -29,7 +28,6 @@ import { LibraryToolbar } from "~/components/workspace/library-toolbar";
 import { LibraryHeaderControls } from "~/components/workspace/library-frame";
 import { LibraryTable } from "~/components/workspace/library-table";
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
-import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { useBookUpload } from "~/hooks/use-book-upload";
 import { useBookDeletion } from "~/hooks/use-book-deletion";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -37,8 +35,9 @@ import { useSyncActions } from "~/lib/sync/use-sync";
 import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
 import { filterBooks, sortBooks } from "~/lib/workspace-utils";
 import { useAuth } from "~/lib/context/auth-context";
-import { useEffectQuery } from "~/hooks/use-effect-query";
-import { ensureLocalThenOpen, refreshWorkspaceBooks } from "~/lib/library-book-open";
+import { ensureLocalThenOpen } from "~/lib/library-book-open";
+import { hydrateBooks } from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
 import { Link } from "react-router";
 
 interface LibraryBrowseContentProps {
@@ -78,40 +77,28 @@ function saveLibrarySortBy(sortBy: WorkspaceSortBy): void {
 
 export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseContentProps = {}) {
   const ws = useWorkspace();
+  const store = useAppStore();
   const { isAuthenticated } = useAuth();
-  const [books, setBooks] = useState<BookMeta[]>(ws.booksRef.current);
+  const books = store.booksSelectors.selectAllBooks.useValue();
+  const downloadingBookIds = store.booksSelectors.selectDownloadingBookIds.useValue();
   const [searchQuery, setSearchQuery] = useState("");
   const [librarySortBy, setLibrarySortBy] = useState<WorkspaceSortBy>(() =>
     getStoredLibrarySortBy(),
   );
   const [shareBook, setShareBook] = useState<BookMeta | null>(null);
-  const [downloadingBookIds, setDownloadingBookIds] = useState<ReadonlySet<string>>(new Set());
   const [settings] = useSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const downloadingBookIdsRef = useRef(new Set<string>());
+  const pendingOpenControllerRef = useRef<AbortController | null>(null);
   const lastRefreshedAtRef = useRef(0);
-  const { data: lastOpenedMap } = useEffectQuery(
-    () => WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())),
-    [],
-  );
-
-  useEffect(() => {
-    const prev = ws.booksChangeListener.current;
-    ws.booksChangeListener.current = () => setBooks([...ws.booksRef.current]);
-    return () => {
-      ws.booksChangeListener.current = prev;
-    };
-  }, [ws]);
+  const lastOpenedMap = store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
 
   const handleOpenBook = useCallback(
     async (book: BookMeta) => {
       const needsDownload = bookNeedsDownload(book);
-      if (needsDownload && downloadingBookIdsRef.current.has(book.id)) return;
-
-      if (needsDownload) {
-        downloadingBookIdsRef.current.add(book.id);
-        setDownloadingBookIds(new Set(downloadingBookIdsRef.current));
-      }
+      if (needsDownload && store.state.books.downloadingBookIds.includes(book.id)) return;
+      pendingOpenControllerRef.current?.abort();
+      const controller = new AbortController();
+      pendingOpenControllerRef.current = controller;
 
       try {
         if (onOpenBook) {
@@ -119,7 +106,8 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
           return;
         }
         await ensureLocalThenOpen(book, {
-          refreshBooks: (freshBooks) => refreshWorkspaceBooks(ws, freshBooks),
+          store,
+          signal: controller.signal,
           openBook: (localBook) => {
             ws.openBookRef.current?.(localBook);
             panelApi?.close();
@@ -128,14 +116,16 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
       } catch (error) {
         console.error("Failed to download book before opening:", error);
         toast.error(`Could not download “${book.title}”. Please try again.`);
-      } finally {
-        if (needsDownload) {
-          downloadingBookIdsRef.current.delete(book.id);
-          setDownloadingBookIds(new Set(downloadingBookIdsRef.current));
-        }
       }
     },
-    [onOpenBook, panelApi, ws],
+    [onOpenBook, panelApi, store, ws],
+  );
+
+  useEffect(
+    () => () => {
+      pendingOpenControllerRef.current?.abort();
+    },
+    [],
   );
 
   const handleOpenNotebook = useCallback(
@@ -167,9 +157,9 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
 
   const handleBookAdded = useCallback(
     (book: BookMeta) => {
-      ws.onBookAddedRef.current?.(book);
+      void handleOpenBook(book);
     },
-    [ws],
+    [handleOpenBook],
   );
 
   const handleBookDeleted = useCallback(
@@ -197,10 +187,8 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
   );
 
   // When the library panel becomes visible/active in dockview, trigger a
-  // sync and refresh the book list (throttled to avoid thrashing on rapid
-  // panel switching). Dispatching `sync:entity-updated` {book} piggybacks
-  // on the workspace's existing listener which calls BookService.getBooks
-  // and propagates the result through booksRef + booksChangeListener.
+  // sync and refresh the Themis books cache (throttled to avoid thrashing on
+  // rapid panel switching).
   useEffect(() => {
     if (!panelApi) return;
 
@@ -211,13 +199,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
 
       if (syncActive) triggerSync();
 
-      queueMicrotask(() => {
-        window.dispatchEvent(
-          new CustomEvent("sync:entity-updated", {
-            detail: { entity: "book" },
-          }),
-        );
-      });
+      store.dispatch(hydrateBooks());
     };
 
     const visDisposable = panelApi.onDidVisibilityChange((e) => {
@@ -231,7 +213,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
       visDisposable.dispose();
       activeDisposable.dispose();
     };
-  }, [panelApi, syncActive, triggerSync]);
+  }, [panelApi, store, syncActive, triggerSync]);
 
   const filteredBooks = useMemo(
     () => (searchQuery ? filterBooks(books, searchQuery) : books),
@@ -315,7 +297,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
                   onDeleteBook={handleDeleteBook}
                   onReloadBook={handleReloadBook}
                   syncActive={syncActive}
-                  downloadingBookIds={downloadingBookIds}
+                  downloadingBookIds={new Set(downloadingBookIds)}
                 />
               </div>
             </div>
@@ -335,7 +317,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
                       handleShareBook={handleShareBook}
                       isAuthenticated={isAuthenticated}
                       syncActive={syncActive}
-                      isDownloading={downloadingBookIds.has(book.id)}
+                      isDownloading={downloadingBookIds.includes(book.id)}
                     />
                   );
                 })}

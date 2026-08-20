@@ -142,8 +142,8 @@ export function stripSuggestedPrompts(text: string): string {
  * - `reconnectToStream` is redirected to the custom resume endpoint
  *   `/api/chat/resume/:sessionId`, which replays an in-flight Redis stream.
  * - The custom `fetch` wrapper retries once on a 404 from `/api/chat`, which
- *   handles the brand-new-session race: `ChatService.createSession` writes
- *   to IDB and enqueues a change for sync-push, but the first `POST /api/chat`
+ *   handles the brand-new-session race: the chat-session saga writes through
+ *   the persistence service and enqueues a change for sync-push, but the first `POST /api/chat`
  *   may arrive before sync-push lands the session in Postgres. On 404 we
  *   dispatch `sync:push-needed` (a no-op if already firing), wait briefly,
  *   and retry exactly once.

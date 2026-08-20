@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { del, get, set } from "idb-keyval";
-import { Effect } from "effect";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "./demo-content";
-import { AppRuntime } from "~/lib/effect-runtime";
 import type { ChatSession } from "~/lib/stores/chat-store";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import type { ChangeEntry, SyncPushResponse } from "~/lib/sync/types";
@@ -28,7 +26,7 @@ vi.mock("~/lib/sync/book-chapter-uploads", () => ({
 vi.mock("~/lib/sync/change-log", () => ({ recordChange: mocks.recordChange }));
 vi.mock("~/lib/sync/push", () => ({ pushChangesWithResult: mocks.push }));
 
-import { adoptDemoContent } from "./adopt-demo";
+import { persistAdoptedDemoContent } from "./adopt-demo";
 
 const CANONICAL_BOOK_ID = "11111111-1111-4111-8111-111111111111";
 const ADOPTED_BOOK_ID = "33333333-3333-4333-8333-333333333333";
@@ -97,26 +95,20 @@ beforeEach(async () => {
     set(DEMO_BOOK_ID, [DEMO_CHAT_SESSION], getChatSessionStore()),
     set(DEMO_BOOK_ID, DEMO_CHAT_SESSION.id, getActiveSessionStore()),
   ]);
-  await AppRuntime.runPromise(
-    WorkspaceService.pipe(
-      Effect.andThen((service) =>
-        service.saveFocusedState({
-          order: [DEMO_BOOK_ID],
-          activeBookId: DEMO_BOOK_ID,
-          clusters: [
-            {
-              bookId: DEMO_BOOK_ID,
-              bookTitle: "The Great Gatsby",
-              bookFormat: "epub",
-              hasChat: true,
-              hasNotebook: true,
-              activeTab: "chat",
-            },
-          ],
-        }),
-      ),
-    ),
-  );
+  await WorkspaceService.saveFocusedState({
+    order: [DEMO_BOOK_ID],
+    activeBookId: DEMO_BOOK_ID,
+    clusters: [
+      {
+        bookId: DEMO_BOOK_ID,
+        bookTitle: "The Great Gatsby",
+        bookFormat: "epub",
+        hasChat: true,
+        hasNotebook: true,
+        activeTab: "chat",
+      },
+    ],
+  });
 });
 
 describe("adoptDemoContent", () => {
@@ -130,7 +122,7 @@ describe("adoptDemoContent", () => {
       order.push("chapters");
     });
 
-    const adopted = await adoptDemoContent("user-1");
+    const adopted = await persistAdoptedDemoContent("user-1");
 
     expect(adopted).toEqual({ bookId: ADOPTED_BOOK_ID, sessionId: ADOPTED_SESSION_ID });
     expect(order).toEqual(["push", "push", "chapters"]);
@@ -142,9 +134,7 @@ describe("adoptDemoContent", () => {
     expect(await get<Record<string, unknown>>(DEMO_BOOK_ID, getBookStore())).toHaveProperty(
       "deletedAt",
     );
-    const focusedState = await AppRuntime.runPromise(
-      WorkspaceService.pipe(Effect.andThen((service) => service.getFocusedState())),
-    );
+    const focusedState = await WorkspaceService.getFocusedState();
     expect(focusedState).toMatchObject({
       order: [ADOPTED_BOOK_ID],
       activeBookId: ADOPTED_BOOK_ID,
@@ -168,7 +158,7 @@ describe("adoptDemoContent", () => {
     ]);
     mocks.push.mockImplementation(async () => acceptedSinceLastPush());
 
-    const adopted = await adoptDemoContent("user-2");
+    const adopted = await persistAdoptedDemoContent("user-2");
 
     expect(adopted.sessionId).toBe(USER_SESSION_ID);
     const savedSessions = await get<{ id: string; bookId: string }[]>(
@@ -203,15 +193,13 @@ describe("adoptDemoContent", () => {
       return acceptedSinceLastPush();
     });
 
-    const adopted = await adoptDemoContent("existing-user");
+    const adopted = await persistAdoptedDemoContent("existing-user");
 
     expect(adopted).toEqual({ bookId: CANONICAL_BOOK_ID, sessionId: ADOPTED_SESSION_ID });
     expect(mocks.ensureChapters).toHaveBeenCalledWith(CANONICAL_BOOK_ID);
     const finalSessionChange = recorded.filter((entry) => entry.entity === "chat_session").at(-1);
     expect(finalSessionChange?.data).toMatchObject({ bookId: CANONICAL_BOOK_ID });
-    const focusedState = await AppRuntime.runPromise(
-      WorkspaceService.pipe(Effect.andThen((service) => service.getFocusedState())),
-    );
+    const focusedState = await WorkspaceService.getFocusedState();
     expect(focusedState?.activeBookId).toBe(CANONICAL_BOOK_ID);
   });
 });

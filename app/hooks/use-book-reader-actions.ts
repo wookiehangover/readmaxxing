@@ -2,21 +2,23 @@ import { useCallback } from "react";
 import type { Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { SelectionPopover, useHighlights } from "~/hooks/use-highlights";
-import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
-import { AppRuntime } from "~/lib/effect-runtime";
 import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { tokenizeSpeedreadText } from "~/lib/speedread";
-import { BookmarkService } from "~/lib/stores/bookmark-store";
 import { BookService } from "~/lib/stores/book-store";
-import { Effect } from "effect";
+import { useAppStore } from "~/lib/themis/provider";
+import { appendHighlightToNotebookRequested } from "~/lib/themis/annotations/annotations-slice";
+import {
+  addBookmarkRequested,
+  deleteBookmarkRequested,
+} from "~/lib/themis/bookmarks/bookmarks-slice";
 
 type HighlightsState = ReturnType<typeof useHighlights>;
 
 interface UseBookReaderActionsOptions {
   book: BookMeta;
-  bookmarks?: BookmarkRecord[];
+  bookmarks: BookmarkRecord[];
   currentChapterLabel: string | null;
   currentPage: number | null;
   latestCfiRef: React.MutableRefObject<string | null>;
@@ -24,7 +26,6 @@ interface UseBookReaderActionsOptions {
   selectionPopover: SelectionPopover | null;
   saveHighlightFromPopover: HighlightsState["saveHighlight"];
   dismissPopovers: HighlightsState["dismissPopovers"];
-  setBookmarkVersion: React.Dispatch<React.SetStateAction<number>>;
   setSpeedreadWords: React.Dispatch<React.SetStateAction<string[]>>;
   setSpeedreadOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
@@ -39,11 +40,11 @@ export function useBookReaderActions({
   selectionPopover,
   saveHighlightFromPopover,
   dismissPopovers,
-  setBookmarkVersion,
   setSpeedreadWords,
   setSpeedreadOpen,
 }: UseBookReaderActionsOptions) {
   const workspace = useWorkspace();
+  const store = useAppStore();
 
   const clearSelection = useCallback(() => {
     const contents = renditionRef.current?.getContents?.() ?? [];
@@ -65,16 +66,12 @@ export function useBookReaderActions({
       append(attributes);
       return;
     }
-    AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attributes))
-      .then(() => {
-        queueMicrotask(() => {
-          window.dispatchEvent(
-            new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-          );
-        });
-      })
-      .catch((error) => console.error("Failed to append highlight to notebook:", error));
-  }, [book.id, saveHighlightFromPopover, workspace.notebookCallbackMap]);
+    store.dispatch(
+      appendHighlightToNotebookRequested(book.id, attributes, undefined, (error) =>
+        console.error("Failed to append highlight to notebook:", error),
+      ),
+    );
+  }, [book.id, saveHighlightFromPopover, store, workspace.notebookCallbackMap]);
 
   const handleAskQuestion = useCallback(async () => {
     if (!selectionPopover) return;
@@ -94,15 +91,11 @@ export function useBookReaderActions({
           { type: "paragraph" },
         ]);
       } else {
-        AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attributes))
-          .then(() => {
-            queueMicrotask(() => {
-              window.dispatchEvent(
-                new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-              );
-            });
-          })
-          .catch((error) => console.error("Failed to append highlight to notebook:", error));
+        store.dispatch(
+          appendHighlightToNotebookRequested(book.id, attributes, undefined, (error) =>
+            console.error("Failed to append highlight to notebook:", error),
+          ),
+        );
       }
 
       workspace.pendingHighlightPillMap.current.set(book.id, {
@@ -124,6 +117,7 @@ export function useBookReaderActions({
     dismissPopovers,
     saveHighlightFromPopover,
     selectionPopover,
+    store,
     workspace,
   ]);
 
@@ -154,17 +148,11 @@ export function useBookReaderActions({
   }, [clearSelection, dismissPopovers, selectionPopover]);
 
   const handleDownload = useCallback(() => {
-    AppRuntime.runPromise(
-      BookService.pipe(
-        Effect.andThen((service) => service.getBookData(book.id)),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to download book:", error);
-            return null as ArrayBuffer | null;
-          }),
-        ),
-      ),
-    )
+    BookService.getBookData(book.id)
+      .catch((error: unknown) => {
+        console.error("Failed to download book:", error);
+        return null;
+      })
       .then((data) => {
         if (!data) return;
         const format = book.format ?? "epub";
@@ -213,36 +201,26 @@ export function useBookReaderActions({
     return location?.start?.cfi ?? null;
   }, [latestCfiRef, renditionRef]);
 
-  const currentBookmark = bookmarks?.find((bookmark) => bookmark.cfi === getCurrentCfi());
-  const handleBookmarkPage = useCallback(async () => {
+  const currentBookmark = bookmarks.find((bookmark) => bookmark.cfi === getCurrentCfi());
+  const handleBookmarkPage = useCallback(() => {
     const cfi = getCurrentCfi();
     if (!cfi) return;
-    const existingBookmark = bookmarks?.find((bookmark) => bookmark.cfi === cfi);
+    const existingBookmark = bookmarks.find((bookmark) => bookmark.cfi === cfi);
     const now = Date.now();
-    await AppRuntime.runPromise(
-      BookmarkService.pipe(
-        Effect.andThen((service) =>
-          existingBookmark
-            ? service.deleteBookmark(existingBookmark.id)
-            : service.saveBookmark({
-                id: `bookmark:${book.id}:cfi:${encodeURIComponent(cfi)}`,
-                bookId: book.id,
-                cfi,
-                label: currentChapterLabel ?? undefined,
-                displayPage: currentPage ?? undefined,
-                createdAt: now,
-                updatedAt: now,
-              }),
-        ),
-      ),
+    store.dispatch(
+      existingBookmark
+        ? deleteBookmarkRequested(book.id, existingBookmark.id)
+        : addBookmarkRequested({
+            id: `bookmark:${book.id}:cfi:${encodeURIComponent(cfi)}`,
+            bookId: book.id,
+            cfi,
+            label: currentChapterLabel ?? undefined,
+            displayPage: currentPage ?? undefined,
+            createdAt: now,
+            updatedAt: now,
+          }),
     );
-    setBookmarkVersion((version) => version + 1);
-    queueMicrotask(() => {
-      window.dispatchEvent(
-        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
-      );
-    });
-  }, [book.id, bookmarks, currentChapterLabel, currentPage, getCurrentCfi, setBookmarkVersion]);
+  }, [book.id, bookmarks, currentChapterLabel, currentPage, getCurrentCfi, store]);
 
   const handleOpenNotebook = useCallback(() => {
     openMobileReadingTab("Notes");

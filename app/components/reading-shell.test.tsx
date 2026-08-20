@@ -36,6 +36,13 @@ vi.mock("~/components/reading-shell/reading-rail", () => ({
     );
   },
 }));
+vi.mock("~/lib/themis/provider", () => ({
+  useAppStore: () => ({
+    booksSelectors: {
+      selectBookById: { useValue: (bookId: string) => books.find((book) => book.id === bookId) },
+    },
+  }),
+}));
 
 import { ReadingShell } from "~/components/reading-shell";
 import { useWorkspace, WorkspaceProvider } from "~/lib/context/workspace-context";
@@ -80,7 +87,6 @@ afterEach(() => {
 function renderShell() {
   function Harness() {
     const workspace = useWorkspace();
-    workspace.booksRef.current = books;
     workspace.activeClusterBookIdRef.current = activeBookId;
     return <ReadingShell />;
   }

@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "~/compone
 import { WorkspaceOutlinePanel } from "~/components/workspace/outline-panel";
 import { WorkspaceNotebookPanel } from "~/components/workspace/panel-components";
 import { useWorkspace } from "~/lib/context/workspace-context";
+import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 
 const desktopTabs = ["Notes", "Discuss", "Outline"] as const;
@@ -30,6 +31,7 @@ export function ReadingRail({
   bookSurface?: ReactNode;
 }) {
   const workspace = useWorkspace();
+  const store = useAppStore();
   const { activeTab, setActiveTab } = useReadingRailTab();
   const activeBookId = useSyncExternalStore(
     workspace.subscribeClusterChanges,
@@ -42,7 +44,7 @@ export function ReadingRail({
     () => null,
   );
   const [tocOpen, setTocOpen] = useState(false);
-  const book = workspace.booksRef.current.find((candidate) => candidate.id === activeBookId);
+  const book = store.booksSelectors.selectBookById.useValue(activeBookId ?? "");
   const toc = activeBookId ? workspace.findTocForBook(activeBookId) : undefined;
   const navigateToToc = activeBookId ? workspace.findTocNavigationForBook(activeBookId) : undefined;
   const chapterLabel = location?.chapterLabel;

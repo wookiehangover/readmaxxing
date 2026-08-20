@@ -1,5 +1,4 @@
 import type { PoolClient } from "pg";
-import { Data } from "effect";
 import { sql } from "pg-sql";
 import { getPool } from "../pool";
 
@@ -15,14 +14,27 @@ export interface BookChaptersRow {
   currentUploadId: string | null;
 }
 
-export class ChapterUploadSessionMismatchError extends Data.TaggedError(
-  "ChapterUploadSessionMismatchError",
-)<{
-  readonly userId: string;
-  readonly bookId: string;
-  readonly expectedUploadId: string;
-  readonly actualUploadId: string | null;
-}> {}
+export class ChapterUploadSessionMismatchError extends Error {
+  readonly _tag = "ChapterUploadSessionMismatchError";
+
+  constructor(
+    readonly details: {
+      readonly userId: string;
+      readonly bookId: string;
+      readonly expectedUploadId: string;
+      readonly actualUploadId: string | null;
+    },
+  ) {
+    super("Chapter upload session no longer matches");
+    this.name = this._tag;
+    Object.assign(this, details);
+  }
+
+  declare readonly userId: string;
+  declare readonly bookId: string;
+  declare readonly expectedUploadId: string;
+  declare readonly actualUploadId: string | null;
+}
 
 const CHAPTERS_COLUMNS = sql`
   user_id AS "userId",

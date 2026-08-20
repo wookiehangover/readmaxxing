@@ -1,12 +1,8 @@
 import { startRegistration } from "@simplewebauthn/browser";
-import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthService, AuthServiceLive } from "~/lib/auth-service";
+import { authService } from "~/lib/auth-service";
 
 vi.mock("@simplewebauthn/browser", () => ({ startRegistration: vi.fn() }));
-
-const run = <A, E>(effect: Effect.Effect<A, E, AuthService>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(AuthServiceLive)));
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -40,7 +36,7 @@ describe("AuthService passkeys", () => {
     ];
     fetchMock.mockResolvedValueOnce(jsonResponse({ passkeys }));
 
-    const result = await run(AuthService.pipe(Effect.andThen((service) => service.listPasskeys())));
+    const result = await authService.listPasskeys();
 
     expect(result).toEqual(passkeys);
     expect(fetchMock).toHaveBeenCalledWith("/api/auth/passkeys");
@@ -56,7 +52,7 @@ describe("AuthService passkeys", () => {
       registration as Awaited<ReturnType<typeof startRegistration>>,
     );
 
-    const result = await run(AuthService.pipe(Effect.andThen((service) => service.addPasskey())));
+    const result = await authService.addPasskey();
 
     expect(startRegistration).toHaveBeenCalledWith({ optionsJSON: options });
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/auth/passkeys/register-options", {
@@ -73,9 +69,7 @@ describe("AuthService passkeys", () => {
   it("renames a passkey", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-    await run(
-      AuthService.pipe(Effect.andThen((service) => service.renamePasskey("credential/1", "Phone"))),
-    );
+    await authService.renamePasskey("credential/1", "Phone");
 
     expect(fetchMock).toHaveBeenCalledWith("/api/auth/passkeys/credential%2F1", {
       method: "PATCH",
@@ -87,7 +81,7 @@ describe("AuthService passkeys", () => {
   it("removes a passkey", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
 
-    await run(AuthService.pipe(Effect.andThen((service) => service.removePasskey("credential-1"))));
+    await authService.removePasskey("credential-1");
 
     expect(fetchMock).toHaveBeenCalledWith("/api/auth/passkeys/credential-1", {
       method: "DELETE",
@@ -97,12 +91,7 @@ describe("AuthService passkeys", () => {
   it("maps route failures to AuthError", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: "Cannot remove the last passkey" }, 400));
 
-    const error = await run(
-      AuthService.pipe(
-        Effect.andThen((service) => service.removePasskey("credential-1")),
-        Effect.flip,
-      ),
-    );
+    const error = await authService.removePasskey("credential-1").catch((cause) => cause);
 
     expect(error).toMatchObject({
       _tag: "AuthError",

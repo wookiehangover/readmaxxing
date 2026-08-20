@@ -1,6 +1,6 @@
 # Agent Instructions
 
-Ebook/PDF reader web app: React Router v7 (framework mode) + TypeScript, Tailwind v4, shadcn/ui (Base UI), `@readmaxxing/epub-successor` + pdfjs, dockview workspace, TipTap notebooks, Effect.ts, Postgres (`pg`), WebAuthn passkeys, Vercel Blob, local-first sync.
+Ebook/PDF reader web app: React Router v7 (framework mode) + TypeScript, Tailwind v4, shadcn/ui (Base UI), `@readmaxxing/epub-successor` + pdfjs, dockview workspace, TipTap notebooks, Themis, Postgres (`pg`), WebAuthn passkeys, Vercel Blob, local-first sync.
 
 ## Package Manager
 
@@ -16,6 +16,7 @@ Ebook/PDF reader web app: React Router v7 (framework mode) + TypeScript, Tailwin
 | Test one file        | `pnpm vitest run path/to/file.test.ts`  |
 | Lint                 | `pnpm oxlint`                           |
 | Lint one path        | `pnpm oxlint path/to/file.ts`           |
+| Themis lint          | `pnpm lint:themis`                      |
 | Format               | `pnpm oxfmt .`                          |
 | E2E (all)            | `pnpm e2e`                              |
 | E2E one file         | `pnpm playwright test e2e/chat.spec.ts` |
@@ -24,12 +25,17 @@ Ebook/PDF reader web app: React Router v7 (framework mode) + TypeScript, Tailwin
 
 Run `pnpm oxfmt .` and `pnpm oxlint` before committing; fix all warnings. Run `pnpm e2e` after structural refactors.
 
+## Themis State Management
+
+- Before store, saga, or selector work, read `.agents/skills/themis/SKILL.md`, `.agents/skills/themis/react/SKILL.md`, and `.agents/skills/themis/core/SKILL.md`, then load the applicable leaf skills.
+- This React app uses `ReactStore` as its only Store family. Do not apply Svelte `Store` or `StreamingStore` guidance.
+- Keep oxlint as the default linter and use `pnpm oxlint`; run `pnpm lint:themis` for scoped Themis architecture rules.
+
 ## External References
 
 | Need                                                   | File                                |
 | ------------------------------------------------------ | ----------------------------------- |
 | Architecture (workspace, storage, sync, chat, sharing) | `docs/architecture.md`              |
-| Effect.ts conventions (services, errors, runtime)      | `docs/effect-conventions.md`        |
 | EPUB engine package (API, security, support matrix)    | `packages/epub-successor/README.md` |
 | E2E fixture epub                                       | `e2e/fixtures/test-book.epub`       |
 

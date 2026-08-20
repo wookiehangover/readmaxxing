@@ -1,50 +1,36 @@
-import { Effect } from "effect";
 import type { WorkspaceContextValue } from "~/lib/context/workspace-context";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { BookService, bookNeedsDownload, type BookMeta } from "~/lib/stores/book-store";
-
-interface DownloadResult {
-  book: BookMeta;
-  books: BookMeta[];
-}
+import { bookNeedsDownload, type BookMeta } from "~/lib/stores/book-store";
+import { booksHydrated, downloadBookForOpenRequested } from "~/lib/themis/books/books-slice";
+import type { AppStore } from "~/lib/themis/store";
 
 interface EnsureLocalThenOpenOptions {
   openBook: (book: BookMeta) => void | Promise<void>;
-  refreshBooks: (books: BookMeta[]) => void;
-  downloadBook?: (book: BookMeta) => Promise<DownloadResult>;
+  store: BooksCache;
   signal?: AbortSignal;
 }
 
-type WorkspaceBookListRefs = Pick<WorkspaceContextValue, "booksRef" | "booksChangeListener">;
+type BooksCache = Pick<AppStore, "dispatch">;
+type WorkspaceBookListRef = Pick<WorkspaceContextValue, "booksRef">;
 
-async function downloadBookForOpen(book: BookMeta): Promise<DownloadResult> {
-  const books = await AppRuntime.runPromise(
-    BookService.pipe(
-      Effect.andThen((service) =>
-        service.getBookData(book.id).pipe(Effect.andThen(() => service.getBooks())),
-      ),
-    ),
-  );
-  const downloadedBook = books.find((candidate) => candidate.id === book.id);
-  if (!downloadedBook?.hasLocalFile) {
-    throw new Error(`Book ${book.id} did not become available locally`);
-  }
-  return { book: downloadedBook, books };
+export function refreshBooksCache(cache: BooksCache, books: BookMeta[]): void {
+  cache.dispatch(booksHydrated(books));
 }
 
-export function refreshWorkspaceBooks(workspace: WorkspaceBookListRefs, books: BookMeta[]): void {
+/** @deprecated Use the Themis books cache. Kept as a compatibility mirror helper. */
+export function refreshWorkspaceBooks(workspace: WorkspaceBookListRef, books: BookMeta[]): void {
   workspace.booksRef.current = books;
-  workspace.booksChangeListener.current?.();
+  queueMicrotask(() => {
+    window.dispatchEvent(
+      new CustomEvent("sync:entity-updated", {
+        detail: { entity: "book" },
+      }),
+    );
+  });
 }
 
 export async function ensureLocalThenOpen(
   book: BookMeta,
-  {
-    openBook,
-    refreshBooks,
-    downloadBook = downloadBookForOpen,
-    signal,
-  }: EnsureLocalThenOpenOptions,
+  { openBook, store, signal }: EnsureLocalThenOpenOptions,
 ): Promise<void> {
   if (signal?.aborted) return;
 
@@ -53,8 +39,47 @@ export async function ensureLocalThenOpen(
     return;
   }
 
-  const downloaded = await downloadBook(book);
-  refreshBooks(downloaded.books);
-  if (signal?.aborted) return;
-  await openBook(downloaded.book);
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => signal?.removeEventListener("abort", handleAbort);
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const rejectOnce = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const handleAbort = () => resolveOnce();
+
+    signal?.addEventListener("abort", handleAbort, { once: true });
+    store.dispatch(
+      downloadBookForOpenRequested(
+        book.id,
+        async (downloadedBook) => {
+          if (signal?.aborted || settled) {
+            resolveOnce();
+            return;
+          }
+          try {
+            await openBook(downloadedBook);
+            resolveOnce();
+          } catch (error) {
+            rejectOnce(error instanceof Error ? error : new Error(String(error)));
+          }
+        },
+        (error) => {
+          if (signal?.aborted) {
+            resolveOnce();
+            return;
+          }
+          rejectOnce(new Error(error));
+        },
+      ),
+    );
+  });
 }
