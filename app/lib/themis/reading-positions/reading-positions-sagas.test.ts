@@ -49,10 +49,12 @@ const stores: AppStore[] = [];
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((next) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((next, fail) => {
     resolve = next;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 function startStore() {
@@ -106,6 +108,70 @@ describe("readingPositionsSaga", () => {
     );
     olderPosition.resolve({ cfi: "page:2", updatedAt: 1 });
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.readingPositionsSelectors.selectPosition.select(store.state, "book-1")?.cfi).toBe(
+      "page:9",
+    );
+  });
+
+  it("keeps unrelated panel keys and settles callbacks across overlapping hydrates", async () => {
+    const olderBook = deferred<{ cfi: string; updatedAt: number }>();
+    const olderPanel = deferred<{ cfi: string; updatedAt: number }>();
+    mocks.runPromise
+      .mockReturnValueOnce(olderBook.promise)
+      .mockReturnValueOnce(olderPanel.promise)
+      .mockResolvedValueOnce({ cfi: "page:9", updatedAt: 9 })
+      .mockResolvedValueOnce({ cfi: "page:8", updatedAt: 8 });
+    const olderCompleted = vi.fn();
+    const olderFailed = vi.fn();
+    const newerCompleted = vi.fn();
+    const newerFailed = vi.fn();
+    const store = startStore();
+
+    store.dispatch(
+      hydrateReadingPositionsRequested(["book-1", "panel-a"], olderCompleted, olderFailed),
+    );
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledTimes(2));
+    store.dispatch(
+      hydrateReadingPositionsRequested(["book-1", "panel-b"], newerCompleted, newerFailed),
+    );
+
+    await vi.waitFor(() => expect(newerCompleted).toHaveBeenCalledOnce());
+    olderBook.resolve({ cfi: "page:2", updatedAt: 2 });
+    olderPanel.resolve({ cfi: "page:3", updatedAt: 3 });
+    await vi.waitFor(() => expect(olderCompleted).toHaveBeenCalledOnce());
+
+    expect(store.readingPositionsSelectors.selectPosition.select(store.state, "book-1")?.cfi).toBe(
+      "page:9",
+    );
+    expect(store.readingPositionsSelectors.selectPosition.select(store.state, "panel-a")?.cfi).toBe(
+      "page:3",
+    );
+    expect(store.readingPositionsSelectors.selectPosition.select(store.state, "panel-b")?.cfi).toBe(
+      "page:8",
+    );
+    expect(olderFailed).not.toHaveBeenCalled();
+    expect(newerFailed).not.toHaveBeenCalled();
+  });
+
+  it("settles a superseded hydrate through its failure callback", async () => {
+    const olderPosition = deferred<{ cfi: string; updatedAt: number }>();
+    mocks.runPromise
+      .mockReturnValueOnce(olderPosition.promise)
+      .mockResolvedValueOnce({ cfi: "page:9", updatedAt: 9 });
+    const olderCompleted = vi.fn();
+    const olderFailed = vi.fn();
+    const newerCompleted = vi.fn();
+    const store = startStore();
+
+    store.dispatch(hydrateReadingPositionsRequested(["book-1"], olderCompleted, olderFailed));
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledOnce());
+    store.dispatch(hydrateReadingPositionsRequested(["book-1"], newerCompleted));
+    await vi.waitFor(() => expect(newerCompleted).toHaveBeenCalledOnce());
+
+    olderPosition.reject(new Error("older hydrate failed"));
+    await vi.waitFor(() => expect(olderFailed).toHaveBeenCalledWith("older hydrate failed"));
+
+    expect(olderCompleted).not.toHaveBeenCalled();
     expect(store.readingPositionsSelectors.selectPosition.select(store.state, "book-1")?.cfi).toBe(
       "page:9",
     );

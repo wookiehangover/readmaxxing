@@ -92,15 +92,27 @@ function notifyFailed(callback: ReadingPositionsFailedCallback | undefined, erro
 
 export function* hydrateReadingPositionsSaga(
   action: ReturnType<typeof hydrateReadingPositionsRequested>,
+  latestVersionByKey: ReadonlyMap<string, number>,
+  requestVersion: number,
 ) {
   const [keys, onCompleted, onFailed] = action.payload;
   try {
     const positions = yield* call(loadReadingPositions, keys);
-    yield* put(readingPositionsHydrated(keys, positions));
+    const freshKeys = keys.filter((key) => latestVersionByKey.get(key) === requestVersion);
+    if (freshKeys.length > 0) {
+      const freshKeySet = new Set(freshKeys);
+      yield* put(
+        readingPositionsHydrated(
+          freshKeys,
+          positions.filter((position) => freshKeySet.has(position.key)),
+        ),
+      );
+    }
     yield* call(notifyCompleted, onCompleted);
   } catch (error) {
     const taggedError = toTaggedError(error);
-    yield* put(readingPositionsFailed(keys, taggedError));
+    const freshKeys = keys.filter((key) => latestVersionByKey.get(key) === requestVersion);
+    if (freshKeys.length > 0) yield* put(readingPositionsFailed(freshKeys, taggedError));
     yield* call(notifyFailed, onFailed, taggedError.message);
   }
 }
@@ -193,26 +205,15 @@ export function* checkPositionNudgeSaga(action: ReturnType<typeof checkPositionN
   }
 }
 
-type ReadingPositionsHydrateTask =
-  ReturnType<
-    typeof fork<Parameters<typeof hydrateReadingPositionsSaga>, typeof hydrateReadingPositionsSaga>
-  > extends Generator<unknown, infer Task, unknown>
-    ? Task
-    : never;
-
 export function* watchReadingPositionHydrates() {
-  const pendingByKey = new Map<string, ReadingPositionsHydrateTask>();
+  const latestVersionByKey = new Map<string, number>();
+  let nextVersion = 0;
   while (true) {
     const action = yield* take(hydrateReadingPositionsRequested);
     const [keys] = action.payload;
-    const pending = new Set<ReadingPositionsHydrateTask>();
-    for (const key of keys) {
-      const task = pendingByKey.get(key);
-      if (task) pending.add(task);
-    }
-    for (const task of pending) yield* cancel(task);
-    const task = yield* fork(hydrateReadingPositionsSaga, action);
-    for (const key of keys) pendingByKey.set(key, task);
+    const requestVersion = ++nextVersion;
+    for (const key of keys) latestVersionByKey.set(key, requestVersion);
+    yield* fork(hydrateReadingPositionsSaga, action, latestVersionByKey, requestVersion);
   }
 }
 
