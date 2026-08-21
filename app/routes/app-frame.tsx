@@ -76,7 +76,7 @@ function AppFrameContent() {
   const zenMode = settings.zenMode;
   const [, setTocVersion] = useState(0);
 
-  const { openBook, openNotebook, openChat, openBookmarks, openStandardEbooks, closeBookPanels } =
+  const { openBook, openNotebook, openChat, openStandardEbooks, closeBookPanels } =
     useWorkspacePanels();
   const openBookIds = useMemo(
     () => new Set(readingBookId === null ? [] : [readingBookId]),
@@ -154,7 +154,6 @@ function AppFrameContent() {
     ws.openBookRef.current = openBook;
     ws.openNotebookRef.current = openNotebook;
     ws.openChatRef.current = openChat;
-    ws.openBookmarksRef.current = openBookmarks;
     ws.openStandardEbooksRef.current = openStandardEbooks;
     ws.onBookAddedRef.current = handleUploadedBookAdded;
     ws.onBookDeletedRef.current = handleBookDeleted;
@@ -162,7 +161,6 @@ function AppFrameContent() {
     handleBookDeleted,
     handleUploadedBookAdded,
     openBook,
-    openBookmarks,
     openChat,
     openNotebook,
     openStandardEbooks,
@@ -174,7 +172,6 @@ function AppFrameContent() {
       ws.openBookRef.current = null;
       ws.openNotebookRef.current = null;
       ws.openChatRef.current = null;
-      ws.openBookmarksRef.current = null;
       ws.openStandardEbooksRef.current = null;
       ws.onBookAddedRef.current = null;
       ws.onBookDeletedRef.current = null;

@@ -75,7 +75,6 @@ const workspace = vi.hoisted(() => ({
   chatContextMap: { current: new Map() },
   pendingHighlightPillMap: { current: new Map() },
   removeHighlightAnnotationForBook: vi.fn(),
-  dockviewApi: { current: null },
   navigateInCluster: vi.fn(),
 }));
 

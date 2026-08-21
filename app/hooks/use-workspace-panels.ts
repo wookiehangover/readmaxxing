@@ -11,7 +11,6 @@ export interface UseWorkspacePanelsResult {
   readonly openBook: (book: BookMeta) => void;
   readonly openNotebook: (book: BookMeta) => void;
   readonly openChat: (book: BookMeta) => void;
-  readonly openBookmarks: (book: BookMeta) => void;
   readonly openOutline: (book: BookMeta) => void;
   readonly openReadingHistory: (book: BookMeta) => void;
   readonly openStandardEbooks: () => void;
@@ -37,8 +36,6 @@ export function useWorkspacePanels(): UseWorkspacePanelsResult {
 
   const openReadingHistory = useCallback(() => {}, []);
 
-  const openBookmarks = useCallback(() => {}, []);
-
   const openOutline = useCallback(() => openMobileReadingTab("Outline"), []);
 
   const openStandardEbooks = useCallback(() => {
@@ -51,7 +48,6 @@ export function useWorkspacePanels(): UseWorkspacePanelsResult {
     openBook,
     openNotebook,
     openChat,
-    openBookmarks,
     openOutline,
     openReadingHistory,
     openStandardEbooks,

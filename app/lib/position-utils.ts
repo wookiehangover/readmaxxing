@@ -70,7 +70,7 @@ export function getReadingPositionRestoreTarget(
 export interface ResolveStartCfiOpts {
   /** In-memory CFI from the current session (highest priority). */
   latestCfi: string | null;
-  /** Panel-specific key (unique per dockview panel). */
+  /** Optional reader-instance-specific key. */
   panelId: string | undefined;
   /** Book-level key (shared across panels showing the same book). */
   bookId: string;
@@ -91,8 +91,7 @@ export interface ResolveStartPositionOpts {
  *
  * Priority:
  *  1. `latestCfi` — kept in a ref across layout changes within the same session.
- *  2. Panel-specific position — survives browser refresh when the workspace
- *     layout is restored with the same panel IDs.
+ *  2. Reader-instance position — supports legacy instance-specific restores.
  *  3. Book-level position — the "last read" fallback shared by all panels.
  *  4. `null` — no saved position; the renderer will open at the beginning.
  */
@@ -135,7 +134,7 @@ export async function resolveStartPosition(
 }
 
 export interface SavePositionDualKeyOpts {
-  /** Panel-specific key (may be undefined when there is no dockview panel). */
+  /** Reader-instance-specific key, when available. */
   panelId: string | undefined;
   /** Book-level key. */
   bookId: string;

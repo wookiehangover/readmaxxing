@@ -3,7 +3,6 @@ import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "./demo-content";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { ChatSession } from "~/lib/stores/chat-store";
 import type { PositionRecord } from "~/lib/stores/position-store";
-import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { ensureBookChaptersUploaded } from "~/lib/sync/book-chapter-uploads";
 import { recordChange } from "~/lib/sync/change-log";
 import { pushChangesWithResult } from "~/lib/sync/push";
@@ -143,19 +142,6 @@ function assertAccepted(result: SyncPushResponse | null, entries: ChangeEntry[])
   }
 }
 
-async function remapSavedWorkspace(bookId: string): Promise<void> {
-  const state = await WorkspaceService.getFocusedState().catch(() => null);
-  if (!state || !state.order.includes(DEMO_BOOK_ID)) return;
-
-  await WorkspaceService.saveFocusedState({
-    order: state.order.map((id) => (id === DEMO_BOOK_ID ? bookId : id)),
-    activeBookId: state.activeBookId === DEMO_BOOK_ID ? bookId : state.activeBookId,
-    clusters: state.clusters.map((cluster) =>
-      cluster.bookId === DEMO_BOOK_ID ? { ...cluster, bookId } : cluster,
-    ),
-  });
-}
-
 export async function persistAdoptedDemoContent(userId: string): Promise<AdoptedDemo> {
   const original = await readSnapshot(DEMO_BOOK_ID);
   // Demo IDs are fixed and database primary keys are global, so both entities
@@ -189,7 +175,6 @@ export async function persistAdoptedDemoContent(userId: string): Promise<Adopted
   const canonicalResult = await pushChangesWithResult(pushContext);
   assertAccepted(canonicalResult, canonicalEntries);
   await ensureBookChaptersUploaded(bookId);
-  await remapSavedWorkspace(bookId);
   const now = Date.now();
   await set(DEMO_BOOK_ID, { ...original.book, deletedAt: now, updatedAt: now }, getBookStore());
   if (!adopted.activeSessionId) throw new Error("The demo conversation could not be adopted.");
