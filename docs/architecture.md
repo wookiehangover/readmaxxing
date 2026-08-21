@@ -4,9 +4,9 @@ Ebook/PDF reader web app. Users add `.epub`/`.pdf` files (drag-and-drop, file pi
 
 ## Reading and library shells
 
-The index route redirects to `/library`. Books open at `/books/:id`, where `ReadingShell` renders the reader and its text-only right rail. The `/library` and `/standard-ebooks` routes use the chromeless `LibraryFrame`; the main route is no longer a dockview workspace.
+The index route redirects to `/library`. Books open at `/books/:id`, where `ReadingShell` renders the reader and its Notes, Discuss, and Outline rail. The `/library` and `/standard-ebooks` routes use the chromeless `LibraryFrame` for browsing and imports.
 
-`app/routes/app-frame.tsx` and `WorkspaceProvider` still coordinate book uploads, reading navigation, and shared reader/notebook callbacks. Some compatibility state and reader APIs retain dockview types while that shared wiring remains in use, but dock-only panel modules are not part of the live route tree.
+`app/routes/app-frame.tsx` and `WorkspaceProvider` coordinate book uploads, route-based reading navigation, and shared reader/notebook callbacks. The active book is the `/books/:id` route; reading tools switch the corresponding `ReadingShell` rail tab.
 
 ## Client-side only
 
