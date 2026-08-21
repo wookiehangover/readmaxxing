@@ -13,7 +13,6 @@ import { deleteHighlightRequested } from "~/lib/themis/annotations/annotations-s
 
 export function BookReaderPanel({
   params,
-  api,
 }: IDockviewPanelProps<
   { bookId: string; bookTitle?: string; bookFormat?: string } & PanelTypographyParams
 >) {
@@ -34,14 +33,10 @@ export function BookReaderPanel({
 
   // PDF books use the dedicated PDF reader component
   if (params.bookFormat === "pdf") {
-    return (
-      <WorkspacePdfReader bookId={params.bookId} panelApi={api} panelTypography={panelTypography} />
-    );
+    return <WorkspacePdfReader bookId={params.bookId} panelTypography={panelTypography} />;
   }
 
-  return (
-    <WorkspaceBookReader bookId={params.bookId} panelApi={api} panelTypography={panelTypography} />
-  );
+  return <WorkspaceBookReader bookId={params.bookId} panelTypography={panelTypography} />;
 }
 
 export function NotebookPanel({

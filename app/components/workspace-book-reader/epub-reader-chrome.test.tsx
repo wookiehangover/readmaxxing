@@ -36,23 +36,7 @@ describe("EpubReaderToolbar", () => {
     act(() =>
       root?.render(
         <EpubReaderToolbar
-          zenMode={false}
-          toolbarVisible
-          showToolbarPersistent={vi.fn()}
-          resetToolbarTimer={vi.fn()}
-          currentChapterLabel="Chapter 1"
-          currentPage={1}
-          totalPages={10}
-          isScrollMode={false}
-          isMobile={false}
-          onPrevious={vi.fn()}
-          onNext={vi.fn()}
-          onSearchOpen={vi.fn()}
-          onOpenNotebook={vi.fn()}
-          onOpenChat={vi.fn()}
           toc={[]}
-          tocOpen={false}
-          setTocOpen={vi.fn()}
           navigateToTocHref={vi.fn()}
           localSettings={{} as Settings}
           onUpdateSettings={vi.fn()}

@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import type { DockviewPanelApi } from "dockview-react";
 import { Button } from "~/components/ui/button";
 import {
   MessageSquare,
@@ -36,19 +35,13 @@ import { useSettings, type WorkspaceSortBy } from "~/lib/settings";
 import { filterBooks, sortBooks } from "~/lib/workspace-utils";
 import { useAuth } from "~/lib/context/auth-context";
 import { ensureLocalThenOpen } from "~/lib/library-book-open";
-import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
 import { Link } from "react-router";
 
 interface LibraryBrowseContentProps {
-  /** Dockview panel API — when provided, enables visibility-based refresh. */
-  panelApi?: DockviewPanelApi;
-  /** Overrides the default Dockview book opener for route-level rendering. */
   onOpenBook?: (book: BookMeta) => void | Promise<void>;
 }
 
-/** Minimum interval between panel-activation-triggered refreshes (ms). */
-const PANEL_REFRESH_THROTTLE_MS = 5000;
 const LIBRARY_SORT_STORAGE_KEY = "library-sort-by";
 const DEFAULT_LIBRARY_SORT_BY: WorkspaceSortBy = "author";
 
@@ -75,7 +68,7 @@ function saveLibrarySortBy(sortBy: WorkspaceSortBy): void {
   }
 }
 
-export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseContentProps = {}) {
+export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps = {}) {
   const ws = useWorkspace();
   const store = useAppStore();
   const { isAuthenticated } = useAuth();
@@ -89,7 +82,6 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
   const [settings] = useSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingOpenControllerRef = useRef<AbortController | null>(null);
-  const lastRefreshedAtRef = useRef(0);
   const lastOpenedMap = store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
 
   const handleOpenBook = useCallback(
@@ -110,7 +102,6 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
           signal: controller.signal,
           openBook: (localBook) => {
             ws.openBookRef.current?.(localBook);
-            panelApi?.close();
           },
         });
       } catch (error) {
@@ -118,7 +109,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
         toast.error(`Could not download “${book.title}”. Please try again.`);
       }
     },
-    [onOpenBook, panelApi, store, ws],
+    [onOpenBook, store, ws],
   );
 
   useEffect(
@@ -173,7 +164,7 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
     onBookDeleted: handleBookDeleted,
   });
   const { handleFileInput } = useBookUpload({ onBookAdded: handleBookAdded });
-  const { reloadBookFiles, isActive: syncActive, triggerSync } = useSyncActions();
+  const { reloadBookFiles, isActive: syncActive } = useSyncActions();
 
   const handleReloadBook = useCallback(
     async (bookId: string) => {
@@ -185,35 +176,6 @@ export function LibraryBrowseContent({ panelApi, onOpenBook }: LibraryBrowseCont
     },
     [reloadBookFiles],
   );
-
-  // When the library panel becomes visible/active in dockview, trigger a
-  // sync and refresh the Themis books cache (throttled to avoid thrashing on
-  // rapid panel switching).
-  useEffect(() => {
-    if (!panelApi) return;
-
-    const refreshLibrary = () => {
-      const now = Date.now();
-      if (now - lastRefreshedAtRef.current < PANEL_REFRESH_THROTTLE_MS) return;
-      lastRefreshedAtRef.current = now;
-
-      if (syncActive) triggerSync();
-
-      store.dispatch(hydrateBooks());
-    };
-
-    const visDisposable = panelApi.onDidVisibilityChange((e) => {
-      if (e.isVisible) refreshLibrary();
-    });
-    const activeDisposable = panelApi.onDidActiveChange((e) => {
-      if (e.isActive) refreshLibrary();
-    });
-
-    return () => {
-      visDisposable.dispose();
-      activeDisposable.dispose();
-    };
-  }, [panelApi, store, syncActive, triggerSync]);
 
   const filteredBooks = useMemo(
     () => (searchQuery ? filterBooks(books, searchQuery) : books),

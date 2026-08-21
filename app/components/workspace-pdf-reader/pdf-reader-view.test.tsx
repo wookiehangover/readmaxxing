@@ -29,7 +29,6 @@ it("releases pointer focus while keeping PDF page turns keyboard activatable", (
   act(() =>
     root?.render(
       <PdfReaderView
-        panelApi={{} as never}
         containerRef={React.createRef<HTMLDivElement>()}
         localSettings={{} as Settings}
         onUpdateSettings={vi.fn()}
