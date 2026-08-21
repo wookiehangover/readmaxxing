@@ -505,6 +505,15 @@ describe("ReadingRail", () => {
     expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Outline");
   });
 
+  it("opens reader actions in the matching desktop tab", async () => {
+    const container = renderRail();
+
+    openMobileReadingTab("Discuss");
+    await act(async () => Promise.resolve());
+
+    expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Discuss");
+  });
+
   it("uses one sliding underline left-aligned with the active tab label", () => {
     const container = renderRail();
     const tabList = container.querySelector("[aria-label='Reading tools']");

@@ -62,11 +62,10 @@ export function ReadingRail({
   const hasTocShortcut = Boolean(chapterLabel && toc?.length && navigateToToc);
 
   useEffect(() => {
-    if (!mobile) return;
-    setActiveTab(getRememberedMobileTab(activeBookId) ?? "Read");
+    if (mobile) setActiveTab(getRememberedMobileTab(activeBookId) ?? "Read");
     const handleOpenTab = (event: Event) => {
       const tab = (event as CustomEvent<MobileReadingTab>).detail;
-      rememberMobileTab(activeBookId, tab);
+      if (mobile) rememberMobileTab(activeBookId, tab);
       setActiveTab(tab);
     };
     window.addEventListener(MOBILE_READING_TAB_EVENT, handleOpenTab);
