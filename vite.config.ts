@@ -11,12 +11,6 @@ function getSiteOrigin() {
   return "";
 }
 
-function isNetworkOnlyDocumentPath(pathname: string) {
-  return ["/settings", "/login"].some(
-    (path) => pathname === path || pathname.startsWith(`${path}/`),
-  );
-}
-
 const manifest: Partial<ManifestOptions> = {
   name: "Readmaxxing",
   short_name: "Readmaxxing",
@@ -102,14 +96,16 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern: ({ request, url, sameOrigin }) =>
-              sameOrigin && request.mode === "navigate" && isNetworkOnlyDocumentPath(url.pathname),
+              sameOrigin &&
+              request.mode === "navigate" &&
+              /^\/(?:settings|login)(?:\/|$)/.test(url.pathname),
             handler: "NetworkOnly",
           },
           {
             urlPattern: ({ request, url, sameOrigin }) =>
               sameOrigin &&
               request.mode === "navigate" &&
-              !isNetworkOnlyDocumentPath(url.pathname) &&
+              !/^\/(?:settings|login)(?:\/|$)/.test(url.pathname) &&
               !url.pathname.startsWith("/api/") &&
               !url.pathname.startsWith("/share/") &&
               !url.pathname.startsWith("/debug/"),
