@@ -15,15 +15,15 @@ const message: UIMessage = {
   parts: [{ type: "text", text: "Hello" }],
 };
 
-function createTransport(onPreparingChange = vi.fn()) {
+function createTransport(onPreparingChange = vi.fn(), bookId = "book-1") {
   return {
     onPreparingChange,
     transport: createChatTransport({
       sessionId: "session-1",
-      bookId: "book-1",
+      bookId,
       visibleTextRef: { current: "Visible" },
       currentChapterRef: { current: 2 },
-      selectedBookIdsRef: { current: ["book-1"] },
+      selectedBookIdsRef: { current: [bookId] },
       getBookContext: () => ({ visibleText: "Visible", currentChapterIndex: 2 }),
       onPreparingChange,
     }),
@@ -77,6 +77,38 @@ describe("createChatTransport", () => {
     expect(mocks.ensureBookChaptersUploaded).toHaveBeenCalledWith("book-1");
     expect(pushNeeded).toHaveBeenCalledOnce();
     expect(onPreparingChange.mock.calls).toEqual([[true], [false]]);
+    window.removeEventListener("sync:push-needed", pushNeeded);
+  });
+
+  it("survives the full signed-out import preparation race after a book id remap", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(response(404, "Book not found"))
+        .mockResolvedValueOnce(
+          response(400, "Book chapters not uploaded. Upload chapters before starting a chat."),
+        )
+        .mockResolvedValueOnce(response(404, "Session not found"))
+        .mockResolvedValueOnce(response(200)),
+    );
+    const pushNeeded = vi.fn();
+    window.addEventListener("sync:push-needed", pushNeeded);
+    const onPreparingChange = vi.fn();
+    const { transport } = createTransport(onPreparingChange, "canonical-book");
+
+    const send = sendMessage(transport);
+    await vi.runAllTimersAsync();
+    await send;
+
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(mocks.ensureBookChaptersUploaded).toHaveBeenCalledTimes(3);
+    expect(mocks.ensureBookChaptersUploaded).toHaveBeenCalledWith("canonical-book");
+    expect(pushNeeded).toHaveBeenCalledTimes(3);
+    expect(onPreparingChange.mock.calls).toEqual([[true], [false]]);
+    for (const [, init] of vi.mocked(fetch).mock.calls) {
+      expect(JSON.parse(String(init?.body))).toMatchObject({ bookId: "canonical-book" });
+    }
     window.removeEventListener("sync:push-needed", pushNeeded);
   });
 

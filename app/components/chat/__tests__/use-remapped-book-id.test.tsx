@@ -37,5 +37,18 @@ describe("useRemappedBookId", () => {
     });
 
     expect(container.querySelector("output")?.dataset.bookId).toBe("canonical-book");
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("sync:entity-updated", {
+          detail: {
+            entity: "book",
+            bookIdRemap: { fromId: "canonical-book", toId: "server-book" },
+          },
+        }),
+      );
+    });
+
+    expect(container.querySelector("output")?.dataset.bookId).toBe("server-book");
   });
 });
