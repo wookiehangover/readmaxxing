@@ -1,7 +1,9 @@
 import { get, set, entries } from "idb-keyval";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
-import { recordChange } from "./change-log";
+import { getUnsyncedChanges, recordChange } from "./change-log";
 import {
+  getBookDataStore,
   getBookStore,
   getBookmarkStore,
   getChatSessionStore,
@@ -25,6 +27,38 @@ function safeEntry(entry: unknown): [IDBValidKey, unknown] | null {
   return [entry[0] as IDBValidKey, entry[1]];
 }
 
+async function queueStrandedBooks(): Promise<void> {
+  const pendingBookIds = new Set(
+    (await getUnsyncedChanges())
+      .filter((change) => change.entity === "book")
+      .map((change) => change.entityId),
+  );
+  const books = await entries(getBookStore());
+  const bookDataStore = getBookDataStore();
+
+  for (const entry of books) {
+    const tuple = safeEntry(entry);
+    if (!tuple) continue;
+
+    const [id, data] = tuple;
+    if (typeof id !== "string" || id === DEMO_BOOK_ID || pendingBookIds.has(id)) continue;
+    if (typeof data !== "object") continue;
+
+    const book = data as Record<string, unknown>;
+    if (book.deletedAt != null || book.remoteFileUrl) continue;
+    if (!(await get(id, bookDataStore))) continue;
+
+    await recordChange({
+      entity: "book",
+      entityId: id,
+      operation: "put",
+      data,
+      timestamp: typeof book.updatedAt === "number" ? book.updatedAt : Date.now(),
+    });
+    pendingBookIds.add(id);
+  }
+}
+
 /**
  * One-time scan of all IDB stores to create change-log entries for
  * existing data. This ensures users who had data before the sync
@@ -32,7 +66,10 @@ function safeEntry(entry: unknown): [IDBValidKey, unknown] | null {
  */
 export async function runInitialSyncIfNeeded(): Promise<void> {
   const done = await get(INITIAL_SYNC_KEY, getSyncFlagsStore());
-  if (done) return;
+  if (done) {
+    await queueStrandedBooks();
+    return;
+  }
 
   console.log("[sync] Running initial sync push for existing data...");
 
