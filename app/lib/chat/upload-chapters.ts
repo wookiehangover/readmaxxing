@@ -2,6 +2,26 @@ import type { BookChapter } from "~/lib/epub/epub-text-extract";
 import { isChaptersUploaded, markChaptersUploaded } from "~/lib/stores/chapter-upload-cache-store";
 
 export const CHAPTER_UPLOAD_CHUNK_BYTES = 3 * 1024 * 1024;
+export const CHAPTER_UPLOAD_NOT_FOUND_RETRY_DELAYS_MS: readonly number[] = [500, 1_000, 2_000];
+
+function requestSyncPush(): void {
+  if (typeof window === "undefined") return;
+  queueMicrotask(() => {
+    window.dispatchEvent(new CustomEvent("sync:push-needed"));
+  });
+}
+
+async function postChapterChunk(url: string, init: RequestInit): Promise<Response> {
+  for (const delayMs of [...CHAPTER_UPLOAD_NOT_FOUND_RETRY_DELAYS_MS, null]) {
+    const response = await fetch(url, init);
+    if (response.status !== 404 || delayMs === null) return response;
+
+    requestSyncPush();
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  throw new Error("Chapter upload retry loop exhausted unexpectedly");
+}
 
 function serializedJsonByteLength(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -63,7 +83,7 @@ export async function uploadChapters(
   const totalChapters = chunks.reduce((count, chunk) => count + chunk.length, 0);
 
   for (const [chunkIndex, chunk] of chunks.entries()) {
-    const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/chapters`, {
+    const res = await postChapterChunk(`/api/books/${encodeURIComponent(bookId)}/chapters`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
