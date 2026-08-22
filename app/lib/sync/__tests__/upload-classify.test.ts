@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { BlobError } from "@vercel/blob";
 import {
   classifyBlobError,
   runUploadWithRetry,
@@ -17,19 +18,24 @@ function makeBlobError(className: string, message: string): Error {
 const noSleep = () => Promise.resolve();
 
 describe("classifyBlobError", () => {
-  it("classifies access / token errors as auth", () => {
+  it("classifies explicit access and expired-token errors as auth", () => {
     expect(classifyBlobError(makeBlobError("BlobAccessError", "Vercel Blob: Access denied"))).toBe(
       "auth",
     );
     expect(
       classifyBlobError(makeBlobError("BlobClientTokenExpiredError", "Vercel Blob: expired")),
     ).toBe("auth");
-    expect(
-      classifyBlobError(
-        makeBlobError("BlobError", "Vercel Blob: Failed to retrieve the client token"),
-      ),
-    ).toBe("auth");
+    expect(classifyBlobError(new BlobError("Access denied"))).toBe("auth");
+    expect(classifyBlobError(new BlobError("Request failed with status 401"))).toBe("auth");
+    expect(classifyBlobError(new BlobError("Request failed with status 403"))).toBe("auth");
   });
+
+  it.each(["Failed to retrieve the client token", "Failed to  retrieve the client token"])(
+    "classifies the SDK's generic token wrapper as transient: %s",
+    (message) => {
+      expect(classifyBlobError(new BlobError(message))).toBe("transient");
+    },
+  );
 
   it("classifies service unavailable / rate-limited / unknown as transient", () => {
     expect(
@@ -106,6 +112,49 @@ describe("runUploadWithRetry", () => {
     expect(onTransientRetry).toHaveBeenCalledTimes(1);
     expect(onTransientRetry).toHaveBeenCalledWith(1, 10, transient);
     expect(onGiveUp).not.toHaveBeenCalled();
+  });
+
+  it("retries a real missing-book handshake wrapper without expiring authentication", async () => {
+    const missingBookHandshake = new BlobError("Failed to  retrieve the client token");
+    const performUpload = vi
+      .fn<() => Promise<{ url: string }>>()
+      .mockRejectedValueOnce(missingBookHandshake)
+      .mockResolvedValueOnce({ url: "https://blob/ok" });
+    const onAuthExpired = vi.fn();
+    const onTransientRetry = vi.fn();
+
+    const result = await runUploadWithRetry(
+      performUpload,
+      { onAuthExpired, onTransientRetry },
+      [10, 10],
+      noSleep,
+    );
+
+    expect(result).toEqual({ url: "https://blob/ok" });
+    expect(performUpload).toHaveBeenCalledTimes(2);
+    expect(onTransientRetry).toHaveBeenCalledWith(1, 10, missingBookHandshake);
+    expect(onAuthExpired).not.toHaveBeenCalled();
+  });
+
+  it("bounds repeated missing-book handshake retries without expiring authentication", async () => {
+    const missingBookHandshake = new BlobError("Failed to  retrieve the client token");
+    const performUpload = vi
+      .fn<() => Promise<{ url: string }>>()
+      .mockRejectedValue(missingBookHandshake);
+    const onAuthExpired = vi.fn();
+    const onGiveUp = vi.fn();
+
+    const result = await runUploadWithRetry(
+      performUpload,
+      { onAuthExpired, onGiveUp },
+      [10, 10],
+      noSleep,
+    );
+
+    expect(result).toBeNull();
+    expect(performUpload).toHaveBeenCalledTimes(3);
+    expect(onGiveUp).toHaveBeenCalledWith(missingBookHandshake, 3);
+    expect(onAuthExpired).not.toHaveBeenCalled();
   });
 
   it("gives up after exhausting all retries on repeated 503s", async () => {

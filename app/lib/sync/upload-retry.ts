@@ -73,16 +73,20 @@ export function classifyBlobError(err: unknown): BlobErrorClass {
   const name = err.name;
   const msg = err.message;
 
-  // Auth: access denied (403) or failed client-token exchange (401/403).
+  // Auth requires an explicit access-denied, expired-token, or 401/403 signal.
   if (
     ctor === "BlobAccessError" ||
     name === "BlobAccessError" ||
     ctor === "BlobClientTokenExpiredError" ||
     name === "BlobClientTokenExpiredError" ||
-    /client token/i.test(msg)
+    /\b(?:401|403)\b|access[\s-]+denied|unauthori[sz]ed/i.test(msg)
   ) {
     return "auth";
   }
+
+  // The SDK uses this same wrapper for every failed token handshake, including
+  // missing-book 400s whose metadata may succeed before a bounded retry.
+  if (/failed to\s+retrieve the client token/i.test(msg)) return "transient";
 
   // Permanent: validation / not-found / aborted — retrying won't help.
   if (
