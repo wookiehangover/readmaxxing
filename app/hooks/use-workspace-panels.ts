@@ -26,9 +26,11 @@ export function useWorkspacePanels(): UseWorkspacePanelsResult {
     (book: BookMeta) => {
       store.dispatch(recordBookOpened(book.id));
       workspace.setActiveCluster(book.id);
-      void navigate(getBookReadingPath(book.id));
+      if (getReadingBookId(location.pathname) !== book.id) {
+        void navigate(getBookReadingPath(book.id));
+      }
     },
-    [navigate, store, workspace],
+    [location.pathname, navigate, store, workspace],
   );
 
   const openReadingTool = useCallback(

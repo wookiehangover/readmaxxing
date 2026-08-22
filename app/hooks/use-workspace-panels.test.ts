@@ -73,6 +73,16 @@ describe("route-based workspace actions", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("/books/book-a");
   });
 
+  it("records and activates an already-open book without navigating again", () => {
+    mocks.pathname = "/books/book-a";
+
+    renderWorkspacePanels().openBook(book);
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(recordBookOpened(book.id));
+    expect(mocks.setActiveCluster).toHaveBeenCalledWith(book.id);
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
   it("opens notes, chat, and outline through reading rail tabs", () => {
     const panels = renderWorkspacePanels();
 

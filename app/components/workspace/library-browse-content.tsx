@@ -85,7 +85,7 @@ export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps =
   const lastOpenedMap = store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
 
   const handleOpenBook = useCallback(
-    async (book: BookMeta) => {
+    async (book: BookMeta, openLocalBook?: (book: BookMeta) => void) => {
       const needsDownload = bookNeedsDownload(book);
       if (needsDownload && store.state.books.downloadingBookIds.includes(book.id)) return;
       pendingOpenControllerRef.current?.abort();
@@ -93,7 +93,7 @@ export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps =
       pendingOpenControllerRef.current = controller;
 
       try {
-        if (onOpenBook) {
+        if (onOpenBook && !openLocalBook) {
           await onOpenBook(book);
           return;
         }
@@ -101,6 +101,10 @@ export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps =
           store,
           signal: controller.signal,
           openBook: (localBook) => {
+            if (openLocalBook) {
+              openLocalBook(localBook);
+              return;
+            }
             ws.openBookRef.current?.(localBook);
           },
         });
@@ -121,16 +125,16 @@ export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps =
 
   const handleOpenNotebook = useCallback(
     (book: BookMeta) => {
-      ws.openNotebookRef.current?.(book);
+      void handleOpenBook(book, (localBook) => ws.openNotebookRef.current?.(localBook));
     },
-    [ws],
+    [handleOpenBook, ws],
   );
 
   const handleOpenChat = useCallback(
     (book: BookMeta) => {
-      ws.openChatRef.current?.(book);
+      void handleOpenBook(book, (localBook) => ws.openChatRef.current?.(localBook));
     },
-    [ws],
+    [handleOpenBook, ws],
   );
 
   const handleShareBook = useCallback((book: BookMeta) => {
