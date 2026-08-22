@@ -29,6 +29,21 @@ interface LocalChatSession {
   deletedAt?: number | null;
 }
 
+interface CapturedSyncChange {
+  entity: string;
+  entityId: string;
+  bookId?: string;
+}
+
+function reservedSyncChanges(syncRequests: CapturedRequest[]): CapturedSyncChange[] {
+  return syncRequests.flatMap(({ url, body }) => {
+    if (url !== "/api/sync/push" || !body) return [];
+    return (JSON.parse(body) as CapturedSyncChange[]).filter(({ entityId, bookId }) =>
+      [DEMO_BOOK_ID, DEMO_SESSION_ID].some((reservedId) => [entityId, bookId].includes(reservedId)),
+    );
+  });
+}
+
 async function readIndexedDbValue<T>(
   page: Page,
   databaseName: string,
@@ -280,6 +295,7 @@ test.describe("Bundled Gatsby onboarding", () => {
       const requests: CapturedRequest[] = [];
       const requestMap = new Map<Request, CapturedRequest>();
       const syncRequests: CapturedRequest[] = [];
+      const authenticatedSyncPushes: CapturedRequest[] = [];
       const syncRequestMap = new Map<Request, CapturedRequest>();
       const authenticationRequests: CapturedRequest[] = [];
       const browserErrors: string[] = [];
@@ -305,11 +321,16 @@ test.describe("Bundled Gatsby onboarding", () => {
           const syncRequest: CapturedRequest = { method: outgoing.method(), url: pathname };
           if (pathname === "/api/sync/push") {
             const payload = outgoing.postDataJSON() as {
-              changes?: { entity: string; entityId: string }[];
+              changes?: { entity: string; entityId: string; data?: { bookId?: string } }[];
             };
             syncRequest.body = JSON.stringify(
-              payload.changes?.map(({ entity, entityId }) => ({ entity, entityId })),
+              payload.changes?.map(({ entity, entityId, data }) => ({
+                entity,
+                entityId,
+                ...(typeof data?.bookId === "string" ? { bookId: data.bookId } : {}),
+              })) ?? [],
             );
+            if (authenticationStarted) authenticatedSyncPushes.push(syncRequest);
           }
           syncRequests.push(syncRequest);
           syncRequestMap.set(outgoing, syncRequest);
@@ -398,6 +419,23 @@ test.describe("Bundled Gatsby onboarding", () => {
           .toBe(verifiedUserId);
         await waitForAppHydration(page);
         await expect(page).not.toHaveURL(/\/login$/);
+
+        await expect
+          .poll(() => authenticatedSyncPushes.some(({ status }) => status !== undefined), {
+            timeout: 30_000,
+          })
+          .toBe(true);
+        expect(
+          reservedSyncChanges(authenticatedSyncPushes),
+          "Authenticated metadata sync uploaded a reserved demo entity or parent book ID",
+        ).toEqual([]);
+        await expect
+          .poll(
+            () =>
+              syncRequests.some(({ url, status }) => url === "/api/sync/pull" && status === 200),
+            { timeout: 30_000 },
+          )
+          .toBe(true);
 
         await expect
           .poll(
@@ -515,6 +553,10 @@ test.describe("Bundled Gatsby onboarding", () => {
           [DEMO_BOOK_ID, DEMO_SESSION_ID].some((id) => url.includes(id) || body?.includes(id)),
         );
         expect(staleDemoRequests).toEqual([]);
+        expect(
+          reservedSyncChanges(authenticatedSyncPushes),
+          "Authenticated metadata sync uploaded a reserved demo entity or parent book ID",
+        ).toEqual([]);
         expect(documentRequestsAfterAuthentication).toBe(0);
       } catch (error) {
         const persistedBooks = await readIndexedDbValue<LocalBook[]>(
