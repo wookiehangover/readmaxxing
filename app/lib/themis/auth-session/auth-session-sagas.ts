@@ -1,6 +1,6 @@
 import { actionChannel, call, fork, put, take, takeEvery } from "typed-redux-saga";
 
-import { authService } from "~/lib/auth-service";
+import { authService, type AuthUser } from "~/lib/auth-service";
 import { toTaggedError } from "~/lib/errors";
 import { hasUnadoptedDemoBook } from "~/lib/onboarding/adopt-demo";
 import {
@@ -44,8 +44,10 @@ function createAuthSessionRefreshRequest() {
 
 export function* refreshAuthSessionSaga(action: ReturnType<typeof refreshAuthSessionRequested>) {
   const [onCompleted, onFailed] = action.payload;
+  let authenticatedUser: AuthUser | null = null;
   try {
     const session = yield* call(authService.getSession);
+    authenticatedUser = session.user;
     if (session.user && (yield* call(hasUnadoptedDemoBook))) {
       const adoption = createDemoAdoptionRequest(session.user.id);
       yield* put(adoption.action);
@@ -54,7 +56,13 @@ export function* refreshAuthSessionSaga(action: ReturnType<typeof refreshAuthSes
     yield* put(authSessionResolved(session.user));
     if (onCompleted) yield* call(onCompleted);
   } catch (cause) {
-    yield* put(authSessionFailed(toTaggedError(cause)));
+    const error = toTaggedError(cause);
+    if (authenticatedUser) {
+      yield* put(authSessionResolved(authenticatedUser));
+      yield* put(authOperationFailed(error));
+    } else {
+      yield* put(authSessionFailed(error));
+    }
     if (onFailed) yield* call(onFailed, cause);
   }
 }
