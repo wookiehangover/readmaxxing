@@ -16,7 +16,7 @@ import {
   type ReaderLayout,
   type Settings,
 } from "~/lib/settings";
-import type { BookFormat } from "~/lib/stores/book-store";
+import type { BookFormat, BookMeta } from "~/lib/stores/book-store";
 
 interface SharedBookReaderProps {
   shareId: string;
@@ -32,11 +32,11 @@ async function loadSharedFile(fileUrl: string): Promise<ArrayBuffer> {
 }
 
 function SharedEpubReader({
-  shareId,
+  book,
   loadData,
   currentCfi,
 }: {
-  shareId: string;
+  book: BookMeta;
   loadData: () => Promise<ArrayBuffer>;
   currentCfi: string | null;
 }) {
@@ -60,7 +60,7 @@ function SharedEpubReader({
   );
   const { toc, loadError, navigateToTocHref, navigationInProgressRef, markNavigationInProgress } =
     useEpubLifecycle({
-      bookId: `share:${shareId}`,
+      bookId: book.id,
       containerRef,
       loadData,
       initialPosition: currentCfi,
@@ -110,6 +110,8 @@ function SharedEpubReader({
         onNext={() => go("next")}
       />
       <EpubReaderToolbar
+        book={book}
+        readOnly
         toc={toc}
         navigateToTocHref={navigateToTocHref}
         localSettings={localSettings}
@@ -120,11 +122,11 @@ function SharedEpubReader({
 }
 
 function SharedPdfReader({
-  shareId,
+  book,
   loadData,
   currentCfi,
 }: {
-  shareId: string;
+  book: BookMeta;
   loadData: () => Promise<ArrayBuffer>;
   currentCfi: string | null;
 }) {
@@ -145,7 +147,7 @@ function SharedPdfReader({
   );
   const { toc, currentPage, totalPages, bookProgress, goToPage, goNext, goPrev, loadError } =
     usePdfLifecycle({
-      bookId: `share:${shareId}`,
+      bookId: book.id,
       containerRef,
       loadData,
       initialPosition: currentCfi,
@@ -159,6 +161,8 @@ function SharedPdfReader({
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-testid="shared-pdf-reader">
       <PdfReaderView
+        book={book}
+        readOnly
         containerRef={containerRef}
         localSettings={localSettings}
         onUpdateSettings={onUpdateSettings}
@@ -201,10 +205,17 @@ function SharedPdfReader({
 
 export function SharedBookReader({ shareId, fileUrl, format, currentCfi }: SharedBookReaderProps) {
   const loadData = useCallback(() => loadSharedFile(fileUrl), [fileUrl]);
+  const book: BookMeta = {
+    id: `share:${shareId}`,
+    title: "",
+    author: "",
+    coverImage: null,
+    format,
+  };
 
   return format === "pdf" ? (
-    <SharedPdfReader shareId={shareId} loadData={loadData} currentCfi={currentCfi} />
+    <SharedPdfReader book={book} loadData={loadData} currentCfi={currentCfi} />
   ) : (
-    <SharedEpubReader shareId={shareId} loadData={loadData} currentCfi={currentCfi} />
+    <SharedEpubReader book={book} loadData={loadData} currentCfi={currentCfi} />
   );
 }

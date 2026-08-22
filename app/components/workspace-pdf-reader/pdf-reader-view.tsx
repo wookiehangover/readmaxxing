@@ -25,7 +25,8 @@ interface PdfReaderViewProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
   localSettings: Settings;
   onUpdateSettings: (update: Partial<Settings>) => void;
-  book?: BookMeta;
+  book: BookMeta;
+  readOnly?: boolean;
   onDownload?: () => void;
   onBookmarkPage?: () => void | Promise<void>;
   isBookmarked?: boolean;
@@ -61,6 +62,7 @@ export function PdfReaderView({
   localSettings,
   onUpdateSettings,
   book,
+  readOnly = false,
   onDownload,
   onBookmarkPage,
   isBookmarked,
@@ -97,7 +99,7 @@ export function PdfReaderView({
           settings={localSettings}
           onUpdateSettings={onUpdateSettings}
           isPdf
-          book={book}
+          book={readOnly ? undefined : book}
           onDownload={onDownload}
           onBookmarkPage={onBookmarkPage}
           isBookmarked={isBookmarked}

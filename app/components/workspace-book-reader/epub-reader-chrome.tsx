@@ -113,7 +113,8 @@ interface EpubReaderToolbarProps {
   navigateToTocHref: (href: string) => void;
   localSettings: Settings;
   onUpdateSettings: (update: Partial<Settings>) => void;
-  book?: BookMeta;
+  book: BookMeta;
+  readOnly?: boolean;
   onDownload?: () => void;
   onCopyPageAsMarkdown?: () => void;
   onOpenSpeedread?: () => void;
@@ -128,6 +129,7 @@ export function EpubReaderToolbar({
   localSettings,
   onUpdateSettings,
   book,
+  readOnly = false,
   onDownload,
   onCopyPageAsMarkdown,
   onOpenSpeedread,
@@ -140,7 +142,7 @@ export function EpubReaderToolbar({
       <ReaderSettingsMenu
         settings={localSettings}
         onUpdateSettings={onUpdateSettings}
-        book={book}
+        book={readOnly ? undefined : book}
         onDownload={onDownload}
         onCopyPageAsMarkdown={onCopyPageAsMarkdown}
         onOpenSpeedread={onOpenSpeedread}

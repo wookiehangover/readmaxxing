@@ -126,12 +126,21 @@ describe("SharedBookReader", () => {
     expect(fetchMock).toHaveBeenCalledWith("/signed/epub");
     expect(mocks.epubToolbar).toHaveBeenCalledOnce();
     const toolbarProps = mocks.epubToolbar.mock.calls[0]![0];
-    expect(toolbarProps).toMatchObject({ localSettings: { readerLayout: "spread" } });
+    expect(toolbarProps).toMatchObject({
+      book: {
+        id: "share:share-1",
+        title: "",
+        author: "",
+        coverImage: null,
+        format: "epub",
+      },
+      readOnly: true,
+      localSettings: { readerLayout: "spread" },
+    });
     expect(toolbarProps).not.toHaveProperty("panelApi");
     expect(toolbarProps).not.toHaveProperty("toolbarVisible");
     expect(toolbarProps).not.toHaveProperty("onOpenNotebook");
     expect(toolbarProps).not.toHaveProperty("onOpenChat");
-    expect(toolbarProps).not.toHaveProperty("book");
     expect(toolbarProps).not.toHaveProperty("onBookmarkPage");
   });
 
@@ -162,9 +171,18 @@ describe("SharedBookReader", () => {
     expect(fetchMock).toHaveBeenCalledWith("/signed/pdf");
     expect(mocks.pdfView).toHaveBeenCalledOnce();
     const viewProps = mocks.pdfView.mock.calls[0]![0];
-    expect(viewProps).toMatchObject({ localSettings: { pdfLayout: "fit-height" } });
+    expect(viewProps).toMatchObject({
+      book: {
+        id: "share:share-2",
+        title: "",
+        author: "",
+        coverImage: null,
+        format: "pdf",
+      },
+      readOnly: true,
+      localSettings: { pdfLayout: "fit-height" },
+    });
     expect(viewProps).not.toHaveProperty("panelApi");
-    expect(viewProps).not.toHaveProperty("book");
     expect(viewProps).not.toHaveProperty("onBookmarkPage");
     expect(viewProps).not.toHaveProperty("onOpenNotebook");
     expect(viewProps).not.toHaveProperty("onOpenChat");
