@@ -40,7 +40,11 @@ function readingHistoryTarget(book: BookMeta, entry: ReadingHistoryEntry) {
   return entry.cfi;
 }
 
-function bookmarkTarget(bookmark: BookBookmark) {
+function bookmarkTarget(book: BookMeta, bookmark: BookBookmark) {
+  if (book.format === "pdf") {
+    const pageNumber = bookmark.pageNumber ?? bookmark.displayPage;
+    if (pageNumber !== undefined) return `page:${pageNumber}`;
+  }
   if (bookmark.cfi) return bookmark.cfi;
   if (bookmark.pageNumber !== undefined) return `page:${bookmark.pageNumber}`;
   return null;
@@ -122,7 +126,7 @@ export function ReadingDetailsPanel({
               {historyEntries.map((entry) => {
                 const locationDetails = [
                   entry.pageIndex !== null
-                    ? `Page ${entry.pageIndex}${entry.totalPages !== null ? ` of ${entry.totalPages}` : ""}`
+                    ? `Page ${entry.pageIndex}${entry.totalPages != null ? ` of ${entry.totalPages}` : ""}`
                     : null,
                   `${Math.round(entry.percentage)}%`,
                 ].filter(Boolean);
@@ -179,7 +183,7 @@ export function ReadingDetailsPanel({
           {savedBookmarks.length > 0 ? (
             <ul className="flex min-w-0 flex-col gap-1">
               {savedBookmarks.map((bookmark) => {
-                const target = bookmarkTarget(bookmark);
+                const target = bookmarkTarget(book, bookmark);
                 const pageNumber =
                   book.format === "pdf"
                     ? (bookmark.pageNumber ?? bookmark.displayPage)

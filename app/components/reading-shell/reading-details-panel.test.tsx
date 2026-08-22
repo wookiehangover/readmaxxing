@@ -160,6 +160,19 @@ describe("ReadingDetailsPanel", () => {
     expect(panel.querySelectorAll("time")).toHaveLength(2);
   });
 
+  it("omits missing total-page counts from legacy reading-history entries", () => {
+    const legacyEntry = {
+      ...historyEntry,
+      totalPages: undefined,
+    } as unknown as ReadingHistoryEntry;
+    store.dispatch(readingHistoryHydrated(book.id, [legacyEntry]));
+
+    const panel = renderPanel();
+
+    expect(panel.textContent).toContain("Page 37");
+    expect(panel.textContent).not.toContain("of undefined");
+  });
+
   it("reflects reading history and bookmarks added to the canonical store after mounting", async () => {
     const panel = renderPanel();
 
@@ -200,6 +213,27 @@ describe("ReadingDetailsPanel", () => {
     expect(mocks.navigateInCluster).toHaveBeenNthCalledWith(2, book.id, "page:28");
     expect(mocks.openMobileReadingTab).toHaveBeenCalledTimes(2);
     expect(mocks.openMobileReadingTab).toHaveBeenCalledWith("Read", book.id);
+  });
+
+  it("navigates PDF bookmarks that only contain a synced display page", async () => {
+    const pdfBook: BookMeta = { ...book, format: "pdf" };
+    const pdfBookmark: Bookmark = {
+      ...bookmark,
+      cfi: undefined,
+      label: "Synced PDF page",
+      pageNumber: undefined,
+      displayPage: 28,
+    };
+    store.dispatch(bookmarksHydrated(book.id, [pdfBookmark]));
+    renderPanel(pdfBook);
+
+    const savedBookmark = findButton("Synced PDF page");
+    expect(savedBookmark?.disabled).toBe(false);
+    expect(savedBookmark?.textContent).toContain("Page 28");
+
+    await act(async () => savedBookmark?.click());
+
+    expect(mocks.navigateInCluster).toHaveBeenCalledWith(book.id, "page:28");
   });
 
   it("rehydrates bookmarks when the existing bookmark sync listener changes", () => {
