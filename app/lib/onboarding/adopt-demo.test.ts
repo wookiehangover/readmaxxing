@@ -17,6 +17,7 @@ import {
 const mocks = vi.hoisted(() => ({
   ensureChapters: vi.fn(),
   getUnsyncedChanges: vi.fn(),
+  markSynced: vi.fn(),
   push: vi.fn(),
   recordChange: vi.fn(),
 }));
@@ -26,6 +27,7 @@ vi.mock("~/lib/sync/book-chapter-uploads", () => ({
 }));
 vi.mock("~/lib/sync/change-log", () => ({
   getUnsyncedChanges: mocks.getUnsyncedChanges,
+  markSynced: mocks.markSynced,
   recordChange: mocks.recordChange,
 }));
 vi.mock("~/lib/sync/push", () => ({ PUSH_BATCH_SIZE: 50, pushChangesWithResult: mocks.push }));
@@ -39,7 +41,7 @@ let recorded: ChangeEntry[];
 let pushedCount: number;
 
 function acceptedSinceLastPush(canonicalId?: string): SyncPushResponse {
-  const pending = recorded.slice(pushedCount);
+  const pending = recorded.slice(pushedCount).filter((entry) => !entry.synced);
   pushedCount = recorded.length;
   return {
     accepted: pending.map((entry) => ({
@@ -55,7 +57,14 @@ beforeEach(async () => {
   recorded = [];
   pushedCount = 0;
   mocks.ensureChapters.mockReset().mockResolvedValue(undefined);
-  mocks.getUnsyncedChanges.mockReset().mockImplementation(async () => recorded.slice(pushedCount));
+  mocks.getUnsyncedChanges
+    .mockReset()
+    .mockImplementation(async () => recorded.slice(pushedCount).filter((entry) => !entry.synced));
+  mocks.markSynced.mockReset().mockImplementation(async (ids: string[]) => {
+    for (const entry of recorded) {
+      if (ids.includes(entry.id)) entry.synced = true;
+    }
+  });
   mocks.push.mockReset();
   mocks.recordChange.mockReset().mockImplementation(async (entry) => {
     const change = { ...entry, id: `change-${recorded.length + 1}`, synced: false } as ChangeEntry;
@@ -157,6 +166,130 @@ describe("adoptDemoContent", () => {
       activeBookId: ADOPTED_BOOK_ID,
       clusters: [{ bookId: ADOPTED_BOOK_ID }],
     });
+  });
+
+  it("discards reserved demo metadata before server deduplication can tombstone both books", async () => {
+    const reservedChanges = [
+      { entity: "book", entityId: DEMO_BOOK_ID, data: { id: DEMO_BOOK_ID } },
+      { entity: "notebook", entityId: DEMO_BOOK_ID, data: { bookId: DEMO_BOOK_ID } },
+      { entity: "position", entityId: DEMO_BOOK_ID, data: { cfi: "demo" } },
+      {
+        entity: "chat_session",
+        entityId: DEMO_CHAT_SESSION.id,
+        data: { id: DEMO_CHAT_SESSION.id, bookId: DEMO_BOOK_ID },
+      },
+      {
+        entity: "chat_session",
+        entityId: "user-created-demo-session",
+        data: { bookId: DEMO_BOOK_ID },
+      },
+      {
+        entity: "chat_message",
+        entityId: "demo-message",
+        data: { sessionId: DEMO_CHAT_SESSION.id },
+      },
+    ] as const;
+    for (const change of reservedChanges) {
+      await mocks.recordChange({ ...change, operation: "put", timestamp: 1 });
+    }
+    await mocks.recordChange({
+      entity: "notebook",
+      entityId: "offline-account-book",
+      operation: "put",
+      data: { bookId: "offline-account-book" },
+      timestamp: 2,
+    });
+
+    const pushedBatches: ChangeEntry[][] = [];
+    mocks.push.mockImplementation(async () => {
+      const pending = (await mocks.getUnsyncedChanges()) as ChangeEntry[];
+      pushedBatches.push(pending);
+      for (const entry of pending) entry.synced = true;
+      const adoptedBook = pending.find(
+        (entry) => entry.entity === "book" && entry.entityId === ADOPTED_BOOK_ID,
+      );
+      const poisoned = pending.some((entry) => entry.entityId === DEMO_BOOK_ID);
+      const canonicalId = poisoned ? DEMO_BOOK_ID : CANONICAL_BOOK_ID;
+      if (adoptedBook) await remapBookId(ADOPTED_BOOK_ID, canonicalId);
+      return {
+        accepted: pending.map((entry) => ({
+          id: entry.id,
+          ...(entry === adoptedBook ? { canonicalId } : {}),
+        })),
+        rejected: [],
+        serverTimestamp: new Date().toISOString(),
+      } satisfies SyncPushResponse;
+    });
+
+    const adopted = await persistAdoptedDemoContent("existing-account-user");
+
+    expect(adopted).toEqual({ bookId: CANONICAL_BOOK_ID, sessionId: ADOPTED_SESSION_ID });
+    expect(mocks.markSynced).toHaveBeenCalledWith(
+      recorded.slice(0, reservedChanges.length).map((entry) => entry.id),
+    );
+    expect(pushedBatches.flat()).toContainEqual(
+      expect.objectContaining({ entityId: "offline-account-book" }),
+    );
+    for (const change of pushedBatches.flat()) {
+      expect(change.entityId).not.toBe(DEMO_BOOK_ID);
+      expect(change.entityId).not.toBe(DEMO_CHAT_SESSION.id);
+      expect(change.data).not.toMatchObject({ bookId: DEMO_BOOK_ID });
+      expect(change.data).not.toMatchObject({ sessionId: DEMO_CHAT_SESSION.id });
+    }
+    expect(await get(CANONICAL_BOOK_ID, getBookStore())).toMatchObject({
+      id: CANONICAL_BOOK_ID,
+      deletedAt: undefined,
+    });
+    expect(await get(DEMO_BOOK_ID, getBookStore())).toHaveProperty("deletedAt");
+    expect(await get<ChatSession[]>(CANONICAL_BOOK_ID, getChatSessionStore())).toEqual([
+      expect.objectContaining({ id: ADOPTED_SESSION_ID, bookId: CANONICAL_BOOK_ID }),
+    ]);
+    expect(mocks.ensureChapters).toHaveBeenCalledWith(CANONICAL_BOOK_ID);
+  });
+
+  it("drops stale demo metadata while draining more than 100 unrelated offline changes", async () => {
+    for (const entity of ["book", "position", "notebook"] as const) {
+      await mocks.recordChange({
+        entity,
+        entityId: DEMO_BOOK_ID,
+        operation: "put",
+        data: { bookId: DEMO_BOOK_ID },
+        timestamp: 1,
+      });
+    }
+    for (let index = 0; index < 101; index++) {
+      await mocks.recordChange({
+        entity: "notebook",
+        entityId: `offline-${index}`,
+        operation: "put",
+        data: { bookId: `offline-${index}` },
+        timestamp: index + 2,
+      });
+    }
+
+    const pushedBatches: ChangeEntry[][] = [];
+    mocks.push.mockImplementation(async () => {
+      const pending = ((await mocks.getUnsyncedChanges()) as ChangeEntry[]).slice(0, 50);
+      pushedBatches.push(pending);
+      for (const entry of pending) entry.synced = true;
+      return {
+        accepted: pending.map((entry) => ({ id: entry.id })),
+        rejected: [],
+        serverTimestamp: new Date().toISOString(),
+      } satisfies SyncPushResponse;
+    });
+
+    await expect(persistAdoptedDemoContent("offline-user")).resolves.toEqual({
+      bookId: ADOPTED_BOOK_ID,
+      sessionId: ADOPTED_SESSION_ID,
+    });
+
+    expect(mocks.markSynced).toHaveBeenCalledWith(["change-1", "change-2", "change-3"]);
+    expect(pushedBatches.flat().some((entry) => entry.entityId === DEMO_BOOK_ID)).toBe(false);
+    expect(
+      pushedBatches.flat().filter((entry) => entry.entityId.startsWith("offline-")),
+    ).toHaveLength(101);
+    expect(mocks.push).toHaveBeenCalledTimes(4);
   });
 
   it("drains more than one full batch of older changes before the adopted book is accepted", async () => {

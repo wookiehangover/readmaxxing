@@ -5,7 +5,7 @@ import type { ChatSession } from "~/lib/stores/chat-store";
 import type { PositionRecord } from "~/lib/stores/position-store";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { ensureBookChaptersUploaded } from "~/lib/sync/book-chapter-uploads";
-import { getUnsyncedChanges, recordChange } from "~/lib/sync/change-log";
+import { getUnsyncedChanges, markSynced, recordChange } from "~/lib/sync/change-log";
 import { PUSH_BATCH_SIZE, pushChangesWithResult, type PushContext } from "~/lib/sync/push";
 import {
   getActiveSessionStore,
@@ -145,7 +145,7 @@ async function pushUntilAccepted(
   context: PushContext,
   entries: ChangeEntry[],
 ): Promise<SyncPushResponse> {
-  let pending = await getUnsyncedChanges();
+  let pending = await getAdoptableChanges();
   const remaining = new Set(entries.map((entry) => entry.id));
   const accepted: SyncPushResponse["accepted"] = [];
   const maxBatches = Math.max(1, Math.ceil(pending.length / PUSH_BATCH_SIZE) + 1);
@@ -160,13 +160,32 @@ async function pushUntilAccepted(
     }
     if (remaining.size === 0) return { ...result, accepted };
 
-    const nextPending = await getUnsyncedChanges();
+    const nextPending = await getAdoptableChanges();
     const nextPendingIds = new Set(nextPending.map((entry) => entry.id));
     if (!pending.some((entry) => !nextPendingIds.has(entry.id))) break;
     pending = nextPending;
   }
 
   throw new Error("The demo library could not be saved to your account. Please try again.");
+}
+
+async function getAdoptableChanges(): Promise<ChangeEntry[]> {
+  const pending = await getUnsyncedChanges();
+  const reserved = pending.filter((change) => {
+    if (change.entityId === DEMO_BOOK_ID || change.entityId === DEMO_CHAT_SESSION.id) return true;
+    if (!change.data || typeof change.data !== "object") return false;
+    const data = change.data as { id?: unknown; bookId?: unknown; sessionId?: unknown };
+    return (
+      data.id === DEMO_BOOK_ID ||
+      data.id === DEMO_CHAT_SESSION.id ||
+      data.bookId === DEMO_BOOK_ID ||
+      data.sessionId === DEMO_CHAT_SESSION.id
+    );
+  });
+  if (reserved.length === 0) return pending;
+  const reservedIds = new Set(reserved.map((change) => change.id));
+  await markSynced([...reservedIds]);
+  return pending.filter((change) => !reservedIds.has(change.id));
 }
 
 async function remapSavedWorkspace(bookId: string): Promise<void> {
