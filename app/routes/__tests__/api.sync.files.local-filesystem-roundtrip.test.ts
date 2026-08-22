@@ -381,6 +381,31 @@ describe("authenticated local filesystem upload and download integration", () =>
     expect(handleUploadMock).not.toHaveBeenCalled();
   });
 
+  it("round-trips a production-built client through an explicit local backend override", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MODE", "production");
+    vi.stubEnv("BLOB_STORAGE_BACKEND", "local");
+    const book = createOwnedBook("production-local-book", authenticatedUser, "pdf");
+    const fetchMock = installRouteBackedFetch();
+
+    const url = await uploadFile(
+      { userId: authenticatedUser, uploadRetryState: new Map() },
+      book.id,
+      new Blob(["production local pdf"], { type: "application/pdf" }),
+      "file",
+    );
+
+    expect(url).toBe(`/api/sync/files/download?bookId=${book.id}&type=file`);
+    expect(book.fileBlobUrl).toBe(url);
+    expect(
+      await readFile(join(dataRoot, "data", "blob", book.userId, book.id, "file"), "utf8"),
+    ).toBe("production local pdf");
+    expect(await (await fetch(url as string)).text()).toBe("production local pdf");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(vercelUploadMock).not.toHaveBeenCalled();
+    expect(handleUploadMock).not.toHaveBeenCalled();
+  });
+
   it("routes an explicit Vercel development override through the existing Blob SDK", async () => {
     vi.stubEnv("BLOB_STORAGE_BACKEND", "vercel");
     vi.stubEnv("BLOB_READ_WRITE_TOKEN", "vercel-test-token");

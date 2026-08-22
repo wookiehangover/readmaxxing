@@ -82,6 +82,39 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("local authenticated file uploads", () => {
+  it.each([
+    [true, "local"],
+    [false, "vercel"],
+  ])("reports the authenticated server-selected %s backend", async (local, backend) => {
+    useLocalMock.mockReturnValue(local);
+    if (!local) vi.stubEnv("BLOB_READ_WRITE_TOKEN", "vercel-token");
+    const request = new Request("http://localhost/api/sync/files/upload", {
+      method: "POST",
+      headers: { "X-Readmax-Storage-Backend": "negotiate" },
+    });
+
+    const response = await action({ request });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ backend });
+    expect(requireAuthMock).toHaveBeenCalledWith(request);
+    expect(writeLocalMock).not.toHaveBeenCalled();
+    expect(handleUploadMock).not.toHaveBeenCalled();
+  });
+
+  it("does not disclose the selected backend to an unauthenticated caller", async () => {
+    requireAuthMock.mockRejectedValue(Response.json({ error: "auth_required" }, { status: 401 }));
+    const request = new Request("http://localhost/api/sync/files/upload", {
+      method: "POST",
+      headers: { "X-Readmax-Storage-Backend": "negotiate" },
+    });
+
+    const response = await action({ request });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: "Unauthorized" });
+  });
+
   it("stores an EPUB without a Vercel token and immediately updates the owned book", async () => {
     const response = await action({ request: uploadRequest() });
 

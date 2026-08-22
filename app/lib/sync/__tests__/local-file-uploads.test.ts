@@ -165,7 +165,7 @@ describe("development file uploads", () => {
 
   it("uses the Vercel client in production", async () => {
     vi.stubEnv("MODE", "production");
-    const fetchMock = vi.fn();
+    const fetchMock = vi.fn(async () => Response.json({ backend: "vercel" }));
     vi.stubGlobal("fetch", fetchMock);
     uploadMock.mockResolvedValue({ url: "https://blob.example/book.epub" } as Awaited<
       ReturnType<typeof upload>
@@ -180,6 +180,10 @@ describe("development file uploads", () => {
 
     expect(result).toBe("https://blob.example/book.epub");
     expect(uploadMock).toHaveBeenCalledOnce();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith("/api/sync/files/upload", {
+      method: "POST",
+      credentials: "include",
+      headers: { "X-Readmax-Storage-Backend": "negotiate" },
+    });
   });
 });

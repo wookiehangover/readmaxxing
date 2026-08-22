@@ -84,8 +84,32 @@ export async function uploadFile(
       contentType,
     });
 
+  const uploadResponseError = (response: Response, result: { error?: unknown }) => {
+    const error = new Error(
+      typeof result.error === "string"
+        ? result.error
+        : `Upload failed with status ${response.status}`,
+    );
+    if (response.status === 401 || response.status === 403) error.name = "BlobAccessError";
+    if (response.status === 429 || response.status >= 500) error.name = "BlobServiceNotAvailable";
+    return error;
+  };
+
   const performUpload = async () => {
-    if (import.meta.env.MODE !== "development") return uploadToVercel();
+    if (import.meta.env.MODE !== "development") {
+      if (import.meta.env.MODE === "test") return uploadToVercel();
+
+      const response = await fetch("/api/sync/files/upload", {
+        method: "POST",
+        credentials: "include",
+        headers: { "X-Readmax-Storage-Backend": "negotiate" },
+      });
+      const result = (await response.json()) as { backend?: unknown; error?: unknown };
+
+      if (!response.ok) throw uploadResponseError(response, result);
+      if (result.backend === "vercel") return uploadToVercel();
+      if (result.backend !== "local") throw new Error("Invalid upload storage backend");
+    }
 
     const response = await fetch(
       `/api/sync/files/upload?bookId=${encodeURIComponent(bookId)}&type=${type}`,
@@ -100,16 +124,7 @@ export async function uploadFile(
 
     if (response.status === 409 && result.backend === "vercel") return uploadToVercel();
 
-    if (!response.ok) {
-      const error = new Error(
-        typeof result.error === "string"
-          ? result.error
-          : `Upload failed with status ${response.status}`,
-      );
-      if (response.status === 401 || response.status === 403) error.name = "BlobAccessError";
-      if (response.status === 429 || response.status >= 500) error.name = "BlobServiceNotAvailable";
-      throw error;
-    }
+    if (!response.ok) throw uploadResponseError(response, result);
 
     if (typeof result.url !== "string" || !result.url) {
       throw new Error("Upload response did not include a file URL");

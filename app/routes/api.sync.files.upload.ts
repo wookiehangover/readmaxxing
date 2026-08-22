@@ -142,6 +142,10 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (request.headers.get("X-Readmax-Storage-Backend") === "negotiate") {
+    return Response.json({ backend: localStorage ? "local" : "vercel" });
+  }
+
   if (localStorage) return uploadLocalFile(request, userId);
 
   if (!request.headers.get("Content-Type")?.startsWith("application/json")) {
