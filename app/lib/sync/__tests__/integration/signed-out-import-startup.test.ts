@@ -1,4 +1,5 @@
 import type { UIMessage } from "@ai-sdk/react";
+import { BlobError } from "@vercel/blob";
 import { upload } from "@vercel/blob/client";
 import { clear, createStore, get, set } from "idb-keyval";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -107,11 +108,14 @@ function makeServer(options: { rejectFirstBookPush?: boolean } = {}) {
     }
 
     if (url === "/api/sync/files/upload") {
-      const body = JSON.parse(String(init?.body)) as { clientPayload: string };
-      const { bookId } = JSON.parse(body.clientPayload) as { bookId: string };
-      const status = books.has(bookId) ? 200 : 404;
+      const body = JSON.parse(String(init?.body)) as { payload: { clientPayload: string } };
+      const { bookId } = JSON.parse(body.payload.clientPayload) as { bookId: string };
+      const status = books.has(bookId) ? 200 : 400;
       requests.push({ url, status });
-      return Response.json({ bookId }, { status });
+      return Response.json(
+        status === 200 ? { bookId } : { error: "Book not found or not owned by user" },
+        { status },
+      );
     }
 
     const chaptersMatch = /^\/api\/books\/([^/]+)\/chapters$/.exec(url);
@@ -150,9 +154,12 @@ function makeServer(options: { rejectFirstBookPush?: boolean } = {}) {
   uploadMock.mockImplementation(async (pathname, _body, uploadOptions) => {
     const response = await fetch(String(uploadOptions.handleUploadUrl), {
       method: "POST",
-      body: JSON.stringify({ pathname, clientPayload: uploadOptions.clientPayload }),
+      body: JSON.stringify({
+        type: "blob.generate-client-token",
+        payload: { pathname, clientPayload: uploadOptions.clientPayload, multipart: false },
+      }),
     });
-    if (!response.ok) throw new Error("Book not found or not owned by user");
+    if (!response.ok) throw new BlobError("Failed to  retrieve the client token");
 
     return {
       url: `blob://${pathname}`,
@@ -220,6 +227,22 @@ afterEach(() => {
 });
 
 describe("integration: signed-out book import and authenticated sync startup", () => {
+  it("models the live Vercel missing-owner handshake status and JSON error", async () => {
+    const server = makeServer();
+
+    const response = await fetch("/api/sync/files/upload", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "blob.generate-client-token",
+        payload: { clientPayload: JSON.stringify({ bookId: "missing-book", type: "file" }) },
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Book not found or not owned by user" });
+    expect(server.requests).toContainEqual({ url: "/api/sync/files/upload", status: 400 });
+  });
+
   it("accepts imported book metadata before blob upload, reading ingestion, chapter preparation, and chat", async () => {
     const server = makeServer();
     const book = await importSignedOutBook("signed-out-import-book");
@@ -336,6 +359,22 @@ describe("integration: signed-out book import and authenticated sync startup", (
       );
     });
 
+    const pushRequestIndexes = server.requests.flatMap((request, index) =>
+      request.url === "/api/sync/push" ? [index] : [],
+    );
+    const acceptedRetryIndex = server.pushes.findIndex((push) =>
+      push.acceptedBookIds.includes(book.id),
+    );
+    const firstUploadIndex = server.requests.findIndex(
+      (request) => request.url === "/api/sync/files/upload",
+    );
+    expect(acceptedRetryIndex).toBeGreaterThan(0);
+    expect(firstUploadIndex).toBeGreaterThan(pushRequestIndexes[acceptedRetryIndex]);
+    expect(
+      server.requests
+        .slice(0, pushRequestIndexes[acceptedRetryIndex])
+        .some((request) => request.url === "/api/sync/files/upload"),
+    ).toBe(false);
     expect(server.requests).toContainEqual({ url: "/api/sync/files/upload", status: 200 });
     expect(
       (await getUnsyncedChanges()).some((change) => rejectedChangeIds.includes(change.id)),
