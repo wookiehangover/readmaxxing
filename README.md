@@ -1,13 +1,13 @@
 # Ebook Reader
 
-A browser-based ebook and PDF reader. Drag and drop `.epub` or `.pdf` files (or import from the Standard Ebooks catalog), read in a multi-panel workspace, and keep books, positions, highlights, and notebooks offline in IndexedDB. Optionally sign in with a passkey to sync across devices and use AI chat.
+A browser-based ebook and PDF reader. Drag and drop `.epub` or `.pdf` files (or import from the Standard Ebooks catalog), browse with `LibraryFrame`, read with `ReadingShell`, and keep books, positions, highlights, and notebooks offline in IndexedDB. Optionally sign in with a passkey to sync across devices and use AI chat.
 
 ## Features
 
 - **Drag-and-drop loading** — drop `.epub` or `.pdf` files anywhere on the page
 - **Local-first storage** — books, positions, highlights, notebooks, and settings in IndexedDB
-- **Dockview workspace** — multi-panel layout (reader, chat, notebook, bookmarks, history, catalog)
-- **Layout modes** — focused (one book cluster) or freeform; single page, two-page spread, continuous scroll
+- **Reading and library shells** — `ReadingShell` pairs the reader with Notes, Discuss, and Outline; `LibraryFrame` hosts browsing and imports
+- **Reading layouts** — single page, two-page spread, or continuous scroll
 - **Typography controls** — font family, size, line height, and dark/sepia themes
 - **Reading progress** — publisher page numbers when available, otherwise character-based locations
 - **Position memory** — resumes where you left off per book (CFI for EPUB, page for PDF)
@@ -24,7 +24,6 @@ A browser-based ebook and PDF reader. Drag and drop `.epub` or `.pdf` files (or 
 - [TypeScript](https://typescriptlang.org/)
 - [Tailwind CSS v4](https://tailwindcss.com/)
 - [shadcn/ui](https://ui.shadcn.com/) (Base UI)
-- [dockview](https://dockview.dev/) — workspace panels
 - [`@readmaxxing/epub-successor`](./packages/epub-successor/) — vendored EPUB 2/3 parsing and rendering
 - [pdfjs-dist](https://mozilla.github.io/pdf.js/) — PDF rendering
 - [TipTap](https://tiptap.dev/) — notebooks

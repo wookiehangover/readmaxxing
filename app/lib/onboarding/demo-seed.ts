@@ -11,7 +11,6 @@ import { AnnotationService } from "~/lib/stores/annotations-store";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import type { ChatSession } from "~/lib/stores/chat-store";
 import { ReadingPositionService } from "~/lib/stores/position-store";
-import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { getActiveSessionStore, getChatSessionStore } from "~/lib/sync/stores";
 
 const ONBOARDING_FLAG = "demo-onboarding";
@@ -81,7 +80,6 @@ export async function provisionDemoContent(book: BookMeta) {
   }
 
   await saveDemoChat(book.id);
-  await Promise.all([WorkspaceService.clearLayout(), WorkspaceService.clearFocusedState()]);
   return book;
 }
 

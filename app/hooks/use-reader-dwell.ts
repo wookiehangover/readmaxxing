@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import type { DockviewPanelApi } from "dockview-react";
 import { useAuth } from "~/lib/context/auth-context";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 
@@ -18,7 +17,6 @@ interface UseReaderDwellOptions {
   bookId: string;
   unit: ReadingDwellUnit | null;
   displayPage?: number | null;
-  panelApi?: DockviewPanelApi;
   enabled?: boolean;
   dwellMs?: number;
 }
@@ -100,7 +98,6 @@ export function useReaderDwell({
   bookId,
   unit,
   displayPage,
-  panelApi,
   enabled = true,
   dwellMs = READER_DWELL_MS,
 }: UseReaderDwellOptions): void {
@@ -120,7 +117,6 @@ export function useReaderDwell({
 
     let cancelled = false;
     let fingerprint: string | null = null;
-    let panelVisible = panelApi?.isVisible ?? true;
     let remainingMs = dwellMs;
     let startedAt = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -130,7 +126,6 @@ export function useReaderDwell({
       const activeBookId = workspace?.activeClusterBookIdRef.current;
       return (
         document.visibilityState === "visible" &&
-        panelVisible &&
         (activeBookId === null || activeBookId === undefined || activeBookId === bookId)
       );
     };
@@ -201,10 +196,6 @@ export function useReaderDwell({
 
     const handleVisibilityChange = () => syncTimer();
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    const panelVisibility = panelApi?.onDidVisibilityChange((event) => {
-      panelVisible = event.isVisible;
-      syncTimer();
-    });
     const unsubscribeClusters = workspace?.subscribeClusterChanges(syncTimer);
 
     void computeFingerprint([userId, bookId, locator])
@@ -220,19 +211,7 @@ export function useReaderDwell({
       controller.abort();
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      panelVisibility?.dispose();
       unsubscribeClusters?.();
     };
-  }, [
-    bookId,
-    dwellMs,
-    enabled,
-    hasText,
-    isAuthenticated,
-    locator,
-    panelApi,
-    unitKind,
-    userId,
-    workspace,
-  ]);
+  }, [bookId, dwellMs, enabled, hasText, isAuthenticated, locator, unitKind, userId, workspace]);
 }

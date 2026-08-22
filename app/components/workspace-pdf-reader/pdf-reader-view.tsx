@@ -1,4 +1,3 @@
-import type { DockviewPanelApi } from "dockview-react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -8,11 +7,7 @@ import {
   TableOfContents,
 } from "lucide-react";
 import { TocList } from "~/components/book-list";
-import {
-  ReaderActionsMenu,
-  ReaderFormattingMenu,
-  ReaderSettingsMenu,
-} from "~/components/reader-settings-menu";
+import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { SearchBar } from "~/components/search-bar";
 import { Button } from "~/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "~/components/ui/popover";
@@ -27,7 +22,6 @@ function blurPageTurnControl(event: React.PointerEvent<HTMLButtonElement>) {
 }
 
 interface PdfReaderViewProps {
-  panelApi?: DockviewPanelApi;
   containerRef: React.RefObject<HTMLDivElement | null>;
   localSettings: Settings;
   onUpdateSettings: (update: Partial<Settings>) => void;
@@ -63,7 +57,6 @@ interface PdfReaderViewProps {
 }
 
 export function PdfReaderView({
-  panelApi,
   containerRef,
   localSettings,
   onUpdateSettings,
@@ -99,29 +92,27 @@ export function PdfReaderView({
 }: PdfReaderViewProps) {
   return (
     <>
-      {!panelApi ? (
-        <ReadingRailMenuPortal>
-          <ReaderSettingsMenu
-            settings={localSettings}
-            onUpdateSettings={onUpdateSettings}
-            isPdf
-            book={book}
-            onDownload={onDownload}
-            onBookmarkPage={onBookmarkPage}
-            isBookmarked={isBookmarked}
-            bookmarksLoaded={bookmarksLoaded}
-            toc={toc}
-            onNavigateToToc={(href) => {
-              try {
-                const destination = JSON.parse(href);
-                if (typeof destination === "number") goToPage(destination + 1);
-              } catch {
-                // Ignore malformed PDF destinations.
-              }
-            }}
-          />
-        </ReadingRailMenuPortal>
-      ) : null}
+      <ReadingRailMenuPortal>
+        <ReaderSettingsMenu
+          settings={localSettings}
+          onUpdateSettings={onUpdateSettings}
+          isPdf
+          book={book}
+          onDownload={onDownload}
+          onBookmarkPage={onBookmarkPage}
+          isBookmarked={isBookmarked}
+          bookmarksLoaded={bookmarksLoaded}
+          toc={toc}
+          onNavigateToToc={(href) => {
+            try {
+              const destination = JSON.parse(href);
+              if (typeof destination === "number") goToPage(destination + 1);
+            } catch {
+              // Ignore malformed PDF destinations.
+            }
+          }}
+        />
+      </ReadingRailMenuPortal>
       <div className="relative flex-1 overflow-hidden">
         {searchOpen && (
           <div className="absolute top-0 right-0 left-0 z-10">
@@ -272,22 +263,6 @@ export function PdfReaderView({
                 </ul>
               </PopoverContent>
             </Popover>
-          )}
-          {panelApi && (
-            <>
-              <ReaderFormattingMenu
-                settings={localSettings}
-                onUpdateSettings={onUpdateSettings}
-                isPdf
-              />
-              <ReaderActionsMenu
-                book={book}
-                onDownload={onDownload}
-                onBookmarkPage={onBookmarkPage}
-                isBookmarked={isBookmarked}
-                bookmarksLoaded={bookmarksLoaded}
-              />
-            </>
           )}
         </div>
       </div>

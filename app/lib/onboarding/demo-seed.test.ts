@@ -16,7 +16,6 @@ import {
 import { spineIndexFromCfi } from "~/lib/epub/successor-reader-adapter";
 import { isFirstVisit } from "~/lib/onboarding/demo-seed";
 import type { ChatSession } from "~/lib/stores/chat-store";
-import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { booksSaga } from "~/lib/themis/books/books-sagas";
 import { seedDemoBookRequested } from "~/lib/themis/books/books-slice";
 import { createAppStore, type AppStore } from "~/lib/themis/store";
@@ -83,7 +82,6 @@ beforeEach(async () => {
     del(DEMO_BOOK_ID, getNotebookStore()),
     del(DEMO_BOOK_ID, getChatSessionStore()),
     del(DEMO_BOOK_ID, getActiveSessionStore()),
-    Promise.all([WorkspaceService.clearLayout(), WorkspaceService.clearFocusedState()]),
   ]);
 
   vi.stubGlobal(
@@ -193,25 +191,5 @@ describe("seedDemo", () => {
     const store = await seedDemoThroughSaga();
     expect(store.state.books.error).not.toBeNull();
     expect(window.localStorage.getItem("demo-onboarding")).toBeNull();
-  });
-
-  it("clears stale workspace state when provisioning the first-visit demo", async () => {
-    await Promise.all([
-      WorkspaceService.saveLayout({ grid: {}, panels: { stale: {} } } as never),
-      WorkspaceService.saveFocusedState({
-        order: ["stale-book"],
-        activeBookId: "stale-book",
-        clusters: [],
-      }),
-    ]);
-
-    await seedDemoThroughSaga();
-
-    const [layout, focusedState] = await Promise.all([
-      WorkspaceService.getLayout(),
-      WorkspaceService.getFocusedState(),
-    ]);
-    expect(layout).toBeNull();
-    expect(focusedState).toBeNull();
   });
 });

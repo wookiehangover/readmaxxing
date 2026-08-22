@@ -1,29 +1,36 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { DockviewApi } from "dockview-react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  clearPendingBookOpenOnWorkspaceExit,
-  deferBookOpenUntilWorkspaceReady,
-  useWorkspacePanels,
-  type UseWorkspacePanelsParams,
-  type UseWorkspacePanelsResult,
-} from "~/hooks/use-workspace-panels";
+import { useDemoOnboarding } from "~/hooks/use-demo-onboarding";
+import { useWorkspacePanels, type UseWorkspacePanelsResult } from "~/hooks/use-workspace-panels";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { recordBookOpened } from "~/lib/themis/workspace-restore/workspace-restore-slice";
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), getNotebook: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  navigate: vi.fn(),
+  openReadingTab: vi.fn(),
+  pathname: "/library",
+  setActiveCluster: vi.fn(),
+}));
 
-vi.mock("react-router", () => ({ useNavigate: () => vi.fn() }));
-vi.mock("~/lib/themis/provider", () => ({ useAppStore: () => ({ dispatch: mocks.dispatch }) }));
-vi.mock("~/lib/stores/annotations-store", () => ({
-  AnnotationService: { getNotebook: mocks.getNotebook },
+vi.mock("react-router", () => ({
+  useLocation: () => ({ pathname: mocks.pathname }),
+  useNavigate: () => mocks.navigate,
+}));
+vi.mock("~/components/reading-shell/mobile-reading-tabs", () => ({
+  openMobileReadingTab: mocks.openReadingTab,
+}));
+vi.mock("~/lib/context/workspace-context", () => ({
+  useWorkspace: () => ({ setActiveCluster: mocks.setActiveCluster }),
+}));
+vi.mock("~/lib/themis/provider", () => ({
+  useAppStore: () => ({ dispatch: mocks.dispatch }),
 }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const roots: Root[] = [];
-
 const book: BookMeta = {
   id: "book-a",
   title: "Book A",
@@ -32,27 +39,13 @@ const book: BookMeta = {
   format: "epub",
 };
 
-function renderWorkspacePanels(api: DockviewApi): UseWorkspacePanelsResult {
+function renderWorkspacePanels(): UseWorkspacePanelsResult {
   let result: UseWorkspacePanelsResult | undefined;
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   roots.push(root);
-  const params = {
-    apiRef: { current: api },
-    ws: {
-      activeClusterBookIdRef: { current: null },
-      openNotebookRef: { current: null },
-      setActiveCluster: vi.fn(),
-    } as unknown as UseWorkspacePanelsParams["ws"],
-    isMobileRef: { current: false },
-    focusedClustersRef: { current: new Map() },
-    focusedOrderRef: { current: [] },
-    pendingOpenBookRef: { current: null },
-    layoutReadyRef: { current: true },
-    isWorkspaceRouteRef: { current: true },
-  } satisfies UseWorkspacePanelsParams;
 
   function Harness() {
-    result = useWorkspacePanels(params);
+    result = useWorkspacePanels();
     return null;
   }
 
@@ -66,133 +59,90 @@ afterEach(() => {
   roots.length = 0;
   document.body.innerHTML = "";
   mocks.dispatch.mockReset();
-  mocks.getNotebook.mockReset();
+  mocks.navigate.mockReset();
+  mocks.openReadingTab.mockReset();
+  mocks.setActiveCluster.mockReset();
+  mocks.pathname = "/library";
 });
 
-describe("openBook", () => {
-  it("records the open through the workspace restore saga action", () => {
-    mocks.getNotebook.mockResolvedValue(null);
-    const api = { panels: [], groups: [], addPanel: vi.fn() } as unknown as DockviewApi;
-
-    renderWorkspacePanels(api).openBook(book);
+describe("route-based workspace actions", () => {
+  it("records, activates, and navigates when opening a book", () => {
+    renderWorkspacePanels().openBook(book);
 
     expect(mocks.dispatch).toHaveBeenCalledWith(recordBookOpened(book.id));
-  });
-});
-
-describe("openOutline", () => {
-  it("focuses the existing outline panel", () => {
-    const focus = vi.fn();
-    const addPanel = vi.fn();
-    const api = {
-      panels: [{ id: `outline-${book.id}`, focus }],
-      groups: [],
-      addPanel,
-    } as unknown as DockviewApi;
-
-    renderWorkspacePanels(api).openOutline(book);
-
-    expect(focus).toHaveBeenCalledOnce();
-    expect(addPanel).not.toHaveBeenCalled();
+    expect(mocks.setActiveCluster).toHaveBeenCalledWith(book.id);
+    expect(mocks.navigate).toHaveBeenCalledWith("/books/book-a");
   });
 
-  it("adds a new outline panel to the book's right group", () => {
-    const group = {
-      element: { getBoundingClientRect: () => ({ left: 0, right: 400 }) },
-    };
-    const bookPanel = {
-      id: `book-${book.id}`,
-      params: { bookId: book.id },
-      group,
-    };
-    const addPanel = vi.fn();
-    const api = {
-      panels: [bookPanel],
-      groups: [group],
-      addPanel,
-    } as unknown as DockviewApi;
+  it("records and activates an already-open book without navigating again", () => {
+    mocks.pathname = "/books/book-a";
 
-    renderWorkspacePanels(api).openOutline(book);
+    renderWorkspacePanels().openBook(book);
 
-    expect(addPanel).toHaveBeenCalledWith({
-      id: `outline-${book.id}`,
-      component: "outline",
-      title: `Outline: ${book.title}`,
-      params: { bookId: book.id, bookTitle: book.title },
-      renderer: "always",
-      position: { referencePanel: bookPanel.id, direction: "right" },
-    });
-  });
-});
-
-describe("deferBookOpenUntilWorkspaceReady", () => {
-  it("queues before navigating when the workspace is not active", () => {
-    const pending = { current: null as BookMeta | null };
-    const navigate = vi.fn(() => {
-      expect(pending.current).toBe(book);
-    });
-
-    const deferred = deferBookOpenUntilWorkspaceReady(book, {
-      layoutReadyRef: { current: false },
-      isWorkspaceRouteRef: { current: false },
-      pendingOpenBookRef: pending,
-      navigate,
-    });
-
-    expect(deferred).toBe(true);
-    expect(pending.current).toBe(book);
-    expect(navigate).toHaveBeenCalledWith("/books/book-a");
+    expect(mocks.dispatch).toHaveBeenCalledWith(recordBookOpened(book.id));
+    expect(mocks.setActiveCluster).toHaveBeenCalledWith(book.id);
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it("queues without navigating while the workspace layout is restoring", () => {
-    const pending = { current: null as BookMeta | null };
-    const navigate = vi.fn();
+  it("navigates once when demo onboarding opens the book, notebook, and chat together", () => {
+    const root = createRoot(document.body.appendChild(document.createElement("div")));
+    roots.push(root);
 
-    const deferred = deferBookOpenUntilWorkspaceReady(book, {
-      layoutReadyRef: { current: false },
-      isWorkspaceRouteRef: { current: true },
-      pendingOpenBookRef: pending,
-      navigate,
-    });
+    function DemoOnboardingHarness() {
+      const { openBook, openNotebook, openChat } = useWorkspacePanels();
 
-    expect(deferred).toBe(true);
-    expect(pending.current).toBe(book);
-    expect(navigate).not.toHaveBeenCalled();
+      useDemoOnboarding({
+        demoBook: book,
+        layoutReady: true,
+        sidebarCollapsed: true,
+        updateSettings: vi.fn(),
+        openBook,
+        openNotebook,
+        openChat,
+      });
+      return null;
+    }
+
+    act(() => root.render(React.createElement(DemoOnboardingHarness)));
+
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/books/book-a");
+    expect(mocks.openReadingTab.mock.calls).toEqual([
+      ["Notes", "book-a"],
+      ["Discuss", "book-a"],
+    ]);
   });
 
-  it("takes the immediate-open path without a dockview instance", () => {
-    const pending = { current: book as BookMeta | null };
-    const isWorkspaceRouteRef = { current: false };
-    isWorkspaceRouteRef.current = true;
-    const navigate = vi.fn();
+  it("opens notes, chat, and outline through reading rail tabs", () => {
+    const panels = renderWorkspacePanels();
 
-    const deferred = deferBookOpenUntilWorkspaceReady(book, {
-      layoutReadyRef: { current: true },
-      isWorkspaceRouteRef,
-      pendingOpenBookRef: pending,
-      navigate,
-    });
+    panels.openNotebook(book);
+    panels.openChat(book);
+    panels.openOutline(book);
 
-    expect(deferred).toBe(false);
-    expect(pending.current).toBeNull();
-    expect(navigate).not.toHaveBeenCalled();
-  });
-});
-
-describe("clearPendingBookOpenOnWorkspaceExit", () => {
-  it("preserves a book queued during the transition into the workspace", () => {
-    const pending = { current: book as BookMeta | null };
-
-    clearPendingBookOpenOnWorkspaceExit(false, true, pending);
-
-    expect(pending.current).toBe(book);
+    expect(mocks.openReadingTab.mock.calls).toEqual([
+      ["Notes", "book-a"],
+      ["Discuss", "book-a"],
+      ["Outline", "book-a"],
+    ]);
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/books/book-a");
   });
 
-  it("clears a pending book only when leaving the workspace", () => {
-    const pending = { current: book as BookMeta | null };
+  it.each([
+    ["openNotebook", "Notes"],
+    ["openChat", "Discuss"],
+  ] as const)("navigates when %s opens a book from outside the reading route", (action, tab) => {
+    renderWorkspacePanels()[action](book);
 
-    clearPendingBookOpenOnWorkspaceExit(true, false, pending);
+    expect(mocks.openReadingTab).toHaveBeenCalledWith(tab, "book-a");
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/books/book-a");
+  });
 
-    expect(pending.current).toBeNull();
+  it("switches the rail immediately without navigating when already reading the book", () => {
+    mocks.pathname = "/books/book-a";
+
+    renderWorkspacePanels().openChat(book);
+
+    expect(mocks.openReadingTab).toHaveBeenCalledWith("Discuss", "book-a");
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 });

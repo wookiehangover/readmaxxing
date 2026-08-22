@@ -47,9 +47,10 @@ function SharedEpubReader({
   const resolvedTheme = useResolvedTheme(settings.theme);
   const [readerLayout, setReaderLayout] = useState<ReaderLayout>("spread");
   const localSettings = { ...settings, readerLayout };
-  const [tocOpen, setTocOpen] = useState(false);
-  const { toolbarVisible, showToolbar, showToolbarPersistent, toggleToolbar, resetToolbarTimer } =
-    useToolbarAutoHide(Boolean(isMobile), settings.zenMode ?? false);
+  const { showToolbar, toggleToolbar } = useToolbarAutoHide(
+    Boolean(isMobile),
+    settings.zenMode ?? false,
+  );
   const onUpdateSettings = useCallback(
     (update: Partial<Settings>) => {
       if (update.readerLayout) setReaderLayout(update.readerLayout);
@@ -57,33 +58,25 @@ function SharedEpubReader({
     },
     [updateSettings],
   );
-  const {
-    toc,
-    currentChapterLabel,
-    currentPage,
-    totalPages,
-    loadError,
-    navigateToTocHref,
-    navigationInProgressRef,
-    markNavigationInProgress,
-  } = useEpubLifecycle({
-    bookId: `share:${shareId}`,
-    containerRef,
-    loadData,
-    initialPosition: currentCfi,
-    persistPosition: false,
-    readerLayout,
-    fontFamily: settings.fontFamily,
-    fontSize: settings.fontSize,
-    fontWeight: settings.fontWeight,
-    lineHeight: settings.lineHeight,
-    textAlign: settings.textAlign,
-    theme: resolvedTheme,
-    loadAndApplyHighlights: async () => {},
-    registerSelectionHandler: () => {},
-    renditionRef,
-    onRelocated: showToolbar,
-  });
+  const { toc, loadError, navigateToTocHref, navigationInProgressRef, markNavigationInProgress } =
+    useEpubLifecycle({
+      bookId: `share:${shareId}`,
+      containerRef,
+      loadData,
+      initialPosition: currentCfi,
+      persistPosition: false,
+      readerLayout,
+      fontFamily: settings.fontFamily,
+      fontSize: settings.fontSize,
+      fontWeight: settings.fontWeight,
+      lineHeight: settings.lineHeight,
+      textAlign: settings.textAlign,
+      theme: resolvedTheme,
+      loadAndApplyHighlights: async () => {},
+      registerSelectionHandler: () => {},
+      renditionRef,
+      onRelocated: showToolbar,
+    });
   const go = useCallback(
     (direction: "prev" | "next") => {
       const rendition = renditionRef.current;
@@ -117,23 +110,7 @@ function SharedEpubReader({
         onNext={() => go("next")}
       />
       <EpubReaderToolbar
-        zenMode={settings.zenMode ?? false}
-        toolbarVisible={toolbarVisible}
-        showToolbarPersistent={showToolbarPersistent}
-        resetToolbarTimer={resetToolbarTimer}
-        currentChapterLabel={currentChapterLabel}
-        currentPage={currentPage}
-        totalPages={totalPages}
-        isScrollMode={readerLayout === "scroll"}
-        isMobile={Boolean(isMobile)}
-        onPrevious={() => go("prev")}
-        onNext={() => go("next")}
-        onSearchOpen={() => {}}
-        onOpenNotebook={() => {}}
-        onOpenChat={() => {}}
         toc={toc}
-        tocOpen={tocOpen}
-        setTocOpen={setTocOpen}
         navigateToTocHref={navigateToTocHref}
         localSettings={localSettings}
         onUpdateSettings={onUpdateSettings}

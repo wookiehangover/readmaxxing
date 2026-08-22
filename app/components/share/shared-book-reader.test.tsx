@@ -127,6 +127,10 @@ describe("SharedBookReader", () => {
     expect(mocks.epubToolbar).toHaveBeenCalledOnce();
     const toolbarProps = mocks.epubToolbar.mock.calls[0]![0];
     expect(toolbarProps).toMatchObject({ localSettings: { readerLayout: "spread" } });
+    expect(toolbarProps).not.toHaveProperty("panelApi");
+    expect(toolbarProps).not.toHaveProperty("toolbarVisible");
+    expect(toolbarProps).not.toHaveProperty("onOpenNotebook");
+    expect(toolbarProps).not.toHaveProperty("onOpenChat");
     expect(toolbarProps).not.toHaveProperty("book");
     expect(toolbarProps).not.toHaveProperty("onBookmarkPage");
   });
@@ -159,6 +163,7 @@ describe("SharedBookReader", () => {
     expect(mocks.pdfView).toHaveBeenCalledOnce();
     const viewProps = mocks.pdfView.mock.calls[0]![0];
     expect(viewProps).toMatchObject({ localSettings: { pdfLayout: "fit-height" } });
+    expect(viewProps).not.toHaveProperty("panelApi");
     expect(viewProps).not.toHaveProperty("book");
     expect(viewProps).not.toHaveProperty("onBookmarkPage");
     expect(viewProps).not.toHaveProperty("onOpenNotebook");

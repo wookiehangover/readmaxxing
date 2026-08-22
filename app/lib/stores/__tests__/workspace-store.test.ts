@@ -1,11 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { createStore, entries, get, set } from "idb-keyval";
+import { createStore, entries, set } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import {
   WorkspaceService as LiveWorkspaceService,
   makeWorkspaceService,
 } from "~/lib/stores/workspace-store";
-import type { SerializedDockview } from "dockview-react";
 
 type WorkspaceService = typeof LiveWorkspaceService;
 let currentService = LiveWorkspaceService;
@@ -22,7 +21,6 @@ namespace Effect {
   export type Effect<A, _E = never, _R = never> = Promise<A>;
 }
 const Effect = {
-  all: <A>(promises: Promise<A>[]) => Promise.all(promises),
   andThen: <A>(operation: (service: WorkspaceService) => Promise<A>) => operation,
   provide: <A>(promise: Promise<A>, _layer: unknown) => promise,
   runPromise: <A>(promise: Promise<A>) => promise,
@@ -35,148 +33,17 @@ vi.mock("idb-keyval", async (importOriginal) => {
 
 let testCounter = 0;
 
-function makeTestStores(): { layoutStore: UseStore; lastOpenedStore: UseStore } {
+function makeTestStores(): { lastOpenedStore: UseStore } {
   const suffix = `ws-test-${++testCounter}-${Date.now()}`;
-  const layoutStore = createStore(`layout-db-${suffix}`, "layout");
   const lastOpenedStore = createStore(`last-opened-db-${suffix}`, "last-opened");
-  return { layoutStore, lastOpenedStore };
+  return { lastOpenedStore };
 }
 
 function makeTestLayer(stores = makeTestStores()) {
   return Layer.succeed(WorkspaceService, makeWorkspaceService(stores));
 }
 
-function makeLayout(overrides: Partial<SerializedDockview> = {}): SerializedDockview {
-  return {
-    grid: { root: { type: "branch", data: [] }, width: 800, height: 600, orientation: 0 },
-    panels: {},
-    activeGroup: undefined,
-    ...overrides,
-  } as SerializedDockview;
-}
-
 describe("WorkspaceService", () => {
-  describe("saveLayout + getLayout", () => {
-    it("saves and retrieves the layout", async () => {
-      const layer = makeTestLayer();
-      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-      const layout = makeLayout();
-      await run(WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(layout))));
-      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getLayout())));
-      expect(result).not.toBeNull();
-      expect(result!.grid).toEqual(layout.grid);
-      expect(result!.panels).toEqual(layout.panels);
-    });
-
-    it("returns null when no layout saved", async () => {
-      const layer = makeTestLayer();
-      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getLayout())));
-      expect(result).toBeNull();
-    });
-
-    it("overwrites an existing layout", async () => {
-      const layer = makeTestLayer();
-      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-      const layout1 = makeLayout({ panels: { "panel-1": {} } } as any);
-      const layout2 = makeLayout({ panels: { "panel-2": {} } } as any);
-      await run(WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(layout1))));
-      await run(WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(layout2))));
-      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getLayout())));
-      expect(result!.panels).toEqual({ "panel-2": {} });
-    });
-
-    it("clears saved layout and focused state", async () => {
-      const layer = makeTestLayer();
-      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-      await run(WorkspaceService.pipe(Effect.andThen((s) => s.saveLayout(makeLayout()))));
-      await run(
-        WorkspaceService.pipe(
-          Effect.andThen((s) =>
-            s.saveFocusedState({ order: [], activeBookId: null, clusters: [] }),
-          ),
-        ),
-      );
-
-      await run(
-        WorkspaceService.pipe(
-          Effect.andThen((s) => Effect.all([s.clearLayout(), s.clearFocusedState()])),
-        ),
-      );
-
-      await expect(
-        run(WorkspaceService.pipe(Effect.andThen((s) => s.getLayout()))),
-      ).resolves.toBeNull();
-      await expect(
-        run(WorkspaceService.pipe(Effect.andThen((s) => s.getFocusedState()))),
-      ).resolves.toBeNull();
-    });
-
-    it("migrates a legacy focused-mode layout into the single layout slot", async () => {
-      const stores = makeTestStores();
-      const legacy = makeLayout({ panels: { legacy: {} } } as any);
-      await set("dockview-layout-focused", legacy, stores.layoutStore);
-      const layer = makeTestLayer(stores);
-      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-
-      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getLayout())));
-      expect(result!.panels).toEqual({ legacy: {} });
-
-      const legacyAfter = await get("dockview-layout-focused", stores.layoutStore);
-      expect(legacyAfter).toBeUndefined();
-    });
-
-    it("does not overwrite an existing layout during migration", async () => {
-      const stores = makeTestStores();
-      const legacy = makeLayout({ panels: { legacy: {} } } as any);
-      const existing = makeLayout({ panels: { existing: {} } } as any);
-      await set("dockview-layout-focused", legacy, stores.layoutStore);
-      await set("dockview-layout", existing, stores.layoutStore);
-      const layer = makeTestLayer(stores);
-      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-
-      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getLayout())));
-      expect(result!.panels).toEqual({ existing: {} });
-
-      const legacyAfter = await get("dockview-layout-focused", stores.layoutStore);
-      expect(legacyAfter).toBeUndefined();
-    });
-
-    it("drops the obsolete legacy freeform layout key", async () => {
-      const stores = makeTestStores();
-      const freeform = makeLayout({ panels: { ff: {} } } as any);
-      await set("dockview-layout-freeform", freeform, stores.layoutStore);
-      const layer = makeTestLayer(stores);
-      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-
-      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getLayout())));
-      expect(result).toBeNull();
-
-      const freeformAfter = await get("dockview-layout-freeform", stores.layoutStore);
-      expect(freeformAfter).toBeUndefined();
-    });
-
-    it("clears and ignores malformed saved layouts", async () => {
-      const stores = makeTestStores();
-      await set("dockview-layout", { panels: {} }, stores.layoutStore);
-      const layer = makeTestLayer(stores);
-      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-
-      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getLayout())));
-
-      expect(result).toBeNull();
-      await expect(get("dockview-layout", stores.layoutStore)).resolves.toBeUndefined();
-    });
-  });
-
   describe("saveLastOpened + getLastOpenedMap", () => {
     it("saves and retrieves last-opened timestamps", async () => {
       const layer = makeTestLayer();
@@ -243,63 +110,6 @@ describe("WorkspaceService", () => {
       const map = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())));
       expect(map.size).toBe(1);
       expect(map.get("book-1")).toBe(2000);
-    });
-  });
-
-  describe("saveFocusedState + getFocusedState", () => {
-    it("saves and retrieves focused-mode open cluster state", async () => {
-      const layer = makeTestLayer();
-      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-      const state = {
-        order: ["book-1", "book-2"],
-        activeBookId: "book-2",
-        clusters: [
-          {
-            bookId: "book-1",
-            bookTitle: "First Book",
-            bookFormat: "epub",
-            hasChat: true,
-            hasNotebook: false,
-            activeTab: "chat" as const,
-          },
-          {
-            bookId: "book-2",
-            bookTitle: "Second Book",
-            hasChat: true,
-            hasNotebook: true,
-            activeTab: "notebook" as const,
-          },
-        ],
-      };
-
-      await run(WorkspaceService.pipe(Effect.andThen((s) => s.saveFocusedState(state))));
-      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getFocusedState())));
-
-      expect(result).toEqual(state);
-    });
-
-    it("returns null when no focused state is saved", async () => {
-      const layer = makeTestLayer();
-      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-
-      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getFocusedState())));
-
-      expect(result).toBeNull();
-    });
-
-    it("clears and ignores malformed focused state", async () => {
-      const stores = makeTestStores();
-      await set("focused-workspace-state", { order: ["book-1"] }, stores.layoutStore);
-      const layer = makeTestLayer(stores);
-      const run = <A, E>(e: Effect.Effect<A, E, WorkspaceService>) =>
-        Effect.runPromise(Effect.provide(e, layer));
-
-      const result = await run(WorkspaceService.pipe(Effect.andThen((s) => s.getFocusedState())));
-
-      expect(result).toBeNull();
-      await expect(get("focused-workspace-state", stores.layoutStore)).resolves.toBeUndefined();
     });
   });
 });

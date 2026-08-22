@@ -128,6 +128,33 @@ function applyLayoutToViewer(viewer: any, layout: PdfLayout): void {
   viewer.currentScaleValue = layoutToScaleValue(layout);
 }
 
+export function observePdfViewerResize(container: HTMLElement, getViewer: () => any): () => void {
+  if (typeof ResizeObserver === "undefined") return () => {};
+
+  let rafId: number | null = null;
+  const observer = new ResizeObserver(() => {
+    if (rafId !== null) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      const viewer = getViewer();
+      if (!viewer || typeof viewer.update !== "function") return;
+
+      const scaleValue = viewer.currentScaleValue;
+      if (typeof scaleValue === "string" && Number.isNaN(Number(scaleValue))) {
+        viewer.currentScaleValue = scaleValue;
+      } else {
+        viewer.update();
+      }
+    });
+  });
+  observer.observe(container);
+
+  return () => {
+    observer.disconnect();
+    if (rafId !== null) cancelAnimationFrame(rafId);
+  };
+}
+
 export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleReturn {
   const {
     bookId,
@@ -233,6 +260,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     setLoadError(false);
 
     let cancelled = false;
+    const disconnectResizeObserver = observePdfViewerResize(el, () => viewerRef.current);
     if (persistPosition) registerActiveReader(bookId);
 
     const init = async () => {
@@ -428,6 +456,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       cancelled = true;
       document.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("pagehide", flushPositionSave);
+      disconnectResizeObserver();
       flushPositionSave();
       if (persistPosition) unregisterActiveReader(bookId);
       setToc([]);

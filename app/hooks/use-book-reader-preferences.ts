@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import type { DockviewPanelApi } from "dockview-react";
 import type { PanelTypographyParams } from "~/components/workspace-book-reader";
 import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
 import type { FontWeight, ReaderLayout, Settings, TextAlign } from "~/lib/settings";
@@ -11,7 +10,6 @@ import {
 
 interface UseBookReaderPreferencesOptions {
   bookId: string;
-  panelApi?: DockviewPanelApi;
   panelTypography?: PanelTypographyParams;
   settings: Settings;
   renditionRef: React.RefObject<SuccessorRenditionAdapter | null>;
@@ -23,7 +21,6 @@ interface UseBookReaderPreferencesOptions {
 
 export function useBookReaderPreferences({
   bookId,
-  panelApi,
   panelTypography,
   settings,
   renditionRef,
@@ -137,17 +134,6 @@ export function useBookReaderPreferences({
       saveBookPreferences(bookId, updatedPreferences).catch((error) =>
         console.error("Failed to save book preferences:", error),
       );
-
-      if (panelApi) {
-        const parameterUpdates: Record<string, unknown> = {};
-        if (update.fontFamily !== undefined) parameterUpdates.fontFamily = update.fontFamily;
-        if (update.fontSize !== undefined) parameterUpdates.fontSize = update.fontSize;
-        if (update.fontWeight !== undefined) parameterUpdates.fontWeight = update.fontWeight;
-        if (update.lineHeight !== undefined) parameterUpdates.lineHeight = update.lineHeight;
-        if (update.textAlign !== undefined) parameterUpdates.textAlign = update.textAlign;
-        if (update.readerLayout !== undefined) parameterUpdates.readerLayout = update.readerLayout;
-        if (Object.keys(parameterUpdates).length > 0) panelApi.updateParameters(parameterUpdates);
-      }
     },
     [
       bookId,
@@ -156,7 +142,6 @@ export function useBookReaderPreferences({
       fontWeight,
       lineHeight,
       navigationRef,
-      panelApi,
       readerLayout,
       renditionRef,
       textAlign,

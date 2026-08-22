@@ -3,7 +3,9 @@ import { Tabs } from "@base-ui/react/tabs";
 import { TocList } from "~/components/book-list";
 import { ChatPanel } from "~/components/chat/chat-panel";
 import {
+  getRememberedMobileReadingTab,
   MOBILE_READING_TAB_EVENT,
+  rememberMobileReadingTab,
   type MobileReadingTab,
 } from "~/components/reading-shell/mobile-reading-tabs";
 import { READING_RAIL_MENU_ID } from "~/components/reading-shell/reading-rail-menu-portal";
@@ -22,17 +24,6 @@ import { cn } from "~/lib/utils";
 
 const desktopTabs = ["Notes", "Discuss", "Outline"] as const;
 const mobileTabs = ["Read", ...desktopTabs] as const;
-const mobileTabStorageKeyPrefix = "reading-shell:mobile-tab:";
-
-function getRememberedMobileTab(bookId: string | null) {
-  if (!bookId) return null;
-  const tab = window.sessionStorage.getItem(`${mobileTabStorageKeyPrefix}${bookId}`);
-  return mobileTabs.find((candidate) => candidate === tab) ?? null;
-}
-
-function rememberMobileTab(bookId: string | null, tab: MobileReadingTab) {
-  if (bookId) window.sessionStorage.setItem(`${mobileTabStorageKeyPrefix}${bookId}`, tab);
-}
 
 export function ReadingRail({
   mobile = false,
@@ -62,11 +53,12 @@ export function ReadingRail({
   const hasTocShortcut = Boolean(chapterLabel && toc?.length && navigateToToc);
 
   useEffect(() => {
-    if (!mobile) return;
-    setActiveTab(getRememberedMobileTab(activeBookId) ?? "Read");
+    const rememberedTab = getRememberedMobileReadingTab(activeBookId);
+    if (mobile) setActiveTab(rememberedTab ?? "Read");
+    else if (rememberedTab && rememberedTab !== "Read") setActiveTab(rememberedTab);
     const handleOpenTab = (event: Event) => {
       const tab = (event as CustomEvent<MobileReadingTab>).detail;
-      rememberMobileTab(activeBookId, tab);
+      if (mobile) rememberMobileReadingTab(activeBookId, tab);
       setActiveTab(tab);
     };
     window.addEventListener(MOBILE_READING_TAB_EVENT, handleOpenTab);
@@ -101,7 +93,7 @@ export function ReadingRail({
         value={activeTab}
         onValueChange={(value) => {
           const tab = value as MobileReadingTab;
-          rememberMobileTab(activeBookId, tab);
+          rememberMobileReadingTab(activeBookId, tab);
           setActiveTab(tab);
         }}
         data-testid="mobile-reading-tabs"

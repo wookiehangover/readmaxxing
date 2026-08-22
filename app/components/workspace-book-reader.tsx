@@ -8,7 +8,6 @@ import type { FontWeight, PdfLayout, ReaderLayout } from "~/lib/settings";
 import { SpeedreadPopout } from "~/components/speedread-popout";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
-import type { DockviewPanelApi } from "dockview-react";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
@@ -21,7 +20,6 @@ import type {
 import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell";
 import { useBookReaderPreferences } from "~/hooks/use-book-reader-preferences";
 import { useBookReaderActions } from "~/hooks/use-book-reader-actions";
-import { useEpubPanelSync } from "~/hooks/use-epub-panel-sync";
 import { useReadingLocation } from "~/hooks/use-reading-location";
 import {
   EpubReaderSurface,
@@ -42,65 +40,35 @@ export interface PanelTypographyParams {
 
 interface WorkspaceBookReaderProps {
   bookId: string;
-  panelApi?: DockviewPanelApi;
   /** Initial typography overrides from restored panel params */
   panelTypography?: PanelTypographyParams;
 }
 
-export function WorkspaceBookReader({
-  bookId,
-  panelApi,
-  panelTypography,
-}: WorkspaceBookReaderProps) {
+export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookReaderProps) {
   const { navigationMap } = useWorkspace();
   // Ref holding the real navigateToCfi from the inner component once it mounts.
   // Before that, the placeholder callback queues CFIs into pendingCfiRef.
   const realNavRef = useRef<((cfi: string) => void) | null>(null);
   const pendingCfiRef = useRef<string | null>(null);
 
-  // Lifted from the inner component so the outer placeholder can force
-  // epub initialization when a navigation request arrives for a background panel.
-  const [hasBeenVisible, setHasBeenVisible] = useState(() =>
-    panelApi ? panelApi.isVisible : true,
-  );
-
-  useEffect(() => {
-    if (!panelApi || hasBeenVisible) return;
-    if (panelApi.isVisible) {
-      setHasBeenVisible(true);
-      return;
-    }
-    const disposable = panelApi.onDidVisibilityChange((e) => {
-      if (e.isVisible) {
-        setHasBeenVisible(true);
-        disposable.dispose();
-      }
-    });
-    return () => disposable.dispose();
-  }, [panelApi, hasBeenVisible]);
-
   // Stable placeholder callback registered immediately so the navigation map
   // has an entry even while book metadata is still loading.
-  // When the rendition isn't ready yet, queue the CFI and force the epub
-  // to start initializing by setting hasBeenVisible = true.
+  // When the rendition isn't ready yet, queue the CFI until initialization completes.
   const placeholderNav = useCallback((cfi: string) => {
     if (realNavRef.current) {
       realNavRef.current(cfi);
     } else {
       pendingCfiRef.current = cfi;
-      // Force epub initialization even if the panel hasn't been visible yet
-      setHasBeenVisible(true);
     }
   }, []);
 
   // Register the placeholder immediately — no waiting for book data.
   useEffect(() => {
-    const id = panelApi?.id ?? bookId;
-    navigationMap.current.set(id, placeholderNav);
+    navigationMap.current.set(bookId, placeholderNav);
     return () => {
-      navigationMap.current.delete(id);
+      navigationMap.current.delete(bookId);
     };
-  }, [bookId, panelApi, placeholderNav, navigationMap]);
+  }, [bookId, placeholderNav, navigationMap]);
 
   // Called by WorkspaceBookReaderInner once its rendition is ready
   const onRenditionReady = useCallback((nav: (cfi: string) => void) => {
@@ -138,9 +106,7 @@ export function WorkspaceBookReader({
   return (
     <WorkspaceBookReaderInner
       book={book}
-      panelApi={panelApi}
       panelTypography={panelTypography}
-      hasBeenVisible={hasBeenVisible}
       onRenditionReady={onRenditionReady}
     />
   );
@@ -152,16 +118,11 @@ export function WorkspaceBookReader({
  */
 function WorkspaceBookReaderInner({
   book,
-  panelApi,
   panelTypography,
-  hasBeenVisible,
   onRenditionReady,
 }: {
   book: BookMeta;
-  panelApi?: DockviewPanelApi;
   panelTypography?: PanelTypographyParams;
-  /** Whether the panel has been visible at least once (controlled by outer component) */
-  hasBeenVisible: boolean;
   /** Called once the rendition is ready so the outer component can connect the real navigate callback */
   onRenditionReady?: (navigateToCfi: (cfi: string) => void) => void;
 }) {
@@ -190,22 +151,19 @@ function WorkspaceBookReaderInner({
     onUpdateSettings: handleUpdateSettings,
   } = useBookReaderPreferences({
     bookId: book.id,
-    panelApi,
     panelTypography,
     settings,
     renditionRef,
     navigationRef: preferenceNavigationRef,
   });
 
-  const [tocOpen, setTocOpen] = useState(false);
   const [speedreadWords, setSpeedreadWords] = useState<string[]>([]);
   const [speedreadOpen, setSpeedreadOpen] = useState(false);
   const [readingDwellUnit, setReadingDwellUnit] = useState<ReadingDwellUnit | null>(null);
 
   const zenMode = settings.zenMode ?? false;
 
-  const { toolbarVisible, showToolbar, showToolbarPersistent, toggleToolbar, resetToolbarTimer } =
-    useToolbarAutoHide(isMobile ?? false, zenMode);
+  const { showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false, zenMode);
 
   const {
     searchOpen,
@@ -260,11 +218,9 @@ function WorkspaceBookReaderInner({
     totalPages,
     loadError,
     navigateToTocHref,
-    flushPositionSave,
     latestCfiRef,
     navigationInProgressRef,
     markNavigationInProgress,
-    markLayoutChangeInProgress,
   } = useEpubLifecycle({
     bookId: book.id,
     containerRef,
@@ -277,19 +233,15 @@ function WorkspaceBookReaderInner({
     theme: resolvedTheme,
     loadAndApplyHighlights,
     registerSelectionHandler,
-    enabled: hasBeenVisible,
-    panelId: panelApi?.id,
     chatContextMap,
     onReadingUnitChange: setReadingDwellUnit,
     onRenditionReady,
     onTocExtracted: (tocData) => {
-      const id = panelApi?.id ?? book.id;
-      tocMap.current.set(id, tocData);
+      tocMap.current.set(book.id, tocData);
       tocChangeListener.current?.();
     },
     onCleanupToc: () => {
-      const id = panelApi?.id ?? book.id;
-      tocMap.current.delete(id);
+      tocMap.current.delete(book.id);
       tocChangeListener.current?.();
     },
     onSearchOpen: handleSearchOpenFromIframe,
@@ -305,7 +257,6 @@ function WorkspaceBookReaderInner({
     bookId: book.id,
     unit: readingDwellUnit,
     displayPage: currentPage,
-    panelApi,
   });
 
   const bookmarkSyncVersion = useSyncListener(["bookmark"]);
@@ -318,12 +269,11 @@ function WorkspaceBookReaderInner({
   }, [book.id, bookmarkSyncVersion, store]);
 
   useEffect(() => {
-    const id = panelApi?.id ?? book.id;
-    tempHighlightMap.current.set(id, applyTemporaryHighlight);
+    tempHighlightMap.current.set(book.id, applyTemporaryHighlight);
     return () => {
-      tempHighlightMap.current.delete(id);
+      tempHighlightMap.current.delete(book.id);
     };
-  }, [book.id, panelApi, applyTemporaryHighlight, tempHighlightMap]);
+  }, [book.id, applyTemporaryHighlight, tempHighlightMap]);
 
   const removeHighlightAnnotation = useCallback(
     (cfiRange: string) => {
@@ -333,21 +283,11 @@ function WorkspaceBookReaderInner({
   );
 
   useEffect(() => {
-    const id = panelApi?.id ?? book.id;
-    highlightDeleteMap.current.set(id, removeHighlightAnnotation);
+    highlightDeleteMap.current.set(book.id, removeHighlightAnnotation);
     return () => {
-      highlightDeleteMap.current.delete(id);
+      highlightDeleteMap.current.delete(book.id);
     };
-  }, [book.id, panelApi, removeHighlightAnnotation, highlightDeleteMap]);
-
-  useEpubPanelSync({
-    panelApi,
-    containerRef,
-    renditionRef,
-    resolvedTheme,
-    flushPositionSave,
-    markLayoutChangeInProgress,
-  });
+  }, [book.id, removeHighlightAnnotation, highlightDeleteMap]);
 
   const handlePrev = useCallback(() => {
     const rendition = renditionRef.current;
@@ -379,7 +319,6 @@ function WorkspaceBookReaderInner({
     handleOpenSpeedread,
     handleBookmarkPage,
     handleOpenNotebook,
-    handleOpenChat,
   } = useBookReaderActions({
     book,
     bookmarks,
@@ -420,24 +359,7 @@ function WorkspaceBookReaderInner({
           onNext={handleNext}
         />
         <EpubReaderToolbar
-          panelApi={panelApi}
-          zenMode={zenMode}
-          toolbarVisible={toolbarVisible}
-          showToolbarPersistent={showToolbarPersistent}
-          resetToolbarTimer={resetToolbarTimer}
-          currentChapterLabel={currentChapterLabel}
-          currentPage={currentPage}
-          totalPages={totalPages}
-          isScrollMode={isScrollMode}
-          isMobile={Boolean(isMobile)}
-          onPrevious={handlePrev}
-          onNext={handleNext}
-          onSearchOpen={handleSearchOpen}
-          onOpenNotebook={handleOpenNotebook}
-          onOpenChat={handleOpenChat}
           toc={toc}
-          tocOpen={tocOpen}
-          setTocOpen={setTocOpen}
           navigateToTocHref={navigateToTocHref}
           localSettings={localSettings}
           onUpdateSettings={handleUpdateSettings}
@@ -449,8 +371,7 @@ function WorkspaceBookReaderInner({
           isBookmarked={Boolean(currentBookmark)}
           bookmarksLoaded={bookmarksLoaded}
         />
-        {/* Portal popovers to document.body to escape dockview's CSS transforms,
-            which create a new containing block and break position:fixed */}
+        {/* Portal popovers to document.body so position:fixed is viewport-relative. */}
         {selectionPopover &&
           createPortal(
             <HighlightPopover
