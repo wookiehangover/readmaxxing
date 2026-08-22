@@ -1,6 +1,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useDemoOnboarding } from "~/hooks/use-demo-onboarding";
 import { useWorkspacePanels, type UseWorkspacePanelsResult } from "~/hooks/use-workspace-panels";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { recordBookOpened } from "~/lib/themis/workspace-restore/workspace-restore-slice";
@@ -83,6 +84,34 @@ describe("route-based workspace actions", () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
+  it("navigates once when demo onboarding opens the book, notebook, and chat together", () => {
+    const root = createRoot(document.body.appendChild(document.createElement("div")));
+    roots.push(root);
+
+    function DemoOnboardingHarness() {
+      const { openBook, openNotebook, openChat } = useWorkspacePanels();
+
+      useDemoOnboarding({
+        demoBook: book,
+        layoutReady: true,
+        sidebarCollapsed: true,
+        updateSettings: vi.fn(),
+        openBook,
+        openNotebook,
+        openChat,
+      });
+      return null;
+    }
+
+    act(() => root.render(React.createElement(DemoOnboardingHarness)));
+
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/books/book-a");
+    expect(mocks.openReadingTab.mock.calls).toEqual([
+      ["Notes", "book-a"],
+      ["Discuss", "book-a"],
+    ]);
+  });
+
   it("opens notes, chat, and outline through reading rail tabs", () => {
     const panels = renderWorkspacePanels();
 
@@ -95,8 +124,17 @@ describe("route-based workspace actions", () => {
       ["Discuss", "book-a"],
       ["Outline", "book-a"],
     ]);
-    expect(mocks.navigate).toHaveBeenCalledTimes(3);
-    expect(mocks.navigate).toHaveBeenNthCalledWith(1, "/books/book-a");
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/books/book-a");
+  });
+
+  it.each([
+    ["openNotebook", "Notes"],
+    ["openChat", "Discuss"],
+  ] as const)("navigates when %s opens a book from outside the reading route", (action, tab) => {
+    renderWorkspacePanels()[action](book);
+
+    expect(mocks.openReadingTab).toHaveBeenCalledWith(tab, "book-a");
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/books/book-a");
   });
 
   it("switches the rail immediately without navigating when already reading the book", () => {

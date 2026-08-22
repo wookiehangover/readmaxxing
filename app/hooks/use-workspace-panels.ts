@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -22,25 +22,40 @@ export function useWorkspacePanels(): UseWorkspacePanelsResult {
   const location = useLocation();
   const store = useAppStore();
   const workspace = useWorkspace();
+  const pendingReadingPathRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    pendingReadingPathRef.current = null;
+  }, [location.pathname]);
+
+  const navigateToBook = useCallback(
+    (book: BookMeta) => {
+      if (getReadingBookId(location.pathname) === book.id) return;
+
+      const readingPath = getBookReadingPath(book.id);
+      if (pendingReadingPathRef.current === readingPath) return;
+
+      pendingReadingPathRef.current = readingPath;
+      void navigate(readingPath);
+    },
+    [location.pathname, navigate],
+  );
+
   const openBook = useCallback(
     (book: BookMeta) => {
       store.dispatch(recordBookOpened(book.id));
       workspace.setActiveCluster(book.id);
-      if (getReadingBookId(location.pathname) !== book.id) {
-        void navigate(getBookReadingPath(book.id));
-      }
+      navigateToBook(book);
     },
-    [location.pathname, navigate, store, workspace],
+    [navigateToBook, store, workspace],
   );
 
   const openReadingTool = useCallback(
     (book: BookMeta, tab: "Notes" | "Discuss" | "Outline") => {
       openMobileReadingTab(tab, book.id);
-      if (getReadingBookId(location.pathname) !== book.id) {
-        void navigate(getBookReadingPath(book.id));
-      }
+      navigateToBook(book);
     },
-    [location.pathname, navigate],
+    [navigateToBook],
   );
 
   const openNotebook = useCallback(
