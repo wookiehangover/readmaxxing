@@ -170,6 +170,9 @@ describe("seedDemo", () => {
     const book = store.booksSelectors.selectBookById.select(store.state, DEMO_BOOK_ID);
 
     expect(book?.id).toBe(DEMO_BOOK_ID);
+    expect(book?.coverImage).toBeInstanceOf(Blob);
+    expect(book?.coverImage?.size).toBeGreaterThan(0);
+    expect(book?.remoteCoverUrl).toBeUndefined();
     expect(await get(DEMO_BOOK_ID, getBookStore())).toMatchObject({ id: DEMO_BOOK_ID });
     expect(await get(DEMO_BOOK_ID, getBookDataStore())).toBeInstanceOf(ArrayBuffer);
     expect(await get(DEMO_BOOK_ID, getPositionStore())).toMatchObject({ cfi: expect.any(String) });
