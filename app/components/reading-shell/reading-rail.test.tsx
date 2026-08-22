@@ -92,6 +92,23 @@ vi.mock("~/lib/context/reading-chat-menu-context", () => ({
 }));
 vi.mock("~/components/share-dialog", () => ({ ShareDialog: () => null }));
 vi.mock("~/hooks/use-sync-listener", () => ({ useSyncListener: () => 0 }));
+vi.mock("~/components/reading-shell/reading-details-panel", () => ({
+  ReadingDetailsPanel: ({
+    book,
+    mobile,
+  }: {
+    book: { id: string; title: string };
+    mobile: boolean;
+  }) => (
+    <section
+      data-testid="reading-details-panel"
+      data-book-id={book.id}
+      data-mobile={String(mobile)}
+    >
+      {book.title}
+    </section>
+  ),
+}));
 vi.mock("~/lib/stores/book-store", () => ({
   BookService: {
     getBook: vi.fn(async (bookId: string) => themis.books.find((book) => book.id === bookId)),
@@ -301,11 +318,18 @@ describe("ReadingRail", () => {
     const bottomRow = tabList.parentElement!;
     const indicator = tabList.querySelector("[role='presentation']");
 
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Read", "Notes", "Discuss", "Outline"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      "Read",
+      "Notes",
+      "Discuss",
+      "Outline",
+      "Details",
+    ]);
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
     expect(rail.className).toContain("h-full");
     expect(rail.lastElementChild).toBe(bottomRow);
     expect(tabList.className).toContain("gap-5");
+    expect(tabList.className).toContain("overflow-x-auto");
     expect(tabList.className).not.toContain("grid");
     expect(bottomRow.className).not.toContain("border-t");
     expect(bottomRow.className).toContain("pb-3");
@@ -320,14 +344,14 @@ describe("ReadingRail", () => {
     expect(indicator?.className).toContain("transition-[left]");
   });
 
-  it("switches Read, Notes, Discuss, and Outline while keeping the book mounted", () => {
+  it("switches Read, Notes, Discuss, Outline, and Details while keeping the book mounted", () => {
     const container = renderMobileRail();
     const bookSurface = container.querySelector("[data-testid='book-surface']");
     const readPanel = bookSurface?.closest<HTMLElement>("[role='tabpanel']");
 
     expect(bookSurface).not.toBeNull();
     expect(readPanel?.hidden).toBe(false);
-    for (const tab of ["Notes", "Discuss", "Outline"] as const) {
+    for (const tab of ["Notes", "Discuss", "Outline", "Details"] as const) {
       clickTab(container, tab);
       expect(
         Array.from(container.querySelectorAll("button"))
@@ -340,6 +364,13 @@ describe("ReadingRail", () => {
       expect(container.querySelector("[data-testid='book-surface']")).toBe(bookSurface);
       expect(readPanel?.hidden).toBe(true);
       expect(readPanel?.hasAttribute("data-hidden")).toBe(true);
+
+      if (tab === "Details") {
+        const detailsPanel = activePanel?.querySelector("[data-testid='reading-details-panel']");
+        expect(detailsPanel?.getAttribute("data-book-id")).toBe("book-1");
+        expect(detailsPanel?.getAttribute("data-mobile")).toBe("true");
+        expect(detailsPanel?.textContent).toBe("The Power Broker");
+      }
     }
 
     clickTab(container, "Read");
@@ -374,15 +405,18 @@ describe("ReadingRail", () => {
   });
 
   it("applies a requested tab that was persisted before the rail mounted", () => {
-    openMobileReadingTab("Outline", "book-1");
+    openMobileReadingTab("Details", "book-1");
 
     const container = renderMobileRail();
 
     expect(
       Array.from(container.querySelectorAll("button"))
-        .find((tab) => tab.textContent === "Outline")
+        .find((tab) => tab.textContent === "Details")
         ?.getAttribute("aria-selected"),
     ).toBe("true");
+    expect(
+      visiblePanel(container)?.querySelector("[data-testid='reading-details-panel']"),
+    ).not.toBe(null);
   });
 
   it("does not force Read when the mobile effect reruns or the rail remounts", () => {
@@ -407,7 +441,7 @@ describe("ReadingRail", () => {
 
   it("remembers the last mobile tab independently for each book", () => {
     let container = renderMobileRail();
-    clickTab(container, "Discuss");
+    clickTab(container, "Details");
 
     workspace.activeClusterBookIdRef.current = "book-2";
     container = remountMobileRail();
@@ -422,9 +456,14 @@ describe("ReadingRail", () => {
     container = remountMobileRail();
     expect(
       Array.from(container.querySelectorAll("button"))
-        .find((tab) => tab.textContent === "Discuss")
+        .find((tab) => tab.textContent === "Details")
         ?.getAttribute("aria-selected"),
     ).toBe("true");
+    expect(
+      visiblePanel(container)
+        ?.querySelector("[data-testid='reading-details-panel']")
+        ?.getAttribute("data-book-id"),
+    ).toBe("book-1");
 
     workspace.activeClusterBookIdRef.current = "book-2";
     container = remountMobileRail();
@@ -503,7 +542,7 @@ describe("ReadingRail", () => {
     }
   });
 
-  it("switches Notes, Discuss, and Outline in place", () => {
+  it("switches Notes, Discuss, Outline, and Details in place", () => {
     const container = renderRail();
     expect(container.querySelector("[data-testid='production-editor']")).not.toBeNull();
 
@@ -514,6 +553,15 @@ describe("ReadingRail", () => {
     clickTab(container, "Outline");
     expect(visiblePanel(container)?.textContent).toContain("Loading outline");
     expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Outline");
+
+    clickTab(container, "Details");
+    const detailsPanel = visiblePanel(container)?.querySelector(
+      "[data-testid='reading-details-panel']",
+    );
+    expect(detailsPanel?.getAttribute("data-book-id")).toBe("book-1");
+    expect(detailsPanel?.getAttribute("data-mobile")).toBe("false");
+    expect(detailsPanel?.textContent).toBe("The Power Broker");
+    expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Details");
   });
 
   it("opens reader actions in the matching desktop tab", async () => {
@@ -549,7 +597,7 @@ describe("ReadingRail", () => {
     const tabList = container.querySelector("[aria-label='Reading tools']");
     const tabs = Array.from(tabList?.querySelectorAll("button") ?? []);
 
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Notes", "Discuss", "Outline"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Notes", "Discuss", "Outline", "Details"]);
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
     expect(container.querySelector("[data-testid='production-editor']")).not.toBeNull();
     expect(container.textContent).not.toContain("Nothing to review yet.");

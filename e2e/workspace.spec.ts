@@ -88,6 +88,20 @@ test.describe("Workspace route", () => {
     });
   });
 
+  test("desktop reader opens Details from the final reading tab", async ({ page }) => {
+    await uploadAndOpenBook(page);
+
+    const tabs = page.getByRole("tablist", { name: "Reading tools" });
+    const detailsTab = tabs.getByRole("tab", { name: "Details", exact: true });
+
+    await expect(tabs.getByRole("tab")).toHaveText(["Notes", "Discuss", "Outline", "Details"]);
+    await detailsTab.click();
+    await expect(detailsTab).toHaveAttribute("aria-selected", "true");
+    await expect(
+      page.getByRole("tabpanel").getByRole("heading", { name: "Test Book for E2E", exact: true }),
+    ).toBeVisible();
+  });
+
   test("mobile reader switches every full-screen tab and keeps the book mounted", async ({
     page,
   }) => {
@@ -100,7 +114,13 @@ test.describe("Workspace route", () => {
     const iframe = bookSurface.locator("iframe").first();
 
     await expect(tabs).toBeVisible();
-    await expect(tabs.getByRole("tab")).toHaveText(["Read", "Notes", "Discuss", "Outline"]);
+    await expect(tabs.getByRole("tab")).toHaveText([
+      "Read",
+      "Notes",
+      "Discuss",
+      "Outline",
+      "Details",
+    ]);
     await expect(tabs.getByRole("tab", { name: "Read", exact: true })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -109,12 +129,20 @@ test.describe("Workspace route", () => {
     await expect(iframe).toBeAttached();
     await iframe.evaluate((element) => element.setAttribute("data-mobile-reader-test", "mounted"));
 
-    for (const name of ["Notes", "Discuss", "Outline"]) {
+    for (const name of ["Notes", "Discuss", "Outline", "Details"]) {
       const tab = tabs.getByRole("tab", { name, exact: true });
       await tab.click();
       await expect(tab).toHaveAttribute("aria-selected", "true");
       await expect(bookSurface).toBeAttached();
       await expect(iframe).toHaveAttribute("data-mobile-reader-test", "mounted");
+
+      if (name === "Details") {
+        await expect(
+          mobileReader
+            .getByRole("tabpanel")
+            .getByRole("heading", { name: "Test Book for E2E", exact: true }),
+        ).toBeVisible();
+      }
     }
 
     await tabs.getByRole("tab", { name: "Read", exact: true }).click();
