@@ -222,6 +222,29 @@ async function waitForStableDemoLibrary(page: Page) {
     .toBe(true);
 }
 
+async function waitForStableLoginAction(page: Page, loginAction: string) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const browser = window as Window & {
+            __reactRouterDataRouter?: {
+              state: { location: { pathname: string }; navigation: { state: string } };
+            };
+          };
+          const router = browser.__reactRouterDataRouter;
+          return (
+            window.location.pathname === "/login" &&
+            router?.state.location.pathname === "/login" &&
+            router.state.navigation.state === "idle"
+          );
+        }),
+      { timeout: 10_000, intervals: [100, 250, 500] },
+    )
+    .toBe(true);
+  await expect(page.getByRole("button", { name: loginAction })).toBeEnabled();
+}
+
 test.describe("Bundled Gatsby onboarding", () => {
   test.describe.configure({ mode: "serial" });
   test.setTimeout(180_000);
@@ -245,6 +268,7 @@ test.describe("Bundled Gatsby onboarding", () => {
 
       const requests: CapturedRequest[] = [];
       const requestMap = new Map<Request, CapturedRequest>();
+      const authenticationRequests: CapturedRequest[] = [];
       const browserErrors: string[] = [];
       let documentRequestsAfterAuthentication = 0;
       let authenticationStarted = false;
@@ -266,6 +290,14 @@ test.describe("Bundled Gatsby onboarding", () => {
       page.on("response", (response) => {
         const captured = requestMap.get(response.request());
         if (captured) captured.status = response.status();
+        const pathname = new URL(response.url()).pathname;
+        if (pathname.startsWith("/api/auth/")) {
+          authenticationRequests.push({
+            method: response.request().method(),
+            url: pathname,
+            status: response.status(),
+          });
+        }
       });
       page.on("pageerror", (error) => browserErrors.push(error.message));
       page.on("console", (message) => {
@@ -299,11 +331,41 @@ test.describe("Bundled Gatsby onboarding", () => {
             await waitForStableDemoLibrary(page);
             await loginLink.click({ timeout: 5_000 });
           }
-          await expect(page).toHaveURL(/\/login$/);
+          await waitForStableLoginAction(page, loginAction);
         }).toPass({ timeout: 60_000, intervals: [100, 250, 500] });
         await expect(page).toHaveURL(/\/login$/);
         authenticationStarted = true;
+        const verificationPath =
+          loginAction === "Create account" ? "/api/auth/register-verify" : "/api/auth/login-verify";
+        const verificationResponse = page.waitForResponse(
+          (response) =>
+            new URL(response.url()).pathname === verificationPath &&
+            response.request().method() === "POST",
+          { timeout: 30_000 },
+        );
         await page.getByRole("button", { name: loginAction }).click();
+        const verifiedResponse = await verificationResponse;
+        expect(verifiedResponse.ok()).toBe(true);
+        const verifiedAccount = (await verifiedResponse.json()) as {
+          verified?: boolean;
+          userId?: string;
+          user?: { id?: string } | null;
+        };
+        expect(verifiedAccount.verified).toBe(true);
+        const verifiedUserId = verifiedAccount.userId ?? verifiedAccount.user?.id;
+        expect(verifiedUserId).toBeTruthy();
+
+        await expect
+          .poll(
+            async () => {
+              const response = await page.request.get("/api/auth/session");
+              if (!response.ok()) return null;
+              const session = (await response.json()) as { user?: { id?: string } | null };
+              return session.user?.id ?? null;
+            },
+            { timeout: 15_000 },
+          )
+          .toBe(verifiedUserId);
         await waitForAppHydration(page);
         await expect(page).not.toHaveURL(/\/login$/);
 
@@ -427,11 +489,16 @@ test.describe("Bundled Gatsby onboarding", () => {
       } catch (error) {
         console.error("Onboarding URL:", page.url());
         console.error("Onboarding network:", JSON.stringify(requests));
+        console.error("Authentication network:", JSON.stringify(authenticationRequests));
         console.error("Browser errors:", JSON.stringify(browserErrors));
         throw error;
       } finally {
         await testInfo.attach("authenticated-onboarding-network", {
           body: JSON.stringify(requests, null, 2),
+          contentType: "application/json",
+        });
+        await testInfo.attach("authentication-network", {
+          body: JSON.stringify(authenticationRequests, null, 2),
           contentType: "application/json",
         });
         await testInfo.attach("browser-errors", {
