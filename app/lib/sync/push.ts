@@ -142,10 +142,18 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
     });
   }
 
-  // Fire-and-forget file uploads after metadata push succeeds
-  uploadPendingFiles(ctx.fileUploadContext, { isStopped: ctx.isStopped }).catch((err) =>
-    console.error("[sync] File upload pass failed:", err),
+  // The upload pass scans every local book, so wait until all queued book
+  // upserts were accepted before exposing their files to the ownership check.
+  const acceptedIdSet = new Set(acceptedIds);
+  const hasUnacceptedBookUpsert = pending.some(
+    (change) =>
+      change.entity === "book" && change.operation === "put" && !acceptedIdSet.has(change.id),
   );
+  if (!hasUnacceptedBookUpsert) {
+    uploadPendingFiles(ctx.fileUploadContext, { isStopped: ctx.isStopped }).catch((err) =>
+      console.error("[sync] File upload pass failed:", err),
+    );
+  }
 
   // If the batch was full there are (likely) more pending changes. Schedule
   // an immediate follow-up push so a backlog drains quickly without waiting

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStore, clear } from "idb-keyval";
 import { recordChange, getUnsyncedChanges } from "../change-log";
+import * as fileUploads from "../file-uploads";
+import { pushChangesWithResult } from "../push";
 import { makeSyncEngine, PUSH_BATCH_SIZE } from "../sync-engine";
 import type { SyncPushRequest } from "../types";
 
@@ -16,6 +18,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -170,10 +173,12 @@ describe("pushChanges batching", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const uploadSpy = vi.spyOn(fileUploads, "uploadPendingFiles").mockResolvedValue(undefined);
     const engine = makeSyncEngine({ userId: "user-test" });
 
     await engine.pushChanges();
 
+    expect(uploadSpy).not.toHaveBeenCalled();
     expect(await getUnsyncedChanges()).toEqual([expect.objectContaining({ id: bookChange.id })]);
     expect(sentBatches[0].changes.map((change) => change.id)).toEqual(
       expect.arrayContaining([bookChange.id, positionChange.id]),
@@ -190,7 +195,9 @@ describe("pushChanges batching", () => {
     expect(sentBatches).toHaveLength(2);
     expect(sentBatches[1].changes).toEqual([expect.objectContaining({ id: bookChange.id })]);
     expect(await getUnsyncedChanges()).toHaveLength(0);
+    expect(uploadSpy).toHaveBeenCalledOnce();
 
+    uploadSpy.mockRestore();
     warnSpy.mockRestore();
   });
 
@@ -228,6 +235,7 @@ describe("pushChanges batching", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const uploadSpy = vi.spyOn(fileUploads, "uploadPendingFiles").mockResolvedValue(undefined);
     const engine = makeSyncEngine({ userId: "user-test" });
 
     await engine.pushChanges();
@@ -242,8 +250,105 @@ describe("pushChanges batching", () => {
 
     await engine.pushChanges();
     expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(uploadSpy).not.toHaveBeenCalled();
 
+    uploadSpy.mockRestore();
     warnSpy.mockRestore();
+  });
+
+  it("waits to upload until book metadata queued beyond the current batch is accepted", async () => {
+    for (let i = 0; i < PUSH_BATCH_SIZE; i++) {
+      await recordChange({
+        entity: "position",
+        entityId: `book-${i}`,
+        operation: "put",
+        data: { cfi: `cfi-${i}`, updatedAt: i },
+        timestamp: i,
+      });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const bookChange = await recordChange({
+      entity: "book",
+      entityId: "book-in-next-batch",
+      operation: "put",
+      data: { id: "book-in-next-batch", title: "Queued book" },
+      timestamp: PUSH_BATCH_SIZE,
+    });
+
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string) as SyncPushRequest;
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({
+          accepted: body.changes.map((change) => ({ id: change.id })),
+          rejected: [],
+          serverTimestamp: new Date().toISOString(),
+        }),
+      } as unknown as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const uploadSpy = vi.spyOn(fileUploads, "uploadPendingFiles").mockResolvedValue(undefined);
+    const scheduleFollowUpPush = vi.fn();
+    const context = {
+      fileUploadContext: { userId: "user-test", uploadRetryState: new Map() },
+      isStopped: () => false,
+      scheduleFollowUpPush,
+    };
+
+    await pushChangesWithResult(context);
+
+    expect(uploadSpy).not.toHaveBeenCalled();
+    expect(scheduleFollowUpPush).toHaveBeenCalledOnce();
+    expect(await getUnsyncedChanges()).toEqual([expect.objectContaining({ id: bookChange.id })]);
+
+    await pushChangesWithResult(context);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(uploadSpy).toHaveBeenCalledOnce();
+    expect(await getUnsyncedChanges()).toHaveLength(0);
+
+    uploadSpy.mockRestore();
+  });
+
+  it("still uploads pending files after accepted changes for already-owned books", async () => {
+    await recordChange({
+      entity: "position",
+      entityId: "already-owned-book",
+      operation: "put",
+      data: { bookId: "already-owned-book", cfi: "epubcfi(/6/2)", updatedAt: 1 },
+      timestamp: 1,
+    });
+
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string) as SyncPushRequest;
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({
+          accepted: body.changes.map((change) => ({ id: change.id })),
+          rejected: [],
+          serverTimestamp: new Date().toISOString(),
+        }),
+      } as unknown as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const uploadSpy = vi.spyOn(fileUploads, "uploadPendingFiles").mockResolvedValue(undefined);
+    const engine = makeSyncEngine({ userId: "user-test" });
+
+    await engine.pushChanges();
+
+    expect(uploadSpy).toHaveBeenCalledOnce();
+    expect(uploadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-test" }),
+      expect.objectContaining({ isStopped: expect.any(Function) }),
+    );
+
+    uploadSpy.mockRestore();
   });
 
   it("does not schedule a follow-up push when the batch was not full", async () => {
