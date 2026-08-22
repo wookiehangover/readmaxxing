@@ -9,10 +9,14 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   navigate: vi.fn(),
   openReadingTab: vi.fn(),
+  pathname: "/library",
   setActiveCluster: vi.fn(),
 }));
 
-vi.mock("react-router", () => ({ useNavigate: () => mocks.navigate }));
+vi.mock("react-router", () => ({
+  useLocation: () => ({ pathname: mocks.pathname }),
+  useNavigate: () => mocks.navigate,
+}));
 vi.mock("~/components/reading-shell/mobile-reading-tabs", () => ({
   openMobileReadingTab: mocks.openReadingTab,
 }));
@@ -53,7 +57,11 @@ afterEach(() => {
   for (const root of roots) act(() => root.unmount());
   roots.length = 0;
   document.body.innerHTML = "";
-  for (const mock of Object.values(mocks)) mock.mockReset();
+  mocks.dispatch.mockReset();
+  mocks.navigate.mockReset();
+  mocks.openReadingTab.mockReset();
+  mocks.setActiveCluster.mockReset();
+  mocks.pathname = "/library";
 });
 
 describe("route-based workspace actions", () => {
@@ -72,6 +80,21 @@ describe("route-based workspace actions", () => {
     panels.openChat(book);
     panels.openOutline(book);
 
-    expect(mocks.openReadingTab.mock.calls).toEqual([["Notes"], ["Discuss"], ["Outline"]]);
+    expect(mocks.openReadingTab.mock.calls).toEqual([
+      ["Notes", "book-a"],
+      ["Discuss", "book-a"],
+      ["Outline", "book-a"],
+    ]);
+    expect(mocks.navigate).toHaveBeenCalledTimes(3);
+    expect(mocks.navigate).toHaveBeenNthCalledWith(1, "/books/book-a");
+  });
+
+  it("switches the rail immediately without navigating when already reading the book", () => {
+    mocks.pathname = "/books/book-a";
+
+    renderWorkspacePanels().openChat(book);
+
+    expect(mocks.openReadingTab).toHaveBeenCalledWith("Discuss", "book-a");
+    expect(mocks.navigate).not.toHaveBeenCalled();
   });
 });

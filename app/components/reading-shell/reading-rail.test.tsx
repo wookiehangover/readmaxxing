@@ -373,6 +373,18 @@ describe("ReadingRail", () => {
     ).toBe("true");
   });
 
+  it("applies a requested tab that was persisted before the rail mounted", () => {
+    openMobileReadingTab("Outline", "book-1");
+
+    const container = renderMobileRail();
+
+    expect(
+      Array.from(container.querySelectorAll("button"))
+        .find((tab) => tab.textContent === "Outline")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
   it("does not force Read when the mobile effect reruns or the rail remounts", () => {
     let container = renderMobileRail();
     clickTab(container, "Outline");

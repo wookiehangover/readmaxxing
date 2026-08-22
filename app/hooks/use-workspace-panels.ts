@@ -1,8 +1,8 @@
 import { useCallback } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { getBookReadingPath } from "~/lib/reading-route";
+import { getBookReadingPath, getReadingBookId } from "~/lib/reading-route";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { useAppStore } from "~/lib/themis/provider";
 import { recordBookOpened } from "~/lib/themis/workspace-restore/workspace-restore-slice";
@@ -19,6 +19,7 @@ export interface UseWorkspacePanelsResult {
 
 export function useWorkspacePanels(): UseWorkspacePanelsResult {
   const navigate = useNavigate();
+  const location = useLocation();
   const store = useAppStore();
   const workspace = useWorkspace();
   const openBook = useCallback(
@@ -30,13 +31,32 @@ export function useWorkspacePanels(): UseWorkspacePanelsResult {
     [navigate, store, workspace],
   );
 
-  const openNotebook = useCallback(() => openMobileReadingTab("Notes"), []);
+  const openReadingTool = useCallback(
+    (book: BookMeta, tab: "Notes" | "Discuss" | "Outline") => {
+      openMobileReadingTab(tab, book.id);
+      if (getReadingBookId(location.pathname) !== book.id) {
+        void navigate(getBookReadingPath(book.id));
+      }
+    },
+    [location.pathname, navigate],
+  );
 
-  const openChat = useCallback(() => openMobileReadingTab("Discuss"), []);
+  const openNotebook = useCallback(
+    (book: BookMeta) => openReadingTool(book, "Notes"),
+    [openReadingTool],
+  );
+
+  const openChat = useCallback(
+    (book: BookMeta) => openReadingTool(book, "Discuss"),
+    [openReadingTool],
+  );
 
   const openReadingHistory = useCallback(() => {}, []);
 
-  const openOutline = useCallback(() => openMobileReadingTab("Outline"), []);
+  const openOutline = useCallback(
+    (book: BookMeta) => openReadingTool(book, "Outline"),
+    [openReadingTool],
+  );
 
   const openStandardEbooks = useCallback(() => {
     navigate("/standard-ebooks");
