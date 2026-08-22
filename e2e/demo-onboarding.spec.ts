@@ -174,8 +174,8 @@ test.describe("Bundled Gatsby onboarding", () => {
     }, testInfo) => {
       await skipIfAuthNotConfigured(request);
       await installVirtualAuthenticator(context, page);
-      if (loginAction === "Sign in") await prepareExistingAccount(page);
       if (process.env.SKIP_AI_TESTS) await mockAiCompletions(page);
+      if (loginAction === "Sign in") await prepareExistingAccount(page);
 
       const requests: CapturedRequest[] = [];
       const requestMap = new Map<Request, CapturedRequest>();
@@ -211,6 +211,30 @@ test.describe("Bundled Gatsby onboarding", () => {
         await waitForAppHydration(page);
 
         const gatsby = page.getByRole("button", { name: "Open The Great Gatsby" });
+        await expect
+          .poll(() => page.evaluate(() => localStorage.getItem("demo-onboarding")), {
+            timeout: 30_000,
+          })
+          .toBe("complete");
+
+        await expect
+          .poll(
+            async () => {
+              const pathname = new URL(page.url()).pathname;
+              if (pathname === `/books/${DEMO_BOOK_ID}`) return "reader";
+              if (pathname === "/library" && (await gatsby.isVisible())) return "library";
+              return "pending";
+            },
+            { timeout: 30_000 },
+          )
+          .not.toBe("pending");
+
+        if (new URL(page.url()).pathname === `/books/${DEMO_BOOK_ID}`) {
+          await expect(page.getByTestId("reading-shell")).toBeVisible({ timeout: 30_000 });
+          await page.goBack();
+        }
+
+        await expect(page).toHaveURL(/\/library$/);
         await expect(gatsby).toBeVisible({ timeout: 30_000 });
         const signedOutBooks = await readIndexedDbValue<LocalBook[]>(
           page,
@@ -221,7 +245,9 @@ test.describe("Bundled Gatsby onboarding", () => {
           expect.objectContaining({ id: DEMO_BOOK_ID, title: "The Great Gatsby" }),
         ]);
 
-        await page.locator('a[href="/login"]').first().click({ timeout: 10_000 });
+        const loginLink = page.locator('a[href="/login"]').first();
+        await expect(loginLink).toBeVisible();
+        await loginLink.click({ timeout: 10_000 });
         await expect(page).toHaveURL(/\/login$/);
         authenticationStarted = true;
         await page.getByRole("button", { name: loginAction }).click();

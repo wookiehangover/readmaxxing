@@ -31,7 +31,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm exec react-router dev --port ${port}`,
+    command: process.env.CI
+      ? "node --env-file-if-exists=.env ./node_modules/@react-router/serve/bin.cjs ./build/server/index.js"
+      : `pnpm exec react-router dev --port ${port}`,
+    env: process.env.CI ? { PORT: String(port), BLOB_STORAGE_BACKEND: "local" } : undefined,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,

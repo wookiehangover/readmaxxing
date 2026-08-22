@@ -6,6 +6,8 @@ import {
   type APIRequestContext,
 } from "@playwright/test";
 
+const pagesWithMockedChapterQuestions = new WeakSet<Page>();
+
 /**
  * Skip the current test when the auth/DB stack is not configured. CI runs
  * without a Postgres service, in which case /api/auth/register-options
@@ -37,6 +39,11 @@ export async function installVirtualAuthenticator(context: BrowserContext, page:
 }
 
 export async function waitForAppHydration(page: Page) {
+  if (process.env.SKIP_AI_TESTS && !pagesWithMockedChapterQuestions.has(page)) {
+    await page.route("**/api/chapter-questions", (route) => route.fulfill({ json: [] }));
+    pagesWithMockedChapterQuestions.add(page);
+  }
+
   const libraryNavigation = page.getByRole("navigation", { name: "Library navigation" });
   const readingShell = page.getByTestId("reading-shell");
 
