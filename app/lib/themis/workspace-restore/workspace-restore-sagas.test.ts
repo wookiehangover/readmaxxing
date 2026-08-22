@@ -14,26 +14,10 @@ import { workspaceRestoreSaga } from "~/lib/themis/workspace-restore/workspace-r
 import {
   hydrateWorkspaceRestore,
   recordBookOpened,
-  saveFocusedWorkspace,
 } from "~/lib/themis/workspace-restore/workspace-restore-slice";
 import { createAppStore, type AppStore } from "~/lib/themis/store";
 
 const stores: AppStore[] = [];
-
-const focusedWorkspace = {
-  order: ["book-1"],
-  activeBookId: "book-1",
-  clusters: [
-    {
-      bookId: "book-1",
-      bookTitle: "Book One",
-      bookFormat: "epub",
-      hasChat: true,
-      hasNotebook: false,
-      activeTab: "chat" as const,
-    },
-  ],
-};
 
 function startStore() {
   const store = createAppStore();
@@ -50,10 +34,8 @@ afterEach(() => {
 });
 
 describe("workspaceRestoreSaga", () => {
-  it("hydrates both restore facts from IDB", async () => {
-    mocks.runPromise
-      .mockResolvedValueOnce(new Map([["book-1", 123]]))
-      .mockResolvedValueOnce(focusedWorkspace);
+  it("hydrates last-opened timestamps from IDB", async () => {
+    mocks.runPromise.mockResolvedValueOnce(new Map([["book-1", 123]]));
     const store = startStore();
 
     store.dispatch(hydrateWorkspaceRestore());
@@ -62,9 +44,6 @@ describe("workspaceRestoreSaga", () => {
       expect(store.workspaceRestoreSelectors.selectLastOpenedAt.select(store.state, "book-1")).toBe(
         123,
       ),
-    );
-    expect(store.workspaceRestoreSelectors.selectFocusedWorkspace.select(store.state)).toEqual(
-      focusedWorkspace,
     );
   });
 
@@ -81,33 +60,5 @@ describe("workspaceRestoreSaga", () => {
       ),
     );
     expect(mocks.runPromise).toHaveBeenCalledOnce();
-  });
-
-  it("updates the focused snapshot only after persistence succeeds", async () => {
-    mocks.runPromise.mockResolvedValueOnce(undefined);
-    const store = startStore();
-
-    store.dispatch(saveFocusedWorkspace(focusedWorkspace));
-
-    await vi.waitFor(() =>
-      expect(store.workspaceRestoreSelectors.selectFocusedWorkspace.select(store.state)).toEqual(
-        focusedWorkspace,
-      ),
-    );
-    expect(mocks.runPromise).toHaveBeenCalledOnce();
-  });
-
-  it("keeps the focused snapshot unchanged when persistence fails", async () => {
-    mocks.runPromise.mockRejectedValueOnce(new Error("IDB unavailable"));
-    const store = startStore();
-
-    store.dispatch(saveFocusedWorkspace(focusedWorkspace));
-
-    await vi.waitFor(() =>
-      expect(
-        store.workspaceRestoreSelectors.selectWorkspaceRestoreError.select(store.state),
-      ).toEqual({ _tag: "Error", message: "IDB unavailable" }),
-    );
-    expect(store.workspaceRestoreSelectors.selectFocusedWorkspace.select(store.state)).toBeNull();
   });
 });

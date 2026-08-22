@@ -1,14 +1,8 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { IDockviewPanelProps } from "dockview-react";
 import type { JSONContent } from "@tiptap/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  OutlinePanel,
-  OUTLINE_POLL_MS,
-  OUTLINE_SAVE_MS,
-  WorkspaceOutlinePanel,
-} from "../outline-panel";
+import { OUTLINE_POLL_MS, OUTLINE_SAVE_MS, WorkspaceOutlinePanel } from "../outline-panel";
 import { ReadingArtifactsError } from "~/lib/reading-agent/artifacts-client";
 
 const mocks = vi.hoisted(() => ({
@@ -16,7 +10,6 @@ const mocks = vi.hoisted(() => ({
   saveReadingOutline: vi.fn(),
   setContent: vi.fn(),
   navigateInCluster: vi.fn(),
-  focusBookPanel: vi.fn(),
   editorProps: null as null | {
     content?: string;
     compact?: boolean;
@@ -28,11 +21,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("~/lib/context/workspace-context", () => ({
   useWorkspace: () => ({
-    dockviewApi: {
-      current: {
-        panels: [{ id: "book-book-1", focus: mocks.focusBookPanel }],
-      },
-    },
     navigateInCluster: mocks.navigateInCluster,
   }),
 }));
@@ -100,20 +88,11 @@ let container: HTMLDivElement | undefined;
 function renderPanel(chromeless = false) {
   container = document.body.appendChild(document.createElement("div"));
   root = createRoot(container);
-  if (chromeless) {
-    act(() =>
-      root!.render(<WorkspaceOutlinePanel bookId="book-1" bookTitle="Siddhartha" chromeless />),
-    );
-    return;
-  }
-  const props = {
-    params: { bookId: "book-1", bookTitle: "Siddhartha" },
-    api: {
-      isVisible: true,
-      onDidVisibilityChange: () => ({ dispose() {} }),
-    },
-  } as unknown as IDockviewPanelProps<{ bookId: string; bookTitle: string }>;
-  act(() => root!.render(<OutlinePanel {...props} />));
+  act(() =>
+    root!.render(
+      <WorkspaceOutlinePanel bookId="book-1" bookTitle="Siddhartha" chromeless={chromeless} />,
+    ),
+  );
 }
 
 beforeEach(() => {
@@ -121,7 +100,6 @@ beforeEach(() => {
   mocks.saveReadingOutline.mockReset();
   mocks.setContent.mockReset();
   mocks.navigateInCluster.mockReset();
-  mocks.focusBookPanel.mockReset();
   mocks.editorProps = null;
   mocks.navigateInCluster.mockResolvedValue(undefined);
   mocks.saveReadingOutline.mockImplementation(async (bookId: string, content: string) => ({
@@ -190,17 +168,20 @@ describe("OutlinePanel", () => {
     );
   });
 
-  it("navigates to a linked increment and focuses the book panel", async () => {
+  it("navigates to a linked increment and focuses the book surface", async () => {
     mocks.fetchReadingArtifacts.mockResolvedValue(outline);
     renderPanel(true);
     await act(async () => {});
+    const bookSurface = document.body.appendChild(document.createElement("button"));
+    bookSurface.setAttribute("aria-label", "Book surface");
 
     await act(async () => {
       await mocks.editorProps!.onNavigateToOutlineIncrement!("epubcfi(/6/4!/4/2/1:0)");
     });
 
     expect(mocks.navigateInCluster).toHaveBeenCalledWith("book-1", "epubcfi(/6/4!/4/2/1:0)");
-    expect(mocks.focusBookPanel).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(bookSurface);
+    bookSurface.remove();
   });
 
   it("shows a sign-in prompt on 401", async () => {

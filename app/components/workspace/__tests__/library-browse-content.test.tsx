@@ -1,4 +1,4 @@
-import { act, createRef } from "react";
+import { act, createRef, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,7 +26,8 @@ vi.mock("~/lib/themis/provider", () => ({
 
 import { LibraryBrowseContent } from "~/components/workspace/library-browse-content";
 import { LibraryFrame } from "~/components/workspace/library-frame";
-import { WorkspaceProvider } from "~/lib/context/workspace-context";
+import { useWorkspace, WorkspaceProvider } from "~/lib/context/workspace-context";
+import { downloadBookForOpenRequested } from "~/lib/themis/books/books-slice";
 
 const book: BookMeta = {
   id: "book-1",
@@ -38,6 +39,26 @@ const book: BookMeta = {
 
 let container: HTMLDivElement | undefined;
 let root: Root | undefined;
+
+interface WorkspaceBookActions {
+  onOpenNotebook?: (book: BookMeta) => void;
+  onOpenChat?: (book: BookMeta) => void;
+}
+
+function WorkspaceBookActionRefs({ onOpenNotebook, onOpenChat }: WorkspaceBookActions) {
+  const workspace = useWorkspace();
+
+  useEffect(() => {
+    workspace.openNotebookRef.current = onOpenNotebook ?? null;
+    workspace.openChatRef.current = onOpenChat ?? null;
+    return () => {
+      workspace.openNotebookRef.current = null;
+      workspace.openChatRef.current = null;
+    };
+  }, [onOpenChat, onOpenNotebook, workspace]);
+
+  return null;
+}
 
 beforeEach(() => {
   localStorage.clear();
@@ -55,13 +76,18 @@ afterEach(() => {
   root = undefined;
 });
 
-function renderLibrary(onOpenBook = vi.fn(), books: BookMeta[] = [book]) {
+function renderLibrary(
+  onOpenBook = vi.fn(),
+  books: BookMeta[] = [book],
+  actions: WorkspaceBookActions = {},
+) {
   themisMocks.books = books;
 
   act(() => {
     root!.render(
       <MemoryRouter>
         <WorkspaceProvider>
+          <WorkspaceBookActionRefs {...actions} />
           <LibraryFrame fileInputRef={createRef<HTMLInputElement>()} onFileInput={vi.fn()}>
             <LibraryBrowseContent onOpenBook={onOpenBook} />
           </LibraryFrame>
@@ -70,6 +96,22 @@ function renderLibrary(onOpenBook = vi.fn(), books: BookMeta[] = [book]) {
     );
   });
   return onOpenBook;
+}
+
+async function selectBookAction(label: string) {
+  const bookCard = container!
+    .querySelector<HTMLButtonElement>('[aria-label="Open Test Book"]')!
+    .closest(".group")!;
+  const menuTrigger = bookCard.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!;
+
+  await act(async () => menuTrigger.click());
+
+  const menuItem = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+    item.textContent?.includes(label),
+  );
+  expect(menuItem).toBeDefined();
+
+  await act(async () => menuItem!.click());
 }
 
 describe("LibraryBrowseContent", () => {
@@ -121,6 +163,56 @@ describe("LibraryBrowseContent", () => {
     );
     expect(onOpenBook).toHaveBeenCalledWith(book);
   });
+
+  it.each([
+    ["Open notebook", "onOpenNotebook"],
+    ["Open chat", "onOpenChat"],
+  ] as const)("downloads a synced book before the %s action", async (label, actionName) => {
+    const remoteBook = {
+      ...book,
+      remoteFileUrl: "https://example.com/book.epub",
+      hasLocalFile: false,
+    };
+    const downloadedBook = { ...remoteBook, hasLocalFile: true };
+    const openReadingTool = vi.fn();
+    themisMocks.dispatch.mockImplementation(
+      (action: ReturnType<typeof downloadBookForOpenRequested>) => {
+        expect(openReadingTool).not.toHaveBeenCalled();
+        void action.payload[1](downloadedBook);
+        return action;
+      },
+    );
+    const onOpenBook = renderLibrary(vi.fn(), [remoteBook], { [actionName]: openReadingTool });
+
+    await selectBookAction(label);
+
+    expect(themisMocks.dispatch).toHaveBeenCalledOnce();
+    expect(themisMocks.dispatch.mock.calls[0]![0]).toEqual(
+      expect.objectContaining({
+        type: downloadBookForOpenRequested.type,
+        payload: [book.id, expect.any(Function), expect.any(Function)],
+      }),
+    );
+    expect(openReadingTool).toHaveBeenCalledExactlyOnceWith(downloadedBook);
+    expect(onOpenBook).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["Open notebook", "onOpenNotebook"],
+    ["Open chat", "onOpenChat"],
+  ] as const)(
+    "opens an already-local book directly for the %s action",
+    async (label, actionName) => {
+      const openReadingTool = vi.fn();
+      const onOpenBook = renderLibrary(vi.fn(), [book], { [actionName]: openReadingTool });
+
+      await selectBookAction(label);
+
+      expect(themisMocks.dispatch).not.toHaveBeenCalled();
+      expect(openReadingTool).toHaveBeenCalledExactlyOnceWith(book);
+      expect(onOpenBook).not.toHaveBeenCalled();
+    },
+  );
 
   it("leaves the header without a control cluster when the library is empty", () => {
     renderLibrary(vi.fn(), []);

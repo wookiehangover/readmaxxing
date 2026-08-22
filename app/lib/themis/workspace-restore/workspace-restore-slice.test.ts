@@ -1,43 +1,45 @@
-import { getItem } from "@augmentcode/themis/utils/collections/collection-utils";
 import { describe, expect, it } from "vitest";
 
 import {
   bookOpenedRecorded,
-  focusedWorkspaceSaved,
   hydrateWorkspaceRestore,
   workspaceRestoreHydrated,
   workspaceRestoreReducer,
 } from "~/lib/themis/workspace-restore/workspace-restore-slice";
 
-const focusedWorkspace = {
-  order: ["book-1"],
-  activeBookId: "book-1",
-  clusters: [
-    {
-      bookId: "book-1",
-      bookTitle: "Book One",
-      bookFormat: "epub",
-      hasChat: true,
-      hasNotebook: false,
-      activeTab: "book" as const,
-    },
-  ],
-};
-
 describe("workspaceRestoreReducer", () => {
-  it("hydrates last-opened timestamps and a normalized focused snapshot", () => {
+  it("hydrates last-opened timestamps", () => {
     const loading = workspaceRestoreReducer(undefined, hydrateWorkspaceRestore());
-    const hydrated = workspaceRestoreReducer(
-      loading,
-      workspaceRestoreHydrated({ "book-1": 123 }, focusedWorkspace),
-    );
+    const hydrated = workspaceRestoreReducer(loading, workspaceRestoreHydrated({ "book-1": 123 }));
 
     expect(hydrated.loading).toBe(false);
     expect(hydrated.lastOpenedByBookId).toEqual({ "book-1": 123 });
-    expect(getItem(hydrated.focusedWorkspace!.clusters, "book-1")).toEqual(
-      focusedWorkspace.clusters[0],
-    );
     expect(JSON.parse(JSON.stringify(hydrated))).toEqual(hydrated);
+  });
+
+  it("preserves books opened before hydration completes", () => {
+    const loading = workspaceRestoreReducer(undefined, hydrateWorkspaceRestore());
+    const opened = workspaceRestoreReducer(loading, bookOpenedRecorded("book-1", 456));
+    const hydrated = workspaceRestoreReducer(opened, workspaceRestoreHydrated({}));
+
+    expect(hydrated.loading).toBe(false);
+    expect(hydrated.lastOpenedByBookId).toEqual({ "book-1": 456 });
+  });
+
+  it("keeps the newer timestamp from hydrated and existing entries", () => {
+    const olderExisting = workspaceRestoreReducer(undefined, bookOpenedRecorded("book-1", 100));
+    const newerExisting = workspaceRestoreReducer(olderExisting, bookOpenedRecorded("book-2", 400));
+    const hydrated = workspaceRestoreReducer(
+      newerExisting,
+      workspaceRestoreHydrated({ "book-1": 300, "book-2": 200, "book-3": 500 }),
+    );
+
+    expect(hydrated.lastOpenedByBookId).toEqual({
+      "book-1": 300,
+      "book-2": 400,
+      "book-3": 500,
+    });
+    expect(newerExisting.lastOpenedByBookId).toEqual({ "book-1": 100, "book-2": 400 });
   });
 
   it("updates last-opened only after the persisted success action", () => {
@@ -46,14 +48,6 @@ describe("workspaceRestoreReducer", () => {
 
     expect(state.lastOpenedByBookId).toEqual({ "book-1": 456 });
     expect(unchanged).toBe(state);
-  });
-
-  it("stores and clears focused restore snapshots", () => {
-    const saved = workspaceRestoreReducer(undefined, focusedWorkspaceSaved(focusedWorkspace));
-    const cleared = workspaceRestoreReducer(saved, focusedWorkspaceSaved(null));
-
-    expect(saved.focusedWorkspace?.order).toEqual(["book-1"]);
-    expect(cleared.focusedWorkspace).toBeNull();
   });
 
   it("keeps identity for unknown actions", () => {

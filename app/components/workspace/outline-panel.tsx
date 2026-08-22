@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JSONContent } from "@tiptap/react";
-import type { IDockviewPanelProps } from "dockview-react";
 import { ListTree } from "lucide-react";
 import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
 import { Button } from "~/components/ui/button";
@@ -46,20 +45,14 @@ function errorState(error: unknown): OutlineState {
   return { status: "error", content: null };
 }
 
-export function OutlinePanel({ params, api }: IDockviewPanelProps<OutlinePanelParams>) {
-  return <WorkspaceOutlinePanel bookId={params.bookId} bookTitle={params.bookTitle} api={api} />;
-}
-
 export function WorkspaceOutlinePanel({
   bookId,
   bookTitle,
-  api,
   chromeless = false,
 }: OutlinePanelParams & {
-  api?: IDockviewPanelProps<OutlinePanelParams>["api"];
   chromeless?: boolean;
 }) {
-  const { dockviewApi, navigateInCluster } = useWorkspace();
+  const { navigateInCluster } = useWorkspace();
   const [state, setState] = useState<OutlineState>({ status: "loading", content: null });
   const [refreshKey, setRefreshKey] = useState(0);
   const editorRef = useRef<TiptapEditorHandle | null>(null);
@@ -123,17 +116,15 @@ export function WorkspaceOutlinePanel({
     async (locator: string) => {
       await navigateInCluster(bookId, locator);
       const surface = document.querySelector<HTMLElement>("[aria-label='Book surface']");
-      if (surface) surface.focus({ preventScroll: true });
-      else dockviewApi.current?.panels.find((panel) => panel.id === `book-${bookId}`)?.focus();
+      surface?.focus({ preventScroll: true });
     },
-    [bookId, dockviewApi, navigateInCluster],
+    [bookId, navigateInCluster],
   );
 
   useEffect(() => {
     let cancelled = false;
     let controller: AbortController | null = null;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
-    let panelVisible = api?.isVisible ?? true;
 
     const clearPoll = () => {
       if (!pollTimer) return;
@@ -141,7 +132,7 @@ export function WorkspaceOutlinePanel({
       pollTimer = null;
     };
 
-    const isVisible = () => document.visibilityState === "visible" && panelVisible;
+    const isVisible = () => document.visibilityState === "visible";
 
     const load = async (silent: boolean) => {
       controller?.abort();
@@ -185,10 +176,6 @@ export function WorkspaceOutlinePanel({
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleFocus);
-    const panelVisibility = api?.onDidVisibilityChange((event) => {
-      panelVisible = event.isVisible;
-      handleVisibilityChange();
-    });
 
     void load(false).then(syncPolling);
 
@@ -198,9 +185,8 @@ export function WorkspaceOutlinePanel({
       clearPoll();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleFocus);
-      panelVisibility?.dispose();
     };
-  }, [api, applyRemoteContent, bookId, refreshKey]);
+  }, [applyRemoteContent, bookId, refreshKey]);
 
   useEffect(() => {
     return () => {

@@ -3,7 +3,6 @@ import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
 import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
-import type { DockviewPanelApi } from "dockview-react";
 import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell";
 import { useAppStore } from "~/lib/themis/provider";
 import { appendHighlightToNotebookRequested } from "~/lib/themis/annotations/annotations-slice";
@@ -12,7 +11,6 @@ type SavedHighlight = { id: string; cfiRange: string; text: string };
 
 interface UsePdfWorkspacePanelsOptions {
   book: BookMeta;
-  panelApi?: DockviewPanelApi;
   currentPage: number;
   hasRestoredPosition: boolean;
   selectionText?: string;
@@ -26,7 +24,6 @@ interface UsePdfWorkspacePanelsOptions {
 
 export function usePdfWorkspacePanels({
   book,
-  panelApi,
   currentPage,
   hasRestoredPosition,
   selectionText,
@@ -52,7 +49,6 @@ export function usePdfWorkspacePanels({
   useReaderDwell({
     bookId: book.id,
     unit: readingDwellUnit,
-    panelApi,
     enabled: hasRestoredPosition,
   });
 
@@ -64,7 +60,6 @@ export function usePdfWorkspacePanels({
   }, []);
 
   useEffect(() => {
-    const id = panelApi?.id ?? book.id;
     const navigatePdf = (target: string) => {
       const pageMatch = target.match(/^page:(\d+)$/);
       if (pageMatch) {
@@ -76,29 +71,27 @@ export function usePdfWorkspacePanels({
         goToPageRef.current(pageNum);
       }
     };
-    navigationMap.current.set(id, navigatePdf);
+    navigationMap.current.set(book.id, navigatePdf);
     return () => {
-      navigationMap.current.delete(id);
+      navigationMap.current.delete(book.id);
     };
-  }, [book.id, panelApi, navigationMap]);
+  }, [book.id, navigationMap]);
 
   // Register temp highlight callback
   useEffect(() => {
-    const id = panelApi?.id ?? book.id;
-    tempHighlightMap.current.set(id, applyTempHighlight);
+    tempHighlightMap.current.set(book.id, applyTempHighlight);
     return () => {
-      tempHighlightMap.current.delete(id);
+      tempHighlightMap.current.delete(book.id);
     };
-  }, [book.id, panelApi, applyTempHighlight, tempHighlightMap]);
+  }, [book.id, applyTempHighlight, tempHighlightMap]);
 
   // Register highlight delete callback
   useEffect(() => {
-    const id = panelApi?.id ?? book.id;
-    highlightDeleteMap.current.set(id, removeHighlight);
+    highlightDeleteMap.current.set(book.id, removeHighlight);
     return () => {
-      highlightDeleteMap.current.delete(id);
+      highlightDeleteMap.current.delete(book.id);
     };
-  }, [book.id, panelApi, removeHighlight, highlightDeleteMap]);
+  }, [book.id, removeHighlight, highlightDeleteMap]);
 
   const handleSaveHighlight = useCallback(async () => {
     const highlight = await saveHighlightFromPopover();

@@ -75,7 +75,6 @@ const workspace = vi.hoisted(() => ({
   chatContextMap: { current: new Map() },
   pendingHighlightPillMap: { current: new Map() },
   removeHighlightAnnotationForBook: vi.fn(),
-  dockviewApi: { current: null },
   navigateInCluster: vi.fn(),
 }));
 
@@ -374,6 +373,18 @@ describe("ReadingRail", () => {
     ).toBe("true");
   });
 
+  it("applies a requested tab that was persisted before the rail mounted", () => {
+    openMobileReadingTab("Outline", "book-1");
+
+    const container = renderMobileRail();
+
+    expect(
+      Array.from(container.querySelectorAll("button"))
+        .find((tab) => tab.textContent === "Outline")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
   it("does not force Read when the mobile effect reruns or the rail remounts", () => {
     let container = renderMobileRail();
     clickTab(container, "Outline");
@@ -503,6 +514,15 @@ describe("ReadingRail", () => {
     clickTab(container, "Outline");
     expect(visiblePanel(container)?.textContent).toContain("Loading outline");
     expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Outline");
+  });
+
+  it("opens reader actions in the matching desktop tab", async () => {
+    const container = renderRail();
+
+    openMobileReadingTab("Discuss");
+    await act(async () => Promise.resolve());
+
+    expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Discuss");
   });
 
   it("uses one sliding underline left-aligned with the active tab label", () => {

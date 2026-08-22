@@ -14,7 +14,7 @@ import {
 import { Textarea } from "~/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
 import { useAuth } from "~/lib/context/auth-context";
-import { useWorkspace } from "~/lib/context/workspace-context";
+import { getReadingBookId } from "~/lib/reading-route";
 import { useSettings } from "~/lib/settings";
 
 type BugReportDialogProps = {
@@ -25,41 +25,6 @@ type BugReportDialogProps = {
   readonly hideTrigger?: boolean;
 };
 
-type PanelSnapshot = {
-  readonly id: string;
-  readonly title: string | null;
-  readonly component: string | null;
-};
-
-type PanelLike = {
-  readonly id?: unknown;
-  readonly title?: unknown;
-  readonly component?: unknown;
-  readonly toJSON?: () => { readonly contentComponent?: unknown };
-};
-
-function panelId(panel: unknown): string | null {
-  const value = (panel as PanelLike | null)?.id;
-  return typeof value === "string" ? value : null;
-}
-
-function panelSnapshot(panel: unknown): PanelSnapshot | null {
-  const candidate = panel as PanelLike | null;
-  const id = panelId(candidate);
-  if (!id) return null;
-  const contentComponent = candidate?.toJSON?.().contentComponent;
-  return {
-    id,
-    title: typeof candidate?.title === "string" ? candidate.title : null,
-    component:
-      typeof candidate?.component === "string"
-        ? candidate.component
-        : typeof contentComponent === "string"
-          ? contentComponent
-          : null,
-  };
-}
-
 export function BugReportDialog({
   triggerClassName,
   triggerSize = "icon",
@@ -67,7 +32,6 @@ export function BugReportDialog({
   onOpenChange,
   hideTrigger = false,
 }: BugReportDialogProps = {}) {
-  const ws = useWorkspace();
   const [settings] = useSettings();
   const auth = useAuth();
   const [internalOpen, setInternalOpen] = useState(false);
@@ -81,27 +45,14 @@ export function BugReportDialog({
   }
 
   function buildContext() {
-    const api = ws.dockviewApi.current;
-    const apiSnapshot = api as {
-      readonly activePanel?: unknown;
-      readonly activeGroup?: { readonly activePanel?: unknown } | null;
-    } | null;
-    const activePanelId =
-      panelId(apiSnapshot?.activePanel) ?? panelId(apiSnapshot?.activeGroup?.activePanel);
+    const route = typeof window === "undefined" ? null : window.location.pathname;
 
     return {
-      route: typeof window === "undefined" ? null : window.location.pathname,
+      route,
       zenMode: settings.zenMode,
       colorTheme: settings.colorTheme,
       theme: settings.theme,
-      openBookIds: Array.from(ws.openBookIdsRef.current ?? []),
-      activeBookId: ws.activeClusterBookIdRef.current ?? null,
-      openPanels: api
-        ? Array.from(api.panels)
-            .map(panelSnapshot)
-            .filter((p) => p !== null)
-        : [],
-      activePanelId,
+      activeBookId: route ? getReadingBookId(route) : null,
       viewport:
         typeof window === "undefined"
           ? null

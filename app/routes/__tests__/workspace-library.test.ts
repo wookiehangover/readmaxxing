@@ -51,15 +51,13 @@ describe("WorkspaceLibraryRoute", () => {
 describe("openBookInWorkspace", () => {
   it("immediately hands a local book to the pending-safe workspace handler", () => {
     const openBook = vi.fn();
-    const navigate = vi.fn();
     const workspace = {
       openBookRef: { current: openBook },
     } as Pick<WorkspaceContextValue, "openBookRef">;
 
-    openBookInWorkspace(book, workspace, navigate);
+    openBookInWorkspace(book, workspace);
 
-    expect(openBook).toHaveBeenCalledWith(book);
-    expect(navigate).toHaveBeenCalledWith("/books/book-1");
+    expect(openBook).toHaveBeenCalledExactlyOnceWith(book);
   });
 
   it("does not hand off a cancelled open", () => {
@@ -69,7 +67,7 @@ describe("openBookInWorkspace", () => {
       openBookRef: { current: vi.fn() },
     } as Pick<WorkspaceContextValue, "openBookRef">;
 
-    openBookInWorkspace(book, workspace, vi.fn(), controller.signal);
+    openBookInWorkspace(book, workspace, controller.signal);
 
     expect(workspace.openBookRef.current).not.toHaveBeenCalled();
   });

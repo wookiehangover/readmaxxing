@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import type { Route } from "./+types/workspace-library";
 import { LibraryBrowseContent } from "~/components/workspace/library-browse-content";
 import { useWorkspace, type WorkspaceContextValue } from "~/lib/context/workspace-context";
 import { ensureLocalThenOpen } from "~/lib/library-book-open";
-import { getBookReadingPath, getReadingBookId } from "~/lib/reading-route";
+import { getReadingBookId } from "~/lib/reading-route";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { useAppStore } from "~/lib/themis/provider";
 
 type WorkspaceBookRefs = Pick<WorkspaceContextValue, "openBookRef">;
-type Navigate = (path: string) => void | Promise<void>;
 
 export function meta(_args: Route.MetaArgs) {
   return [{ title: "Library — Readmaxxing" }];
@@ -19,18 +17,15 @@ export function meta(_args: Route.MetaArgs) {
 export function openBookInWorkspace(
   book: BookMeta,
   workspace: WorkspaceBookRefs,
-  navigate: Navigate,
   signal?: AbortSignal,
 ) {
   if (signal?.aborted) return;
   workspace.openBookRef.current?.(book);
-  void navigate(getBookReadingPath(book.id));
 }
 
 export default function WorkspaceLibraryRoute() {
   const ws = useWorkspace();
   const store = useAppStore();
-  const navigate = useNavigate();
   const pendingOpenControllerRef = useRef<AbortController | null>(null);
 
   useEffect(
@@ -54,7 +49,7 @@ export default function WorkspaceLibraryRoute() {
           signal: controller.signal,
           store,
           openBook: (localBook) => {
-            openBookInWorkspace(localBook, ws, navigate, controller.signal);
+            openBookInWorkspace(localBook, ws, controller.signal);
           },
         });
       } catch (error) {
@@ -62,7 +57,7 @@ export default function WorkspaceLibraryRoute() {
         toast.error(`Could not download “${book.title}”. Please try again.`);
       }
     },
-    [navigate, store, ws],
+    [store, ws],
   );
 
   return <LibraryBrowseContent onOpenBook={handleOpenBook} />;

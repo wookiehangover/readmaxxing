@@ -5,7 +5,6 @@ import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useAppStore } from "~/lib/themis/provider";
-import type { DockviewPanelApi } from "dockview-react";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { useReadingLocation } from "~/hooks/use-reading-location";
@@ -25,30 +24,10 @@ import {
 
 interface WorkspacePdfReaderProps {
   bookId: string;
-  panelApi?: DockviewPanelApi;
   panelTypography?: PanelTypographyParams;
 }
 
-export function WorkspacePdfReader({ bookId, panelApi, panelTypography }: WorkspacePdfReaderProps) {
-  const [hasBeenVisible, setHasBeenVisible] = useState(() =>
-    panelApi ? panelApi.isVisible : true,
-  );
-
-  useEffect(() => {
-    if (!panelApi || hasBeenVisible) return;
-    if (panelApi.isVisible) {
-      setHasBeenVisible(true);
-      return;
-    }
-    const disposable = panelApi.onDidVisibilityChange((e) => {
-      if (e.isVisible) {
-        setHasBeenVisible(true);
-        disposable.dispose();
-      }
-    });
-    return () => disposable.dispose();
-  }, [panelApi, hasBeenVisible]);
-
+export function WorkspacePdfReader({ bookId, panelTypography }: WorkspacePdfReaderProps) {
   // Look up book metadata from the Themis books collection. Populated at app
   // startup by the books hydrate saga, so this is a synchronous read.
   const store = useAppStore();
@@ -71,26 +50,15 @@ export function WorkspacePdfReader({ bookId, panelApi, panelTypography }: Worksp
     );
   }
 
-  return (
-    <WorkspacePdfReaderInner
-      book={book}
-      panelApi={panelApi}
-      panelTypography={panelTypography}
-      hasBeenVisible={hasBeenVisible}
-    />
-  );
+  return <WorkspacePdfReaderInner book={book} panelTypography={panelTypography} />;
 }
 
 function WorkspacePdfReaderInner({
   book,
-  panelApi,
   panelTypography,
-  hasBeenVisible,
 }: {
   book: BookMeta;
-  panelApi?: DockviewPanelApi;
   panelTypography?: PanelTypographyParams;
-  hasBeenVisible: boolean;
 }) {
   const { tocMap, tocChangeListener } = useWorkspace();
   const isMobile = useIsMobile();
@@ -137,9 +105,7 @@ function WorkspacePdfReaderInner({
     goToPage,
     goNext,
     goPrev,
-    flushPositionSave,
     pdfDocRef,
-    viewerRef,
     eventBusRef,
   } = usePdfLifecycle({
     bookId: book.id,
@@ -147,16 +113,12 @@ function WorkspacePdfReaderInner({
     pdfLayout: localPdfLayout,
     theme: settings.theme,
     fontSize: localFontSize,
-    enabled: hasBeenVisible,
-    panelId: panelApi?.id,
     onTocExtracted: (tocData) => {
-      const id = panelApi?.id ?? book.id;
-      tocMap.current.set(id, tocData);
+      tocMap.current.set(book.id, tocData);
       tocChangeListener.current?.();
     },
     onCleanupToc: () => {
-      const id = panelApi?.id ?? book.id;
-      tocMap.current.delete(id);
+      tocMap.current.delete(book.id);
       tocChangeListener.current?.();
     },
     onRelocated: showToolbar,
@@ -210,65 +172,10 @@ function WorkspacePdfReaderInner({
     return () => window.removeEventListener("book-search:open", handleBookSearchOpen);
   }, [book.id, handleSearchOpen]);
 
-  // Handle panel visibility changes
-  useEffect(() => {
-    if (!panelApi) return;
-
-    const visDisposable = panelApi.onDidVisibilityChange((e) => {
-      if (!e.isVisible) flushPositionSave();
-    });
-
-    return () => {
-      visDisposable.dispose();
-    };
-  }, [panelApi, flushPositionSave]);
-
-  // Handle panel dimension changes — recalculate PDF layout when the panel resizes
-  useEffect(() => {
-    if (!panelApi) return;
-
-    let rafId: number | null = null;
-    const dimensionsDisposable = panelApi.onDidDimensionsChange(() => {
-      // The PDF viewer needs to recalculate scale/layout when container dimensions change
-      // Use requestAnimationFrame to coalesce rapid resize events during drag-resize
-      if (rafId !== null) cancelAnimationFrame(rafId);
-
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        const viewer = viewerRef.current;
-        if (viewer && typeof viewer.update === "function") {
-          const scaleValue = viewer.currentScaleValue;
-          if (typeof scaleValue === "string" && Number.isNaN(Number(scaleValue))) {
-            viewer.currentScaleValue = scaleValue;
-          } else {
-            viewer.update();
-          }
-        }
-      });
-    });
-
-    return () => {
-      dimensionsDisposable.dispose();
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, [panelApi, viewerRef]);
-
-  const handleUpdateSettings = useCallback(
-    (update: Partial<Settings>) => {
-      if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
-      if (update.pdfLayout !== undefined) setLocalPdfLayout(update.pdfLayout);
-
-      if (panelApi) {
-        const paramUpdates: Record<string, unknown> = {};
-        if (update.fontSize !== undefined) paramUpdates.fontSize = update.fontSize;
-        if (update.pdfLayout !== undefined) paramUpdates.pdfLayout = update.pdfLayout;
-        if (Object.keys(paramUpdates).length > 0) {
-          panelApi.updateParameters(paramUpdates);
-        }
-      }
-    },
-    [panelApi],
-  );
+  const handleUpdateSettings = useCallback((update: Partial<Settings>) => {
+    if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
+    if (update.pdfLayout !== undefined) setLocalPdfLayout(update.pdfLayout);
+  }, []);
 
   const {
     handleSaveHighlight,
@@ -279,7 +186,6 @@ function WorkspacePdfReaderInner({
     setGoToPage,
   } = usePdfWorkspacePanels({
     book,
-    panelApi,
     currentPage,
     hasRestoredPosition,
     selectionText: selectionPopover?.text,
@@ -373,7 +279,6 @@ function WorkspacePdfReaderInner({
       onPointerDown={handlePanelPointerDown}
     >
       <PdfReaderView
-        panelApi={panelApi}
         containerRef={containerRef}
         localSettings={localSettings}
         onUpdateSettings={handleUpdateSettings}
@@ -407,7 +312,7 @@ function WorkspacePdfReaderInner({
         setTocOpen={setTocOpen}
         goToPage={goToPage}
       />
-      {/* Portal popovers to document.body to escape dockview's CSS transforms */}
+      {/* Portal popovers to document.body so position:fixed is viewport-relative. */}
       {selectionPopover &&
         createPortal(
           <HighlightPopover
