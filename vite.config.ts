@@ -1,7 +1,7 @@
 import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
-import { VitePWA } from "vite-plugin-pwa";
+import { type ManifestOptions, VitePWA } from "vite-plugin-pwa";
 
 function getSiteOrigin() {
   const productionUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL;
@@ -17,8 +17,64 @@ function isNetworkOnlyDocumentPath(pathname: string) {
   );
 }
 
+const manifest: Partial<ManifestOptions> = {
+  name: "Readmaxxing",
+  short_name: "Readmaxxing",
+  description:
+    "AI-assisted ebook reader with multi-pane layout, highlights, notes, and hundreds of free books.",
+  start_url: "/",
+  scope: "/",
+  display: "standalone",
+  theme_color: "#0a0a0a",
+  icons: [
+    {
+      src: "/apple-touch-icon.png",
+      sizes: "180x180",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: "/favicon-32x32.png",
+      sizes: "32x32",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: "/favicon-16x16.png",
+      sizes: "16x16",
+      type: "image/png",
+      purpose: "any",
+    },
+    {
+      src: "/favicon.svg",
+      sizes: "any",
+      type: "image/svg+xml",
+      purpose: "any",
+    },
+    {
+      src: "/apple-touch-icon.png",
+      sizes: "180x180",
+      type: "image/png",
+      purpose: "maskable",
+    },
+  ],
+};
+
 export default defineConfig({
   plugins: [
+    {
+      name: "dev-pwa-manifest",
+      apply: "serve",
+      configureServer(server) {
+        server.middlewares.use((request, response, next) => {
+          if (request.url !== "/manifest.webmanifest") return next();
+
+          response.statusCode = 200;
+          response.setHeader("Content-Type", "application/manifest+json");
+          response.end(JSON.stringify(manifest));
+        });
+      },
+    },
     tailwindcss(),
     reactRouter(),
     VitePWA({
@@ -108,48 +164,7 @@ export default defineConfig({
       devOptions: {
         enabled: false,
       },
-      manifest: {
-        name: "Readmaxxing",
-        short_name: "Readmaxxing",
-        description:
-          "AI-assisted ebook reader with multi-pane layout, highlights, notes, and hundreds of free books.",
-        start_url: "/",
-        scope: "/",
-        display: "standalone",
-        theme_color: "#0a0a0a",
-        icons: [
-          {
-            src: "/apple-touch-icon.png",
-            sizes: "180x180",
-            type: "image/png",
-            purpose: "any",
-          },
-          {
-            src: "/favicon-32x32.png",
-            sizes: "32x32",
-            type: "image/png",
-            purpose: "any",
-          },
-          {
-            src: "/favicon-16x16.png",
-            sizes: "16x16",
-            type: "image/png",
-            purpose: "any",
-          },
-          {
-            src: "/favicon.svg",
-            sizes: "any",
-            type: "image/svg+xml",
-            purpose: "any",
-          },
-          {
-            src: "/apple-touch-icon.png",
-            sizes: "180x180",
-            type: "image/png",
-            purpose: "maskable",
-          },
-        ],
-      },
+      manifest,
     }),
   ],
   define: {

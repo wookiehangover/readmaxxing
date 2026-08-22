@@ -1,3 +1,5 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Plugin, ViteDevServer } from "vite";
 import type { VitePWAOptions } from "vite-plugin-pwa";
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,7 +13,7 @@ vi.mock("@react-router/dev/vite", () => ({ reactRouter: vi.fn(() => []) }));
 vi.mock("@tailwindcss/vite", () => ({ default: vi.fn(() => []) }));
 vi.mock("vite-plugin-pwa", () => ({ VitePWA: mocks.vitePWA }));
 
-await import("../../../vite.config");
+const { default: viteConfig } = await import("../../../vite.config");
 
 function getPwaOptions() {
   const options = mocks.vitePWA.mock.calls[0]?.[0];
@@ -35,6 +37,61 @@ function matchesRoute(
 }
 
 describe("PWA document navigation", () => {
+  it("serves the canonical manifest during development without enabling its service worker", async () => {
+    const manifestPlugin = viteConfig.plugins
+      ?.flat()
+      .find(
+        (plugin): plugin is Plugin =>
+          typeof plugin === "object" &&
+          plugin !== null &&
+          "name" in plugin &&
+          plugin.name === "dev-pwa-manifest",
+      );
+
+    expect(manifestPlugin?.apply).toBe("serve");
+    if (typeof manifestPlugin?.configureServer !== "function") {
+      throw new Error("Development manifest middleware was not configured");
+    }
+
+    const use = vi.fn();
+    const server = { middlewares: { use } } as unknown as ViteDevServer;
+    await manifestPlugin.configureServer.call({} as never, server);
+
+    const middleware = use.mock.calls[0]?.[0] as (
+      request: IncomingMessage,
+      response: ServerResponse,
+      next: () => void,
+    ) => void;
+    const response = {
+      statusCode: 200,
+      setHeader: vi.fn(),
+      end: vi.fn(),
+    } as unknown as ServerResponse;
+    const next = vi.fn();
+
+    middleware({ url: "/manifest.webmanifest" } as IncomingMessage, response, next);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.setHeader).toHaveBeenCalledWith("Content-Type", "application/manifest+json");
+    expect(next).not.toHaveBeenCalled();
+
+    const body = vi.mocked(response.end).mock.calls[0]?.[0];
+    expect(typeof body).toBe("string");
+    const manifest = JSON.parse(body as string);
+    const pwaOptions = mocks.vitePWA.mock.calls[0]?.[0];
+
+    expect(manifest).toEqual(pwaOptions?.manifest);
+    expect(manifest).toMatchObject({
+      name: "Readmaxxing",
+      start_url: "/",
+      icons: expect.arrayContaining([
+        expect.objectContaining({ src: "/apple-touch-icon.png", sizes: "180x180" }),
+        expect.objectContaining({ src: "/favicon.svg", type: "image/svg+xml" }),
+      ]),
+    });
+    expect(pwaOptions?.devOptions?.enabled).toBe(false);
+  });
+
   it("uses NetworkOnly for settings and login before the documents route", () => {
     const routes = getPwaOptions().runtimeCaching ?? [];
     const networkOnlyRoute = routes.find(
