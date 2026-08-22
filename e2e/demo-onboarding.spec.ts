@@ -162,6 +162,66 @@ async function mockAiCompletions(page: Page) {
   });
 }
 
+async function waitForStableDemoLibrary(page: Page) {
+  const demoReaderPath = `/books/${DEMO_BOOK_ID}`;
+
+  await expect
+    .poll(
+      async () => {
+        if (new URL(page.url()).pathname === demoReaderPath) {
+          await expect(page.getByTestId("reading-shell")).toBeVisible({ timeout: 30_000 });
+          await expect(page.getByText("Loading workspace…", { exact: true })).toBeHidden({
+            timeout: 30_000,
+          });
+          await page.goBack();
+          return false;
+        }
+
+        return page.evaluate(() => {
+          const browser = window as Window & {
+            __reactRouterDataRouter?: {
+              state: { location: { pathname: string }; navigation: { state: string } };
+            };
+          };
+          const router = browser.__reactRouterDataRouter;
+          if (
+            window.location.pathname !== "/library" ||
+            router?.state.location.pathname !== "/library" ||
+            router.state.navigation.state !== "idle" ||
+            localStorage.getItem("demo-onboarding") !== "complete"
+          ) {
+            return false;
+          }
+
+          const login = document.querySelector('a[href="/login"]');
+          const gatsby = document.querySelector('button[aria-label="Open The Great Gatsby"]');
+          const frame = login?.closest(".app-frame");
+          if (!(login instanceof HTMLElement) || !(gatsby instanceof HTMLElement) || !frame) {
+            return false;
+          }
+          if (
+            frame.classList.contains("opacity-0") ||
+            frame
+              .getAnimations()
+              .some((animation) => animation.playState === "running" || animation.pending)
+          ) {
+            return false;
+          }
+
+          const bounds = login.getBoundingClientRect();
+          if (bounds.width === 0 || bounds.height === 0) return false;
+          const target = document.elementFromPoint(
+            bounds.left + bounds.width / 2,
+            bounds.top + bounds.height / 2,
+          );
+          return target === login || login.contains(target);
+        });
+      },
+      { timeout: 60_000, intervals: [100, 250, 500] },
+    )
+    .toBe(true);
+}
+
 test.describe("Bundled Gatsby onboarding", () => {
   test.describe.configure({ mode: "serial" });
   test.setTimeout(180_000);
@@ -174,6 +234,12 @@ test.describe("Bundled Gatsby onboarding", () => {
     }, testInfo) => {
       await skipIfAuthNotConfigured(request);
       await installVirtualAuthenticator(context, page);
+      if (process.env.E2E_CPU_THROTTLING_RATE) {
+        const devtools = await context.newCDPSession(page);
+        await devtools.send("Emulation.setCPUThrottlingRate", {
+          rate: Number(process.env.E2E_CPU_THROTTLING_RATE),
+        });
+      }
       if (process.env.SKIP_AI_TESTS) await mockAiCompletions(page);
       if (loginAction === "Sign in") await prepareExistingAccount(page);
 
@@ -216,25 +282,7 @@ test.describe("Bundled Gatsby onboarding", () => {
             timeout: 30_000,
           })
           .toBe("complete");
-
-        await expect
-          .poll(
-            async () => {
-              const pathname = new URL(page.url()).pathname;
-              if (pathname === `/books/${DEMO_BOOK_ID}`) return "reader";
-              if (pathname === "/library" && (await gatsby.isVisible())) return "library";
-              return "pending";
-            },
-            { timeout: 30_000 },
-          )
-          .not.toBe("pending");
-
-        if (new URL(page.url()).pathname === `/books/${DEMO_BOOK_ID}`) {
-          await expect(page.getByTestId("reading-shell")).toBeVisible({ timeout: 30_000 });
-          await page.goBack();
-        }
-
-        await expect(page).toHaveURL(/\/library$/);
+        await waitForStableDemoLibrary(page);
         await expect(gatsby).toBeVisible({ timeout: 30_000 });
         const signedOutBooks = await readIndexedDbValue<LocalBook[]>(
           page,
@@ -246,14 +294,31 @@ test.describe("Bundled Gatsby onboarding", () => {
         ]);
 
         const loginLink = page.locator('a[href="/login"]').first();
-        await expect(loginLink).toBeVisible();
-        await loginLink.click({ timeout: 10_000 });
+        await expect(async () => {
+          if (new URL(page.url()).pathname !== "/login") {
+            await waitForStableDemoLibrary(page);
+            await loginLink.click({ timeout: 5_000 });
+          }
+          await expect(page).toHaveURL(/\/login$/);
+        }).toPass({ timeout: 60_000, intervals: [100, 250, 500] });
         await expect(page).toHaveURL(/\/login$/);
         authenticationStarted = true;
         await page.getByRole("button", { name: loginAction }).click();
         await waitForAppHydration(page);
         await expect(page).not.toHaveURL(/\/login$/);
 
+        await expect
+          .poll(
+            async () => {
+              const books = await readIndexedDbValue<LocalBook[]>(page, "ebook-reader-db", "books");
+              const adopted = books.filter(
+                (book) => !book.deletedAt && book.title === "The Great Gatsby",
+              );
+              return adopted.length === 1 && adopted[0].id !== DEMO_BOOK_ID ? adopted[0].id : null;
+            },
+            { timeout: 30_000 },
+          )
+          .not.toBeNull();
         await expect(gatsby).toBeVisible({ timeout: 30_000 });
         const adoptedBooks = await readIndexedDbValue<LocalBook[]>(
           page,
