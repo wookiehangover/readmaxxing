@@ -5,8 +5,8 @@ import type { ChatSession } from "~/lib/stores/chat-store";
 import type { PositionRecord } from "~/lib/stores/position-store";
 import { WorkspaceService } from "~/lib/stores/workspace-store";
 import { ensureBookChaptersUploaded } from "~/lib/sync/book-chapter-uploads";
-import { recordChange } from "~/lib/sync/change-log";
-import { pushChangesWithResult } from "~/lib/sync/push";
+import { getUnsyncedChanges, recordChange } from "~/lib/sync/change-log";
+import { PUSH_BATCH_SIZE, pushChangesWithResult, type PushContext } from "~/lib/sync/push";
 import {
   getActiveSessionStore,
   getBookDataStore,
@@ -141,11 +141,32 @@ async function recordSnapshot(bookId: string, snapshot: DemoSnapshot): Promise<C
   return entries;
 }
 
-function assertAccepted(result: SyncPushResponse | null, entries: ChangeEntry[]): void {
-  const accepted = new Set(result?.accepted.map((entry) => entry.id));
-  if (!result || entries.some((entry) => !accepted.has(entry.id))) {
-    throw new Error("The demo library could not be saved to your account. Please try again.");
+async function pushUntilAccepted(
+  context: PushContext,
+  entries: ChangeEntry[],
+): Promise<SyncPushResponse> {
+  let pending = await getUnsyncedChanges();
+  const remaining = new Set(entries.map((entry) => entry.id));
+  const accepted: SyncPushResponse["accepted"] = [];
+  const maxBatches = Math.max(1, Math.ceil(pending.length / PUSH_BATCH_SIZE) + 1);
+
+  for (let attempt = 0; attempt < maxBatches; attempt++) {
+    const result = await pushChangesWithResult(context);
+    if (!result || result.rejected.some((entry) => remaining.has(entry.id))) break;
+
+    for (const entry of result.accepted) {
+      accepted.push(entry);
+      remaining.delete(entry.id);
+    }
+    if (remaining.size === 0) return { ...result, accepted };
+
+    const nextPending = await getUnsyncedChanges();
+    const nextPendingIds = new Set(nextPending.map((entry) => entry.id));
+    if (!pending.some((entry) => !nextPendingIds.has(entry.id))) break;
+    pending = nextPending;
   }
+
+  throw new Error("The demo library could not be saved to your account. Please try again.");
 }
 
 async function remapSavedWorkspace(bookId: string): Promise<void> {
@@ -174,9 +195,8 @@ export async function persistAdoptedDemoContent(userId: string): Promise<Adopted
     isStopped: () => false,
     scheduleFollowUpPush: () => {},
   };
-  const initialResult = await pushChangesWithResult(pushContext);
-  assertAccepted(
-    initialResult,
+  const initialResult = await pushUntilAccepted(
+    pushContext,
     initialEntries.filter((entry) => entry.entity === "book"),
   );
 
@@ -203,8 +223,7 @@ export async function persistAdoptedDemoContent(userId: string): Promise<Adopted
     set(bookId, activeSessionId, getActiveSessionStore()),
   ]);
   const canonicalEntries = await recordSnapshot(bookId, canonical);
-  const canonicalResult = await pushChangesWithResult(pushContext);
-  assertAccepted(canonicalResult, canonicalEntries);
+  await pushUntilAccepted(pushContext, canonicalEntries);
   await ensureBookChaptersUploaded(bookId);
   await remapSavedWorkspace(bookId);
   const now = Date.now();

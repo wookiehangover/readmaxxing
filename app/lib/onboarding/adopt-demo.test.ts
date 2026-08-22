@@ -16,6 +16,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   ensureChapters: vi.fn(),
+  getUnsyncedChanges: vi.fn(),
   push: vi.fn(),
   recordChange: vi.fn(),
 }));
@@ -23,8 +24,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock("~/lib/sync/book-chapter-uploads", () => ({
   ensureBookChaptersUploaded: mocks.ensureChapters,
 }));
-vi.mock("~/lib/sync/change-log", () => ({ recordChange: mocks.recordChange }));
-vi.mock("~/lib/sync/push", () => ({ pushChangesWithResult: mocks.push }));
+vi.mock("~/lib/sync/change-log", () => ({
+  getUnsyncedChanges: mocks.getUnsyncedChanges,
+  recordChange: mocks.recordChange,
+}));
+vi.mock("~/lib/sync/push", () => ({ PUSH_BATCH_SIZE: 50, pushChangesWithResult: mocks.push }));
 
 import { hasUnadoptedDemoBook, persistAdoptedDemoContent } from "./adopt-demo";
 
@@ -51,6 +55,7 @@ beforeEach(async () => {
   recorded = [];
   pushedCount = 0;
   mocks.ensureChapters.mockReset().mockResolvedValue(undefined);
+  mocks.getUnsyncedChanges.mockReset().mockImplementation(async () => recorded.slice(pushedCount));
   mocks.push.mockReset();
   mocks.recordChange.mockReset().mockImplementation(async (entry) => {
     const change = { ...entry, id: `change-${recorded.length + 1}`, synced: false } as ChangeEntry;
@@ -152,6 +157,180 @@ describe("adoptDemoContent", () => {
       activeBookId: ADOPTED_BOOK_ID,
       clusters: [{ bookId: ADOPTED_BOOK_ID }],
     });
+  });
+
+  it("drains more than one full batch of older changes before the adopted book is accepted", async () => {
+    for (let index = 0; index < 101; index++) {
+      await mocks.recordChange({
+        entity: "notebook",
+        entityId: `offline-${index}`,
+        operation: "put",
+        data: { bookId: `offline-${index}` },
+        timestamp: index,
+      });
+    }
+    mocks.push.mockImplementation(async () => {
+      const batch = recorded.slice(pushedCount, pushedCount + 50);
+      pushedCount += batch.length;
+      return {
+        accepted: batch.map((entry) => ({ id: entry.id })),
+        rejected: [],
+        serverTimestamp: new Date().toISOString(),
+      } satisfies SyncPushResponse;
+    });
+
+    const adopted = await persistAdoptedDemoContent("offline-user");
+
+    expect(adopted).toEqual({ bookId: ADOPTED_BOOK_ID, sessionId: ADOPTED_SESSION_ID });
+    expect(mocks.push).toHaveBeenCalledTimes(4);
+    expect(mocks.ensureChapters).toHaveBeenCalledWith(ADOPTED_BOOK_ID);
+  });
+
+  it("waits across batches for every canonical dependent and session after a book remap", async () => {
+    for (let index = 0; index < 49; index++) {
+      await mocks.recordChange({
+        entity: "notebook",
+        entityId: `offline-${index}`,
+        operation: "put",
+        data: { bookId: `offline-${index}` },
+        timestamp: index,
+      });
+    }
+    mocks.push.mockImplementation(async () => {
+      const batch = recorded.slice(pushedCount, pushedCount + 50);
+      pushedCount += batch.length;
+      const accepted = batch.map((entry) => ({
+        id: entry.id,
+        ...(entry.entity === "book" && entry.entityId === ADOPTED_BOOK_ID
+          ? { canonicalId: CANONICAL_BOOK_ID }
+          : {}),
+      }));
+      if (accepted.some((entry) => entry.canonicalId === CANONICAL_BOOK_ID)) {
+        await remapBookId(ADOPTED_BOOK_ID, CANONICAL_BOOK_ID);
+        for (let index = 0; index < 46; index++) {
+          await mocks.recordChange({
+            entity: "notebook",
+            entityId: `later-offline-${index}`,
+            operation: "put",
+            data: { bookId: `later-offline-${index}` },
+            timestamp: index,
+          });
+        }
+      }
+      return { accepted, rejected: [], serverTimestamp: new Date().toISOString() };
+    });
+
+    const adopted = await persistAdoptedDemoContent("existing-offline-user");
+
+    expect(adopted).toEqual({ bookId: CANONICAL_BOOK_ID, sessionId: ADOPTED_SESSION_ID });
+    const canonicalChanges = recorded.filter(
+      (entry) =>
+        entry.entityId === CANONICAL_BOOK_ID ||
+        (entry.entity === "chat_session" &&
+          (entry.data as { bookId: string }).bookId === CANONICAL_BOOK_ID),
+    );
+    expect(canonicalChanges.map((entry) => entry.entity)).toEqual([
+      "book",
+      "position",
+      "notebook",
+      "chat_session",
+    ]);
+    expect(pushedCount).toBe(recorded.length);
+    expect(mocks.push).toHaveBeenCalledTimes(3);
+    expect(mocks.ensureChapters).toHaveBeenCalledWith(CANONICAL_BOOK_ID);
+  });
+
+  it("fails without retrying when authentication expires during an adoption push", async () => {
+    mocks.push.mockResolvedValueOnce(null);
+
+    await expect(persistAdoptedDemoContent("expired-user")).rejects.toThrow(
+      "The demo library could not be saved to your account.",
+    );
+
+    expect(mocks.push).toHaveBeenCalledOnce();
+    expect(mocks.ensureChapters).not.toHaveBeenCalled();
+  });
+
+  it("fails immediately when the adopted book is explicitly rejected", async () => {
+    mocks.push.mockImplementationOnce(async () => ({
+      accepted: [],
+      rejected: [{ id: recorded[0].id, reason: "invalid book metadata" }],
+      serverTimestamp: new Date().toISOString(),
+    }));
+
+    await expect(persistAdoptedDemoContent("rejected-user")).rejects.toThrow(
+      "The demo library could not be saved to your account.",
+    );
+
+    expect(mocks.push).toHaveBeenCalledOnce();
+    expect(mocks.ensureChapters).not.toHaveBeenCalled();
+  });
+
+  it("fails when the canonical chat session is explicitly rejected", async () => {
+    mocks.push.mockImplementationOnce(async () => acceptedSinceLastPush());
+    mocks.push.mockImplementationOnce(async () => {
+      const pending = recorded.slice(pushedCount);
+      const session = pending.find((entry) => entry.entity === "chat_session");
+      expect(session).toBeDefined();
+      return {
+        accepted: pending.filter((entry) => entry !== session).map((entry) => ({ id: entry.id })),
+        rejected: [{ id: session!.id, reason: "session rejected" }],
+        serverTimestamp: new Date().toISOString(),
+      } satisfies SyncPushResponse;
+    });
+
+    await expect(persistAdoptedDemoContent("rejected-session-user")).rejects.toThrow(
+      "The demo library could not be saved to your account.",
+    );
+
+    expect(mocks.push).toHaveBeenCalledTimes(2);
+    expect(mocks.ensureChapters).not.toHaveBeenCalled();
+  });
+
+  it("stops when an older backlog batch makes no changelog progress", async () => {
+    await mocks.recordChange({
+      entity: "notebook",
+      entityId: "stalled-offline-change",
+      operation: "put",
+      data: {},
+      timestamp: 1,
+    });
+    mocks.push.mockResolvedValue({
+      accepted: [],
+      rejected: [],
+      serverTimestamp: new Date().toISOString(),
+    });
+
+    await expect(persistAdoptedDemoContent("stalled-user")).rejects.toThrow(
+      "The demo library could not be saved to your account.",
+    );
+
+    expect(mocks.push).toHaveBeenCalledOnce();
+    expect(mocks.ensureChapters).not.toHaveBeenCalled();
+  });
+
+  it("bounds retries when a slowly draining backlog would otherwise starve adoption", async () => {
+    for (let index = 0; index < 101; index++) {
+      await mocks.recordChange({
+        entity: "notebook",
+        entityId: `slow-offline-${index}`,
+        operation: "put",
+        data: {},
+        timestamp: index,
+      });
+    }
+    mocks.push.mockImplementation(async () => ({
+      accepted: [{ id: recorded[pushedCount++].id }],
+      rejected: [],
+      serverTimestamp: new Date().toISOString(),
+    }));
+
+    await expect(persistAdoptedDemoContent("slow-offline-user")).rejects.toThrow(
+      "The demo library could not be saved to your account.",
+    );
+
+    expect(mocks.push).toHaveBeenCalledTimes(4);
+    expect(mocks.ensureChapters).not.toHaveBeenCalled();
   });
 
   it("mints a fresh id for the demo session when a user chat already exists", async () => {
