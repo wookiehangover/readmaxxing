@@ -52,40 +52,87 @@ export async function uploadFile(
   bookId: string,
   data: ArrayBuffer | Blob,
   type: "file" | "cover",
+  preferredContentType?: string,
 ): Promise<string | null> {
   const folder = type === "cover" ? "covers" : "books";
-  const fileName = type === "cover" ? "cover.jpg" : "book.epub";
-  const contentType = type === "cover" ? "image/jpeg" : "application/epub+zip";
+  const contentType =
+    preferredContentType ||
+    (isBlobLike(data) ? data.type : undefined) ||
+    (type === "cover" ? "image/jpeg" : "application/epub+zip");
+  const extension =
+    contentType === "application/pdf"
+      ? "pdf"
+      : contentType === "image/png"
+        ? "png"
+        : contentType === "image/webp"
+          ? "webp"
+          : type === "cover"
+            ? "jpg"
+            : "epub";
+  const fileName = `${type === "cover" ? "cover" : "book"}.${extension}`;
   const blob = isBlobLike(data) ? data : new Blob([data], { type: contentType });
   const pathname = `${folder}/${ctx.userId}/${bookId}/${fileName}`;
 
-  const result = await runUploadWithRetry(
-    () =>
-      upload(pathname, blob, {
-        access: "private",
-        handleUploadUrl: "/api/sync/files/upload",
-        clientPayload: JSON.stringify({ bookId, type }),
-        contentType,
-      }),
-    {
-      onAuthExpired: () => ctx.onAuthExpired?.(),
-      onTransientRetry: (attempt, delayMs, err) => {
-        console.warn(
-          `[sync] File upload transient error for ${bookId} (${type}), attempt ${attempt}, retrying in ${delayMs}ms:`,
-          err,
-        );
+  const uploadToVercel = () =>
+    upload(pathname, blob, {
+      access: "private",
+      handleUploadUrl: "/api/sync/files/upload",
+      clientPayload: JSON.stringify({ bookId, type }),
+      contentType,
+    });
+
+  const performUpload = async () => {
+    if (import.meta.env.MODE !== "development") return uploadToVercel();
+
+    const response = await fetch(
+      `/api/sync/files/upload?bookId=${encodeURIComponent(bookId)}&type=${type}`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": contentType },
+        body: blob,
       },
-      onGiveUp: (err, totalAttempts) => {
-        console.error(
-          `[sync] File upload giving up for ${bookId} (${type}) after ${totalAttempts} transient failures:`,
-          err,
-        );
-      },
-      onPermanentFailure: (err) => {
-        console.error(`[sync] File upload failed for ${bookId} (${type}):`, err);
-      },
+    );
+    const result = (await response.json()) as { url?: unknown; error?: unknown; backend?: unknown };
+
+    if (response.status === 409 && result.backend === "vercel") return uploadToVercel();
+
+    if (!response.ok) {
+      const error = new Error(
+        typeof result.error === "string"
+          ? result.error
+          : `Upload failed with status ${response.status}`,
+      );
+      if (response.status === 401 || response.status === 403) error.name = "BlobAccessError";
+      if (response.status === 429 || response.status >= 500) error.name = "BlobServiceNotAvailable";
+      throw error;
+    }
+
+    if (typeof result.url !== "string" || !result.url) {
+      throw new Error("Upload response did not include a file URL");
+    }
+
+    return { url: result.url };
+  };
+
+  const result = await runUploadWithRetry(performUpload, {
+    onAuthExpired: () => ctx.onAuthExpired?.(),
+    onTransientRetry: (attempt, delayMs, err) => {
+      console.warn(
+        `[sync] File upload transient error for ${bookId} (${type}), attempt ${attempt}, retrying in ${delayMs}ms:`,
+        err,
+      );
     },
-  );
+    onGiveUp: (err, totalAttempts) => {
+      console.error(
+        `[sync] File upload giving up for ${bookId} (${type}) after ${totalAttempts} transient failures:`,
+        err,
+      );
+    },
+    onPermanentFailure: (err) => {
+      console.error(`[sync] File upload failed for ${bookId} (${type}):`, err);
+    },
+  });
 
   return result?.url ?? null;
 }
@@ -101,6 +148,7 @@ export async function uploadFileWithBackoff(
   bookId: string,
   data: ArrayBuffer | Blob,
   type: FileUploadType,
+  contentType?: string,
 ): Promise<string | null> {
   const key = uploadRetryKey(bookId, type);
   const decision = shouldAttemptUpload(ctx.uploadRetryState, key, Date.now());
@@ -114,7 +162,7 @@ export async function uploadFileWithBackoff(
   }
   const size = isBlobLike(data) ? data.size : data.byteLength;
   syncDebugLog("upload-attempt", { bookId, type, size });
-  const url = await uploadFile(ctx, bookId, data, type);
+  const url = await uploadFile(ctx, bookId, data, type, contentType);
   if (url) {
     clearUploadRetry(ctx.uploadRetryState, key);
     syncDebugLog("upload-success", { bookId, type, size });
@@ -175,7 +223,13 @@ async function uploadLocalCopy(
   if (options?.resetBackoff) {
     clearUploadRetry(ctx.uploadRetryState, uploadRetryKey(bookId, type));
   }
-  const url = await uploadFileWithBackoff(ctx, bookId, data, type);
+  const contentType =
+    type === "file" && meta.format === "pdf"
+      ? "application/pdf"
+      : isBlobLike(data)
+        ? data.type || undefined
+        : undefined;
+  const url = await uploadFileWithBackoff(ctx, bookId, data, type, contentType);
   if (!url) return null;
   return stampUploadedUrl(bookId, meta, url, type);
 }
