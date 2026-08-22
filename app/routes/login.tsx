@@ -5,6 +5,8 @@ import type { Route } from "./+types/login";
 import { Button } from "~/components/ui/button";
 import { authService } from "~/lib/auth-service";
 import { useAuth } from "~/lib/context/auth-context";
+import { refreshAuthSessionRequested } from "~/lib/themis/auth-session/auth-session-slice";
+import { useAppStore } from "~/lib/themis/provider";
 
 export function meta(_args: Route.MetaArgs) {
   return [{ title: "Log in — Readmaxxing" }];
@@ -42,16 +44,23 @@ export function HydrateFallback() {
 export default function LoginRoute() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { refreshAuth, register, signIn } = useAuth();
+  const { register, signIn } = useAuth();
+  const store = useAppStore();
   const [error, setError] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState<"register" | "signin" | null>(null);
+
+  function refreshAuthAndWait() {
+    return new Promise<void>((resolve, reject) => {
+      store.dispatch(refreshAuthSessionRequested(resolve, reject));
+    });
+  }
 
   async function handleRegister() {
     setError(null);
     setLoadingAction("register");
     try {
       await register("Reader");
-      refreshAuth();
+      await refreshAuthAndWait();
       navigate("/", { replace: true });
     } catch (err: unknown) {
       if (err instanceof Response) return;
@@ -67,7 +76,7 @@ export default function LoginRoute() {
     setLoadingAction("signin");
     try {
       await signIn();
-      refreshAuth();
+      await refreshAuthAndWait();
       navigate("/", { replace: true });
     } catch (err: unknown) {
       if (err instanceof Response) return;

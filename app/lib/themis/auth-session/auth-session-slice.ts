@@ -14,7 +14,9 @@ import type {
   PasskeysCompletedCallback,
 } from "~/lib/themis/auth-session/auth-session-types";
 
-export const refreshAuthSessionRequested = createAction("authSession/refreshRequested");
+export const refreshAuthSessionRequested = createAction<
+  [onCompleted?: AuthLogoutCompletedCallback, onFailed?: AuthOperationFailedCallback]
+>("authSession/refreshRequested");
 export const authSessionResolved = createAction<[user: AuthUser | null]>("authSession/resolved");
 export const authSessionFailed = createAction<[error: TaggedError]>("authSession/failed");
 export const authOperationFailed = createAction<[error: TaggedError]>(

@@ -31,7 +31,8 @@ function createDemoAdoptionRequest(userId: string) {
   return { action: adoptDemoBookRequested(userId, onCompleted, onFailed), completion };
 }
 
-export function* refreshAuthSessionSaga() {
+export function* refreshAuthSessionSaga(action: ReturnType<typeof refreshAuthSessionRequested>) {
+  const [onCompleted, onFailed] = action.payload;
   try {
     const session = yield* call(authService.getSession);
     if (session.user && (yield* call(hasUnadoptedDemoBook))) {
@@ -40,8 +41,10 @@ export function* refreshAuthSessionSaga() {
       yield* call(() => adoption.completion);
     }
     yield* put(authSessionResolved(session.user));
+    if (onCompleted) yield* call(onCompleted);
   } catch (cause) {
     yield* put(authSessionFailed(toTaggedError(cause)));
+    if (onFailed) yield* call(onFailed, cause);
   }
 }
 

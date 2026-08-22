@@ -93,25 +93,28 @@ describe("authSessionSaga", () => {
     mocks.hasUnadoptedDemoBook.mockResolvedValueOnce(true);
     mocks.persistAdoptedDemoContent.mockReturnValueOnce(adoption);
     mocks.getBookIncludingDeleted.mockResolvedValueOnce(adoptedBook);
+    const onCompleted = vi.fn();
+    const onFailed = vi.fn();
     const store = startStore({ runBooksSaga: true });
     store.dispatch(bookAdded(demo));
 
-    store.dispatch(refreshAuthSessionRequested());
+    store.dispatch(refreshAuthSessionRequested(onCompleted, onFailed));
 
     await vi.waitFor(() => expect(mocks.persistAdoptedDemoContent).toHaveBeenCalledWith(user.id));
     expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(false);
     expect(store.authSessionSelectors.selectAuthLoading.select(store.state)).toBe(true);
+    expect(onCompleted).not.toHaveBeenCalled();
 
     finishAdoption(adopted);
 
-    await vi.waitFor(() =>
-      expect(store.authSessionSelectors.selectAuthUser.select(store.state)).toEqual(user),
-    );
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledOnce());
+    expect(store.authSessionSelectors.selectAuthUser.select(store.state)).toEqual(user);
     expect(store.booksSelectors.selectBookById.select(store.state, adopted.bookId)).toEqual(
       adoptedBook,
     );
     expect(store.booksSelectors.selectBookById.select(store.state, DEMO_BOOK_ID)).toBeUndefined();
     expect(mocks.persistAdoptedDemoContent).toHaveBeenCalledOnce();
+    expect(onFailed).not.toHaveBeenCalled();
   });
 
   it("does not read or adopt a demo while the session is signed out", async () => {
@@ -144,18 +147,20 @@ describe("authSessionSaga", () => {
     mocks.getSession.mockResolvedValueOnce({ user });
     mocks.hasUnadoptedDemoBook.mockResolvedValueOnce(true);
     mocks.persistAdoptedDemoContent.mockRejectedValueOnce(new Error("demo adoption failed"));
+    const onCompleted = vi.fn();
+    const onFailed = vi.fn();
     const store = startStore({ runBooksSaga: true });
 
-    store.dispatch(refreshAuthSessionRequested());
+    store.dispatch(refreshAuthSessionRequested(onCompleted, onFailed));
 
-    await vi.waitFor(() =>
-      expect(store.authSessionSelectors.selectAuthLoading.select(store.state)).toBe(false),
-    );
+    await vi.waitFor(() => expect(onFailed).toHaveBeenCalledOnce());
     expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(false);
     expect(store.authSessionSelectors.selectAuthError.select(store.state)).toEqual({
       _tag: "Error",
       message: "demo adoption failed",
     });
+    expect(onCompleted).not.toHaveBeenCalled();
+    expect(onFailed.mock.calls[0]?.[0]).toEqual(new Error("demo adoption failed"));
   });
 
   it("resolves a failed refresh as signed out", async () => {
