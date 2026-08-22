@@ -234,7 +234,7 @@ describe("authSessionSaga", () => {
     expect(mocks.persistAdoptedDemoContent).not.toHaveBeenCalled();
   });
 
-  it("keeps the authenticated app hidden when adopting the demo fails", async () => {
+  it("preserves the authenticated session when adopting the demo fails", async () => {
     mocks.getSession.mockResolvedValueOnce({ user });
     mocks.hasUnadoptedDemoBook.mockResolvedValueOnce(true);
     mocks.persistAdoptedDemoContent.mockRejectedValueOnce(new Error("demo adoption failed"));
@@ -245,13 +245,33 @@ describe("authSessionSaga", () => {
     store.dispatch(refreshAuthSessionRequested(onCompleted, onFailed));
 
     await vi.waitFor(() => expect(onFailed).toHaveBeenCalledOnce());
-    expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(false);
+    expect(store.authSessionSelectors.selectAuthUser.select(store.state)).toEqual(user);
+    expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(true);
+    expect(store.authSessionSelectors.selectAuthLoading.select(store.state)).toBe(false);
     expect(store.authSessionSelectors.selectAuthError.select(store.state)).toEqual({
       _tag: "Error",
       message: "demo adoption failed",
     });
     expect(onCompleted).not.toHaveBeenCalled();
     expect(onFailed.mock.calls[0]?.[0]).toEqual(new Error("demo adoption failed"));
+  });
+
+  it("preserves the authenticated session when checking local demo state fails", async () => {
+    mocks.getSession.mockResolvedValueOnce({ user });
+    mocks.hasUnadoptedDemoBook.mockRejectedValueOnce(new Error("local storage unavailable"));
+    const onFailed = vi.fn();
+    const store = startStore();
+
+    store.dispatch(refreshAuthSessionRequested(undefined, onFailed));
+
+    await vi.waitFor(() => expect(onFailed).toHaveBeenCalledOnce());
+    expect(store.authSessionSelectors.selectAuthUser.select(store.state)).toEqual(user);
+    expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(true);
+    expect(store.authSessionSelectors.selectAuthLoading.select(store.state)).toBe(false);
+    expect(store.authSessionSelectors.selectAuthError.select(store.state)).toEqual({
+      _tag: "Error",
+      message: "local storage unavailable",
+    });
   });
 
   it("resolves a failed refresh as signed out", async () => {
