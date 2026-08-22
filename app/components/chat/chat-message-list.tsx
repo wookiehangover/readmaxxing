@@ -24,6 +24,7 @@ export function ChatMessageList({
   messageIdSet,
   selectedBookTitles,
   sendMessage,
+  isPreparingForChat = false,
 }: {
   messages: UIMessage[];
   status: string;
@@ -35,6 +36,7 @@ export function ChatMessageList({
   messageIdSet: Set<string>;
   selectedBookTitles: string[];
   sendMessage: (message: { text: string }) => void;
+  isPreparingForChat?: boolean;
 }) {
   return (
     <ScrollArea
@@ -97,6 +99,11 @@ export function ChatMessageList({
             </div>
           );
         })}
+        {isPreparingForChat ? (
+          <Marker role="status" aria-live="polite" className="shrink-0 py-1 text-xs">
+            <MarkerContent className="shimmer">Preparing this book for chat…</MarkerContent>
+          </Marker>
+        ) : null}
       </div>
     </ScrollArea>
   );

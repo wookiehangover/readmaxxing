@@ -185,6 +185,10 @@ export function ChatPanelInner({
     () => (simulateDemoStream ? createDemoIntroChat() : null),
     [simulateDemoStream],
   );
+  const [isPreparingForChat, setIsPreparingForChat] = useState(false);
+  const handlePreparingChange = useCallback((preparing: boolean) => {
+    setIsPreparingForChat(preparing);
+  }, []);
   const transport = useMemo(() => {
     if (demoChat) return demoChat.transport({ delayMs: 25 });
     return createChatTransport({
@@ -194,8 +198,9 @@ export function ChatPanelInner({
       currentChapterRef,
       selectedBookIdsRef,
       getBookContext,
+      onPreparingChange: handlePreparingChange,
     });
-  }, [activeSessionId, bookId, demoChat, getBookContext]);
+  }, [activeSessionId, bookId, demoChat, getBookContext, handlePreparingChange]);
 
   const messagesRef = useRef<UIMessage[]>(initialMessages);
   const streamedToolCallIdRef = useRef<Map<string, JSONContent>>(new Map());
@@ -345,6 +350,7 @@ export function ChatPanelInner({
         messageIdSet={messageIdSet}
         selectedBookTitles={selectedBookTitles}
         sendMessage={handleSendMessage}
+        isPreparingForChat={isPreparingForChat}
       />
       <ChatInput
         textareaRef={textareaRef}
