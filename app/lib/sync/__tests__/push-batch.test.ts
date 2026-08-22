@@ -132,6 +132,120 @@ describe("pushChanges batching", () => {
     warnSpy.mockRestore();
   });
 
+  it("keeps a rejected book upsert queued while unrelated accepted entries drain, then retries it", async () => {
+    const bookChange = await recordChange({
+      entity: "book",
+      entityId: "book-needs-retry",
+      operation: "put",
+      data: { id: "book-needs-retry", title: "Recoverable book" },
+      timestamp: 1,
+    });
+    const positionChange = await recordChange({
+      entity: "position",
+      entityId: "unrelated-book",
+      operation: "put",
+      data: { bookId: "unrelated-book", cfi: "epubcfi(/6/2)", updatedAt: 2 },
+      timestamp: 2,
+    });
+
+    const sentBatches: SyncPushRequest[] = [];
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string) as SyncPushRequest;
+      sentBatches.push(body);
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({
+          accepted:
+            sentBatches.length === 1 ? [{ id: positionChange.id }] : [{ id: bookChange.id }],
+          rejected:
+            sentBatches.length === 1
+              ? [{ id: bookChange.id, reason: "database connection temporarily unavailable" }]
+              : [],
+          serverTimestamp: new Date().toISOString(),
+        }),
+      } as unknown as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const engine = makeSyncEngine({ userId: "user-test" });
+
+    await engine.pushChanges();
+
+    expect(await getUnsyncedChanges()).toEqual([expect.objectContaining({ id: bookChange.id })]);
+    expect(sentBatches[0].changes.map((change) => change.id)).toEqual(
+      expect.arrayContaining([bookChange.id, positionChange.id]),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Book"),
+      bookChange.id,
+      bookChange.entityId,
+      "database connection temporarily unavailable",
+    );
+
+    await engine.pushChanges();
+
+    expect(sentBatches).toHaveLength(2);
+    expect(sentBatches[1].changes).toEqual([expect.objectContaining({ id: bookChange.id })]);
+    expect(await getUnsyncedChanges()).toHaveLength(0);
+
+    warnSpy.mockRestore();
+  });
+
+  it("drains a permanently rejected book after bounded retries without blocking unrelated changes", async () => {
+    const bookChange = await recordChange({
+      entity: "book",
+      entityId: "permanently-invalid-book",
+      operation: "put",
+      data: { id: "permanently-invalid-book", title: "Invalid book" },
+      timestamp: 1,
+    });
+    const positionChange = await recordChange({
+      entity: "position",
+      entityId: "unrelated-book",
+      operation: "put",
+      data: { bookId: "unrelated-book", cfi: "epubcfi(/6/2)", updatedAt: 2 },
+      timestamp: 2,
+    });
+
+    const fetchMock = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string) as SyncPushRequest;
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => ({
+          accepted: body.changes
+            .filter((change) => change.id !== bookChange.id)
+            .map((change) => ({ id: change.id })),
+          rejected: [{ id: bookChange.id, reason: "invalid book metadata" }],
+          serverTimestamp: new Date().toISOString(),
+        }),
+      } as unknown as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const engine = makeSyncEngine({ userId: "user-test" });
+
+    await engine.pushChanges();
+    expect(await getUnsyncedChanges()).toEqual([expect.objectContaining({ id: bookChange.id })]);
+    expect(fetchMock.mock.calls[0][1]?.body).toContain(positionChange.id);
+
+    await engine.pushChanges();
+    expect(await getUnsyncedChanges()).toEqual([expect.objectContaining({ id: bookChange.id })]);
+
+    await engine.pushChanges();
+    expect(await getUnsyncedChanges()).toHaveLength(0);
+
+    await engine.pushChanges();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    warnSpy.mockRestore();
+  });
+
   it("does not schedule a follow-up push when the batch was not full", async () => {
     for (let i = 0; i < 10; i++) {
       await recordChange({

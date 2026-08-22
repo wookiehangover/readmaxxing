@@ -11,6 +11,8 @@ import type { EntityType, SyncPushRequest, SyncPushResponse } from "./types";
  * are drained across multiple requests scheduled back-to-back.
  */
 export const PUSH_BATCH_SIZE = 50;
+const MAX_REJECTED_BOOK_PUSH_ATTEMPTS = 3;
+const rejectedBookPushAttempts = new Map<string, number>();
 
 export interface PushContext {
   fileUploadContext: FileUploadContext;
@@ -57,22 +59,49 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
 
   const result: SyncPushResponse = await res.json();
   const rejected = result.rejected ?? [];
+  const changesById = new Map(changes.map((change) => [change.id, change]));
   syncDebugLog("push-response", {
     accepted: result.accepted.length,
     rejected: rejected.length,
   });
 
-  // Drain rejected entries alongside accepted ones so a permanently-rejected
-  // entry at the head of the queue cannot starve every later change under
-  // the batch cap. Trade-off: transient server-side per-entry errors are
-  // therefore not retried in place — the next user mutation creates a new
-  // ChangeEntry and drives a fresh push. Rejection reasons are logged so
-  // they remain diagnosable.
+  const terminalRejectedIds: string[] = [];
   for (const entry of rejected) {
-    console.warn("[sync] Push entry rejected by server:", entry.id, entry.reason);
+    const change = changesById.get(entry.id);
+    if (change?.entity === "book" && change.operation === "put") {
+      const attempts = (rejectedBookPushAttempts.get(entry.id) ?? 0) + 1;
+      if (attempts < MAX_REJECTED_BOOK_PUSH_ATTEMPTS) {
+        rejectedBookPushAttempts.set(entry.id, attempts);
+        console.warn(
+          "[sync] Book metadata push rejected; will retry:",
+          entry.id,
+          change.entityId,
+          entry.reason,
+        );
+        continue;
+      }
+
+      rejectedBookPushAttempts.delete(entry.id);
+      console.warn(
+        "[sync] Book metadata push rejected; retry limit reached:",
+        entry.id,
+        change.entityId,
+        entry.reason,
+      );
+    } else {
+      console.warn("[sync] Push entry rejected by server:", entry.id, entry.reason);
+    }
+    terminalRejectedIds.push(entry.id);
   }
 
-  const syncedIds = [...result.accepted.map((a) => a.id), ...rejected.map((r) => r.id)];
+  const acceptedIds = result.accepted.map((entry) => entry.id);
+  for (const id of acceptedIds) {
+    rejectedBookPushAttempts.delete(id);
+  }
+
+  // Keep rejected book upserts available for a bounded later retry while
+  // draining accepted and terminal entries so they cannot starve the queue.
+  const syncedIds = [...acceptedIds, ...terminalRejectedIds];
   if (syncedIds.length > 0) {
     await markSynced(syncedIds);
     await clearSyncedChanges();
@@ -80,7 +109,6 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
 
   // Apply cross-device dedup remaps for any accepted book entries that
   // the server mapped to a canonical id.
-  const changesById = new Map(changes.map((c) => [c.id, c]));
   const affectedEntities = new Set<EntityType>();
   const bookIdRemaps: Array<{ fromId: string; toId: string }> = [];
   for (const entry of result.accepted) {
