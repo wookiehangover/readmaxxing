@@ -31,6 +31,11 @@ export interface AdoptedDemo {
   sessionId: string;
 }
 
+export async function hasUnadoptedDemoBook(): Promise<boolean> {
+  const book = await get<BookMeta>(DEMO_BOOK_ID, getBookStore());
+  return Boolean(book && !book.deletedAt);
+}
+
 async function readSnapshot(bookId: string): Promise<DemoSnapshot> {
   const [book, data, position, notebook, sessions, activeSessionId] = await Promise.all([
     get<BookMeta>(bookId, getBookStore()),

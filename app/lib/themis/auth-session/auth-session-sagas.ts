@@ -2,6 +2,7 @@ import { call, put, takeEvery, takeLatest } from "typed-redux-saga";
 
 import { authService } from "~/lib/auth-service";
 import { toTaggedError } from "~/lib/errors";
+import { hasUnadoptedDemoBook } from "~/lib/onboarding/adopt-demo";
 import {
   addPasskeyRequested,
   authOperationFailed,
@@ -17,10 +18,27 @@ import {
   refreshAuthSessionRequested,
   signInRequested,
 } from "~/lib/themis/auth-session/auth-session-slice";
+import { adoptDemoBookRequested } from "~/lib/themis/books/books-slice";
+
+function createDemoAdoptionRequest(userId: string) {
+  let onCompleted!: () => void;
+  let onFailed!: (error: string) => void;
+  const completion = new Promise<void>((resolve, reject) => {
+    onCompleted = resolve;
+    onFailed = (error) => reject(new Error(error));
+  });
+
+  return { action: adoptDemoBookRequested(userId, onCompleted, onFailed), completion };
+}
 
 export function* refreshAuthSessionSaga() {
   try {
     const session = yield* call(authService.getSession);
+    if (session.user && (yield* call(hasUnadoptedDemoBook))) {
+      const adoption = createDemoAdoptionRequest(session.user.id);
+      yield* put(adoption.action);
+      yield* call(() => adoption.completion);
+    }
     yield* put(authSessionResolved(session.user));
   } catch (cause) {
     yield* put(authSessionFailed(toTaggedError(cause)));

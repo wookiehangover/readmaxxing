@@ -26,7 +26,7 @@ vi.mock("~/lib/sync/book-chapter-uploads", () => ({
 vi.mock("~/lib/sync/change-log", () => ({ recordChange: mocks.recordChange }));
 vi.mock("~/lib/sync/push", () => ({ pushChangesWithResult: mocks.push }));
 
-import { persistAdoptedDemoContent } from "./adopt-demo";
+import { hasUnadoptedDemoBook, persistAdoptedDemoContent } from "./adopt-demo";
 
 const CANONICAL_BOOK_ID = "11111111-1111-4111-8111-111111111111";
 const ADOPTED_BOOK_ID = "33333333-3333-4333-8333-333333333333";
@@ -112,6 +112,18 @@ beforeEach(async () => {
 });
 
 describe("adoptDemoContent", () => {
+  it("detects a locally present demo that has not been adopted", async () => {
+    await expect(hasUnadoptedDemoBook()).resolves.toBe(true);
+  });
+
+  it("skips a missing or soft-deleted demo", async () => {
+    await del(DEMO_BOOK_ID, getBookStore());
+    await expect(hasUnadoptedDemoBook()).resolves.toBe(false);
+
+    await set(DEMO_BOOK_ID, { id: DEMO_BOOK_ID, deletedAt: Date.now() }, getBookStore());
+    await expect(hasUnadoptedDemoBook()).resolves.toBe(false);
+  });
+
   it("records and pushes seeded data before uploading chapters", async () => {
     const order: string[] = [];
     mocks.push.mockImplementation(async () => {
