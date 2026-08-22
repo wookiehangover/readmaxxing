@@ -1,12 +1,18 @@
 import { mergeBookRecord, mergeChatMessageRecord, mergeChatSessionRecord } from "./entity-mergers";
 import { reuploadBookChapters } from "./book-chapter-uploads";
+import { getUnsyncedChanges } from "./change-log";
 import {
   reloadBookFiles as reloadBookFilesImpl,
   resetUploadBackoff,
   uploadPendingFiles,
   type FileUploadContext,
 } from "./file-uploads";
-import { PUSH_BATCH_SIZE, pushChanges as pushChangesImpl } from "./push";
+import {
+  PUSH_BATCH_SIZE,
+  pushChanges as pushChangesImpl,
+  pushChangesWithResult,
+  type PushContext,
+} from "./push";
 import { pullChanges as pullChangesImpl } from "./pull";
 import type { UploadRetryEntry } from "./upload-retry";
 
@@ -134,17 +140,18 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     }
   }
 
-  const doPush = () =>
-    pushChangesImpl({
-      fileUploadContext,
-      isStopped,
-      onAuthExpired: config.onAuthExpired,
-      scheduleFollowUpPush: () => {
-        queueMicrotask(() => {
-          runCycle(doPush);
-        });
-      },
-    });
+  const pushContext: PushContext = {
+    fileUploadContext,
+    isStopped,
+    onAuthExpired: config.onAuthExpired,
+    scheduleFollowUpPush: () => {
+      queueMicrotask(() => {
+        runCycle(doPush);
+      });
+    },
+  };
+
+  const doPush = () => pushChangesImpl(pushContext);
 
   const doPull = () =>
     pullChangesImpl({
@@ -153,12 +160,21 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     });
 
   const doRecoverFiles = async () => {
-    await doPush();
-    resetUploadBackoff(fileUploadContext);
-    await uploadPendingFiles(fileUploadContext, {
-      isStopped,
-      verifyExistingRemoteUrls: true,
-    });
+    const pushResult = await pushChangesWithResult(pushContext);
+    const hasUnacceptedBookPut =
+      pushResult !== null &&
+      (await getUnsyncedChanges()).some(
+        (change) => change.entity === "book" && change.operation === "put",
+      );
+
+    if (!hasUnacceptedBookPut) {
+      resetUploadBackoff(fileUploadContext);
+      await uploadPendingFiles(fileUploadContext, {
+        isStopped,
+        verifyExistingRemoteUrls: true,
+      });
+    }
+
     await doPush();
   };
 
