@@ -6,6 +6,7 @@ import {
   type NotebookEditorCallbacks,
 } from "~/lib/context/workspace-context";
 import { useReadingChatMenuRegistration } from "~/lib/context/reading-chat-menu-context";
+import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
 import { generateChatSessionTitleRequested } from "~/lib/themis/chat-sessions/chat-sessions-slice";
 import { useAppStore } from "~/lib/themis/provider";
 import { ChatInput } from "./chat-input";
@@ -240,7 +241,8 @@ export function ChatPanelInner({
     id: activeSessionId,
     transport,
     messages: chatInitialMessages,
-    resume: !onChatInteraction,
+    resume:
+      !onChatInteraction && bookId !== DEMO_BOOK_ID && activeSessionId !== DEMO_CHAT_SESSION.id,
     onToolCall: simulateDemoStream ? undefined : (onToolCall as any),
     onFinish,
     onError: (error) => console.error("Chat error:", error),

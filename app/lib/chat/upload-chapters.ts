@@ -1,4 +1,5 @@
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 import { isChaptersUploaded, markChaptersUploaded } from "~/lib/stores/chapter-upload-cache-store";
 
 export const CHAPTER_UPLOAD_CHUNK_BYTES = 3 * 1024 * 1024;
@@ -74,6 +75,7 @@ export async function uploadChapters(
   format: string | undefined,
   options: { force?: boolean } = {},
 ): Promise<void> {
+  if (bookId === DEMO_BOOK_ID) return;
   if (!options.force && (await isChaptersUploaded(bookId))) return;
 
   const chunks = createChapterUploadChunks(chapters);

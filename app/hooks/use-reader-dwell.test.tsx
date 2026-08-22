@@ -1,6 +1,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 import { READER_DWELL_MS, useReaderDwell, type ReadingDwellUnit } from "./use-reader-dwell";
 
 const mocks = vi.hoisted(() => ({
@@ -92,6 +93,21 @@ afterEach(() => {
 });
 
 describe("useReaderDwell", () => {
+  it("never ingests dwell for the reserved demo book after authentication", async () => {
+    await render(
+      {
+        unitKind: "epub-spine",
+        locator: "chapter-1.xhtml",
+        text: "Visible demo chapter text with enough content",
+      },
+      DEMO_BOOK_ID,
+    );
+
+    await advance(READER_DWELL_MS * 2);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("posts once after ten visible seconds", async () => {
     await render({
       unitKind: "epub-spine",

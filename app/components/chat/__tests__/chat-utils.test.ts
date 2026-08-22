@@ -1,5 +1,6 @@
 import type { UIMessage } from "@ai-sdk/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
 
 const mocks = vi.hoisted(() => ({ ensureBookChaptersUploaded: vi.fn(async () => {}) }));
 
@@ -15,15 +16,20 @@ const message: UIMessage = {
   parts: [{ type: "text", text: "Hello" }],
 };
 
-function createTransport(onPreparingChange = vi.fn(), bookId = "book-1") {
+function createTransport(
+  onPreparingChange = vi.fn(),
+  bookId = "book-1",
+  sessionId = "session-1",
+  selectedBookIds = [bookId],
+) {
   return {
     onPreparingChange,
     transport: createChatTransport({
-      sessionId: "session-1",
+      sessionId,
       bookId,
       visibleTextRef: { current: "Visible" },
       currentChapterRef: { current: 2 },
-      selectedBookIdsRef: { current: [bookId] },
+      selectedBookIdsRef: { current: selectedBookIds },
       getBookContext: () => ({ visibleText: "Visible", currentChapterIndex: 2 }),
       onPreparingChange,
     }),
@@ -54,6 +60,41 @@ describe("createChatTransport", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it.each([
+    [DEMO_BOOK_ID, "session-1"],
+    ["book-1", DEMO_CHAT_SESSION.id],
+  ])(
+    "blocks reserved chat book/session IDs before sending or resuming",
+    async (bookId, sessionId) => {
+      vi.stubGlobal("fetch", vi.fn());
+      const { transport } = createTransport(vi.fn(), bookId, sessionId);
+
+      await expect(sendMessage(transport)).rejects.toThrow("Demo content must be adopted");
+      await expect(transport.reconnectToStream({ chatId: sessionId })).rejects.toThrow(
+        "Demo content must be adopted",
+      );
+
+      expect(fetch).not.toHaveBeenCalled();
+      expect(mocks.ensureBookChaptersUploaded).not.toHaveBeenCalled();
+    },
+  );
+
+  it("removes a reserved demo book from authenticated multi-book chat context", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(200)));
+    const { transport } = createTransport(vi.fn(), "owned-book", "owned-session", [
+      "owned-book",
+      DEMO_BOOK_ID,
+      "second-owned-book",
+    ]);
+
+    await sendMessage(transport);
+
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+    expect(body.bookIds).toEqual(["owned-book", "second-owned-book"]);
+    expect(body.bookContexts).not.toHaveProperty(DEMO_BOOK_ID);
+    expect(JSON.stringify(body)).not.toContain(DEMO_BOOK_ID);
   });
 
   it.each([

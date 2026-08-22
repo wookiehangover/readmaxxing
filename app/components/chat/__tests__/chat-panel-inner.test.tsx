@@ -1,16 +1,22 @@
 import React, { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
+
+const useChatMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@ai-sdk/react", () => ({
-  useChat: () => ({
-    messages: [],
-    regenerate: vi.fn(),
-    sendMessage: vi.fn(),
-    setMessages: vi.fn(),
-    status: "ready",
-    stop: vi.fn(),
-  }),
+  useChat: (options: unknown) => {
+    useChatMock(options);
+    return {
+      messages: [],
+      regenerate: vi.fn(),
+      sendMessage: vi.fn(),
+      setMessages: vi.fn(),
+      status: "ready",
+      stop: vi.fn(),
+    };
+  },
 }));
 vi.mock("~/lib/context/workspace-context", () => ({ useOptionalWorkspace: () => null }));
 vi.mock("~/lib/themis/provider", () => ({
@@ -48,6 +54,7 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   document.body.innerHTML = "";
+  useChatMock.mockClear();
 });
 
 describe("ChatPanelInner", () => {
@@ -75,5 +82,31 @@ describe("ChatPanelInner", () => {
     expect(container.querySelector("button")).toBeNull();
     expect(container.textContent).not.toContain("Sessions");
     expect(container.textContent).not.toContain("New chat");
+    expect(useChatMock).toHaveBeenLastCalledWith(expect.objectContaining({ resume: true }));
+  });
+
+  it.each([
+    [DEMO_BOOK_ID, "owned-session"],
+    ["owned-book", DEMO_CHAT_SESSION.id],
+  ])("disables automatic resume for reserved book/session IDs", (bookId, activeSessionId) => {
+    const container = document.body.appendChild(document.createElement("div"));
+    root = createRoot(container);
+    act(() =>
+      root?.render(
+        <ChatPanelInner
+          bookId={bookId}
+          bookTitle="Book"
+          initialMessages={[]}
+          bookDataRef={createRef<ArrayBuffer>()}
+          textareaRef={createRef<HTMLTextAreaElement>()}
+          inputRef={{ current: "" }}
+          activeSessionId={activeSessionId}
+          onSwitchSession={vi.fn()}
+          onNewSession={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(useChatMock).toHaveBeenLastCalledWith(expect.objectContaining({ resume: false }));
   });
 });

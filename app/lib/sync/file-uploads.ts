@@ -1,5 +1,6 @@
 import { upload } from "@vercel/blob/client";
 import { get, set, entries } from "idb-keyval";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 import { recordChange } from "./change-log";
 import { getBookStore, getBookDataStore } from "./stores";
 import { syncDebugLog } from "./sync-debug";
@@ -54,6 +55,8 @@ export async function uploadFile(
   type: "file" | "cover",
   preferredContentType?: string,
 ): Promise<string | null> {
+  if (bookId === DEMO_BOOK_ID) return null;
+
   const folder = type === "cover" ? "covers" : "books";
   const contentType =
     preferredContentType ||
@@ -150,6 +153,8 @@ export async function uploadFileWithBackoff(
   type: FileUploadType,
   contentType?: string,
 ): Promise<string | null> {
+  if (bookId === DEMO_BOOK_ID) return null;
+
   const key = uploadRetryKey(bookId, type);
   const decision = shouldAttemptUpload(ctx.uploadRetryState, key, Date.now());
   if (!decision.attempt) {
@@ -256,6 +261,7 @@ export async function uploadPendingFiles(
   for (const entry of allBooks) {
     if (!Array.isArray(entry) || entry.length < 2) continue;
     const bookId = entry[0];
+    if (bookId === DEMO_BOOK_ID) continue;
     let meta = entry[1];
     if (!meta || typeof meta !== "object" || meta.deletedAt) continue;
 
@@ -321,7 +327,7 @@ export async function uploadPendingFiles(
  * scoped to one book).
  */
 export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): Promise<void> {
-  if (!ctx.userId) return;
+  if (!ctx.userId || bookId === DEMO_BOOK_ID) return;
 
   const bookStore = getBookStore();
   const dataStore = getBookDataStore();

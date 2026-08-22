@@ -6,6 +6,7 @@ import {
 } from "~/lib/chat/upload-chapters";
 import { isChaptersUploaded, markChaptersUploaded } from "~/lib/stores/chapter-upload-cache-store";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 
 vi.mock("~/lib/stores/chapter-upload-cache-store", () => ({
   isChaptersUploaded: vi.fn(),
@@ -34,6 +35,14 @@ describe("uploadChapters", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("never sends or marks chapters for the reserved demo book", async () => {
+    await uploadChapters(DEMO_BOOK_ID, [chapter], "epub", { force: true });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(isChaptersUploaded).not.toHaveBeenCalled();
+    expect(markChaptersUploaded).not.toHaveBeenCalled();
   });
 
   it("skips normal uploads when the book was already uploaded", async () => {

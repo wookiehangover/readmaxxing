@@ -4,6 +4,8 @@ import { createChat } from "@shadcn/helpers/ai-sdk";
 import { DefaultChatTransport } from "ai";
 import {
   DEMO_CAPABILITIES_ANSWER,
+  DEMO_BOOK_ID,
+  DEMO_CHAT_SESSION,
   DEMO_INTRO_QUESTION,
   DEMO_SUGGESTED_QUESTIONS,
 } from "~/lib/onboarding/demo-content";
@@ -187,6 +189,10 @@ export function createChatTransport(opts: {
   onPreparingChange?: (preparing: boolean) => void;
 }) {
   const fetchWithPreparationRetry: typeof fetch = async (input, init) => {
+    if (opts.bookId === DEMO_BOOK_ID || opts.sessionId === DEMO_CHAT_SESSION.id) {
+      throw new Error("Demo content must be adopted before using authenticated chat.");
+    }
+
     // Only retry the POST /api/chat path — resume/messages endpoints have
     // their own ownership checks and shouldn't race on creation.
     const isChatPost = typeof input === "string" && input === "/api/chat";
@@ -220,7 +226,9 @@ export function createChatTransport(opts: {
       // Read the latest selection at send time. Always include the primary
       // book first; dedupe defensively in case the same id appears twice.
       const selected = opts.selectedBookIdsRef.current ?? [opts.bookId];
-      const bookIds = Array.from(new Set([opts.bookId, ...selected]));
+      const bookIds = Array.from(new Set([opts.bookId, ...selected])).filter(
+        (bookId) => bookId !== DEMO_BOOK_ID,
+      );
       const bookContexts: Record<string, { visibleText?: string; currentChapterIndex?: number }> =
         {};
       for (const id of bookIds) {
