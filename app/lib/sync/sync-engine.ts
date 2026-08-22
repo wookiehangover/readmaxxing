@@ -153,6 +153,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     });
 
   const doRecoverFiles = async () => {
+    await doPush();
     resetUploadBackoff(fileUploadContext);
     await uploadPendingFiles(fileUploadContext, {
       isStopped,
