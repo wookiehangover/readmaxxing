@@ -39,6 +39,7 @@ import {
   replaceBookFileRequested,
   updateBookMetadataRequested,
 } from "~/lib/themis/books/books-slice";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -56,9 +57,33 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.restoreAllMocks();
 });
 
 describe("BookDetailsRoute", () => {
+  it("renders a local demo cover instead of a stale authenticated cover URL", () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:signed-out-demo-cover");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const props = {
+      loaderData: {
+        book: {
+          id: DEMO_BOOK_ID,
+          title: "The Great Gatsby",
+          author: "F. Scott Fitzgerald",
+          coverImage: new Blob(["gatsby cover"]),
+          remoteCoverUrl: "/api/sync/files/download?bookId=stale-account-book&type=cover",
+          format: "epub" as const,
+        },
+      },
+    } as unknown as Parameters<typeof BookDetailsRoute>[0];
+
+    act(() => root.render(<BookDetailsRoute {...props} />));
+
+    expect(container.querySelector('img[alt="The Great Gatsby"]')?.getAttribute("src")).toBe(
+      "blob:signed-out-demo-cover",
+    );
+  });
+
   it("dispatches metadata saves to the books saga", () => {
     const props = {
       loaderData: {

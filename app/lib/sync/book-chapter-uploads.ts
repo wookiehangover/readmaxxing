@@ -1,6 +1,7 @@
 import { get } from "idb-keyval";
 import { uploadChapters } from "~/lib/chat/upload-chapters";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 import { isChaptersUploaded } from "~/lib/stores/chapter-upload-cache-store";
 import { getBookDataStore, getBookStore } from "./stores";
 
@@ -57,6 +58,8 @@ function startBookChapterUpload(
   force: boolean,
   extracted?: ExtractedBookChapters,
 ): Promise<void> {
+  if (bookId === DEMO_BOOK_ID) return Promise.resolve();
+
   const current = pendingUploads.get(bookId);
   if (current) return current;
 

@@ -21,6 +21,7 @@ import { useAppStore } from "~/lib/themis/provider";
 import { ChatPanelInner } from "./chat-panel-inner";
 import { resolvePendingChatMessage, type ChatIntent } from "./chat-intent";
 import { toUIMessages, uiMessagesToChatMessages } from "./chat-utils";
+import { useRemappedBookId } from "./use-remapped-book-id";
 
 interface ChatPanelProps {
   bookId: string;
@@ -78,9 +79,11 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const setChatMessagesRef = useRef<((messages: UIMessage[]) => void) | null>(null);
   const explanationInFlightRef = useRef<{ bookId: string; message: string } | null>(null);
 
-  const chatBookId = adoptedBookId ?? bookId;
+  const chatBookId = useRemappedBookId(adoptedBookId ?? bookId);
   const activeSession = store.chatSessionsSelectors.selectActiveSessionByBook.useValue(chatBookId);
   const activeSessionId = activeSession?.id ?? null;
+  const hasReservedChatIds =
+    chatBookId === DEMO_BOOK_ID || activeSessionId === DEMO_CHAT_SESSION.id;
   const chatSessionsLoaded =
     store.chatSessionsSelectors.selectChatSessionsLoaded.useValue(chatBookId);
   const chatSessionsError =
@@ -150,7 +153,11 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   );
 
   const chatReady =
-    isAuthenticated && chatSessionsLoaded && bookContext !== null && activeSessionId !== null;
+    isAuthenticated &&
+    !hasReservedChatIds &&
+    chatSessionsLoaded &&
+    bookContext !== null &&
+    activeSessionId !== null;
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -174,6 +181,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
   useEffect(() => {
     if (!isAuthenticated && chatBookId !== DEMO_BOOK_ID) return;
+    if (isAuthenticated && chatBookId === DEMO_BOOK_ID) return;
     let cancelled = false;
     setLoadError(null);
     store.dispatch(hydrateChatSessionsRequested(chatBookId, isAuthenticated));
@@ -249,7 +257,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   }, [activeSessionId, initialMessages]);
 
   useEffect(() => {
-    if (!isAuthenticated || !activeSessionId) return;
+    if (!isAuthenticated || !activeSessionId || hasReservedChatIds) return;
     let cancelled = false;
     fetch(`/api/chat/messages/${encodeURIComponent(activeSessionId)}`)
       .then(async (response) => {
@@ -278,7 +286,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, chatBookId, isAuthenticated, store]);
+  }, [activeSessionId, chatBookId, hasReservedChatIds, isAuthenticated, store]);
 
   const chatSyncVersion = useSyncListener(["chat_message", "chat_session"]);
 
@@ -370,6 +378,14 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
+
+  if (isAuthenticated && hasReservedChatIds) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-muted-foreground">Preparing your book…</p>
       </div>
     );
   }

@@ -1,3 +1,5 @@
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
+
 export type ReadingArtifactKind = "outline" | "characters" | "wiki";
 
 export interface ReadingArtifactHead {
@@ -95,6 +97,10 @@ export async function fetchReadingArtifacts(
   bookId: string,
   init?: RequestInit,
 ): Promise<ReadingArtifactsResponse> {
+  if (bookId === DEMO_BOOK_ID) {
+    throw new ReadingArtifactsError("auth_required", 401, "Authentication required");
+  }
+
   let response: Response;
   try {
     response = await fetch(`/api/books/${encodeURIComponent(bookId)}/artifacts`, {
@@ -142,6 +148,10 @@ export async function saveReadingOutline(
   content: string,
   init?: RequestInit,
 ): Promise<ReadingOutlineSaveResponse> {
+  if (bookId === DEMO_BOOK_ID) {
+    throw new ReadingArtifactsError("auth_required", 401, "Authentication required");
+  }
+
   const headers = new Headers(init?.headers);
   headers.set("Content-Type", "application/json");
 

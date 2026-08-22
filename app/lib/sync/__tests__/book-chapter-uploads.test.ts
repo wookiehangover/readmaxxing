@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 
 const { getMock, uploadChaptersMock, isChaptersUploadedMock, extractBookChaptersMock } = vi.hoisted(
   () => ({
@@ -34,6 +35,14 @@ describe("ensureBookChaptersUploaded", () => {
     vi.clearAllMocks();
     isChaptersUploadedMock.mockResolvedValue(false);
     uploadChaptersMock.mockResolvedValue(undefined);
+  });
+
+  it("never prepares or uploads chapters for the reserved demo book", async () => {
+    await ensureBookChaptersUploaded(DEMO_BOOK_ID, { chapters, format: "epub" });
+
+    expect(isChaptersUploadedMock).not.toHaveBeenCalled();
+    expect(getMock).not.toHaveBeenCalled();
+    expect(uploadChaptersMock).not.toHaveBeenCalled();
   });
 
   it("does no extraction work when the current cache version is uploaded", async () => {

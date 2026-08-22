@@ -1,8 +1,9 @@
+import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
 import { clearSyncedChanges, getUnsyncedChanges, markSynced } from "./change-log";
 import { type FileUploadContext, uploadPendingFiles } from "./file-uploads";
 import { remapBookId } from "./remap";
 import { syncDebugLog } from "./sync-debug";
-import type { EntityType, SyncPushRequest, SyncPushResponse } from "./types";
+import type { ChangeEntry, EntityType, SyncPushRequest, SyncPushResponse } from "./types";
 
 /**
  * Maximum number of change log entries to send in a single `/api/sync/push`
@@ -11,6 +12,21 @@ import type { EntityType, SyncPushRequest, SyncPushResponse } from "./types";
  * are drained across multiple requests scheduled back-to-back.
  */
 export const PUSH_BATCH_SIZE = 50;
+const MAX_REJECTED_BOOK_PUSH_ATTEMPTS = 3;
+const rejectedBookPushAttempts = new Map<string, number>();
+
+function isReservedDemoChange(change: ChangeEntry): boolean {
+  if (change.entityId === DEMO_BOOK_ID || change.entityId === DEMO_CHAT_SESSION.id) return true;
+  if (!change.data || typeof change.data !== "object") return false;
+
+  const data = change.data as Record<string, unknown>;
+  return (
+    data.id === DEMO_BOOK_ID ||
+    data.id === DEMO_CHAT_SESSION.id ||
+    data.bookId === DEMO_BOOK_ID ||
+    data.sessionId === DEMO_CHAT_SESSION.id
+  );
+}
 
 export interface PushContext {
   fileUploadContext: FileUploadContext;
@@ -26,8 +42,17 @@ export interface PushContext {
 
 export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushResponse | null> {
   if (ctx.isStopped()) return null;
-  const pending = await getUnsyncedChanges();
+  let pending = await getUnsyncedChanges();
   if (pending.length === 0) return null;
+
+  const reservedChanges = pending.filter(isReservedDemoChange);
+  if (reservedChanges.length > 0) {
+    await markSynced(reservedChanges.map((change) => change.id));
+    await clearSyncedChanges();
+    for (const change of reservedChanges) rejectedBookPushAttempts.delete(change.id);
+    pending = pending.filter((change) => !isReservedDemoChange(change));
+    if (pending.length === 0) return null;
+  }
 
   // Cap each request at PUSH_BATCH_SIZE so the server handler stays well
   // under Vercel's function timeout. Remaining entries drain on follow-up
@@ -57,22 +82,49 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
 
   const result: SyncPushResponse = await res.json();
   const rejected = result.rejected ?? [];
+  const changesById = new Map(changes.map((change) => [change.id, change]));
   syncDebugLog("push-response", {
     accepted: result.accepted.length,
     rejected: rejected.length,
   });
 
-  // Drain rejected entries alongside accepted ones so a permanently-rejected
-  // entry at the head of the queue cannot starve every later change under
-  // the batch cap. Trade-off: transient server-side per-entry errors are
-  // therefore not retried in place — the next user mutation creates a new
-  // ChangeEntry and drives a fresh push. Rejection reasons are logged so
-  // they remain diagnosable.
+  const terminalRejectedIds: string[] = [];
   for (const entry of rejected) {
-    console.warn("[sync] Push entry rejected by server:", entry.id, entry.reason);
+    const change = changesById.get(entry.id);
+    if (change?.entity === "book" && change.operation === "put") {
+      const attempts = (rejectedBookPushAttempts.get(entry.id) ?? 0) + 1;
+      if (attempts < MAX_REJECTED_BOOK_PUSH_ATTEMPTS) {
+        rejectedBookPushAttempts.set(entry.id, attempts);
+        console.warn(
+          "[sync] Book metadata push rejected; will retry:",
+          entry.id,
+          change.entityId,
+          entry.reason,
+        );
+        continue;
+      }
+
+      rejectedBookPushAttempts.delete(entry.id);
+      console.warn(
+        "[sync] Book metadata push rejected; retry limit reached:",
+        entry.id,
+        change.entityId,
+        entry.reason,
+      );
+    } else {
+      console.warn("[sync] Push entry rejected by server:", entry.id, entry.reason);
+    }
+    terminalRejectedIds.push(entry.id);
   }
 
-  const syncedIds = [...result.accepted.map((a) => a.id), ...rejected.map((r) => r.id)];
+  const acceptedIds = result.accepted.map((entry) => entry.id);
+  for (const id of acceptedIds) {
+    rejectedBookPushAttempts.delete(id);
+  }
+
+  // Keep rejected book upserts available for a bounded later retry while
+  // draining accepted and terminal entries so they cannot starve the queue.
+  const syncedIds = [...acceptedIds, ...terminalRejectedIds];
   if (syncedIds.length > 0) {
     await markSynced(syncedIds);
     await clearSyncedChanges();
@@ -80,14 +132,15 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
 
   // Apply cross-device dedup remaps for any accepted book entries that
   // the server mapped to a canonical id.
-  const changesById = new Map(changes.map((c) => [c.id, c]));
   const affectedEntities = new Set<EntityType>();
+  const bookIdRemaps: Array<{ fromId: string; toId: string }> = [];
   for (const entry of result.accepted) {
     if (!entry.canonicalId) continue;
     const change = changesById.get(entry.id);
     if (!change || change.entity !== "book") continue;
     if (change.entityId === entry.canonicalId) continue;
     await remapBookId(change.entityId, entry.canonicalId);
+    bookIdRemaps.push({ fromId: change.entityId, toId: entry.canonicalId });
     affectedEntities.add("book");
     affectedEntities.add("position");
     affectedEntities.add("highlight");
@@ -97,15 +150,33 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
   if (affectedEntities.size > 0 && typeof window !== "undefined") {
     queueMicrotask(() => {
       for (const entity of affectedEntities) {
-        window.dispatchEvent(new CustomEvent("sync:entity-updated", { detail: { entity } }));
+        if (entity === "book") {
+          for (const bookIdRemap of bookIdRemaps) {
+            window.dispatchEvent(
+              new CustomEvent("sync:entity-updated", {
+                detail: { entity, bookIdRemap },
+              }),
+            );
+          }
+        } else {
+          window.dispatchEvent(new CustomEvent("sync:entity-updated", { detail: { entity } }));
+        }
       }
     });
   }
 
-  // Fire-and-forget file uploads after metadata push succeeds
-  uploadPendingFiles(ctx.fileUploadContext, { isStopped: ctx.isStopped }).catch((err) =>
-    console.error("[sync] File upload pass failed:", err),
+  // The upload pass scans every local book, so wait until all queued book
+  // upserts were accepted before exposing their files to the ownership check.
+  const acceptedIdSet = new Set(acceptedIds);
+  const hasUnacceptedBookUpsert = pending.some(
+    (change) =>
+      change.entity === "book" && change.operation === "put" && !acceptedIdSet.has(change.id),
   );
+  if (!hasUnacceptedBookUpsert) {
+    uploadPendingFiles(ctx.fileUploadContext, { isStopped: ctx.isStopped }).catch((err) =>
+      console.error("[sync] File upload pass failed:", err),
+    );
+  }
 
   // If the batch was full there are (likely) more pending changes. Schedule
   // an immediate follow-up push so a backlog drains quickly without waiting

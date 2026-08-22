@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 import {
   fetchReadingArtifacts,
   parseReadingArtifactsResponse,
@@ -55,6 +56,15 @@ describe("parseReadingArtifactsResponse", () => {
 });
 
 describe("fetchReadingArtifacts", () => {
+  it("does not request authenticated artifacts for the reserved demo book", async () => {
+    await expect(fetchReadingArtifacts(DEMO_BOOK_ID)).rejects.toMatchObject({
+      code: "auth_required",
+      status: 401,
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("sends credentials and returns the parsed outline", async () => {
     fetchMock.mockResolvedValue(
       new Response(
@@ -105,6 +115,15 @@ describe("fetchReadingArtifacts", () => {
 });
 
 describe("saveReadingOutline", () => {
+  it("does not save authenticated artifacts for the reserved demo book", async () => {
+    await expect(saveReadingOutline(DEMO_BOOK_ID, outline.content)).rejects.toMatchObject({
+      code: "auth_required",
+      status: 401,
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("puts outline content with credentials and returns the saved head", async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ bookId: "book-1", artifact: outline }), {
