@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { runInNewContext } from "node:vm";
 import type { Plugin, ViteDevServer } from "vite";
 import type { VitePWAOptions } from "vite-plugin-pwa";
 import { describe, expect, it, vi } from "vitest";
@@ -34,6 +35,21 @@ function matchesRoute(
     url: new URL(pathname, "https://readmaxxing.test"),
     sameOrigin,
   } as MatchOptions);
+}
+
+function matchesSerializedRoute(
+  route: NonNullable<ReturnType<typeof getPwaOptions>["runtimeCaching"]>[number],
+  pathname: string,
+  sameOrigin = true,
+) {
+  const urlPattern = route.urlPattern;
+  if (typeof urlPattern !== "function") throw new Error("Route matcher is missing");
+
+  return matchesRoute(
+    { ...route, urlPattern: runInNewContext(`(${urlPattern.toString()})`) as typeof urlPattern },
+    pathname,
+    sameOrigin,
+  );
 }
 
 describe("PWA document navigation", () => {
@@ -132,6 +148,34 @@ describe("PWA document navigation", () => {
     expect(matchesRoute(route!, "/share/book-id")).toBe(false);
     expect(matchesRoute(route!, "/debug/reading-agent")).toBe(false);
     expect(matchesRoute(route!, "https://other.test/about", false)).toBe(false);
+  });
+
+  it("keeps serialized navigation matchers independent of Vite configuration scope", () => {
+    const routes = getPwaOptions().runtimeCaching ?? [];
+    const networkOnlyRoute = routes.find(
+      (candidate) => candidate.handler === "NetworkOnly" && !candidate.options?.cacheName,
+    );
+    const documentsRoute = routes.find((candidate) => candidate.options?.cacheName === "documents");
+
+    expect(networkOnlyRoute).toBeDefined();
+    expect(documentsRoute).toBeDefined();
+
+    for (const pathname of ["/settings", "/settings/profile", "/login", "/login/"]) {
+      expect(matchesSerializedRoute(networkOnlyRoute!, pathname)).toBe(true);
+      expect(matchesSerializedRoute(documentsRoute!, pathname)).toBe(false);
+    }
+
+    expect(matchesSerializedRoute(networkOnlyRoute!, "/settings-other")).toBe(false);
+    expect(matchesSerializedRoute(networkOnlyRoute!, "/about")).toBe(false);
+    expect(matchesSerializedRoute(networkOnlyRoute!, "https://other.test/settings", false)).toBe(
+      false,
+    );
+
+    expect(matchesSerializedRoute(documentsRoute!, "/about")).toBe(true);
+    expect(matchesSerializedRoute(documentsRoute!, "/api/chat")).toBe(false);
+    expect(matchesSerializedRoute(documentsRoute!, "/share/book-id")).toBe(false);
+    expect(matchesSerializedRoute(documentsRoute!, "/debug/reading-agent")).toBe(false);
+    expect(matchesSerializedRoute(documentsRoute!, "https://other.test/about", false)).toBe(false);
   });
 
   it("prerenders /about", () => {
