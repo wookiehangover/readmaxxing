@@ -10,6 +10,7 @@ import {
   checkPositionNudgeRequested,
   flushReadingPositionRequested,
   hydrateLocationCacheRequested,
+  hydrateReadingHistoryRequested,
   hydrateReadingPositionsRequested,
   locationCacheHydrated,
   locationCacheSaved,
@@ -66,12 +67,16 @@ async function persistLocationCache(bookId: string, json: string) {
   return { bookId, json };
 }
 
+async function loadReadingHistory(bookId: string) {
+  return ReadingHistoryService.getHistory(bookId);
+}
+
 async function persistReadingHistory(
   bookId: string,
   data: Parameters<typeof ReadingHistoryService.recordVisit>[1],
 ) {
   await ReadingHistoryService.recordVisit(bookId, data);
-  return ReadingHistoryService.getHistory(bookId);
+  return loadReadingHistory(bookId);
 }
 
 async function checkRemotePosition(bookId: string) {
@@ -182,6 +187,18 @@ export function* saveLocationCacheSaga(action: ReturnType<typeof saveLocationCac
   }
 }
 
+export function* hydrateReadingHistorySaga(
+  action: ReturnType<typeof hydrateReadingHistoryRequested>,
+) {
+  const [bookId] = action.payload;
+  try {
+    const history = yield* call(loadReadingHistory, bookId);
+    yield* put(readingHistoryHydrated(bookId, history));
+  } catch (error) {
+    yield* put(readingPositionsFailed([bookId], toTaggedError(error)));
+  }
+}
+
 export function* recordReadingHistorySaga(
   action: ReturnType<typeof recordReadingHistoryRequested>,
 ) {
@@ -191,6 +208,24 @@ export function* recordReadingHistorySaga(
     yield* put(readingHistoryHydrated(bookId, history));
   } catch (error) {
     yield* put(readingPositionsFailed([bookId], toTaggedError(error)));
+  }
+}
+
+type ReadingHistoryHydrateTask =
+  ReturnType<
+    typeof fork<Parameters<typeof hydrateReadingHistorySaga>, typeof hydrateReadingHistorySaga>
+  > extends Generator<unknown, infer Task, unknown>
+    ? Task
+    : never;
+
+export function* watchReadingHistoryHydrates() {
+  const pendingByBookId = new Map<string, ReadingHistoryHydrateTask>();
+  while (true) {
+    const action = yield* take(hydrateReadingHistoryRequested);
+    const [bookId] = action.payload;
+    const pending = pendingByBookId.get(bookId);
+    if (pending) yield* cancel(pending);
+    pendingByBookId.set(bookId, yield* fork(hydrateReadingHistorySaga, action));
   }
 }
 
@@ -220,6 +255,7 @@ export function* watchReadingPositionHydrates() {
 export function* readingPositionsSaga() {
   yield* fork(watchReadingPositionHydrates);
   yield* fork(watchReadingPositionChanges);
+  yield* fork(watchReadingHistoryHydrates);
   yield* takeEvery(flushReadingPositionRequested, flushReadingPositionSaga);
   yield* takeEvery(hydrateLocationCacheRequested, hydrateLocationCacheSaga);
   yield* takeEvery(saveLocationCacheRequested, saveLocationCacheSaga);

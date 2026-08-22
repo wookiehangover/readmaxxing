@@ -63,6 +63,27 @@ describe("readingPositionsReducer", () => {
     expect(readingPositionsReducer(state, { type: "unknown" })).toBe(state);
   });
 
+  it("replaces repeatedly hydrated history only for the requested book", () => {
+    const otherBookEntry = { ...historyEntry, id: "history-2", bookId: "book-2" };
+    const replacementEntry = { ...historyEntry, id: "history-3", cfi: "epubcfi(/6/8)" };
+    const withOtherBook = readingPositionsReducer(
+      undefined,
+      readingHistoryHydrated("book-2", [otherBookEntry]),
+    );
+    const firstHydration = readingPositionsReducer(
+      withOtherBook,
+      readingHistoryHydrated("book-1", [historyEntry]),
+    );
+    const repeatedHydration = readingPositionsReducer(
+      firstHydration,
+      readingHistoryHydrated("book-1", [replacementEntry]),
+    );
+
+    expect(getItem(repeatedHydration.history, historyEntry.id)).toBeUndefined();
+    expect(getItem(repeatedHydration.history, replacementEntry.id)).toEqual(replacementEntry);
+    expect(getItem(repeatedHydration.history, otherBookEntry.id)).toEqual(otherBookEntry);
+  });
+
   it("derives remote nudges from canonical local and remote positions", () => {
     const store = createAppStore();
     store.init({
