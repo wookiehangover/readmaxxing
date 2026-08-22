@@ -82,12 +82,14 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
   // the server mapped to a canonical id.
   const changesById = new Map(changes.map((c) => [c.id, c]));
   const affectedEntities = new Set<EntityType>();
+  const bookIdRemaps: Array<{ fromId: string; toId: string }> = [];
   for (const entry of result.accepted) {
     if (!entry.canonicalId) continue;
     const change = changesById.get(entry.id);
     if (!change || change.entity !== "book") continue;
     if (change.entityId === entry.canonicalId) continue;
     await remapBookId(change.entityId, entry.canonicalId);
+    bookIdRemaps.push({ fromId: change.entityId, toId: entry.canonicalId });
     affectedEntities.add("book");
     affectedEntities.add("position");
     affectedEntities.add("highlight");
@@ -97,7 +99,17 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
   if (affectedEntities.size > 0 && typeof window !== "undefined") {
     queueMicrotask(() => {
       for (const entity of affectedEntities) {
-        window.dispatchEvent(new CustomEvent("sync:entity-updated", { detail: { entity } }));
+        if (entity === "book") {
+          for (const bookIdRemap of bookIdRemaps) {
+            window.dispatchEvent(
+              new CustomEvent("sync:entity-updated", {
+                detail: { entity, bookIdRemap },
+              }),
+            );
+          }
+        } else {
+          window.dispatchEvent(new CustomEvent("sync:entity-updated", { detail: { entity } }));
+        }
       }
     });
   }

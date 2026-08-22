@@ -21,6 +21,7 @@ import { useAppStore } from "~/lib/themis/provider";
 import { ChatPanelInner } from "./chat-panel-inner";
 import { resolvePendingChatMessage, type ChatIntent } from "./chat-intent";
 import { toUIMessages, uiMessagesToChatMessages } from "./chat-utils";
+import { useRemappedBookId } from "./use-remapped-book-id";
 
 interface ChatPanelProps {
   bookId: string;
@@ -78,7 +79,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const setChatMessagesRef = useRef<((messages: UIMessage[]) => void) | null>(null);
   const explanationInFlightRef = useRef<{ bookId: string; message: string } | null>(null);
 
-  const chatBookId = adoptedBookId ?? bookId;
+  const chatBookId = useRemappedBookId(adoptedBookId ?? bookId);
   const activeSession = store.chatSessionsSelectors.selectActiveSessionByBook.useValue(chatBookId);
   const activeSessionId = activeSession?.id ?? null;
   const chatSessionsLoaded =
