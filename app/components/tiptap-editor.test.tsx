@@ -86,3 +86,17 @@ describe("TiptapEditor rail heading styles", () => {
     expect(prose?.classList.contains("[&_h6]:text-[0.75em]")).toBe(true);
   });
 });
+
+describe("TiptapEditor read-only mode", () => {
+  it("renders content without an editable document", async () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    root = createRoot(container);
+
+    await act(async () =>
+      root?.render(<TiptapEditor content="Shared content" compact editable={false} />),
+    );
+
+    expect(container.textContent).toContain("Shared content");
+    expect(container.querySelector(".tiptap")?.getAttribute("contenteditable")).toBe("false");
+  });
+});

@@ -114,11 +114,12 @@ interface EpubReaderToolbarProps {
   localSettings: Settings;
   onUpdateSettings: (update: Partial<Settings>) => void;
   book: BookMeta;
-  onDownload: () => void;
-  onCopyPageAsMarkdown: () => void;
-  onOpenSpeedread: () => void;
-  onBookmarkPage: () => void | Promise<void>;
-  isBookmarked: boolean;
+  readOnly?: boolean;
+  onDownload?: () => void;
+  onCopyPageAsMarkdown?: () => void;
+  onOpenSpeedread?: () => void;
+  onBookmarkPage?: () => void | Promise<void>;
+  isBookmarked?: boolean;
   bookmarksLoaded?: boolean;
 }
 
@@ -128,6 +129,7 @@ export function EpubReaderToolbar({
   localSettings,
   onUpdateSettings,
   book,
+  readOnly = false,
   onDownload,
   onCopyPageAsMarkdown,
   onOpenSpeedread,
@@ -140,7 +142,7 @@ export function EpubReaderToolbar({
       <ReaderSettingsMenu
         settings={localSettings}
         onUpdateSettings={onUpdateSettings}
-        book={book}
+        book={readOnly ? undefined : book}
         onDownload={onDownload}
         onCopyPageAsMarkdown={onCopyPageAsMarkdown}
         onOpenSpeedread={onOpenSpeedread}

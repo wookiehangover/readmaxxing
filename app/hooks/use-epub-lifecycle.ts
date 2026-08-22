@@ -113,6 +113,9 @@ export interface ChatContextEntry {
 export interface UseEpubLifecycleConfig {
   bookId: string;
   containerRef: React.RefObject<HTMLDivElement | null>;
+  loadData?: () => Promise<ArrayBuffer>;
+  initialPosition?: string | null;
+  persistPosition?: boolean;
   readerLayout: ReaderLayout;
   fontFamily: string;
   fontSize: number;
@@ -199,7 +202,14 @@ function mapToc(
 }
 
 export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecycleReturn {
-  const { bookId, containerRef, enabled = true } = config;
+  const {
+    bookId,
+    containerRef,
+    enabled = true,
+    loadData,
+    initialPosition,
+    persistPosition = true,
+  } = config;
   const internalBookRef = useRef<any | null>(null);
   const internalRenditionRef = useRef<any | null>(null);
   const bookRef = config.bookRef ?? internalBookRef;
@@ -242,6 +252,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   }, []);
 
   const flushPositionSave = useCallback(() => {
+    if (configRef.current.persistPosition === false) return;
     const cfi = latestCfiRef.current;
     if (!cfi) return;
     const panelId = configRef.current.panelId;
@@ -331,7 +342,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
 
   usePositionNudge({
     bookId,
-    enabled: enabled && hasRestoredPosition,
+    enabled: enabled && hasRestoredPosition && persistPosition,
     navigateToPosition: navigateToCfi,
   });
 
@@ -349,7 +360,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     let publisherPages: PublisherPageMap | null = null;
     let layoutRestoreInProgress = false;
     let mobileLayoutObserver: ResizeObserver | null = null;
-    registerActiveReader(bookId);
+    if (persistPosition) registerActiveReader(bookId);
     setHasRestoredPosition(false);
     setLoadError(false);
 
@@ -369,6 +380,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         localProgression: relocation.localProgression,
         spineIndex: relocation.spineIndex,
       };
+      latestCfiRef.current = cfi;
+      if (!persistPosition) return;
       const panelId = configRef.current.panelId;
       store.dispatch(
         readingPositionChanged({
@@ -504,8 +517,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         if (layoutHasSize) void restoreLastGoodPosition(restoreTarget, relocation.spineIndex);
         return;
       }
-      latestCfiRef.current = cfi;
       saveRelocation(cfi, relocation);
+      if (!persistPosition) return;
       store.dispatch(
         recordReadingHistoryRequested(bookId, {
           cfi,
@@ -519,9 +532,13 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     };
 
     const init = async () => {
-      const data = await new Promise<ArrayBuffer>((resolve, reject) => {
-        store.dispatch(loadBookDataRequested(bookId, resolve, (error) => reject(new Error(error))));
-      });
+      const data = loadData
+        ? await loadData()
+        : await new Promise<ArrayBuffer>((resolve, reject) => {
+            store.dispatch(
+              loadBookDataRequested(bookId, resolve, (error) => reject(new Error(error))),
+            );
+          });
       if (cancelled) return;
       provider = await openZipResourceProvider(data, { signal: controller.signal });
       const opened = await openPublication(provider, { signal: controller.signal });
@@ -543,16 +560,19 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
 
       // Heuristic locations are only needed when there is no publisher page-list.
       if (!publisherPages) {
-        await new Promise<void>((resolve) => {
-          store.dispatch(hydrateLocationCacheRequested(bookId, resolve));
-        });
-        const cached =
-          store.readingPositionsSelectors.selectLocationCache.select(store.state, bookId)?.json ??
-          null;
+        if (persistPosition) {
+          await new Promise<void>((resolve) => {
+            store.dispatch(hydrateLocationCacheRequested(bookId, resolve));
+          });
+        }
+        const cached = persistPosition
+          ? (store.readingPositionsSelectors.selectLocationCache.select(store.state, bookId)
+              ?.json ?? null)
+          : null;
         const successorCache = parseSuccessorPositionCache(cached);
         positions =
           successorCache?.positions ?? (await generateSuccessorPositions(publication, provider));
-        if (!successorCache) {
+        if (persistPosition && !successorCache) {
           store.dispatch(
             saveLocationCacheRequested(bookId, serializeSuccessorPositionCache(positions)),
           );
@@ -583,35 +603,40 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         });
       });
 
-      const positionKeys =
-        configRef.current.panelId === undefined ? [bookId] : [bookId, configRef.current.panelId];
-      await new Promise<void>((resolve, reject) => {
-        store.dispatch(
-          hydrateReadingPositionsRequested(positionKeys, resolve, (error) =>
-            reject(new Error(error)),
-          ),
-        );
-      });
-      const startPosition = await resolveStartPosition({
-        latest: latestCfiRef.current
-          ? {
-              cfi: latestCfiRef.current,
-              localProgression: latestLayoutRef.current.localProgression,
-              spineIndex: latestLayoutRef.current.spineIndex,
-            }
-          : null,
-        panelId: configRef.current.panelId,
-        bookId,
-        getPositionRecord: async (key) => {
-          const record = store.readingPositionsSelectors.selectPosition.select(store.state, key);
-          if (!record?.cfi) return null;
-          return {
-            cfi: record.cfi,
-            localProgression: record.localProgression,
-            spineIndex: record.spineIndex,
-          } satisfies StoredReadingPosition;
-        },
-      });
+      let startPosition: StoredReadingPosition | null = initialPosition
+        ? { cfi: initialPosition }
+        : null;
+      if (persistPosition) {
+        const positionKeys =
+          configRef.current.panelId === undefined ? [bookId] : [bookId, configRef.current.panelId];
+        await new Promise<void>((resolve, reject) => {
+          store.dispatch(
+            hydrateReadingPositionsRequested(positionKeys, resolve, (error) =>
+              reject(new Error(error)),
+            ),
+          );
+        });
+        startPosition = await resolveStartPosition({
+          latest: latestCfiRef.current
+            ? {
+                cfi: latestCfiRef.current,
+                localProgression: latestLayoutRef.current.localProgression,
+                spineIndex: latestLayoutRef.current.spineIndex,
+              }
+            : null,
+          panelId: configRef.current.panelId,
+          bookId,
+          getPositionRecord: async (key) => {
+            const record = store.readingPositionsSelectors.selectPosition.select(store.state, key);
+            if (!record?.cfi) return null;
+            return {
+              cfi: record.cfi,
+              localProgression: record.localProgression,
+              spineIndex: record.spineIndex,
+            } satisfies StoredReadingPosition;
+          },
+        });
+      }
       suppressPositionSaveRef.current = true;
       try {
         if (startPosition) {
@@ -653,7 +678,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     document.addEventListener("keydown", handleKeyDown);
     window.addEventListener("pagehide", flushPositionSave);
     void init().catch((error) => {
-      unregisterActiveReader(bookId);
+      if (persistPosition) unregisterActiveReader(bookId);
       if (!cancelled) {
         setLoadError(true);
         console.error("Failed to load book data:", error);
@@ -667,7 +692,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       window.removeEventListener("pagehide", flushPositionSave);
       flushPositionSave();
       clearNavigationInProgress();
-      unregisterActiveReader(bookId);
+      if (persistPosition) unregisterActiveReader(bookId);
       setToc([]);
       setHasRestoredPosition(false);
       setCurrentChapterLabel(null);
@@ -688,8 +713,11 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     displayCfiWithFallback,
     enabled,
     flushPositionSave,
+    initialPosition,
+    loadData,
     markNavigationInProgress,
     navigateToCfi,
+    persistPosition,
     renditionRef,
     store,
     ws,

@@ -54,8 +54,8 @@ interface ReaderFormattingMenuProps {
 
 interface ReaderActionsMenuProps {
   book?: BookMeta;
-  onDownload: () => void | Promise<void>;
-  onBookmarkPage: () => void | Promise<void>;
+  onDownload?: () => void | Promise<void>;
+  onBookmarkPage?: () => void | Promise<void>;
   onCopyPageAsMarkdown?: () => void;
   onOpenSpeedread?: () => void;
   isBookmarked?: boolean;
@@ -300,27 +300,31 @@ function ReaderActionItems({
           Share
         </DropdownMenuItem>
       )}
-      <DropdownMenuItem
-        onClick={() => {
-          void Promise.resolve(onDownload()).catch(console.error);
-        }}
-      >
-        <Download className="size-4" />
-        Download
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        disabled={!bookmarksLoaded}
-        onClick={() => {
-          void Promise.resolve(onBookmarkPage()).catch(console.error);
-        }}
-      >
-        <BookmarkIcon className="size-4" />
-        {!bookmarksLoaded
-          ? "Loading bookmarks…"
-          : isBookmarked
-            ? "Remove bookmark"
-            : "Bookmark page"}
-      </DropdownMenuItem>
+      {onDownload ? (
+        <DropdownMenuItem
+          onClick={() => {
+            void Promise.resolve(onDownload()).catch(console.error);
+          }}
+        >
+          <Download className="size-4" />
+          Download
+        </DropdownMenuItem>
+      ) : null}
+      {onBookmarkPage ? (
+        <DropdownMenuItem
+          disabled={!bookmarksLoaded}
+          onClick={() => {
+            void Promise.resolve(onBookmarkPage()).catch(console.error);
+          }}
+        >
+          <BookmarkIcon className="size-4" />
+          {!bookmarksLoaded
+            ? "Loading bookmarks…"
+            : isBookmarked
+              ? "Remove bookmark"
+              : "Bookmark page"}
+        </DropdownMenuItem>
+      ) : null}
     </DropdownMenuGroup>
   );
 }
@@ -370,6 +374,13 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
   const registeredChatActions = useReadingChatMenuActions();
   const chatActions = registeredChatActions?.bookId === book?.id ? registeredChatActions : null;
   const { activeTab } = useReadingRailTab();
+  const hasActions = Boolean(
+    props.onDownload ||
+    props.onBookmarkPage ||
+    props.onCopyPageAsMarkdown ||
+    props.onOpenSpeedread ||
+    (isAuthenticated && book),
+  );
 
   useEffect(() => {
     if (!workspace || !bookId || !props.onNavigateToToc) return;
@@ -399,19 +410,21 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
                 <ReaderFormattingMenuItems {...props} />
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <Zap className="size-4" />
-                Actions
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-52 text-xs">
-                <ReaderActionItems
-                  {...props}
-                  isAuthenticated={isAuthenticated}
-                  onShare={handleShare}
-                />
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
+            {hasActions ? (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Zap className="size-4" />
+                  Actions
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-52 text-xs">
+                  <ReaderActionItems
+                    {...props}
+                    isAuthenticated={isAuthenticated}
+                    onShare={handleShare}
+                  />
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ) : null}
             {props.toc && props.toc.length > 0 && props.onNavigateToToc ? (
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
@@ -428,6 +441,12 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
+            {isAuthenticated && book ? (
+              <DropdownMenuItem onClick={handleShare}>
+                <Share2 className="size-4" />
+                Share
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onClick={() => navigate("/library")}>
               <Library className="size-4" />
               Library
