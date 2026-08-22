@@ -28,12 +28,22 @@ export const workspaceRestoreInitialState: WorkspaceRestoreState = {
 const reducer = createReducer<WorkspaceRestoreState>(workspaceRestoreInitialState);
 
 reducer.with(hydrateWorkspaceRestore, (state) => ({ ...state, loading: true, error: null }));
-reducer.with(workspaceRestoreHydrated, (state, { payload: [lastOpenedByBookId] }) => ({
-  ...state,
-  lastOpenedByBookId,
-  loading: false,
-  error: null,
-}));
+reducer.with(workspaceRestoreHydrated, (state, { payload: [lastOpenedByBookId] }) => {
+  const mergedLastOpenedByBookId = { ...lastOpenedByBookId };
+  for (const [bookId, timestamp] of Object.entries(state.lastOpenedByBookId)) {
+    mergedLastOpenedByBookId[bookId] = Math.max(
+      timestamp,
+      mergedLastOpenedByBookId[bookId] ?? timestamp,
+    );
+  }
+
+  return {
+    ...state,
+    lastOpenedByBookId: mergedLastOpenedByBookId,
+    loading: false,
+    error: null,
+  };
+});
 reducer.with(workspaceRestoreHydrateFailed, (state, { payload: [error] }) => ({
   ...state,
   loading: false,
