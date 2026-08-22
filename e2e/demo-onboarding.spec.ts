@@ -7,6 +7,8 @@ import {
 
 const DEMO_BOOK_ID = "af6bcb3e-6cb8-4c64-8e4d-9d65b1ec19d1";
 const DEMO_SESSION_ID = "39e8921b-1341-49c1-9ef8-0f03e8a36571";
+const CI_ASSISTANT_RESPONSE =
+  "The green light represents Gatsby's longing for an unreachable future.";
 
 interface CapturedRequest {
   method: string;
@@ -102,7 +104,66 @@ async function prepareExistingAccount(page: Page) {
   });
 }
 
+async function mockAiCompletions(page: Page) {
+  await page.route("**/api/chat-title", async (route) => {
+    await route.fulfill({ json: { title: "The green light" } });
+  });
+
+  await page.route("**/api/chapter-questions", async (route) => {
+    await route.fulfill({
+      json: [
+        "What does the green light represent?",
+        "How does Nick describe Gatsby?",
+        "What does the setting reveal?",
+      ],
+    });
+  });
+
+  await page.route("**/api/chat", async (route) => {
+    const body = route.request().postDataJSON() as {
+      bookId?: string;
+      bookIds?: string[];
+      sessionId?: string;
+    };
+    const bookId = body.bookId ?? body.bookIds?.[0];
+    const sessionId = body.sessionId;
+    if (!bookId || !sessionId) {
+      await route.fulfill({ status: 400, json: { error: "bookId and sessionId are required" } });
+      return;
+    }
+
+    const [bookOwnership, sessionOwnership] = await Promise.all([
+      page.request.get(`/api/books/${encodeURIComponent(bookId)}/artifacts`),
+      page.request.get(`/api/chat/messages/${encodeURIComponent(sessionId)}`),
+    ]);
+    const rejectedOwnership = [bookOwnership, sessionOwnership].find((response) => !response.ok());
+    if (rejectedOwnership) {
+      await route.fulfill({ response: rejectedOwnership });
+      return;
+    }
+
+    const stream = [
+      { type: "start", messageId: "e2e-assistant" },
+      { type: "start-step" },
+      { type: "text-start", id: "e2e-text" },
+      { type: "text-delta", id: "e2e-text", delta: CI_ASSISTANT_RESPONSE },
+      { type: "text-end", id: "e2e-text" },
+      { type: "finish-step" },
+      { type: "finish", finishReason: "stop" },
+    ];
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "content-type": "text/event-stream",
+        "x-vercel-ai-ui-message-stream": "v1",
+      },
+      body: `${stream.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`,
+    });
+  });
+}
+
 test.describe("Bundled Gatsby onboarding", () => {
+  test.describe.configure({ mode: "serial" });
   test.setTimeout(180_000);
 
   for (const loginAction of ["Create account", "Sign in"] as const) {
@@ -114,6 +175,7 @@ test.describe("Bundled Gatsby onboarding", () => {
       await skipIfAuthNotConfigured(request);
       await installVirtualAuthenticator(context, page);
       if (loginAction === "Sign in") await prepareExistingAccount(page);
+      if (process.env.SKIP_AI_TESTS) await mockAiCompletions(page);
 
       const requests: CapturedRequest[] = [];
       const requestMap = new Map<Request, CapturedRequest>();
@@ -238,9 +300,11 @@ test.describe("Bundled Gatsby onboarding", () => {
         expect(chatRequest.bookId ?? chatRequest.bookIds?.[0]).toBe(accountBookId);
         expect(chatRequest.sessionId).toBe(activeSessionId);
         await expect(page.getByText(firstQuestion)).toBeVisible({ timeout: 15_000 });
-        await expect(page.locator(".max-w-prose.text-foreground").first()).toContainText(/\S+/, {
-          timeout: 60_000,
-        });
+        const assistantResponse = page.locator(".max-w-prose.text-foreground").first();
+        await expect(assistantResponse).toContainText(
+          process.env.SKIP_AI_TESTS ? CI_ASSISTANT_RESPONSE : /\S+/,
+          { timeout: 60_000 },
+        );
 
         expect(requests).toEqual(
           expect.arrayContaining([
