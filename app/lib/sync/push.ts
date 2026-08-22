@@ -1,8 +1,9 @@
+import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
 import { clearSyncedChanges, getUnsyncedChanges, markSynced } from "./change-log";
 import { type FileUploadContext, uploadPendingFiles } from "./file-uploads";
 import { remapBookId } from "./remap";
 import { syncDebugLog } from "./sync-debug";
-import type { EntityType, SyncPushRequest, SyncPushResponse } from "./types";
+import type { ChangeEntry, EntityType, SyncPushRequest, SyncPushResponse } from "./types";
 
 /**
  * Maximum number of change log entries to send in a single `/api/sync/push`
@@ -13,6 +14,19 @@ import type { EntityType, SyncPushRequest, SyncPushResponse } from "./types";
 export const PUSH_BATCH_SIZE = 50;
 const MAX_REJECTED_BOOK_PUSH_ATTEMPTS = 3;
 const rejectedBookPushAttempts = new Map<string, number>();
+
+function isReservedDemoChange(change: ChangeEntry): boolean {
+  if (change.entityId === DEMO_BOOK_ID || change.entityId === DEMO_CHAT_SESSION.id) return true;
+  if (!change.data || typeof change.data !== "object") return false;
+
+  const data = change.data as Record<string, unknown>;
+  return (
+    data.id === DEMO_BOOK_ID ||
+    data.id === DEMO_CHAT_SESSION.id ||
+    data.bookId === DEMO_BOOK_ID ||
+    data.sessionId === DEMO_CHAT_SESSION.id
+  );
+}
 
 export interface PushContext {
   fileUploadContext: FileUploadContext;
@@ -28,8 +42,17 @@ export interface PushContext {
 
 export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushResponse | null> {
   if (ctx.isStopped()) return null;
-  const pending = await getUnsyncedChanges();
+  let pending = await getUnsyncedChanges();
   if (pending.length === 0) return null;
+
+  const reservedChanges = pending.filter(isReservedDemoChange);
+  if (reservedChanges.length > 0) {
+    await markSynced(reservedChanges.map((change) => change.id));
+    await clearSyncedChanges();
+    for (const change of reservedChanges) rejectedBookPushAttempts.delete(change.id);
+    pending = pending.filter((change) => !isReservedDemoChange(change));
+    if (pending.length === 0) return null;
+  }
 
   // Cap each request at PUSH_BATCH_SIZE so the server handler stays well
   // under Vercel's function timeout. Remaining entries drain on follow-up
