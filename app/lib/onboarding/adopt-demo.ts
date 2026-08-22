@@ -189,7 +189,19 @@ export async function persistAdoptedDemoContent(userId: string): Promise<Adopted
     await set(bookId, { ...adopted.book, id: bookId, deletedAt: undefined }, getBookStore());
   }
 
-  const canonical = await readSnapshot(bookId);
+  const remapped = await readSnapshot(bookId);
+  const sessions = remapped.sessions.filter((session) => session.id !== DEMO_CHAT_SESSION.id);
+  const activeSessionId = sessions.some((session) => session.id === remapped.activeSessionId)
+    ? remapped.activeSessionId
+    : adopted.activeSessionId;
+  if (!activeSessionId || !sessions.some((session) => session.id === activeSessionId)) {
+    throw new Error("The demo conversation could not be adopted.");
+  }
+  const canonical = { ...remapped, sessions, activeSessionId };
+  await Promise.all([
+    set(bookId, sessions, getChatSessionStore()),
+    set(bookId, activeSessionId, getActiveSessionStore()),
+  ]);
   const canonicalEntries = await recordSnapshot(bookId, canonical);
   const canonicalResult = await pushChangesWithResult(pushContext);
   assertAccepted(canonicalResult, canonicalEntries);
@@ -197,6 +209,5 @@ export async function persistAdoptedDemoContent(userId: string): Promise<Adopted
   await remapSavedWorkspace(bookId);
   const now = Date.now();
   await set(DEMO_BOOK_ID, { ...original.book, deletedAt: now, updatedAt: now }, getBookStore());
-  if (!adopted.activeSessionId) throw new Error("The demo conversation could not be adopted.");
-  return { bookId, sessionId: adopted.activeSessionId };
+  return { bookId, sessionId: activeSessionId };
 }

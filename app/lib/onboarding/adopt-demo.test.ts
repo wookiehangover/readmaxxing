@@ -214,4 +214,41 @@ describe("adoptDemoContent", () => {
     const focusedState = await WorkspaceService.getFocusedState();
     expect(focusedState?.activeBookId).toBe(CANONICAL_BOOK_ID);
   });
+
+  it("removes a reserved session merged into an existing canonical book and repairs its active id", async () => {
+    const existingSession = {
+      id: "55555555-5555-4555-8555-555555555555",
+      bookId: CANONICAL_BOOK_ID,
+      title: "Existing account conversation",
+      messages: [],
+      createdAt: 200,
+      updatedAt: 200,
+    };
+    await Promise.all([
+      set(
+        CANONICAL_BOOK_ID,
+        [{ ...DEMO_CHAT_SESSION, bookId: CANONICAL_BOOK_ID }, existingSession],
+        getChatSessionStore(),
+      ),
+      set(CANONICAL_BOOK_ID, DEMO_CHAT_SESSION.id, getActiveSessionStore()),
+    ]);
+    mocks.push.mockImplementation(async () => {
+      if (pushedCount === 0) {
+        const response = acceptedSinceLastPush(CANONICAL_BOOK_ID);
+        await remapBookId(ADOPTED_BOOK_ID, CANONICAL_BOOK_ID);
+        return response;
+      }
+      return acceptedSinceLastPush();
+    });
+
+    const adopted = await persistAdoptedDemoContent("existing-user");
+
+    expect(adopted).toEqual({ bookId: CANONICAL_BOOK_ID, sessionId: ADOPTED_SESSION_ID });
+    expect(await get<ChatSession[]>(CANONICAL_BOOK_ID, getChatSessionStore())).toEqual([
+      existingSession,
+      expect.objectContaining({ id: ADOPTED_SESSION_ID, bookId: CANONICAL_BOOK_ID }),
+    ]);
+    expect(await get(CANONICAL_BOOK_ID, getActiveSessionStore())).toBe(ADOPTED_SESSION_ID);
+    expect(recorded.some((entry) => entry.entityId === DEMO_CHAT_SESSION.id)).toBe(false);
+  });
 });
