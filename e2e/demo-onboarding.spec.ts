@@ -246,7 +246,7 @@ async function waitForStableLoginAction(page: Page, loginAction: string) {
 }
 
 test.describe("Bundled Gatsby onboarding", () => {
-  test.describe.configure({ mode: "serial" });
+  test.describe.configure({ mode: "serial", retries: 0 });
   test.setTimeout(180_000);
 
   for (const loginAction of ["Create account", "Sign in"] as const) {
@@ -257,17 +257,30 @@ test.describe("Bundled Gatsby onboarding", () => {
     }, testInfo) => {
       await skipIfAuthNotConfigured(request);
       await installVirtualAuthenticator(context, page);
-      if (process.env.E2E_CPU_THROTTLING_RATE) {
+      if (process.env.E2E_CPU_THROTTLING_RATE || process.env.E2E_NETWORK_LATENCY_MS) {
         const devtools = await context.newCDPSession(page);
-        await devtools.send("Emulation.setCPUThrottlingRate", {
-          rate: Number(process.env.E2E_CPU_THROTTLING_RATE),
-        });
+        if (process.env.E2E_CPU_THROTTLING_RATE) {
+          await devtools.send("Emulation.setCPUThrottlingRate", {
+            rate: Number(process.env.E2E_CPU_THROTTLING_RATE),
+          });
+        }
+        if (process.env.E2E_NETWORK_LATENCY_MS) {
+          await devtools.send("Network.enable");
+          await devtools.send("Network.emulateNetworkConditions", {
+            offline: false,
+            latency: Number(process.env.E2E_NETWORK_LATENCY_MS),
+            downloadThroughput: -1,
+            uploadThroughput: -1,
+          });
+        }
       }
       if (process.env.SKIP_AI_TESTS) await mockAiCompletions(page);
       if (loginAction === "Sign in") await prepareExistingAccount(page);
 
       const requests: CapturedRequest[] = [];
       const requestMap = new Map<Request, CapturedRequest>();
+      const syncRequests: CapturedRequest[] = [];
+      const syncRequestMap = new Map<Request, CapturedRequest>();
       const authenticationRequests: CapturedRequest[] = [];
       const browserErrors: string[] = [];
       let documentRequestsAfterAuthentication = 0;
@@ -286,10 +299,27 @@ test.describe("Bundled Gatsby onboarding", () => {
           requests.push(captured);
           requestMap.set(outgoing, captured);
         }
+
+        const pathname = new URL(outgoing.url()).pathname;
+        if (/^\/api\/sync\/(push|pull)$/.test(pathname)) {
+          const syncRequest: CapturedRequest = { method: outgoing.method(), url: pathname };
+          if (pathname === "/api/sync/push") {
+            const payload = outgoing.postDataJSON() as {
+              changes?: { entity: string; entityId: string }[];
+            };
+            syncRequest.body = JSON.stringify(
+              payload.changes?.map(({ entity, entityId }) => ({ entity, entityId })),
+            );
+          }
+          syncRequests.push(syncRequest);
+          syncRequestMap.set(outgoing, syncRequest);
+        }
       });
       page.on("response", (response) => {
         const captured = requestMap.get(response.request());
         if (captured) captured.status = response.status();
+        const syncRequest = syncRequestMap.get(response.request());
+        if (syncRequest) syncRequest.status = response.status();
         const pathname = new URL(response.url()).pathname;
         if (pathname.startsWith("/api/auth/")) {
           authenticationRequests.push({
@@ -487,9 +517,25 @@ test.describe("Bundled Gatsby onboarding", () => {
         expect(staleDemoRequests).toEqual([]);
         expect(documentRequestsAfterAuthentication).toBe(0);
       } catch (error) {
+        const persistedBooks = await readIndexedDbValue<LocalBook[]>(
+          page,
+          "ebook-reader-db",
+          "books",
+        ).catch(() => null);
+        const persistedDemoSessions = await readIndexedDbValue<LocalChatSession[]>(
+          page,
+          "ebook-reader-chat-sessions",
+          "sessions",
+          DEMO_BOOK_ID,
+        ).catch(() => null);
         console.error("Onboarding URL:", page.url());
         console.error("Onboarding network:", JSON.stringify(requests));
+        console.error("Sync network:", JSON.stringify(syncRequests));
         console.error("Authentication network:", JSON.stringify(authenticationRequests));
+        console.error(
+          "Onboarding IndexedDB:",
+          JSON.stringify({ books: persistedBooks, demoSessions: persistedDemoSessions }),
+        );
         console.error("Browser errors:", JSON.stringify(browserErrors));
         throw error;
       } finally {
@@ -499,6 +545,10 @@ test.describe("Bundled Gatsby onboarding", () => {
         });
         await testInfo.attach("authentication-network", {
           body: JSON.stringify(authenticationRequests, null, 2),
+          contentType: "application/json",
+        });
+        await testInfo.attach("sync-network", {
+          body: JSON.stringify(syncRequests, null, 2),
           contentType: "application/json",
         });
         await testInfo.attach("browser-errors", {
