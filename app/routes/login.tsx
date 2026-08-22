@@ -4,8 +4,7 @@ import { Loader2 } from "lucide-react";
 import type { Route } from "./+types/login";
 import { Button } from "~/components/ui/button";
 import { authService } from "~/lib/auth-service";
-import { useAuth } from "~/lib/context/auth-context";
-import { refreshAuthSessionRequested } from "~/lib/themis/auth-session/auth-session-slice";
+import { registerRequested, signInRequested } from "~/lib/themis/auth-session/auth-session-slice";
 import { useAppStore } from "~/lib/themis/provider";
 
 export function meta(_args: Route.MetaArgs) {
@@ -44,14 +43,17 @@ export function HydrateFallback() {
 export default function LoginRoute() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { register, signIn } = useAuth();
   const store = useAppStore();
   const [error, setError] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState<"register" | "signin" | null>(null);
 
-  function refreshAuthAndWait() {
+  function authenticateAndWait(operation: "register" | "signin") {
     return new Promise<void>((resolve, reject) => {
-      store.dispatch(refreshAuthSessionRequested(resolve, reject));
+      store.dispatch(
+        operation === "register"
+          ? registerRequested("Reader", () => resolve(), reject, true)
+          : signInRequested(() => resolve(), reject, true),
+      );
     });
   }
 
@@ -59,8 +61,7 @@ export default function LoginRoute() {
     setError(null);
     setLoadingAction("register");
     try {
-      await register("Reader");
-      await refreshAuthAndWait();
+      await authenticateAndWait("register");
       navigate("/", { replace: true });
     } catch (err: unknown) {
       if (err instanceof Response) return;
@@ -75,8 +76,7 @@ export default function LoginRoute() {
     setError(null);
     setLoadingAction("signin");
     try {
-      await signIn();
-      await refreshAuthAndWait();
+      await authenticateAndWait("signin");
       navigate("/", { replace: true });
     } catch (err: unknown) {
       if (err instanceof Response) return;

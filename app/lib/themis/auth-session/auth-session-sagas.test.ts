@@ -39,6 +39,7 @@ import {
   registerRequested,
   refreshAuthSessionRequested,
   renamePasskeyRequested,
+  signInRequested,
 } from "~/lib/themis/auth-session/auth-session-slice";
 import { booksSaga } from "~/lib/themis/books/books-sagas";
 import { bookAdded } from "~/lib/themis/books/books-slice";
@@ -116,6 +117,96 @@ describe("authSessionSaga", () => {
     expect(mocks.persistAdoptedDemoContent).toHaveBeenCalledOnce();
     expect(onFailed).not.toHaveBeenCalled();
   });
+
+  it("finishes an adoption-bearing refresh before processing a later refresh", async () => {
+    const demo = {
+      id: DEMO_BOOK_ID,
+      title: "The Great Gatsby",
+      author: "F. Scott Fitzgerald",
+      coverImage: null,
+      format: "epub" as const,
+    };
+    const adopted = { bookId: "account-book", sessionId: "account-session" };
+    let finishAdoption!: (result: typeof adopted) => void;
+    mocks.getSession.mockResolvedValue({ user });
+    mocks.hasUnadoptedDemoBook.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    mocks.persistAdoptedDemoContent.mockReturnValueOnce(
+      new Promise<typeof adopted>((resolve) => {
+        finishAdoption = resolve;
+      }),
+    );
+    mocks.getBookIncludingDeleted.mockResolvedValueOnce({ ...demo, id: adopted.bookId });
+    const firstCompleted = vi.fn();
+    const secondCompleted = vi.fn();
+    const failed = vi.fn();
+    const store = startStore({ runBooksSaga: true });
+    store.dispatch(bookAdded(demo));
+
+    store.dispatch(refreshAuthSessionRequested(firstCompleted, failed));
+    await vi.waitFor(() => expect(mocks.persistAdoptedDemoContent).toHaveBeenCalledOnce());
+    store.dispatch(refreshAuthSessionRequested(secondCompleted, failed));
+
+    expect(mocks.getSession).toHaveBeenCalledOnce();
+    expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(false);
+    expect(firstCompleted).not.toHaveBeenCalled();
+    expect(secondCompleted).not.toHaveBeenCalled();
+
+    finishAdoption(adopted);
+
+    await vi.waitFor(() => expect(secondCompleted).toHaveBeenCalledOnce());
+    expect(firstCompleted).toHaveBeenCalledOnce();
+    expect(mocks.persistAdoptedDemoContent).toHaveBeenCalledOnce();
+    expect(store.authSessionSelectors.selectAuthUser.select(store.state)).toEqual(user);
+    expect(failed).not.toHaveBeenCalled();
+  });
+
+  it.each(["register", "signIn"] as const)(
+    "adopts the demo before completing ordinary %s authentication",
+    async (operation) => {
+      const demo = {
+        id: DEMO_BOOK_ID,
+        title: "The Great Gatsby",
+        author: "F. Scott Fitzgerald",
+        coverImage: null,
+        format: "epub" as const,
+      };
+      const adopted = { bookId: "account-book", sessionId: "account-session" };
+      const registration = { verified: true, userId: user.id };
+      const signIn = { verified: true, user };
+      let finishAdoption!: (result: typeof adopted) => void;
+      mocks[operation].mockResolvedValueOnce(operation === "register" ? registration : signIn);
+      mocks.getSession.mockResolvedValueOnce({ user });
+      mocks.hasUnadoptedDemoBook.mockResolvedValueOnce(true);
+      mocks.persistAdoptedDemoContent.mockReturnValueOnce(
+        new Promise<typeof adopted>((resolve) => {
+          finishAdoption = resolve;
+        }),
+      );
+      mocks.getBookIncludingDeleted.mockResolvedValueOnce({ ...demo, id: adopted.bookId });
+      const completed = vi.fn();
+      const failed = vi.fn();
+      const store = startStore({ runBooksSaga: true });
+      store.dispatch(bookAdded(demo));
+
+      store.dispatch(
+        operation === "register"
+          ? registerRequested("Reader", completed, failed, true)
+          : signInRequested(completed, failed, true),
+      );
+
+      await vi.waitFor(() => expect(mocks.persistAdoptedDemoContent).toHaveBeenCalledWith(user.id));
+      expect(completed).not.toHaveBeenCalled();
+      expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(false);
+
+      finishAdoption(adopted);
+
+      await vi.waitFor(() => expect(completed).toHaveBeenCalledOnce());
+      expect(completed).toHaveBeenCalledWith(operation === "register" ? registration : signIn);
+      expect(store.authSessionSelectors.selectAuthUser.select(store.state)).toEqual(user);
+      expect(mocks.persistAdoptedDemoContent).toHaveBeenCalledOnce();
+      expect(failed).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not read or adopt a demo while the session is signed out", async () => {
     mocks.getSession.mockResolvedValueOnce({ user: null });

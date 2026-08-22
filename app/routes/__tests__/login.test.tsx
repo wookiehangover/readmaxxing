@@ -5,8 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   navigate: vi.fn(),
-  register: vi.fn(),
-  signIn: vi.fn(),
 }));
 
 vi.mock("react-router", async (importOriginal) => {
@@ -17,15 +15,12 @@ vi.mock("react-router", async (importOriginal) => {
     useSearchParams: () => [new URLSearchParams()],
   };
 });
-vi.mock("~/lib/context/auth-context", () => ({
-  useAuth: () => ({ register: mocks.register, signIn: mocks.signIn }),
-}));
 vi.mock("~/lib/themis/provider", () => ({
   useAppStore: () => ({ dispatch: mocks.dispatch }),
 }));
 
 import LoginRoute from "~/routes/login";
-import { refreshAuthSessionRequested } from "~/lib/themis/auth-session/auth-session-slice";
+import { registerRequested, signInRequested } from "~/lib/themis/auth-session/auth-session-slice";
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -34,12 +29,11 @@ afterEach(() => {
 
 describe("LoginRoute", () => {
   it.each([
-    { button: "Create account", operation: "register" as const },
-    { button: "Sign in", operation: "signIn" as const },
+    { button: "Create account", operation: "register" as const, request: registerRequested },
+    { button: "Sign in", operation: "signIn" as const, request: signInRequested },
   ])(
     "waits for demo adoption before navigating after $operation",
-    async ({ button, operation }) => {
-      mocks[operation].mockResolvedValueOnce({ verified: true, userId: "user-1" });
+    async ({ button, operation, request }) => {
       const root = createRoot(document.body.appendChild(document.createElement("div")));
       act(() => root.render(React.createElement(LoginRoute)));
 
@@ -53,12 +47,14 @@ describe("LoginRoute", () => {
       });
 
       expect(mocks.dispatch).toHaveBeenCalledOnce();
-      const [refreshAction] = mocks.dispatch.mock.calls[0];
-      expect(refreshAction.type).toBe(refreshAuthSessionRequested.type);
+      const [authAction] = mocks.dispatch.mock.calls[0];
+      expect(authAction.type).toBe(request.type);
+      expect(authAction.payload.at(-1)).toBe(true);
       expect(mocks.navigate).not.toHaveBeenCalled();
 
       await act(async () => {
-        refreshAction.payload[0]();
+        const completed = authAction.payload[operation === "register" ? 1 : 0];
+        completed({ verified: true, userId: "user-1" });
       });
 
       expect(mocks.navigate).toHaveBeenCalledWith("/", { replace: true });

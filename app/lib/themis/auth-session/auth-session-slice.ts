@@ -31,10 +31,15 @@ export const registerRequested = createAction<
     displayName: string | undefined,
     onCompleted: AuthRegistrationCompletedCallback,
     onFailed: AuthOperationFailedCallback,
+    refreshBeforeCompletion?: boolean,
   ]
 >("authSession/registerRequested");
 export const signInRequested = createAction<
-  [onCompleted: AuthSignInCompletedCallback, onFailed: AuthOperationFailedCallback]
+  [
+    onCompleted: AuthSignInCompletedCallback,
+    onFailed: AuthOperationFailedCallback,
+    refreshBeforeCompletion?: boolean,
+  ]
 >("authSession/signInRequested");
 export const generateMagicLinkRequested = createAction<
   [onCompleted: MagicLinkCompletedCallback, onFailed: AuthOperationFailedCallback]
