@@ -289,6 +289,50 @@ describe("readingPositionsSaga", () => {
     ).toEqual([newer]);
   });
 
+  it("ignores a stale history hydrate after recording a newer visit", async () => {
+    const staleHistory = deferred<ReadingHistoryEntry[]>();
+    const recorded: ReadingHistoryEntry = {
+      id: "recorded-history",
+      bookId: "book-1",
+      cfi: "epubcfi(/6/8)",
+      chapterHref: "chapter.xhtml",
+      chapterLabel: "Chapter",
+      percentage: 40,
+      pageIndex: 4,
+      totalPages: 10,
+      timestamp: 2,
+    };
+    mocks.runPromise
+      .mockReturnValueOnce(staleHistory.promise)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([recorded]);
+    const store = startStore();
+
+    store.dispatch(hydrateReadingHistoryRequested("book-1"));
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledOnce());
+    store.dispatch(
+      recordReadingHistoryRequested("book-1", {
+        cfi: recorded.cfi,
+        chapterHref: recorded.chapterHref,
+        chapterLabel: recorded.chapterLabel,
+        percentage: recorded.percentage,
+        pageIndex: recorded.pageIndex,
+        totalPages: recorded.totalPages,
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(
+        store.readingPositionsSelectors.selectReadingHistory.select(store.state, "book-1"),
+      ).toEqual([recorded]),
+    );
+    staleHistory.resolve([]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      store.readingPositionsSelectors.selectReadingHistory.select(store.state, "book-1"),
+    ).toEqual([recorded]);
+  });
+
   it("records reading-history hydration failures without replacing existing history", async () => {
     const entry: ReadingHistoryEntry = {
       id: "history-1",

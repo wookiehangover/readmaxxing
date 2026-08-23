@@ -189,13 +189,19 @@ export function* saveLocationCacheSaga(action: ReturnType<typeof saveLocationCac
 
 export function* hydrateReadingHistorySaga(
   action: ReturnType<typeof hydrateReadingHistoryRequested>,
+  latestVersionByBookId: ReadonlyMap<string, number>,
+  requestVersion: number,
 ) {
   const [bookId] = action.payload;
   try {
     const history = yield* call(loadReadingHistory, bookId);
-    yield* put(readingHistoryHydrated(bookId, history));
+    if (latestVersionByBookId.get(bookId) === requestVersion) {
+      yield* put(readingHistoryHydrated(bookId, history));
+    }
   } catch (error) {
-    yield* put(readingPositionsFailed([bookId], toTaggedError(error)));
+    if (latestVersionByBookId.get(bookId) === requestVersion) {
+      yield* put(readingPositionsFailed([bookId], toTaggedError(error)));
+    }
   }
 }
 
@@ -218,14 +224,28 @@ type ReadingHistoryHydrateTask =
     ? Task
     : never;
 
-export function* watchReadingHistoryHydrates() {
+export function* watchReadingHistoryHydrates(latestVersionByBookId: Map<string, number>) {
   const pendingByBookId = new Map<string, ReadingHistoryHydrateTask>();
   while (true) {
     const action = yield* take(hydrateReadingHistoryRequested);
     const [bookId] = action.payload;
+    const requestVersion = (latestVersionByBookId.get(bookId) ?? 0) + 1;
+    latestVersionByBookId.set(bookId, requestVersion);
     const pending = pendingByBookId.get(bookId);
     if (pending) yield* cancel(pending);
-    pendingByBookId.set(bookId, yield* fork(hydrateReadingHistorySaga, action));
+    pendingByBookId.set(
+      bookId,
+      yield* fork(hydrateReadingHistorySaga, action, latestVersionByBookId, requestVersion),
+    );
+  }
+}
+
+export function* watchReadingHistoryRecords(latestVersionByBookId: Map<string, number>) {
+  while (true) {
+    const action = yield* take(recordReadingHistoryRequested);
+    const [bookId] = action.payload;
+    latestVersionByBookId.set(bookId, (latestVersionByBookId.get(bookId) ?? 0) + 1);
+    yield* fork(recordReadingHistorySaga, action);
   }
 }
 
@@ -253,12 +273,13 @@ export function* watchReadingPositionHydrates() {
 }
 
 export function* readingPositionsSaga() {
+  const latestHistoryVersionByBookId = new Map<string, number>();
   yield* fork(watchReadingPositionHydrates);
   yield* fork(watchReadingPositionChanges);
-  yield* fork(watchReadingHistoryHydrates);
+  yield* fork(watchReadingHistoryHydrates, latestHistoryVersionByBookId);
+  yield* fork(watchReadingHistoryRecords, latestHistoryVersionByBookId);
   yield* takeEvery(flushReadingPositionRequested, flushReadingPositionSaga);
   yield* takeEvery(hydrateLocationCacheRequested, hydrateLocationCacheSaga);
   yield* takeEvery(saveLocationCacheRequested, saveLocationCacheSaga);
-  yield* takeEvery(recordReadingHistoryRequested, recordReadingHistorySaga);
   yield* takeEvery(checkPositionNudgeRequested, checkPositionNudgeSaga);
 }
