@@ -32,6 +32,10 @@ export async function loader() {
   return null;
 }
 
+export function shouldRevalidate() {
+  return false;
+}
+
 // Build a minimal JSON blob of non-default theme CSS variables for the FOUC script.
 // This is serialized at build/SSR time and embedded in the inline script.
 const colorThemeVarsJson = JSON.stringify(
