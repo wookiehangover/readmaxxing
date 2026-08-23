@@ -149,6 +149,7 @@ function renderMenu({
   const onNavigateToToc = vi.fn();
   const onNewSession = vi.fn();
   const onSwitchSession = vi.fn();
+  const onSyncToFurthestPage = vi.fn().mockResolvedValue(undefined);
   const chatActions: ReadingChatMenuActions = {
     bookId: "book-1",
     activeSessionId: "session-1",
@@ -185,6 +186,7 @@ function renderMenu({
                     remoteFileUrl,
                   }
             }
+            onSyncToFurthestPage={guest ? undefined : onSyncToFurthestPage}
             onDownload={guest ? undefined : vi.fn()}
             onBookmarkPage={guest ? undefined : vi.fn()}
             onCopyPageAsMarkdown={guest ? undefined : vi.fn()}
@@ -196,7 +198,14 @@ function renderMenu({
       </ReadingRailTabProvider>,
     ),
   );
-  return { container, onUpdateSettings, onNavigateToToc, onNewSession, onSwitchSession };
+  return {
+    container,
+    onUpdateSettings,
+    onNavigateToToc,
+    onNewSession,
+    onSwitchSession,
+    onSyncToFurthestPage,
+  };
 }
 
 beforeEach(() => {
@@ -275,6 +284,26 @@ describe("ReaderSettingsMenu", () => {
     ).toHaveLength(0);
   });
 
+  it("shows Sync to furthest page only for signed-in readers with an open book", async () => {
+    const signedIn = renderMenu();
+    const syncItem = Array.from(
+      signedIn.container.querySelectorAll<HTMLElement>("[role='menuitem']"),
+    ).find((item) => item.textContent?.trim() === "Sync to furthest page");
+
+    expect(syncItem).toBeDefined();
+    await act(async () => syncItem?.click());
+    expect(signedIn.onSyncToFurthestPage).toHaveBeenCalledOnce();
+
+    act(() => root?.unmount());
+    signedIn.container.remove();
+    root = null;
+    container = null;
+
+    auth.isAuthenticated = false;
+    const signedOut = renderMenu();
+    expect(signedOut.container.textContent).not.toContain("Sync to furthest page");
+  });
+
   it("shows notebook export only on Notes and never shows Details", async () => {
     const rendered = renderMenu();
     const findExportItem = () =>
@@ -349,6 +378,7 @@ describe("ReaderSettingsMenu", () => {
     expect(rendered.container.textContent).toContain("Speedread");
     expect(rendered.container.textContent).toContain("Copy chapter");
     expect(rendered.container.textContent).toContain("Share");
+    expect(rendered.container.textContent).toContain("Sync to furthest page");
     expect(rendered.container.textContent).toContain("Download");
     expect(rendered.container.textContent).toContain("Bookmark page");
     expect(rendered.container.textContent).not.toContain("Outline");
@@ -361,6 +391,7 @@ describe("ReaderSettingsMenu", () => {
     expect(rendered.container.textContent).toContain("Table of Contents");
     expect(rendered.container.textContent).not.toContain("Actions");
     expect(rendered.container.textContent).not.toContain("Share");
+    expect(rendered.container.textContent).not.toContain("Sync to furthest page");
     expect(rendered.container.textContent).not.toContain("Bookmark page");
   });
 

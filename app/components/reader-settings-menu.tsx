@@ -14,6 +14,7 @@ import {
   Zap,
   ClipboardCopyIcon,
   History,
+  RefreshCw,
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -54,6 +55,7 @@ interface ReaderFormattingMenuProps {
 
 interface ReaderActionsMenuProps {
   book?: BookMeta;
+  onSyncToFurthestPage?: () => void | Promise<void>;
   onDownload?: () => void | Promise<void>;
   onBookmarkPage?: () => void | Promise<void>;
   onCopyPageAsMarkdown?: () => void;
@@ -269,6 +271,7 @@ export function ReaderFormattingMenu(props: ReaderFormattingMenuProps) {
 
 function ReaderActionItems({
   book,
+  onSyncToFurthestPage,
   onDownload,
   onBookmarkPage,
   onCopyPageAsMarkdown,
@@ -300,6 +303,16 @@ function ReaderActionItems({
           Share
         </DropdownMenuItem>
       )}
+      {isAuthenticated && book && onSyncToFurthestPage ? (
+        <DropdownMenuItem
+          onClick={() => {
+            void Promise.resolve(onSyncToFurthestPage()).catch(console.error);
+          }}
+        >
+          <RefreshCw className="size-4" />
+          Sync to furthest page
+        </DropdownMenuItem>
+      ) : null}
       {onDownload ? (
         <DropdownMenuItem
           onClick={() => {

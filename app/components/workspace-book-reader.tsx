@@ -26,6 +26,7 @@ import {
   EpubReaderToolbar,
 } from "~/components/workspace-book-reader/epub-reader-chrome";
 import { hydrateBookmarksRequested } from "~/lib/themis/bookmarks/bookmarks-slice";
+import { useSyncToFurthestPosition } from "~/hooks/use-sync-to-furthest-position";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -217,6 +218,7 @@ function WorkspaceBookReaderInner({
     currentPage,
     totalPages,
     loadError,
+    navigateToCfi,
     navigateToTocHref,
     latestCfiRef,
     navigationInProgressRef,
@@ -252,6 +254,13 @@ function WorkspaceBookReaderInner({
   });
   useReadingLocation(book.id, currentChapterLabel, currentPage, totalPages);
   preferenceNavigationRef.current = { markNavigationInProgress, navigationInProgressRef };
+
+  const getCurrentPosition = useCallback(() => latestCfiRef.current, [latestCfiRef]);
+  const handleSyncToFurthestPage = useSyncToFurthestPosition({
+    bookId: book.id,
+    getCurrentPosition,
+    navigateToPosition: navigateToCfi,
+  });
 
   useReaderDwell({
     bookId: book.id,
@@ -364,6 +373,7 @@ function WorkspaceBookReaderInner({
           localSettings={localSettings}
           onUpdateSettings={handleUpdateSettings}
           book={book}
+          onSyncToFurthestPage={handleSyncToFurthestPage}
           onDownload={handleDownload}
           onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
           onOpenSpeedread={handleOpenSpeedread}

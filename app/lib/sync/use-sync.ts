@@ -31,6 +31,8 @@ export interface SyncStatus {
 export interface SyncActions {
   /** Whether the sync engine is active (user is authenticated). */
   isActive: boolean;
+  /** Manually pull and merge remote changes. */
+  pullChanges: () => Promise<void>;
   /** Manually trigger a push cycle, including file upload recovery. */
   triggerSync: () => Promise<void>;
   /**
@@ -55,6 +57,7 @@ const defaultSyncStatus: SyncStatus = {
 
 const defaultSyncActions: SyncActions = {
   isActive: false,
+  pullChanges: async () => {},
   triggerSync: async () => {},
   reloadBookFiles: async () => {},
 };
@@ -149,6 +152,15 @@ export function useSync(): SyncActions {
       throw new Error("Cannot push while offline");
     }
     await engine.triggerManualPush();
+  }, []);
+
+  const pullChanges = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      throw new Error("Cannot pull while offline");
+    }
+    await engine.pullChanges();
   }, []);
 
   const reloadBookFiles = useCallback(async (bookId: string) => {
@@ -247,9 +259,10 @@ export function useSync(): SyncActions {
   return useMemo(
     () => ({
       isActive: isAuthenticated,
+      pullChanges,
       triggerSync,
       reloadBookFiles,
     }),
-    [isAuthenticated, triggerSync, reloadBookFiles],
+    [isAuthenticated, pullChanges, triggerSync, reloadBookFiles],
   );
 }

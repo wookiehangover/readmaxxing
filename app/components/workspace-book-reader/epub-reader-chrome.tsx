@@ -115,6 +115,7 @@ interface EpubReaderToolbarProps {
   onUpdateSettings: (update: Partial<Settings>) => void;
   book: BookMeta;
   readOnly?: boolean;
+  onSyncToFurthestPage?: () => void | Promise<void>;
   onDownload?: () => void;
   onCopyPageAsMarkdown?: () => void;
   onOpenSpeedread?: () => void;
@@ -130,6 +131,7 @@ export function EpubReaderToolbar({
   onUpdateSettings,
   book,
   readOnly = false,
+  onSyncToFurthestPage,
   onDownload,
   onCopyPageAsMarkdown,
   onOpenSpeedread,
@@ -143,6 +145,7 @@ export function EpubReaderToolbar({
         settings={localSettings}
         onUpdateSettings={onUpdateSettings}
         book={readOnly ? undefined : book}
+        onSyncToFurthestPage={onSyncToFurthestPage}
         onDownload={onDownload}
         onCopyPageAsMarkdown={onCopyPageAsMarkdown}
         onOpenSpeedread={onOpenSpeedread}
