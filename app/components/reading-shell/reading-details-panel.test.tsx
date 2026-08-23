@@ -134,7 +134,8 @@ describe("ReadingDetailsPanel", () => {
     expect(panel.textContent).toContain("Reading history");
     expect(panel.textContent).toContain("No reading history yet");
     expect(panel.textContent).toContain("Bookmarks");
-    expect(panel.textContent).toContain("No bookmarks yet");
+    expect(panel.textContent).toContain("... → Actions → Bookmark page");
+    expect(panel.textContent).not.toContain("No bookmarks yet");
     expect(dispatch).toHaveBeenCalledWith(hydrateReadingHistoryRequested(book.id));
     expect(dispatch).toHaveBeenCalledWith(hydrateBookmarksRequested(book.id));
   });
@@ -146,35 +147,87 @@ describe("ReadingDetailsPanel", () => {
     expect(panel.textContent?.match(/Middlemarch/g)).toHaveLength(2);
   });
 
-  it("renders compact tables with column headers, location details, and a timestamp with seconds", () => {
-    store.dispatch(readingHistoryHydrated(book.id, [historyEntry]));
-    store.dispatch(bookmarksHydrated(book.id, [bookmark]));
+  it("groups borderless, headerless tables by date and shows history times with seconds", () => {
+    const earlierHistoryEntry = {
+      ...historyEntry,
+      id: "history-2",
+      chapterLabel: "Chapter Two",
+      timestamp: new Date("2026-08-19T12:00:00Z").valueOf(),
+    };
+    const sameDayHistoryEntry = {
+      ...historyEntry,
+      id: "history-3",
+      chapterLabel: "Chapter Three",
+      timestamp: historyEntry.timestamp + 60 * 60 * 1000,
+    };
+    const laterBookmark = {
+      ...bookmark,
+      id: "bookmark-2",
+      label: "Another memorable chapter",
+      createdAt: new Date("2026-08-22T12:00:00Z").valueOf(),
+    };
+    const sameDayBookmark = {
+      ...bookmark,
+      id: "bookmark-3",
+      label: "Same-day bookmark",
+      createdAt: laterBookmark.createdAt + 60 * 60 * 1000,
+    };
+    store.dispatch(
+      readingHistoryHydrated(book.id, [historyEntry, earlierHistoryEntry, sameDayHistoryEntry]),
+    );
+    store.dispatch(bookmarksHydrated(book.id, [bookmark, laterBookmark, sameDayBookmark]));
 
     const panel = renderPanel();
     const tables = panel.querySelectorAll("table");
-    const historyTime = new Date(historyEntry.timestamp).toLocaleString(undefined, {
-      dateStyle: "short",
+    const historySection = panel.querySelector(`[aria-labelledby="reading-history-${book.id}"]`);
+    const bookmarksSection = panel.querySelector(`[aria-labelledby="bookmarks-${book.id}"]`);
+    const historyTime = new Date(historyEntry.timestamp).toLocaleTimeString(undefined, {
       timeStyle: "medium",
     });
+    const formatDate = (timestamp: number) =>
+      new Date(timestamp).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
 
-    expect(tables).toHaveLength(2);
-    expect(tables[0]?.getAttribute("aria-label")).toBe("Reading history");
-    expect(tables[1]?.getAttribute("aria-label")).toBe("Bookmarks");
-    expect(tables[0]?.querySelector("thead")?.textContent).toContain("Page · progress");
-    expect(tables[1]?.querySelector("thead")?.textContent).toContain("Page");
+    expect(tables).toHaveLength(4);
+    expect(historySection?.querySelectorAll("table")).toHaveLength(2);
+    expect(bookmarksSection?.querySelectorAll("table")).toHaveLength(2);
+    expect(historySection?.querySelectorAll("table")[0]?.querySelectorAll("tbody tr")).toHaveLength(
+      2,
+    );
+    expect(
+      bookmarksSection?.querySelectorAll("table")[0]?.querySelectorAll("tbody tr"),
+    ).toHaveLength(2);
+    expect(panel.querySelector("thead")).toBeNull();
+    expect(
+      Array.from(historySection?.querySelectorAll("h4") ?? [], (heading) => heading.textContent),
+    ).toEqual([formatDate(historyEntry.timestamp), formatDate(earlierHistoryEntry.timestamp)]);
+    expect(
+      Array.from(bookmarksSection?.querySelectorAll("h4") ?? [], (heading) => heading.textContent),
+    ).toEqual([formatDate(laterBookmark.createdAt), formatDate(bookmark.createdAt)]);
     expect(panel.textContent).toContain("Chapter One");
     expect(panel.textContent).toContain("37 / 150");
-    expect(panel.textContent).toContain("25%");
+    expect(panel.textContent).not.toContain("25%");
     expect(panel.textContent).toContain("A memorable chapter");
     expect(panel.textContent).not.toContain("Page 42");
-    expect(tables[0]?.querySelector("time")?.textContent).toBe(historyTime);
-    expect(panel.querySelectorAll("time")).toHaveLength(2);
-    expect(
-      panel.querySelector("[data-testid='reading-history-table-scroll']")?.className,
-    ).toContain("max-h-88");
-    expect(panel.querySelector("[data-testid='bookmarks-table-scroll']")?.className).toContain(
-      "overflow-y-auto",
+    expect(Array.from(panel.querySelectorAll("time"), (time) => time.textContent)).toContain(
+      historyTime,
     );
+    expect(panel.querySelectorAll("time")).toHaveLength(3);
+    const historyScroll = panel.querySelector("[data-testid='reading-history-table-scroll']");
+    const bookmarksScroll = panel.querySelector("[data-testid='bookmarks-table-scroll']");
+    expect(historyScroll?.className).toContain("max-h-88");
+    expect(historyScroll?.className).not.toContain("rounded-md");
+    expect(historyScroll?.className).not.toContain("border");
+    expect(bookmarksScroll?.className).toContain("overflow-y-auto");
+    expect(bookmarksScroll?.className).not.toContain("border");
+    expect(
+      Array.from(panel.querySelectorAll("tbody tr")).every((row) =>
+        row.className.includes("border-0"),
+      ),
+    ).toBe(true);
   });
 
   it("omits missing total-page counts from legacy reading-history entries", () => {
@@ -186,7 +239,8 @@ describe("ReadingDetailsPanel", () => {
 
     const panel = renderPanel();
 
-    expect(panel.textContent).toContain("37 · 25%");
+    expect(panel.textContent).toContain("37");
+    expect(panel.textContent).not.toContain("25%");
     expect(panel.textContent).not.toContain("of undefined");
   });
 

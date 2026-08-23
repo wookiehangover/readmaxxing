@@ -1,6 +1,6 @@
 import { type KeyboardEvent, useEffect } from "react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { Bookmark, History } from "lucide-react";
+import { History } from "lucide-react";
 
 import { CoverImage } from "~/components/book-grid/cover-image";
 import { CoverPlaceholder } from "~/components/book-grid/cover-placeholder";
@@ -14,14 +14,7 @@ import {
 } from "~/components/ui/empty";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Separator } from "~/components/ui/separator";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "~/components/ui/table";
+import { Table, TableBody, TableCell, TableRow } from "~/components/ui/table";
 import { useSyncListener } from "~/hooks/use-sync-listener";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import type { BookMeta } from "~/lib/stores/book-store";
@@ -40,11 +33,29 @@ function formatDate(timestamp: number) {
   });
 }
 
-function formatHistoryTimestamp(timestamp: number) {
-  return new Date(timestamp).toLocaleString(undefined, {
-    dateStyle: "short",
-    timeStyle: "medium",
-  });
+function formatHistoryTime(timestamp: number) {
+  return new Date(timestamp).toLocaleTimeString(undefined, { timeStyle: "medium" });
+}
+
+function calendarDateKey(timestamp: number) {
+  const date = new Date(timestamp);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function groupByCalendarDate<T>(items: T[], getTimestamp: (item: T) => number) {
+  return items.reduce<{ key: string; timestamp: number; items: T[] }[]>((groups, item) => {
+    const timestamp = getTimestamp(item);
+    const key = calendarDateKey(timestamp);
+    const currentGroup = groups.at(-1);
+
+    if (currentGroup?.key === key) {
+      currentGroup.items.push(item);
+    } else {
+      groups.push({ key, timestamp, items: [item] });
+    }
+
+    return groups;
+  }, []);
 }
 
 function activateRowOnKeyDown(event: KeyboardEvent<HTMLTableRowElement>) {
@@ -105,6 +116,8 @@ export function ReadingDetailsPanel({
   const savedBookmarks = [...bookmarks.value].sort(
     (first, second) => second.createdAt - first.createdAt,
   );
+  const historyGroups = groupByCalendarDate(historyEntries, (entry) => entry.timestamp);
+  const bookmarkGroups = groupByCalendarDate(savedBookmarks, (bookmark) => bookmark.createdAt);
 
   return (
     <ScrollArea className="h-full min-h-0 flex-1" hideScrollbar>
@@ -143,53 +156,52 @@ export function ReadingDetailsPanel({
             Reading history
           </h3>
           {historyEntries.length > 0 ? (
-            <div
-              data-testid="reading-history-table-scroll"
-              className="max-h-88 overflow-y-auto rounded-md border"
-            >
-              <Table aria-label="Reading history" className="table-fixed text-xs">
-                <TableHeader className="sticky top-0 bg-background">
-                  <TableRow>
-                    <TableHead className="h-8 w-[38%]">Location</TableHead>
-                    <TableHead className="h-8 w-[30%]">Page · progress</TableHead>
-                    <TableHead className="h-8 w-[32%]">Visited</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {historyEntries.map((entry) => {
-                    const locationDetails = [
-                      entry.pageIndex !== null
-                        ? `${entry.pageIndex}${entry.totalPages != null ? ` / ${entry.totalPages}` : ""}`
-                        : null,
-                      `${Math.round(entry.percentage)}%`,
-                    ].filter(Boolean);
+            <div data-testid="reading-history-table-scroll" className="max-h-88 overflow-y-auto">
+              <div className="flex flex-col gap-3">
+                {historyGroups.map((group) => {
+                  const dateLabel = formatDate(group.timestamp);
 
-                    return (
-                      <TableRow
-                        key={entry.id}
-                        className="cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none"
-                        tabIndex={0}
-                        onClick={() => void navigateToLocation(readingHistoryTarget(book, entry))}
-                        onKeyDown={activateRowOnKeyDown}
+                  return (
+                    <div key={group.key} className="flex flex-col gap-1">
+                      <h4 className="text-xs font-normal text-muted-foreground">{dateLabel}</h4>
+                      <Table
+                        aria-label={`Reading history for ${dateLabel}`}
+                        className="table-fixed text-xs"
                       >
-                        <TableCell className="max-w-0 py-1.5 font-medium">
-                          <span className="block truncate">
-                            {entry.chapterLabel ?? "Saved location"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="py-1.5 text-muted-foreground">
-                          {locationDetails.join(" · ")}
-                        </TableCell>
-                        <TableCell className="py-1.5 whitespace-normal text-muted-foreground">
-                          <time dateTime={new Date(entry.timestamp).toISOString()}>
-                            {formatHistoryTimestamp(entry.timestamp)}
-                          </time>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                        <TableBody>
+                          {group.items.map((entry) => (
+                            <TableRow
+                              key={entry.id}
+                              className="cursor-pointer border-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none"
+                              tabIndex={0}
+                              onClick={() =>
+                                void navigateToLocation(readingHistoryTarget(book, entry))
+                              }
+                              onKeyDown={activateRowOnKeyDown}
+                            >
+                              <TableCell className="w-[38%] max-w-0 py-1.5 font-medium">
+                                <span className="block truncate">
+                                  {entry.chapterLabel ?? "Saved location"}
+                                </span>
+                              </TableCell>
+                              <TableCell className="w-[30%] py-1.5 text-muted-foreground">
+                                {entry.pageIndex !== null
+                                  ? `${entry.pageIndex}${entry.totalPages != null ? ` / ${entry.totalPages}` : ""}`
+                                  : "—"}
+                              </TableCell>
+                              <TableCell className="w-[32%] py-1.5 whitespace-normal text-muted-foreground">
+                                <time dateTime={new Date(entry.timestamp).toISOString()}>
+                                  {formatHistoryTime(entry.timestamp)}
+                                </time>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           ) : (
             <Empty className="min-h-0 flex-none p-3">
@@ -211,72 +223,63 @@ export function ReadingDetailsPanel({
             Bookmarks
           </h3>
           {savedBookmarks.length > 0 ? (
-            <div
-              data-testid="bookmarks-table-scroll"
-              className="max-h-88 overflow-y-auto rounded-md border"
-            >
-              <Table aria-label="Bookmarks" className="table-fixed text-xs">
-                <TableHeader className="sticky top-0 bg-background">
-                  <TableRow>
-                    <TableHead className="h-8 w-[46%]">Location</TableHead>
-                    <TableHead className="h-8 w-[18%]">Page</TableHead>
-                    <TableHead className="h-8 w-[36%]">Saved</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {savedBookmarks.map((bookmark) => {
-                    const target = bookmarkTarget(book, bookmark);
-                    const pageNumber =
-                      book.format === "pdf"
-                        ? (bookmark.pageNumber ?? bookmark.displayPage)
-                        : (bookmark.displayPage ?? bookmark.pageNumber);
-                    const locationLabel =
-                      bookmark.label && bookmark.label !== `Page ${pageNumber}`
-                        ? bookmark.label
-                        : "Saved location";
+            <div data-testid="bookmarks-table-scroll" className="max-h-88 overflow-y-auto">
+              <div className="flex flex-col gap-3">
+                {bookmarkGroups.map((group) => {
+                  const dateLabel = formatDate(group.timestamp);
 
-                    return (
-                      <TableRow
-                        key={bookmark.id}
-                        className={cn(
-                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
-                          {
-                            "cursor-pointer": target,
-                            "cursor-default opacity-50": !target,
-                          },
-                        )}
-                        aria-disabled={!target}
-                        tabIndex={target ? 0 : undefined}
-                        onClick={target ? () => void navigateToLocation(target) : undefined}
-                        onKeyDown={target ? activateRowOnKeyDown : undefined}
+                  return (
+                    <div key={group.key} className="flex flex-col gap-1">
+                      <h4 className="text-xs font-normal text-muted-foreground">{dateLabel}</h4>
+                      <Table
+                        aria-label={`Bookmarks for ${dateLabel}`}
+                        className="table-fixed text-xs"
                       >
-                        <TableCell className="max-w-0 py-1.5 font-medium">
-                          <span className="block truncate">{locationLabel}</span>
-                        </TableCell>
-                        <TableCell className="py-1.5 text-muted-foreground">
-                          {pageNumber ?? "—"}
-                        </TableCell>
-                        <TableCell className="py-1.5 whitespace-normal text-muted-foreground">
-                          <time dateTime={new Date(bookmark.createdAt).toISOString()}>
-                            {formatDate(bookmark.createdAt)}
-                          </time>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                        <TableBody>
+                          {group.items.map((bookmark) => {
+                            const target = bookmarkTarget(book, bookmark);
+                            const pageNumber =
+                              book.format === "pdf"
+                                ? (bookmark.pageNumber ?? bookmark.displayPage)
+                                : (bookmark.displayPage ?? bookmark.pageNumber);
+                            const locationLabel =
+                              bookmark.label && bookmark.label !== `Page ${pageNumber}`
+                                ? bookmark.label
+                                : "Saved location";
+
+                            return (
+                              <TableRow
+                                key={bookmark.id}
+                                className={cn(
+                                  "border-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
+                                  {
+                                    "cursor-pointer": target,
+                                    "cursor-default opacity-50": !target,
+                                  },
+                                )}
+                                aria-disabled={!target}
+                                tabIndex={target ? 0 : undefined}
+                                onClick={target ? () => void navigateToLocation(target) : undefined}
+                                onKeyDown={target ? activateRowOnKeyDown : undefined}
+                              >
+                                <TableCell className="w-[70%] max-w-0 py-1.5 font-medium">
+                                  <span className="block truncate">{locationLabel}</span>
+                                </TableCell>
+                                <TableCell className="w-[30%] py-1.5 text-muted-foreground">
+                                  {pageNumber ?? "—"}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           ) : (
-            <Empty className="min-h-0 flex-none p-3">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <Bookmark aria-hidden="true" />
-                </EmptyMedia>
-                <EmptyTitle>No bookmarks yet</EmptyTitle>
-                <EmptyDescription>Save a page to find it again here.</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            <p className="py-3 text-xs text-muted-foreground">... → Actions → Bookmark page</p>
           )}
         </section>
       </div>
