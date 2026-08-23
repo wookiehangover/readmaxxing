@@ -70,6 +70,14 @@ export function pdfChapterLabelForPage(
   return current?.label ?? null;
 }
 
+export function shouldSavePdfPageChange(
+  hasRestoredPosition: boolean,
+  currentPage: number,
+  nextPage: number,
+): boolean {
+  return hasRestoredPosition && currentPage !== nextPage;
+}
+
 async function pdfDestinationPage(doc: any, destination: unknown): Promise<number | null> {
   try {
     const resolved =
@@ -263,6 +271,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     setLoadError(false);
 
     let cancelled = false;
+    let positionRestored = false;
     let restoredPageToSuppress: number | null = null;
     const disconnectResizeObserver = observePdfViewerResize(el, () => viewerRef.current);
     if (persistPosition) registerActiveReader(bookId);
@@ -328,9 +337,14 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       // Listen for page changes
       eventBus.on("pagechanging", (evt: any) => {
         const pageNum = evt.pageNumber;
+        const shouldSave = shouldSavePdfPageChange(
+          positionRestored,
+          latestPageRef.current,
+          pageNum,
+        );
         latestPageRef.current = pageNum;
         setCurrentPage(pageNum);
-        savePositionDebounced(pageNum);
+        if (shouldSave) savePositionDebounced(pageNum);
         configRef.current.onRelocated?.();
         if (!hasRestoredPositionRef.current || configRef.current.persistPosition === false) return;
         if (restoredPageToSuppress === pageNum) {
@@ -412,6 +426,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
             }
             latestPageRef.current = startPage;
             setCurrentPage(startPage);
+            positionRestored = true;
             hasRestoredPositionRef.current = true;
             setHasRestoredPosition(true);
           })

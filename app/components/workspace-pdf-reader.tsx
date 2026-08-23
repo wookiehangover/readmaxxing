@@ -21,6 +21,7 @@ import {
   deleteBookmarkRequested,
   hydrateBookmarksRequested,
 } from "~/lib/themis/bookmarks/bookmarks-slice";
+import { useSyncToFurthestPosition } from "~/hooks/use-sync-to-furthest-position";
 
 interface WorkspacePdfReaderProps {
   bookId: string;
@@ -257,6 +258,20 @@ function WorkspacePdfReaderInner({
 
   const isScrollMode = localPdfLayout === "continuous";
 
+  const getCurrentPosition = useCallback(() => `page:${currentPage}`, [currentPage]);
+  const navigateToPosition = useCallback(
+    (position: string) => {
+      const page = Number(position.slice("page:".length));
+      if (position.startsWith("page:") && Number.isSafeInteger(page) && page > 0) goToPage(page);
+    },
+    [goToPage],
+  );
+  const handleSyncToFurthestPage = useSyncToFurthestPosition({
+    bookId: book.id,
+    getCurrentPosition,
+    navigateToPosition,
+  });
+
   const localSettings: Settings = {
     ...settings,
     fontSize: localFontSize,
@@ -283,6 +298,7 @@ function WorkspacePdfReaderInner({
         localSettings={localSettings}
         onUpdateSettings={handleUpdateSettings}
         book={book}
+        onSyncToFurthestPage={handleSyncToFurthestPage}
         onDownload={handleDownload}
         onBookmarkPage={handleBookmarkPage}
         isBookmarked={Boolean(currentBookmark)}

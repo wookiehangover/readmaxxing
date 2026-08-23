@@ -76,6 +76,17 @@ describe("sync-engine startup and manual file recovery", () => {
     }
   });
 
+  it("rethrows failures from an awaited pull", async () => {
+    const pullError = new Error("pull failed");
+    const onSyncError = vi.fn();
+    pullChangesMock.mockRejectedValueOnce(pullError);
+    const engine = makeSyncEngine({ userId: "user-test", onSyncError });
+
+    await expect(engine.pullChanges()).rejects.toThrow("pull failed");
+
+    expect(onSyncError).toHaveBeenCalledWith(pullError);
+  });
+
   it("pushes queued metadata before verified file recovery on manual sync", async () => {
     const engine = makeSyncEngine({ userId: "user-test" });
 

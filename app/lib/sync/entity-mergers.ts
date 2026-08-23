@@ -1,4 +1,5 @@
 import { get, set, entries } from "idb-keyval";
+import { isFurtherAlong } from "~/lib/position-compare";
 import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
 import { removeSessionLocally } from "~/lib/stores/chat-store";
 import { isWellFormedEntry } from "./idb-entry";
@@ -121,9 +122,21 @@ export async function mergePositionRecord(record: Record<string, unknown>): Prom
     return;
   }
 
-  const merged = lwwMerge(existingRemote as { cfi: string; updatedAt: number }, remotePosition);
-  if (merged === remotePosition) {
-    await set(id, remotePosition, store);
+  const existingPosition = existingRemote as { cfi: string; updatedAt: number };
+  const remoteIsFurther = isFurtherAlong(remotePosition.cfi, existingPosition.cfi);
+  const existingIsFurther = isFurtherAlong(existingPosition.cfi, remotePosition.cfi);
+  const remoteWins =
+    remoteIsFurther ||
+    (!existingIsFurther && remotePosition.updatedAt >= existingPosition.updatedAt);
+  if (remoteWins) {
+    await set(
+      id,
+      {
+        ...remotePosition,
+        updatedAt: Math.max(remotePosition.updatedAt, existingPosition.updatedAt),
+      },
+      store,
+    );
     notifyPositionUpdated();
   }
 }

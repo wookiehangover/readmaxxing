@@ -40,24 +40,28 @@ describe("mergePositionRecord", () => {
     });
   });
 
-  it("preserves LWW behavior in the remote position store", async () => {
-    await mergePositionRecord({ bookId: "book-lww", cfi: "initial", updatedAt: 100 });
+  it.each([
+    ["EPUB CFI", "epubcfi(/6/4!/4/2/2)", "epubcfi(/6/4!/4/4/2)"],
+    ["PDF page", "page:2", "page:12"],
+  ])("prefers further %s content before timestamps", async (_label, earlier, further) => {
+    await mergePositionRecord({ bookId: "book-lww", cfi: earlier, updatedAt: 200 });
+    await mergePositionRecord({ bookId: "book-lww", cfi: further, updatedAt: 100 });
     await expect(getRemotePositionRecord("book-lww")).resolves.toEqual({
-      cfi: "initial",
-      updatedAt: 100,
+      cfi: further,
+      updatedAt: 200,
     });
     await expect(get("book-lww", positionStore)).resolves.toBeUndefined();
 
-    await mergePositionRecord({ bookId: "book-lww", cfi: "older", updatedAt: 50 });
+    await mergePositionRecord({ bookId: "book-lww", cfi: earlier, updatedAt: 300 });
     await expect(getRemotePositionRecord("book-lww")).resolves.toEqual({
-      cfi: "initial",
-      updatedAt: 100,
+      cfi: further,
+      updatedAt: 200,
     });
 
-    await mergePositionRecord({ bookId: "book-lww", cfi: "newer", updatedAt: 200 });
+    await mergePositionRecord({ bookId: "book-lww", cfi: further, updatedAt: 300 });
     await expect(getRemotePositionRecord("book-lww")).resolves.toEqual({
-      cfi: "newer",
-      updatedAt: 200,
+      cfi: further,
+      updatedAt: 300,
     });
   });
 

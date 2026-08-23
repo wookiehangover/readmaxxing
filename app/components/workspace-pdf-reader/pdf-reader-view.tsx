@@ -27,6 +27,7 @@ interface PdfReaderViewProps {
   onUpdateSettings: (update: Partial<Settings>) => void;
   book: BookMeta;
   readOnly?: boolean;
+  onSyncToFurthestPage?: () => void | Promise<void>;
   onDownload?: () => void;
   onBookmarkPage?: () => void | Promise<void>;
   isBookmarked?: boolean;
@@ -63,6 +64,7 @@ export function PdfReaderView({
   onUpdateSettings,
   book,
   readOnly = false,
+  onSyncToFurthestPage,
   onDownload,
   onBookmarkPage,
   isBookmarked,
@@ -100,6 +102,7 @@ export function PdfReaderView({
           onUpdateSettings={onUpdateSettings}
           isPdf
           book={readOnly ? undefined : book}
+          onSyncToFurthestPage={onSyncToFurthestPage}
           onDownload={onDownload}
           onBookmarkPage={onBookmarkPage}
           isBookmarked={isBookmarked}

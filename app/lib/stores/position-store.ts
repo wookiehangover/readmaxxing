@@ -93,20 +93,29 @@ export function makePositionService(stores: PositionServiceStores) {
           options.spineIndex >= 0
             ? options.spineIndex
             : undefined;
-        // Short-circuit no-op writes: if the stored CFI (and layout fields)
-        // match exactly, skip the IDB write, and only record a sync changelog
-        // when this matches a pending local-only save.
+        // Layout metadata can be filled in by a relocation emitted during restore.
+        // Preserve the existing clock when the CFI did not move so reopening a
+        // book cannot make this device appear newer than another device.
         const existing = migratePosition(await get<unknown>(bookId, positionStore));
-        if (
-          existing &&
-          existing.cfi === cfi &&
-          existing.localProgression === localProgression &&
-          existing.spineIndex === spineIndex
-        ) {
+        if (existing?.cfi === cfi) {
           const pending = pendingLocalOnlyChanges.get(bookId);
+          const layoutMatches =
+            existing.localProgression === localProgression && existing.spineIndex === spineIndex;
+          const record: PositionRecord = layoutMatches
+            ? existing
+            : {
+                cfi,
+                updatedAt: existing.updatedAt,
+                ...(localProgression !== undefined ? { localProgression } : {}),
+                ...(spineIndex !== undefined ? { spineIndex } : {}),
+              };
+          if (!layoutMatches) {
+            await set(bookId, record, positionStore);
+            if (pending?.cfi === cfi) pendingLocalOnlyChanges.set(bookId, record);
+          }
           if (shouldRecordChange && pending?.cfi === cfi) {
             pendingLocalOnlyChanges.delete(bookId);
-            enqueuePositionChange(bookId, pending);
+            enqueuePositionChange(bookId, record);
           }
           return;
         }
