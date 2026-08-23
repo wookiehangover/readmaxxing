@@ -23,6 +23,50 @@ const historyEntry: ReadingHistoryEntry = {
   timestamp: 1,
 };
 
+function selectPositionNudge({
+  localCfi = "epubcfi(/6/4)",
+  localUpdatedAt = 10,
+  remoteCfi,
+  remoteUpdatedAt = 1,
+  history = [],
+}: {
+  localCfi?: string;
+  localUpdatedAt?: number;
+  remoteCfi: string | null;
+  remoteUpdatedAt?: number;
+  history?: ReadingHistoryEntry[];
+}) {
+  let readingPositions = readingPositionsReducer(
+    undefined,
+    readingPositionsHydrated(
+      ["book-1"],
+      [{ key: "book-1", cfi: localCfi, updatedAt: localUpdatedAt }],
+    ),
+  );
+  if (history.length > 0) {
+    readingPositions = readingPositionsReducer(
+      readingPositions,
+      readingHistoryHydrated("book-1", history),
+    );
+  }
+  if (remoteCfi !== null) {
+    readingPositions = readingPositionsReducer(
+      readingPositions,
+      remoteReadingPositionChecked("book-1", {
+        bookId: "book-1",
+        cfi: remoteCfi,
+        updatedAt: remoteUpdatedAt,
+      }),
+    );
+  }
+
+  const store = createAppStore();
+  store.init({ readingPositions });
+  const nudge = store.readingPositionsSelectors.selectPositionNudge.select(store.state, "book-1");
+  store.dispose();
+  return nudge;
+}
+
 describe("readingPositionsReducer", () => {
   it("hydrates positions by key without replacing unrelated records", () => {
     const first = readingPositionsReducer(
@@ -63,28 +107,36 @@ describe("readingPositionsReducer", () => {
     expect(readingPositionsReducer(state, { type: "unknown" })).toBe(state);
   });
 
-  it("derives remote nudges from canonical local and remote positions", () => {
-    const store = createAppStore();
-    store.init({
-      readingPositions: readingPositionsReducer(
-        readingPositionsReducer(
-          undefined,
-          readingPositionsHydrated(
-            ["book-1"],
-            [{ key: "book-1", cfi: "epubcfi(/6/4)", updatedAt: 1 }],
-          ),
-        ),
-        remoteReadingPositionChecked("book-1", {
-          bookId: "book-1",
-          cfi: "epubcfi(/6/8)",
-          updatedAt: 2,
-        }),
-      ),
-    });
-
+  it("nudges for a content-further remote even when its timestamp is older", () => {
     expect(
-      store.readingPositionsSelectors.selectPositionNudge.select(store.state, "book-1")?.cfi,
+      selectPositionNudge({
+        localUpdatedAt: 10,
+        remoteCfi: "epubcfi(/6/8)",
+        remoteUpdatedAt: 1,
+      })?.cfi,
     ).toBe("epubcfi(/6/8)");
-    store.dispose();
+  });
+
+  it("does not nudge when the remote position is missing, equal, or earlier", () => {
+    expect(selectPositionNudge({ remoteCfi: null })).toBeNull();
+    expect(selectPositionNudge({ remoteCfi: "epubcfi(/6/4)" })).toBeNull();
+    expect(selectPositionNudge({ remoteCfi: "epubcfi(/6/2)" })).toBeNull();
+    expect(selectPositionNudge({ localCfi: "page:5", remoteCfi: "page:5" })).toBeNull();
+    expect(selectPositionNudge({ localCfi: "page:5", remoteCfi: "page:4" })).toBeNull();
+  });
+
+  it("does not nudge after the user intentionally backtracked from the remote position", () => {
+    expect(
+      selectPositionNudge({
+        remoteCfi: "epubcfi(/6/8)",
+        history: [{ ...historyEntry, cfi: "epubcfi(/6/8)" }],
+      }),
+    ).toBeNull();
+    expect(
+      selectPositionNudge({
+        remoteCfi: "epubcfi(/6/8)",
+        history: [{ ...historyEntry, cfi: "epubcfi(/6/10)" }],
+      }),
+    ).toBeNull();
   });
 });
