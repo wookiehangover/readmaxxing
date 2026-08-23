@@ -26,12 +26,13 @@ function matchesRoute(
   route: NonNullable<ReturnType<typeof getPwaOptions>["runtimeCaching"]>[number],
   pathname: string,
   sameOrigin = true,
+  mode: RequestMode = "navigate",
 ) {
   const urlPattern = route.urlPattern;
   if (typeof urlPattern !== "function") throw new Error("Route matcher is missing");
   type MatchOptions = Parameters<typeof urlPattern>[0];
   return urlPattern({
-    request: { mode: "navigate" } as Request,
+    request: { mode } as Request,
     url: new URL(pathname, "https://readmaxxing.test"),
     sameOrigin,
   } as MatchOptions);
@@ -41,6 +42,7 @@ function matchesSerializedRoute(
   route: NonNullable<ReturnType<typeof getPwaOptions>["runtimeCaching"]>[number],
   pathname: string,
   sameOrigin = true,
+  mode: RequestMode = "navigate",
 ) {
   const urlPattern = route.urlPattern;
   if (typeof urlPattern !== "function") throw new Error("Route matcher is missing");
@@ -49,6 +51,7 @@ function matchesSerializedRoute(
     { ...route, urlPattern: runInNewContext(`(${urlPattern.toString()})`) as typeof urlPattern },
     pathname,
     sameOrigin,
+    mode,
   );
 }
 
@@ -152,6 +155,38 @@ describe("PWA document navigation", () => {
     expect(matchesRoute(route!, "/share/book-id")).toBe(false);
     expect(matchesRoute(route!, "/debug/reading-agent")).toBe(false);
     expect(matchesRoute(route!, "https://other.test/about", false)).toBe(false);
+  });
+
+  it("falls back reader and library data requests to an empty route response offline", async () => {
+    const route = getPwaOptions().runtimeCaching?.find(
+      (candidate) => candidate.options?.cacheName === "reader-route-data",
+    );
+
+    expect(route).toMatchObject({ handler: "NetworkFirst" });
+    for (const pathname of ["/_.data", "/library.data", "/books/book-id.data"]) {
+      expect(matchesRoute(route!, pathname, true, "cors")).toBe(true);
+      expect(matchesSerializedRoute(route!, pathname, true, "cors")).toBe(true);
+    }
+
+    for (const pathname of [
+      "/api/chat.data",
+      "/share/book-id.data",
+      "/debug/reading-agent.data",
+      "/settings.data",
+      "/login.data",
+      "/books/book-id",
+    ]) {
+      expect(matchesRoute(route!, pathname, true, "cors")).toBe(false);
+      expect(matchesSerializedRoute(route!, pathname, true, "cors")).toBe(false);
+    }
+    expect(matchesRoute(route!, "https://other.test/books/book-id.data", false, "cors")).toBe(
+      false,
+    );
+
+    const fallback = await route?.options?.plugins?.[0]?.handlerDidError?.({} as never);
+    expect(fallback).toBeInstanceOf(Response);
+    expect(fallback?.status).toBe(204);
+    expect(await fallback?.text()).toBe("");
   });
 
   it("keeps serialized navigation matchers independent of Vite configuration scope", () => {
