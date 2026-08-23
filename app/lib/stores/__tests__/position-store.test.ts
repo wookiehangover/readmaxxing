@@ -154,6 +154,26 @@ describe("savePosition", () => {
     expect(second?.updatedAt).toBe(first?.updatedAt);
   });
 
+  it("preserves updatedAt when restore enriches the same CFI with layout data", async () => {
+    const { store, service } = createTestStore();
+    await idbSet("book-restore", { cfi: "epubcfi(/6/90)", updatedAt: 123 }, store);
+
+    await Effect.runPromise(
+      service.savePosition("book-restore", "epubcfi(/6/90)", {
+        localProgression: 0.5,
+        spineIndex: 2,
+      }),
+    );
+
+    await expect(Effect.runPromise(service.getPositionRecord("book-restore"))).resolves.toEqual({
+      cfi: "epubcfi(/6/90)",
+      updatedAt: 123,
+      localProgression: 0.5,
+      spineIndex: 2,
+    });
+    expect(recordChange).not.toHaveBeenCalled();
+  });
+
   it("still records a change when CFI changes to a new value", async () => {
     const { service } = createTestStore();
 

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { observePdfViewerResize, pdfChapterLabelForPage } from "~/hooks/use-pdf-lifecycle";
+import {
+  observePdfViewerResize,
+  pdfChapterLabelForPage,
+  shouldSavePdfPageChange,
+} from "~/hooks/use-pdf-lifecycle";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -19,6 +23,17 @@ describe("pdfChapterLabelForPage", () => {
 
   it("returns null before the first resolved bookmark", () => {
     expect(pdfChapterLabelForPage([{ label: "Chapter 1", page: 5 }], 2)).toBeNull();
+  });
+});
+
+describe("shouldSavePdfPageChange", () => {
+  it("ignores initial and restore-generated page events", () => {
+    expect(shouldSavePdfPageChange(false, 1, 12)).toBe(false);
+    expect(shouldSavePdfPageChange(true, 12, 12)).toBe(false);
+  });
+
+  it("saves a page change after restore", () => {
+    expect(shouldSavePdfPageChange(true, 12, 13)).toBe(true);
   });
 });
 
