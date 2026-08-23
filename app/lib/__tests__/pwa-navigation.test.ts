@@ -53,6 +53,10 @@ function matchesSerializedRoute(
 }
 
 describe("PWA document navigation", () => {
+  it("includes all routes in the initial manifest", () => {
+    expect(reactRouterConfig.routeDiscovery).toEqual({ mode: "initial" });
+  });
+
   it("serves the canonical manifest during development without enabling its service worker", async () => {
     const manifestPlugin = viteConfig.plugins
       ?.flat()
