@@ -13,12 +13,12 @@ export function StandardEbooksToolbar({ query, onQueryChange }: StandardEbooksTo
   return (
     <div className="flex w-full min-w-0 items-center gap-3 px-4 md:px-6">
       <div className="relative min-w-0 max-w-sm flex-1">
-        <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
         <Input
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search Standard Ebooks…"
-          className="h-8 pl-7 text-sm"
+          placeholder="Search free books"
+          className="h-8 pl-7 text-sm border-none placeholder:text-muted-foreground/50"
           aria-label="Search Standard Ebooks"
         />
       </div>

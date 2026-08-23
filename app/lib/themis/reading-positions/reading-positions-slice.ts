@@ -51,6 +51,9 @@ export const saveLocationCacheRequested = createAction<[bookId: string, json: st
 export const locationCacheSaved = createAction<[cache: LocationCacheRecord]>(
   "readingPositions/locationCacheSaved",
 );
+export const hydrateReadingHistoryRequested = createAction<[bookId: string]>(
+  "readingPositions/hydrateHistoryRequested",
+);
 export const recordReadingHistoryRequested = createAction<
   [bookId: string, data: ReadingHistoryVisitData]
 >("readingPositions/recordHistoryRequested");

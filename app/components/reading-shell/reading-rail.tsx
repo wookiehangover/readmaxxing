@@ -8,6 +8,7 @@ import {
   rememberMobileReadingTab,
   type MobileReadingTab,
 } from "~/components/reading-shell/mobile-reading-tabs";
+import { ReadingDetailsPanel } from "~/components/reading-shell/reading-details-panel";
 import { READING_RAIL_MENU_ID } from "~/components/reading-shell/reading-rail-menu-portal";
 import {
   useReadingRailTab,
@@ -22,7 +23,7 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 
-const desktopTabs = ["Notes", "Discuss", "Outline"] as const;
+const desktopTabs = ["Notes", "Discuss", "Outline", "Details"] as const;
 const mobileTabs = ["Read", ...desktopTabs] as const;
 
 export function ReadingRail({
@@ -76,6 +77,9 @@ export function ReadingRail({
       <Tabs.Panel value="Outline" className="min-h-0 flex-1 overflow-hidden outline-none">
         <WorkspaceOutlinePanel bookId={book.id} bookTitle={book.title} chromeless />
       </Tabs.Panel>
+      <Tabs.Panel value="Details" className="min-h-0 flex-1 overflow-hidden outline-none">
+        <ReadingDetailsPanel book={book} mobile={mobile} />
+      </Tabs.Panel>
       <Tabs.Panel value="Review" className="min-h-0 flex-1 overflow-hidden outline-none">
         <Empty className="h-full pr-6">
           <EmptyHeader>
@@ -110,7 +114,7 @@ export function ReadingRail({
         <div className="flex shrink-0 items-start gap-3 bg-background px-6 pt-3 pb-3">
           <Tabs.List
             aria-label="Reading sections"
-            className="relative flex min-w-0 flex-1 items-center gap-5"
+            className="relative flex min-w-0 flex-1 items-center gap-5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {mobileTabs.map((tab) => (
               <Tabs.Tab

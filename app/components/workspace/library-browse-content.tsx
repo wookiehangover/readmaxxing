@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { Button } from "~/components/ui/button";
 import {
   MessageSquare,
   NotebookPen,
@@ -8,7 +7,6 @@ import {
   RefreshCw,
   Share2,
   Trash2,
-  Upload,
   Edit3Icon,
   Loader2,
 } from "lucide-react";
@@ -191,7 +189,6 @@ export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps =
   );
 
   const libraryView = settings.libraryView;
-  const isEmpty = books.length === 0;
   const hasMatches = filteredBooks.length > 0;
 
   return (
@@ -204,106 +201,70 @@ export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps =
         className="hidden"
         onChange={handleFileInput}
       />
-      {isEmpty ? (
-        <div className="flex h-full flex-col items-center gap-4 p-6 text-center">
-          <Button className="mt-auto" onClick={() => fileInputRef.current?.click()}>
-            <Upload className="size-4" />
-            Upload an epub or PDF
-          </Button>
-          <span className="text-sm text-muted-foreground">or</span>
-          <Button variant="outline" render={<Link to="/standard-ebooks" />}>
-            <Globe className="size-4" />
-            Browse Standard Ebooks
-          </Button>
-          <div className="max-w-md space-y-3 text-sm text-muted-foreground text-left">
-            <p className="text-center py-5">* * *</p>
-            <p>
-              Readmaxxing is an AI-assisted reading app with chat, search, notes, bookmarks, and
-              reading history.
-            </p>
-            <p>
-              Use it for syntopical reading, comparative literature, and interrogating multiple
-              books at once.
-            </p>
-            <p>Open a book to start reading, mark up ideas, and build context as you go.</p>
+
+      <LibraryHeaderControls>
+        <LibraryToolbar
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          sortBy={librarySortBy}
+          onSortByChange={handleLibrarySortByChange}
+        />
+      </LibraryHeaderControls>
+      {!hasMatches ? (
+        <div className="flex flex-1 items-center justify-center p-6">
+          <p className="text-sm text-muted-foreground">No matching books</p>
+        </div>
+      ) : libraryView === "table" ? (
+        <div className="flex-1 overflow-hidden p-4 pt-2 md:p-6 md:pt-3">
+          <div className="mx-auto h-full w-full max-w-6xl">
+            <LibraryTable
+              books={filteredBooks}
+              onOpenBook={handleOpenBook}
+              onOpenNotebook={handleOpenNotebook}
+              onOpenChat={handleOpenChat}
+              onDeleteBook={handleDeleteBook}
+              onReloadBook={handleReloadBook}
+              syncActive={syncActive}
+              downloadingBookIds={new Set(downloadingBookIds)}
+            />
           </div>
-          {!isAuthenticated && (
-            <div className="mt-auto flex items-center gap-2">
-              <Button variant="ghost" size="sm" render={<Link to="/login" />}>
-                Login
-              </Button>
-              <Button variant="ghost" size="sm" render={<Link to="/login" />}>
-                Create account
-              </Button>
-            </div>
-          )}
         </div>
       ) : (
-        <>
-          <LibraryHeaderControls>
-            <LibraryToolbar
-              query={searchQuery}
-              onQueryChange={setSearchQuery}
-              sortBy={librarySortBy}
-              onSortByChange={handleLibrarySortByChange}
-            />
-          </LibraryHeaderControls>
-          {!hasMatches ? (
-            <div className="flex flex-1 items-center justify-center p-6">
-              <p className="text-sm text-muted-foreground">No matching books</p>
-            </div>
-          ) : libraryView === "table" ? (
-            <div className="flex-1 overflow-hidden p-4 pt-2 md:p-6 md:pt-3">
-              <div className="mx-auto h-full w-full max-w-6xl">
-                <LibraryTable
-                  books={filteredBooks}
-                  onOpenBook={handleOpenBook}
-                  onOpenNotebook={handleOpenNotebook}
-                  onOpenChat={handleOpenChat}
-                  onDeleteBook={handleDeleteBook}
-                  onReloadBook={handleReloadBook}
+        <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
+          <div className="flex flex-wrap gap-8 justify-center md:justify-start max-w-screen-2xl mx-auto">
+            {sortedGridBooks.map((book) => {
+              return (
+                <LibraryBook
+                  key={book.id}
+                  book={book}
+                  handleOpenBook={handleOpenBook}
+                  handleOpenNotebook={handleOpenNotebook}
+                  handleOpenChat={handleOpenChat}
+                  handleDeleteBook={handleDeleteBook}
+                  handleReloadBook={handleReloadBook}
+                  handleShareBook={handleShareBook}
+                  isAuthenticated={isAuthenticated}
                   syncActive={syncActive}
-                  downloadingBookIds={new Set(downloadingBookIds)}
+                  isDownloading={downloadingBookIds.includes(book.id)}
                 />
-              </div>
+              );
+            })}
+            <div className="max-w-40 md:max-w-52 w-full">
+              <AddBookCard onClick={() => fileInputRef.current?.click()} />
             </div>
-          ) : (
-            <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
-              <div className="mx-auto grid max-w-6xl grid-cols-2 items-start gap-4 sm:grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] sm:gap-6">
-                {sortedGridBooks.map((book) => {
-                  return (
-                    <LibraryBook
-                      key={book.id}
-                      book={book}
-                      handleOpenBook={handleOpenBook}
-                      handleOpenNotebook={handleOpenNotebook}
-                      handleOpenChat={handleOpenChat}
-                      handleDeleteBook={handleDeleteBook}
-                      handleReloadBook={handleReloadBook}
-                      handleShareBook={handleShareBook}
-                      isAuthenticated={isAuthenticated}
-                      syncActive={syncActive}
-                      isDownloading={downloadingBookIds.includes(book.id)}
-                    />
-                  );
-                })}
-                <div className="max-w-40">
-                  <AddBookCard onClick={() => fileInputRef.current?.click()} />
-                </div>
-                <div className="max-w-40">
-                  <Link
-                    to="/standard-ebooks"
-                    className="flex aspect-[2/3] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground"
-                  >
-                    <Globe className="size-6" />
-                    <span className="text-xs font-medium">Standard Ebooks</span>
-                  </Link>
-                </div>
-              </div>
+            <div className="max-w-40 md:max-w-52 w-full">
+              <Link
+                to="/standard-ebooks"
+                className="flex aspect-[2/3] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground"
+              >
+                <Globe className="size-6" />
+                <span className="text-xs font-medium">Standard Ebooks</span>
+              </Link>
             </div>
-          )}
-        </>
+          </div>
+        </div>
       )}
+
       <ShareDialog
         book={shareBook}
         open={shareBook !== null}
@@ -341,7 +302,7 @@ function LibraryBook({
   const needsDownload = bookNeedsDownload(book);
 
   return (
-    <div key={book.id} className="group relative max-w-40">
+    <div key={book.id} className="group relative max-w-40 md:max-w-52">
       <button
         type="button"
         onClick={() => handleOpenBook(book)}
@@ -374,7 +335,7 @@ function LibraryBook({
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger
-          className="ml-auto flex size-7 items-center justify-center rounded-md text-foreground/70 backdrop-blur-sm transition-opacity hover:bg-background focus-visible:opacity-100 mt-1"
+          className="ml-auto flex size-7 items-center justify-center rounded-md text-foreground/70 backdrop-blur-sm transition-opacity hover:bg-muted/80 focus-visible:opacity-100 mt-1 opacity-20 group-hover:opacity-100"
           render={<button type="button" />}
           onClick={(e) => e.preventDefault()}
         >

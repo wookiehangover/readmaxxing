@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { ReadingHistoryError } from "~/lib/errors";
 import type { ReadingHistoryEntry } from "~/lib/stores/reading-history-store";
 
 const mocks = vi.hoisted(() => ({
@@ -39,6 +40,7 @@ import {
   checkPositionNudgeRequested,
   flushReadingPositionRequested,
   hydrateLocationCacheRequested,
+  hydrateReadingHistoryRequested,
   hydrateReadingPositionsRequested,
   readingPositionChanged,
   recordReadingHistoryRequested,
@@ -215,6 +217,162 @@ describe("readingPositionsSaga", () => {
       ).toBe("page:5"),
     );
     await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledTimes(8), { timeout: 2000 });
+  });
+
+  it("hydrates persisted reading history without recording a new visit", async () => {
+    const entry: ReadingHistoryEntry = {
+      id: "history-1",
+      bookId: "book-1",
+      cfi: "epubcfi(/6/4)",
+      chapterHref: "chapter.xhtml",
+      chapterLabel: "Chapter",
+      percentage: 20,
+      pageIndex: 2,
+      totalPages: 10,
+      timestamp: 1,
+    };
+    mocks.runPromise.mockResolvedValueOnce([entry]);
+    const store = startStore();
+
+    store.dispatch(hydrateReadingHistoryRequested("book-1"));
+
+    await vi.waitFor(() =>
+      expect(
+        store.readingPositionsSelectors.selectReadingHistory.select(store.state, "book-1"),
+      ).toEqual([entry]),
+    );
+    expect(mocks.runPromise).toHaveBeenCalledExactlyOnceWith("book-1");
+  });
+
+  it("keeps the latest overlapping reading-history hydrate for each book", async () => {
+    const older: ReadingHistoryEntry = {
+      id: "older-history",
+      bookId: "book-1",
+      cfi: "epubcfi(/6/4)",
+      chapterHref: "chapter.xhtml",
+      chapterLabel: "Chapter",
+      percentage: 20,
+      pageIndex: 2,
+      totalPages: 10,
+      timestamp: 1,
+    };
+    const newer = { ...older, id: "newer-history", cfi: "epubcfi(/6/8)", timestamp: 2 };
+    const otherBook = { ...older, id: "other-history", bookId: "book-2" };
+    const olderRequest = deferred<ReadingHistoryEntry[]>();
+    const otherBookRequest = deferred<ReadingHistoryEntry[]>();
+    mocks.runPromise
+      .mockReturnValueOnce(olderRequest.promise)
+      .mockReturnValueOnce(otherBookRequest.promise)
+      .mockResolvedValueOnce([newer]);
+    const store = startStore();
+
+    store.dispatch(hydrateReadingHistoryRequested("book-1"));
+    store.dispatch(hydrateReadingHistoryRequested("book-2"));
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledTimes(2));
+    store.dispatch(hydrateReadingHistoryRequested("book-1"));
+
+    await vi.waitFor(() =>
+      expect(
+        store.readingPositionsSelectors.selectReadingHistory.select(store.state, "book-1"),
+      ).toEqual([newer]),
+    );
+    otherBookRequest.resolve([otherBook]);
+    await vi.waitFor(() =>
+      expect(
+        store.readingPositionsSelectors.selectReadingHistory.select(store.state, "book-2"),
+      ).toEqual([otherBook]),
+    );
+    olderRequest.resolve([older]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      store.readingPositionsSelectors.selectReadingHistory.select(store.state, "book-1"),
+    ).toEqual([newer]);
+  });
+
+  it("ignores a stale history hydrate after recording a newer visit", async () => {
+    const staleHistory = deferred<ReadingHistoryEntry[]>();
+    const recorded: ReadingHistoryEntry = {
+      id: "recorded-history",
+      bookId: "book-1",
+      cfi: "epubcfi(/6/8)",
+      chapterHref: "chapter.xhtml",
+      chapterLabel: "Chapter",
+      percentage: 40,
+      pageIndex: 4,
+      totalPages: 10,
+      timestamp: 2,
+    };
+    mocks.runPromise
+      .mockReturnValueOnce(staleHistory.promise)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([recorded]);
+    const store = startStore();
+
+    store.dispatch(hydrateReadingHistoryRequested("book-1"));
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledOnce());
+    store.dispatch(
+      recordReadingHistoryRequested("book-1", {
+        cfi: recorded.cfi,
+        chapterHref: recorded.chapterHref,
+        chapterLabel: recorded.chapterLabel,
+        percentage: recorded.percentage,
+        pageIndex: recorded.pageIndex,
+        totalPages: recorded.totalPages,
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(
+        store.readingPositionsSelectors.selectReadingHistory.select(store.state, "book-1"),
+      ).toEqual([recorded]),
+    );
+    staleHistory.resolve([]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      store.readingPositionsSelectors.selectReadingHistory.select(store.state, "book-1"),
+    ).toEqual([recorded]);
+  });
+
+  it("records reading-history hydration failures without replacing existing history", async () => {
+    const entry: ReadingHistoryEntry = {
+      id: "history-1",
+      bookId: "book-1",
+      cfi: "epubcfi(/6/4)",
+      chapterHref: "chapter.xhtml",
+      chapterLabel: "Chapter",
+      percentage: 20,
+      pageIndex: 2,
+      totalPages: 10,
+      timestamp: 1,
+    };
+    mocks.runPromise
+      .mockResolvedValueOnce([entry])
+      .mockRejectedValueOnce(
+        new ReadingHistoryError({ operation: "getHistory", bookId: "book-1" }),
+      );
+    const store = startStore();
+
+    store.dispatch(hydrateReadingHistoryRequested("book-1"));
+    await vi.waitFor(() =>
+      expect(
+        store.readingPositionsSelectors.selectReadingHistory.select(store.state, "book-1"),
+      ).toEqual([entry]),
+    );
+    store.dispatch(hydrateReadingHistoryRequested("book-1"));
+
+    await vi.waitFor(() =>
+      expect(
+        store.readingPositionsSelectors.selectReadingPositionError.select(store.state, "book-1"),
+      ).toEqual({
+        _tag: "ReadingHistoryError",
+        message: "ReadingHistoryError",
+        operation: "getHistory",
+        bookId: "book-1",
+      }),
+    );
+    expect(
+      store.readingPositionsSelectors.selectReadingHistory.select(store.state, "book-1"),
+    ).toEqual([entry]);
   });
 
   it("hydrates location caches and persists history into normalized state", async () => {
