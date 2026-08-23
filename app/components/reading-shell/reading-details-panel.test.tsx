@@ -97,9 +97,9 @@ function renderPanel(currentBook = book, mobile = false) {
   return container!;
 }
 
-function findButton(label: string) {
-  return Array.from(container!.querySelectorAll("button")).find((button) =>
-    button.textContent?.includes(label),
+function findRow(label: string) {
+  return Array.from(container!.querySelectorAll<HTMLTableRowElement>("tbody tr")).find((row) =>
+    row.textContent?.includes(label),
   );
 }
 
@@ -146,18 +146,35 @@ describe("ReadingDetailsPanel", () => {
     expect(panel.textContent?.match(/Middlemarch/g)).toHaveLength(2);
   });
 
-  it("renders populated reading-history and bookmark sections with location and date details", () => {
+  it("renders compact tables with column headers, location details, and a timestamp with seconds", () => {
     store.dispatch(readingHistoryHydrated(book.id, [historyEntry]));
     store.dispatch(bookmarksHydrated(book.id, [bookmark]));
 
     const panel = renderPanel();
+    const tables = panel.querySelectorAll("table");
+    const historyTime = new Date(historyEntry.timestamp).toLocaleString(undefined, {
+      dateStyle: "short",
+      timeStyle: "medium",
+    });
 
+    expect(tables).toHaveLength(2);
+    expect(tables[0]?.getAttribute("aria-label")).toBe("Reading history");
+    expect(tables[1]?.getAttribute("aria-label")).toBe("Bookmarks");
+    expect(tables[0]?.querySelector("thead")?.textContent).toContain("Page · progress");
+    expect(tables[1]?.querySelector("thead")?.textContent).toContain("Page");
     expect(panel.textContent).toContain("Chapter One");
-    expect(panel.textContent).toContain("Page 37 of 150");
+    expect(panel.textContent).toContain("37 / 150");
     expect(panel.textContent).toContain("25%");
     expect(panel.textContent).toContain("A memorable chapter");
-    expect(panel.textContent).toContain("Page 42");
+    expect(panel.textContent).not.toContain("Page 42");
+    expect(tables[0]?.querySelector("time")?.textContent).toBe(historyTime);
     expect(panel.querySelectorAll("time")).toHaveLength(2);
+    expect(
+      panel.querySelector("[data-testid='reading-history-table-scroll']")?.className,
+    ).toContain("max-h-88");
+    expect(panel.querySelector("[data-testid='bookmarks-table-scroll']")?.className).toContain(
+      "overflow-y-auto",
+    );
   });
 
   it("omits missing total-page counts from legacy reading-history entries", () => {
@@ -169,7 +186,7 @@ describe("ReadingDetailsPanel", () => {
 
     const panel = renderPanel();
 
-    expect(panel.textContent).toContain("Page 37");
+    expect(panel.textContent).toContain("37 · 25%");
     expect(panel.textContent).not.toContain("of undefined");
   });
 
@@ -190,8 +207,8 @@ describe("ReadingDetailsPanel", () => {
     store.dispatch(bookmarksHydrated(book.id, [bookmark]));
     renderPanel();
 
-    await act(async () => findButton("Chapter One")?.click());
-    await act(async () => findButton("A memorable chapter")?.click());
+    await act(async () => findRow("Chapter One")?.click());
+    await act(async () => findRow("A memorable chapter")?.click());
 
     expect(mocks.navigateInCluster).toHaveBeenNthCalledWith(1, book.id, historyEntry.cfi);
     expect(mocks.navigateInCluster).toHaveBeenNthCalledWith(2, book.id, bookmark.cfi);
@@ -206,8 +223,8 @@ describe("ReadingDetailsPanel", () => {
     store.dispatch(bookmarksHydrated(book.id, [pdfBookmark]));
     renderPanel(pdfBook, true);
 
-    await act(async () => findButton("Chapter One")?.click());
-    await act(async () => findButton("Page 28")?.click());
+    await act(async () => findRow("Chapter One")?.click());
+    await act(async () => findRow("Saved location")?.click());
 
     expect(mocks.navigateInCluster).toHaveBeenNthCalledWith(1, book.id, "page:12");
     expect(mocks.navigateInCluster).toHaveBeenNthCalledWith(2, book.id, "page:28");
@@ -227,9 +244,9 @@ describe("ReadingDetailsPanel", () => {
     store.dispatch(bookmarksHydrated(book.id, [pdfBookmark]));
     renderPanel(pdfBook);
 
-    const savedBookmark = findButton("Synced PDF page");
-    expect(savedBookmark?.disabled).toBe(false);
-    expect(savedBookmark?.textContent).toContain("Page 28");
+    const savedBookmark = findRow("Synced PDF page");
+    expect(savedBookmark?.getAttribute("aria-disabled")).toBe("false");
+    expect(savedBookmark?.textContent).toContain("28");
 
     await act(async () => savedBookmark?.click());
 
