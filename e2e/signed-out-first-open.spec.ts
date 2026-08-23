@@ -42,7 +42,7 @@ test("signed-out first visit does not remain on the workspace loader", async ({ 
   await resetSignedOutState(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  await expect(page.getByText("Loading workspace…", { exact: true })).toBeHidden({
+  await expect(page.getByTestId("workspace-loading-overlay")).toBeHidden({
     timeout: 15_000,
   });
   await waitForAppHydration(page);

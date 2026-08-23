@@ -185,7 +185,7 @@ async function waitForStableDemoLibrary(page: Page) {
       async () => {
         if (new URL(page.url()).pathname === demoReaderPath) {
           await expect(page.getByTestId("reading-shell")).toBeVisible({ timeout: 30_000 });
-          await expect(page.getByText("Loading workspace…", { exact: true })).toBeHidden({
+          await expect(page.getByTestId("workspace-loading-overlay")).toBeHidden({
             timeout: 30_000,
           });
           await page.goBack();
