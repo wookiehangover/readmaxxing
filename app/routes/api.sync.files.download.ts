@@ -1,6 +1,7 @@
 import { get } from "@vercel/blob";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
+import { readLocalFile, useLocalFileStorage } from "~/lib/storage/local-file-storage.server";
 
 /**
  * GET /api/sync/files/download?bookId=...&type=file|cover
@@ -21,8 +22,9 @@ export async function loader({ request }: { request: Request }) {
 
   const { userId } = await requireAuth(request);
 
+  const localStorage = useLocalFileStorage();
   const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
+  if (!localStorage && !token) {
     return Response.json({ error: "Blob storage is not configured" }, { status: 500 });
   }
 
@@ -49,6 +51,20 @@ export async function loader({ request }: { request: Request }) {
   const blobUrl = type === "cover" ? book.coverBlobUrl : book.fileBlobUrl;
   if (!blobUrl) {
     return Response.json({ error: `No ${type} uploaded for this book` }, { status: 404 });
+  }
+
+  if (localStorage) {
+    const localFile = await readLocalFile({ userId, bookId, type });
+    if (!localFile) {
+      return Response.json({ error: `No ${type} uploaded for this book` }, { status: 404 });
+    }
+
+    const headers: Record<string, string> = { "Content-Type": localFile.contentType };
+    if (type === "cover") {
+      headers["Cache-Control"] = "private, max-age=31536000, immutable";
+    }
+
+    return new Response(new Uint8Array(localFile.data), { headers });
   }
 
   // Private blobs: use get() to fetch via authenticated token and stream to client

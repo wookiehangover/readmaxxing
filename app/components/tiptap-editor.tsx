@@ -30,6 +30,7 @@ export interface TiptapEditorHandle {
 interface TiptapEditorProps {
   content?: TiptapEditorContent;
   compact?: boolean;
+  editable?: boolean;
   placeholder?: string;
   onUpdate?: (content: JSONContent) => void;
   onBlur?: () => void;
@@ -103,30 +104,32 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
       >
         "{text}"
       </blockquote>
-      <div className="absolute top-full right-1 z-10 mt-0.5 flex gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100 group-focus-within/hl:opacity-100">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleNavigate();
-          }}
-          className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title="Navigate to highlight"
-        >
-          <Navigation className="size-3" />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleDelete();
-          }}
-          className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title="Delete highlight"
-        >
-          <Trash2 className="size-3" />
-        </button>
-      </div>
+      {editor.isEditable ? (
+        <div className="absolute top-full right-1 z-10 mt-0.5 flex gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100 group-focus-within/hl:opacity-100">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleNavigate();
+            }}
+            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title="Navigate to highlight"
+          >
+            <Navigation className="size-3" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete();
+            }}
+            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title="Delete highlight"
+          >
+            <Trash2 className="size-3" />
+          </button>
+        </div>
+      ) : null}
     </NodeViewWrapper>
   );
 }
@@ -135,6 +138,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
   {
     content,
     compact = false,
+    editable = true,
     placeholder,
     onUpdate,
     onBlur,
@@ -169,6 +173,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       type: "doc",
       content: [{ type: "paragraph" }],
     },
+    editable,
     onCreate: ({ editor }) => setIsEmpty(editor.isEmpty),
     onTransaction: ({ editor }) => setIsEmpty(editor.isEmpty),
     onUpdate: ({ editor }) => {
@@ -179,6 +184,10 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     },
     immediatelyRender: true,
   });
+
+  useEffect(() => {
+    editor?.setEditable(editable);
+  }, [editable, editor]);
 
   // Notify parent when editor becomes available
   const onReadyRef = useRef(onReady);

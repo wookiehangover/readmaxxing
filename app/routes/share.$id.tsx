@@ -1,25 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
-import {
-  createNavigator,
-  openPublication,
-  openZipResourceProvider,
-  type ZipResourceProvider,
-} from "@readmaxxing/epub-successor";
-import { AlertCircle, BookOpen, Check, Loader2 } from "lucide-react";
-import { Streamdown } from "streamdown";
+import { AlertCircle, Check, Loader2 } from "lucide-react";
+import { SharedBookReader } from "~/components/share/shared-book-reader";
+import { SharedReadingRail } from "~/components/share/shared-reading-rail";
+import { ReadingRailTabProvider } from "~/components/reading-shell/reading-rail-tab-context";
+import { ReadingSplit } from "~/components/reading-shell/reading-split";
+import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
-import { Skeleton } from "~/components/ui/skeleton";
+import { useIsMobile } from "~/hooks/use-mobile";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { getPositionsByUser } from "~/lib/database/book/reading-position";
 import { getShareLink, type ShareLinkRow } from "~/lib/database/share/share-link";
 import { getUser } from "~/lib/database/user/user";
-import { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
 import { signDownloadToken } from "~/lib/share-download-token";
 import type { BookFormat } from "~/lib/stores/book-store";
 import { importSharedBookRequested } from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
-import { cn } from "~/lib/utils";
 
 type ShareStatus = "available" | "expired" | "exhausted" | "not_found" | "unavailable";
 
@@ -44,10 +40,6 @@ interface ShareLoaderData {
   };
 }
 
-type SharedChatMessage = { role: string; content: string; createdAt: string };
-
-type SharedChatSession = { id: string; title: string | null; messages: SharedChatMessage[] };
-
 interface LoaderArgs {
   request: Request;
   params: { id: string };
@@ -67,13 +59,6 @@ function isExhausted(shareLink: ShareLinkRow): boolean {
 
 function normalizeFormat(format: string | null | undefined): BookFormat {
   return format === "pdf" ? "pdf" : "epub";
-}
-
-async function readApiError(response: Response): Promise<string> {
-  const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
-  return typeof body?.error === "string"
-    ? body.error
-    : `Request failed with ${response.status} ${response.statusText}`;
 }
 
 export async function loader({ request, params }: LoaderArgs): Promise<ShareLoaderData> {
@@ -185,273 +170,35 @@ export function meta({ data }: { data?: ShareLoaderData }) {
   ];
 }
 
-function CoverArt({ book }: { book?: ShareBookData }) {
-  const [failed, setFailed] = useState(false);
-
-  return (
-    <div className="flex aspect-[2/3] w-28 items-center justify-center overflow-hidden bg-muted sm:w-36">
-      {book?.coverUrl && !failed ? (
-        <img
-          src={book.coverUrl}
-          alt={`Cover for ${book.title}`}
-          className="size-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <BookOpen className="size-12 text-muted-foreground/50" />
-      )}
-    </div>
-  );
-}
-
-async function fetchSharedJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(await readApiError(response));
-  return (await response.json()) as T;
-}
-
-function SharedEpubPreview({ book, fileUrl }: { book: ShareBookData; fileUrl?: string | null }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [loading, setLoading] = useState(book.format === "epub");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (book.format !== "epub") return;
-    const container = containerRef.current;
-    if (!container) return;
-    if (!fileUrl) {
-      setLoading(false);
-      setError("Reader preview is unavailable because the download link could not be signed.");
-      return;
-    }
-
-    const previewContainer = container;
-    const previewFileUrl = fileUrl;
-    const abortController = new AbortController();
-    let cancelled = false;
-    let provider: ZipResourceProvider | null = null;
-    let rendition: SuccessorRenditionAdapter | null = null;
-
-    async function initPreview() {
-      try {
-        setLoading(true);
-        setError(null);
-        previewContainer.replaceChildren();
-
-        const response = await fetch(previewFileUrl, { signal: abortController.signal });
-        if (!response.ok) throw new Error(await readApiError(response));
-        const arrayBuffer = await response.arrayBuffer();
-        if (cancelled) return;
-
-        provider = await openZipResourceProvider(arrayBuffer, {
-          signal: abortController.signal,
-        });
-        const opened = await openPublication(provider, { signal: abortController.signal });
-        if (!opened.publication) {
-          throw new Error(
-            opened.diagnostics.map(({ message }) => message).join("; ") ||
-              "EPUB publication could not be parsed",
-          );
-        }
-        const navigator = createNavigator(opened.publication, {
-          container: previewContainer,
-          flow: "scrolled",
-          preferences: {
-            theme: "light",
-            spread: "single",
-            fontFamily: 'Georgia, "Times New Roman", serif',
-            fontSize: 112.5,
-            lineHeight: 1.7,
-            preferenceCss: "p,li{line-height:1.7 !important;}a{color:#2563eb !important;}",
-          },
-          security: { resourceProvider: provider },
-        });
-        rendition = new SuccessorRenditionAdapter(opened.publication, navigator);
-
-        try {
-          await rendition.display(book.currentCfi ?? undefined);
-        } catch {
-          await rendition.display();
-        }
-        if (!cancelled) setLoading(false);
-      } catch (cause) {
-        if (cancelled || abortController.signal.aborted) return;
-        setError(cause instanceof Error ? cause.message : "Failed to load reader preview");
-        setLoading(false);
-      }
-    }
-
-    void initPreview();
-    return () => {
-      cancelled = true;
-      abortController.abort();
-      rendition?.destroy();
-      provider?.close();
-      previewContainer.replaceChildren();
-    };
-  }, [book.currentCfi, book.format, fileUrl]);
-
-  if (book.format === "pdf") {
-    return (
-      <div className="flex h-[600px] flex-col overflow-hidden bg-background lg:h-full">
-        <div className="flex flex-1 items-center justify-center bg-muted/40 p-8">
-          {book.coverUrl ? (
-            <img
-              src={book.coverUrl}
-              alt={`Cover for ${book.title}`}
-              className="max-h-[520px] object-contain"
-            />
-          ) : (
-            <div className="flex aspect-[2/3] w-56 items-center justify-center bg-muted">
-              <BookOpen className="size-16 text-muted-foreground/50" />
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-[600px] flex-col overflow-hidden bg-background lg:h-full">
-      <div className="relative min-h-0 flex-1 bg-white">
-        <div ref={containerRef} className="size-full" />
-        {loading && (
-          <div className="absolute inset-0 flex flex-col gap-4 bg-background p-8">
-            <Skeleton className="h-8 w-1/2" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-11/12" />
-            <Skeleton className="h-4 w-10/12" />
-            <Skeleton className="mt-8 h-64 w-full" />
-          </div>
-        )}
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/95 p-8 text-center">
-            <p className="max-w-sm text-sm text-destructive">{error}</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SharedChatPanel({ shareId, enabled }: { shareId: string; enabled: boolean }) {
-  const [chats, setChats] = useState<SharedChatSession[]>([]);
-  const [loading, setLoading] = useState(enabled);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    async function loadSharedChats() {
-      try {
-        const chatsData = await fetchSharedJson<{ sessions: SharedChatSession[] }>(
-          `/api/share/${shareId}/chats`,
-        );
-        if (cancelled) return;
-        setChats(chatsData.sessions);
-        setError(null);
-      } catch (cause) {
-        if (!cancelled)
-          setError(cause instanceof Error ? cause.message : "Failed to load shared content");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void loadSharedChats();
-    const interval = window.setInterval(loadSharedChats, 30_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [enabled, shareId]);
-
-  if (!enabled) {
-    return (
-      <aside className="flex h-[600px] flex-col overflow-hidden border-t bg-background pt-5 lg:h-full lg:border-t-0 lg:border-l lg:pt-0 lg:pl-5">
-        <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
-          Chat sessions were not included with this share link.
-        </div>
-      </aside>
-    );
-  }
-
-  return (
-    <aside className="flex h-[600px] flex-col overflow-hidden border-t bg-background pt-5 lg:h-full lg:border-t-0 lg:border-l lg:pt-0 lg:pl-5">
-      {error && <p className="px-4 py-3 text-sm text-destructive">{error}</p>}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {loading ? (
-          <div className="flex flex-col gap-3">
-            <Skeleton className="h-12 w-3/4" />
-            <Skeleton className="h-20 w-full" />
-            <Skeleton className="h-16 w-5/6 self-end" />
-          </div>
-        ) : chats.length > 0 ? (
-          <div className="flex flex-col gap-6">
-            {chats.map((session) => (
-              <section key={session.id} className="flex flex-col gap-3">
-                <div>
-                  <h3 className="text-sm font-medium">{session.title || "Untitled chat"}</h3>
-                  <p className="text-xs text-muted-foreground">
-                    {session.messages.length} messages
-                  </p>
-                </div>
-                <div className="flex flex-col gap-3">
-                  {session.messages.map((message, index) => (
-                    <SharedChatBubble
-                      key={`${session.id}-${message.createdAt}-${index}`}
-                      message={message}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        ) : (
-          <p className="bg-muted/50 p-6 text-center text-sm text-muted-foreground">No chats yet.</p>
-        )}
-      </div>
-    </aside>
-  );
-}
-
-function SharedChatBubble({ message }: { message: SharedChatMessage }) {
-  const isUser = message.role === "user";
-  return (
-    <div className={cn("flex", { "justify-end": isUser, "justify-start": !isUser })}>
-      <div
-        className={cn("max-w-[85%] rounded-lg px-3 py-2 text-sm", {
-          "bg-secondary text-secondary-foreground": isUser,
-          "text-foreground": !isUser,
-        })}
-      >
-        {isUser ? (
-          <p className="whitespace-pre-wrap">{message.content}</p>
-        ) : (
-          <Streamdown>{message.content}</Streamdown>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function SharedReadingSection({
+function SharedBookSurface({
   shareId,
   book,
   fileUrl,
-  shareChats,
 }: {
   shareId: string;
   book: ShareBookData;
-  fileUrl?: string | null;
-  shareChats: boolean;
+  fileUrl: string | null | undefined;
 }) {
   return (
-    <section className="min-h-0 flex-1 self-center border-t pt-6 w-[calc(100vw-2rem)] sm:w-[calc(100vw-3rem)] lg:w-[calc(100vw-4rem)]">
-      <div className="grid min-h-0 gap-5 lg:h-full lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
-        <SharedEpubPreview book={book} fileUrl={fileUrl} />
-        <SharedChatPanel shareId={shareId} enabled={shareChats} />
-      </div>
+    <section className="h-full min-w-0" aria-label="Book surface" data-testid="share-book-surface">
+      {fileUrl ? (
+        <SharedBookReader
+          shareId={shareId}
+          fileUrl={fileUrl}
+          format={book.format}
+          currentCfi={book.currentCfi}
+        />
+      ) : (
+        <div className="flex h-full items-center justify-center p-6">
+          <Alert variant="destructive" className="max-w-lg">
+            <AlertCircle />
+            <AlertTitle>Shared book file unavailable</AlertTitle>
+            <AlertDescription>
+              The reader could not open this shared file. Ask the sharer to create a new link.
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
     </section>
   );
 }
@@ -459,10 +206,10 @@ function SharedReadingSection({
 export default function SharePage({ loaderData }: ComponentProps) {
   const navigate = useNavigate();
   const store = useAppStore();
+  const isMobile = useIsMobile();
   const [state, setState] = useState<"idle" | "importing" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const canImport = loaderData.status === "available" && !!loaderData.book;
-  const sharerName = loaderData.sharer?.displayName ?? "A Readmaxxing reader";
 
   function handleImport() {
     if (!loaderData.book) return;
@@ -478,7 +225,7 @@ export default function SharePage({ loaderData }: ComponentProps) {
         },
         (book) => {
           setState("done");
-          navigate("/", { replace: true, state: { importedBookId: book.id } });
+          navigate(`/books/${encodeURIComponent(book.id)}`, { replace: true });
         },
         (message) => {
           setState("idle");
@@ -488,72 +235,89 @@ export default function SharePage({ loaderData }: ComponentProps) {
     );
   }
 
+  if (loaderData.status !== "available" || !loaderData.book) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground">
+        <Alert variant="destructive" className="max-w-lg">
+          <AlertCircle />
+          <AlertTitle>Shared book unavailable</AlertTitle>
+          <AlertDescription>
+            {loaderData.message ?? "This share link is not available."}
+          </AlertDescription>
+        </Alert>
+      </main>
+    );
+  }
+
+  const bookSurface = (
+    <SharedBookSurface
+      shareId={loaderData.id}
+      book={loaderData.book}
+      fileUrl={loaderData.fileUrl}
+    />
+  );
+
   return (
-    <main className="min-h-dvh bg-background px-4 py-10 text-foreground sm:px-6 lg:px-8">
-      <div className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-7xl items-start justify-center lg:h-[calc(100dvh-5rem)]">
-        <div className="flex w-full flex-col gap-6 lg:h-full lg:min-h-0">
-          <section className="grid w-full shrink-0 gap-10 p-0 md:grid-cols-[auto_1fr] md:items-center">
-            <div className="flex justify-center md:justify-start">
-              <CoverArt book={loaderData.book} />
-            </div>
-
-            <div className="space-y-6 text-center md:text-left">
-              <div className="space-y-3">
-                <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-                  Shared on Readmaxxing
-                </p>
-                <h1 className="text-3xl font-semibold tracking-tight sm:text-5xl">
-                  {loaderData.book?.title ?? "Shared book unavailable"}
-                </h1>
-                {loaderData.book && (
-                  <p className="text-lg text-muted-foreground">by {loaderData.book.author}</p>
-                )}
-                {loaderData.sharer && (
-                  <p className="text-sm text-muted-foreground">Shared by {sharerName}</p>
-                )}
-              </div>
-
-              {loaderData.status !== "available" && (
-                <div className="inline-flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
-                  <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                  <span>{loaderData.message ?? "This share link is not available."}</span>
-                </div>
-              )}
-
-              {error && (
-                <div className="inline-flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-left text-sm text-destructive">
-                  <AlertCircle className="mt-0.5 size-4 shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <div className="flex flex-col items-center gap-3 sm:flex-row md:justify-start">
-                <Button
-                  type="button"
-                  size="lg"
-                  disabled={!canImport || state === "importing" || state === "done"}
-                  onClick={handleImport}
-                  className={cn("min-w-48", { "opacity-80": state !== "idle" })}
-                >
-                  {state === "importing" && <Loader2 className="animate-spin" />}
-                  {state === "done" && <Check />}
-                  {state === "idle" ? "Add to Library & Read" : "Adding to library…"}
-                </Button>
-                <p className="max-w-sm text-sm text-muted-foreground">
-                  The book will be saved locally in this browser and opened in your workspace.
-                </p>
-              </div>
-            </div>
-          </section>
-          {canImport && loaderData.book && (
-            <SharedReadingSection
+    <main className="flex h-dvh min-h-dvh flex-col overflow-hidden bg-background text-foreground">
+      <header
+        className="flex h-10 shrink-0 items-center justify-between gap-3 border-b bg-background px-3 sm:px-4"
+        data-testid="share-banner"
+        data-status={error ? "error" : state}
+      >
+        <p className="flex min-w-0 items-center gap-2 overflow-hidden text-sm">
+          <span className="shrink-0 font-medium">Readmaxxing</span>
+          <span aria-hidden="true" className="text-muted-foreground">
+            ·
+          </span>
+          <span className="truncate text-muted-foreground">{loaderData.book.title}</span>
+        </p>
+        <div className="flex shrink-0 items-center gap-2">
+          {error && (
+            <p
+              className="max-w-24 truncate text-xs text-destructive sm:max-w-64"
+              role="status"
+              title={error}
+            >
+              {error}
+            </p>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            disabled={!canImport || state === "importing" || state === "done"}
+            onClick={handleImport}
+          >
+            {state === "importing" && <Loader2 data-icon="inline-start" className="animate-spin" />}
+            {state === "done" && <Check data-icon="inline-start" />}
+            {state === "idle" && error && <AlertCircle data-icon="inline-start" />}
+            {state === "idle" ? "Add to Library" : state === "importing" ? "Adding…" : "Added"}
+          </Button>
+        </div>
+      </header>
+      <div className="min-h-0 flex-1">
+        <ReadingRailTabProvider>
+          {isMobile === true ? (
+            <SharedReadingRail
+              mobile
+              bookSurface={bookSurface}
               shareId={loaderData.id}
-              book={loaderData.book}
-              fileUrl={loaderData.fileUrl}
-              shareChats={loaderData.shareChats}
+              bookTitle={loaderData.book.title}
+              included={loaderData.shareChats}
+            />
+          ) : (
+            <ReadingSplit
+              book={bookSurface}
+              rail={
+                <SharedReadingRail
+                  shareId={loaderData.id}
+                  bookTitle={loaderData.book.title}
+                  included={loaderData.shareChats}
+                />
+              }
             />
           )}
-        </div>
+        </ReadingRailTabProvider>
       </div>
     </main>
   );

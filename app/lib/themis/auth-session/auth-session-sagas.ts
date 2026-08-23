@@ -1,7 +1,8 @@
-import { call, put, takeEvery, takeLatest } from "typed-redux-saga";
+import { actionChannel, call, fork, put, take, takeEvery } from "typed-redux-saga";
 
-import { authService } from "~/lib/auth-service";
+import { authService, type AuthUser } from "~/lib/auth-service";
 import { toTaggedError } from "~/lib/errors";
+import { hasUnadoptedDemoBook } from "~/lib/onboarding/adopt-demo";
 import {
   addPasskeyRequested,
   authOperationFailed,
@@ -17,13 +18,64 @@ import {
   refreshAuthSessionRequested,
   signInRequested,
 } from "~/lib/themis/auth-session/auth-session-slice";
+import { adoptDemoBookRequested } from "~/lib/themis/books/books-slice";
 
-export function* refreshAuthSessionSaga() {
+function createDemoAdoptionRequest(userId: string) {
+  let onCompleted!: () => void;
+  let onFailed!: (error: string) => void;
+  const completion = new Promise<void>((resolve, reject) => {
+    onCompleted = resolve;
+    onFailed = (error) => reject(new Error(error));
+  });
+
+  return { action: adoptDemoBookRequested(userId, onCompleted, onFailed), completion };
+}
+
+function createAuthSessionRefreshRequest() {
+  let onCompleted!: () => void;
+  let onFailed!: (cause: unknown) => void;
+  const completion = new Promise<void>((resolve, reject) => {
+    onCompleted = resolve;
+    onFailed = reject;
+  });
+
+  return { action: refreshAuthSessionRequested(onCompleted, onFailed), completion };
+}
+
+export function* refreshAuthSessionSaga(action: ReturnType<typeof refreshAuthSessionRequested>) {
+  const [onCompleted, onFailed] = action.payload;
+  let authenticatedUser: AuthUser | null = null;
   try {
     const session = yield* call(authService.getSession);
+    authenticatedUser = session.user;
+    if (session.user && (yield* call(hasUnadoptedDemoBook))) {
+      const adoption = createDemoAdoptionRequest(session.user.id);
+      yield* put(adoption.action);
+      yield* call(() => adoption.completion);
+    }
     yield* put(authSessionResolved(session.user));
+    if (onCompleted) yield* call(onCompleted);
   } catch (cause) {
-    yield* put(authSessionFailed(toTaggedError(cause)));
+    const error = toTaggedError(cause);
+    if (authenticatedUser) {
+      yield* put(authSessionResolved(authenticatedUser));
+      yield* put(authOperationFailed(error));
+    } else {
+      yield* put(authSessionFailed(error));
+    }
+    if (onFailed) yield* call(onFailed, cause);
+  }
+}
+
+function* watchAuthSessionRefreshes() {
+  const requests = yield* actionChannel(refreshAuthSessionRequested);
+  try {
+    while (true) {
+      const action = yield* take(requests);
+      yield* call(refreshAuthSessionSaga, action);
+    }
+  } finally {
+    requests.close();
   }
 }
 
@@ -40,9 +92,14 @@ export function* logoutSaga(action: ReturnType<typeof logoutRequested>) {
 }
 
 export function* registerSaga(action: ReturnType<typeof registerRequested>) {
-  const [displayName, onCompleted, onFailed] = action.payload;
+  const [displayName, onCompleted, onFailed, refreshBeforeCompletion] = action.payload;
   try {
     const result = yield* call(authService.register, displayName);
+    if (refreshBeforeCompletion) {
+      const refresh = createAuthSessionRefreshRequest();
+      yield* put(refresh.action);
+      yield* call(() => refresh.completion);
+    }
     yield* call(onCompleted, result);
   } catch (cause) {
     yield* put(authOperationFailed(toTaggedError(cause)));
@@ -51,9 +108,14 @@ export function* registerSaga(action: ReturnType<typeof registerRequested>) {
 }
 
 export function* signInSaga(action: ReturnType<typeof signInRequested>) {
-  const [onCompleted, onFailed] = action.payload;
+  const [onCompleted, onFailed, refreshBeforeCompletion] = action.payload;
   try {
     const result = yield* call(authService.signIn);
+    if (refreshBeforeCompletion) {
+      const refresh = createAuthSessionRefreshRequest();
+      yield* put(refresh.action);
+      yield* call(() => refresh.completion);
+    }
     yield* call(onCompleted, result);
   } catch (cause) {
     yield* put(authOperationFailed(toTaggedError(cause)));
@@ -117,7 +179,7 @@ export function* removePasskeySaga(action: ReturnType<typeof removePasskeyReques
 }
 
 export function* authSessionSaga() {
-  yield* takeLatest(refreshAuthSessionRequested, refreshAuthSessionSaga);
+  yield* fork(watchAuthSessionRefreshes);
   yield* takeEvery(logoutRequested, logoutSaga);
   yield* takeEvery(registerRequested, registerSaga);
   yield* takeEvery(signInRequested, signInSaga);

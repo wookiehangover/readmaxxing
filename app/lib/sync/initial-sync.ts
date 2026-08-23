@@ -1,7 +1,9 @@
 import { get, set, entries } from "idb-keyval";
+import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
 import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
-import { recordChange } from "./change-log";
+import { getUnsyncedChanges, recordChange } from "./change-log";
 import {
+  getBookDataStore,
   getBookStore,
   getBookmarkStore,
   getChatSessionStore,
@@ -25,6 +27,38 @@ function safeEntry(entry: unknown): [IDBValidKey, unknown] | null {
   return [entry[0] as IDBValidKey, entry[1]];
 }
 
+async function queueStrandedBooks(): Promise<void> {
+  const pendingBookIds = new Set(
+    (await getUnsyncedChanges())
+      .filter((change) => change.entity === "book")
+      .map((change) => change.entityId),
+  );
+  const books = await entries(getBookStore());
+  const bookDataStore = getBookDataStore();
+
+  for (const entry of books) {
+    const tuple = safeEntry(entry);
+    if (!tuple) continue;
+
+    const [id, data] = tuple;
+    if (typeof id !== "string" || id === DEMO_BOOK_ID || pendingBookIds.has(id)) continue;
+    if (typeof data !== "object") continue;
+
+    const book = data as Record<string, unknown>;
+    if (book.deletedAt != null || book.remoteFileUrl) continue;
+    if (!(await get(id, bookDataStore))) continue;
+
+    await recordChange({
+      entity: "book",
+      entityId: id,
+      operation: "put",
+      data,
+      timestamp: typeof book.updatedAt === "number" ? book.updatedAt : Date.now(),
+    });
+    pendingBookIds.add(id);
+  }
+}
+
 /**
  * One-time scan of all IDB stores to create change-log entries for
  * existing data. This ensures users who had data before the sync
@@ -32,7 +66,10 @@ function safeEntry(entry: unknown): [IDBValidKey, unknown] | null {
  */
 export async function runInitialSyncIfNeeded(): Promise<void> {
   const done = await get(INITIAL_SYNC_KEY, getSyncFlagsStore());
-  if (done) return;
+  if (done) {
+    await queueStrandedBooks();
+    return;
+  }
 
   console.log("[sync] Running initial sync push for existing data...");
 
@@ -43,6 +80,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     const tuple = safeEntry(entry);
     if (!tuple) continue;
     const [id, data] = tuple;
+    if (id === DEMO_BOOK_ID) continue;
     await recordChange({
       entity: "book",
       entityId: id as string,
@@ -59,6 +97,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     const tuple = safeEntry(entry);
     if (!tuple) continue;
     const [bookId, data] = tuple;
+    if (bookId === DEMO_BOOK_ID) continue;
     await recordChange({
       entity: "position",
       entityId: bookId as string,
@@ -77,7 +116,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     const [id, data] = tuple;
     const rec = data as Record<string, unknown>;
     // Skip soft-deleted highlights
-    if (rec?.deletedAt) continue;
+    if (rec?.deletedAt || rec?.bookId === DEMO_BOOK_ID) continue;
     await recordChange({
       entity: "highlight",
       entityId: id as string,
@@ -96,7 +135,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     const [id, data] = tuple;
     const rec = data as Record<string, unknown>;
     // Skip soft-deleted bookmarks
-    if (rec?.deletedAt) continue;
+    if (rec?.deletedAt || rec?.bookId === DEMO_BOOK_ID) continue;
     await recordChange({
       entity: "bookmark",
       entityId: id as string,
@@ -113,6 +152,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     const tuple = safeEntry(entry);
     if (!tuple) continue;
     const [bookId, data] = tuple;
+    if (bookId === DEMO_BOOK_ID) continue;
     await recordChange({
       entity: "notebook",
       entityId: bookId as string,
@@ -128,10 +168,12 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   for (const entry of sessions) {
     const tuple = safeEntry(entry);
     if (!tuple) continue;
+    if (tuple[0] === DEMO_BOOK_ID) continue;
     const sessionList = tuple[1] as ChatSession[];
     if (!Array.isArray(sessionList)) continue;
     for (const session of sessionList) {
       if (!session || typeof session !== "object") continue;
+      if (session.bookId === DEMO_BOOK_ID || session.id === DEMO_CHAT_SESSION.id) continue;
       // Record session metadata only. Chat messages are server-authoritative
       // and persisted by /api/chat — they must not be pushed from clients.
       const { messages: _messages, ...metadata } = session;

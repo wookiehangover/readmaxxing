@@ -61,7 +61,7 @@ launches it in a Vercel Sandbox. Leave the legacy `READING_AGENT_URL` unset; do 
 separate `:5174` sidecar. A 60s local sweep reclaims expired leases and retries due units so
 local ingest does not wait for the Vercel cron.
 
-The app works fully offline without environment variables. Sync, cloud storage, and production chat resume require Postgres, WebAuthn config, Vercel Blob, and Redis — see [Environment variables](#environment-variables).
+The app works fully offline without environment variables. Sync requires Postgres and WebAuthn configuration. Development stores books and covers in `data/blob/` without a Vercel Blob token or callback URL; production uses Vercel Blob. Production chat resume additionally requires Redis — see [Environment variables](#environment-variables).
 
 ## Environment variables
 
@@ -76,7 +76,8 @@ All environment variables are optional for offline reading. Sync and related fea
 - `DATABASE_URL` — Postgres connection string
 - `WEBAUTHN_RP_ID` — WebAuthn Relying Party ID (e.g. `localhost` for dev, your domain for prod)
 - `WEBAUTHN_RP_ORIGIN` — WebAuthn origin URL (e.g. `http://localhost:5173` for dev)
-- `BLOB_READ_WRITE_TOKEN` — Vercel Blob storage token
+- `BLOB_STORAGE_BACKEND` — optional `local` or `vercel` override; defaults to local filesystem storage in development and Vercel Blob elsewhere.
+- `BLOB_READ_WRITE_TOKEN` — Vercel Blob storage token, required only when using the Vercel backend.
 - `REDIS_URL` — Redis for resumable AI chat streaming (Vercel KV, Upstash, or any Redis-compatible service). Required in production; in development the chat panel works without it but mid-stream reconnect is disabled.
 - `READING_AGENT_SECRET` — authenticates the app-hosted ReadingScribe agent.
 - `READING_AGENT_URL` — unused legacy external-host override; leave unset.

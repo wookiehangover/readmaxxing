@@ -36,6 +36,7 @@ export default [
   route("api/cron/reading-ingest", "routes/api.cron.reading-ingest.ts"),
   route("api/share", "routes/api.share.ts"),
   route("api/share/:id", "routes/api.share.$id.ts"),
+  route("api/share/:id/artifacts", "routes/api.share.$id.artifacts.ts"),
   route("api/share/:id/chats", "routes/api.share.$id.chats.ts"),
   route("api/share/:id/cover", "routes/api.share.$id.cover.ts"),
   route("api/share/:id/notebook", "routes/api.share.$id.notebook.ts"),

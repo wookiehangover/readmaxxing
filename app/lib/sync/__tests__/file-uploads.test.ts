@@ -2,8 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clear, createStore, get, set } from "idb-keyval";
 import { upload } from "@vercel/blob/client";
 import { Blob as NodeBlob } from "node:buffer";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 import { recordChange } from "../change-log";
-import { reloadBookFiles, uploadPendingFiles } from "../file-uploads";
+import {
+  reloadBookFiles,
+  uploadFile,
+  uploadFileWithBackoff,
+  uploadPendingFiles,
+} from "../file-uploads";
 import { uploadRetryKey, type UploadRetryEntry } from "../upload-retry";
 
 vi.mock("@vercel/blob/client", () => ({
@@ -61,6 +67,28 @@ afterEach(() => {
 });
 
 describe("uploadPendingFiles", () => {
+  it("skips the reserved demo file and cover while recovering account-owned books", async () => {
+    await Promise.all([seedPendingBook(DEMO_BOOK_ID), seedPendingBook("owned-book")]);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    uploadMock.mockImplementation(async (pathname) => makeUploadResult(pathname));
+
+    await uploadPendingFiles(
+      { userId: "user-1", uploadRetryState: new Map() },
+      { verifyExistingRemoteUrls: true },
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(uploadMock.mock.calls.map(([pathname]) => pathname)).toEqual([
+      "books/user-1/owned-book/book.epub",
+      "covers/user-1/owned-book/cover.jpg",
+    ]);
+    expect(recordChangeMock).toHaveBeenCalledTimes(2);
+    expect(
+      (await get<Record<string, unknown>>(DEMO_BOOK_ID, bookStore))?.remoteFileUrl,
+    ).toBeUndefined();
+  });
+
   it("uploads local books missing remote URLs without touching already-remote books", async () => {
     await seedPendingBook("book-missing");
     await set(
@@ -185,7 +213,33 @@ describe("uploadPendingFiles", () => {
   });
 });
 
+describe("reserved demo upload boundaries", () => {
+  it("rejects direct file and cover uploads without recording retry backoff", async () => {
+    const ctx = { userId: "user-1", uploadRetryState: new Map<string, UploadRetryEntry>() };
+
+    await expect(uploadFile(ctx, DEMO_BOOK_ID, new ArrayBuffer(8), "file")).resolves.toBeNull();
+    await expect(
+      uploadFileWithBackoff(ctx, DEMO_BOOK_ID, new Blob(["cover"]), "cover"),
+    ).resolves.toBeNull();
+
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(ctx.uploadRetryState.size).toBe(0);
+  });
+});
+
 describe("reloadBookFiles", () => {
+  it("does not download or upload the reserved demo book or cover", async () => {
+    await seedPendingBook(DEMO_BOOK_ID);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await reloadBookFiles({ userId: "user-1", uploadRetryState: new Map() }, DEMO_BOOK_ID);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(uploadMock).not.toHaveBeenCalled();
+    expect(recordChangeMock).not.toHaveBeenCalled();
+  });
+
   it("falls back to reupload when remote file and cover downloads return 404", async () => {
     await set(
       "book-stale",

@@ -4,8 +4,8 @@ import type { BookMeta } from "~/lib/stores/book-store";
 import type { ChatSession } from "~/lib/stores/chat-store";
 import type { PositionRecord } from "~/lib/stores/position-store";
 import { ensureBookChaptersUploaded } from "~/lib/sync/book-chapter-uploads";
-import { recordChange } from "~/lib/sync/change-log";
-import { pushChangesWithResult } from "~/lib/sync/push";
+import { getUnsyncedChanges, markSynced, recordChange } from "~/lib/sync/change-log";
+import { PUSH_BATCH_SIZE, pushChangesWithResult, type PushContext } from "~/lib/sync/push";
 import {
   getActiveSessionStore,
   getBookDataStore,
@@ -28,6 +28,11 @@ interface DemoSnapshot {
 export interface AdoptedDemo {
   bookId: string;
   sessionId: string;
+}
+
+export async function hasUnadoptedDemoBook(): Promise<boolean> {
+  const book = await get<BookMeta>(DEMO_BOOK_ID, getBookStore());
+  return Boolean(book && !book.deletedAt);
 }
 
 async function readSnapshot(bookId: string): Promise<DemoSnapshot> {
@@ -135,11 +140,51 @@ async function recordSnapshot(bookId: string, snapshot: DemoSnapshot): Promise<C
   return entries;
 }
 
-function assertAccepted(result: SyncPushResponse | null, entries: ChangeEntry[]): void {
-  const accepted = new Set(result?.accepted.map((entry) => entry.id));
-  if (!result || entries.some((entry) => !accepted.has(entry.id))) {
-    throw new Error("The demo library could not be saved to your account. Please try again.");
+async function pushUntilAccepted(
+  context: PushContext,
+  entries: ChangeEntry[],
+): Promise<SyncPushResponse> {
+  let pending = await getAdoptableChanges();
+  const remaining = new Set(entries.map((entry) => entry.id));
+  const accepted: SyncPushResponse["accepted"] = [];
+  const maxBatches = Math.max(1, Math.ceil(pending.length / PUSH_BATCH_SIZE) + 1);
+
+  for (let attempt = 0; attempt < maxBatches; attempt++) {
+    const result = await pushChangesWithResult(context);
+    if (!result || result.rejected.some((entry) => remaining.has(entry.id))) break;
+
+    for (const entry of result.accepted) {
+      accepted.push(entry);
+      remaining.delete(entry.id);
+    }
+    if (remaining.size === 0) return { ...result, accepted };
+
+    const nextPending = await getAdoptableChanges();
+    const nextPendingIds = new Set(nextPending.map((entry) => entry.id));
+    if (!pending.some((entry) => !nextPendingIds.has(entry.id))) break;
+    pending = nextPending;
   }
+
+  throw new Error("The demo library could not be saved to your account. Please try again.");
+}
+
+async function getAdoptableChanges(): Promise<ChangeEntry[]> {
+  const pending = await getUnsyncedChanges();
+  const reserved = pending.filter((change) => {
+    if (change.entityId === DEMO_BOOK_ID || change.entityId === DEMO_CHAT_SESSION.id) return true;
+    if (!change.data || typeof change.data !== "object") return false;
+    const data = change.data as { id?: unknown; bookId?: unknown; sessionId?: unknown };
+    return (
+      data.id === DEMO_BOOK_ID ||
+      data.id === DEMO_CHAT_SESSION.id ||
+      data.bookId === DEMO_BOOK_ID ||
+      data.sessionId === DEMO_CHAT_SESSION.id
+    );
+  });
+  if (reserved.length === 0) return pending;
+  const reservedIds = new Set(reserved.map((change) => change.id));
+  await markSynced([...reservedIds]);
+  return pending.filter((change) => !reservedIds.has(change.id));
 }
 
 export async function persistAdoptedDemoContent(userId: string): Promise<AdoptedDemo> {
@@ -155,9 +200,8 @@ export async function persistAdoptedDemoContent(userId: string): Promise<Adopted
     isStopped: () => false,
     scheduleFollowUpPush: () => {},
   };
-  const initialResult = await pushChangesWithResult(pushContext);
-  assertAccepted(
-    initialResult,
+  const initialResult = await pushUntilAccepted(
+    pushContext,
     initialEntries.filter((entry) => entry.entity === "book"),
   );
 
@@ -170,13 +214,23 @@ export async function persistAdoptedDemoContent(userId: string): Promise<Adopted
     await set(bookId, { ...adopted.book, id: bookId, deletedAt: undefined }, getBookStore());
   }
 
-  const canonical = await readSnapshot(bookId);
+  const remapped = await readSnapshot(bookId);
+  const sessions = remapped.sessions.filter((session) => session.id !== DEMO_CHAT_SESSION.id);
+  const activeSessionId = sessions.some((session) => session.id === remapped.activeSessionId)
+    ? remapped.activeSessionId
+    : adopted.activeSessionId;
+  if (!activeSessionId || !sessions.some((session) => session.id === activeSessionId)) {
+    throw new Error("The demo conversation could not be adopted.");
+  }
+  const canonical = { ...remapped, sessions, activeSessionId };
+  await Promise.all([
+    set(bookId, sessions, getChatSessionStore()),
+    set(bookId, activeSessionId, getActiveSessionStore()),
+  ]);
   const canonicalEntries = await recordSnapshot(bookId, canonical);
-  const canonicalResult = await pushChangesWithResult(pushContext);
-  assertAccepted(canonicalResult, canonicalEntries);
+  await pushUntilAccepted(pushContext, canonicalEntries);
   await ensureBookChaptersUploaded(bookId);
   const now = Date.now();
   await set(DEMO_BOOK_ID, { ...original.book, deletedAt: now, updatedAt: now }, getBookStore());
-  if (!adopted.activeSessionId) throw new Error("The demo conversation could not be adopted.");
-  return { bookId, sessionId: adopted.activeSessionId };
+  return { bookId, sessionId: activeSessionId };
 }

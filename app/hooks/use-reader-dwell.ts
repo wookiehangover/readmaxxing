@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "~/lib/context/auth-context";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 
 export const READER_DWELL_MS = 10_000;
 const READER_DWELL_RETRY_DELAYS_MS = [250, 500, 1_000] as const;
@@ -113,7 +114,17 @@ export function useReaderDwell({
   latestContentRef.current = { chapterLabel, displayPage, text };
 
   useEffect(() => {
-    if (!enabled || !isAuthenticated || !userId || !unitKind || !locator || !hasText) return;
+    if (
+      !enabled ||
+      !isAuthenticated ||
+      !userId ||
+      bookId === DEMO_BOOK_ID ||
+      !unitKind ||
+      !locator ||
+      !hasText
+    ) {
+      return;
+    }
 
     let cancelled = false;
     let fingerprint: string | null = null;

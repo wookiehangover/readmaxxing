@@ -4,10 +4,39 @@ import { createChat } from "@shadcn/helpers/ai-sdk";
 import { DefaultChatTransport } from "ai";
 import {
   DEMO_CAPABILITIES_ANSWER,
+  DEMO_BOOK_ID,
+  DEMO_CHAT_SESSION,
   DEMO_INTRO_QUESTION,
   DEMO_SUGGESTED_QUESTIONS,
 } from "~/lib/onboarding/demo-content";
 import type { ChatMessage } from "~/lib/stores/chat-store";
+import { ensureBookChaptersUploaded } from "~/lib/sync/book-chapter-uploads";
+
+export const CHAT_SEND_RETRY_DELAYS_MS: readonly number[] = [250, 500, 1_000];
+
+function requestSyncPush(): void {
+  if (typeof window === "undefined") return;
+  queueMicrotask(() => {
+    window.dispatchEvent(new CustomEvent("sync:push-needed"));
+  });
+}
+
+async function isRetryableChatResponse(response: Response): Promise<boolean> {
+  if (response.status === 404) return true;
+  if (response.status !== 400) return false;
+
+  const body = await response
+    .clone()
+    .json()
+    .catch(() => null);
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    "error" in body &&
+    typeof body.error === "string" &&
+    body.error.startsWith("Book chapters not uploaded.")
+  );
+}
 
 /** Build the ephemeral logged-out intro conversation used by the mock transport. */
 export function createDemoIntroChat() {
@@ -141,12 +170,9 @@ export function stripSuggestedPrompts(text: string): string {
  *   stale closure) so a selection change between renders is always reflected.
  * - `reconnectToStream` is redirected to the custom resume endpoint
  *   `/api/chat/resume/:sessionId`, which replays an in-flight Redis stream.
- * - The custom `fetch` wrapper retries once on a 404 from `/api/chat`, which
- *   handles the brand-new-session race: the chat-session saga writes through
- *   the persistence service and enqueues a change for sync-push, but the first `POST /api/chat`
- *   may arrive before sync-push lands the session in Postgres. On 404 we
- *   dispatch `sync:push-needed` (a no-op if already firing), wait briefly,
- *   and retry exactly once.
+ * - The custom `fetch` wrapper retries a short, finite number of times when
+ *   `/api/chat` cannot yet see the book/session (404) or chapters (specific
+ *   400). Each retry requests a sync push and awaits chapter upload first.
  */
 export function createChatTransport(opts: {
   sessionId: string;
@@ -160,34 +186,49 @@ export function createChatTransport(opts: {
     visibleText?: string;
     currentChapterIndex?: number;
   };
+  onPreparingChange?: (preparing: boolean) => void;
 }) {
-  const fetchWithSessionRetry: typeof fetch = async (input, init) => {
-    const res = await fetch(input, init);
+  const fetchWithPreparationRetry: typeof fetch = async (input, init) => {
+    if (opts.bookId === DEMO_BOOK_ID || opts.sessionId === DEMO_CHAT_SESSION.id) {
+      throw new Error("Demo content must be adopted before using authenticated chat.");
+    }
+
     // Only retry the POST /api/chat path — resume/messages endpoints have
     // their own ownership checks and shouldn't race on creation.
     const isChatPost = typeof input === "string" && input === "/api/chat";
-    if (res.status !== 404 || !isChatPost) return res;
+    if (!isChatPost) return fetch(input, init);
 
-    // Trigger an immediate push and give it time to complete. Defer the
-    // dispatch via queueMicrotask so we never emit a sync event from inside
-    // a React render path (avoids flushSync warnings).
-    if (typeof window !== "undefined") {
-      queueMicrotask(() => {
-        window.dispatchEvent(new CustomEvent("sync:push-needed"));
-      });
+    let preparing = false;
+    try {
+      for (const delayMs of [...CHAT_SEND_RETRY_DELAYS_MS, null]) {
+        const response = await fetch(input, init);
+        if (!(await isRetryableChatResponse(response)) || delayMs === null) return response;
+
+        if (!preparing) {
+          preparing = true;
+          opts.onPreparingChange?.(true);
+        }
+        requestSyncPush();
+        await ensureBookChaptersUploaded(opts.bookId);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      throw new Error("Chat send retry loop exhausted unexpectedly");
+    } finally {
+      if (preparing) opts.onPreparingChange?.(false);
     }
-    await new Promise((r) => setTimeout(r, 800));
-    return fetch(input, init);
   };
 
   return new DefaultChatTransport<UIMessage>({
     api: "/api/chat",
-    fetch: fetchWithSessionRetry,
+    fetch: fetchWithPreparationRetry,
     prepareSendMessagesRequest: ({ messages }) => {
       // Read the latest selection at send time. Always include the primary
       // book first; dedupe defensively in case the same id appears twice.
       const selected = opts.selectedBookIdsRef.current ?? [opts.bookId];
-      const bookIds = Array.from(new Set([opts.bookId, ...selected]));
+      const bookIds = Array.from(new Set([opts.bookId, ...selected])).filter(
+        (bookId) => bookId !== DEMO_BOOK_ID,
+      );
       const bookContexts: Record<string, { visibleText?: string; currentChapterIndex?: number }> =
         {};
       for (const id of bookIds) {

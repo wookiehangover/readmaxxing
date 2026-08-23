@@ -14,7 +14,9 @@ import type {
   PasskeysCompletedCallback,
 } from "~/lib/themis/auth-session/auth-session-types";
 
-export const refreshAuthSessionRequested = createAction("authSession/refreshRequested");
+export const refreshAuthSessionRequested = createAction<
+  [onCompleted?: AuthLogoutCompletedCallback, onFailed?: AuthOperationFailedCallback]
+>("authSession/refreshRequested");
 export const authSessionResolved = createAction<[user: AuthUser | null]>("authSession/resolved");
 export const authSessionFailed = createAction<[error: TaggedError]>("authSession/failed");
 export const authOperationFailed = createAction<[error: TaggedError]>(
@@ -29,10 +31,15 @@ export const registerRequested = createAction<
     displayName: string | undefined,
     onCompleted: AuthRegistrationCompletedCallback,
     onFailed: AuthOperationFailedCallback,
+    refreshBeforeCompletion?: boolean,
   ]
 >("authSession/registerRequested");
 export const signInRequested = createAction<
-  [onCompleted: AuthSignInCompletedCallback, onFailed: AuthOperationFailedCallback]
+  [
+    onCompleted: AuthSignInCompletedCallback,
+    onFailed: AuthOperationFailedCallback,
+    refreshBeforeCompletion?: boolean,
+  ]
 >("authSession/signInRequested");
 export const generateMagicLinkRequested = createAction<
   [onCompleted: MagicLinkCompletedCallback, onFailed: AuthOperationFailedCallback]

@@ -26,9 +26,10 @@ interface PdfReaderViewProps {
   localSettings: Settings;
   onUpdateSettings: (update: Partial<Settings>) => void;
   book: BookMeta;
-  onDownload: () => void;
-  onBookmarkPage: () => void | Promise<void>;
-  isBookmarked: boolean;
+  readOnly?: boolean;
+  onDownload?: () => void;
+  onBookmarkPage?: () => void | Promise<void>;
+  isBookmarked?: boolean;
   bookmarksLoaded?: boolean;
   searchOpen: boolean;
   searchQuery: string;
@@ -48,8 +49,8 @@ interface PdfReaderViewProps {
   totalPages: number;
   currentPage: number;
   bookProgress: number;
-  onOpenNotebook: () => void;
-  onOpenChat: () => void;
+  onOpenNotebook?: () => void;
+  onOpenChat?: () => void;
   toc: TocEntry[];
   tocOpen: boolean;
   setTocOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -61,6 +62,7 @@ export function PdfReaderView({
   localSettings,
   onUpdateSettings,
   book,
+  readOnly = false,
   onDownload,
   onBookmarkPage,
   isBookmarked,
@@ -97,7 +99,7 @@ export function PdfReaderView({
           settings={localSettings}
           onUpdateSettings={onUpdateSettings}
           isPdf
-          book={book}
+          book={readOnly ? undefined : book}
           onDownload={onDownload}
           onBookmarkPage={onBookmarkPage}
           isBookmarked={isBookmarked}
@@ -216,14 +218,18 @@ export function PdfReaderView({
                 <Search className="size-4" />
                 <span className="sr-only">Search in book</span>
               </Button>
-              <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
-                <Notebook className="size-4" />
-                <span className="sr-only">Open Notebook</span>
-              </Button>
-              <Button variant="ghost" size="icon" onClick={onOpenChat} title="Open Chat">
-                <MessageCircle className="size-4" />
-                <span className="sr-only">Open Chat</span>
-              </Button>
+              {onOpenNotebook ? (
+                <Button variant="ghost" size="icon" onClick={onOpenNotebook} title="Open Notebook">
+                  <Notebook className="size-4" />
+                  <span className="sr-only">Open Notebook</span>
+                </Button>
+              ) : null}
+              {onOpenChat ? (
+                <Button variant="ghost" size="icon" onClick={onOpenChat} title="Open Chat">
+                  <MessageCircle className="size-4" />
+                  <span className="sr-only">Open Chat</span>
+                </Button>
+              ) : null}
             </>
           )}
           {toc.length > 0 && (
