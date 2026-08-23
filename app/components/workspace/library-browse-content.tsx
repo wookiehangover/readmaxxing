@@ -68,12 +68,15 @@ function saveLibrarySortBy(sortBy: WorkspaceSortBy): void {
   }
 }
 
-export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps = {}) {
+export function LibraryBrowseContent({
+  onOpenBook,
+}: LibraryBrowseContentProps = {}) {
   const ws = useWorkspace();
   const store = useAppStore();
   const { isAuthenticated } = useAuth();
   const books = store.booksSelectors.selectAllBooks.useValue();
-  const downloadingBookIds = store.booksSelectors.selectDownloadingBookIds.useValue();
+  const downloadingBookIds =
+    store.booksSelectors.selectDownloadingBookIds.useValue();
   const [searchQuery, setSearchQuery] = useState("");
   const [librarySortBy, setLibrarySortBy] = useState<WorkspaceSortBy>(() =>
     getStoredLibrarySortBy(),
@@ -82,12 +85,17 @@ export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps =
   const [settings] = useSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingOpenControllerRef = useRef<AbortController | null>(null);
-  const lastOpenedMap = store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
+  const lastOpenedMap =
+    store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
 
   const handleOpenBook = useCallback(
     async (book: BookMeta, openLocalBook?: (book: BookMeta) => void) => {
       const needsDownload = bookNeedsDownload(book);
-      if (needsDownload && store.state.books.downloadingBookIds.includes(book.id)) return;
+      if (
+        needsDownload &&
+        store.state.books.downloadingBookIds.includes(book.id)
+      )
+        return;
       pendingOpenControllerRef.current?.abort();
       const controller = new AbortController();
       pendingOpenControllerRef.current = controller;
@@ -125,14 +133,18 @@ export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps =
 
   const handleOpenNotebook = useCallback(
     (book: BookMeta) => {
-      void handleOpenBook(book, (localBook) => ws.openNotebookRef.current?.(localBook));
+      void handleOpenBook(book, (localBook) =>
+        ws.openNotebookRef.current?.(localBook),
+      );
     },
     [handleOpenBook, ws],
   );
 
   const handleOpenChat = useCallback(
     (book: BookMeta) => {
-      void handleOpenBook(book, (localBook) => ws.openChatRef.current?.(localBook));
+      void handleOpenBook(book, (localBook) =>
+        ws.openChatRef.current?.(localBook),
+      );
     },
     [handleOpenBook, ws],
   );
@@ -204,106 +216,70 @@ export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps =
         className="hidden"
         onChange={handleFileInput}
       />
-      {isEmpty ? (
-        <div className="flex h-full flex-col items-center gap-4 p-6 text-center">
-          <Button className="mt-auto" onClick={() => fileInputRef.current?.click()}>
-            <Upload className="size-4" />
-            Upload an epub or PDF
-          </Button>
-          <span className="text-sm text-muted-foreground">or</span>
-          <Button variant="outline" render={<Link to="/standard-ebooks" />}>
-            <Globe className="size-4" />
-            Browse Standard Ebooks
-          </Button>
-          <div className="max-w-md space-y-3 text-sm text-muted-foreground text-left">
-            <p className="text-center py-5">* * *</p>
-            <p>
-              Readmaxxing is an AI-assisted reading app with chat, search, notes, bookmarks, and
-              reading history.
-            </p>
-            <p>
-              Use it for syntopical reading, comparative literature, and interrogating multiple
-              books at once.
-            </p>
-            <p>Open a book to start reading, mark up ideas, and build context as you go.</p>
+
+      <LibraryHeaderControls>
+        <LibraryToolbar
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          sortBy={librarySortBy}
+          onSortByChange={handleLibrarySortByChange}
+        />
+      </LibraryHeaderControls>
+      {!hasMatches ? (
+        <div className="flex flex-1 items-center justify-center p-6">
+          <p className="text-sm text-muted-foreground">No matching books</p>
+        </div>
+      ) : libraryView === "table" ? (
+        <div className="flex-1 overflow-hidden p-4 pt-2 md:p-6 md:pt-3">
+          <div className="mx-auto h-full w-full max-w-6xl">
+            <LibraryTable
+              books={filteredBooks}
+              onOpenBook={handleOpenBook}
+              onOpenNotebook={handleOpenNotebook}
+              onOpenChat={handleOpenChat}
+              onDeleteBook={handleDeleteBook}
+              onReloadBook={handleReloadBook}
+              syncActive={syncActive}
+              downloadingBookIds={new Set(downloadingBookIds)}
+            />
           </div>
-          {!isAuthenticated && (
-            <div className="mt-auto flex items-center gap-2">
-              <Button variant="ghost" size="sm" render={<Link to="/login" />}>
-                Login
-              </Button>
-              <Button variant="ghost" size="sm" render={<Link to="/login" />}>
-                Create account
-              </Button>
-            </div>
-          )}
         </div>
       ) : (
-        <>
-          <LibraryHeaderControls>
-            <LibraryToolbar
-              query={searchQuery}
-              onQueryChange={setSearchQuery}
-              sortBy={librarySortBy}
-              onSortByChange={handleLibrarySortByChange}
-            />
-          </LibraryHeaderControls>
-          {!hasMatches ? (
-            <div className="flex flex-1 items-center justify-center p-6">
-              <p className="text-sm text-muted-foreground">No matching books</p>
-            </div>
-          ) : libraryView === "table" ? (
-            <div className="flex-1 overflow-hidden p-4 pt-2 md:p-6 md:pt-3">
-              <div className="mx-auto h-full w-full max-w-6xl">
-                <LibraryTable
-                  books={filteredBooks}
-                  onOpenBook={handleOpenBook}
-                  onOpenNotebook={handleOpenNotebook}
-                  onOpenChat={handleOpenChat}
-                  onDeleteBook={handleDeleteBook}
-                  onReloadBook={handleReloadBook}
+        <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
+          <div className="flex flex-wrap gap-8">
+            {sortedGridBooks.map((book) => {
+              return (
+                <LibraryBook
+                  key={book.id}
+                  book={book}
+                  handleOpenBook={handleOpenBook}
+                  handleOpenNotebook={handleOpenNotebook}
+                  handleOpenChat={handleOpenChat}
+                  handleDeleteBook={handleDeleteBook}
+                  handleReloadBook={handleReloadBook}
+                  handleShareBook={handleShareBook}
+                  isAuthenticated={isAuthenticated}
                   syncActive={syncActive}
-                  downloadingBookIds={new Set(downloadingBookIds)}
+                  isDownloading={downloadingBookIds.includes(book.id)}
                 />
-              </div>
+              );
+            })}
+            <div className="max-w-52 w-full">
+              <AddBookCard onClick={() => fileInputRef.current?.click()} />
             </div>
-          ) : (
-            <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
-              <div className="mx-auto grid max-w-6xl grid-cols-2 items-start gap-4 sm:grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] sm:gap-6">
-                {sortedGridBooks.map((book) => {
-                  return (
-                    <LibraryBook
-                      key={book.id}
-                      book={book}
-                      handleOpenBook={handleOpenBook}
-                      handleOpenNotebook={handleOpenNotebook}
-                      handleOpenChat={handleOpenChat}
-                      handleDeleteBook={handleDeleteBook}
-                      handleReloadBook={handleReloadBook}
-                      handleShareBook={handleShareBook}
-                      isAuthenticated={isAuthenticated}
-                      syncActive={syncActive}
-                      isDownloading={downloadingBookIds.includes(book.id)}
-                    />
-                  );
-                })}
-                <div className="max-w-40">
-                  <AddBookCard onClick={() => fileInputRef.current?.click()} />
-                </div>
-                <div className="max-w-40">
-                  <Link
-                    to="/standard-ebooks"
-                    className="flex aspect-[2/3] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground"
-                  >
-                    <Globe className="size-6" />
-                    <span className="text-xs font-medium">Standard Ebooks</span>
-                  </Link>
-                </div>
-              </div>
+            <div className="max-w-52 w-full">
+              <Link
+                to="/standard-ebooks"
+                className="flex aspect-[2/3] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground"
+              >
+                <Globe className="size-6" />
+                <span className="text-xs font-medium">Standard Ebooks</span>
+              </Link>
             </div>
-          )}
-        </>
+          </div>
+        </div>
       )}
+
       <ShareDialog
         book={shareBook}
         open={shareBook !== null}
@@ -341,12 +317,14 @@ function LibraryBook({
   const needsDownload = bookNeedsDownload(book);
 
   return (
-    <div key={book.id} className="group relative max-w-40">
+    <div key={book.id} className="group relative max-w-52">
       <button
         type="button"
         onClick={() => handleOpenBook(book)}
         disabled={isDownloading}
-        aria-label={isDownloading ? `Downloading ${book.title}` : `Open ${book.title}`}
+        aria-label={
+          isDownloading ? `Downloading ${book.title}` : `Open ${book.title}`
+        }
         className="block w-full text-left disabled:cursor-wait"
       >
         <div className="relative shadow-lg transition-shadow duration-500 book-cover-container group-hover:shadow-2xl">
@@ -374,7 +352,7 @@ function LibraryBook({
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger
-          className="ml-auto flex size-7 items-center justify-center rounded-md text-foreground/70 backdrop-blur-sm transition-opacity hover:bg-background focus-visible:opacity-100 mt-1"
+          className="ml-auto flex size-7 items-center justify-center rounded-md text-foreground/70 backdrop-blur-sm transition-opacity hover:bg-muted/80 focus-visible:opacity-100 mt-1 opacity-20 group-hover:opacity-100"
           render={<button type="button" />}
           onClick={(e) => e.preventDefault()}
         >
@@ -405,7 +383,10 @@ function LibraryBook({
               Sync
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem variant="destructive" onClick={() => handleDeleteBook(book.id)}>
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => handleDeleteBook(book.id)}
+          >
             <Trash2 className="size-4" />
             Delete
           </DropdownMenuItem>

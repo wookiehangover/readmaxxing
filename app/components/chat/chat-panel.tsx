@@ -421,8 +421,8 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
 
   if (!chatSessionsLoaded || !bookContext || (isAuthenticated && !activeSessionId)) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">Loading chat…</p>
+      <div className="flex">
+        <p className="text-muted-foreground text-xs">Loading chat…</p>
       </div>
     );
   }
