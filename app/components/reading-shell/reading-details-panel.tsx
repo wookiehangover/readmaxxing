@@ -124,7 +124,7 @@ export function ReadingDetailsPanel({
           "px-6 pt-5": mobile,
         })}
       >
-        <div className="flex flex-col items-center gap-3 text-center">
+        <div className="flex gap-3">
           <div className="w-full max-w-40 overflow-hidden rounded-lg">
             {book.coverImage || book.remoteCoverUrl ? (
               <CoverImage

@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { Button } from "~/components/ui/button";
 import {
   MessageSquare,
   NotebookPen,
@@ -8,7 +7,6 @@ import {
   RefreshCw,
   Share2,
   Trash2,
-  Upload,
   Edit3Icon,
   Loader2,
 } from "lucide-react";
@@ -68,15 +66,12 @@ function saveLibrarySortBy(sortBy: WorkspaceSortBy): void {
   }
 }
 
-export function LibraryBrowseContent({
-  onOpenBook,
-}: LibraryBrowseContentProps = {}) {
+export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps = {}) {
   const ws = useWorkspace();
   const store = useAppStore();
   const { isAuthenticated } = useAuth();
   const books = store.booksSelectors.selectAllBooks.useValue();
-  const downloadingBookIds =
-    store.booksSelectors.selectDownloadingBookIds.useValue();
+  const downloadingBookIds = store.booksSelectors.selectDownloadingBookIds.useValue();
   const [searchQuery, setSearchQuery] = useState("");
   const [librarySortBy, setLibrarySortBy] = useState<WorkspaceSortBy>(() =>
     getStoredLibrarySortBy(),
@@ -85,17 +80,12 @@ export function LibraryBrowseContent({
   const [settings] = useSettings();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingOpenControllerRef = useRef<AbortController | null>(null);
-  const lastOpenedMap =
-    store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
+  const lastOpenedMap = store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
 
   const handleOpenBook = useCallback(
     async (book: BookMeta, openLocalBook?: (book: BookMeta) => void) => {
       const needsDownload = bookNeedsDownload(book);
-      if (
-        needsDownload &&
-        store.state.books.downloadingBookIds.includes(book.id)
-      )
-        return;
+      if (needsDownload && store.state.books.downloadingBookIds.includes(book.id)) return;
       pendingOpenControllerRef.current?.abort();
       const controller = new AbortController();
       pendingOpenControllerRef.current = controller;
@@ -133,18 +123,14 @@ export function LibraryBrowseContent({
 
   const handleOpenNotebook = useCallback(
     (book: BookMeta) => {
-      void handleOpenBook(book, (localBook) =>
-        ws.openNotebookRef.current?.(localBook),
-      );
+      void handleOpenBook(book, (localBook) => ws.openNotebookRef.current?.(localBook));
     },
     [handleOpenBook, ws],
   );
 
   const handleOpenChat = useCallback(
     (book: BookMeta) => {
-      void handleOpenBook(book, (localBook) =>
-        ws.openChatRef.current?.(localBook),
-      );
+      void handleOpenBook(book, (localBook) => ws.openChatRef.current?.(localBook));
     },
     [handleOpenBook, ws],
   );
@@ -203,7 +189,6 @@ export function LibraryBrowseContent({
   );
 
   const libraryView = settings.libraryView;
-  const isEmpty = books.length === 0;
   const hasMatches = filteredBooks.length > 0;
 
   return (
@@ -246,7 +231,7 @@ export function LibraryBrowseContent({
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
-          <div className="flex flex-wrap gap-8">
+          <div className="flex flex-wrap gap-8 justify-center md:justify-start">
             {sortedGridBooks.map((book) => {
               return (
                 <LibraryBook
@@ -264,10 +249,10 @@ export function LibraryBrowseContent({
                 />
               );
             })}
-            <div className="max-w-52 w-full">
+            <div className="max-w-40 md:max-w-52 w-full">
               <AddBookCard onClick={() => fileInputRef.current?.click()} />
             </div>
-            <div className="max-w-52 w-full">
+            <div className="max-w-40 md:max-w-52 w-full">
               <Link
                 to="/standard-ebooks"
                 className="flex aspect-[2/3] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 text-muted-foreground transition-colors hover:border-muted-foreground/50 hover:text-foreground"
@@ -317,14 +302,12 @@ function LibraryBook({
   const needsDownload = bookNeedsDownload(book);
 
   return (
-    <div key={book.id} className="group relative max-w-52">
+    <div key={book.id} className="group relative max-w-40 md:max-w-52">
       <button
         type="button"
         onClick={() => handleOpenBook(book)}
         disabled={isDownloading}
-        aria-label={
-          isDownloading ? `Downloading ${book.title}` : `Open ${book.title}`
-        }
+        aria-label={isDownloading ? `Downloading ${book.title}` : `Open ${book.title}`}
         className="block w-full text-left disabled:cursor-wait"
       >
         <div className="relative shadow-lg transition-shadow duration-500 book-cover-container group-hover:shadow-2xl">
@@ -383,10 +366,7 @@ function LibraryBook({
               Sync
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => handleDeleteBook(book.id)}
-          >
+          <DropdownMenuItem variant="destructive" onClick={() => handleDeleteBook(book.id)}>
             <Trash2 className="size-4" />
             Delete
           </DropdownMenuItem>

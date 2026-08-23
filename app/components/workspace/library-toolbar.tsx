@@ -24,8 +24,8 @@ export function LibraryToolbar({
         <Input
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="Search books…"
-          className="h-8 pl-7 text-sm"
+          placeholder="Search library"
+          className="h-8 pl-7 text-sm border-none placeholder:text-muted-foreground/50"
           aria-label="Search books"
         />
       </div>
