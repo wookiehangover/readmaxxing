@@ -44,17 +44,18 @@ describe("mergePositionRecord", () => {
     ["EPUB CFI", "epubcfi(/6/4!/4/2/2)", "epubcfi(/6/4!/4/4/2)"],
     ["PDF page", "page:2", "page:12"],
   ])("prefers further %s content before timestamps", async (_label, earlier, further) => {
+    await mergePositionRecord({ bookId: "book-lww", cfi: earlier, updatedAt: 200 });
     await mergePositionRecord({ bookId: "book-lww", cfi: further, updatedAt: 100 });
     await expect(getRemotePositionRecord("book-lww")).resolves.toEqual({
       cfi: further,
-      updatedAt: 100,
+      updatedAt: 200,
     });
     await expect(get("book-lww", positionStore)).resolves.toBeUndefined();
 
-    await mergePositionRecord({ bookId: "book-lww", cfi: earlier, updatedAt: 200 });
+    await mergePositionRecord({ bookId: "book-lww", cfi: earlier, updatedAt: 300 });
     await expect(getRemotePositionRecord("book-lww")).resolves.toEqual({
       cfi: further,
-      updatedAt: 100,
+      updatedAt: 200,
     });
 
     await mergePositionRecord({ bookId: "book-lww", cfi: further, updatedAt: 300 });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const connectMock = vi.hoisted(() => vi.fn());
 
@@ -29,18 +29,27 @@ beforeEach(() => {
   connectMock.mockReset();
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("upsertPosition", () => {
   it.each([
     ["EPUB CFI", "epubcfi(/6/4!/4/2/2)", "epubcfi(/6/4!/4/4/2)"],
     ["PDF page", "page:2", "page:12"],
   ])("accepts further-but-older %s content", async (_label, earlier, further) => {
+    const serverNow = new Date("2026-01-03T00:00:00.000Z");
+    vi.spyOn(Date, "now").mockReturnValue(serverNow.getTime());
     const existing = positionRow(earlier, new Date("2026-01-02T00:00:00.000Z"));
-    const replacement = positionRow(further, new Date("2026-01-01T00:00:00.000Z"));
+    const replacement = positionRow(further, serverNow);
     const client = createClient(existing, replacement);
 
     await expect(
-      upsertPosition("user-1", "book-1", further, replacement.updatedAt),
+      upsertPosition("user-1", "book-1", further, new Date("2026-01-01T00:00:00.000Z")),
     ).resolves.toEqual(replacement);
+    const writeQuery = client.query.mock.calls[3]?.[0] as { values?: unknown[] };
+    expect(writeQuery.values).toContain(serverNow.toISOString());
+    expect(replacement.updatedAt.getTime()).toBeGreaterThan(existing.updatedAt.getTime());
     expect(client.query).toHaveBeenCalledTimes(5);
     expect(client.release).toHaveBeenCalledOnce();
   });

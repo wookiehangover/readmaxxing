@@ -63,9 +63,16 @@ export async function upsertPosition(
       return null;
     }
 
+    const storedUpdatedAt =
+      existingRow &&
+      cfi !== existingRow.cfi &&
+      new Date(ts).getTime() <= existingRow.updatedAt.getTime()
+        ? new Date(Math.max(Date.now(), existingRow.updatedAt.getTime() + 1)).toISOString()
+        : ts;
+
     const result = await client.query<ReadingPositionRow>(sql`
       INSERT INTO readmax.reading_position (user_id, book_id, cfi, updated_at)
-      VALUES (${userId}, ${bookId}, ${cfi}, ${ts})
+      VALUES (${userId}, ${bookId}, ${cfi}, ${storedUpdatedAt})
       ON CONFLICT (user_id, book_id) DO UPDATE
         SET cfi = EXCLUDED.cfi,
             updated_at = EXCLUDED.updated_at

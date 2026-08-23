@@ -129,7 +129,14 @@ export async function mergePositionRecord(record: Record<string, unknown>): Prom
     remoteIsFurther ||
     (!existingIsFurther && remotePosition.updatedAt >= existingPosition.updatedAt);
   if (remoteWins) {
-    await set(id, remotePosition, store);
+    await set(
+      id,
+      {
+        ...remotePosition,
+        updatedAt: Math.max(remotePosition.updatedAt, existingPosition.updatedAt),
+      },
+      store,
+    );
     notifyPositionUpdated();
   }
 }
