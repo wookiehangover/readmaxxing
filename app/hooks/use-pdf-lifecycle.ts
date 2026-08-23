@@ -13,6 +13,7 @@ import {
   flushReadingPositionRequested,
   hydrateReadingPositionsRequested,
   readingPositionChanged,
+  recordReadingHistoryRequested,
 } from "~/lib/themis/reading-positions/reading-positions-slice";
 
 export interface UsePdfLifecycleConfig {
@@ -195,6 +196,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   const viewerRef = useRef<any>(null);
   const eventBusRef = useRef<any>(null);
   const latestPageRef = useRef<number>(1);
+  const hasRestoredPositionRef = useRef(false);
 
   const flushPositionSave = useCallback(() => {
     if (configRef.current.persistPosition === false) return;
@@ -265,10 +267,12 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     if (!el) return;
 
     setHasRestoredPosition(false);
+    hasRestoredPositionRef.current = false;
     setLoadError(false);
 
     let cancelled = false;
     let positionRestored = false;
+    let restoredPageToSuppress: number | null = null;
     const disconnectResizeObserver = observePdfViewerResize(el, () => viewerRef.current);
     if (persistPosition) registerActiveReader(bookId);
 
@@ -342,6 +346,23 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
         setCurrentPage(pageNum);
         if (shouldSave) savePositionDebounced(pageNum);
         configRef.current.onRelocated?.();
+        if (!hasRestoredPositionRef.current || configRef.current.persistPosition === false) return;
+        if (restoredPageToSuppress === pageNum) {
+          restoredPageToSuppress = null;
+          return;
+        }
+        restoredPageToSuppress = null;
+        const pageCount = viewer.pagesCount || pdfDocRef.current?.numPages || null;
+        store.dispatch(
+          recordReadingHistoryRequested(bookId, {
+            cfi: `page:${pageNum}`,
+            chapterHref: null,
+            chapterLabel: null,
+            percentage: pageCount ? (pageNum / pageCount) * 100 : 0,
+            pageIndex: pageNum,
+            totalPages: pageCount,
+          }),
+        );
       });
 
       // Listen for pages rendered (for highlight overlay re-application)
@@ -399,12 +420,14 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
                 startPage = parsed;
               }
             }
+            restoredPageToSuppress = startPage;
             if (startPage > 1) {
               viewer.currentPageNumber = startPage;
             }
             latestPageRef.current = startPage;
             setCurrentPage(startPage);
             positionRestored = true;
+            hasRestoredPositionRef.current = true;
             setHasRestoredPosition(true);
           })
           .catch((err) => console.error("Failed to restore PDF position:", err));
@@ -476,6 +499,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       if (persistPosition) unregisterActiveReader(bookId);
       setToc([]);
       setChapterStarts([]);
+      hasRestoredPositionRef.current = false;
       setHasRestoredPosition(false);
       configRef.current.onCleanupToc?.();
 

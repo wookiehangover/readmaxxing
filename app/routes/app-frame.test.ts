@@ -51,7 +51,10 @@ describe("app-frame hydration", () => {
       createElement(WorkspaceRestoreGate, null, createElement("p", null, "Ready"));
 
     act(() => root.render(renderGate()));
-    expect(container.textContent).toContain("Loading workspace");
+    const loadingOverlay = container.querySelector('[data-testid="workspace-loading-overlay"]');
+    expect(loadingOverlay?.getAttribute("role")).toBe("status");
+    expect(loadingOverlay?.getAttribute("aria-busy")).toBe("true");
+    expect(container.textContent).toBe("");
 
     mocks.booksLoading = false;
     act(() => root.render(renderGate()));

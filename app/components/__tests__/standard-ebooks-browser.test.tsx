@@ -69,27 +69,46 @@ afterEach(() => {
 });
 
 describe("StandardEbooksBrowser", () => {
-  it("keeps loaded books when switching from the library-style grid to the table", async () => {
+  async function renderBrowser(onBookAdded = vi.fn()) {
     await act(async () => {
       root!.render(
         <MemoryRouter>
           <LibraryFrame fileInputRef={createRef<HTMLInputElement>()} onFileInput={vi.fn()}>
-            <StandardEbooksBrowser onBookAdded={vi.fn()} />
+            <StandardEbooksBrowser onBookAdded={onBookAdded} />
           </LibraryFrame>
         </MemoryRouter>,
       );
     });
+  }
 
-    const grid = container!.querySelector<HTMLElement>(".grid");
-    expect(grid?.classList.contains("max-w-6xl")).toBe(true);
-    expect(grid?.classList.contains("grid-cols-2")).toBe(true);
-    expect(grid?.classList.contains("sm:grid-cols-[repeat(auto-fill,minmax(10rem,10rem))]")).toBe(
-      true,
+  it("uses the library wrap layout and keeps loaded books when switching to the table", async () => {
+    await renderBrowser();
+
+    const wrap = [...container!.querySelectorAll<HTMLElement>("div")].find(
+      (element) => element.classList.contains("flex-wrap") && element.classList.contains("gap-8"),
     );
-    expect(grid?.className).toContain("sm:gap-6");
-    expect(grid?.className).toContain("items-start");
-    expect([...grid!.children].every((card) => card.classList.contains("max-w-40"))).toBe(true);
-    expect(grid?.querySelectorAll('a[href^="https://standardebooks.org/ebooks/"]')).toHaveLength(2);
+    expect(wrap?.classList.contains("justify-center")).toBe(true);
+    expect(wrap?.classList.contains("md:justify-start")).toBe(true);
+    expect(wrap?.classList.contains("grid")).toBe(false);
+    expect(wrap?.classList.contains("max-w-6xl")).toBe(false);
+    expect([...wrap!.children]).toHaveLength(2);
+    expect(
+      [...wrap!.children].every(
+        (card) => card.classList.contains("max-w-40") && card.classList.contains("md:max-w-52"),
+      ),
+    ).toBe(true);
+    expect(wrap!.querySelectorAll('a[href^="https://standardebooks.org/ebooks/"]')).toHaveLength(0);
+    expect(wrap!.textContent).not.toContain("Book One");
+    expect(wrap!.textContent).not.toContain("Author One");
+
+    const firstCover = wrap!.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add Book One to library"]',
+    )!;
+    const coverContainer = firstCover.firstElementChild!;
+    expect(coverContainer.classList.contains("shadow-lg")).toBe(true);
+    expect(coverContainer.classList.contains("group-hover:shadow-2xl")).toBe(true);
+    expect(coverContainer.classList.contains("book-cover-container")).toBe(true);
+    expect(firstCover.querySelector(".aspect-\\[2\\/3\\]")).not.toBeNull();
 
     const search = container!.querySelector<HTMLInputElement>(
       '[aria-label="Search Standard Ebooks"]',
@@ -110,36 +129,29 @@ describe("StandardEbooksBrowser", () => {
       await Promise.resolve();
     });
 
-    expect(grid?.classList.contains("grid")).toBe(false);
     expect(container!.querySelectorAll("tbody tr")).toHaveLength(2);
     expect(container!.querySelector("table")?.closest(".max-w-6xl")).not.toBeNull();
     expect(container!.querySelector("table")?.className).toContain("table-fixed");
   });
 
-  it("downloads an EPUB then dispatches it through the shared upload saga", async () => {
+  it("imports from a cover click and prevents the added book from importing again", async () => {
     const data = new ArrayBuffer(8);
     const onBookAdded = vi.fn();
     mocks.runPromise.mockResolvedValueOnce(data);
-    await act(async () => {
-      root!.render(
-        <MemoryRouter>
-          <LibraryFrame fileInputRef={createRef<HTMLInputElement>()} onFileInput={vi.fn()}>
-            <StandardEbooksBrowser onBookAdded={onBookAdded} />
-          </LibraryFrame>
-        </MemoryRouter>,
-      );
-    });
+    await renderBrowser(onBookAdded);
 
-    const addButton = [...container!.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.textContent?.includes("Add to Library"),
+    const coverButton = container!.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add Book One to library"]',
     )!;
     await act(async () => {
-      addButton.click();
+      coverButton.click();
       await Promise.resolve();
     });
 
-    expect(mocks.runPromise).toHaveBeenCalledOnce();
+    expect(mocks.runPromise).toHaveBeenCalledWith("/ebooks/book-one");
     expect(mocks.dispatch).toHaveBeenCalledOnce();
+    expect(coverButton.getAttribute("aria-label")).toBe("Importing Book One");
+    expect(coverButton.querySelector(".animate-spin")).not.toBeNull();
     const action = mocks.dispatch.mock.calls[0]![0] as ReturnType<typeof uploadBooksRequested>;
     const [files, onUploaded] = action.payload;
     expect(files[0]?.name).toBe("Book One.epub");
@@ -154,33 +166,57 @@ describe("StandardEbooksBrowser", () => {
     };
     act(() => onUploaded?.(savedBook));
     expect(onBookAdded).toHaveBeenCalledWith(savedBook);
-    expect(addButton.textContent).toContain("Added");
+    expect(coverButton.getAttribute("aria-label")).toBe("Book One added to library");
+    expect(coverButton.disabled).toBe(true);
+    coverButton.click();
+    expect(mocks.runPromise).toHaveBeenCalledOnce();
+    expect(mocks.dispatch).toHaveBeenCalledOnce();
+  });
+
+  it("offers the Standard Ebooks link and add action in the cover menu", async () => {
+    mocks.runPromise.mockResolvedValueOnce(new ArrayBuffer(8));
+    await renderBrowser();
+
+    const trigger = container!.querySelector<HTMLButtonElement>(
+      'button[aria-label="Actions for Book One"]',
+    )!;
+    expect(trigger.classList.contains("opacity-20")).toBe(true);
+    expect(trigger.classList.contains("group-hover:opacity-100")).toBe(true);
+    await act(async () => trigger.click());
+
+    const menuItems = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+    const externalLink = menuItems.find((item) =>
+      item.textContent?.includes("View on Standard Ebooks"),
+    ) as HTMLAnchorElement;
+    expect(externalLink.href).toBe("https://standardebooks.org/ebooks/book-one");
+    expect(externalLink.target).toBe("_blank");
+    expect(externalLink.rel).toBe("noopener noreferrer");
+
+    const addItem = menuItems.find((item) => item.textContent?.includes("Add to library"))!;
+    await act(async () => {
+      addItem.click();
+      await Promise.resolve();
+    });
+    expect(mocks.runPromise).toHaveBeenCalledWith("/ebooks/book-one");
+    expect(mocks.dispatch).toHaveBeenCalledOnce();
   });
 
   it("settles the importing state when the upload saga reports a parse failure", async () => {
     mocks.runPromise.mockResolvedValueOnce(new ArrayBuffer(8));
-    await act(async () => {
-      root!.render(
-        <MemoryRouter>
-          <LibraryFrame fileInputRef={createRef<HTMLInputElement>()} onFileInput={vi.fn()}>
-            <StandardEbooksBrowser onBookAdded={vi.fn()} />
-          </LibraryFrame>
-        </MemoryRouter>,
-      );
-    });
+    await renderBrowser();
 
-    const addButton = [...container!.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.textContent?.includes("Add to Library"),
+    const coverButton = container!.querySelector<HTMLButtonElement>(
+      'button[aria-label="Add Book One to library"]',
     )!;
     await act(async () => {
-      addButton.click();
+      coverButton.click();
       await Promise.resolve();
     });
     const action = mocks.dispatch.mock.calls[0]![0] as ReturnType<typeof uploadBooksRequested>;
     act(() => action.payload[3]?.("parse failed"));
 
     expect(container!.textContent).toContain('Failed to import "Book One". Please try again.');
-    expect(addButton.textContent).toContain("Add to Library");
-    expect(addButton.disabled).toBe(false);
+    expect(coverButton.getAttribute("aria-label")).toBe("Add Book One to library");
+    expect(coverButton.disabled).toBe(false);
   });
 });

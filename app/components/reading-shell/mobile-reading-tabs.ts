@@ -1,14 +1,15 @@
 export const MOBILE_READING_TAB_EVENT = "reading-shell:open-mobile-tab";
 
-export type MobileReadingTab = "Read" | "Notes" | "Discuss" | "Outline";
+export type MobileReadingTab = "Read" | "Notes" | "Discuss" | "Outline" | "Details";
 const mobileTabStorageKeyPrefix = "reading-shell:mobile-tab:";
 
 export function getRememberedMobileReadingTab(bookId: string | null) {
   if (!bookId) return null;
   const tab = window.sessionStorage.getItem(`${mobileTabStorageKeyPrefix}${bookId}`);
   return (
-    (["Read", "Notes", "Discuss", "Outline"] as const).find((candidate) => candidate === tab) ??
-    null
+    (["Read", "Notes", "Discuss", "Outline", "Details"] as const).find(
+      (candidate) => candidate === tab,
+    ) ?? null
   );
 }
 

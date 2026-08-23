@@ -115,19 +115,22 @@ async function selectBookAction(label: string) {
 }
 
 describe("LibraryBrowseContent", () => {
-  it("caps the library grid and keeps its tracks cover-sized", () => {
+  it("caps the library wrap and keeps its cards cover-sized", () => {
     renderLibrary();
 
-    const grid = container!.querySelector<HTMLElement>(".grid")!;
-    expect(grid.classList.contains("max-w-6xl")).toBe(true);
-    expect(grid.classList.contains("grid-cols-2")).toBe(true);
-    expect(grid.classList.contains("sm:grid-cols-[repeat(auto-fill,minmax(10rem,10rem))]")).toBe(
-      true,
-    );
-    expect(grid.className).toContain("items-start");
-    expect([...grid.children]).toHaveLength(3);
-    expect([...grid.children].every((card) => card.classList.contains("max-w-40"))).toBe(true);
-    expect(grid.querySelector('[aria-label="Open Test Book"] .aspect-\\[2\\/3\\]')).not.toBeNull();
+    const wrap = container!.querySelector<HTMLElement>(".flex.flex-wrap")!;
+    expect(wrap.classList.contains("gap-8")).toBe(true);
+    expect(wrap.classList.contains("justify-center")).toBe(true);
+    expect(wrap.classList.contains("md:justify-start")).toBe(true);
+    expect(wrap.classList.contains("max-w-screen-2xl")).toBe(true);
+    expect(wrap.classList.contains("mx-auto")).toBe(true);
+    expect([...wrap.children]).toHaveLength(3);
+    expect(
+      [...wrap.children].every(
+        (card) => card.classList.contains("max-w-40") && card.classList.contains("md:max-w-52"),
+      ),
+    ).toBe(true);
+    expect(wrap.querySelector('[aria-label="Open Test Book"] .aspect-\\[2\\/3\\]')).not.toBeNull();
   });
 
   it("uses the same content cap for the table view", async () => {
@@ -214,11 +217,11 @@ describe("LibraryBrowseContent", () => {
     },
   );
 
-  it("leaves the header without a control cluster when the library is empty", () => {
+  it("keeps search and library navigation in the header when the library is empty", () => {
     renderLibrary(vi.fn(), []);
 
     const header = container!.querySelector("header")!;
-    expect(header.querySelector('[aria-label="Search books"]')).toBeNull();
+    expect(header.querySelector('[aria-label="Search books"]')).not.toBeNull();
     expect(header.querySelector('nav[aria-label="Library navigation"]')).not.toBeNull();
   });
 });

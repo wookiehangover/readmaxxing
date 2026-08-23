@@ -37,9 +37,13 @@ clientLoader.hydrate = true as const;
 
 function WorkspaceLoadingOverlay() {
   return (
-    <div className="fixed inset-0 z-50 flex h-dvh items-center justify-center">
-      <p className="text-muted-foreground">Loading workspace…</p>
-    </div>
+    <div
+      aria-busy="true"
+      aria-label="Loading workspace"
+      className="fixed inset-0 z-50 h-dvh"
+      data-testid="workspace-loading-overlay"
+      role="status"
+    />
   );
 }
 

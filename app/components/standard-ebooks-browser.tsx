@@ -1,7 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Globe, Loader2, Plus, Check } from "lucide-react";
+import { Check, Ellipsis, ExternalLink, Globe, Loader2, Plus } from "lucide-react";
 import { StandardEbooksToolbar } from "~/components/standard-ebooks-toolbar";
-import { Button } from "~/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { Skeleton } from "~/components/ui/skeleton";
 import { StandardEbooksTable } from "~/components/workspace/standard-ebooks-table";
 import { LibraryHeaderControls } from "~/components/workspace/library-frame";
@@ -207,10 +213,10 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
         </LibraryHeaderControls>
       </div>
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:px-6">
         {isInitialLoading ? (
           settings.standardEbooksView === "grid" ? (
-            <div className="grid max-w-6xl grid-cols-2 items-start gap-4 sm:grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] sm:gap-6">
+            <div className="flex flex-wrap gap-8 justify-center md:justify-start  max-w-screen-2xl mx-auto">
               {Array.from({ length: 12 }).map((_, i) => (
                 <SkeletonCard key={i} />
               ))}
@@ -225,7 +231,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
             </p>
           </div>
         ) : settings.standardEbooksView === "grid" ? (
-          <div className="mx-auto grid max-w-6xl grid-cols-2 items-start gap-4 sm:grid-cols-[repeat(auto-fill,minmax(10rem,10rem))] sm:gap-6">
+          <div className="flex flex-wrap gap-8 justify-center md:justify-start max-w-screen-2xl mx-auto">
             {books.map((book) => (
               <SEBookCard
                 key={book.urlPath}
@@ -277,73 +283,81 @@ function SEBookCard({
   isAdded: boolean;
   onDownload: (book: SEBook) => void;
 }) {
+  const isUnavailable = isDownloading || isAdded;
+
   return (
-    <div className="group flex max-w-40 flex-col overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md">
-      <div className="aspect-[2/3] w-full overflow-hidden bg-muted">
-        {book.coverUrl ? (
-          <img
-            src={book.coverUrl}
-            alt={book.title}
-            className="size-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="flex size-full flex-col items-center justify-center p-3 text-center">
-            <Globe className="mb-2 size-8 text-muted-foreground/50" />
-            <p className="line-clamp-3 text-sm font-medium text-muted-foreground">{book.title}</p>
-          </div>
-        )}
-      </div>
-      <div className="flex flex-1 flex-col gap-1 p-2">
-        <a
-          href={`https://standardebooks.org${book.urlPath}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="line-clamp-2 text-sm font-medium leading-tight hover:underline"
-        >
-          {book.title}
-        </a>
-        <p className="line-clamp-1 text-xs text-muted-foreground">{book.author}</p>
-        <div className="mt-auto pt-1">
-          <Button
-            variant={isAdded ? "ghost" : "outline"}
-            size="sm"
-            className="w-full"
-            disabled={isDownloading || isAdded}
-            onClick={() => onDownload(book)}
-          >
-            {isDownloading ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                Importing…
-              </>
-            ) : isAdded ? (
-              <>
-                <Check className="size-3.5" />
-                Added
-              </>
-            ) : (
-              <>
-                <Plus className="size-3.5" />
-                Add to Library
-              </>
-            )}
-          </Button>
+    <div className="group relative w-full max-w-40 md:max-w-52">
+      <button
+        type="button"
+        onClick={() => onDownload(book)}
+        disabled={isUnavailable}
+        aria-label={
+          isDownloading
+            ? `Importing ${book.title}`
+            : isAdded
+              ? `${book.title} added to library`
+              : `Add ${book.title} to library`
+        }
+        className="block w-full text-left disabled:cursor-wait"
+      >
+        <div className="relative overflow-hidden shadow-lg transition-shadow duration-500 book-cover-container group-hover:shadow-2xl">
+          {book.coverUrl ? (
+            <img
+              src={book.coverUrl}
+              alt={book.title}
+              className="aspect-[2/3] w-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="flex aspect-[2/3] w-full items-center justify-center bg-muted">
+              <Globe className="size-8 text-muted-foreground/50" aria-hidden="true" />
+            </div>
+          )}
+          {isDownloading && (
+            <div className="absolute inset-0 flex items-center justify-center rounded bg-background/70">
+              <Loader2 className="size-6 animate-spin" aria-hidden="true" />
+              <span className="sr-only">Importing…</span>
+            </div>
+          )}
         </div>
-      </div>
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className="mt-1 ml-auto flex size-7 items-center justify-center rounded-md text-foreground/70 opacity-20 backdrop-blur-sm transition-opacity hover:bg-muted/80 focus-visible:opacity-100 group-hover:opacity-100"
+          render={<button type="button" aria-label={`Actions for ${book.title}`} />}
+          onClick={(event) => event.preventDefault()}
+        >
+          <Ellipsis className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto">
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              render={
+                <a
+                  href={`https://standardebooks.org${book.urlPath}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+              }
+            >
+              <ExternalLink className="size-4" />
+              View on Standard Ebooks
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={isUnavailable} onClick={() => onDownload(book)}>
+              {isUnavailable ? <Check className="size-4" /> : <Plus className="size-4" />}
+              {isUnavailable ? "Added" : "Add to library"}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
 
 function SkeletonCard() {
   return (
-    <div className="flex max-w-40 flex-col overflow-hidden rounded-lg border bg-card">
-      <Skeleton className="aspect-[2/3] w-full rounded-none" />
-      <div className="flex flex-col gap-1.5 p-2">
-        <Skeleton className="h-4 w-3/4" />
-        <Skeleton className="h-3 w-1/2" />
-        <Skeleton className="mt-1 h-8 w-full" />
-      </div>
+    <div className="w-full max-w-40 md:max-w-52">
+      <Skeleton className="aspect-[2/3] w-full shadow-lg" />
     </div>
   );
 }
