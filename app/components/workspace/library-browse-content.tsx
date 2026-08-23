@@ -231,7 +231,7 @@ export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps =
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-4 pt-2 md:p-6">
-          <div className="flex flex-wrap gap-8 justify-center md:justify-start">
+          <div className="flex flex-wrap gap-8 justify-center md:justify-start max-w-screen-2xl mx-auto">
             {sortedGridBooks.map((book) => {
               return (
                 <LibraryBook

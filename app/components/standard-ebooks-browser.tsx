@@ -213,10 +213,10 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
         </LibraryHeaderControls>
       </div>
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:px-6">
         {isInitialLoading ? (
           settings.standardEbooksView === "grid" ? (
-            <div className="flex flex-wrap gap-8 justify-center md:justify-start">
+            <div className="flex flex-wrap gap-8 justify-center md:justify-start  max-w-screen-2xl mx-auto">
               {Array.from({ length: 12 }).map((_, i) => (
                 <SkeletonCard key={i} />
               ))}
@@ -231,7 +231,7 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
             </p>
           </div>
         ) : settings.standardEbooksView === "grid" ? (
-          <div className="flex flex-wrap gap-8 justify-center md:justify-start">
+          <div className="flex flex-wrap gap-8 justify-center md:justify-start max-w-screen-2xl mx-auto">
             {books.map((book) => (
               <SEBookCard
                 key={book.urlPath}
@@ -300,7 +300,7 @@ function SEBookCard({
         }
         className="block w-full text-left disabled:cursor-wait"
       >
-        <div className="relative overflow-hidden rounded-lg shadow-lg transition-shadow duration-500 book-cover-container group-hover:shadow-2xl">
+        <div className="relative overflow-hidden shadow-lg transition-shadow duration-500 book-cover-container group-hover:shadow-2xl">
           {book.coverUrl ? (
             <img
               src={book.coverUrl}
@@ -357,7 +357,7 @@ function SEBookCard({
 function SkeletonCard() {
   return (
     <div className="w-full max-w-40 md:max-w-52">
-      <Skeleton className="aspect-[2/3] w-full rounded-lg shadow-lg" />
+      <Skeleton className="aspect-[2/3] w-full shadow-lg" />
     </div>
   );
 }
