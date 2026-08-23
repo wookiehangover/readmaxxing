@@ -180,7 +180,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
   return {
     pushChanges: () => runCycle(doPush),
-    pullChanges: () => runCycle(doPull),
+    pullChanges: () => runCycle(doPull, true),
 
     startSync() {
       stopped = false;
