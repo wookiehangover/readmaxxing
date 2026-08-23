@@ -218,7 +218,7 @@ describe("ReadingDetailsPanel", () => {
     expect(panel.querySelectorAll("time")).toHaveLength(3);
     const historyScroll = panel.querySelector("[data-testid='reading-history-table-scroll']");
     const bookmarksScroll = panel.querySelector("[data-testid='bookmarks-table-scroll']");
-    expect(historyScroll?.className).toContain("max-h-88");
+    expect(historyScroll?.className).toContain("max-h-72");
     expect(historyScroll?.className).not.toContain("rounded-md");
     expect(historyScroll?.className).not.toContain("border");
     expect(bookmarksScroll?.className).toContain("overflow-y-auto");

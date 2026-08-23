@@ -156,7 +156,7 @@ export function ReadingDetailsPanel({
             Reading history
           </h3>
           {historyEntries.length > 0 ? (
-            <div data-testid="reading-history-table-scroll" className="max-h-88 overflow-y-auto">
+            <div data-testid="reading-history-table-scroll" className="max-h-72 overflow-y-auto">
               <div className="flex flex-col gap-3">
                 {historyGroups.map((group) => {
                   const dateLabel = formatDate(group.timestamp);
