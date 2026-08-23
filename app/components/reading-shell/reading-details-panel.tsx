@@ -1,7 +1,6 @@
 import { type KeyboardEvent, useEffect } from "react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { History } from "lucide-react";
-
+import { History, EllipsisIcon } from "lucide-react";
 import { CoverImage } from "~/components/book-grid/cover-image";
 import { CoverPlaceholder } from "~/components/book-grid/cover-placeholder";
 import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
@@ -162,8 +161,8 @@ export function ReadingDetailsPanel({
                   const dateLabel = formatDate(group.timestamp);
 
                   return (
-                    <div key={group.key} className="flex flex-col gap-1">
-                      <h4 className="text-xs font-normal text-muted-foreground">{dateLabel}</h4>
+                    <div key={group.key} className="flex flex-col">
+                      <h4 className="text-xs font-normal text-muted-foreground sticky top-0 bg-background/80 backdrop-blur z-10 pl-2 pb-1">{dateLabel}</h4>
                       <Table
                         aria-label={`Reading history for ${dateLabel}`}
                         className="table-fixed text-xs"
@@ -279,7 +278,17 @@ export function ReadingDetailsPanel({
               </div>
             </div>
           ) : (
-            <p className="py-3 text-xs text-muted-foreground">... → Actions → Bookmark page</p>
+            <div className="flex justify-center py-4">
+                <p className="flex items-center gap-1 text-xs text-muted-foreground/50">
+                  <span className="aspect-square p-1 border rounded-sm">
+                    <EllipsisIcon className="size-3" />
+                  </span>
+                  <span>→</span>
+                  <span>Actions</span>
+                  <span>→</span>
+                  <span>Bookmark page</span>
+                </p>
+            </div>
           )}
         </section>
       </div>

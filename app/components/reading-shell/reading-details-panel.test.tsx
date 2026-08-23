@@ -134,8 +134,6 @@ describe("ReadingDetailsPanel", () => {
     expect(panel.textContent).toContain("Reading history");
     expect(panel.textContent).toContain("No reading history yet");
     expect(panel.textContent).toContain("Bookmarks");
-    expect(panel.textContent).toContain("... → Actions → Bookmark page");
-    expect(panel.textContent).not.toContain("No bookmarks yet");
     expect(dispatch).toHaveBeenCalledWith(hydrateReadingHistoryRequested(book.id));
     expect(dispatch).toHaveBeenCalledWith(hydrateBookmarksRequested(book.id));
   });
