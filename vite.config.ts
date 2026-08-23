@@ -102,6 +102,24 @@ export default defineConfig({
             handler: "NetworkOnly",
           },
           {
+            urlPattern: ({ url, sameOrigin }) =>
+              sameOrigin && /^\/(?:_\.data|(?:library|books)(?:\/.*)?\.data)$/.test(url.pathname),
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "reader-route-data",
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              plugins: [
+                {
+                  // React Router interprets an empty 204 as no server loader data,
+                  // allowing clientLoaders to continue with IndexedDB offline.
+                  handlerDidError: async () => new Response(null, { status: 204 }),
+                },
+              ],
+            },
+          },
+          {
             urlPattern: ({ request, url, sameOrigin }) =>
               sameOrigin &&
               request.mode === "navigate" &&
