@@ -145,7 +145,7 @@ describe("ReadingDetailsPanel", () => {
     expect(panel.textContent?.match(/Middlemarch/g)).toHaveLength(2);
   });
 
-  it("groups borderless, headerless tables by date and shows history times with seconds", () => {
+  it("groups history by date and renders bookmarks in one newest-first table", () => {
     const earlierHistoryEntry = {
       ...historyEntry,
       id: "history-2",
@@ -189,22 +189,26 @@ describe("ReadingDetailsPanel", () => {
         year: "numeric",
       });
 
-    expect(tables).toHaveLength(4);
+    expect(tables).toHaveLength(3);
     expect(historySection?.querySelectorAll("table")).toHaveLength(2);
-    expect(bookmarksSection?.querySelectorAll("table")).toHaveLength(2);
+    expect(bookmarksSection?.querySelectorAll("table")).toHaveLength(1);
     expect(historySection?.querySelectorAll("table")[0]?.querySelectorAll("tbody tr")).toHaveLength(
       2,
     );
-    expect(
-      bookmarksSection?.querySelectorAll("table")[0]?.querySelectorAll("tbody tr"),
-    ).toHaveLength(2);
+    expect(bookmarksSection?.querySelectorAll("tbody tr")).toHaveLength(3);
     expect(panel.querySelector("thead")).toBeNull();
     expect(
       Array.from(historySection?.querySelectorAll("h4") ?? [], (heading) => heading.textContent),
     ).toEqual([formatDate(historyEntry.timestamp), formatDate(earlierHistoryEntry.timestamp)]);
+    expect(bookmarksSection?.querySelector("h4")).toBeNull();
+    expect(bookmarksSection?.querySelector("table")?.getAttribute("aria-label")).toBe("Bookmarks");
     expect(
-      Array.from(bookmarksSection?.querySelectorAll("h4") ?? [], (heading) => heading.textContent),
-    ).toEqual([formatDate(laterBookmark.createdAt), formatDate(bookmark.createdAt)]);
+      Array.from(bookmarksSection?.querySelectorAll("tbody tr") ?? [], (row) => row.textContent),
+    ).toEqual([
+      expect.stringContaining("Same-day bookmark"),
+      expect.stringContaining("Another memorable chapter"),
+      expect.stringContaining("A memorable chapter"),
+    ]);
     expect(panel.textContent).toContain("Chapter One");
     expect(panel.textContent).toContain("37 / 150");
     expect(panel.textContent).not.toContain("25%");

@@ -116,7 +116,6 @@ export function ReadingDetailsPanel({
     (first, second) => second.createdAt - first.createdAt,
   );
   const historyGroups = groupByCalendarDate(historyEntries, (entry) => entry.timestamp);
-  const bookmarkGroups = groupByCalendarDate(savedBookmarks, (bookmark) => bookmark.createdAt);
 
   return (
     <ScrollArea className="h-full min-h-0 flex-1" hideScrollbar>
@@ -162,7 +161,9 @@ export function ReadingDetailsPanel({
 
                   return (
                     <div key={group.key} className="flex flex-col">
-                      <h4 className="text-xs font-normal text-muted-foreground sticky top-0 bg-background/80 backdrop-blur z-10 pl-2 pb-1">{dateLabel}</h4>
+                      <h4 className="text-xs font-normal text-muted-foreground sticky top-0 bg-background/80 backdrop-blur z-10 pl-2 pb-1">
+                        {dateLabel}
+                      </h4>
                       <Table
                         aria-label={`Reading history for ${dateLabel}`}
                         className="table-fixed text-xs"
@@ -223,71 +224,57 @@ export function ReadingDetailsPanel({
           </h3>
           {savedBookmarks.length > 0 ? (
             <div data-testid="bookmarks-table-scroll" className="max-h-88 overflow-y-auto">
-              <div className="flex flex-col gap-3">
-                {bookmarkGroups.map((group) => {
-                  const dateLabel = formatDate(group.timestamp);
+              <Table aria-label="Bookmarks" className="table-fixed text-xs">
+                <TableBody>
+                  {savedBookmarks.map((bookmark) => {
+                    const target = bookmarkTarget(book, bookmark);
+                    const pageNumber =
+                      book.format === "pdf"
+                        ? (bookmark.pageNumber ?? bookmark.displayPage)
+                        : (bookmark.displayPage ?? bookmark.pageNumber);
+                    const locationLabel =
+                      bookmark.label && bookmark.label !== `Page ${pageNumber}`
+                        ? bookmark.label
+                        : "Saved location";
 
-                  return (
-                    <div key={group.key} className="flex flex-col gap-1">
-                      <h4 className="text-xs font-normal text-muted-foreground">{dateLabel}</h4>
-                      <Table
-                        aria-label={`Bookmarks for ${dateLabel}`}
-                        className="table-fixed text-xs"
+                    return (
+                      <TableRow
+                        key={bookmark.id}
+                        className={cn(
+                          "border-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
+                          {
+                            "cursor-pointer": target,
+                            "cursor-default opacity-50": !target,
+                          },
+                        )}
+                        aria-disabled={!target}
+                        tabIndex={target ? 0 : undefined}
+                        onClick={target ? () => void navigateToLocation(target) : undefined}
+                        onKeyDown={target ? activateRowOnKeyDown : undefined}
                       >
-                        <TableBody>
-                          {group.items.map((bookmark) => {
-                            const target = bookmarkTarget(book, bookmark);
-                            const pageNumber =
-                              book.format === "pdf"
-                                ? (bookmark.pageNumber ?? bookmark.displayPage)
-                                : (bookmark.displayPage ?? bookmark.pageNumber);
-                            const locationLabel =
-                              bookmark.label && bookmark.label !== `Page ${pageNumber}`
-                                ? bookmark.label
-                                : "Saved location";
-
-                            return (
-                              <TableRow
-                                key={bookmark.id}
-                                className={cn(
-                                  "border-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none",
-                                  {
-                                    "cursor-pointer": target,
-                                    "cursor-default opacity-50": !target,
-                                  },
-                                )}
-                                aria-disabled={!target}
-                                tabIndex={target ? 0 : undefined}
-                                onClick={target ? () => void navigateToLocation(target) : undefined}
-                                onKeyDown={target ? activateRowOnKeyDown : undefined}
-                              >
-                                <TableCell className="w-[70%] max-w-0 py-1.5 font-medium">
-                                  <span className="block truncate">{locationLabel}</span>
-                                </TableCell>
-                                <TableCell className="w-[30%] py-1.5 text-muted-foreground">
-                                  {pageNumber ?? "—"}
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  );
-                })}
-              </div>
+                        <TableCell className="w-[70%] max-w-0 py-1.5 font-medium">
+                          <span className="block truncate">{locationLabel}</span>
+                        </TableCell>
+                        <TableCell className="w-[30%] py-1.5 text-muted-foreground">
+                          {pageNumber ?? "—"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
           ) : (
             <div className="flex justify-center py-4">
-                <p className="flex items-center gap-1 text-xs text-muted-foreground/50">
-                  <span className="aspect-square p-1 border rounded-sm">
-                    <EllipsisIcon className="size-3" />
-                  </span>
-                  <span>→</span>
-                  <span>Actions</span>
-                  <span>→</span>
-                  <span>Bookmark page</span>
-                </p>
+              <p className="flex items-center gap-1 text-xs text-muted-foreground/50">
+                <span className="aspect-square p-1 border rounded-sm">
+                  <EllipsisIcon className="size-3" />
+                </span>
+                <span>→</span>
+                <span>Actions</span>
+                <span>→</span>
+                <span>Bookmark page</span>
+              </p>
             </div>
           )}
         </section>
