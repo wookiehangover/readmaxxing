@@ -15,6 +15,9 @@ CREATE TABLE readmax.chat_session (
 
 CREATE INDEX chat_session_user_id_idx ON readmax.chat_session (user_id);
 CREATE INDEX chat_session_book_id_idx ON readmax.chat_session (book_id);
+CREATE INDEX chat_session_user_updated_idx ON readmax.chat_session (user_id, updated_at, id);
+CREATE INDEX chat_session_user_book_updated_idx ON readmax.chat_session (user_id, book_id, updated_at DESC, id)
+    WHERE deleted_at IS NULL;
 
 -- Chat messages
 
@@ -28,3 +31,6 @@ CREATE TABLE readmax.chat_message (
 );
 
 CREATE INDEX chat_message_session_id_idx ON readmax.chat_message (session_id);
+CREATE INDEX chat_message_session_created_idx ON readmax.chat_message (session_id, created_at, id);
+CREATE INDEX chat_message_created_session_idx ON readmax.chat_message (created_at, session_id, id);
+CREATE INDEX chat_message_created_id_session_idx ON readmax.chat_message (created_at, id, session_id);

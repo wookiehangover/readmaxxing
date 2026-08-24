@@ -14,6 +14,7 @@ export interface BookRow {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  cursorTimestamp?: string;
 }
 
 export interface UpsertBookData {
@@ -53,7 +54,13 @@ export async function upsertBook(userId: string, book: UpsertBookData): Promise<
           author = COALESCE(EXCLUDED.author, readmax.book.author),
           format = COALESCE(EXCLUDED.format, readmax.book.format),
           file_hash = COALESCE(EXCLUDED.file_hash, readmax.book.file_hash),
-          updated_at = EXCLUDED.updated_at,
+          updated_at = CASE
+            WHEN EXCLUDED.updated_at = readmax.book.updated_at
+              AND EXCLUDED.deleted_at IS NULL
+              AND readmax.book.deleted_at IS NOT NULL
+            THEN readmax.book.updated_at + INTERVAL '1 millisecond'
+            ELSE EXCLUDED.updated_at
+          END,
           deleted_at = CASE
             WHEN ${shouldUpdateDeletedAt} THEN EXCLUDED.deleted_at
             ELSE readmax.book.deleted_at
@@ -74,7 +81,7 @@ export async function upsertBook(userId: string, book: UpsertBookData): Promise<
   return result.rows[0];
 }
 
-export async function getBooksByUser(userId: string): Promise<BookRow[]> {
+export async function getBooksByUser(userId: string, limit?: number): Promise<BookRow[]> {
   const pool = getPool();
   const result = await pool.query<BookRow>(sql`
     SELECT ${BOOK_COLUMNS}
@@ -82,18 +89,30 @@ export async function getBooksByUser(userId: string): Promise<BookRow[]> {
     WHERE user_id = ${userId}
       AND deleted_at IS NULL
     ORDER BY updated_at DESC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }
 
-export async function getBooksByUserSince(userId: string, cursor: Date): Promise<BookRow[]> {
+export async function getBooksByUserSince(
+  userId: string,
+  cursor: Date,
+  limit?: number,
+  cursorId?: string | null,
+  exactCursorTimestamp?: string,
+): Promise<BookRow[]> {
   const pool = getPool();
+  const cursorTimestamp = exactCursorTimestamp ?? cursor.toISOString();
   const result = await pool.query<BookRow>(sql`
-    SELECT ${BOOK_COLUMNS}
+    SELECT ${BOOK_COLUMNS}, updated_at::text AS "cursorTimestamp"
     FROM readmax.book
     WHERE user_id = ${userId}
-      AND updated_at > ${cursor.toISOString()}
-    ORDER BY updated_at ASC
+      AND (
+        updated_at > ${cursorTimestamp}
+        OR (updated_at = ${cursorTimestamp} AND id > ${cursorId ?? null})
+      )
+    ORDER BY updated_at ASC, id ASC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }

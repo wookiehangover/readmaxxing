@@ -11,6 +11,7 @@ export interface ChatSessionRow {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  cursorTimestamp?: string;
 }
 
 export interface ChatMessageRow {
@@ -20,6 +21,7 @@ export interface ChatMessageRow {
   content: string | null;
   parts: unknown | null;
   createdAt: Date;
+  cursorTimestamp?: string;
 }
 
 const SESSION_COLUMNS = sql`
@@ -98,7 +100,7 @@ export async function getSessionByIdForUser(
   return result.rows[0];
 }
 
-export async function getSessionsByUser(userId: string): Promise<ChatSessionRow[]> {
+export async function getSessionsByUser(userId: string, limit?: number): Promise<ChatSessionRow[]> {
   const pool = getPool();
   const result = await pool.query<ChatSessionRow>(sql`
     SELECT ${SESSION_COLUMNS}
@@ -106,6 +108,25 @@ export async function getSessionsByUser(userId: string): Promise<ChatSessionRow[
     WHERE user_id = ${userId}
       AND deleted_at IS NULL
     ORDER BY updated_at DESC
+    LIMIT ${limit ?? null}
+  `);
+  return result.rows;
+}
+
+export async function getSessionsByUserAndBook(
+  userId: string,
+  bookId: string,
+  limit?: number,
+): Promise<ChatSessionRow[]> {
+  const pool = getPool();
+  const result = await pool.query<ChatSessionRow>(sql`
+    SELECT ${SESSION_COLUMNS}
+    FROM readmax.chat_session
+    WHERE user_id = ${userId}
+      AND book_id = ${bookId}
+      AND deleted_at IS NULL
+    ORDER BY updated_at DESC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }
@@ -113,14 +134,22 @@ export async function getSessionsByUser(userId: string): Promise<ChatSessionRow[
 export async function getSessionsByUserSince(
   userId: string,
   cursor: Date,
+  limit?: number,
+  cursorId?: string | null,
+  exactCursorTimestamp?: string,
 ): Promise<ChatSessionRow[]> {
   const pool = getPool();
+  const cursorTimestamp = exactCursorTimestamp ?? cursor.toISOString();
   const result = await pool.query<ChatSessionRow>(sql`
-    SELECT ${SESSION_COLUMNS}
+    SELECT ${SESSION_COLUMNS}, updated_at::text AS "cursorTimestamp"
     FROM readmax.chat_session
     WHERE user_id = ${userId}
-      AND updated_at > ${cursor.toISOString()}
-    ORDER BY updated_at ASC
+      AND (
+        updated_at > ${cursorTimestamp}
+        OR (updated_at = ${cursorTimestamp} AND id > ${cursorId ?? null})
+      )
+    ORDER BY updated_at ASC, id ASC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }
@@ -182,13 +211,30 @@ export async function upsertMessage(message: {
   return result.rows[0];
 }
 
-export async function getMessagesBySession(sessionId: string): Promise<ChatMessageRow[]> {
+export async function getMessagesBySession(
+  sessionId: string,
+  limit?: number,
+): Promise<ChatMessageRow[]> {
   const pool = getPool();
   const result = await pool.query<ChatMessageRow>(sql`
     SELECT ${MESSAGE_COLUMNS}
     FROM readmax.chat_message
     WHERE session_id = ${sessionId}
     ORDER BY created_at ASC
+    LIMIT ${limit ?? null}
+  `);
+  return result.rows;
+}
+
+export async function getMessagesBySessions(sessionIds: string[]): Promise<ChatMessageRow[]> {
+  if (sessionIds.length === 0) return [];
+
+  const pool = getPool();
+  const result = await pool.query<ChatMessageRow>(sql`
+    SELECT ${MESSAGE_COLUMNS}
+    FROM readmax.chat_message
+    WHERE session_id = ANY(${sessionIds})
+    ORDER BY session_id ASC, created_at ASC
   `);
   return result.rows;
 }
@@ -196,8 +242,12 @@ export async function getMessagesBySession(sessionId: string): Promise<ChatMessa
 export async function getMessagesByUserSince(
   userId: string,
   cursor: Date,
+  limit?: number,
+  cursorId?: string | null,
+  exactCursorTimestamp?: string,
 ): Promise<ChatMessageRow[]> {
   const pool = getPool();
+  const cursorTimestamp = exactCursorTimestamp ?? cursor.toISOString();
   const result = await pool.query<ChatMessageRow>(sql`
     SELECT
       m.id,
@@ -205,12 +255,17 @@ export async function getMessagesByUserSince(
       m.role,
       m.content,
       m.parts,
-      m.created_at AS "createdAt"
+      m.created_at AS "createdAt",
+      m.created_at::text AS "cursorTimestamp"
     FROM readmax.chat_message m
     JOIN readmax.chat_session s ON s.id = m.session_id
     WHERE s.user_id = ${userId}
-      AND m.created_at > ${cursor.toISOString()}
-    ORDER BY m.created_at ASC
+      AND (
+        m.created_at > ${cursorTimestamp}
+        OR (m.created_at = ${cursorTimestamp} AND m.id > ${cursorId ?? null})
+      )
+    ORDER BY m.created_at ASC, m.id ASC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }

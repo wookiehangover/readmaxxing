@@ -183,4 +183,100 @@ describe("integration: pull merge applies mergers for every entity group", () =>
     expect(parsed.theme).toBe("dark");
     expect(parsed.colorTheme).toBe("nord");
   });
+
+  it("defers chat messages until every paginated parent session has been merged", async () => {
+    const timestamp = "2026-04-22T12:00:00.000Z";
+    const sessionCursor = JSON.stringify({ t: timestamp, id: "session-first" });
+    const messageCursor = JSON.stringify({ t: timestamp, id: "message-late" });
+    const message = {
+      id: "message-late",
+      sessionId: "session-late",
+      role: "user",
+      content: "A message whose parent is on the next page",
+      createdAt: timestamp,
+    };
+    const responses: SyncPullResponse[] = [
+      {
+        serverTimestamp: timestamp,
+        changes: [
+          {
+            entity: "chat_session",
+            records: [
+              {
+                id: "session-first",
+                bookId: "book-1",
+                title: "First session",
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              },
+            ],
+            cursor: sessionCursor,
+            hasMore: true,
+          },
+          {
+            entity: "chat_message",
+            records: [message],
+            cursor: messageCursor,
+            hasMore: false,
+          },
+        ],
+      },
+      {
+        serverTimestamp: timestamp,
+        changes: [
+          {
+            entity: "chat_session",
+            records: [
+              {
+                id: "session-late",
+                bookId: "book-1",
+                title: "Later session",
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              },
+            ],
+            cursor: JSON.stringify({ t: timestamp, id: "session-late" }),
+            hasMore: false,
+          },
+          {
+            entity: "chat_message",
+            records: [message],
+            cursor: messageCursor,
+            hasMore: false,
+          },
+        ],
+      },
+    ];
+
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      if (fetchMock.mock.calls.length === 2) {
+        const url = new URL(String(input), "https://readmax.test");
+        expect(url.searchParams.get("entityType")).toBe("chat_session,chat_message");
+        expect(JSON.parse(url.searchParams.get("cursors") ?? "[]")).toEqual([
+          { entityType: "chat_session", cursor: sessionCursor },
+        ]);
+      }
+
+      const response = responses[fetchMock.mock.calls.length - 1];
+      return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        json: async () => response,
+      } as unknown as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const engine = makeSyncEngine({ userId: "user-test" });
+    await engine.pullChanges();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const sessions = await get<
+      Array<{ id: string; messages: Array<{ id: string; content: string }> }>
+    >("book-1", chatSessionStore);
+    expect(sessions?.find((session) => session.id === "session-late")?.messages).toEqual([
+      expect.objectContaining({ id: "message-late", content: message.content }),
+    ]);
+    expect(await get<string>("chat_message", cursorStore)).toBe(messageCursor);
+  });
 });

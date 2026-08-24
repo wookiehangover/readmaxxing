@@ -86,8 +86,71 @@ export interface ParsedPullCursors {
    * ("from the beginning").
    */
   cursorsByEntity: Record<EntityType, Date>;
+  /** Exact database timestamp strings, including any fractional microseconds. */
+  cursorTimestampsByEntity: Record<EntityType, string>;
+  cursorIdsByEntity: Record<EntityType, string | null>;
   /** Populated when the `cursors` param is malformed. */
   error?: string;
+}
+
+interface EncodedPullCursor {
+  t: string;
+  id: string;
+}
+
+export function encodePullCursor(timestamp: Date, id: string, exactTimestamp?: string): string {
+  return JSON.stringify({
+    t: exactTimestamp ?? timestamp.toISOString(),
+    id,
+  } satisfies EncodedPullCursor);
+}
+
+function parsePullCursor(cursor: string): {
+  date: Date;
+  timestamp: string;
+  id: string | null;
+  error?: string;
+} {
+  let timestamp = cursor;
+  let id: string | null = null;
+
+  if (cursor.trimStart().startsWith("{")) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cursor);
+    } catch {
+      return {
+        date: EPOCH,
+        timestamp: EPOCH.toISOString(),
+        id: null,
+        error: "Invalid encoded cursor",
+      };
+    }
+
+    const encoded = parsed as Partial<EncodedPullCursor>;
+    if (typeof encoded.t !== "string" || typeof encoded.id !== "string") {
+      return {
+        date: EPOCH,
+        timestamp: EPOCH.toISOString(),
+        id: null,
+        error: "Invalid encoded cursor",
+      };
+    }
+    timestamp = encoded.t;
+    id = encoded.id;
+  }
+
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) {
+    return {
+      date: EPOCH,
+      timestamp: EPOCH.toISOString(),
+      id: null,
+      error: "Invalid cursor timestamp",
+    };
+  }
+
+  return { date, timestamp, id };
 }
 
 /**
@@ -103,37 +166,75 @@ export interface ParsedPullCursors {
  */
 export function parseCursorsParam(cursorsParam: string | null): ParsedPullCursors {
   const cursorsByEntity = {} as Record<EntityType, Date>;
-  for (const t of PULL_ENTITY_TYPES) cursorsByEntity[t] = EPOCH;
+  const cursorTimestampsByEntity = {} as Record<EntityType, string>;
+  const cursorIdsByEntity = {} as Record<EntityType, string | null>;
+  for (const t of PULL_ENTITY_TYPES) {
+    cursorsByEntity[t] = EPOCH;
+    cursorTimestampsByEntity[t] = EPOCH.toISOString();
+    cursorIdsByEntity[t] = null;
+  }
 
-  if (!cursorsParam) return { cursorsByEntity };
+  if (!cursorsParam) return { cursorsByEntity, cursorTimestampsByEntity, cursorIdsByEntity };
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(cursorsParam);
   } catch {
-    return { cursorsByEntity, error: "Invalid 'cursors' JSON" };
+    return {
+      cursorsByEntity,
+      cursorTimestampsByEntity,
+      cursorIdsByEntity,
+      error: "Invalid 'cursors' JSON",
+    };
   }
   if (!Array.isArray(parsed)) {
-    return { cursorsByEntity, error: "'cursors' must be a JSON array" };
+    return {
+      cursorsByEntity,
+      cursorTimestampsByEntity,
+      cursorIdsByEntity,
+      error: "'cursors' must be a JSON array",
+    };
   }
 
   for (const item of parsed) {
     if (!item || typeof item !== "object") {
-      return { cursorsByEntity, error: "Invalid cursor entry" };
+      return {
+        cursorsByEntity,
+        cursorTimestampsByEntity,
+        cursorIdsByEntity,
+        error: "Invalid cursor entry",
+      };
     }
     const { entityType, cursor } = item as Partial<SyncCursor>;
     if (typeof entityType !== "string" || !PULL_ENTITY_TYPES.includes(entityType as EntityType)) {
-      return { cursorsByEntity, error: `Unknown entityType: ${String(entityType)}` };
+      return {
+        cursorsByEntity,
+        cursorTimestampsByEntity,
+        cursorIdsByEntity,
+        error: `Unknown entityType: ${String(entityType)}`,
+      };
     }
     if (typeof cursor !== "string") {
-      return { cursorsByEntity, error: `Missing cursor for ${entityType}` };
+      return {
+        cursorsByEntity,
+        cursorTimestampsByEntity,
+        cursorIdsByEntity,
+        error: `Missing cursor for ${entityType}`,
+      };
     }
-    const date = new Date(cursor);
-    if (isNaN(date.getTime())) {
-      return { cursorsByEntity, error: `Invalid cursor timestamp for ${entityType}` };
+    const parsedCursor = parsePullCursor(cursor);
+    if (parsedCursor.error) {
+      return {
+        cursorsByEntity,
+        cursorTimestampsByEntity,
+        cursorIdsByEntity,
+        error: `${parsedCursor.error} for ${entityType}`,
+      };
     }
-    cursorsByEntity[entityType as EntityType] = date;
+    cursorsByEntity[entityType as EntityType] = parsedCursor.date;
+    cursorTimestampsByEntity[entityType as EntityType] = parsedCursor.timestamp;
+    cursorIdsByEntity[entityType as EntityType] = parsedCursor.id;
   }
 
-  return { cursorsByEntity };
+  return { cursorsByEntity, cursorTimestampsByEntity, cursorIdsByEntity };
 }

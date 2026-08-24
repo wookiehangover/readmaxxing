@@ -40,6 +40,7 @@ CREATE TABLE readmax.session (
 );
 
 CREATE INDEX session_user_id_idx ON readmax.session (user_id);
+CREATE INDEX session_expires_at_idx ON readmax.session (expires_at);
 
 -- Challenges (WebAuthn registration/authentication)
 
@@ -53,6 +54,7 @@ CREATE TABLE readmax.challenge (
 );
 
 CREATE INDEX challenge_user_id_idx ON readmax.challenge (user_id);
+CREATE INDEX challenge_expires_at_idx ON readmax.challenge (expires_at);
 
 -- Magic links
 
@@ -84,6 +86,9 @@ CREATE TABLE readmax.book (
 );
 
 CREATE INDEX book_user_id_idx ON readmax.book (user_id);
+CREATE INDEX book_user_updated_idx ON readmax.book (user_id, updated_at, id);
+CREATE INDEX book_user_live_updated_idx ON readmax.book (user_id, updated_at DESC, id)
+    WHERE deleted_at IS NULL;
 
 -- Reading positions
 
@@ -94,6 +99,7 @@ CREATE TABLE readmax.reading_position (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, book_id)
 );
+CREATE INDEX reading_position_user_updated_idx ON readmax.reading_position (user_id, updated_at, book_id);
 
 -- Cached chapter extraction per book (used by chat / summarization pipelines)
 

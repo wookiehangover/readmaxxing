@@ -9,6 +9,7 @@ export interface ReadingPositionRow {
   bookId: string;
   cfi: string | null;
   updatedAt: Date;
+  cursorTimestamp?: string;
 }
 
 const POSITION_COLUMNS = sql`
@@ -88,13 +89,17 @@ export async function upsertPosition(
   }
 }
 
-export async function getPositionsByUser(userId: string): Promise<ReadingPositionRow[]> {
+export async function getPositionsByUser(
+  userId: string,
+  limit?: number,
+): Promise<ReadingPositionRow[]> {
   const pool = getPool();
   const result = await pool.query<ReadingPositionRow>(sql`
     SELECT ${POSITION_COLUMNS}
     FROM readmax.reading_position
     WHERE user_id = ${userId}
     ORDER BY updated_at DESC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }
@@ -102,14 +107,37 @@ export async function getPositionsByUser(userId: string): Promise<ReadingPositio
 export async function getPositionsByUserSince(
   userId: string,
   cursor: Date,
+  limit?: number,
+  cursorId?: string | null,
+  exactCursorTimestamp?: string,
 ): Promise<ReadingPositionRow[]> {
+  const pool = getPool();
+  const cursorTimestamp = exactCursorTimestamp ?? cursor.toISOString();
+  const result = await pool.query<ReadingPositionRow>(sql`
+    SELECT ${POSITION_COLUMNS}, updated_at::text AS "cursorTimestamp"
+    FROM readmax.reading_position
+    WHERE user_id = ${userId}
+      AND (
+        updated_at > ${cursorTimestamp}
+        OR (updated_at = ${cursorTimestamp} AND book_id > ${cursorId ?? null})
+      )
+    ORDER BY updated_at ASC, book_id ASC
+    LIMIT ${limit ?? null}
+  `);
+  return result.rows;
+}
+
+export async function getPositionForBook(
+  userId: string,
+  bookId: string,
+): Promise<ReadingPositionRow | null> {
   const pool = getPool();
   const result = await pool.query<ReadingPositionRow>(sql`
     SELECT ${POSITION_COLUMNS}
     FROM readmax.reading_position
     WHERE user_id = ${userId}
-      AND updated_at > ${cursor.toISOString()}
-    ORDER BY updated_at ASC
+      AND book_id = ${bookId}
+    LIMIT 1
   `);
-  return result.rows;
+  return result.rows[0] ?? null;
 }

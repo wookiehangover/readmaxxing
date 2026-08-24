@@ -13,6 +13,7 @@ export interface BookmarkRow {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  cursorTimestamp?: string;
 }
 
 export interface UpsertBookmarkData {
@@ -97,15 +98,26 @@ export async function softDeleteBookmark(userId: string, bookmarkId: string): Pr
   return (result.rowCount ?? 0) > 0;
 }
 
-export async function getBookmarksByUser(userId: string, since?: Date): Promise<BookmarkRow[]> {
+export async function getBookmarksByUser(
+  userId: string,
+  since?: Date,
+  limit?: number,
+  cursorId?: string | null,
+  exactCursorTimestamp?: string,
+): Promise<BookmarkRow[]> {
   const pool = getPool();
   if (since) {
+    const cursorTimestamp = exactCursorTimestamp ?? since.toISOString();
     const result = await pool.query<BookmarkRow>(sql`
-      SELECT ${BOOKMARK_COLUMNS}
+      SELECT ${BOOKMARK_COLUMNS}, updated_at::text AS "cursorTimestamp"
       FROM readmax.bookmark
       WHERE user_id = ${userId}
-        AND (updated_at > ${since.toISOString()} OR deleted_at > ${since.toISOString()})
-      ORDER BY updated_at ASC
+        AND (
+          updated_at > ${cursorTimestamp}
+          OR (updated_at = ${cursorTimestamp} AND id > ${cursorId ?? null})
+        )
+      ORDER BY updated_at ASC, id ASC
+      LIMIT ${limit ?? null}
     `);
     return result.rows;
   }
@@ -114,7 +126,8 @@ export async function getBookmarksByUser(userId: string, since?: Date): Promise<
     SELECT ${BOOKMARK_COLUMNS}
     FROM readmax.bookmark
     WHERE user_id = ${userId}
-    ORDER BY updated_at ASC
+    ORDER BY updated_at ASC, id ASC
+    LIMIT ${limit ?? null}
   `);
   return result.rows;
 }

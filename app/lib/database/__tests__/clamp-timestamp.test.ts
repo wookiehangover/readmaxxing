@@ -232,5 +232,6 @@ describe("upsertBook (clamped updated_at)", () => {
     expect(sqlText).toContain("EXCLUDED.updated_at = readmax.book.updated_at");
     expect(sqlText).toContain("EXCLUDED.deleted_at IS NULL");
     expect(sqlText).toContain("readmax.book.deleted_at IS NOT NULL");
+    expect(sqlText).toContain("THEN readmax.book.updated_at + INTERVAL '1 millisecond'");
   });
 });

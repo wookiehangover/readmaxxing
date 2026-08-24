@@ -9,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { getBookByIdForUser } from "~/lib/database/book/book";
-import { getPositionsByUser } from "~/lib/database/book/reading-position";
+import { getPositionForBook } from "~/lib/database/book/reading-position";
 import { getShareLink, type ShareLinkRow } from "~/lib/database/share/share-link";
 import { getUser } from "~/lib/database/user/user";
 import { signDownloadToken } from "~/lib/share-download-token";
@@ -82,10 +82,10 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     };
   }
 
-  const [book, sharer, positions] = await Promise.all([
+  const [book, sharer, currentPosition] = await Promise.all([
     getBookByIdForUser(shareLink.bookId, shareLink.userId),
     getUser(shareLink.userId),
-    getPositionsByUser(shareLink.userId),
+    getPositionForBook(shareLink.userId, shareLink.bookId),
   ]);
   if (!book || book.deletedAt || !book.fileBlobUrl) {
     return {
@@ -96,9 +96,6 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     };
   }
 
-  const currentPosition = positions.find(
-    (position) => position.bookId === shareLink.bookId && position.cfi,
-  );
   const bookData: ShareBookData = {
     title: book.title ?? "Untitled",
     author: book.author ?? "Unknown Author",
