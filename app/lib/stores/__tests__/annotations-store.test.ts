@@ -1,9 +1,38 @@
 import { describe, it, expect } from "vitest";
-import { Effect, Layer } from "effect";
 import { createStore } from "idb-keyval";
-import { AnnotationService, makeAnnotationService } from "~/lib/stores/annotations-store";
+import {
+  AnnotationService as LiveAnnotationService,
+  makeAnnotationService,
+} from "~/lib/stores/annotations-store";
 import type { Highlight, Notebook } from "~/lib/stores/annotations-store";
 import { getUnsyncedChanges, markSynced, clearSyncedChanges } from "~/lib/sync/change-log";
+
+type AnnotationService = typeof LiveAnnotationService;
+let currentService = LiveAnnotationService;
+const AnnotationService = {
+  pipe: <A>(operation: (service: AnnotationService) => Promise<A>) => operation(currentService),
+};
+const Layer = {
+  succeed: (_tag: unknown, service: AnnotationService) => {
+    currentService = service;
+    return undefined;
+  },
+};
+namespace Effect {
+  export type Effect<A, _E = never, _R = never> = Promise<A>;
+}
+const Effect = {
+  andThen: <A>(operation: (service: AnnotationService) => Promise<A>) => operation,
+  provide: <A>(promise: Promise<A>, _layer: unknown) => promise,
+  runPromise: <A>(promise: Promise<A>) => promise,
+  runPromiseExit: async <A>(promise: Promise<A>) => {
+    try {
+      return { _tag: "Success" as const, value: await promise };
+    } catch (error) {
+      return { _tag: "Failure" as const, cause: { error } };
+    }
+  },
+};
 
 function makeHighlight(overrides: Partial<Highlight> = {}): Highlight {
   return {
@@ -180,9 +209,8 @@ describe("AnnotationService", () => {
 
       // Simulate what append_to_notes does: read, merge, save immediately
       await run(
-        Effect.gen(function* () {
-          const svc = yield* AnnotationService;
-          const notebook = yield* svc.getNotebook("book-1");
+        (async () => {
+          const notebook = await currentService.getNotebook("book-1");
           const existingContent = notebook?.content?.content ?? [];
           const newNode = {
             type: "paragraph",
@@ -192,13 +220,13 @@ describe("AnnotationService", () => {
             type: "doc" as const,
             content: [...existingContent, newNode],
           };
-          yield* svc.saveNotebook({
+          await currentService.saveNotebook({
             bookId: "book-1",
             content: updatedContent,
             updatedAt: Date.now(),
           });
           return updatedContent;
-        }),
+        })(),
       );
 
       // Immediately read back — no debounce delay, simulating unmount right after
@@ -231,9 +259,8 @@ describe("AnnotationService", () => {
       // Simulate append_to_notes fallback: no editor callbacks available,
       // so we read from IndexedDB, merge, and write back
       await run(
-        Effect.gen(function* () {
-          const svc = yield* AnnotationService;
-          const notebook = yield* svc.getNotebook("book-1");
+        (async () => {
+          const notebook = await currentService.getNotebook("book-1");
           const existingContent = notebook?.content?.content ?? [];
           const newNodes = [
             {
@@ -247,12 +274,12 @@ describe("AnnotationService", () => {
             type: "doc" as const,
             content: [...existingContent, ...newNodes],
           };
-          yield* svc.saveNotebook({
+          await currentService.saveNotebook({
             bookId: "book-1",
             content: updatedContent,
             updatedAt: Date.now(),
           });
-        }),
+        })(),
       );
 
       const result = await run(
@@ -288,12 +315,13 @@ describe("AnnotationService", () => {
           content: [{ type: "paragraph", content: [{ type: "text", text: "server truth" }] }],
         },
       });
-      await run(AnnotationService.pipe(Effect.andThen((s) => s.cacheNotebook(nb))));
+      const cached = await run(AnnotationService.pipe(Effect.andThen((s) => s.cacheNotebook(nb))));
 
       // IDB should have the notebook row so warm-start matches server state.
       const stored = await run(
         AnnotationService.pipe(Effect.andThen((s) => s.getNotebook("book-1"))),
       );
+      expect(cached).toEqual(nb);
       expect(stored).not.toBeNull();
       expect((stored!.content as any).content[0].content[0].text).toBe("server truth");
 
@@ -302,6 +330,40 @@ describe("AnnotationService", () => {
       const unsynced = await getUnsyncedChanges();
       const echoed = unsynced.filter((c) => c.entity === "notebook" && c.entityId === "book-1");
       expect(echoed).toHaveLength(0);
+    });
+
+    it("cacheNotebook retains a newer IndexedDB notebook without recording a sync change", async () => {
+      const layer = makeTestLayer();
+      const run = <A, E>(e: Effect.Effect<A, E, AnnotationService>) =>
+        Effect.runPromise(Effect.provide(e, layer));
+      const pre = await getUnsyncedChanges();
+      if (pre.length > 0) {
+        await markSynced(pre.map((change) => change.id));
+        await clearSyncedChanges();
+      }
+      const newer = makeNotebook({
+        content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "newer" } }] },
+        updatedAt: 2,
+      });
+      const older = makeNotebook({
+        content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "older" } }] },
+        updatedAt: 1,
+      });
+      await run(AnnotationService.pipe(Effect.andThen((service) => service.cacheNotebook(newer))));
+
+      const cached = await run(
+        AnnotationService.pipe(Effect.andThen((service) => service.cacheNotebook(older))),
+      );
+      const stored = await run(
+        AnnotationService.pipe(Effect.andThen((service) => service.getNotebook("book-1"))),
+      );
+
+      expect(cached).toEqual(newer);
+      expect(stored).toEqual(newer);
+      const unsynced = await getUnsyncedChanges();
+      expect(
+        unsynced.filter((change) => change.entity === "notebook" && change.entityId === "book-1"),
+      ).toHaveLength(0);
     });
 
     it("edit_notes reads real content from IndexedDB when editor is not ready", async () => {

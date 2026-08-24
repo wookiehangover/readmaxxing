@@ -1,4 +1,13 @@
-import ePub from "epubjs";
+import { openPublication, openZipResourceProvider } from "@readmaxxing/epub-successor";
+import type { Link, TocEntry } from "@readmaxxing/epub-successor";
+import { extractCompatibleToc } from "~/lib/epub/successor-reader-adapter";
+
+export interface BookChapterSegment {
+  spineIndex: number;
+  href: string;
+  start: number;
+  end: number;
+}
 
 export interface BookChapter {
   index: number;
@@ -6,12 +15,8 @@ export interface BookChapter {
   text: string;
   spineStart: number;
   spineEnd: number;
-}
-
-interface TocEntryLike {
-  label?: string;
-  href?: string;
-  subitems?: TocEntryLike[];
+  /** Absent on chapters extracted before per-spine bookkeeping was added. */
+  segments?: BookChapterSegment[];
 }
 
 interface SpineTextItem {
@@ -23,6 +28,26 @@ interface SpineTextItem {
 interface TocChapterStart {
   title: string;
   spineStart: number;
+}
+
+export function joinSpineTextSegments(spineTexts: readonly SpineTextItem[]): {
+  text: string;
+  segments: BookChapterSegment[];
+} {
+  let text = "";
+  const segments: BookChapterSegment[] = [];
+
+  for (const item of spineTexts) {
+    if (!item.text) continue;
+
+    // Separators are gaps between segments and belong to neither spine item.
+    if (text) text += "\n\n";
+    const start = text.length;
+    text += item.text;
+    segments.push({ spineIndex: item.index, href: item.href, start, end: text.length });
+  }
+
+  return { text, segments };
 }
 
 function normalizeEpubHref(href: string): string {
@@ -60,24 +85,24 @@ function filenameFromHref(href: string): string {
   );
 }
 
-function flattenTocToUsefulEntries(entries: TocEntryLike[]): TocEntryLike[] {
+function flattenTocToUsefulEntries(entries: readonly TocEntry[]): readonly TocEntry[] {
   return entries.flatMap((entry) => {
-    const subitems = entry.subitems?.filter((subitem) => subitem.label?.trim() || subitem.href);
+    const children = entry.children.filter((child) => child.title.trim() || child.href);
 
     // EPUB TOCs often use top-level entries for "Part" containers and nested
     // entries for the actual readable chapters. The chat model needs the same
     // logical chapter units a reader sees, so prefer leaf entries; when leaves
     // point into the same spine file, later range building dedupes them because
     // spine-level extraction cannot safely split by fragment anchors.
-    if (subitems && subitems.length > 0) {
-      return flattenTocToUsefulEntries(subitems);
+    if (children.length > 0) {
+      return flattenTocToUsefulEntries(children);
     }
 
     return [entry];
   });
 }
 
-function findSpineIndexForHref(spineItems: any[], href: string): number | null {
+function findSpineIndexForHref(spineItems: readonly Link[], href: string): number | null {
   const normalizedHref = normalizeEpubHref(href);
   if (!normalizedHref) {
     return null;
@@ -87,11 +112,14 @@ function findSpineIndexForHref(spineItems: any[], href: string): number | null {
   return matchIndex >= 0 ? matchIndex : null;
 }
 
-function buildTocChapterStarts(spineItems: any[], toc: TocEntryLike[]): TocChapterStart[] {
+function buildTocChapterStarts(
+  spineItems: readonly Link[],
+  toc: readonly TocEntry[],
+): TocChapterStart[] {
   const starts = flattenTocToUsefulEntries(toc)
     .map((entry): TocChapterStart | null => {
-      const title = entry.label?.trim();
-      const href = entry.href ?? "";
+      const title = entry.title.trim();
+      const href = entry.href;
       const spineStart = findSpineIndexForHref(spineItems, href);
 
       if (!title || spineStart === null) {
@@ -117,62 +145,48 @@ function buildTocChapterStarts(spineItems: any[], toc: TocEntryLike[]): TocChapt
 function buildFallbackChapters(spineTexts: SpineTextItem[]): BookChapter[] {
   return spineTexts
     .filter((item) => item.text.length > 0)
-    .map((item) => ({
-      index: item.index,
-      title: filenameFromHref(item.href) || `Chapter ${item.index + 1}`,
-      text: item.text,
-      spineStart: item.index,
-      spineEnd: item.index + 1,
-    }));
+    .map((item) => {
+      const content = joinSpineTextSegments([item]);
+      return {
+        index: item.index,
+        title: filenameFromHref(item.href) || `Chapter ${item.index + 1}`,
+        ...content,
+        spineStart: item.index,
+        spineEnd: item.index + 1,
+      };
+    });
 }
 
 /**
  * Extract structured chapter data from an epub ArrayBuffer.
- * Client-side only — epubjs requires DOM.
+ * Client-side only because chapter extraction uses DOMParser.
  *
  * @param data - The epub file as an ArrayBuffer
  * @returns Array of logical chapters with index, title, text, and spine range
  */
 export async function extractBookChapters(data: ArrayBuffer): Promise<BookChapter[]> {
-  const book = ePub(data);
+  const provider = await openZipResourceProvider(data);
 
   try {
-    await book.ready;
-
-    const spine = book.spine as any;
-    if (typeof spine.each !== "function") {
-      return [];
-    }
-
-    let toc: TocEntryLike[] = [];
-    try {
-      const nav = await book.loaded.navigation;
-      if (nav?.toc) {
-        toc = nav.toc as TocEntryLike[];
-      }
-    } catch {
-      // Navigation may not be available for all epubs
-    }
-
-    // Collect spine items
-    const spineItems: any[] = [];
-    spine.each((item: any) => {
-      spineItems.push(item);
-    });
+    const opened = await openPublication(provider);
+    if (!opened.publication) return [];
+    const publication = opened.publication;
+    const spineItems = publication.readingOrder;
+    const toc = await extractCompatibleToc(publication, provider);
 
     const spineTexts: SpineTextItem[] = [];
 
     for (let i = 0; i < spineItems.length; i++) {
-      const item = spineItems[i];
+      const item = spineItems[i]!;
 
       try {
-        await item.load(book.load.bind(book));
-        const text = item.document?.body?.textContent?.trim() ?? "";
-        item.unload();
+        const source = await provider.readText(item.href);
+        const document = new DOMParser().parseFromString(source, "application/xhtml+xml");
+        const text = document.body?.textContent?.trim() ?? "";
 
-        spineTexts.push({ index: i, href: item.href ?? "", text });
+        spineTexts.push({ index: i, href: item.href, text });
       } catch (err) {
-        console.warn(`Failed to load spine item "${item.href ?? "unknown"}":`, err);
+        console.warn(`Failed to load spine item "${item.href}":`, err);
         continue;
       }
     }
@@ -182,33 +196,33 @@ export async function extractBookChapters(data: ArrayBuffer): Promise<BookChapte
       return buildFallbackChapters(spineTexts);
     }
 
+    // Keep the tocStarts position as the chapter index even when empty-text
+    // chapters are dropped: logicalChapterIndex (successor-toc.ts) derives the
+    // reader's current chapter from the same TOC start list, so compacting
+    // indexes here would report chapters ahead of the reader's position.
     const chapters = tocStarts
       .map((start, index): BookChapter | null => {
         const spineEnd = tocStarts[index + 1]?.spineStart ?? spineItems.length;
-        const text = spineTexts
-          .filter((item) => item.index >= start.spineStart && item.index < spineEnd)
-          .map((item) => item.text)
-          .filter(Boolean)
-          .join("\n\n")
-          .trim();
+        const content = joinSpineTextSegments(
+          spineTexts.filter((item) => item.index >= start.spineStart && item.index < spineEnd),
+        );
 
-        if (!text) {
+        if (!content.text) {
           return null;
         }
 
         return {
           index,
           title: start.title,
-          text,
+          ...content,
           spineStart: start.spineStart,
           spineEnd,
         };
       })
-      .filter((chapter): chapter is BookChapter => chapter !== null)
-      .map((chapter, index) => ({ ...chapter, index }));
+      .filter((chapter): chapter is BookChapter => chapter !== null);
 
     return chapters.length > 0 ? chapters : buildFallbackChapters(spineTexts);
   } finally {
-    book.destroy();
+    provider.close();
   }
 }

@@ -1,4 +1,8 @@
-import type EpubBook from "epubjs/types/book";
+import { openPublication, openZipResourceProvider } from "@readmaxxing/epub-successor";
+import {
+  createSuccessorBookAdapter,
+  type SuccessorBookAdapter,
+} from "~/lib/epub/successor-reader-adapter";
 
 export interface SearchResult {
   cfi: string;
@@ -23,18 +27,20 @@ export function normalizeSearchText(text: string): string {
     .replace(/\u2014/g, "--") // em dash → double hyphen
     .replace(/\u2013/g, "-") // en dash → hyphen
     .replace(/\u2026/g, "...") // ellipsis char → three dots
+    .replace(/[\u00A0\u202F]/g, " ") // non-breaking spaces → regular space
+    .replace(/[\u200B-\u200D\uFEFF]/g, "") // strip zero-width characters
     .replace(/\s+/g, " ") // collapse whitespace
     .trim();
 }
 
 /**
- * Search an epubjs Book instance for a query string across all spine items.
+ * Search a successor-backed book adapter for a query string across all spine items.
  * Returns an array of results with CFI locations, excerpts, and section labels.
  *
  * This is a standalone, testable utility extracted from the useBookSearch hook.
  */
 export async function searchBookForCfi(
-  book: EpubBook,
+  book: SuccessorBookAdapter,
   query: string,
   options?: SearchOptions,
 ): Promise<SearchResult[]> {
@@ -83,7 +89,7 @@ export async function searchBookForCfi(
  * Designed for AI-generated text that may not match epub source exactly.
  */
 export async function fuzzySearchBookForCfi(
-  book: EpubBook,
+  book: SuccessorBookAdapter,
   query: string,
   options?: SearchOptions,
 ): Promise<SearchResult[]> {
@@ -108,4 +114,23 @@ export async function fuzzySearchBookForCfi(
   }
 
   return [];
+}
+
+export async function fuzzySearchEpubForCfi(
+  data: ArrayBuffer,
+  query: string,
+  options?: SearchOptions,
+): Promise<SearchResult[]> {
+  const provider = await openZipResourceProvider(data, { signal: options?.signal });
+  try {
+    const opened = await openPublication(provider, { signal: options?.signal });
+    if (!opened.publication) return [];
+    return await fuzzySearchBookForCfi(
+      createSuccessorBookAdapter(opened.publication, provider),
+      query,
+      options,
+    );
+  } finally {
+    provider.close();
+  }
 }

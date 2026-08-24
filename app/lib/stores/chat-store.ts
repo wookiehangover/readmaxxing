@@ -1,5 +1,4 @@
 import { get, set, del } from "idb-keyval";
-import { Context, Effect, Layer } from "effect";
 import { ChatError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
 import {
@@ -96,51 +95,6 @@ export async function removeSessionLocally(bookId: string, sessionId: string): P
   }
 }
 
-// --- Service interface ---
-
-export class ChatService extends Context.Tag("ChatService")<
-  ChatService,
-  {
-    // Warm-start read path (delegates to the active session)
-    readonly getMessages: (bookId: string) => Effect.Effect<ChatMessage[], ChatError>;
-
-    // Session CRUD
-    readonly createSession: (
-      bookId: string,
-      title?: string,
-    ) => Effect.Effect<ChatSession, ChatError>;
-    readonly getSession: (
-      sessionId: string,
-      bookId: string,
-    ) => Effect.Effect<ChatSession | null, ChatError>;
-    readonly getSessionsByBook: (bookId: string) => Effect.Effect<ChatSession[], ChatError>;
-    readonly deleteSession: (sessionId: string, bookId: string) => Effect.Effect<void, ChatError>;
-
-    // Active session tracking per book
-    readonly getActiveSessionId: (bookId: string) => Effect.Effect<string | null, ChatError>;
-    readonly setActiveSessionId: (
-      bookId: string,
-      sessionId: string,
-    ) => Effect.Effect<void, ChatError>;
-
-    // Title edits (LWW via recordChange)
-    readonly updateSessionTitle: (
-      sessionId: string,
-      bookId: string,
-      title: string,
-    ) => Effect.Effect<void, ChatError>;
-
-    // Server-reconciliation cache write. Replaces the active session's
-    // messages in IDB with the authoritative server list. Does NOT enqueue
-    // sync changes — the server is already the source of truth for chat.
-    readonly cacheServerMessages: (
-      bookId: string,
-      sessionId: string,
-      messages: ChatMessage[],
-    ) => Effect.Effect<void, ChatError>;
-  }
->() {}
-
 // --- Migration helper ---
 
 /**
@@ -177,143 +131,122 @@ async function migrateOldMessages(bookId: string): Promise<ChatSession[]> {
   return [session];
 }
 
-// --- Live implementation ---
+async function chatOperation<T>(operation: string, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (cause) {
+    throw new ChatError({ operation, cause });
+  }
+}
 
-export const ChatServiceLive = Layer.succeed(ChatService, {
+export const ChatService = {
   // --- Warm-start read path ---
 
-  getMessages: (bookId) =>
-    Effect.tryPromise({
-      try: async () => {
-        let sessions = await get<ChatSession[]>(bookId, getSessionStore());
-        if (!sessions || sessions.length === 0) {
-          sessions = await migrateOldMessages(bookId);
-        }
-        if (!sessions || sessions.length === 0) return [];
+  getMessages: (bookId: string) =>
+    chatOperation("getMessages", async () => {
+      let sessions = await get<ChatSession[]>(bookId, getSessionStore());
+      if (!sessions || sessions.length === 0) {
+        sessions = await migrateOldMessages(bookId);
+      }
+      if (!sessions || sessions.length === 0) return [];
 
-        const activeId = await get<string>(bookId, getActiveSessionStore());
-        const active = activeId
-          ? sessions.find((s) => s.id === activeId)
-          : sessions[sessions.length - 1];
-        return active?.messages ?? [];
-      },
-      catch: (cause) => new ChatError({ operation: "getMessages", cause }),
+      const activeId = await get<string>(bookId, getActiveSessionStore());
+      const active = activeId
+        ? sessions.find((s) => s.id === activeId)
+        : sessions[sessions.length - 1];
+      return active?.messages ?? [];
     }),
 
   // --- Session CRUD ---
 
-  createSession: (bookId, title) =>
-    Effect.tryPromise({
-      try: async () => {
-        const now = Date.now();
-        const session: ChatSession = {
-          id: generateSessionId(),
-          bookId,
-          title: title ?? "",
-          messages: [],
-          createdAt: now,
-          updatedAt: now,
-        };
-        const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
-        sessions.push(session);
-        await set(bookId, sessions, getSessionStore());
-        await set(bookId, session.id, getActiveSessionStore());
-        trackSessionChange(session);
-        return session;
-      },
-      catch: (cause) => new ChatError({ operation: "createSession", cause }),
+  createSession: (bookId: string, title?: string) =>
+    chatOperation("createSession", async () => {
+      const now = Date.now();
+      const session: ChatSession = {
+        id: generateSessionId(),
+        bookId,
+        title: title ?? "",
+        messages: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
+      sessions.push(session);
+      await set(bookId, sessions, getSessionStore());
+      await set(bookId, session.id, getActiveSessionStore());
+      trackSessionChange(session);
+      return session;
     }),
 
-  getSession: (sessionId, bookId) =>
-    Effect.tryPromise({
-      try: async () => {
-        const sessions = await get<ChatSession[]>(bookId, getSessionStore());
-        return sessions?.find((s) => s.id === sessionId) ?? null;
-      },
-      catch: (cause) => new ChatError({ operation: "getSession", cause }),
+  getSession: (sessionId: string, bookId: string) =>
+    chatOperation("getSession", async () => {
+      const sessions = await get<ChatSession[]>(bookId, getSessionStore());
+      return sessions?.find((s) => s.id === sessionId) ?? null;
     }),
 
-  getSessionsByBook: (bookId) =>
-    Effect.tryPromise({
-      try: async () => {
-        let sessions = await get<ChatSession[]>(bookId, getSessionStore());
-        if (!sessions || sessions.length === 0) {
-          sessions = await migrateOldMessages(bookId);
+  getSessionsByBook: (bookId: string) =>
+    chatOperation("getSessionsByBook", async () => {
+      let sessions = await get<ChatSession[]>(bookId, getSessionStore());
+      if (!sessions || sessions.length === 0) {
+        sessions = await migrateOldMessages(bookId);
+      }
+      return sessions ?? [];
+    }),
+
+  cacheServerMessages: (bookId: string, sessionId: string, messages: ChatMessage[]) =>
+    chatOperation("cacheServerMessages", async () => {
+      const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
+      const idx = sessions.findIndex((s) => s.id === sessionId);
+      if (idx < 0) return;
+      // Server is authoritative for chat messages, so this is a warm-start
+      // cache update only. Do NOT bump updatedAt — it is the LWW clock for
+      // session metadata (title, bookId), and bumping it on every message
+      // hydration would silently overwrite legitimate metadata edits from
+      // other devices on the next sync pull.
+      sessions[idx] = { ...sessions[idx], messages };
+      await set(bookId, sessions, getSessionStore());
+    }),
+
+  deleteSession: (sessionId: string, bookId: string) =>
+    chatOperation("deleteSession", async () => {
+      const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
+      const deleted = sessions.find((s) => s.id === sessionId);
+      const filtered = sessions.filter((s) => s.id !== sessionId);
+      await set(bookId, filtered, getSessionStore());
+
+      if (deleted) {
+        trackSessionChange({ ...deleted, updatedAt: Date.now() }, "delete");
+      }
+
+      // If the deleted session was active, clear or reset active
+      const activeId = await get<string>(bookId, getActiveSessionStore());
+      if (activeId === sessionId) {
+        if (filtered.length > 0) {
+          await set(bookId, filtered[filtered.length - 1].id, getActiveSessionStore());
+        } else {
+          await del(bookId, getActiveSessionStore());
         }
-        return sessions ?? [];
-      },
-      catch: (cause) => new ChatError({ operation: "getSessionsByBook", cause }),
-    }),
-
-  cacheServerMessages: (bookId, sessionId, messages) =>
-    Effect.tryPromise({
-      try: async () => {
-        const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
-        const idx = sessions.findIndex((s) => s.id === sessionId);
-        if (idx < 0) return;
-        // Server is authoritative for chat messages, so this is a warm-start
-        // cache update only. Do NOT bump updatedAt — it is the LWW clock for
-        // session metadata (title, bookId), and bumping it on every message
-        // hydration would silently overwrite legitimate metadata edits from
-        // other devices on the next sync pull.
-        sessions[idx] = { ...sessions[idx], messages };
-        await set(bookId, sessions, getSessionStore());
-      },
-      catch: (cause) => new ChatError({ operation: "cacheServerMessages", cause }),
-    }),
-
-  deleteSession: (sessionId, bookId) =>
-    Effect.tryPromise({
-      try: async () => {
-        const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
-        const deleted = sessions.find((s) => s.id === sessionId);
-        const filtered = sessions.filter((s) => s.id !== sessionId);
-        await set(bookId, filtered, getSessionStore());
-
-        if (deleted) {
-          trackSessionChange({ ...deleted, updatedAt: Date.now() }, "delete");
-        }
-
-        // If the deleted session was active, clear or reset active
-        const activeId = await get<string>(bookId, getActiveSessionStore());
-        if (activeId === sessionId) {
-          if (filtered.length > 0) {
-            await set(bookId, filtered[filtered.length - 1].id, getActiveSessionStore());
-          } else {
-            await del(bookId, getActiveSessionStore());
-          }
-        }
-      },
-      catch: (cause) => new ChatError({ operation: "deleteSession", cause }),
+      }
     }),
 
   // --- Active session tracking ---
 
-  getActiveSessionId: (bookId) =>
-    Effect.tryPromise({
-      try: async () => {
-        return (await get<string>(bookId, getActiveSessionStore())) ?? null;
-      },
-      catch: (cause) => new ChatError({ operation: "getActiveSessionId", cause }),
+  getActiveSessionId: (bookId: string) =>
+    chatOperation("getActiveSessionId", async () => {
+      return (await get<string>(bookId, getActiveSessionStore())) ?? null;
     }),
 
-  setActiveSessionId: (bookId, sessionId) =>
-    Effect.tryPromise({
-      try: () => set(bookId, sessionId, getActiveSessionStore()),
-      catch: (cause) => new ChatError({ operation: "setActiveSessionId", cause }),
-    }),
+  setActiveSessionId: (bookId: string, sessionId: string) =>
+    chatOperation("setActiveSessionId", () => set(bookId, sessionId, getActiveSessionStore())),
 
-  updateSessionTitle: (sessionId, bookId, title) =>
-    Effect.tryPromise({
-      try: async () => {
-        const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
-        const idx = sessions.findIndex((s) => s.id === sessionId);
-        if (idx >= 0) {
-          sessions[idx] = { ...sessions[idx], title, updatedAt: Date.now() };
-          await set(bookId, sessions, getSessionStore());
-          trackSessionChange(sessions[idx]);
-        }
-      },
-      catch: (cause) => new ChatError({ operation: "updateSessionTitle", cause }),
+  updateSessionTitle: (sessionId: string, bookId: string, title: string) =>
+    chatOperation("updateSessionTitle", async () => {
+      const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
+      const idx = sessions.findIndex((s) => s.id === sessionId);
+      if (idx >= 0) {
+        sessions[idx] = { ...sessions[idx], title, updatedAt: Date.now() };
+        await set(bookId, sessions, getSessionStore());
+        trackSessionChange(sessions[idx]);
+      }
     }),
-});
+};

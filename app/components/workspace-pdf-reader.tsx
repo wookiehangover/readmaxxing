@@ -1,78 +1,41 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
-import { Button } from "~/components/ui/button";
-import {
-  ChevronLeft,
-  ChevronRight,
-  MessageCircle,
-  Notebook,
-  Search,
-  TableOfContents,
-} from "lucide-react";
-import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
-import { TocList } from "~/components/book-list";
-import { Effect } from "effect";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
-import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
 import { HighlightPopover } from "~/components/highlight-popover";
-import { SearchBar } from "~/components/search-bar";
-import { useEffectQuery } from "~/hooks/use-effect-query";
-import { cn } from "~/lib/utils";
-import { AppRuntime } from "~/lib/effect-runtime";
-import type { DockviewPanelApi } from "dockview";
+import { useAppStore } from "~/lib/themis/provider";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
+import { useReadingLocation } from "~/hooks/use-reading-location";
 import { usePdfSearch } from "~/hooks/use-pdf-search";
 import { usePdfHighlights } from "~/hooks/use-pdf-highlights";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { usePdfWorkspacePanels } from "~/hooks/use-pdf-workspace-panels";
 import type { PanelTypographyParams } from "~/components/workspace-book-reader";
-import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 import { useSyncListener } from "~/hooks/use-sync-listener";
+import { PdfReaderView } from "~/components/workspace-pdf-reader/pdf-reader-view";
+import {
+  addBookmarkRequested,
+  deleteBookmarkRequested,
+  hydrateBookmarksRequested,
+} from "~/lib/themis/bookmarks/bookmarks-slice";
+import { useSyncToFurthestPosition } from "~/hooks/use-sync-to-furthest-position";
 
 interface WorkspacePdfReaderProps {
   bookId: string;
-  panelApi?: DockviewPanelApi;
   panelTypography?: PanelTypographyParams;
 }
 
-export function WorkspacePdfReader({ bookId, panelApi, panelTypography }: WorkspacePdfReaderProps) {
-  const [hasBeenVisible, setHasBeenVisible] = useState(() =>
-    panelApi ? panelApi.isVisible : true,
-  );
+export function WorkspacePdfReader({ bookId, panelTypography }: WorkspacePdfReaderProps) {
+  // Look up book metadata from the Themis books collection. Populated at app
+  // startup by the books hydrate saga, so this is a synchronous read.
+  const store = useAppStore();
+  const booksLoading = store.booksSelectors.selectBooksLoading.useValue();
+  const book = store.booksSelectors.selectBookById.useValue(bookId);
 
-  useEffect(() => {
-    if (!panelApi || hasBeenVisible) return;
-    if (panelApi.isVisible) {
-      setHasBeenVisible(true);
-      return;
-    }
-    const disposable = panelApi.onDidVisibilityChange((e) => {
-      if (e.isVisible) {
-        setHasBeenVisible(true);
-        disposable.dispose();
-      }
-    });
-    return () => disposable.dispose();
-  }, [panelApi, hasBeenVisible]);
-
-  const {
-    data: book,
-    error,
-    isLoading,
-  } = useEffectQuery(
-    () =>
-      BookService.pipe(
-        Effect.andThen((s) => s.getBook(bookId)),
-        Effect.catchTag("BookNotFoundError", () => Effect.succeed(null as BookMeta | null)),
-      ),
-    [bookId],
-  );
-
-  if (isLoading) {
+  if (!book && booksLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Loading book…</p>
@@ -80,7 +43,7 @@ export function WorkspacePdfReader({ bookId, panelApi, panelTypography }: Worksp
     );
   }
 
-  if (error || !book) {
+  if (!book) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Book not found.</p>
@@ -88,26 +51,15 @@ export function WorkspacePdfReader({ bookId, panelApi, panelTypography }: Worksp
     );
   }
 
-  return (
-    <WorkspacePdfReaderInner
-      book={book}
-      panelApi={panelApi}
-      panelTypography={panelTypography}
-      hasBeenVisible={hasBeenVisible}
-    />
-  );
+  return <WorkspacePdfReaderInner book={book} panelTypography={panelTypography} />;
 }
 
 function WorkspacePdfReaderInner({
   book,
-  panelApi,
   panelTypography,
-  hasBeenVisible,
 }: {
   book: BookMeta;
-  panelApi?: DockviewPanelApi;
   panelTypography?: PanelTypographyParams;
-  hasBeenVisible: boolean;
 }) {
   const { tocMap, tocChangeListener } = useWorkspace();
   const isMobile = useIsMobile();
@@ -124,7 +76,6 @@ function WorkspacePdfReaderInner({
   );
 
   const [tocOpen, setTocOpen] = useState(false);
-  const [bookmarkVersion, setBookmarkVersion] = useState(0);
   const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
 
   // Ref-based callback so usePdfHighlights always calls the latest handleOpenNotebook
@@ -147,13 +98,14 @@ function WorkspacePdfReaderInner({
 
   const {
     toc,
+    currentChapterLabel,
     bookProgress,
     currentPage,
+    hasRestoredPosition,
     totalPages,
     goToPage,
     goNext,
     goPrev,
-    flushPositionSave,
     pdfDocRef,
     eventBusRef,
   } = usePdfLifecycle({
@@ -162,37 +114,28 @@ function WorkspacePdfReaderInner({
     pdfLayout: localPdfLayout,
     theme: settings.theme,
     fontSize: localFontSize,
-    enabled: hasBeenVisible,
-    panelId: panelApi?.id,
     onTocExtracted: (tocData) => {
-      const id = panelApi?.id ?? book.id;
-      tocMap.current.set(id, tocData);
+      tocMap.current.set(book.id, tocData);
       tocChangeListener.current?.();
     },
     onCleanupToc: () => {
-      const id = panelApi?.id ?? book.id;
-      tocMap.current.delete(id);
+      tocMap.current.delete(book.id);
       tocChangeListener.current?.();
     },
     onRelocated: showToolbar,
     panelRef,
     onAfterRender: reapplyAllHighlights,
   });
+  useReadingLocation(book.id, currentChapterLabel, currentPage, totalPages);
 
   const bookmarkSyncVersion = useSyncListener(["bookmark"]);
-  const { data: bookmarks } = useEffectQuery(
-    () =>
-      BookmarkService.pipe(
-        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to load bookmarks:", error);
-            return [] as BookmarkRecord[];
-          }),
-        ),
-      ),
-    [book.id, bookmarkVersion, bookmarkSyncVersion],
-  );
+  const store = useAppStore();
+  const bookmarks = store.bookmarksSelectors.selectBookmarksByBook.useValue(book.id);
+  const bookmarksLoaded = store.bookmarksSelectors.selectBookmarksLoaded.useValue(book.id);
+
+  useEffect(() => {
+    store.dispatch(hydrateBookmarksRequested(book.id));
+  }, [book.id, bookmarkSyncVersion, store]);
 
   // Load highlights once after initial render
   const highlightsLoadedRef = useRef(false);
@@ -230,46 +173,23 @@ function WorkspacePdfReaderInner({
     return () => window.removeEventListener("book-search:open", handleBookSearchOpen);
   }, [book.id, handleSearchOpen]);
 
-  // Handle panel visibility changes
-  useEffect(() => {
-    if (!panelApi) return;
-
-    const visDisposable = panelApi.onDidVisibilityChange((e) => {
-      if (!e.isVisible) flushPositionSave();
-    });
-
-    return () => {
-      visDisposable.dispose();
-    };
-  }, [panelApi, flushPositionSave]);
-
-  const handleUpdateSettings = useCallback(
-    (update: Partial<Settings>) => {
-      if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
-      if (update.pdfLayout !== undefined) setLocalPdfLayout(update.pdfLayout);
-
-      if (panelApi) {
-        const paramUpdates: Record<string, unknown> = {};
-        if (update.fontSize !== undefined) paramUpdates.fontSize = update.fontSize;
-        if (update.pdfLayout !== undefined) paramUpdates.pdfLayout = update.pdfLayout;
-        if (Object.keys(paramUpdates).length > 0) {
-          panelApi.updateParameters(paramUpdates);
-        }
-      }
-    },
-    [panelApi],
-  );
+  const handleUpdateSettings = useCallback((update: Partial<Settings>) => {
+    if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
+    if (update.pdfLayout !== undefined) setLocalPdfLayout(update.pdfLayout);
+  }, []);
 
   const {
     handleSaveHighlight,
     handleAskQuestion,
+    handleExplainThis,
     handleOpenNotebook,
     handleOpenChat,
     setGoToPage,
   } = usePdfWorkspacePanels({
     book,
-    panelApi,
     currentPage,
+    hasRestoredPosition,
+    selectionText: selectionPopover?.text,
     pdfDocRef,
     saveHighlightFromPopover,
     applyTempHighlight,
@@ -287,17 +207,11 @@ function WorkspacePdfReaderInner({
   }, [selectionPopover, dismissPopovers]);
 
   const handleDownload = useCallback(() => {
-    AppRuntime.runPromise(
-      BookService.pipe(
-        Effect.andThen((s) => s.getBookData(book.id)),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to download book:", error);
-            return null as ArrayBuffer | null;
-          }),
-        ),
-      ),
-    )
+    BookService.getBookData(book.id)
+      .catch((error: unknown) => {
+        console.error("Failed to download book:", error);
+        return null;
+      })
       .then((data) => {
         if (!data) return;
         const format = book.format ?? "pdf";
@@ -315,36 +229,28 @@ function WorkspacePdfReaderInner({
       .catch(console.error);
   }, [book.id, book.title, book.format]);
 
-  const currentBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+  const currentBookmark = bookmarks.find((bookmark) => bookmark.pageNumber === currentPage);
 
-  const handleBookmarkPage = useCallback(async () => {
+  const handleBookmarkPage = useCallback(() => {
+    if (!bookmarksLoaded) return;
     if (currentPage < 1) return;
-    const existingBookmark = bookmarks?.find((bookmark) => bookmark.pageNumber === currentPage);
+    const existingBookmark = bookmarks.find((bookmark) => bookmark.pageNumber === currentPage);
     const now = Date.now();
 
-    await AppRuntime.runPromise(
-      BookmarkService.pipe(
-        Effect.andThen((s) =>
-          existingBookmark
-            ? s.deleteBookmark(existingBookmark.id)
-            : s.saveBookmark({
-                id: `bookmark:${book.id}:page:${currentPage}`,
-                bookId: book.id,
-                pageNumber: currentPage,
-                label: `Page ${currentPage}`,
-                createdAt: now,
-                updatedAt: now,
-              }),
-        ),
-      ),
+    store.dispatch(
+      existingBookmark
+        ? deleteBookmarkRequested(book.id, existingBookmark.id)
+        : addBookmarkRequested({
+            id: `bookmark:${book.id}:page:${currentPage}`,
+            bookId: book.id,
+            pageNumber: currentPage,
+            label: `Page ${currentPage}`,
+            createdAt: now,
+            updatedAt: now,
+          }),
     );
-    setBookmarkVersion((version) => version + 1);
-    queueMicrotask(() => {
-      window.dispatchEvent(
-        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
-      );
-    });
-  }, [book.id, bookmarks, currentPage]);
+  }, [book.id, bookmarks, bookmarksLoaded, currentPage, store]);
+
   // Keep goToPage in sync for navigation map
   useEffect(() => {
     setGoToPage(goToPage);
@@ -352,174 +258,84 @@ function WorkspacePdfReaderInner({
 
   const isScrollMode = localPdfLayout === "continuous";
 
+  const getCurrentPosition = useCallback(() => `page:${currentPage}`, [currentPage]);
+  const navigateToPosition = useCallback(
+    (position: string) => {
+      const page = Number(position.slice("page:".length));
+      if (position.startsWith("page:") && Number.isSafeInteger(page) && page > 0) goToPage(page);
+    },
+    [goToPage],
+  );
+  const handleSyncToFurthestPage = useSyncToFurthestPosition({
+    bookId: book.id,
+    getCurrentPosition,
+    navigateToPosition,
+  });
+
   const localSettings: Settings = {
     ...settings,
     fontSize: localFontSize,
     pdfLayout: localPdfLayout,
   };
 
+  const handlePanelPointerDown = useCallback(() => {
+    const panel = panelRef.current;
+
+    if (!panel?.contains(document.activeElement)) {
+      panel?.focus({ preventScroll: true });
+    }
+  }, []);
+
   return (
-    <div ref={panelRef} className="flex h-full flex-col outline-none" tabIndex={0}>
-      <div className="relative flex-1 overflow-hidden">
-        {searchOpen && (
-          <div className="absolute top-0 right-0 left-0 z-10">
-            <SearchBar
-              query={searchQuery}
-              onQueryChange={handleSearchQueryChange}
-              resultCount={searchResultCount}
-              currentIndex={searchIndex}
-              onNext={searchNext}
-              onPrev={searchPrev}
-              onClose={handleSearchClose}
-            />
-          </div>
-        )}
-        <div
-          ref={containerRef}
-          className="absolute inset-0 overflow-auto"
-          data-testid="pdf-container"
-        />
-        {!isScrollMode && (
-          <div className="pointer-events-none absolute inset-0 z-[5]">
-            <button
-              type="button"
-              aria-label="Previous page"
-              className="pointer-events-auto absolute top-0 left-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
-              onPointerUp={goPrev}
-            />
-            {isMobile && (
-              <button
-                type="button"
-                aria-label="Toggle toolbar"
-                className="pointer-events-auto absolute top-0 left-1/4 h-full w-1/2 appearance-none border-none bg-transparent p-0"
-                onPointerUp={toggleToolbar}
-              />
-            )}
-            <button
-              type="button"
-              aria-label="Next page"
-              className="pointer-events-auto absolute top-0 right-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
-              onPointerUp={goNext}
-            />
-          </div>
-        )}
-      </div>
-      <div
-        className={cn(
-          "relative flex items-center justify-center px-2 h-10 transition-all duration-300 ease-in-out",
-          {
-            "max-h-0 overflow-hidden border-t-0 opacity-0": isMobile && !toolbarVisible,
-            "max-h-20 opacity-100": !isMobile || toolbarVisible,
-          },
-        )}
-      >
-        <div className="absolute left-2 flex items-center gap-1.5">
-          {totalPages > 0 ? (
-            <span className="text-muted-foreground text-xs tabular-nums">
-              {currentPage} / {totalPages}
-            </span>
-          ) : (
-            <span className="text-muted-foreground text-xs tabular-nums">
-              {Math.round(bookProgress)}%
-            </span>
-          )}
-        </div>
-        {!isScrollMode && (
-          <div className="hidden items-center gap-4 md:flex">
-            <Button variant="ghost" size="icon" onClick={goPrev} data-testid="pdf-prev">
-              <ChevronLeft className="size-4" />
-              <span className="sr-only">Previous page</span>
-            </Button>
-            <Button variant="ghost" size="icon" onClick={goNext} data-testid="pdf-next">
-              <ChevronRight className="size-4" />
-              <span className="sr-only">Next page</span>
-            </Button>
-          </div>
-        )}
-        <div className="absolute right-2 flex items-center gap-1">
-          {isMobile && (
-            <>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => (searchOpen ? handleSearchClose() : handleSearchOpen())}
-                title="Search in book (Cmd+F)"
-                data-testid="pdf-search-btn"
-              >
-                <Search className="size-4" />
-                <span className="sr-only">Search in book</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleOpenNotebook}
-                title="Open Notebook"
-              >
-                <Notebook className="size-4" />
-                <span className="sr-only">Open Notebook</span>
-              </Button>
-              <Button variant="ghost" size="icon" onClick={handleOpenChat} title="Open Chat">
-                <MessageCircle className="size-4" />
-                <span className="sr-only">Open Chat</span>
-              </Button>
-            </>
-          )}
-          {toc.length > 0 && (
-            <Popover open={tocOpen} onOpenChange={setTocOpen}>
-              <PopoverTrigger
-                render={<Button variant="ghost" size="icon" title="Table of Contents" />}
-              >
-                <TableOfContents className="size-4" />
-                <span className="sr-only">Table of Contents</span>
-              </PopoverTrigger>
-              <PopoverContent
-                side="top"
-                align="end"
-                sideOffset={8}
-                className="max-h-80 w-64 overflow-y-auto p-1.5"
-              >
-                <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                  Table of Contents
-                </p>
-                <ul>
-                  <TocList
-                    entries={toc}
-                    onNavigate={(href) => {
-                      try {
-                        const dest = JSON.parse(href);
-                        if (typeof dest === "number") {
-                          goToPage(dest + 1);
-                        }
-                      } catch {
-                        // ignore
-                      }
-                      setTocOpen(false);
-                    }}
-                  />
-                </ul>
-              </PopoverContent>
-            </Popover>
-          )}
-          <ReaderFormattingMenu
-            settings={localSettings}
-            onUpdateSettings={handleUpdateSettings}
-            isPdf
-          />
-          <ReaderActionsMenu
-            book={book}
-            onDownload={handleDownload}
-            onBookmarkPage={handleBookmarkPage}
-            isBookmarked={Boolean(currentBookmark)}
-          />
-        </div>
-      </div>
-      {/* Portal popovers to document.body to escape dockview's CSS transforms */}
+    <div
+      ref={panelRef}
+      className="flex h-full flex-col outline-none"
+      tabIndex={0}
+      onPointerDown={handlePanelPointerDown}
+    >
+      <PdfReaderView
+        containerRef={containerRef}
+        localSettings={localSettings}
+        onUpdateSettings={handleUpdateSettings}
+        book={book}
+        onSyncToFurthestPage={handleSyncToFurthestPage}
+        onDownload={handleDownload}
+        onBookmarkPage={handleBookmarkPage}
+        isBookmarked={Boolean(currentBookmark)}
+        bookmarksLoaded={bookmarksLoaded}
+        searchOpen={searchOpen}
+        searchQuery={searchQuery}
+        searchResultCount={searchResultCount}
+        searchIndex={searchIndex}
+        searchNext={searchNext}
+        searchPrev={searchPrev}
+        onSearchOpen={handleSearchOpen}
+        onSearchClose={handleSearchClose}
+        onSearchQueryChange={handleSearchQueryChange}
+        isScrollMode={isScrollMode}
+        isMobile={Boolean(isMobile)}
+        toggleToolbar={toggleToolbar}
+        goPrev={goPrev}
+        goNext={goNext}
+        toolbarVisible={toolbarVisible}
+        totalPages={totalPages}
+        currentPage={currentPage}
+        bookProgress={bookProgress}
+        onOpenNotebook={handleOpenNotebook}
+        onOpenChat={handleOpenChat}
+        toc={toc}
+        tocOpen={tocOpen}
+        setTocOpen={setTocOpen}
+        goToPage={goToPage}
+      />
+      {/* Portal popovers to document.body so position:fixed is viewport-relative. */}
       {selectionPopover &&
         createPortal(
           <HighlightPopover
             position={selectionPopover.position}
             onCopyAsMarkdown={handleCopyAsMarkdown}
             onAskQuestion={handleAskQuestion}
+            onExplain={handleExplainThis}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
           />,

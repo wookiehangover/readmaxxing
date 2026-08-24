@@ -2,6 +2,14 @@ import { useEffect, useRef, useState } from "react";
 
 const REVOKE_DELAY_MS = 2000;
 
+function revokeAfterDelay(url: string, pendingRevocations: Map<number, string>) {
+  const timer = window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+    pendingRevocations.delete(timer);
+  }, REVOKE_DELAY_MS);
+  pendingRevocations.set(timer, url);
+}
+
 /**
  * Creates an object URL for a Blob and revokes it lazily.
  *
@@ -18,42 +26,45 @@ export function useBlobObjectUrl(
   blob: Blob | null,
   key: string | number | null | undefined,
 ): string | null {
-  const [url, setUrl] = useState<string | null>(() =>
-    blob && key != null ? URL.createObjectURL(blob) : null,
-  );
-  const keyRef = useRef<string | number | null>(blob && key != null ? key : null);
-  const urlRef = useRef<string | null>(url);
-
-  useEffect(() => {
-    urlRef.current = url;
-  }, [url]);
+  const [url, setUrl] = useState<string | null>(null);
+  const keyRef = useRef<string | number | null>(null);
+  const urlRef = useRef<string | null>(null);
+  const pendingRevocationsRef = useRef(new Map<number, string>());
 
   useEffect(() => {
     if (!blob || key == null) {
       const prev = urlRef.current;
       keyRef.current = null;
-      setUrl(null);
+      urlRef.current = null;
       if (prev) {
-        const t = window.setTimeout(() => URL.revokeObjectURL(prev), REVOKE_DELAY_MS);
-        return () => window.clearTimeout(t);
+        setUrl(null);
+        revokeAfterDelay(prev, pendingRevocationsRef.current);
       }
       return;
     }
-    if (keyRef.current === key) return;
+    if (keyRef.current === key && urlRef.current) return;
     const next = URL.createObjectURL(blob);
     const prev = urlRef.current;
     keyRef.current = key;
+    urlRef.current = next;
     setUrl(next);
     if (prev) {
-      const t = window.setTimeout(() => URL.revokeObjectURL(prev), REVOKE_DELAY_MS);
-      return () => window.clearTimeout(t);
+      revokeAfterDelay(prev, pendingRevocationsRef.current);
     }
   }, [blob, key]);
 
   useEffect(() => {
     return () => {
-      const u = urlRef.current;
-      if (u) URL.revokeObjectURL(u);
+      const currentUrl = urlRef.current;
+      if (currentUrl) URL.revokeObjectURL(currentUrl);
+      keyRef.current = null;
+      urlRef.current = null;
+
+      for (const [timer, pendingUrl] of pendingRevocationsRef.current) {
+        window.clearTimeout(timer);
+        URL.revokeObjectURL(pendingUrl);
+      }
+      pendingRevocationsRef.current.clear();
     };
   }, []);
 

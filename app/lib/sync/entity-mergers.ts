@@ -1,7 +1,7 @@
 import { get, set, entries } from "idb-keyval";
+import { isFurtherAlong } from "~/lib/position-compare";
 import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
 import { removeSessionLocally } from "~/lib/stores/chat-store";
-import { isActiveReader } from "./active-readers";
 import { isWellFormedEntry } from "./idb-entry";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
@@ -23,7 +23,7 @@ import {
   getChatSessionStore,
   getHighlightStore,
   getNotebookStore,
-  getPositionStore,
+  getRemotePositionStore,
 } from "./stores";
 import type { EntityType } from "./types";
 
@@ -110,26 +110,44 @@ export async function mergeBookRecord(record: Record<string, unknown>): Promise<
 }
 
 export async function mergePositionRecord(record: Record<string, unknown>): Promise<void> {
-  const store = getPositionStore();
-  const localRecord = serverPositionToLocal(record);
-  const id = localRecord.id;
+  const store = getRemotePositionStore();
+  const remoteRecord = serverPositionToLocal(record);
+  const id = remoteRecord.id;
+  const remotePosition = { cfi: remoteRecord.cfi, updatedAt: remoteRecord.updatedAt };
+  const existingRemote = await get<Record<string, unknown>>(id, store);
 
-  if (isActiveReader(id)) {
-    // Local always wins for the open book; remote position is intentionally dropped.
+  if (!existingRemote) {
+    await set(id, remotePosition, store);
+    notifyPositionUpdated();
     return;
   }
 
-  const local = await get<Record<string, unknown>>(id, store);
-
-  if (!local) {
-    await set(id, localRecord, store);
-    return;
+  const existingPosition = existingRemote as { cfi: string; updatedAt: number };
+  const remoteIsFurther = isFurtherAlong(remotePosition.cfi, existingPosition.cfi);
+  const existingIsFurther = isFurtherAlong(existingPosition.cfi, remotePosition.cfi);
+  const remoteWins =
+    remoteIsFurther ||
+    (!existingIsFurther && remotePosition.updatedAt >= existingPosition.updatedAt);
+  if (remoteWins) {
+    await set(
+      id,
+      {
+        ...remotePosition,
+        updatedAt: Math.max(remotePosition.updatedAt, existingPosition.updatedAt),
+      },
+      store,
+    );
+    notifyPositionUpdated();
   }
+}
 
-  const merged = lwwMerge(local as { updatedAt: number }, localRecord as { updatedAt: number });
-  if (merged === localRecord) {
-    await set(id, localRecord, store);
-  }
+function notifyPositionUpdated(): void {
+  if (typeof window === "undefined") return;
+  queueMicrotask(() => {
+    window.dispatchEvent(
+      new CustomEvent("sync:entity-updated", { detail: { entity: "position" } }),
+    );
+  });
 }
 
 /**

@@ -6,6 +6,8 @@ import {
   type APIRequestContext,
 } from "@playwright/test";
 
+const pagesWithMockedChapterQuestions = new WeakSet<Page>();
+
 /**
  * Skip the current test when the auth/DB stack is not configured. CI runs
  * without a Postgres service, in which case /api/auth/register-options
@@ -36,15 +38,33 @@ export async function installVirtualAuthenticator(context: BrowserContext, page:
   });
 }
 
+export async function waitForAppHydration(page: Page) {
+  if (process.env.SKIP_AI_TESTS && !pagesWithMockedChapterQuestions.has(page)) {
+    await page.route("**/api/chapter-questions", (route) => route.fulfill({ json: [] }));
+    pagesWithMockedChapterQuestions.add(page);
+  }
+
+  const libraryNavigation = page.getByRole("navigation", { name: "Library navigation" });
+  const readingShell = page.getByTestId("reading-shell");
+
+  await expect
+    .poll(
+      async () =>
+        (await libraryNavigation.isVisible().catch(() => false)) ||
+        (await readingShell.isVisible().catch(() => false)),
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+}
+
 /**
  * Register a fresh passkey via the /login page. Leaves the user signed in
- * and back on the workspace route with the dockview hydrated.
+ * and back on the hydrated library or reading route.
  */
 export async function registerAndSignIn(page: Page) {
   await page.goto("/login");
   await page.getByRole("button", { name: "Create account" }).click();
-  await page.waitForURL((url) => url.pathname === "/", { timeout: 20_000 });
-  await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+  await waitForAppHydration(page);
 
   // AuthProvider resolves /api/auth/session asynchronously after navigate;
   // the chat panel short-circuits to the "Sign in" CTA until isAuthenticated
@@ -63,5 +83,5 @@ export async function registerAndSignIn(page: Page) {
     )
     .not.toBeNull();
   await page.reload();
-  await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+  await waitForAppHydration(page);
 }

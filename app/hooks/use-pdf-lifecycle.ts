@@ -1,19 +1,27 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { Effect } from "effect";
-import { BookService } from "~/lib/stores/book-store";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { ReadingPositionService } from "~/lib/stores/position-store";
-import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
+import { resolveStartCfi } from "~/lib/position-utils";
 import type { PdfLayout, Theme } from "~/lib/settings";
 import { resolveTheme } from "~/lib/settings";
 import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-readers";
 import type { TocEntry } from "~/lib/context/reader-context";
-
-const POSITION_SAVE_DEBOUNCE_MS = 1000;
+import { isEditableElement } from "~/lib/dom-utils";
+import { useOptionalWorkspace } from "~/lib/context/workspace-context";
+import { usePositionNudge } from "~/hooks/use-position-nudge";
+import { loadBookDataRequested } from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
+import {
+  flushReadingPositionRequested,
+  hydrateReadingPositionsRequested,
+  readingPositionChanged,
+  recordReadingHistoryRequested,
+} from "~/lib/themis/reading-positions/reading-positions-slice";
 
 export interface UsePdfLifecycleConfig {
   bookId: string;
   containerRef: React.RefObject<HTMLDivElement | null>;
+  loadData?: () => Promise<ArrayBuffer>;
+  initialPosition?: string | null;
+  persistPosition?: boolean;
   pdfLayout: PdfLayout;
   theme: Theme;
   fontSize: number;
@@ -29,9 +37,12 @@ export interface UsePdfLifecycleConfig {
 
 export interface UsePdfLifecycleReturn {
   toc: TocEntry[];
+  currentChapterLabel: string | null;
   currentPage: number;
   totalPages: number;
   bookProgress: number;
+  hasRestoredPosition: boolean;
+  loadError: boolean;
   goToPage: (page: number) => void;
   goNext: () => void;
   goPrev: () => void;
@@ -41,6 +52,55 @@ export interface UsePdfLifecycleReturn {
   viewerRef: React.RefObject<any>;
   /** Reference to the EventBus instance for search/highlight integration */
   eventBusRef: React.RefObject<any>;
+}
+
+export interface PdfChapterStart {
+  label: string;
+  page: number;
+}
+
+export function pdfChapterLabelForPage(
+  chapterStarts: readonly PdfChapterStart[],
+  currentPage: number,
+): string | null {
+  let current: PdfChapterStart | null = null;
+  for (const start of chapterStarts) {
+    if (start.page <= currentPage && (!current || start.page >= current.page)) current = start;
+  }
+  return current?.label ?? null;
+}
+
+export function shouldSavePdfPageChange(
+  hasRestoredPosition: boolean,
+  currentPage: number,
+  nextPage: number,
+): boolean {
+  return hasRestoredPosition && currentPage !== nextPage;
+}
+
+async function pdfDestinationPage(doc: any, destination: unknown): Promise<number | null> {
+  try {
+    const resolved =
+      typeof destination === "string" ? await doc.getDestination(destination) : destination;
+    if (typeof resolved === "number") return resolved + 1;
+    if (!Array.isArray(resolved) || resolved.length === 0) return null;
+    const target = resolved[0];
+    if (typeof target === "number") return target + 1;
+    return (await doc.getPageIndex(target)) + 1;
+  } catch {
+    return null;
+  }
+}
+
+async function pdfChapterStarts(doc: any, items: any[]): Promise<PdfChapterStart[]> {
+  const starts: PdfChapterStart[] = [];
+  for (const item of items) {
+    const label = typeof item.title === "string" ? item.title.trim() : "";
+    const page = label ? await pdfDestinationPage(doc, item.dest) : null;
+    if (label && page !== null) starts.push({ label, page });
+    if (item.items?.length) starts.push(...(await pdfChapterStarts(doc, item.items)));
+  }
+  return starts;
 }
 
 /** Map our PdfLayout setting to PDFViewer ScrollMode */
@@ -77,58 +137,96 @@ function applyLayoutToViewer(viewer: any, layout: PdfLayout): void {
   viewer.currentScaleValue = layoutToScaleValue(layout);
 }
 
+export function observePdfViewerResize(container: HTMLElement, getViewer: () => any): () => void {
+  if (typeof ResizeObserver === "undefined") return () => {};
+
+  let rafId: number | null = null;
+  const observer = new ResizeObserver(() => {
+    if (rafId !== null) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      const viewer = getViewer();
+      if (!viewer || typeof viewer.update !== "function") return;
+
+      const scaleValue = viewer.currentScaleValue;
+      if (typeof scaleValue === "string" && Number.isNaN(Number(scaleValue))) {
+        viewer.currentScaleValue = scaleValue;
+      } else {
+        viewer.update();
+      }
+    });
+  });
+  observer.observe(container);
+
+  return () => {
+    observer.disconnect();
+    if (rafId !== null) cancelAnimationFrame(rafId);
+  };
+}
+
 export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleReturn {
-  const { bookId, containerRef, pdfLayout, fontSize, enabled = true, panelId } = config;
+  const {
+    bookId,
+    containerRef,
+    pdfLayout,
+    fontSize,
+    enabled = true,
+    panelId,
+    loadData,
+    initialPosition,
+    persistPosition = true,
+  } = config;
 
   const configRef = useRef(config);
   configRef.current = config;
 
+  // Access workspace context to check if this book panel is active in focused mode
+  const ws = useOptionalWorkspace();
+  const store = useAppStore();
+
   const [toc, setToc] = useState<TocEntry[]>([]);
+  const [chapterStarts, setChapterStarts] = useState<PdfChapterStart[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
+  const [hasRestoredPosition, setHasRestoredPosition] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const pdfDocRef = useRef<any>(null);
+  const loadingTaskRef = useRef<any>(null);
   const viewerRef = useRef<any>(null);
   const eventBusRef = useRef<any>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestPageRef = useRef<number>(1);
+  const hasRestoredPositionRef = useRef(false);
 
   const flushPositionSave = useCallback(() => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
+    if (configRef.current.persistPosition === false) return;
     const page = latestPageRef.current;
     if (page > 0) {
-      savePositionDualKey({
-        panelId,
-        bookId,
-        cfi: `page:${page}`,
-        savePosition: (key, val, options) =>
-          AppRuntime.runPromise(
-            ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val, options))),
-          ),
-      }).catch((err) => console.error("Failed to flush PDF position:", err));
+      const panelId = configRef.current.panelId;
+      store.dispatch(
+        flushReadingPositionRequested({
+          bookId,
+          cfi: `page:${page}`,
+          ...(panelId !== undefined ? { panelId } : {}),
+        }),
+      );
     }
-  }, [bookId, panelId]);
+  }, [bookId, store]);
 
   const savePositionDebounced = useCallback(
     (page: number) => {
       latestPageRef.current = page;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        savePositionDualKey({
-          panelId: configRef.current.panelId,
+      if (configRef.current.persistPosition === false) return;
+      const panelId = configRef.current.panelId;
+      store.dispatch(
+        readingPositionChanged({
           bookId,
           cfi: `page:${page}`,
-          savePosition: (key, val, options) =>
-            AppRuntime.runPromise(
-              ReadingPositionService.pipe(Effect.andThen((s) => s.savePosition(key, val, options))),
-            ),
-        }).catch((err) => console.error("Failed to save PDF position:", err));
-      }, POSITION_SAVE_DEBOUNCE_MS);
+          ...(panelId !== undefined ? { panelId } : {}),
+        }),
+      );
     },
-    [bookId],
+    [bookId, store],
   );
 
   const goToPage = useCallback((page: number) => {
@@ -147,20 +245,46 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     if (viewer) viewer.previousPage();
   }, []);
 
+  const navigateToPosition = useCallback(
+    (cfi: string) => {
+      const match = /^page:([0-9]+)$/.exec(cfi);
+      if (!match) return;
+      goToPage(Number(match[1]));
+    },
+    [goToPage],
+  );
+
+  usePositionNudge({
+    bookId,
+    enabled: enabled && hasRestoredPosition && persistPosition,
+    navigateToPosition,
+  });
+
   // Main lifecycle effect — create PDFViewer and load document
   useEffect(() => {
     if (!enabled) return;
     const el = containerRef.current;
     if (!el) return;
 
+    setHasRestoredPosition(false);
+    hasRestoredPositionRef.current = false;
+    setLoadError(false);
+
     let cancelled = false;
-    registerActiveReader(bookId);
+    let positionRestored = false;
+    let restoredPageToSuppress: number | null = null;
+    const disconnectResizeObserver = observePdfViewerResize(el, () => viewerRef.current);
+    if (persistPosition) registerActiveReader(bookId);
 
     const init = async () => {
       // Load book data
-      const bookData = await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.getBookData(bookId))),
-      );
+      const bookData = loadData
+        ? await loadData()
+        : await new Promise<ArrayBuffer>((resolve, reject) => {
+            store.dispatch(
+              loadBookDataRequested(bookId, resolve, (error) => reject(new Error(error))),
+            );
+          });
       if (cancelled) return;
 
       // Setup pdfjs worker
@@ -213,10 +337,32 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       // Listen for page changes
       eventBus.on("pagechanging", (evt: any) => {
         const pageNum = evt.pageNumber;
+        const shouldSave = shouldSavePdfPageChange(
+          positionRestored,
+          latestPageRef.current,
+          pageNum,
+        );
         latestPageRef.current = pageNum;
         setCurrentPage(pageNum);
-        savePositionDebounced(pageNum);
+        if (shouldSave) savePositionDebounced(pageNum);
         configRef.current.onRelocated?.();
+        if (!hasRestoredPositionRef.current || configRef.current.persistPosition === false) return;
+        if (restoredPageToSuppress === pageNum) {
+          restoredPageToSuppress = null;
+          return;
+        }
+        restoredPageToSuppress = null;
+        const pageCount = viewer.pagesCount || pdfDocRef.current?.numPages || null;
+        store.dispatch(
+          recordReadingHistoryRequested(bookId, {
+            cfi: `page:${pageNum}`,
+            chapterHref: null,
+            chapterLabel: null,
+            percentage: pageCount ? (pageNum / pageCount) * 100 : 0,
+            pageIndex: pageNum,
+            totalPages: pageCount,
+          }),
+        );
       });
 
       // Listen for pages rendered (for highlight overlay re-application)
@@ -227,9 +373,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       // Load PDF document
       const dataCopy = new Uint8Array(bookData).slice();
       const loadingTask = pdfjs.getDocument({ data: dataCopy });
+      loadingTaskRef.current = loadingTask;
       const doc = await loadingTask.promise;
       if (cancelled) {
-        await doc.destroy();
         return;
       }
       pdfDocRef.current = doc;
@@ -246,15 +392,26 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
         applyLayoutToViewer(viewer, configRef.current.pdfLayout);
 
         // Restore reading position
-        resolveStartCfi({
-          latestCfi: latestPageRef.current > 1 ? `page:${latestPageRef.current}` : null,
-          panelId,
-          bookId,
-          getPosition: (key) =>
-            AppRuntime.runPromise(
-              ReadingPositionService.pipe(Effect.andThen((s) => s.getPosition(key))),
-            ),
-        })
+        const resolvePosition = persistPosition
+          ? new Promise<void>((resolve, reject) => {
+              const positionKeys = panelId === undefined ? [bookId] : [bookId, panelId];
+              store.dispatch(
+                hydrateReadingPositionsRequested(positionKeys, resolve, (error) =>
+                  reject(new Error(error)),
+                ),
+              );
+            }).then(() =>
+              resolveStartCfi({
+                latestCfi: latestPageRef.current > 1 ? `page:${latestPageRef.current}` : null,
+                panelId,
+                bookId,
+                getPosition: async (key) =>
+                  store.readingPositionsSelectors.selectPosition.select(store.state, key)?.cfi ??
+                  null,
+              }),
+            )
+          : Promise.resolve(initialPosition ?? null);
+        resolvePosition
           .then((savedPos) => {
             let startPage = 1;
             if (savedPos && savedPos.startsWith("page:")) {
@@ -263,11 +420,15 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
                 startPage = parsed;
               }
             }
+            restoredPageToSuppress = startPage;
             if (startPage > 1) {
               viewer.currentPageNumber = startPage;
             }
             latestPageRef.current = startPage;
             setCurrentPage(startPage);
+            positionRestored = true;
+            hasRestoredPositionRef.current = true;
+            setHasRestoredPosition(true);
           })
           .catch((err) => console.error("Failed to restore PDF position:", err));
       });
@@ -287,6 +448,8 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
           const tocData = mapOutline(outline);
           setToc(tocData);
           configRef.current.onTocExtracted?.(tocData);
+          const starts = await pdfChapterStarts(doc, outline);
+          if (!cancelled) setChapterStarts(starts);
         }
       } catch {
         // Outline extraction is non-fatal
@@ -294,15 +457,50 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     };
 
     init().catch((err) => {
-      unregisterActiveReader(bookId);
-      if (!cancelled) console.error("Failed to load PDF:", err);
+      if (persistPosition) unregisterActiveReader(bookId);
+      if (!cancelled) {
+        setLoadError(true);
+        console.error("Failed to load PDF:", err);
+      }
     });
+
+    // Keyboard navigation on the parent document
+    // Arrow keys work globally (no focus check) so users don't need to click
+    // the PDF viewer or navigation buttons first. In workspace/focused mode, we
+    // only respond when this book is the active cluster; otherwise we respond
+    // to all arrow keys. We always skip when typing in an editable element.
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (layoutToScrollMode(configRef.current.pdfLayout) === 0) return;
+      if (isEditableElement()) return;
+
+      // In workspace focused mode, only respond if this book is the active cluster
+      if (ws && ws.activeClusterBookIdRef.current !== null) {
+        if (ws.activeClusterBookIdRef.current !== bookId) return;
+      }
+
+      if (e.key === "ArrowLeft") {
+        viewerRef.current?.previousPage();
+      } else if (e.key === "ArrowRight") {
+        viewerRef.current?.nextPage();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    // Flush the debounced position save on refresh/close — without this a
+    // page turn within the debounce window is lost, and the server's older
+    // position wins LWW on the next pull.
+    window.addEventListener("pagehide", flushPositionSave);
 
     return () => {
       cancelled = true;
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("pagehide", flushPositionSave);
+      disconnectResizeObserver();
       flushPositionSave();
-      unregisterActiveReader(bookId);
+      if (persistPosition) unregisterActiveReader(bookId);
       setToc([]);
+      setChapterStarts([]);
+      hasRestoredPositionRef.current = false;
+      setHasRestoredPosition(false);
       configRef.current.onCleanupToc?.();
 
       // Cleanup viewer
@@ -312,13 +510,12 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       }
       eventBusRef.current = null;
 
-      if (pdfDocRef.current) {
-        pdfDocRef.current.destroy().catch(() => {});
-        pdfDocRef.current = null;
-      }
+      loadingTaskRef.current?.destroy().catch(() => {});
+      loadingTaskRef.current = null;
+      pdfDocRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, bookId, flushPositionSave, panelId]);
+  }, [enabled, bookId, flushPositionSave, initialPosition, loadData, panelId, persistPosition]);
 
   // Update scale when fontSize changes
   useEffect(() => {
@@ -347,12 +544,16 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   }, [config.theme]);
 
   const bookProgress = totalPages > 0 ? (currentPage / totalPages) * 100 : 0;
+  const currentChapterLabel = pdfChapterLabelForPage(chapterStarts, currentPage);
 
   return {
     toc,
+    currentChapterLabel,
     currentPage,
     totalPages,
     bookProgress,
+    hasRestoredPosition,
+    loadError,
     goToPage,
     goNext,
     goPrev,

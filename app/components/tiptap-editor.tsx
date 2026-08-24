@@ -1,18 +1,22 @@
-import { useEditor, EditorContent, NodeViewWrapper } from "@tiptap/react";
+import { useEditor, EditorContent, NodeViewContent, NodeViewWrapper } from "@tiptap/react";
 import type { ReactNodeViewProps, JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
-import { useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
+import { useCallback, useEffect, useRef, useImperativeHandle, forwardRef, useState } from "react";
 import { Navigation, Trash2 } from "lucide-react";
 import {
   HighlightReference,
   type HighlightReferenceAttrs,
 } from "~/lib/editor/tiptap-highlight-node";
+import { OutlineIncrement, type OutlineIncrementAttrs } from "~/lib/editor/tiptap-outline-node";
+import { cn } from "~/lib/utils";
+
+export type TiptapEditorContent = JSONContent | string;
 
 export interface TiptapEditorHandle {
   appendHighlightReference: (attrs: HighlightReferenceAttrs) => void;
   appendContent: (nodes: JSONContent[]) => void;
-  setContent: (content: JSONContent) => void;
+  setContent: (content: TiptapEditorContent) => void;
   getContent: () => JSONContent;
   /** Returns the current number of top-level nodes in the document. */
   getTopLevelNodeCount: () => number;
@@ -24,12 +28,49 @@ export interface TiptapEditorHandle {
 }
 
 interface TiptapEditorProps {
-  content?: JSONContent;
+  content?: TiptapEditorContent;
+  compact?: boolean;
+  editable?: boolean;
+  placeholder?: string;
   onUpdate?: (content: JSONContent) => void;
+  onBlur?: () => void;
   onNavigateToHighlight?: (cfi: string) => void | Promise<void>;
+  onNavigateToOutlineIncrement?: (locator: string) => void | Promise<void>;
   onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
   /** Fires once the underlying Tiptap editor instance is created and ready. */
   onReady?: () => void;
+}
+
+function OutlineIncrementView({ node, editor }: ReactNodeViewProps) {
+  const { locator, page } = node.attrs as OutlineIncrementAttrs;
+
+  const handleNavigate = useCallback(() => {
+    if (!locator) return;
+    editor.view.dom.dispatchEvent(
+      new CustomEvent("outline-increment-navigate", {
+        detail: { locator },
+        bubbles: true,
+      }),
+    );
+  }, [editor, locator]);
+
+  return (
+    <NodeViewWrapper className="relative my-2 pl-[22px]">
+      {locator && page ? (
+        <button
+          type="button"
+          contentEditable={false}
+          onClick={handleNavigate}
+          className="absolute top-0 left-0 w-6 cursor-pointer rounded-sm py-0.5 text-left text-xs font-normal text-muted-foreground/70 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`Go to page ${page}`}
+          title={`Go to page ${page}`}
+        >
+          {page}
+        </button>
+      ) : null}
+      <NodeViewContent />
+    </NodeViewWrapper>
+  );
 }
 
 function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps) {
@@ -55,24 +96,26 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
   }, [highlightId, cfiRange, editor, deleteNode]);
 
   return (
-    <NodeViewWrapper>
+    <NodeViewWrapper className="group/hl relative my-2">
       <blockquote
         onClick={handleNavigate}
-        className="group/hl relative my-2 cursor-pointer rounded border-l-4 border-amber-400 bg-amber-50 px-3 py-2 pr-16 text-sm italic text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/50 dark:text-amber-200 dark:hover:bg-amber-950/80"
+        className="my-0 cursor-pointer border-0 bg-foreground/[0.04] px-3 py-2 text-sm italic text-muted-foreground transition-colors hover:bg-muted/70"
         title="Click to navigate to this highlight"
       >
         "{text}"
-        <span className="absolute top-1/2 right-2 flex -translate-y-1/2 gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100">
+      </blockquote>
+      {editor.isEditable ? (
+        <div className="absolute top-full right-1 z-10 mt-0.5 flex gap-0.5 opacity-0 transition-opacity group-hover/hl:opacity-100 group-focus-within/hl:opacity-100">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               handleNavigate();
             }}
-            className="rounded p-1 text-amber-700 hover:bg-amber-200 dark:text-amber-300 dark:hover:bg-amber-800"
+            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title="Navigate to highlight"
           >
-            <Navigation className="size-3.5" />
+            <Navigation className="size-3" />
           </button>
           <button
             type="button"
@@ -80,23 +123,37 @@ function HighlightReferenceView({ node, editor, deleteNode }: ReactNodeViewProps
               e.stopPropagation();
               handleDelete();
             }}
-            className="rounded p-1 text-amber-700 hover:bg-red-100 hover:text-red-600 dark:text-amber-300 dark:hover:bg-red-900 dark:hover:text-red-400"
+            className="flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             title="Delete highlight"
           >
-            <Trash2 className="size-3.5" />
+            <Trash2 className="size-3" />
           </button>
-        </span>
-      </blockquote>
+        </div>
+      ) : null}
     </NodeViewWrapper>
   );
 }
 
 export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(function TiptapEditor(
-  { content, onUpdate, onNavigateToHighlight, onDeleteHighlight, onReady },
+  {
+    content,
+    compact = false,
+    editable = true,
+    placeholder,
+    onUpdate,
+    onBlur,
+    onNavigateToHighlight,
+    onNavigateToOutlineIncrement,
+    onDeleteHighlight,
+    onReady,
+  },
   ref,
 ) {
+  const [isEmpty, setIsEmpty] = useState(true);
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
+  const onBlurRef = useRef(onBlur);
+  onBlurRef.current = onBlur;
 
   const editor = useEditor({
     extensions: [
@@ -108,16 +165,29 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       HighlightReference.configure({
         component: HighlightReferenceView,
       }),
+      OutlineIncrement.configure({
+        component: OutlineIncrementView,
+      }),
     ],
     content: content || {
       type: "doc",
       content: [{ type: "paragraph" }],
     },
+    editable,
+    onCreate: ({ editor }) => setIsEmpty(editor.isEmpty),
+    onTransaction: ({ editor }) => setIsEmpty(editor.isEmpty),
     onUpdate: ({ editor }) => {
       onUpdateRef.current?.(editor.getJSON());
     },
+    onBlur: () => {
+      onBlurRef.current?.();
+    },
     immediatelyRender: true,
   });
+
+  useEffect(() => {
+    editor?.setEditable(editable);
+  }, [editable, editor]);
 
   // Notify parent when editor becomes available
   const onReadyRef = useRef(onReady);
@@ -145,13 +215,22 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       onDeleteHighlight?.(detail.highlightId, detail.cfiRange);
     };
 
+    const handleOutlineNavigate = (e: Event) => {
+      const detail = (e as CustomEvent<{ locator?: unknown }>).detail;
+      if (typeof detail?.locator === "string") {
+        void onNavigateToOutlineIncrement?.(detail.locator);
+      }
+    };
+
     dom.addEventListener("highlight-navigate", handleNavigate);
     dom.addEventListener("highlight-delete", handleDelete);
+    dom.addEventListener("outline-increment-navigate", handleOutlineNavigate);
     return () => {
       dom.removeEventListener("highlight-navigate", handleNavigate);
       dom.removeEventListener("highlight-delete", handleDelete);
+      dom.removeEventListener("outline-increment-navigate", handleOutlineNavigate);
     };
-  }, [editor, onNavigateToHighlight, onDeleteHighlight]);
+  }, [editor, onNavigateToHighlight, onNavigateToOutlineIncrement, onDeleteHighlight]);
 
   // Expose imperative handle for appending highlight references
   useImperativeHandle(
@@ -168,9 +247,12 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
         const endPos = editor.state.doc.content.size;
         editor.chain().focus().insertContentAt(endPos, nodes).run();
       },
-      setContent(content: JSONContent) {
+      setContent(content: TiptapEditorContent) {
         if (!editor) return;
-        editor.commands.setContent(content);
+        // Programmatic content always comes from an authoritative server/sync
+        // snapshot. Do not emit onUpdate, which would enqueue a newer local
+        // autosave and could overwrite a subsequent remote change.
+        editor.commands.setContent(content, { emitUpdate: false });
       },
       getContent() {
         if (!editor) return { type: "doc", content: [] };
@@ -197,10 +279,25 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
   );
 
   return (
-    <div className="tiptap-editor">
+    <div className="tiptap-editor relative">
+      {placeholder && isEmpty ? (
+        <p
+          aria-hidden="true"
+          className={cn("pointer-events-none absolute top-0 left-0 z-10 text-sm", {
+            "px-4 py-3": !compact,
+            "text-muted-foreground": !compact,
+            "text-muted-foreground/35": compact,
+          })}
+        >
+          {placeholder}
+        </p>
+      ) : null}
       <EditorContent
         editor={editor}
-        className="prose prose-sm dark:prose-invert max-w-none px-4 py-3 focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none [&_.tiptap_li]:my-0.5 [&_.tiptap_li_p]:my-0"
+        className={cn(
+          "prose prose-sm dark:prose-invert max-w-none focus:outline-none [&_.tiptap]:min-h-[200px] [&_.tiptap]:outline-none [&_.tiptap_li]:my-0.5 [&_.tiptap_li_p]:my-0 [&_h1]:text-[1.125em] [&_h1]:font-medium [&_h2]:text-[1em] [&_h2]:font-medium [&_h3]:text-[0.9375em] [&_h4]:text-[0.875em] [&_h5]:text-[0.8125em] [&_h6]:text-[0.75em]",
+          { "px-4 py-3": !compact },
+        )}
       />
     </div>
   );

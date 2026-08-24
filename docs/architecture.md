@@ -1,0 +1,90 @@
+# Architecture
+
+Ebook/PDF reader web app. Users add `.epub`/`.pdf` files (drag-and-drop, file picker, or the Standard Ebooks catalog), persisted in IndexedDB. The app is local-first for most entities (IndexedDB is the source of truth; sync is optional and requires a passkey session). **Chat is the exception** — Postgres is authoritative.
+
+## Reading and library shells
+
+The index route redirects to `/library`. Books open at `/books/:id`, where `ReadingShell` renders the reader and its Notes, Discuss, and Outline rail. The `/library` and `/standard-ebooks` routes use the chromeless `LibraryFrame` for browsing and imports.
+
+`app/routes/app-frame.tsx` and `WorkspaceProvider` coordinate book uploads, route-based reading navigation, and shared reader/notebook callbacks. The active book is the `/books/:id` route; reading tools switch the corresponding `ReadingShell` rail tab.
+
+## Client-side only
+
+All epub/pdf parsing, IndexedDB access, and rendering must happen client-side. Routes use `clientLoader` (with `clientLoader.hydrate = true`), never `loader`. `@readmaxxing/epub-successor`, pdfjs, and IndexedDB are unavailable during SSR.
+
+## Storage
+
+- `idb-keyval` (IndexedDB). idb-keyval allows one object store per database, so **each entity uses a separate database**.
+- All store accessors live in `app/lib/sync/stores.ts` and are **lazy getter functions** (`getBookStore()`, `getPositionStore()`, …), not module-scope `createStore()` calls — module-scope creation fails during SSR (`indexedDB` undefined in Node). Add new stores there.
+- Book metadata and book binary data (epub/pdf `ArrayBuffer`) live in separate databases.
+
+## EPUB rendering
+
+EPUB parsing and rendering live in the workspace package [`packages/epub-successor`](../packages/epub-successor/) (`@readmaxxing/epub-successor`). The app opens a ZIP resource provider, parses a `Publication`, and drives a `Navigator` that mounts one sanitized spine section at a time in a scriptless sandboxed iframe. App wiring:
+
+- Lifecycle / positions: `app/hooks/use-epub-lifecycle.ts`
+- Adapter (TOC, CFI display, positions cache): `app/lib/epub/successor-reader-adapter.ts`
+- Import-time metadata: `app/lib/epub/epub-service.ts`
+- Highlights: `app/hooks/use-highlights.ts` + package decorations layer
+
+The iframe does not inherit parent-page CSS (including Tailwind dark mode) or font imports. Typography and theme are applied through navigator preferences / injected preference CSS (`setPreferences`, `preferenceCss`, `readerBaseCss`) and host styles in `app/lib/epub/epub-rendering-utils.ts` / `epub-theme-utils.ts`. Prefer self-hosted fonts under `public/fonts/`; package CSP allows `font-src blob: 'self'`.
+
+Persist package-relative `href` + CFI/text locators, never blob URLs or viewport page numbers. Full package docs: [packages/epub-successor/README.md](../packages/epub-successor/README.md).
+
+PDFs render via pdfjs (`app/lib/pdf/`, `app/components/workspace-pdf-reader.tsx`) and do not use this package.
+
+## Settings & reading positions
+
+- Reader settings (theme, layout mode, fonts, sizes, split ratio) live in localStorage via `useSettings()` / `getSettings()` in `app/lib/settings.ts`.
+- Reading positions are stored per-book in IndexedDB as `{ cfi, updatedAt }` LWW records (`app/lib/stores/position-store.ts`); epub uses a CFI string, pdf a `page:N` pseudo-CFI.
+
+## Sync
+
+Synced entity types (`app/lib/sync/types.ts`): `book`, `highlight`, `bookmark`, `notebook`, `chat_session`, `chat_message`, `position`, `settings`. (Reading history is local-only.)
+
+- **Engine**: `makeSyncEngine()` (`app/lib/sync/sync-engine.ts`) is a factory returning a `SyncEngine` (`pushChanges`/`pullChanges`/`startSync`/`stopSync`/`triggerPush`/`triggerPull`/`reloadBookFiles`). `startSync()` does an immediate pull, then runs periodic push (30s) and pull (60s) intervals; `runCycle` serializes/normalizes errors and surfaces `onSyncStart`/`onSyncEnd`/`onSyncError`/`onAuthExpired`. `app/lib/sync/use-sync.ts` is the React wiring: it owns the engine instance and triggers immediate push+pull on window `focus`, push on `online`, blocks pushes while `offline`, and listens for the `sync:push-needed` event.
+- **Change tracking**: service mutations call `recordChange()` (`app/lib/sync/change-log.ts`) which appends to a changelog IDB store. Changes are batched and pushed on an interval or immediately on `sync:push-needed`. Chat message **bodies are not recorded** — the server persists them while streaming `/api/chat`.
+- **Merge strategies** (`ENTITY_MERGE_STRATEGIES` in `types.ts`, mergers in `app/lib/sync/entity-mergers.ts`):
+  - `lww` (Last-Write-Wins by `updatedAt`): `book`, `position`, `notebook`, `settings`, `chat_session` metadata.
+  - `set_union` (with tombstone/soft-delete propagation): `highlight`, `bookmark`.
+  - `append_only` (`ON CONFLICT DO NOTHING`): `chat_message` — written server-side during streaming; pull only hydrates the IDB warm-start cache.
+- **Sync events**: the engine dispatches granular `sync:entity-updated` events. Components use `useSyncListener(["entity"])` to re-render only on their data.
+- **File sync**: epub/pdf files and covers upload to Vercel Blob (private) via `/api/sync/files/*`. Metadata syncs immediately; binaries download on-demand when a book opens. Server may dedupe an uploaded book by `fileHash` and return a `canonicalId`; the client remaps local references (`app/lib/sync/remap.ts`).
+- **Initial sync**: on first login `runInitialSyncIfNeeded()` (`initial-sync.ts`) scans all IDB stores and backfills the change log so pre-existing data gets pushed.
+
+## Chat
+
+Chat is **server-authoritative**: Postgres (`readmax.chat_session`, `readmax.chat_message`) is the source of truth, not IndexedDB — a deliberate deviation from local-first because chat streams LLM output and runs server tools. A conversation can span multiple books in a cluster; book-scoped tools take a `bookId` (defaulting to the primary book).
+
+- **Transport**: client uses the AI SDK `DefaultChatTransport` with `resume: true`. On mount, `useChat` hydrates from `/api/chat/messages/:sessionId` and, if an `activeStreamId` is present, reconnects to the in-flight SSE stream via `/api/chat/resume/:sessionId` (`resumable-stream` + Redis). Survives reloads and tab switches mid-generation.
+- **IDB warm-start cache**: `app/lib/stores/chat-store.ts` keeps a per-session IDB copy of messages so the panel paints before server hydration. Written from the server list via `cacheServerMessages()`; **never** pushed for messages. Session metadata (title, `bookId`, timestamps) syncs LWW as `chat_session`.
+- **Server-executed tools** (run inside `/api/chat`, not the browser): `read_notes`, `append_to_notes`, `edit_notes` (sandboxed JS edit script against the notebook SDK), `create_highlight` (upserts by text anchor; client resolves CFI later), `search_book`, `read_chapter`, `search_standard_ebooks`, plus Anthropic `web_search`. Output streams back as SSE message parts; `app/components/chat/use-chat-tool-handlers.ts` watches for `output-available` parts and applies the state change locally — the client never re-runs these tools.
+- **Auth-gated endpoints** (require a passkey session; unauthenticated → 401 with a sign-in CTA): `POST /api/chat`, `POST /api/chat-title`, `GET /api/chat/resume/:sessionId`, `GET /api/chat/messages/:sessionId`.
+
+## Reading artifacts
+
+Outline, character-sheet, and story-so-far artifacts are server-authoritative Postgres data scoped by user and book. Authenticated dwell ingestion uses `POST /api/books/:bookId/artifacts/ingest`; the server verifies the normalized-text SHA-256 fingerprint and deduplicates before any background work. Current heads and newest-first revision history are available from `GET /api/books/:bookId/artifacts` and `GET /api/books/:bookId/artifacts/revisions?kind=outline|characters|wiki`. Background ingest claims durable Postgres queue rows and generates page increments through the AI Gateway before merging artifact revisions. Queue rows, artifacts, revisions, and per-unit usage remain durable across transient generation failures.
+
+## Notebooks
+
+Per-book rich-text notes edited with TipTap (`app/components/tiptap-editor.tsx`, `workspace-notebook.tsx`), stored as `JSONContent` in the notebook IDB store and synced LWW as `notebook`. Chat tools (`append_to_notes`, `edit_notes`) write through to IDB and dispatch a sync event; see `NotebookEditorCallbacks.seedLastContent` for the cursor-preservation handshake.
+
+## Sharing
+
+Read-only public share links (`app/routes/share.$id.tsx`, `app/routes/api.share*.ts`, `app/lib/database/share/`). A share exposes a book (epub or pdf), its current position, notebook, and chats via signed, use-count-limited download tokens (`app/lib/share-download-token.ts`). These routes are server-rendered and read from Postgres directly.
+
+## Standard Ebooks
+
+`app/lib/standard-ebooks.ts` + `app/routes/api.standard-ebooks.*.ts` proxy the Standard Ebooks catalog for search, new releases, and download/import into the user's library.
+
+## Auth
+
+WebAuthn passkeys via `@simplewebauthn/*` (`app/routes/api.auth.*.ts`, `app/lib/auth-*.ts`, `app/lib/database/auth/`). Session enforced by `app/lib/database/auth-middleware.ts`; client state in `app/lib/context/auth-context.tsx`.
+
+## Shared reader hooks
+
+Add new reader functionality to the shared hook rather than duplicating per reader:
+
+- Epub: `app/hooks/use-epub-lifecycle.ts`, `use-reader-search.ts`, `use-highlights.ts`.
+- PDF: `app/hooks/use-pdf-lifecycle.ts`, `use-pdf-search.ts`, `use-pdf-highlights.ts`, `use-pdf-workspace-panels.ts`.
+- Shared: `use-toolbar-auto-hide.ts`, `use-book-search.ts`, `use-book-upload.ts`, `use-book-deletion.ts`.

@@ -1,12 +1,15 @@
 import { useCallback } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import type { JSONContent } from "@tiptap/react";
-import { Effect } from "effect";
-import { AnnotationService } from "~/lib/stores/annotations-store";
 import { BookService } from "~/lib/stores/book-store";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
+import { normalizeCfiRange } from "~/lib/chat/highlight-tools";
+import { useAppStore } from "~/lib/themis/provider";
+import {
+  addHighlightRequested,
+  cacheNotebookRequested,
+} from "~/lib/themis/annotations/annotations-slice";
 import { getToolInfo } from "./chat-utils";
 
 interface UseChatToolHandlersOptions {
@@ -15,10 +18,10 @@ interface UseChatToolHandlersOptions {
   bookDataRef: React.RefObject<ArrayBuffer | null>;
   /**
    * Populated by useStreamingAppend with toolCallIds whose content was already
-   * inserted into the live editor via the input-streaming preview. onFinish
-   * uses this to avoid double-appending the authoritative server output.
+   * inserted into the live editor and their pre-preview content. onFinish uses
+   * this to avoid duplicates and roll back failed optimistic previews.
    */
-  streamedToolCallIdRef?: React.MutableRefObject<Set<string>>;
+  streamedToolCallIdRef?: React.MutableRefObject<Map<string, JSONContent>>;
 }
 
 export function useChatToolHandlers({
@@ -27,12 +30,32 @@ export function useChatToolHandlers({
   bookDataRef,
   streamedToolCallIdRef,
 }: UseChatToolHandlersOptions) {
+  const store = useAppStore();
   const {
     navigateInCluster,
     applyTempHighlightForBook,
     notebookCallbackMap,
     notebookEditorCallbackMap,
   } = useWorkspace();
+
+  const cacheNotebookSnapshot = useCallback(
+    (targetBookId: string, content: JSONContent, updatedAt: number): void => {
+      store.dispatch(
+        cacheNotebookRequested(
+          { bookId: targetBookId, content, updatedAt },
+          () => {
+            queueMicrotask(() => {
+              window.dispatchEvent(
+                new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
+              );
+            });
+          },
+          console.error,
+        ),
+      );
+    },
+    [store],
+  );
 
   // onToolCall fires as soon as each tool call has its input parsed. All
   // notebook tools (append_to_notes, edit_notes) now run on the server; their
@@ -81,19 +104,45 @@ export function useChatToolHandlers({
         const toolCallId = (part as any).toolCallId as string | undefined;
 
         // Always consume the streaming-preview marker for this toolCallId so
-        // the Set doesn't grow unbounded across messages — even when the
+        // the Map doesn't grow unbounded across messages — even when the
         // server output indicates nothing was appended.
-        const streamingPreviewed =
-          !!toolCallId && !!streamedToolCallIdRef?.current.delete(toolCallId);
+        const previewSnapshot = toolCallId
+          ? streamedToolCallIdRef?.current.get(toolCallId)
+          : undefined;
+        const streamingPreviewed = previewSnapshot !== undefined;
+        if (toolCallId) streamedToolCallIdRef?.current.delete(toolCallId);
 
         // Route to the book named in the tool output (multi-book chat). Falls
         // back to the bound (primary) bookId for back-compat when absent.
         const targetBookId = output?.bookId ?? bookId;
-        if (!output?.appended || !targetBookId) continue;
-        const appendedNodes = Array.isArray(output.appendedNodes) ? output.appendedNodes : [];
-        if (appendedNodes.length === 0) continue;
+        if (!output || !targetBookId) continue;
 
         const editorCbs = notebookEditorCallbackMap.current.get(targetBookId);
+        const authoritativeSnapshot =
+          output.updatedContent && typeof output.updatedAt === "number"
+            ? { content: output.updatedContent, updatedAt: output.updatedAt }
+            : null;
+
+        if (!output.appended) {
+          // The streamed preview already mutated the open editor. Restore the
+          // authoritative server snapshot when available, otherwise roll back
+          // to the content captured before the preview began.
+          if (authoritativeSnapshot) {
+            editorCbs?.setContent(authoritativeSnapshot.content);
+            editorCbs?.seedLastContent(authoritativeSnapshot.content);
+            cacheNotebookSnapshot(
+              targetBookId,
+              authoritativeSnapshot.content,
+              authoritativeSnapshot.updatedAt,
+            );
+          } else if (previewSnapshot) {
+            editorCbs?.setContent(previewSnapshot);
+          }
+          continue;
+        }
+
+        const appendedNodes = Array.isArray(output.appendedNodes) ? output.appendedNodes : [];
+        if (appendedNodes.length === 0) continue;
 
         // Editor update: if the streaming preview already inserted these nodes
         // during input-streaming, skip — re-applying would duplicate.
@@ -103,29 +152,13 @@ export function useChatToolHandlers({
 
         // Write-through to IndexedDB is independent of editor state — even if
         // the editor isn't open we still want IDB to reflect the new notes.
-        if (output.updatedContent && typeof output.updatedAt === "number") {
-          const nextContent = output.updatedContent;
-          const nextUpdatedAt = output.updatedAt;
-          editorCbs?.seedLastContent(nextContent);
-          AppRuntime.runPromise(
-            AnnotationService.pipe(
-              Effect.andThen((svc) =>
-                svc.cacheNotebook({
-                  bookId: targetBookId,
-                  content: nextContent,
-                  updatedAt: nextUpdatedAt,
-                }),
-              ),
-            ),
-          )
-            .then(() => {
-              queueMicrotask(() => {
-                window.dispatchEvent(
-                  new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-                );
-              });
-            })
-            .catch(console.error);
+        if (authoritativeSnapshot) {
+          editorCbs?.seedLastContent(authoritativeSnapshot.content);
+          cacheNotebookSnapshot(
+            targetBookId,
+            authoritativeSnapshot.content,
+            authoritativeSnapshot.updatedAt,
+          );
         }
       }
 
@@ -177,25 +210,7 @@ export function useChatToolHandlers({
         // Use cacheNotebook (not saveNotebook) because the server has already
         // persisted this notebook state. saveNotebook would recordChange and
         // echo the same value back to the server on the next sync push.
-        AppRuntime.runPromise(
-          AnnotationService.pipe(
-            Effect.andThen((svc) =>
-              svc.cacheNotebook({
-                bookId: targetBookId,
-                content: updatedContent,
-                updatedAt: nextUpdatedAt,
-              }),
-            ),
-          ),
-        )
-          .then(() => {
-            queueMicrotask(() => {
-              window.dispatchEvent(
-                new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-              );
-            });
-          })
-          .catch(console.error);
+        cacheNotebookSnapshot(targetBookId, updatedContent, nextUpdatedAt);
       }
 
       // Handle create_highlight tool calls
@@ -217,6 +232,7 @@ export function useChatToolHandlers({
                 text: string;
                 note?: string | null;
                 color?: string;
+                cfiRange?: string | null;
                 createdAt: number;
                 textAnchor: { chapterIndex: number; snippet: string; offset?: number };
               };
@@ -248,9 +264,7 @@ export function useChatToolHandlers({
           try {
             const data = isPrimaryTarget
               ? bookDataRef.current
-              : await AppRuntime.runPromise(
-                  BookService.pipe(Effect.andThen((s) => s.getBookData(targetBookId))),
-                );
+              : await BookService.getBookData(targetBookId);
             if (!data) return;
 
             if (targetFormat === "pdf") {
@@ -260,7 +274,8 @@ export function useChatToolHandlers({
               const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
               pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href;
               const dataCopy = new Uint8Array(data).slice();
-              const doc = await pdfjs.getDocument({ data: dataCopy }).promise;
+              const loadingTask = pdfjs.getDocument({ data: dataCopy });
+              const doc = await loadingTask.promise;
               try {
                 const results = await searchPdf(doc, highlightText);
                 if (results.length > 0) {
@@ -273,13 +288,17 @@ export function useChatToolHandlers({
                     color: "rgba(255, 213, 79, 0.4)",
                     createdAt: Date.now(),
                   };
-                  await AppRuntime.runPromise(
-                    Effect.gen(function* () {
-                      const svc = yield* AnnotationService;
-                      yield* svc.saveHighlight(highlight);
-                    }),
-                  );
-                  await navigateInCluster(targetBookId, cfiRange);
+                  await new Promise<void>((resolve, reject) => {
+                    store.dispatch(
+                      addHighlightRequested(
+                        highlight,
+                        () => resolve(),
+                        (error) => reject(new Error(error)),
+                      ),
+                    );
+                  });
+                  // Don't navigate when AI creates highlights - preserves reading position
+                  // User can navigate to highlights via the notebook panel
 
                   // Append highlight to notebook (same as epub path)
                   const attrs = {
@@ -291,9 +310,7 @@ export function useChatToolHandlers({
                   if (appendFn) {
                     appendFn(attrs);
                   } else {
-                    AppRuntime.runPromise(
-                      appendHighlightReferenceToNotebook(targetBookId, attrs),
-                    ).catch(console.error);
+                    appendHighlightReferenceToNotebook(targetBookId, attrs).catch(console.error);
                   }
                 } else {
                   console.warn(
@@ -302,71 +319,63 @@ export function useChatToolHandlers({
                   );
                 }
               } finally {
-                await doc.destroy();
+                await loadingTask.destroy().catch(() => {});
               }
             } else {
               // Epub path
-              const ePub = (await import("epubjs")).default;
-              const { fuzzySearchBookForCfi } = await import("~/lib/epub/epub-search");
-              const tempBook = ePub(data.slice(0));
-              try {
+              let cfiRange = normalizeCfiRange(serverHighlight?.cfiRange) ?? "";
+              if (!cfiRange) {
+                const { fuzzySearchEpubForCfi } = await import("~/lib/epub/epub-search");
                 // Prefer the server's text-anchor snippet when present — the
                 // server already located the best chapter, so searching for the
                 // snippet first improves the odds of a clean match.
                 const snippet = serverHighlight?.textAnchor.snippet ?? highlightText;
-                let results = await fuzzySearchBookForCfi(tempBook, snippet);
+                let results = await fuzzySearchEpubForCfi(data.slice(0), snippet);
                 if (results.length === 0 && snippet !== highlightText) {
-                  results = await fuzzySearchBookForCfi(tempBook, highlightText);
+                  results = await fuzzySearchEpubForCfi(data.slice(0), highlightText);
                 }
+                cfiRange = normalizeCfiRange(results[0]?.cfi) ?? "";
+              }
 
-                const cfiRange = results[0]?.cfi ?? "";
-                const highlight = {
-                  id: serverHighlight?.id ?? crypto.randomUUID(),
-                  bookId: targetBookId,
-                  cfiRange,
-                  text: highlightText,
-                  color: serverHighlight?.color ?? "rgba(255, 213, 79, 0.4)",
-                  createdAt: serverHighlight?.createdAt ?? Date.now(),
-                  ...(serverHighlight?.textAnchor
-                    ? { textAnchor: serverHighlight.textAnchor }
-                    : {}),
-                  ...(serverHighlight?.note ? { note: serverHighlight.note } : {}),
-                };
+              if (!cfiRange) {
+                console.warn("create_highlight: no CFI resolved for:", highlightText.slice(0, 60));
+                return;
+              }
 
-                if (cfiRange === "") {
-                  console.warn(
-                    "create_highlight: no CFI resolved for:",
-                    highlightText.slice(0, 60),
-                  );
-                }
+              const highlight = {
+                id: serverHighlight?.id ?? crypto.randomUUID(),
+                bookId: targetBookId,
+                cfiRange,
+                text: highlightText,
+                color: serverHighlight?.color ?? "rgba(255, 213, 79, 0.4)",
+                createdAt: serverHighlight?.createdAt ?? Date.now(),
+                ...(serverHighlight?.textAnchor ? { textAnchor: serverHighlight.textAnchor } : {}),
+                ...(serverHighlight?.note ? { note: serverHighlight.note } : {}),
+              };
 
-                await AppRuntime.runPromise(
-                  Effect.gen(function* () {
-                    const svc = yield* AnnotationService;
-                    yield* svc.saveHighlight(highlight);
-                  }),
+              await new Promise<void>((resolve, reject) => {
+                store.dispatch(
+                  addHighlightRequested(
+                    highlight,
+                    () => resolve(),
+                    (error) => reject(new Error(error)),
+                  ),
                 );
+              });
 
-                if (cfiRange !== "") {
-                  await navigateInCluster(targetBookId, cfiRange);
-                  applyTempHighlightForBook(targetBookId, cfiRange);
-                }
+              // Don't navigate when AI creates highlights - preserves reading position
+              // User can navigate to highlights via the notebook panel
 
-                const attrs = {
-                  highlightId: highlight.id,
-                  cfiRange: highlight.cfiRange,
-                  text: highlight.text,
-                };
-                const appendFn = notebookCallbackMap.current.get(targetBookId);
-                if (appendFn) {
-                  appendFn(attrs);
-                } else {
-                  AppRuntime.runPromise(
-                    appendHighlightReferenceToNotebook(targetBookId, attrs),
-                  ).catch(console.error);
-                }
-              } finally {
-                tempBook.destroy();
+              const attrs = {
+                highlightId: highlight.id,
+                cfiRange: highlight.cfiRange,
+                text: highlight.text,
+              };
+              const appendFn = notebookCallbackMap.current.get(targetBookId);
+              if (appendFn) {
+                appendFn(attrs);
+              } else {
+                appendHighlightReferenceToNotebook(targetBookId, attrs).catch(console.error);
               }
             }
           } catch (err) {
@@ -379,11 +388,13 @@ export function useChatToolHandlers({
       bookId,
       bookFormat,
       bookDataRef,
+      cacheNotebookSnapshot,
       navigateInCluster,
       applyTempHighlightForBook,
       notebookCallbackMap,
       notebookEditorCallbackMap,
       streamedToolCallIdRef,
+      store,
     ],
   );
 

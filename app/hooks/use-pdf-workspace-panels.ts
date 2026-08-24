@@ -1,18 +1,19 @@
-import { useEffect, useRef, useCallback } from "react";
-import { Effect } from "effect";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { AppRuntime } from "~/lib/effect-runtime";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
-import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
-import type { DockviewPanelApi } from "dockview";
+import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
+import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell";
+import { useAppStore } from "~/lib/themis/provider";
+import { appendHighlightToNotebookRequested } from "~/lib/themis/annotations/annotations-slice";
 
 type SavedHighlight = { id: string; cfiRange: string; text: string };
 
 interface UsePdfWorkspacePanelsOptions {
   book: BookMeta;
-  panelApi?: DockviewPanelApi;
   currentPage: number;
+  hasRestoredPosition: boolean;
+  selectionText?: string;
   pdfDocRef?: React.RefObject<any>;
   saveHighlightFromPopover: () => Promise<SavedHighlight | null>;
   applyTempHighlight: (text: string) => void;
@@ -23,8 +24,9 @@ interface UsePdfWorkspacePanelsOptions {
 
 export function usePdfWorkspacePanels({
   book,
-  panelApi,
   currentPage,
+  hasRestoredPosition,
+  selectionText,
   pdfDocRef,
   saveHighlightFromPopover,
   applyTempHighlight,
@@ -33,6 +35,7 @@ export function usePdfWorkspacePanels({
   handleOpenNotebookRef,
 }: UsePdfWorkspacePanelsOptions) {
   const ws = useWorkspace();
+  const store = useAppStore();
   const {
     navigationMap,
     notebookCallbackMap,
@@ -42,6 +45,12 @@ export function usePdfWorkspacePanels({
     tempHighlightMap,
     highlightDeleteMap,
   } = ws;
+  const [readingDwellUnit, setReadingDwellUnit] = useState<ReadingDwellUnit | null>(null);
+  useReaderDwell({
+    bookId: book.id,
+    unit: readingDwellUnit,
+    enabled: hasRestoredPosition,
+  });
 
   // Register navigation callback for PDF (accepts "page:N" format or page number string)
   const goToPageRef = useRef<(page: number) => void>(() => {});
@@ -51,7 +60,6 @@ export function usePdfWorkspacePanels({
   }, []);
 
   useEffect(() => {
-    const id = panelApi?.id ?? book.id;
     const navigatePdf = (target: string) => {
       const pageMatch = target.match(/^page:(\d+)$/);
       if (pageMatch) {
@@ -63,29 +71,27 @@ export function usePdfWorkspacePanels({
         goToPageRef.current(pageNum);
       }
     };
-    navigationMap.current.set(id, navigatePdf);
+    navigationMap.current.set(book.id, navigatePdf);
     return () => {
-      navigationMap.current.delete(id);
+      navigationMap.current.delete(book.id);
     };
-  }, [book.id, panelApi, navigationMap]);
+  }, [book.id, navigationMap]);
 
   // Register temp highlight callback
   useEffect(() => {
-    const id = panelApi?.id ?? book.id;
-    tempHighlightMap.current.set(id, applyTempHighlight);
+    tempHighlightMap.current.set(book.id, applyTempHighlight);
     return () => {
-      tempHighlightMap.current.delete(id);
+      tempHighlightMap.current.delete(book.id);
     };
-  }, [book.id, panelApi, applyTempHighlight, tempHighlightMap]);
+  }, [book.id, applyTempHighlight, tempHighlightMap]);
 
   // Register highlight delete callback
   useEffect(() => {
-    const id = panelApi?.id ?? book.id;
-    highlightDeleteMap.current.set(id, removeHighlight);
+    highlightDeleteMap.current.set(book.id, removeHighlight);
     return () => {
-      highlightDeleteMap.current.delete(id);
+      highlightDeleteMap.current.delete(book.id);
     };
-  }, [book.id, panelApi, removeHighlight, highlightDeleteMap]);
+  }, [book.id, removeHighlight, highlightDeleteMap]);
 
   const handleSaveHighlight = useCallback(async () => {
     const highlight = await saveHighlightFromPopover();
@@ -100,19 +106,12 @@ export function usePdfWorkspacePanels({
       appendFn(attrs);
       return;
     }
-    // Notebook panel isn't mounted — write the reference directly to IDB so
-    // the highlight is visible (and deletable) the next time the notebook
-    // opens, instead of silently orphaning it.
-    AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
-      .then(() => {
-        queueMicrotask(() => {
-          window.dispatchEvent(
-            new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-          );
-        });
-      })
-      .catch((err) => console.error("Failed to append highlight to notebook:", err));
-  }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
+    store.dispatch(
+      appendHighlightToNotebookRequested(book.id, attrs, undefined, (error) =>
+        console.error("Failed to append highlight to notebook:", error),
+      ),
+    );
+  }, [saveHighlightFromPopover, notebookCallbackMap, book.id, store]);
 
   const handleAskQuestion = useCallback(async () => {
     try {
@@ -131,21 +130,18 @@ export function usePdfWorkspacePanels({
           { type: "paragraph" },
         ]);
       } else {
-        AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
-          .then(() => {
-            queueMicrotask(() => {
-              window.dispatchEvent(
-                new CustomEvent("sync:entity-updated", { detail: { entity: "notebook" } }),
-              );
-            });
-          })
-          .catch((err) => console.error("Failed to append highlight to notebook:", err));
+        store.dispatch(
+          appendHighlightToNotebookRequested(book.id, attrs, undefined, (error) =>
+            console.error("Failed to append highlight to notebook:", error),
+          ),
+        );
       }
 
       pendingHighlightPillMap.current.set(book.id, {
         text: highlight.text,
         pageLabel: `p${currentPage}`,
       });
+      openMobileReadingTab("Discuss");
       ws.openChatRef.current?.(book);
       dismissPopovers();
       window.getSelection()?.removeAllRanges();
@@ -159,12 +155,34 @@ export function usePdfWorkspacePanels({
     notebookEditorCallbackMap,
     pendingHighlightPillMap,
     saveHighlightFromPopover,
+    store,
     ws.openChatRef,
   ]);
+
+  const handleExplainThis = useCallback(() => {
+    const quote = selectionText;
+    if (!quote) return;
+
+    const message = `Explain this passage:\n\n${quote
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n")}`;
+    ws.pendingChatPromptMap.current.set(book.id, message);
+    openMobileReadingTab("Discuss");
+    ws.openChatRef.current?.(book);
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent("chat:explain", { detail: { bookId: book.id, message } }),
+      );
+    });
+    dismissPopovers();
+    window.getSelection()?.removeAllRanges();
+  }, [book, dismissPopovers, selectionText, ws.openChatRef, ws.pendingChatPromptMap]);
 
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
+    openMobileReadingTab("Notes");
     ws.openNotebookRef.current?.(book);
   }, [ws, book]);
 
@@ -172,6 +190,7 @@ export function usePdfWorkspacePanels({
   handleOpenNotebookRef.current = handleOpenNotebook;
 
   const handleOpenChat = useCallback(() => {
+    openMobileReadingTab("Discuss");
     ws.openChatRef.current?.(book);
   }, [ws, book]);
 
@@ -181,7 +200,7 @@ export function usePdfWorkspacePanels({
   useEffect(() => {
     // Only load book data as fallback when pdfDocRef is not available
     if (pdfDocRef) return;
-    AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBookData(book.id))))
+    BookService.getBookData(book.id)
       .then((data) => {
         bookDataRef.current = data;
       })
@@ -189,7 +208,8 @@ export function usePdfWorkspacePanels({
   }, [book.id, pdfDocRef]);
 
   useEffect(() => {
-    if (currentPage < 1) return;
+    setReadingDwellUnit(null);
+    if (currentPage < 1 || !hasRestoredPosition) return;
 
     let cancelled = false;
     const doc = pdfDocRef?.current;
@@ -203,6 +223,11 @@ export function usePdfWorkspacePanels({
             currentChapterIndex: currentPage - 1,
             currentSpineHref: `page:${currentPage}`,
             visibleText: text,
+          });
+          setReadingDwellUnit({
+            unitKind: "pdf-page",
+            locator: `page:${currentPage}`,
+            text,
           });
         })
         .catch(console.error);
@@ -218,6 +243,11 @@ export function usePdfWorkspacePanels({
             currentSpineHref: `page:${currentPage}`,
             visibleText: text,
           });
+          setReadingDwellUnit({
+            unitKind: "pdf-page",
+            locator: `page:${currentPage}`,
+            text,
+          });
         })
         .catch(console.error);
     }
@@ -225,7 +255,7 @@ export function usePdfWorkspacePanels({
     return () => {
       cancelled = true;
     };
-  }, [book.id, currentPage, chatContextMap, pdfDocRef]);
+  }, [book.id, currentPage, chatContextMap, hasRestoredPosition, pdfDocRef]);
 
   // Clean up chatContextMap on unmount
   useEffect(() => {
@@ -237,6 +267,7 @@ export function usePdfWorkspacePanels({
   return {
     handleSaveHighlight,
     handleAskQuestion,
+    handleExplainThis,
     handleOpenNotebook,
     handleOpenChat,
     setGoToPage,

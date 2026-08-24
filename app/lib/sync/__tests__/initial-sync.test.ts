@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { clear, createStore, del, set } from "idb-keyval";
+import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
 import { clearSyncedChanges, getUnsyncedChanges, markSynced } from "~/lib/sync/change-log";
 import { runInitialSyncIfNeeded } from "~/lib/sync/initial-sync";
 import type { ChatSession } from "~/lib/stores/chat-store";
@@ -10,6 +11,7 @@ const flagStore = createStore("ebook-reader-sync-flags", "flags");
 const bookStore = createStore("ebook-reader-db", "books");
 const posStore = createStore("ebook-reader-positions", "positions");
 const hlStore = createStore("ebook-reader-highlights", "highlights");
+const bookmarkStore = createStore("ebook-reader-bookmarks", "bookmarks");
 const nbStore = createStore("ebook-reader-notebooks", "notebooks");
 const chatStore = createStore("ebook-reader-chat-sessions", "sessions");
 
@@ -19,6 +21,7 @@ beforeEach(async () => {
     clear(bookStore),
     clear(posStore),
     clear(hlStore),
+    clear(bookmarkStore),
     clear(nbStore),
     clear(chatStore),
     del(INITIAL_SYNC_KEY, flagStore),
@@ -32,6 +35,46 @@ beforeEach(async () => {
 });
 
 describe("runInitialSyncIfNeeded — chat backfill", () => {
+  it("excludes the reserved demo book, its dependents, and its fixed chat session", async () => {
+    const ownedBookId = "owned-book";
+    const ownedSession: ChatSession = {
+      ...DEMO_CHAT_SESSION,
+      id: "owned-session",
+      bookId: ownedBookId,
+    };
+    await Promise.all([
+      set(DEMO_BOOK_ID, { id: DEMO_BOOK_ID, updatedAt: 1 }, bookStore),
+      set(ownedBookId, { id: ownedBookId, updatedAt: 2 }, bookStore),
+      set(DEMO_BOOK_ID, { bookId: DEMO_BOOK_ID, updatedAt: 1 }, posStore),
+      set(ownedBookId, { bookId: ownedBookId, updatedAt: 2 }, posStore),
+      set("demo-highlight", { bookId: DEMO_BOOK_ID, updatedAt: 1 }, hlStore),
+      set("owned-highlight", { bookId: ownedBookId, updatedAt: 2 }, hlStore),
+      set("demo-bookmark", { bookId: DEMO_BOOK_ID, updatedAt: 1 }, bookmarkStore),
+      set("owned-bookmark", { bookId: ownedBookId, updatedAt: 2 }, bookmarkStore),
+      set(DEMO_BOOK_ID, { bookId: DEMO_BOOK_ID, updatedAt: 1 }, nbStore),
+      set(ownedBookId, { bookId: ownedBookId, updatedAt: 2 }, nbStore),
+      set(DEMO_BOOK_ID, [DEMO_CHAT_SESSION], chatStore),
+      set(ownedBookId, [ownedSession, { ...DEMO_CHAT_SESSION, bookId: ownedBookId }], chatStore),
+    ]);
+
+    await runInitialSyncIfNeeded();
+
+    const changes = await getUnsyncedChanges();
+    expect(changes).toHaveLength(6);
+    expect(changes.map(({ entity, entityId }) => [entity, entityId])).toEqual(
+      expect.arrayContaining([
+        ["book", ownedBookId],
+        ["position", ownedBookId],
+        ["highlight", "owned-highlight"],
+        ["bookmark", "owned-bookmark"],
+        ["notebook", ownedBookId],
+        ["chat_session", ownedSession.id],
+      ]),
+    );
+    expect(JSON.stringify(changes)).not.toContain(DEMO_BOOK_ID);
+    expect(JSON.stringify(changes)).not.toContain(DEMO_CHAT_SESSION.id);
+  });
+
   it("records chat_session changes but zero chat_message changes, even when messages exist in IDB", async () => {
     const session: ChatSession = {
       id: "session-1",
@@ -107,7 +150,7 @@ describe("runInitialSyncIfNeeded — settings backfill", () => {
         colorTheme: "nord",
         // UI fields that pre-split clients might still have in the legacy
         // blob — must NOT reach the change log.
-        layoutMode: "freeform",
+        zenMode: true,
         sidebarCollapsed: true,
         libraryView: "table",
         readerLayout: "spread",
@@ -132,7 +175,7 @@ describe("runInitialSyncIfNeeded — settings backfill", () => {
     expect(data).not.toHaveProperty("fontSize");
     expect(data).not.toHaveProperty("fontFamily");
     expect(data).not.toHaveProperty("lineHeight");
-    expect(data).not.toHaveProperty("layoutMode");
+    expect(data).not.toHaveProperty("zenMode");
     expect(data).not.toHaveProperty("sidebarCollapsed");
     expect(data).not.toHaveProperty("libraryView");
     expect(data).not.toHaveProperty("readerLayout");
@@ -145,7 +188,7 @@ describe("runInitialSyncIfNeeded — settings backfill", () => {
     localStorage.setItem(
       "app-settings",
       JSON.stringify({
-        layoutMode: "freeform",
+        zenMode: true,
         sidebarCollapsed: true,
         libraryView: "table",
         updatedAt: 100,

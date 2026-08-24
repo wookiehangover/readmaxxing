@@ -1,8 +1,8 @@
 @import "tailwindcss";
+@import "./typeset.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
-@import "dockview/dist/styles/dockview.css";
 @import "pdfjs-dist/web/pdf_viewer.css";
 @import "streamdown/styles.css";
 
@@ -30,6 +30,47 @@
   font-family: "Berkeley Mono";
   src: url("/fonts/BerkeleyMonoVariable.woff2") format("woff2");
   font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter[opsz,wght].woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Literata";
+  src: url("/fonts/Literata[opsz,wght].woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Lora";
+  src: url("/fonts/Lora[wght].woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Merriweather";
+  src: url("/fonts/Merriweather[opsz,wdth,wght].woff2") format("woff2");
+  font-weight: 300 900;
+  font-stretch: 87% 112%;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/SourceSerif4[opsz,wght].woff2") format("woff2");
+  font-weight: 200 900;
   font-style: normal;
   font-display: swap;
 }
@@ -87,7 +128,7 @@ body {
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.97 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
@@ -185,109 +226,13 @@ body {
   }
 
   @media (max-width: 480px) {
-    body {
+    .app-frame {
       padding-top: env(safe-area-inset-top);
       padding-bottom: env(safe-area-inset-bottom);
       padding-left: env(safe-area-inset-left);
       padding-right: env(safe-area-inset-right);
     }
   }
-}
-
-/* Custom dockview theme mapped to shadcn CSS variables */
-.dockview-theme-app {
-  --dv-paneview-active-outline-color: var(--ring);
-  --dv-tabs-and-actions-container-font-size: 12px;
-  --dv-tabs-and-actions-container-height: 36px;
-  --dv-drag-over-background-color: color-mix(in oklch, var(--accent) 50%, transparent);
-  --dv-drag-over-border-color: var(--border);
-  --dv-tabs-container-scrollbar-color: var(--muted-foreground);
-  --dv-icon-hover-background-color: var(--accent);
-  --dv-floating-box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  --dv-overlay-z-index: 999;
-  --dv-tab-font-size: 12px;
-  --dv-border-radius: 0px;
-  --dv-tab-margin: 0;
-  --dv-sash-color: transparent;
-  --dv-active-sash-color: var(--ring);
-  --dv-active-sash-transition-duration: 0.1s;
-  --dv-active-sash-transition-delay: 0.5s;
-  --dv-scrollbar-background-color: color-mix(in oklch, var(--foreground) 25%, transparent);
-
-  /* Panel & group backgrounds */
-  --dv-group-view-background-color: var(--background);
-  --dv-tabs-and-actions-container-background-color: var(--card);
-
-  /* Active group tabs */
-  --dv-activegroup-visiblepanel-tab-background-color: var(--background);
-  --dv-activegroup-hiddenpanel-tab-background-color: var(--secondary);
-  --dv-activegroup-visiblepanel-tab-color: var(--foreground);
-  --dv-activegroup-hiddenpanel-tab-color: var(--muted-foreground);
-
-  /* Inactive group tabs */
-  --dv-inactivegroup-visiblepanel-tab-background-color: var(--secondary);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--secondary);
-  --dv-inactivegroup-visiblepanel-tab-color: var(--muted-foreground);
-  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted-foreground);
-
-  /* Borders & separators */
-  --dv-tab-divider-color: var(--border);
-  --dv-separator-border: var(--border);
-  --dv-paneview-header-border-color: var(--border);
-}
-
-.dockview-theme-app .dv-tab {
-  border-left: 1px solid var(--border);
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-}
-
-.dv-tab:focus-within::after,
-.dv-tab:focus::after {
-  display: none !important;
-}
-
-.dv-left-actions-container,
-.dv-void-container {
-  border-bottom: 1px solid var(--border);
-}
-
-.zen-mode .dv-tabs-and-actions-container {
-  display: none !important;
-}
-
-.zen-mode .dv-left-actions-container,
-.zen-mode .dv-void-container {
-  border-bottom: none;
-}
-
-.dockview-theme-app .dv-tab.dv-active-tab {
-  border-bottom-color: transparent;
-}
-
-.dockview-theme-app .dv-tab .dv-default-tab .dv-default-tab-action {
-  padding: 2px;
-}
-
-.dockview-theme-app .dv-tab .dv-default-tab .dv-default-tab-action svg {
-  width: 8px;
-  height: 8px;
-}
-
-.dockview-theme-app .dv-focused-book-group > .dv-tabs-and-actions-container {
-  display: none;
-}
-
-.dockview-theme-app
-  .dv-drop-target-container
-  .dv-drop-target-anchor.dv-drop-target-anchor-container-changed {
-  opacity: 0;
-  transition: none;
-}
-
-.dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {
-  background-color: var(--dv-activegroup-visiblepanel-tab-background-color) !important;
-  color: var(--dv-activegroup-visiblepanel-tab-color) !important;
 }
 
 @supports (animation-timeline: scroll()) {
@@ -377,19 +322,23 @@ body {
   border-radius: 1px;
 }
 
-/* suggested question indicator*/
-
-.next-suggestion {
+.book-cover-container::after {
+  --spine-start: 3%;
+  --spine-end: 5%;
+  --spine-color: rgba(0 0 0 / 25%);
+  --spine-highlight: rgba(255 255 255 / 5%);
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    transform 0.3s cubic-bezier(0.25, 1, 0.5, 1),
-    opacity 0.2s ease;
-}
-
-.next-suggestion-active {
-  opacity: 1;
+  right: 0;
+  bottom: 0;
+  background-image: linear-gradient(
+    to right,
+    var(--spine-highlight),
+    var(--spine-highlight) var(--spine-start),
+    var(--spine-color) var(--spine-start),
+    transparent var(--spine-end),
+    transparent
+  );
 }

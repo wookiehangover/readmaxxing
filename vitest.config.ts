@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: "happy-dom",
     setupFiles: ["fake-indexeddb/auto"],
-    include: ["app/**/*.test.{ts,tsx}"],
+    include: ["app/**/*.test.{ts,tsx}", "packages/**/*.test.{ts,tsx}"],
   },
   resolve: {
     tsconfigPaths: true,

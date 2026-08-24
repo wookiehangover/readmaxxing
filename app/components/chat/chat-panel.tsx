@@ -1,199 +1,236 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { useChat, type UIMessage } from "@ai-sdk/react";
-import { Effect } from "effect";
-import { useStickToBottom } from "use-stick-to-bottom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { UIMessage } from "@ai-sdk/react";
 import { Button } from "~/components/ui/button";
-import { Plus } from "lucide-react";
-import { ChatService } from "~/lib/stores/chat-store";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
-import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
-import { uploadChaptersOnce } from "~/lib/chat/upload-chapters";
-import { cn } from "~/lib/utils";
+import { OnboardingDialog } from "~/components/onboarding/onboarding-dialog";
 import { useSyncListener } from "~/hooks/use-sync-listener";
-import {
-  useOptionalWorkspace,
-  type NotebookEditorCallbacks,
-} from "~/lib/context/workspace-context";
 import { useAuth } from "~/lib/context/auth-context";
+import { useWorkspace } from "~/lib/context/workspace-context";
+import { extractBookChapters, type BookChapter } from "~/lib/epub/epub-text-extract";
+import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
+import { extractPdfChapters } from "~/lib/pdf/pdf-text-extract";
+import { BookService } from "~/lib/stores/book-store";
+import { ensureBookChaptersUploaded } from "~/lib/sync/book-chapter-uploads";
+import { adoptDemoBookRequested } from "~/lib/themis/books/books-slice";
 import {
-  toUIMessages,
-  uiMessagesToChatMessages,
-  parseSuggestedPrompts,
-  createChatTransport,
-  joinTextParts,
-} from "./chat-utils";
-import { ChatMessage } from "./chat-message";
-import { ChatEmptyState, SuggestedPrompts } from "./chat-empty-state";
-import { useChatToolHandlers } from "./use-chat-tool-handlers";
-import { useStreamingAppend } from "./use-streaming-append";
-import { ChatInput } from "./chat-input";
-import { SessionMenuButton, ChatSessionList, EditableTitle } from "./chat-session-menu";
-import { ChatBookSelector } from "./chat-book-selector";
+  cacheChatMessagesRequested,
+  createChatSessionRequested,
+  hydrateChatSessionsRequested,
+  selectChatSessionRequested,
+} from "~/lib/themis/chat-sessions/chat-sessions-slice";
+import { useAppStore } from "~/lib/themis/provider";
+import { ChatPanelInner } from "./chat-panel-inner";
+import { resolvePendingChatMessage, type ChatIntent } from "./chat-intent";
+import { toUIMessages, uiMessagesToChatMessages } from "./chat-utils";
+import { useRemappedBookId } from "./use-remapped-book-id";
 
 interface ChatPanelProps {
   bookId: string;
   bookTitle: string;
 }
 
-/**
- * A client-only, ephemeral marker rendered inline in the chat stream when the
- * user adds/removes a book from the selection mid-session. These are never sent
- * to the server and never persisted; they disappear on reload (acceptable).
- */
-interface BookAnnotation {
-  id: string;
-  action: "added" | "removed";
-  title: string;
-  /** Id of the message this marker renders after; null = after current last. */
-  afterMessageId: string | null;
-}
-
-/**
- * The book-selection state shared with the chat-header book-selector dropdown
- * (built in a separate task). The chat's own book (`ownBookId`) is always part
- * of `selectedBookIds`, is the primary book, and cannot be toggled off.
- */
-export interface BookSelection {
-  /** Currently-open books the user may include in the chat. */
-  openBooks: BookMeta[];
-  /** Book IDs included in the chat (always contains `ownBookId`). */
-  selectedBookIds: string[];
-  /** The chat's own book; locked-checked and never removable. */
-  ownBookId: string;
-  /** Toggle a book in/out of the selection (no-op for `ownBookId`). */
-  onToggleBook: (id: string) => void;
-}
-
-// Signature for the last message's parts — enough to detect in-flight streaming
-// growth (new text tokens, new tool invocations) without relying on deep equality.
-function lastMessageSignature(msg: UIMessage | undefined): string {
-  if (!msg) return "";
-  const parts = msg.parts ?? [];
-  let sig = `${msg.id}|${parts.length}`;
+function lastMessageSignature(message: UIMessage | undefined): string {
+  if (!message) return "";
+  const parts = message.parts ?? [];
+  let signature = `${message.id}|${parts.length}`;
   for (const part of parts) {
     if (part.type === "text") {
-      sig += `|t:${part.text.length}`;
+      signature += `|t:${part.text.length}`;
     } else if (part.type.startsWith("tool-")) {
-      // tool parts carry `state` + `output`; state transitions and output
-      // presence are the visible changes we care about
-      const p = part as { state?: string; output?: unknown };
-      sig += `|${part.type}:${p.state ?? ""}:${p.output === undefined ? 0 : 1}`;
+      const toolPart = part as { state?: string; output?: unknown };
+      signature += `|${part.type}:${toolPart.state ?? ""}:${toolPart.output === undefined ? 0 : 1}`;
     } else {
-      sig += `|${part.type}`;
+      signature += `|${part.type}`;
     }
   }
-  return sig;
+  return signature;
 }
 
-// Returns true when the two message lists would render differently.
-// Compares length, last id, and last-part signature. This is sufficient for
-// sync-pull updates (append-only messages) without iterating the whole list.
-function messagesDiffer(a: UIMessage[], b: UIMessage[]): boolean {
-  if (a.length !== b.length) return true;
-  if (a.length === 0) return false;
-  const la = a[a.length - 1];
-  const lb = b[b.length - 1];
-  if (la.id !== lb.id) return true;
-  return lastMessageSignature(la) !== lastMessageSignature(lb);
+function messagesDiffer(current: UIMessage[], next: UIMessage[]): boolean {
+  if (current.length !== next.length) return true;
+  if (current.length === 0) return false;
+  const currentLast = current[current.length - 1];
+  const nextLast = next[next.length - 1];
+  return (
+    currentLast.id !== nextLast.id ||
+    lastMessageSignature(currentLast) !== lastMessageSignature(nextLast)
+  );
 }
 
 export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(null);
+  const { pendingChatPromptMap } = useWorkspace();
+  const store = useAppStore();
   const [bookContext, setBookContext] = useState<{
     title: string;
     author: string;
     chapters: BookChapter[];
   } | null>(null);
-  const [bookFormat, setBookFormat] = useState<string | undefined>(undefined);
+  const [bookFormat, setBookFormat] = useState<string>();
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [sessionTitle, setSessionTitle] = useState<string>("");
-  // Increment to force ChatPanelInner remount on session switch
-  const [sessionKey, setSessionKey] = useState(0);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [pendingChatIntent, setPendingChatIntent] = useState<ChatIntent>({ type: "none" });
+  const [resumeAfterAuth, setResumeAfterAuth] = useState(false);
+  const [explainPrompt, setExplainPrompt] = useState<string | null>(null);
+  const [adoptedBookId, setAdoptedBookId] = useState<string | null>(null);
+  const [adoptionError, setAdoptionError] = useState<string | null>(null);
   const bookDataRef = useRef<ArrayBuffer | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inputRef = useRef("");
-  // Ref to setMessages from ChatPanelInner's useChat hook — lets us update
-  // messages in-place on sync without remounting (which loses scroll position).
-  const setChatMessagesRef = useRef<((msgs: UIMessage[]) => void) | null>(null);
+  const setChatMessagesRef = useRef<((messages: UIMessage[]) => void) | null>(null);
+  const explanationInFlightRef = useRef<{ bookId: string; message: string } | null>(null);
 
-  // Load chat history and book context on mount.
-  //
-  // Gated on `isAuthenticated` so signed-out users never create orphaned local
-  // chat sessions (these would otherwise linger in IDB until the next manual
-  // clear) and never fire the subsequent messages fetch that would 401.
+  const chatBookId = useRemappedBookId(adoptedBookId ?? bookId);
+  const activeSession = store.chatSessionsSelectors.selectActiveSessionByBook.useValue(chatBookId);
+  const activeSessionId = activeSession?.id ?? null;
+  const hasReservedChatIds =
+    chatBookId === DEMO_BOOK_ID || activeSessionId === DEMO_CHAT_SESSION.id;
+  const chatSessionsLoaded =
+    store.chatSessionsSelectors.selectChatSessionsLoaded.useValue(chatBookId);
+  const chatSessionsError =
+    store.chatSessionsSelectors.selectChatSessionsError.useValue(chatBookId);
+  const initialMessages = useMemo(
+    () => toUIMessages(activeSession?.messages ?? []),
+    [activeSession?.messages],
+  );
+
+  const explanationScopeRef = useRef({ active: false, bookId: chatBookId });
+  useEffect(() => {
+    const scope = { active: true, bookId: chatBookId };
+    explanationScopeRef.current = scope;
+    return () => {
+      scope.active = false;
+    };
+  }, [chatBookId]);
+
+  const startExplanationSession = useCallback(
+    (message: string) => {
+      const scope = explanationScopeRef.current;
+      return new Promise<boolean>((resolve) => {
+        store.dispatch(
+          createChatSessionRequested(
+            chatBookId,
+            undefined,
+            () => {
+              if (!scope.active || scope.bookId !== chatBookId) {
+                resolve(false);
+                return;
+              }
+              setExplainPrompt(message);
+              resolve(true);
+            },
+            (error) => {
+              console.error("Failed to start explanation chat:", error);
+              resolve(false);
+            },
+          ),
+        );
+      });
+    },
+    [chatBookId, store],
+  );
+
+  const consumePendingExplanation = useCallback(
+    (expectedMessage?: string) => {
+      const message = pendingChatPromptMap.current.get(chatBookId);
+      if (!message || (expectedMessage !== undefined && message !== expectedMessage)) return;
+      if (explanationInFlightRef.current?.bookId === chatBookId) return;
+
+      const inFlight = { bookId: chatBookId, message };
+      explanationInFlightRef.current = inFlight;
+      startExplanationSession(message)
+        .then((started) => {
+          if (started && pendingChatPromptMap.current.get(chatBookId) === message) {
+            pendingChatPromptMap.current.delete(chatBookId);
+          }
+        })
+        .finally(() => {
+          if (explanationInFlightRef.current === inFlight) {
+            explanationInFlightRef.current = null;
+          }
+        });
+    },
+    [chatBookId, pendingChatPromptMap, startExplanationSession],
+  );
+
+  const chatReady =
+    isAuthenticated &&
+    !hasReservedChatIds &&
+    chatSessionsLoaded &&
+    bookContext !== null &&
+    activeSessionId !== null;
+
   useEffect(() => {
     if (!isAuthenticated) return;
+
+    const handleExplain = (event: Event) => {
+      const { bookId: eventBookId, message } = (
+        event as CustomEvent<{ bookId: string; message: string }>
+      ).detail;
+      if (!chatReady || eventBookId !== chatBookId) return;
+      consumePendingExplanation(message);
+    };
+
+    window.addEventListener("chat:explain", handleExplain);
+    return () => window.removeEventListener("chat:explain", handleExplain);
+  }, [chatBookId, chatReady, consumePendingExplanation, isAuthenticated]);
+
+  useEffect(() => {
+    if (!chatReady) return;
+    consumePendingExplanation();
+  }, [chatReady, consumePendingExplanation]);
+
+  useEffect(() => {
+    if (!isAuthenticated && chatBookId !== DEMO_BOOK_ID) return;
+    if (isAuthenticated && chatBookId === DEMO_BOOK_ID) return;
     let cancelled = false;
+    setLoadError(null);
+    store.dispatch(hydrateChatSessionsRequested(chatBookId, isAuthenticated));
 
     const load = async () => {
       try {
-        const [savedMessages, book, bookData] = await Promise.all([
-          AppRuntime.runPromise(ChatService.pipe(Effect.andThen((s) => s.getMessages(bookId)))),
-          AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBook(bookId)))),
-          AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBookData(bookId)))),
-        ]);
-
-        if (cancelled) return;
-
-        // Get active session info
-        const activeId = await AppRuntime.runPromise(
-          ChatService.pipe(Effect.andThen((s) => s.getActiveSessionId(bookId))),
-        );
-        if (cancelled) return;
-
-        if (activeId) {
-          setActiveSessionId(activeId);
-          const session = await AppRuntime.runPromise(
-            ChatService.pipe(Effect.andThen((s) => s.getSession(activeId, bookId))),
-          );
-          if (cancelled) return;
-          if (session) {
-            setSessionTitle(session.title);
+        const book = await BookService.getBook(chatBookId).catch((error: unknown) => {
+          if (error instanceof Error && "_tag" in error && error._tag === "BookNotFoundError") {
+            return null;
           }
-        } else {
-          // No session exists — create one so messages persist from the start
-          const newSession = await AppRuntime.runPromise(
-            ChatService.pipe(Effect.andThen((s) => s.createSession(bookId))),
+          throw error;
+        });
+        if (cancelled) return;
+        if (!book) {
+          setLoadError(
+            "Book not found. This chat panel may have been restored from a saved layout for a deleted book.",
           );
-          if (cancelled) return;
-          setActiveSessionId(newSession.id);
-          setSessionTitle(newSession.title);
+          return;
         }
 
-        // Chapter extraction is best-effort and MUST NOT block chat from
-        // rendering. On Safari with large PDFs, pdfjs has been observed to
-        // throw from inside `getTextContent`; if that escapes, we still want
-        // the chat panel to load with an empty chapter list. Chapter-dependent
-        // features degrade gracefully server-side when chapters are missing.
+        const bookData = await BookService.getBookData(chatBookId);
+        if (cancelled) return;
+
         let chapters: BookChapter[] = [];
         try {
           chapters =
             book.format === "pdf"
               ? await extractPdfChapters(bookData)
               : await extractBookChapters(bookData);
-        } catch (err) {
-          console.warn("Failed to extract book chapters for chat context:", err);
+        } catch (error) {
+          console.warn("Failed to extract book chapters for chat context:", error);
         }
         if (cancelled) return;
 
         bookDataRef.current = bookData;
         setBookFormat(book.format);
-        setBookContext({ title: book.title, author: book.author, chapters });
-        setInitialMessages(toUIMessages(savedMessages));
-
-        // Fire-and-forget: upload chapters to the server once per book so
-        // subsequent chat requests can reuse the cached text. Skip when empty
-        // — no point POSTing an empty payload.
-        if (chapters.length > 0) {
-          uploadChaptersOnce(bookId, chapters, book.format).catch(console.error);
+        if (isAuthenticated && chapters.length > 0) {
+          try {
+            await ensureBookChaptersUploaded(chatBookId, { chapters, format: book.format });
+          } catch (error) {
+            console.error("Failed to upload chapters for chat context:", error);
+          }
         }
-      } catch (err) {
+        if (cancelled) return;
+
+        setBookContext({ title: book.title, author: book.author, chapters });
+      } catch (error) {
         if (!cancelled) {
-          console.error("Failed to load chat data:", err);
+          console.error("Failed to load chat data:", error);
           setLoadError("Failed to load chat data.");
         }
       }
@@ -203,32 +240,32 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [bookId, isAuthenticated]);
+  }, [chatBookId, isAuthenticated, store]);
 
-  // Track current messages for sync comparison without re-registering the listener
   const initialMessagesRef = useRef(initialMessages);
-  initialMessagesRef.current = initialMessages;
+  const renderedSessionIdRef = useRef(activeSessionId);
 
-  // Reconcile with the server-authoritative message history whenever the
-  // active session changes. IDB is rendered first as a warm-start cache; the
-  // fetched messages then replace it via the registered setMessages callback
-  // AND are written back to IDB so the next cold reload renders the correct
-  // thread immediately (instead of the stale pre-server IDB copy).
-  //
-  // If the server is unavailable (401/503), we silently keep the IDB copy.
-  // Gated on `isAuthenticated` — signed-out users never hit the endpoint.
-  //
-  // Session-switch safety: `handleSwitchSession` bumps `sessionKey` which
-  // remounts ChatPanelInner. The `cancelled` flag below is flipped during
-  // cleanup before the next effect runs, so any in-flight fetch for the old
-  // session bails out before touching the new inner's `setChatMessagesRef`.
   useEffect(() => {
-    if (!isAuthenticated || !activeSessionId) return;
+    if (renderedSessionIdRef.current !== activeSessionId) {
+      renderedSessionIdRef.current = activeSessionId;
+      initialMessagesRef.current = initialMessages;
+      return;
+    }
+    if (!messagesDiffer(initialMessagesRef.current, initialMessages)) return;
+    setChatMessagesRef.current?.(initialMessages);
+    initialMessagesRef.current = initialMessages;
+  }, [activeSessionId, initialMessages]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !activeSessionId || hasReservedChatIds) return;
     let cancelled = false;
     fetch(`/api/chat/messages/${encodeURIComponent(activeSessionId)}`)
-      .then(async (res) => {
-        if (!res.ok) return null;
-        return (await res.json()) as { messages: UIMessage[]; activeStreamId: string | null };
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as {
+          messages: UIMessage[];
+          activeStreamId: string | null;
+        };
       })
       .then((data) => {
         if (cancelled || !data) return;
@@ -236,108 +273,107 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
         if (setChatMessagesRef.current) {
           setChatMessagesRef.current(serverMessages);
           initialMessagesRef.current = serverMessages;
-        } else {
-          setInitialMessages(serverMessages);
-          initialMessagesRef.current = serverMessages;
         }
-        // Cache the server result locally so a subsequent cold reload sees
-        // the authoritative thread even before the fetch completes.
-        AppRuntime.runPromise(
-          ChatService.pipe(
-            Effect.andThen((s) =>
-              s.cacheServerMessages(
-                bookId,
-                activeSessionId,
-                uiMessagesToChatMessages(serverMessages),
-              ),
-            ),
+        store.dispatch(
+          cacheChatMessagesRequested(
+            chatBookId,
+            activeSessionId,
+            uiMessagesToChatMessages(serverMessages),
           ),
-        ).catch(console.error);
+        );
       })
       .catch(console.error);
     return () => {
       cancelled = true;
     };
-  }, [bookId, activeSessionId, isAuthenticated]);
+  }, [activeSessionId, chatBookId, hasReservedChatIds, isAuthenticated, store]);
 
-  // Split the chat sync listener by entity type so background session-metadata
-  // updates (title, updatedAt, activeStreamId from LWW) do NOT touch the
-  // message list. Calling `setMessages` on an unchanged list still resets
-  // scroll position inside `useStickToBottom`, which feels like a reload.
-  //
-  // - `chat_session` events → update only `sessionTitle` (and any other
-  //   session metadata). Do NOT call setChatMessagesRef.
-  // - `chat_message` events → diff messages against what's currently rendered
-  //   (length + last id + last-part signature) and only call setMessages when
-  //   the list has actually changed. Streaming deltas still flow through
-  //   because the last-part signature picks up on text growth.
-  const sessionSyncVersion = useSyncListener(["chat_session"]);
-  const messageSyncVersion = useSyncListener(["chat_message"]);
+  const chatSyncVersion = useSyncListener(["chat_message", "chat_session"]);
 
   useEffect(() => {
-    if (sessionSyncVersion === 0 || !activeSessionId) return;
-    AppRuntime.runPromise(
-      ChatService.pipe(Effect.andThen((s) => s.getSession(activeSessionId, bookId))),
-    )
-      .then((session) => {
-        if (!session) return;
-        setSessionTitle(session.title);
-      })
-      .catch(console.error);
-  }, [bookId, activeSessionId, sessionSyncVersion]);
-
-  useEffect(() => {
-    if (messageSyncVersion === 0 || !activeSessionId) return;
-    AppRuntime.runPromise(
-      ChatService.pipe(Effect.andThen((s) => s.getSession(activeSessionId, bookId))),
-    )
-      .then((session) => {
-        if (!session) return;
-        const newMessages = toUIMessages(session.messages);
-        const current = initialMessagesRef.current ?? [];
-        if (!messagesDiffer(current, newMessages)) return;
-        if (setChatMessagesRef.current) {
-          // Update messages in-place without remounting — preserves scroll
-          setChatMessagesRef.current(newMessages);
-          initialMessagesRef.current = newMessages;
-        } else {
-          // Fallback: remount if ref isn't registered yet
-          setInitialMessages(newMessages);
-          setSessionKey((k) => k + 1);
-        }
-      })
-      .catch(console.error);
-  }, [bookId, activeSessionId, messageSyncVersion]);
+    if (chatSyncVersion === 0 || !activeSessionId) return;
+    store.dispatch(hydrateChatSessionsRequested(chatBookId));
+  }, [activeSessionId, chatBookId, chatSyncVersion, store]);
 
   const handleSwitchSession = useCallback(
-    async (sessionId: string) => {
-      await AppRuntime.runPromise(
-        ChatService.pipe(Effect.andThen((s) => s.setActiveSessionId(bookId, sessionId))),
+    (sessionId: string) => {
+      store.dispatch(
+        selectChatSessionRequested(chatBookId, sessionId, undefined, (error) =>
+          console.error("Failed to switch chat session:", error),
+        ),
       );
-      const session = await AppRuntime.runPromise(
-        ChatService.pipe(Effect.andThen((s) => s.getSession(sessionId, bookId))),
-      );
-      if (session) {
-        setActiveSessionId(sessionId);
-        setSessionTitle(session.title);
-        setInitialMessages(toUIMessages(session.messages));
-        setSessionKey((k) => k + 1);
-      }
     },
-    [bookId],
+    [chatBookId, store],
   );
 
-  const handleNewSession = useCallback(async () => {
-    const session = await AppRuntime.runPromise(
-      ChatService.pipe(Effect.andThen((s) => s.createSession(bookId))),
+  const handleNewSession = useCallback(() => {
+    store.dispatch(
+      createChatSessionRequested(chatBookId, undefined, undefined, (error) =>
+        console.error("Failed to create chat session:", error),
+      ),
     );
-    setActiveSessionId(session.id);
-    setSessionTitle(session.title);
-    setInitialMessages([]);
-    setSessionKey((k) => k + 1);
-  }, [bookId]);
+  }, [chatBookId, store]);
 
-  // Show loading state while checking auth
+  const openOnboarding = useCallback((intent: ChatIntent) => {
+    setPendingChatIntent(intent);
+    setResumeAfterAuth(false);
+    setOnboardingOpen(true);
+  }, []);
+  const handleOnboardingOpenChange = useCallback((open: boolean) => {
+    setOnboardingOpen(open);
+    if (!open) {
+      setPendingChatIntent({ type: "none" });
+      setResumeAfterAuth(false);
+    }
+  }, []);
+  const handleAuthenticated = useCallback(
+    (userId: string) => {
+      const typedText = textareaRef.current?.value.trim();
+      if (typedText) {
+        setPendingChatIntent((intent) =>
+          resolvePendingChatMessage(intent) ? intent : { type: "typed", text: typedText },
+        );
+      }
+      return new Promise<void>((resolve) => {
+        store.dispatch(
+          adoptDemoBookRequested(
+            userId,
+            (adopted) => {
+              setAdoptedBookId(adopted.bookId);
+              store.dispatch(hydrateChatSessionsRequested(adopted.bookId, true));
+              setAdoptionError(null);
+              setResumeAfterAuth(true);
+              queueMicrotask(() => setOnboardingOpen(false));
+              resolve();
+            },
+            (error) => {
+              console.error("Failed to adopt demo library:", error);
+              setAdoptionError(
+                "Your account is ready, but we couldn't finish setting up the demo library. Check your connection and reload to try again.",
+              );
+              setResumeAfterAuth(false);
+              queueMicrotask(() => setOnboardingOpen(false));
+              resolve();
+            },
+          ),
+        );
+      });
+    },
+    [store],
+  );
+  const handleResumeComplete = useCallback(() => {
+    setPendingChatIntent({ type: "none" });
+    setResumeAfterAuth(false);
+    setExplainPrompt(null);
+  }, []);
+  const isLoggedOutDemoBook = !isAuthenticated && bookId === DEMO_BOOK_ID;
+  const isLoggedOutDemoSession = isLoggedOutDemoBook && activeSessionId === DEMO_CHAT_SESSION.id;
+  const pendingMessage = resolvePendingChatMessage(pendingChatIntent);
+
+  useEffect(() => {
+    if (isAuthenticated && resumeAfterAuth && pendingMessage === null) handleResumeComplete();
+  }, [handleResumeComplete, isAuthenticated, pendingMessage, resumeAfterAuth]);
+
   if (authLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -346,10 +382,17 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     );
   }
 
-  // Show sign-in CTA if not authenticated
-  if (!isAuthenticated) {
+  if (isAuthenticated && hasReservedChatIds) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
+      <div className="flex h-full items-center justify-center">
+        <p className="text-muted-foreground">Preparing your book…</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated && !isLoggedOutDemoBook) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-center text-muted-foreground">
           Sign in to chat with <span className="italic">{bookTitle}</span>
         </p>
@@ -360,589 +403,77 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
     );
   }
 
-  if (loadError) {
+  if (loadError || (chatSessionsError && !activeSession)) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">{loadError}</p>
+        <p className="text-muted-foreground">{loadError ?? chatSessionsError?.message}</p>
       </div>
     );
   }
 
-  if (!initialMessages || !bookContext || !activeSessionId) {
+  if (adoptionError) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-muted-foreground">Loading chat…</p>
+        <p className="text-center text-muted-foreground">{adoptionError}</p>
       </div>
     );
   }
 
-  return (
-    <ChatPanelInner
-      key={sessionKey}
-      bookId={bookId}
-      bookTitle={bookTitle}
-      bookFormat={bookFormat}
-      initialMessages={initialMessages}
-      bookDataRef={bookDataRef}
-      textareaRef={textareaRef}
-      inputRef={inputRef}
-      activeSessionId={activeSessionId}
-      sessionTitle={sessionTitle}
-      onSwitchSession={handleSwitchSession}
-      onNewSession={handleNewSession}
-      onSessionTitleChange={setSessionTitle}
-      onRegisterSetMessages={(fn) => {
-        setChatMessagesRef.current = fn;
-      }}
-    />
-  );
-}
-
-/**
- * Derives the list of currently-open books (those with an open panel) from the
- * workspace context. Reads `openBookIdsRef` — the authoritative open-book set
- * the workspace tracks for the active layout mode (freeform: mounted `book-*`
- * panels; focused: the full focused-order set, since inactive focused clusters
- * are unmounted and so would be missing from dockview / `clustersRef`). Resolves
- * those IDs to `BookMeta` via `booksRef` and re-derives on cluster changes via
- * `subscribeClusterChanges` (workspace.tsx also notifies when the set changes).
- * Returns an empty list when there is no workspace (standalone reader), so the
- * dropdown task can hide itself.
- */
-function useOpenBooks(workspace: ReturnType<typeof useOptionalWorkspace>): BookMeta[] {
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    if (!workspace) return;
-    return workspace.subscribeClusterChanges(() => setVersion((v) => v + 1));
-  }, [workspace]);
-  return useMemo(() => {
-    if (!workspace) return [];
-    void version; // re-derive whenever the open-book set / clusters change
-    const openIds = workspace.openBookIdsRef.current;
-    return workspace.booksRef.current.filter((b) => openIds.has(b.id));
-  }, [workspace, version]);
-}
-
-function ChatPanelInner({
-  bookId,
-  bookTitle,
-  bookFormat,
-  initialMessages,
-  bookDataRef,
-  textareaRef,
-  inputRef,
-  activeSessionId,
-  sessionTitle,
-  onSwitchSession,
-  onNewSession,
-  onSessionTitleChange,
-  onRegisterSetMessages,
-}: {
-  bookId: string;
-  bookTitle: string;
-  bookFormat?: string;
-  initialMessages: UIMessage[];
-  bookDataRef: React.RefObject<ArrayBuffer | null>;
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
-  inputRef: React.MutableRefObject<string>;
-  activeSessionId: string;
-  sessionTitle: string;
-  onSwitchSession: (sessionId: string) => void;
-  onNewSession: () => void;
-  onSessionTitleChange: (title: string) => void;
-  onRegisterSetMessages?: (fn: (msgs: UIMessage[]) => void) => void;
-}) {
-  const workspace = useOptionalWorkspace();
-  const fallbackChatContextMap = useRef(
-    new Map<
-      string,
-      { currentChapterIndex: number; currentSpineHref: string; visibleText: string }
-    >(),
-  );
-  const fallbackNotebookEditorCallbackMap = useRef(new Map<string, NotebookEditorCallbacks>());
-  const chatContextMap = workspace?.chatContextMap ?? fallbackChatContextMap;
-  const notebookEditorCallbackMap =
-    workspace?.notebookEditorCallbackMap ?? fallbackNotebookEditorCallbackMap;
-  const pendingHighlightPillMap = workspace?.pendingHighlightPillMap;
-  const [showSessionList, setShowSessionList] = useState(false);
-  const [highlightPill, setHighlightPill] = useState<{
-    text: string;
-    pageLabel: string;
-  } | null>(null);
-
-  const consumePendingHighlightPill = useCallback(() => {
-    if (!pendingHighlightPillMap) return;
-    const pendingPill = pendingHighlightPillMap.current.get(bookId);
-    if (!pendingPill) return;
-    setHighlightPill(pendingPill);
-    pendingHighlightPillMap.current.delete(bookId);
-    // Focus the textarea so the pill is immediately visible and the user can type
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-    });
-  }, [bookId, pendingHighlightPillMap, textareaRef]);
-
-  useEffect(() => {
-    consumePendingHighlightPill();
-  }, [consumePendingHighlightPill]);
-
-  // Refs that stay up-to-date with the reader's current chapter index and visible text
-  const currentChapterRef = useRef<number | undefined>(undefined);
-  const visibleTextRef = useRef<string>("");
-  useEffect(() => {
-    // Read initial value
-    const ctx = chatContextMap.current.get(bookId);
-    if (ctx) {
-      currentChapterRef.current = ctx.currentChapterIndex;
-      visibleTextRef.current = ctx.visibleText ?? "";
-    }
-
-    // Poll for updates (chatContextMap is updated by the reader's relocated event)
-    const interval = setInterval(() => {
-      const latest = chatContextMap.current.get(bookId);
-      if (latest) {
-        currentChapterRef.current = latest.currentChapterIndex;
-        visibleTextRef.current = latest.visibleText ?? "";
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [bookId, chatContextMap]);
-
-  // Books the user can choose to include in the chat (currently-open books).
-  const openBooks = useOpenBooks(workspace);
-  // `useOpenBooks` returns a NEW array reference on every cluster-change bump,
-  // even when the actual open-book set is unchanged. Effects must not key off
-  // that identity or they re-run (and potentially setState) on every bump,
-  // which loops with the workspace's `notifyClusterChanges()`. Derive a stable
-  // content key and read the latest array via a ref inside effects instead.
-  const openBooksRef = useRef(openBooks);
-  openBooksRef.current = openBooks;
-  const openBooksKey = useMemo(
-    () => openBooks.map((b) => `${b.id}:${b.title}`).join("\u0000"),
-    [openBooks],
-  );
-
-  // Set of book IDs included in the chat. The chat's own book is always present
-  // and is the primary (first) book. The dropdown task toggles additional books
-  // in/out via `toggleSelectedBook` (own book is a no-op).
-  const [selectedBookIds, setSelectedBookIds] = useState<string[]>([bookId]);
-  // Ref mirror so the transport reads the latest selection at send time rather
-  // than a stale closure captured when the transport was memoized.
-  const selectedBookIdsRef = useRef<string[]>(selectedBookIds);
-  selectedBookIdsRef.current = selectedBookIds;
-
-  const toggleSelectedBook = useCallback(
-    (id: string) => {
-      // The chat's own book can never be removed.
-      if (id === bookId) return;
-      setSelectedBookIds((prev) =>
-        prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id],
-      );
-    },
-    [bookId],
-  );
-
-  // Client-only, ephemeral markers shown inline when the user adds/removes a
-  // book mid-session. They are NEVER sent to the server (kept out of the
-  // useChat message list) and NEVER persisted to IDB. Each marker records the
-  // id of the message it should render after, so it stays in stream order.
-  // `null` means "after the current last message".
-  const [bookAnnotations, setBookAnnotations] = useState<BookAnnotation[]>([]);
-
-  // Selection bundle handed to the book-selector dropdown (separate task). The
-  // dropdown renders the open books with circular checkboxes, keeps the own
-  // book (`ownBookId`) locked-checked, and toggles the rest via `onToggleBook`.
-  const bookSelection: BookSelection = useMemo(
-    () => ({
-      openBooks,
-      selectedBookIds,
-      ownBookId: bookId,
-      onToggleBook: toggleSelectedBook,
-    }),
-    [openBooks, selectedBookIds, bookId, toggleSelectedBook],
-  );
-
-  // Titles of the selected books, primary (own book) first, for the empty state.
-  // Keyed on the stable `openBooksKey` (not the array identity) so it only
-  // recomputes when the open-book content actually changes.
-  const selectedBookTitles = useMemo(() => {
-    const titleById = new Map(openBooksRef.current.map((b) => [b.id, b.title]));
-    titleById.set(bookId, bookTitle);
-    return selectedBookIds.map((id) => titleById.get(id) ?? bookTitle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBookIds, openBooksKey, bookId, bookTitle]);
-
-  // Drop any selected books that are no longer open, but always keep the own
-  // book. Depends on `openBooksKey` (content) rather than the array identity so
-  // it does not re-run on every cluster-change bump.
-  useEffect(() => {
-    const openIds = new Set(openBooksRef.current.map((b) => b.id));
-    setSelectedBookIds((prev) => {
-      const next = prev.filter((id) => id === bookId || openIds.has(id));
-      return next.length === prev.length ? prev : next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openBooksKey, bookId]);
-
-  // Per-book reader context accessor for the transport. The primary book reads
-  // from the live refs (kept fresh by the poll above); other books read their
-  // last-known context from the shared chatContextMap.
-  const getBookContext = useCallback(
-    (id: string) => {
-      if (id === bookId) {
-        return {
-          visibleText: visibleTextRef.current,
-          currentChapterIndex: currentChapterRef.current,
-        };
-      }
-      const ctx = chatContextMap.current.get(id);
-      return {
-        visibleText: ctx?.visibleText,
-        currentChapterIndex: ctx?.currentChapterIndex,
-      };
-    },
-    [bookId, chatContextMap],
-  );
-
-  const transport = useMemo(
-    () =>
-      createChatTransport({
-        sessionId: activeSessionId,
-        bookId,
-        visibleTextRef,
-        currentChapterRef,
-        selectedBookIdsRef,
-        getBookContext,
-      }),
-    [activeSessionId, bookId, getBookContext],
-  );
-
-  // Track latest messages for onFinish callbacks (e.g. title generation)
-  const messagesRef = useRef<UIMessage[]>(initialMessages);
-
-  // Shared ref so the streaming preview hook can tell onFinish which
-  // toolCallIds already had their content inserted into the live editor.
-  const streamedToolCallIdRef = useRef<Set<string>>(new Set());
-
-  const { onToolCall, onFinish: onToolFinish } = useChatToolHandlers({
-    bookId,
-    bookFormat,
-    bookDataRef,
-    streamedToolCallIdRef,
-  });
-
-  // Track whether title generation has already been triggered for this session
-  const titleGeneratedRef = useRef(false);
-
-  const onFinish = useCallback(
-    (event: { message: UIMessage }) => {
-      onToolFinish(event);
-
-      // Fire-and-forget title generation after the first assistant response
-      const currentMessages = messagesRef.current;
-      if (
-        !titleGeneratedRef.current &&
-        event.message.role === "assistant" &&
-        currentMessages.length <= 5
-      ) {
-        titleGeneratedRef.current = true;
-
-        // Check if the active session needs a title, then generate one
-        const generateTitle = async () => {
-          const session = await AppRuntime.runPromise(
-            Effect.gen(function* () {
-              const svc = yield* ChatService;
-              const activeId = yield* svc.getActiveSessionId(bookId);
-              if (!activeId) return null;
-              return yield* svc.getSession(activeId, bookId);
-            }),
-          );
-
-          if (!session) return;
-
-          // Only generate if session has a default/generic title
-          if (session.title) return;
-
-          const res = await fetch("/api/chat-title", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ messages: currentMessages }),
-          });
-
-          if (!res.ok) return;
-
-          const { title } = (await res.json()) as { title: string };
-          if (!title) return;
-
-          await AppRuntime.runPromise(
-            ChatService.pipe(
-              Effect.andThen((svc) => svc.updateSessionTitle(session.id, session.bookId, title)),
-            ),
-          );
-          onSessionTitleChange(title);
-        };
-
-        generateTitle().catch(console.error);
-      }
-    },
-    [onToolFinish, bookId, onSessionTitleChange],
-  );
-
-  const { messages, sendMessage, setMessages, status, stop } = useChat({
-    id: activeSessionId,
-    transport,
-    messages: initialMessages,
-    // Reconnect to any in-flight stream for this session on mount. The resume
-    // endpoint returns 204 No Content when nothing is active; `useChat`
-    // treats that as a no-op, so this is safe to always enable.
-    resume: true,
-    // `onToolCall` is a documented no-op placeholder (no client-side tools
-    // today). All notebook/highlight tools run on the server; their outputs
-    // are consumed in `onFinish`. The cast preserves the SDK callback shape.
-    onToolCall: onToolCall as any,
-    onFinish,
-    onError: (err) => {
-      console.error("Chat error:", err);
-    },
-  });
-
-  // Keep messagesRef in sync
-  messagesRef.current = messages;
-
-  // Detect mid-session book add/remove and emit an ephemeral inline marker.
-  // We diff `selectedBookIds` against the previous selection rather than doing
-  // this in `toggleSelectedBook` so the marker can be anchored to the current
-  // last message id (read from `messagesRef`) without reordering hooks.
-  //
-  // Gated on a non-empty message list: the initial/default selection and any
-  // toggles while the chat is still empty produce no markers (the empty-state
-  // reflects those separately).
-  const prevSelectedBookIdsRef = useRef<string[]>(selectedBookIds);
-  useEffect(() => {
-    const prev = prevSelectedBookIdsRef.current;
-    prevSelectedBookIdsRef.current = selectedBookIds;
-    if (messagesRef.current.length === 0) return;
-
-    const prevSet = new Set(prev);
-    const nextSet = new Set(selectedBookIds);
-    const added = selectedBookIds.filter((id) => !prevSet.has(id));
-    const removed = prev.filter((id) => !nextSet.has(id));
-    if (added.length === 0 && removed.length === 0) return;
-
-    const titleById = new Map(openBooksRef.current.map((b) => [b.id, b.title]));
-    titleById.set(bookId, bookTitle);
-    const afterMessageId = messagesRef.current[messagesRef.current.length - 1]?.id ?? null;
-    const newMarkers: BookAnnotation[] = [
-      ...added.map((id) => ({
-        id: `annot-${crypto.randomUUID()}`,
-        action: "added" as const,
-        title: titleById.get(id) ?? id,
-        afterMessageId,
-      })),
-      ...removed.map((id) => ({
-        id: `annot-${crypto.randomUUID()}`,
-        action: "removed" as const,
-        title: titleById.get(id) ?? id,
-        afterMessageId,
-      })),
-    ];
-    setBookAnnotations((prevMarkers) => [...prevMarkers, ...newMarkers]);
-    // Triggered by selection changes; `openBooksKey` keeps title lookups fresh
-    // without re-running on every cluster-change array-identity bump.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBookIds, openBooksKey, bookId, bookTitle]);
-
-  // Expose setMessages to the parent so sync can update messages in-place
-  useEffect(() => {
-    onRegisterSetMessages?.(setMessages);
-  }, [setMessages, onRegisterSetMessages]);
-
-  // Stream append_to_notes content to the notebook in real-time as tokens arrive
-  useStreamingAppend({
-    messages,
-    bookId,
-    status,
-    notebookEditorCallbackMap,
-    streamedToolCallIdRef,
-  });
-
-  const isLoading = status === "streaming" || status === "submitted";
-
-  // Ids of currently-rendered messages, used to place ephemeral markers in
-  // stream order (and to absorb orphans whose anchor is gone) without ever
-  // touching the useChat message list.
-  const messageIdSet = useMemo(() => new Set(messages.map((m) => m.id)), [messages]);
-
-  const { scrollRef, contentRef } = useStickToBottom();
-
-  const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      const text = inputRef.current.trim();
-      if (!text || isLoading) return;
-      sendMessage({ text });
-      inputRef.current = "";
-      if (textareaRef.current) {
-        textareaRef.current.value = "";
-      }
-    },
-    [sendMessage, isLoading, inputRef, textareaRef],
-  );
-
-  const handleSwitchSessionFromList = useCallback(
-    (sessionId: string) => {
-      setShowSessionList(false);
-      if (sessionId !== activeSessionId) {
-        onSwitchSession(sessionId);
-      }
-    },
-    [activeSessionId, onSwitchSession],
-  );
-
-  const handleNewSessionFromList = useCallback(() => {
-    setShowSessionList(false);
-    onNewSession();
-  }, [onNewSession]);
-
-  return (
-    <div className="flex h-full flex-col" onFocusCapture={consumePendingHighlightPill}>
-      {/* Header */}
-      <div className="flex items-center gap-1 border-b px-2 py-1.5">
-        <SessionMenuButton
-          showSessionList={showSessionList}
-          onToggle={() => setShowSessionList((v) => !v)}
-        />
-        {showSessionList ? (
-          <h3 className="min-w-0 flex-1 truncate text-sm font-medium">Sessions</h3>
-        ) : sessionTitle ? (
-          <EditableTitle
-            value={sessionTitle}
-            className="min-w-0 flex-1 text-sm font-medium"
-            onSave={(newTitle) => {
-              if (!activeSessionId) return;
-              AppRuntime.runPromise(
-                ChatService.pipe(
-                  Effect.andThen((s) => s.updateSessionTitle(activeSessionId, bookId, newTitle)),
-                ),
-              )
-                .then(() => onSessionTitleChange(newTitle))
-                .catch(console.error);
-            }}
-          />
-        ) : null}
-        {!showSessionList && (
-          <div className="ml-auto flex items-center gap-1">
-            <ChatBookSelector {...bookSelection} />
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onNewSession}
-              title="New chat"
-              className="size-7"
-            >
-              <Plus className="size-3.5" />
-              <span className="sr-only">New chat</span>
-            </Button>
-          </div>
-        )}
+  if (!chatSessionsLoaded || !bookContext || (isAuthenticated && !activeSessionId)) {
+    return (
+      <div className="flex">
+        <p className="text-muted-foreground text-xs">Loading chat…</p>
       </div>
+    );
+  }
 
-      {showSessionList ? (
-        <ChatSessionList
-          bookId={bookId}
-          activeSessionId={activeSessionId}
-          onSwitchSession={handleSwitchSessionFromList}
-          onNewSession={handleNewSessionFromList}
-          onClose={() => setShowSessionList(false)}
+  if (!isAuthenticated && !isLoggedOutDemoSession) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4">
+        <p className="text-center text-muted-foreground">
+          Sign in to chat with <span className="italic">{bookTitle}</span>
+        </p>
+        <Button render={<a href="/login" />} nativeButton={false} variant="default">
+          Sign in
+        </Button>
+      </div>
+    );
+  }
+
+  if (!activeSessionId) return null;
+
+  return (
+    <>
+      <ChatPanelInner
+        key={activeSessionId}
+        bookId={chatBookId}
+        bookTitle={bookTitle}
+        bookFormat={bookFormat}
+        initialMessages={initialMessages}
+        bookDataRef={bookDataRef}
+        textareaRef={textareaRef}
+        inputRef={inputRef}
+        activeSessionId={activeSessionId}
+        onSwitchSession={handleSwitchSession}
+        onNewSession={handleNewSession}
+        onRegisterSetMessages={(setMessages) => {
+          setChatMessagesRef.current = setMessages;
+        }}
+        onChatInteraction={isLoggedOutDemoSession ? openOnboarding : undefined}
+        simulateDemoStream={isLoggedOutDemoSession}
+        resumeMessage={
+          explainPrompt ??
+          (isAuthenticated && resumeAfterAuth ? (pendingMessage ?? undefined) : undefined)
+        }
+        onResumeComplete={handleResumeComplete}
+      />
+      {(onboardingOpen || isLoggedOutDemoSession) && (
+        <OnboardingDialog
+          open={onboardingOpen}
+          onOpenChange={handleOnboardingOpenChange}
+          onAuthenticated={handleAuthenticated}
         />
-      ) : (
-        <>
-          {/* Messages */}
-          <div
-            ref={scrollRef}
-            className={cn("flex-1 overflow-y-auto px-4 py-3 relative flex flex-col", {
-              "scroll-fog-bottom": messages.length > 0,
-            })}
-          >
-            <div ref={contentRef} className="flex flex-col flex-1">
-              {messages.length === 0 && (
-                <ChatEmptyState bookTitles={selectedBookTitles} sendMessage={sendMessage} />
-              )}
-              <div className="space-y-3">
-                {messages.map((message, i) => {
-                  const isLastAssistant = message.role === "assistant" && i === messages.length - 1;
-                  const isCurrentlyStreaming = status === "streaming" && i === messages.length - 1;
-                  // Ephemeral add/remove markers anchored after this message.
-                  // The last rendered message also absorbs orphan markers whose
-                  // anchor is no longer present.
-                  const isLast = i === messages.length - 1;
-                  const inlineAnnotations = bookAnnotations.filter(
-                    (a) =>
-                      a.afterMessageId === message.id ||
-                      (isLast && !messageIdSet.has(a.afterMessageId ?? "")),
-                  );
-
-                  return (
-                    <div key={message.id}>
-                      <ChatMessage
-                        message={message}
-                        bookId={bookId}
-                        bookFormat={bookFormat}
-                        bookDataRef={bookDataRef}
-                        isStreaming={isCurrentlyStreaming}
-                      />
-                      {isLastAssistant && !isLoading && (
-                        <SuggestedPrompts
-                          prompts={parseSuggestedPrompts(
-                            joinTextParts(
-                              message.parts
-                                ?.filter(
-                                  (p): p is { type: "text"; text: string } => p.type === "text",
-                                )
-                                .map((p) => p.text) ?? [],
-                            ),
-                          )}
-                          sendMessage={sendMessage}
-                        />
-                      )}
-                      {inlineAnnotations.map((a) => (
-                        <BookAnnotationMarker key={a.id} action={a.action} title={a.title} />
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Input */}
-          <ChatInput
-            bookTitle={bookTitle}
-            textareaRef={textareaRef}
-            inputRef={inputRef}
-            isLoading={isLoading}
-            onSubmit={handleSubmit}
-            onStop={stop}
-            highlightPill={highlightPill ?? undefined}
-            onClearHighlightPill={() => setHighlightPill(null)}
-          />
-        </>
       )}
-    </div>
-  );
-}
-
-/**
- * Ephemeral, client-only inline marker for a mid-session book add/remove.
- * Rendered as a centered, muted divider — visually distinct from chat bubbles.
- */
-function BookAnnotationMarker({ action, title }: { action: "added" | "removed"; title: string }) {
-  return (
-    <div className="flex items-center justify-center gap-1 py-1 text-xs text-muted-foreground">
-      <span aria-hidden>{action === "added" ? "+" : "−"}</span>
-      <span>
-        {action === "added" ? "Added" : "Removed"} <span className="italic">{title}</span>
-      </span>
-    </div>
+    </>
   );
 }

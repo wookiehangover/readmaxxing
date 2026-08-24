@@ -1,4 +1,5 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner";
+import { useEffect, useState } from "react";
 import {
   CircleCheckIcon,
   InfoIcon,
@@ -10,6 +11,11 @@ import { resolveTheme, useSettings } from "~/lib/settings";
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const [settings] = useSettings();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  if (!mounted) return null;
 
   return (
     <Sonner

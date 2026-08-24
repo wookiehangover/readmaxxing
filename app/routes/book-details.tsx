@@ -1,36 +1,35 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Link, useNavigate } from "react-router";
-import { Effect } from "effect";
-import { ArrowLeft, BookOpen, BookOpenText, CloudUpload, Download, RotateCcw } from "lucide-react";
+import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
+import { useNavigate, useRevalidator } from "react-router";
+import { ArrowLeft, BookOpen, CloudUpload, RotateCcw } from "lucide-react";
 import type { Route } from "./+types/book-details";
-import type { JSONContent } from "@tiptap/react";
 import { BookService, type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
-import { AnnotationService } from "~/lib/stores/annotations-store";
-import { useSyncState } from "~/lib/sync/use-sync";
-import { AppRuntime } from "~/lib/effect-runtime";
+import { useSyncActions } from "~/lib/sync/use-sync";
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
-import { useEffectQuery } from "~/hooks/use-effect-query";
-import { TiptapEditor } from "~/components/tiptap-editor";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
-import { ScrollArea } from "~/components/ui/scroll-area";
+import {
+  replaceBookFileRequested,
+  updateBookMetadataRequested,
+} from "~/lib/themis/books/books-slice";
+import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
+import { hydrateAnnotationsRequested } from "~/lib/themis/annotations/annotations-slice";
+import { useSyncListener } from "~/hooks/use-sync-listener";
 
-export function meta({ data }: Route.MetaArgs) {
-  const title = data?.book?.title ?? "Readmaxxing";
+export function meta({ loaderData }: Route.MetaArgs) {
+  const title = loaderData?.book?.title ?? "Readmaxxing";
   return [{ title: `${title} — Readmaxxing` }];
 }
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
-  const book = await AppRuntime.runPromise(
-    BookService.pipe(
-      Effect.andThen((s) => s.getBookIncludingDeleted(params.id)),
-      Effect.catchTag("BookNotFoundError", () =>
-        Effect.die(new Response("Book not found", { status: 404 })),
-      ),
-    ),
-  );
+  const book = await BookService.getBookIncludingDeleted(params.id).catch((error: unknown) => {
+    if (error instanceof Error && "_tag" in error && error._tag === "BookNotFoundError") {
+      throw new Response("Book not found", { status: 404 });
+    }
+    throw error;
+  });
   return { book };
 }
 
@@ -62,8 +61,9 @@ function CoverImage({
   const directUrl = remoteCoverUrl && isPublicBlobUrl(remoteCoverUrl) ? remoteCoverUrl : null;
   const cacheKey = coverCacheKey({ remoteCoverUrl, updatedAt });
   const versionParam = cacheKey ? `&v=${encodeURIComponent(cacheKey)}` : "";
+  const preferLocalDemoCover = bookId === DEMO_BOOK_ID && coverImage !== null;
   const proxyUrl =
-    !directUrl && remoteCoverUrl && bookId
+    !directUrl && remoteCoverUrl && bookId && !preferLocalDemoCover
       ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover${versionParam}`
       : null;
   const remoteUrl = directUrl ?? proxyUrl;
@@ -95,8 +95,10 @@ function CoverPlaceholder() {
 export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const { book } = loaderData;
   const navigate = useNavigate();
+  const revalidator = useRevalidator();
+  const store = useAppStore();
 
-  const { triggerSync, isActive } = useSyncState();
+  const { triggerSync, isActive, reloadBookFiles } = useSyncActions();
 
   const [title, setTitle] = useState(book.title);
   const [author, setAuthor] = useState(book.author);
@@ -105,41 +107,26 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
   const [deletedAt, setDeletedAt] = useState(book.deletedAt);
   const [restoring, setRestoring] = useState(false);
   const [pushing, setPushing] = useState(false);
-  const [pushed, setPushed] = useState(false);
+  const [pushStatus, setPushStatus] = useState<"idle" | "success" | "failed">("idle");
+  const [replacing, setReplacing] = useState(false);
 
   const isDeleted = deletedAt !== undefined;
 
-  // Load notebook for this book
-  const { data: notebook, isLoading: notebookLoading } = useEffectQuery(
-    () => AnnotationService.pipe(Effect.andThen((svc) => svc.getNotebook(book.id))),
-    [book.id],
-  );
+  const notebook = store.annotationsSelectors.selectNotebookByBookId.useValue(book.id);
+  const annotationsLoaded = store.annotationsSelectors.selectAnnotationsLoaded.useValue(book.id);
+  const notebookSyncVersion = useSyncListener(["notebook"]);
   const notebookContent = notebook?.content ?? null;
-  const hasNotebook = !notebookLoading && notebookContent !== null;
+  const hasNotebook = annotationsLoaded && notebookContent !== null;
+
+  useEffect(() => {
+    store.dispatch(hydrateAnnotationsRequested(book.id));
+  }, [book.id, notebookSyncVersion, store]);
 
   // Debounced notebook save
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleNotebookUpdate = useCallback(
-    (newContent: JSONContent) => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        const program = Effect.gen(function* () {
-          const svc = yield* AnnotationService;
-          yield* svc.saveNotebook({
-            bookId: book.id,
-            content: newContent,
-            updatedAt: Date.now(),
-          });
-        });
-        AppRuntime.runPromise(program).catch((err) =>
-          console.error("Failed to save notebook:", err),
-        );
-      }, 1000);
-    },
-    [book.id],
-  );
+  const replaceInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -149,54 +136,118 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     };
   }, []);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(() => {
     setSaving(true);
     setSaved(false);
-    try {
-      const updatedBook: BookMeta = { ...book, title, author, deletedAt };
-      await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))),
-      );
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      console.error("Failed to save book:", err);
-    } finally {
-      setSaving(false);
-    }
-  }, [book, title, author, deletedAt]);
+    const updatedBook: BookMeta = { ...book, title, author, deletedAt };
+    store.dispatch(
+      updateBookMetadataRequested(
+        updatedBook,
+        "update",
+        () => {
+          setSaved(true);
+          setSaving(false);
+          setTimeout(() => setSaved(false), 2000);
+        },
+        (error) => {
+          console.error("Failed to save book:", error);
+          setSaving(false);
+        },
+      ),
+    );
+  }, [book, title, author, deletedAt, store]);
 
-  const handleRestore = useCallback(async () => {
+  const handleRestore = useCallback(() => {
     setRestoring(true);
-    try {
-      const updatedBook: BookMeta = { ...book, title, author, deletedAt: undefined };
-      await AppRuntime.runPromise(
-        BookService.pipe(Effect.andThen((s) => s.updateBookMeta(updatedBook))),
-      );
-      setDeletedAt(undefined);
-    } catch (err) {
-      console.error("Failed to restore book:", err);
-    } finally {
-      setRestoring(false);
-    }
-  }, [book, title, author]);
+    const updatedBook: BookMeta = {
+      ...book,
+      title,
+      author,
+      deletedAt: undefined,
+    };
+    store.dispatch(
+      updateBookMetadataRequested(
+        updatedBook,
+        "restore",
+        () => {
+          setDeletedAt(undefined);
+          setRestoring(false);
+        },
+        (error) => {
+          console.error("Failed to restore book:", error);
+          setRestoring(false);
+        },
+      ),
+    );
+  }, [book, title, author, store]);
 
-  const handlePush = useCallback(() => {
+  const handlePush = useCallback(async () => {
     if (pushFeedbackTimerRef.current) clearTimeout(pushFeedbackTimerRef.current);
     if (pushedResetTimerRef.current) clearTimeout(pushedResetTimerRef.current);
+    pushFeedbackTimerRef.current = null;
+    pushedResetTimerRef.current = null;
     setPushing(true);
-    setPushed(false);
-    triggerSync();
-    pushFeedbackTimerRef.current = setTimeout(() => {
-      setPushing(false);
-      setPushed(true);
-      pushFeedbackTimerRef.current = null;
+    setPushStatus("idle");
+    try {
+      await triggerSync();
+      setPushStatus("success");
       pushedResetTimerRef.current = setTimeout(() => {
-        setPushed(false);
+        setPushStatus("idle");
         pushedResetTimerRef.current = null;
       }, 2000);
-    }, 600);
+    } catch (err) {
+      console.error("Failed to push book:", err);
+      setPushStatus("failed");
+      pushFeedbackTimerRef.current = setTimeout(() => {
+        setPushStatus("idle");
+        pushFeedbackTimerRef.current = null;
+      }, 2000);
+    } finally {
+      setPushing(false);
+    }
   }, [triggerSync]);
+
+  const handleReplaceButtonClick = useCallback(() => {
+    replaceInputRef.current?.click();
+  }, []);
+
+  const handleReplaceFile = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const input = event.currentTarget;
+      const file = input.files?.[0];
+      if (!file) return;
+
+      if (!file.name.toLowerCase().endsWith(".epub")) {
+        console.error("Only .epub files can replace book files.");
+        input.value = "";
+        return;
+      }
+
+      setReplacing(true);
+      store.dispatch(
+        replaceBookFileRequested(
+          {
+            bookId: book.id,
+            file,
+            remoteCoverUrl: book.remoteCoverUrl,
+            syncActive: isActive,
+            reloadBookFiles,
+          },
+          () => {
+            revalidator.revalidate();
+            setReplacing(false);
+            input.value = "";
+          },
+          (error) => {
+            console.error("Failed to replace book file:", error);
+            setReplacing(false);
+            input.value = "";
+          },
+        ),
+      );
+    },
+    [book.id, book.remoteCoverUrl, isActive, reloadBookFiles, revalidator, store],
+  );
 
   return (
     <div className="h-dvh overflow-y-auto p-4 md:p-6">
@@ -251,37 +302,33 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
           </div>
 
           <div className="mt-2 flex gap-2">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : saved ? "Saved" : "Save"}
+            <input
+              ref={replaceInputRef}
+              type="file"
+              accept=".epub"
+              className="hidden"
+              onChange={handleReplaceFile}
+            />
+            <Button variant="outline" onClick={handleReplaceButtonClick} disabled={replacing}>
+              {replacing ? "Replacing…" : "Replace book file"}
             </Button>
             {isActive && (
               <Button variant="outline" onClick={handlePush} disabled={pushing}>
                 <CloudUpload className="size-4" />
-                {pushing ? "Pushing…" : pushed ? "Pushed" : "Push"}
+                {pushing
+                  ? "Pushing…"
+                  : pushStatus === "success"
+                    ? "Pushed"
+                    : pushStatus === "failed"
+                      ? "Failed"
+                      : "Push"}
               </Button>
             )}
-            {bookNeedsDownload(book) ? (
-              <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
-                <Download className="size-4" />
-                Download &amp; Read
-              </Button>
-            ) : (
-              <Button variant="outline" render={<Link to={`/books/${book.id}`} />}>
-                <BookOpenText className="size-4" />
-                Read
-              </Button>
-            )}
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : saved ? "Saved" : "Save"}
+            </Button>
           </div>
         </div>
-
-        {hasNotebook && (
-          <div className="flex min-w-0 flex-1 flex-col border-t pt-8 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-8">
-            <h2 className="mb-2 text-sm font-semibold">Notes</h2>
-            <ScrollArea className="flex-1">
-              <TiptapEditor content={notebookContent} onUpdate={handleNotebookUpdate} />
-            </ScrollArea>
-          </div>
-        )}
       </div>
     </div>
   );

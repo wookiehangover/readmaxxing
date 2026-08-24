@@ -62,9 +62,7 @@ export async function processEntry(
           format: data.format,
           fileHash: data.fileHash,
           updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-          ...(data.deletedAt !== undefined
-            ? { deletedAt: data.deletedAt != null ? new Date(data.deletedAt) : null }
-            : {}),
+          deletedAt: data.deletedAt != null ? new Date(data.deletedAt) : null,
         };
         await upsertBook(userId, bookData);
 

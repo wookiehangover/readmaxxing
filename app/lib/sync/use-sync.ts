@@ -1,11 +1,19 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { useAuth } from "~/lib/context/auth-context";
 import { runBlobUrlBackfillIfNeeded } from "./backfill-blob-urls";
 import { runFileHashBackfillIfNeeded } from "./backfill-file-hash";
 import { runInitialSyncIfNeeded } from "./initial-sync";
 import { makeSyncEngine, type SyncEngine } from "./sync-engine";
 
-export interface SyncState {
+export interface SyncStatus {
   /** Whether a sync cycle is currently running. */
   isSyncing: boolean;
   /** Whether there are local changes not yet pushed to the server. */
@@ -18,8 +26,15 @@ export interface SyncState {
   isOnline: boolean;
   /** Whether the sync engine is active (user is authenticated). */
   isActive: boolean;
-  /** Manually trigger a push+pull cycle. */
-  triggerSync: () => void;
+}
+
+export interface SyncActions {
+  /** Whether the sync engine is active (user is authenticated). */
+  isActive: boolean;
+  /** Manually pull and merge remote changes. */
+  pullChanges: () => Promise<void>;
+  /** Manually trigger a push cycle, including file upload recovery. */
+  triggerSync: () => Promise<void>;
   /**
    * Re-download a single book's file and cover, or upload them if the DB
    * row is missing the blob URLs. Also re-uploads extracted chapter text.
@@ -28,49 +43,124 @@ export interface SyncState {
   reloadBookFiles: (bookId: string) => Promise<void>;
 }
 
-const defaultSyncState: SyncState = {
+/** Combined status + actions. Prefer `useSyncStatus` / `useSyncActions` to avoid extra re-renders. */
+export type SyncState = SyncStatus & SyncActions;
+
+const defaultSyncStatus: SyncStatus = {
   isSyncing: false,
   hasPendingChanges: false,
   lastSyncedAt: null,
   syncError: null,
-  isOnline: true,
+  isOnline: typeof navigator !== "undefined" ? navigator.onLine : true,
   isActive: false,
-  triggerSync: () => {},
+};
+
+const defaultSyncActions: SyncActions = {
+  isActive: false,
+  pullChanges: async () => {},
+  triggerSync: async () => {},
   reloadBookFiles: async () => {},
 };
 
-const SyncContext = createContext<SyncState>(defaultSyncState);
+/**
+ * External store for high-churn sync status (isSyncing, pending, errors).
+ * Status flips must not re-render the whole app tree under SyncProvider —
+ * only components that call useSyncStatus() subscribe.
+ */
+let statusSnapshot: SyncStatus = defaultSyncStatus;
+const statusListeners = new Set<() => void>();
 
-export function useSyncState(): SyncState {
-  return useContext(SyncContext);
+function emitSyncStatus(partial: Partial<SyncStatus>): void {
+  const next: SyncStatus = { ...statusSnapshot, ...partial };
+  if (
+    next.isSyncing === statusSnapshot.isSyncing &&
+    next.hasPendingChanges === statusSnapshot.hasPendingChanges &&
+    next.lastSyncedAt === statusSnapshot.lastSyncedAt &&
+    next.syncError === statusSnapshot.syncError &&
+    next.isOnline === statusSnapshot.isOnline &&
+    next.isActive === statusSnapshot.isActive
+  ) {
+    return;
+  }
+  statusSnapshot = next;
+  for (const listener of statusListeners) listener();
 }
 
-export { SyncContext };
+function subscribeSyncStatus(listener: () => void): () => void {
+  statusListeners.add(listener);
+  return () => {
+    statusListeners.delete(listener);
+  };
+}
+
+function getSyncStatusSnapshot(): SyncStatus {
+  return statusSnapshot;
+}
+
+const SyncActionsContext = createContext<SyncActions>(defaultSyncActions);
+
+/** Subscribe to high-churn sync status (syncing spinner, pending badge). */
+export function useSyncStatus(): SyncStatus {
+  return useSyncExternalStore(subscribeSyncStatus, getSyncStatusSnapshot, getSyncStatusSnapshot);
+}
+
+/** Stable actions + isActive. Does not re-render on isSyncing/pending flips. */
+export function useSyncActions(): SyncActions {
+  return useContext(SyncActionsContext);
+}
+
+/**
+ * Combined status + actions. Re-renders on every status flip — prefer
+ * useSyncStatus() or useSyncActions() when you only need one side.
+ */
+export function useSyncState(): SyncState {
+  const status = useSyncStatus();
+  const actions = useSyncActions();
+  return { ...status, ...actions };
+}
+
+/** @deprecated Use SyncActionsContext via useSyncActions / useSyncState */
+export const SyncContext = SyncActionsContext;
 
 /**
  * React hook that manages the SyncEngine lifecycle.
  *
- * - Creates and starts the engine when the user is authenticated
- * - Stops the engine on logout or unmount
- * - Triggers a push on window focus
- * - Pauses/resumes based on navigator.onLine
+ * Status is published via an external store so SyncProvider re-renders only
+ * when auth/actions change, not on every isSyncing flip.
  */
-export function useSync(): SyncState {
+export function useSync(): SyncActions {
   const { isAuthenticated, user } = useAuth();
   const engineRef = useRef<SyncEngine | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [hasPendingChanges, setHasPendingChanges] = useState(false);
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
-  const [syncError, setSyncError] = useState<Error | null>(null);
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== "undefined" ? navigator.onLine : true,
-  );
+  const userId = user?.id ?? null;
 
-  // Stable trigger function
-  const triggerSync = useCallback(() => {
-    if (engineRef.current) {
-      engineRef.current.triggerPush();
+  // Keep isActive on the external store in sync with auth without React state.
+  useEffect(() => {
+    emitSyncStatus({ isActive: isAuthenticated });
+    if (!isAuthenticated) {
+      emitSyncStatus({
+        isSyncing: false,
+        hasPendingChanges: false,
+        syncError: null,
+      });
     }
+  }, [isAuthenticated]);
+
+  const triggerSync = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      throw new Error("Cannot push while offline");
+    }
+    await engine.triggerManualPush();
+  }, []);
+
+  const pullChanges = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      throw new Error("Cannot pull while offline");
+    }
+    await engine.pullChanges();
   }, []);
 
   const reloadBookFiles = useCallback(async (bookId: string) => {
@@ -79,18 +169,8 @@ export function useSync(): SyncState {
     engineRef.current.triggerPush();
   }, []);
 
-  // Log sync errors to console
-  useEffect(() => {
-    if (syncError) {
-      console.error("[sync]", syncError.message);
-    }
-  }, [syncError]);
-
-  const userId = user?.id ?? null;
-
   useEffect(() => {
     if (!isAuthenticated || !userId) {
-      // Not authenticated (or user not yet loaded) — tear down any existing engine
       if (engineRef.current) {
         engineRef.current.stopSync();
         engineRef.current = null;
@@ -98,24 +178,26 @@ export function useSync(): SyncState {
       return;
     }
 
-    // Create and start the sync engine
     const engine = makeSyncEngine({
       userId,
-      onSyncStart: () => setIsSyncing(true),
+      onSyncStart: () => emitSyncStatus({ isSyncing: true }),
       onSyncEnd: ({ success }) => {
-        setIsSyncing(false);
         if (success) {
-          setHasPendingChanges(false);
-          setSyncError(null);
-          setLastSyncedAt(new Date().toISOString());
+          emitSyncStatus({
+            isSyncing: false,
+            hasPendingChanges: false,
+            syncError: null,
+            lastSyncedAt: new Date().toISOString(),
+          });
+        } else {
+          emitSyncStatus({ isSyncing: false });
         }
-        // On failure: keep hasPendingChanges, syncError, and lastSyncedAt unchanged
       },
       onSyncError: (err) => {
-        setSyncError(err);
+        emitSyncStatus({ syncError: err });
+        console.error("[sync]", err.message);
       },
       onAuthExpired: () => {
-        // Session expired — stop syncing; auth context will update separately
         engine.stopSync();
         engineRef.current = null;
       },
@@ -123,9 +205,6 @@ export function useSync(): SyncState {
 
     engineRef.current = engine;
 
-    // Run initial sync for existing users before starting the engine.
-    // This scans all IDB stores and creates change-log entries for
-    // pre-existing data so it gets pushed on the first sync cycle.
     runInitialSyncIfNeeded()
       .catch((err) => {
         console.error("[sync] Initial sync scan failed:", err);
@@ -142,26 +221,23 @@ export function useSync(): SyncState {
         engine.startSync();
       });
 
-    // Window focus → immediate push + pull
     function handleFocus() {
       engineRef.current?.triggerPush();
       engineRef.current?.triggerPull();
     }
 
-    // Online/offline handling
     function handleOnline() {
-      setIsOnline(true);
+      emitSyncStatus({ isOnline: true });
       engineRef.current?.startSync();
     }
 
     function handleOffline() {
-      setIsOnline(false);
+      emitSyncStatus({ isOnline: false });
       engineRef.current?.stopSync();
     }
 
-    // Custom event: book mutations trigger immediate push
     function handlePushNeeded() {
-      setHasPendingChanges(true);
+      emitSyncStatus({ hasPendingChanges: true });
       engineRef.current?.triggerPush();
     }
 
@@ -180,14 +256,13 @@ export function useSync(): SyncState {
     };
   }, [isAuthenticated, userId]);
 
-  return {
-    isSyncing,
-    hasPendingChanges,
-    lastSyncedAt,
-    syncError,
-    isOnline,
-    isActive: isAuthenticated,
-    triggerSync,
-    reloadBookFiles,
-  };
+  return useMemo(
+    () => ({
+      isActive: isAuthenticated,
+      pullChanges,
+      triggerSync,
+      reloadBookFiles,
+    }),
+    [isAuthenticated, pullChanges, triggerSync, reloadBookFiles],
+  );
 }

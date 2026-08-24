@@ -1,5 +1,109 @@
 import { describe, it, expect, vi } from "vitest";
-import { resolveStartCfi, savePositionDualKey } from "~/lib/position-utils";
+import {
+  getReadingPositionRestoreTarget,
+  resolveStartCfi,
+  resolveStartPosition,
+  savePositionDualKey,
+  shouldAcceptReadingPosition,
+} from "~/lib/position-utils";
+
+describe("shouldAcceptReadingPosition", () => {
+  const current = {
+    cfi: "epubcfi(/6/4!/4/2/8:20)",
+    localProgression: 0.62,
+    spineIndex: 1,
+  };
+
+  it("rejects a chapter-start regression during layout settling", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: false },
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a less-far position during layout settling", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/4!/4/2/4:10)", localProgression: 0.3, spineIndex: 1 },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: false },
+      ),
+    ).toBe(false);
+  });
+
+  it("accepts a small backward scroll during layout settling", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/4!/4/2/8:10)", localProgression: 0.58, spineIndex: 1 },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: false },
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects a relocation to an earlier spine during layout settling", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/2!/4)", localProgression: 0, spineIndex: 0 },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: false },
+      ),
+    ).toBe(false);
+  });
+
+  it("accepts intentional backward navigation", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: true },
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts backward reading when no layout change is settling", () => {
+    expect(
+      shouldAcceptReadingPosition(
+        current,
+        { cfi: "epubcfi(/6/4!/4/2/4:10)", localProgression: 0.3, spineIndex: 1 },
+        { layoutHasSize: true, layoutChangeInProgress: false, navigationInProgress: false },
+      ),
+    ).toBe(true);
+  });
+
+  it("restores the last-good position after a layout thrash regression", () => {
+    expect(
+      getReadingPositionRestoreTarget(
+        current,
+        { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: false },
+      ),
+    ).toBe(current);
+  });
+
+  it("does not restore over intentional backward navigation", () => {
+    expect(
+      getReadingPositionRestoreTarget(
+        current,
+        { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
+        { layoutHasSize: true, layoutChangeInProgress: true, navigationInProgress: true },
+      ),
+    ).toBeNull();
+  });
+
+  it("restores the last-good position instead of accepting a zero-size relocation", () => {
+    expect(
+      getReadingPositionRestoreTarget(
+        current,
+        { cfi: "epubcfi(/6/4!/4)", localProgression: 0, spineIndex: 1 },
+        { layoutHasSize: false, layoutChangeInProgress: false, navigationInProgress: false },
+      ),
+    ).toBe(current);
+  });
+});
 
 describe("resolveStartCfi", () => {
   it("returns latestCfi when provided (skips all DB calls)", async () => {
@@ -173,5 +277,73 @@ describe("savePositionDualKey", () => {
 
     expect(saved).toHaveLength(2);
     expect(saved.every((s) => s.cfi === cfi)).toBe(true);
+  });
+
+  it("mirrors exact restore layout to both keys during a final flush", async () => {
+    const savePosition = vi.fn().mockResolvedValue(undefined);
+
+    await savePositionDualKey({
+      panelId: "panel-2",
+      bookId: "book-2",
+      cfi: "epubcfi(/6/8!/4/2/8:20)",
+      localProgression: 0.62,
+      spineIndex: 3,
+      savePosition,
+    });
+
+    expect(savePosition).toHaveBeenNthCalledWith(1, "book-2", "epubcfi(/6/8!/4/2/8:20)", {
+      localProgression: 0.62,
+      spineIndex: 3,
+    });
+    expect(savePosition).toHaveBeenNthCalledWith(2, "panel-2", "epubcfi(/6/8!/4/2/8:20)", {
+      recordChange: false,
+      localProgression: 0.62,
+      spineIndex: 3,
+    });
+  });
+
+  it("can make both book and panel saves local-only", async () => {
+    const savePosition = vi
+      .fn<(key: string, cfi: string, options?: { recordChange?: boolean }) => Promise<void>>()
+      .mockResolvedValue(undefined);
+
+    await savePositionDualKey({
+      panelId: "panel-3",
+      bookId: "book-3",
+      cfi: "epubcfi(/6/90)",
+      recordChange: false,
+      savePosition,
+    });
+
+    expect(savePosition).toHaveBeenCalledTimes(2);
+    expect(savePosition).toHaveBeenNthCalledWith(1, "book-3", "epubcfi(/6/90)", {
+      recordChange: false,
+    });
+    expect(savePosition).toHaveBeenNthCalledWith(2, "panel-3", "epubcfi(/6/90)", {
+      recordChange: false,
+    });
+  });
+});
+
+describe("resolveStartPosition", () => {
+  it("restores the book-level position when a recreated panel has no mirror", async () => {
+    const bookPosition = {
+      cfi: "epubcfi(/6/8!/4/2/8:20)",
+      localProgression: 0.62,
+      spineIndex: 3,
+    };
+    const getPositionRecord = vi.fn(async (key: string) =>
+      key === "book-2" ? bookPosition : null,
+    );
+
+    const result = await resolveStartPosition({
+      latest: null,
+      panelId: "new-panel-2",
+      bookId: "book-2",
+      getPositionRecord,
+    });
+
+    expect(result).toEqual(bookPosition);
+    expect(getPositionRecord.mock.calls).toEqual([["new-panel-2"], ["book-2"]]);
   });
 });

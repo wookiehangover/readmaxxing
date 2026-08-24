@@ -1,5 +1,6 @@
 import { useBlobObjectUrl } from "~/hooks/use-blob-object-url";
 import { coverCacheKey, isPublicBlobUrl } from "~/lib/blob-url";
+import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 import { cn } from "~/lib/utils";
 
 export function CoverImage({
@@ -20,8 +21,9 @@ export function CoverImage({
   const directUrl = remoteCoverUrl && isPublicBlobUrl(remoteCoverUrl) ? remoteCoverUrl : null;
   const cacheKey = coverCacheKey({ remoteCoverUrl, updatedAt });
   const versionParam = cacheKey ? `&v=${encodeURIComponent(cacheKey)}` : "";
+  const preferLocalDemoCover = bookId === DEMO_BOOK_ID && coverImage !== null;
   const proxyUrl =
-    !directUrl && remoteCoverUrl && bookId
+    !directUrl && remoteCoverUrl && bookId && !preferLocalDemoCover
       ? `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=cover${versionParam}`
       : null;
   const remoteUrl = directUrl ?? proxyUrl;
@@ -34,7 +36,7 @@ export function CoverImage({
     <img
       src={url}
       alt={alt}
-      className={cn("aspect-[2/3] w-full rounded-lg object-cover", {
+      className={cn("aspect-2/3 w-full object-cover book-cover-image", {
         "grayscale opacity-50": needsDownload,
       })}
     />

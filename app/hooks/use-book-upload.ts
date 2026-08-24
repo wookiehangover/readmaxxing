@@ -1,77 +1,35 @@
 import { useCallback } from "react";
 import type React from "react";
-import { Effect } from "effect";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import type { BookFormat } from "~/lib/stores/book-store";
-import { parseEpubEffect } from "~/lib/epub/epub-service";
-import { parsePdfEffect } from "~/lib/pdf/pdf-service";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { computeFileHash } from "~/lib/book-hash";
+import type { BookMeta } from "~/lib/stores/book-store";
+import { useAppStore } from "~/lib/themis/provider";
+import { uploadBooksRequested } from "~/lib/themis/books/books-slice";
 
 interface UseBookUploadOptions {
-  /** Called after each book is saved to IndexedDB. */
+  /** UI side effect called after the saga saves and stores each book. */
   onBookAdded: (book: BookMeta) => void;
 }
 
 /**
- * Shared hook that handles file-input upload → parse → IndexedDB save.
+ * Shared hook that dispatches file-input uploads to the books saga.
  * Supports both .epub and .pdf files.
  *
  * Returns a change-event handler suitable for `<input type="file" onChange={…} />`.
  * The handler resets the input value after processing so the same file can be re-selected.
  */
 export function useBookUpload({ onBookAdded }: UseBookUploadOptions) {
+  const store = useAppStore();
   const handleFileInput = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (!files) return;
       const bookFiles = Array.from(files).filter(
         (f) => f.name.endsWith(".epub") || f.name.endsWith(".pdf"),
       );
 
-      const program = Effect.forEach(bookFiles, (file) =>
-        Effect.gen(function* () {
-          const arrayBuffer = yield* Effect.promise(() => file.arrayBuffer());
-          const fileHash = yield* Effect.promise(() => computeFileHash(arrayBuffer));
-
-          const existing = yield* BookService.pipe(
-            Effect.andThen((s) => s.findByFileHash(fileHash)),
-          );
-          if (existing) {
-            onBookAdded(existing);
-            return;
-          }
-
-          const isPdf = file.name.toLowerCase().endsWith(".pdf");
-          const format: BookFormat = isPdf ? "pdf" : "epub";
-
-          const metadata = isPdf
-            ? yield* parsePdfEffect(arrayBuffer, file.name)
-            : yield* parseEpubEffect(arrayBuffer);
-
-          const book: BookMeta = {
-            id: crypto.randomUUID(),
-            title: metadata.title,
-            author: metadata.author,
-            coverImage: metadata.coverImage,
-            format,
-            fileHash,
-          };
-          yield* BookService.pipe(Effect.andThen((s) => s.saveBook(book, arrayBuffer)));
-          onBookAdded(book);
-        }),
-      ).pipe(
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to add book:", error);
-          }),
-        ),
-      );
-
-      await AppRuntime.runPromise(program);
+      if (bookFiles.length > 0) store.dispatch(uploadBooksRequested(bookFiles, onBookAdded));
       e.target.value = "";
     },
-    [onBookAdded],
+    [onBookAdded, store],
   );
 
   return { handleFileInput };

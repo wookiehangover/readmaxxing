@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
-import { Effect } from "effect";
 import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
   CloudDownload,
   Ellipsis,
+  Loader2,
   MessageSquare,
   NotebookPen,
   RefreshCw,
@@ -30,10 +30,9 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { type BookMeta, bookNeedsDownload } from "~/lib/stores/book-store";
-import { WorkspaceService } from "~/lib/stores/workspace-store";
-import { useEffectQuery } from "~/hooks/use-effect-query";
 import { sortBooksForTable, type SortDirection, type TableSortColumn } from "~/lib/workspace-utils";
 import { useAuth } from "~/lib/context/auth-context";
+import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 
 interface LibraryTableProps {
@@ -44,6 +43,7 @@ interface LibraryTableProps {
   onDeleteBook: (bookId: string) => void;
   onReloadBook: (bookId: string) => void;
   syncActive: boolean;
+  downloadingBookIds: ReadonlySet<string>;
 }
 
 type SortState = { column: TableSortColumn; direction: SortDirection };
@@ -95,12 +95,11 @@ export function LibraryTable({
   onDeleteBook,
   onReloadBook,
   syncActive,
+  downloadingBookIds,
 }: LibraryTableProps) {
+  const store = useAppStore();
   const { isAuthenticated } = useAuth();
-  const { data: lastOpenedMap } = useEffectQuery(
-    () => WorkspaceService.pipe(Effect.andThen((s) => s.getLastOpenedMap())),
-    [],
-  );
+  const lastOpenedMap = store.workspaceRestoreSelectors.selectLastOpenedMap.useValue();
 
   const [sort, setSort] = useState<SortState>({ column: "lastOpened", direction: "desc" });
   const [shareBook, setShareBook] = useState<BookMeta | null>(null);
@@ -129,32 +128,38 @@ export function LibraryTable({
 
   return (
     <div className="h-full overflow-y-auto">
-      <Table>
+      <Table className="table-fixed md:table-auto">
         <TableHeader className="sticky top-0 bg-background">
           <TableRow>
             <TableHead className="w-12" />
             <SortHeader label="Title" column="title" sort={sort} onSort={handleSort} />
-            <SortHeader label="Author" column="author" sort={sort} onSort={handleSort} />
+            <SortHeader
+              label="Author"
+              column="author"
+              sort={sort}
+              onSort={handleSort}
+              className="hidden md:table-cell"
+            />
             <SortHeader
               label="Format"
               column="format"
               sort={sort}
               onSort={handleSort}
-              className="w-20"
+              className="hidden w-20 md:table-cell"
             />
             <SortHeader
               label="Last opened"
               column="lastOpened"
               sort={sort}
               onSort={handleSort}
-              className="w-32"
+              className="hidden w-32 md:table-cell"
             />
             <SortHeader
               label="Updated"
               column="updated"
               sort={sort}
               onSort={handleSort}
-              className="w-32"
+              className="hidden w-32 md:table-cell"
             />
             <TableHead className="w-10" />
           </TableRow>
@@ -162,12 +167,19 @@ export function LibraryTable({
         <TableBody>
           {sortedBooks.map((book) => {
             const needsDownload = bookNeedsDownload(book);
+            const isDownloading = downloadingBookIds.has(book.id);
             const lastOpened = lastOpenedMap?.get(book.id);
             return (
               <TableRow
                 key={book.id}
-                className={cn("cursor-pointer", { "opacity-70": needsDownload })}
-                onClick={() => onOpenBook(book)}
+                className={cn("cursor-pointer", {
+                  "opacity-70": needsDownload,
+                  "cursor-wait": isDownloading,
+                })}
+                aria-disabled={isDownloading}
+                onClick={() => {
+                  if (!isDownloading) onOpenBook(book);
+                }}
               >
                 <TableCell>
                   <div className="relative">
@@ -183,24 +195,34 @@ export function LibraryTable({
                         <span className="text-xs text-muted-foreground">📖</span>
                       </div>
                     )}
-                    {needsDownload && (
+                    {(needsDownload || isDownloading) && (
                       <div className="absolute inset-0 flex items-center justify-center rounded bg-black/30">
-                        <CloudDownload className="size-3 text-white" />
+                        {isDownloading ? (
+                          <Loader2 className="size-3 animate-spin text-white" aria-hidden="true" />
+                        ) : (
+                          <CloudDownload className="size-3 text-white" />
+                        )}
+                        {isDownloading && <span className="sr-only">Downloading…</span>}
                       </div>
                     )}
                   </div>
                 </TableCell>
                 <TableCell className="max-w-0 font-medium">
                   <span className="block truncate">{book.title}</span>
+                  <span className="block truncate text-xs font-normal text-muted-foreground md:hidden">
+                    {book.author}
+                  </span>
                 </TableCell>
-                <TableCell className="max-w-0 text-muted-foreground">
+                <TableCell className="hidden max-w-0 text-muted-foreground md:table-cell">
                   <span className="block truncate">{book.author}</span>
                 </TableCell>
-                <TableCell className="uppercase text-muted-foreground">
+                <TableCell className="hidden uppercase text-muted-foreground md:table-cell">
                   {book.format ?? "epub"}
                 </TableCell>
-                <TableCell className="text-muted-foreground">{formatDate(lastOpened)}</TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell className="hidden text-muted-foreground md:table-cell">
+                  {formatDate(lastOpened)}
+                </TableCell>
+                <TableCell className="hidden text-muted-foreground md:table-cell">
                   {formatDate(book.updatedAt)}
                 </TableCell>
                 <TableCell
@@ -211,7 +233,7 @@ export function LibraryTable({
                 >
                   <DropdownMenu>
                     <DropdownMenuTrigger
-                      className="inline-flex size-7 items-center justify-center rounded-md hover:bg-accent"
+                      className="inline-flex size-9 items-center justify-center rounded-md hover:bg-accent md:size-7"
                       render={<button type="button" />}
                       aria-label="Book actions"
                     >

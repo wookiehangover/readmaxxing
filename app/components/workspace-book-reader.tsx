@@ -1,47 +1,38 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
-import { Button } from "~/components/ui/button";
-import {
-  ChevronLeft,
-  ChevronRight,
-  MessageSquare,
-  Notebook,
-  Search,
-  TableOfContents,
-} from "lucide-react";
-import { Popover, PopoverTrigger, PopoverContent } from "~/components/ui/popover";
-import { SearchBar } from "~/components/search-bar";
 import { useReaderSearch } from "~/hooks/use-reader-search";
-import { TocList } from "~/components/book-list";
-import { Effect } from "effect";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
-import { useSettings, resolveTheme } from "~/lib/settings";
-import type { PdfLayout, ReaderLayout, Settings, TextAlign } from "~/lib/settings";
-import { ReaderActionsMenu, ReaderFormattingMenu } from "~/components/reader-settings-menu";
+import type { BookMeta } from "~/lib/stores/book-store";
+import { useAppStore } from "~/lib/themis/provider";
+import { useResolvedTheme, useSettings } from "~/lib/settings";
+import type { FontWeight, PdfLayout, ReaderLayout } from "~/lib/settings";
+import { SpeedreadPopout } from "~/components/speedread-popout";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
-import { useEffectQuery } from "~/hooks/use-effect-query";
-import { cn } from "~/lib/utils";
-import { registerThemeColors, injectThemeColors } from "~/lib/epub/epub-theme-utils";
-import type { DockviewPanelApi } from "dockview";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
-import { BookmarkService, type Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
-import {
-  getBookPreferences,
-  saveBookPreferences,
-  type BookPreferences,
-} from "~/lib/stores/book-preferences-store";
 import { useSyncListener } from "~/hooks/use-sync-listener";
+import type {
+  SuccessorBookAdapter,
+  SuccessorRenditionAdapter,
+} from "~/lib/epub/successor-reader-adapter";
+import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell";
+import { useBookReaderPreferences } from "~/hooks/use-book-reader-preferences";
+import { useBookReaderActions } from "~/hooks/use-book-reader-actions";
+import { useReadingLocation } from "~/hooks/use-reading-location";
+import {
+  EpubReaderSurface,
+  EpubReaderToolbar,
+} from "~/components/workspace-book-reader/epub-reader-chrome";
+import { hydrateBookmarksRequested } from "~/lib/themis/bookmarks/bookmarks-slice";
+import { useSyncToFurthestPosition } from "~/hooks/use-sync-to-furthest-position";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
   fontFamily?: string;
   fontSize?: number;
+  fontWeight?: FontWeight;
   lineHeight?: number;
   textAlign?: "left" | "center" | "right" | "justify";
   readerLayout?: ReaderLayout;
@@ -50,65 +41,35 @@ export interface PanelTypographyParams {
 
 interface WorkspaceBookReaderProps {
   bookId: string;
-  panelApi?: DockviewPanelApi;
   /** Initial typography overrides from restored panel params */
   panelTypography?: PanelTypographyParams;
 }
 
-export function WorkspaceBookReader({
-  bookId,
-  panelApi,
-  panelTypography,
-}: WorkspaceBookReaderProps) {
+export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookReaderProps) {
   const { navigationMap } = useWorkspace();
   // Ref holding the real navigateToCfi from the inner component once it mounts.
   // Before that, the placeholder callback queues CFIs into pendingCfiRef.
   const realNavRef = useRef<((cfi: string) => void) | null>(null);
   const pendingCfiRef = useRef<string | null>(null);
 
-  // Lifted from the inner component so the outer placeholder can force
-  // epub initialization when a navigation request arrives for a background panel.
-  const [hasBeenVisible, setHasBeenVisible] = useState(() =>
-    panelApi ? panelApi.isVisible : true,
-  );
-
-  useEffect(() => {
-    if (!panelApi || hasBeenVisible) return;
-    if (panelApi.isVisible) {
-      setHasBeenVisible(true);
-      return;
-    }
-    const disposable = panelApi.onDidVisibilityChange((e) => {
-      if (e.isVisible) {
-        setHasBeenVisible(true);
-        disposable.dispose();
-      }
-    });
-    return () => disposable.dispose();
-  }, [panelApi, hasBeenVisible]);
-
   // Stable placeholder callback registered immediately so the navigation map
   // has an entry even while book metadata is still loading.
-  // When the rendition isn't ready yet, queue the CFI and force the epub
-  // to start initializing by setting hasBeenVisible = true.
+  // When the rendition isn't ready yet, queue the CFI until initialization completes.
   const placeholderNav = useCallback((cfi: string) => {
     if (realNavRef.current) {
       realNavRef.current(cfi);
     } else {
       pendingCfiRef.current = cfi;
-      // Force epub initialization even if the panel hasn't been visible yet
-      setHasBeenVisible(true);
     }
   }, []);
 
   // Register the placeholder immediately — no waiting for book data.
   useEffect(() => {
-    const id = panelApi?.id ?? bookId;
-    navigationMap.current.set(id, placeholderNav);
+    navigationMap.current.set(bookId, placeholderNav);
     return () => {
-      navigationMap.current.delete(id);
+      navigationMap.current.delete(bookId);
     };
-  }, [bookId, panelApi, placeholderNav, navigationMap]);
+  }, [bookId, placeholderNav, navigationMap]);
 
   // Called by WorkspaceBookReaderInner once its rendition is ready
   const onRenditionReady = useCallback((nav: (cfi: string) => void) => {
@@ -121,21 +82,13 @@ export function WorkspaceBookReader({
     }
   }, []);
 
-  // Load book data via useEffectQuery
-  const {
-    data: book,
-    error,
-    isLoading,
-  } = useEffectQuery(
-    () =>
-      BookService.pipe(
-        Effect.andThen((s) => s.getBook(bookId)),
-        Effect.catchTag("BookNotFoundError", () => Effect.succeed(null as BookMeta | null)),
-      ),
-    [bookId],
-  );
+  // Look up book metadata from the Themis books collection. Populated at app
+  // startup by the books hydrate saga, so this is a synchronous read.
+  const store = useAppStore();
+  const booksLoading = store.booksSelectors.selectBooksLoading.useValue();
+  const book = store.booksSelectors.selectBookById.useValue(bookId);
 
-  if (isLoading) {
+  if (!book && booksLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Loading book…</p>
@@ -143,7 +96,7 @@ export function WorkspaceBookReader({
     );
   }
 
-  if (error || !book) {
+  if (!book) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-muted-foreground">Book not found.</p>
@@ -154,9 +107,7 @@ export function WorkspaceBookReader({
   return (
     <WorkspaceBookReaderInner
       book={book}
-      panelApi={panelApi}
       panelTypography={panelTypography}
-      hasBeenVisible={hasBeenVisible}
       onRenditionReady={onRenditionReady}
     />
   );
@@ -168,101 +119,53 @@ export function WorkspaceBookReader({
  */
 function WorkspaceBookReaderInner({
   book,
-  panelApi,
   panelTypography,
-  hasBeenVisible,
   onRenditionReady,
 }: {
   book: BookMeta;
-  panelApi?: DockviewPanelApi;
   panelTypography?: PanelTypographyParams;
-  /** Whether the panel has been visible at least once (controlled by outer component) */
-  hasBeenVisible: boolean;
   /** Called once the rendition is ready so the outer component can connect the real navigate callback */
   onRenditionReady?: (navigateToCfi: (cfi: string) => void) => void;
 }) {
-  const ws = useWorkspace();
-  const {
-    tocMap,
-    tocChangeListener,
-    notebookCallbackMap,
-    chatContextMap,
-    tempHighlightMap,
-    highlightDeleteMap,
-  } = ws;
+  const { tocMap, tocChangeListener, chatContextMap, tempHighlightMap, highlightDeleteMap } =
+    useWorkspace();
   const isMobile = useIsMobile();
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const bookRef = useRef<import("epubjs/types/book").default | null>(null);
-  const renditionRef = useRef<import("epubjs/types/rendition").default | null>(null);
+  const bookRef = useRef<SuccessorBookAdapter | null>(null);
+  const renditionRef = useRef<SuccessorRenditionAdapter | null>(null);
 
   const [settings] = useSettings();
+  const resolvedTheme = useResolvedTheme(settings.theme);
+  const preferenceNavigationRef = useRef<{
+    markNavigationInProgress: () => void;
+    navigationInProgressRef: React.MutableRefObject<boolean>;
+  } | null>(null);
+  const {
+    fontFamily: localFontFamily,
+    fontSize: localFontSize,
+    fontWeight: localFontWeight,
+    lineHeight: localLineHeight,
+    textAlign: localTextAlign,
+    readerLayout: localReaderLayout,
+    localSettings,
+    onUpdateSettings: handleUpdateSettings,
+  } = useBookReaderPreferences({
+    bookId: book.id,
+    panelTypography,
+    settings,
+    renditionRef,
+    navigationRef: preferenceNavigationRef,
+  });
 
-  // Per-panel typography overrides: initialized from panel params (restored layout)
-  // or global settings as fallback. These are local to this panel instance.
-  const [localFontFamily, setLocalFontFamily] = useState<string>(
-    () => panelTypography?.fontFamily ?? settings.fontFamily,
-  );
-  const [localFontSize, setLocalFontSize] = useState<number>(
-    () => panelTypography?.fontSize ?? settings.fontSize,
-  );
-  const [localLineHeight, setLocalLineHeight] = useState<number>(
-    () => panelTypography?.lineHeight ?? settings.lineHeight,
-  );
-  const [localTextAlign, setLocalTextAlign] = useState<TextAlign>(
-    () => panelTypography?.textAlign ?? settings.textAlign,
-  );
-  const [localReaderLayout, setLocalReaderLayout] = useState<ReaderLayout>(
-    () => panelTypography?.readerLayout ?? settings.readerLayout,
-  );
-
-  const [tocOpen, setTocOpen] = useState(false);
-  const [bookmarkVersion, setBookmarkVersion] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    getBookPreferences(book.id)
-      .then((prefs) => {
-        if (cancelled) return;
-        setLocalFontFamily(prefs?.fontFamily ?? panelTypography?.fontFamily ?? settings.fontFamily);
-        setLocalFontSize(prefs?.fontSize ?? panelTypography?.fontSize ?? settings.fontSize);
-        setLocalLineHeight(prefs?.lineHeight ?? panelTypography?.lineHeight ?? settings.lineHeight);
-        setLocalTextAlign(
-          prefs && "textAlign" in prefs
-            ? prefs.textAlign
-            : (panelTypography?.textAlign ?? settings.textAlign),
-        );
-        setLocalReaderLayout(
-          prefs?.readerLayout ?? panelTypography?.readerLayout ?? settings.readerLayout,
-        );
-      })
-      .catch((error) => console.error("Failed to load book preferences:", error));
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    book.id,
-    panelTypography?.fontFamily,
-    panelTypography?.fontSize,
-    panelTypography?.lineHeight,
-    panelTypography?.textAlign,
-    panelTypography?.readerLayout,
-    settings.fontFamily,
-    settings.fontSize,
-    settings.lineHeight,
-    settings.textAlign,
-    settings.readerLayout,
-  ]);
+  const [speedreadWords, setSpeedreadWords] = useState<string[]>([]);
+  const [speedreadOpen, setSpeedreadOpen] = useState(false);
+  const [readingDwellUnit, setReadingDwellUnit] = useState<ReadingDwellUnit | null>(null);
 
   const zenMode = settings.zenMode ?? false;
 
-  // Mobile and zen mode toolbar auto-hide
-  const { toolbarVisible, showToolbar, showToolbarPersistent, toggleToolbar, resetToolbarTimer } =
-    useToolbarAutoHide(isMobile ?? false, zenMode);
+  const { showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false, zenMode);
 
-  // Search state (shared hook)
   const {
     searchOpen,
     searchQuery,
@@ -292,7 +195,6 @@ function WorkspaceBookReaderInner({
     return () => window.removeEventListener("book-search:open", handleBookSearchOpen);
   }, [book.id, handleSearchOpen]);
 
-  // Ref-based callback so useHighlights always calls the latest handleOpenNotebook
   const handleOpenNotebookRef = useRef<() => void>(() => {});
 
   const {
@@ -301,12 +203,13 @@ function WorkspaceBookReaderInner({
     dismissPopovers,
     loadAndApplyHighlights,
     registerSelectionHandler,
-    highlightsRef,
+    removeHighlightDecoration,
+    applyTemporaryHighlight,
   } = useHighlights({
     bookId: book.id,
     renditionRef,
     onHighlightClick: () => handleOpenNotebookRef.current(),
-    theme: settings.theme,
+    theme: resolvedTheme,
   });
 
   const {
@@ -314,8 +217,9 @@ function WorkspaceBookReaderInner({
     currentChapterLabel,
     currentPage,
     totalPages,
+    loadError,
+    navigateToCfi,
     navigateToTocHref,
-    flushPositionSave,
     latestCfiRef,
     navigationInProgressRef,
     markNavigationInProgress,
@@ -325,23 +229,21 @@ function WorkspaceBookReaderInner({
     readerLayout: localReaderLayout,
     fontFamily: localFontFamily,
     fontSize: localFontSize,
+    fontWeight: localFontWeight,
     lineHeight: localLineHeight,
     textAlign: localTextAlign,
-    theme: settings.theme,
+    theme: resolvedTheme,
     loadAndApplyHighlights,
     registerSelectionHandler,
-    enabled: hasBeenVisible,
-    panelId: panelApi?.id,
     chatContextMap,
+    onReadingUnitChange: setReadingDwellUnit,
     onRenditionReady,
     onTocExtracted: (tocData) => {
-      const id = panelApi?.id ?? book.id;
-      tocMap.current.set(id, tocData);
+      tocMap.current.set(book.id, tocData);
       tocChangeListener.current?.();
     },
     onCleanupToc: () => {
-      const id = panelApi?.id ?? book.id;
-      tocMap.current.delete(id);
+      tocMap.current.delete(book.id);
       tocChangeListener.current?.();
     },
     onSearchOpen: handleSearchOpenFromIframe,
@@ -350,168 +252,51 @@ function WorkspaceBookReaderInner({
     bookRef,
     renditionRef,
   });
+  useReadingLocation(book.id, currentChapterLabel, currentPage, totalPages);
+  preferenceNavigationRef.current = { markNavigationInProgress, navigationInProgressRef };
+
+  const getCurrentPosition = useCallback(() => latestCfiRef.current, [latestCfiRef]);
+  const handleSyncToFurthestPage = useSyncToFurthestPosition({
+    bookId: book.id,
+    getCurrentPosition,
+    navigateToPosition: navigateToCfi,
+  });
+
+  useReaderDwell({
+    bookId: book.id,
+    unit: readingDwellUnit,
+    displayPage: currentPage,
+  });
 
   const bookmarkSyncVersion = useSyncListener(["bookmark"]);
-  const { data: bookmarks } = useEffectQuery(
-    () =>
-      BookmarkService.pipe(
-        Effect.andThen((s) => s.getBookmarksByBook(book.id)),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to load bookmarks:", error);
-            return [] as BookmarkRecord[];
-          }),
-        ),
-      ),
-    [book.id, bookmarkVersion, bookmarkSyncVersion],
-  );
+  const store = useAppStore();
+  const bookmarks = store.bookmarksSelectors.selectBookmarksByBook.useValue(book.id);
+  const bookmarksLoaded = store.bookmarksSelectors.selectBookmarksLoaded.useValue(book.id);
 
-  // Temporary highlight: briefly flash a CFI range in the reader
-  const applyTempHighlight = useCallback((cfi: string) => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-    try {
-      rendition.annotations.highlight(
-        cfi,
-        {},
-        undefined as any,
-        undefined as any,
-        { fill: "rgba(255, 213, 79, 0.4)", "fill-opacity": "0.4" } as any,
-      );
-      setTimeout(() => {
-        try {
-          rendition.annotations.remove(cfi, "highlight");
-        } catch {
-          // annotation may already be gone
-        }
-      }, 3000);
-    } catch {
-      // annotation may already be gone
-    }
-  }, []);
-
-  // Register temp highlight callback
   useEffect(() => {
-    const id = panelApi?.id ?? book.id;
-    tempHighlightMap.current.set(id, applyTempHighlight);
-    return () => {
-      tempHighlightMap.current.delete(id);
-    };
-  }, [book.id, panelApi, applyTempHighlight, tempHighlightMap]);
+    store.dispatch(hydrateBookmarksRequested(book.id));
+  }, [book.id, bookmarkSyncVersion, store]);
 
-  // Register highlight delete callback so notebooks can remove annotations from rendition
+  useEffect(() => {
+    tempHighlightMap.current.set(book.id, applyTemporaryHighlight);
+    return () => {
+      tempHighlightMap.current.delete(book.id);
+    };
+  }, [book.id, applyTemporaryHighlight, tempHighlightMap]);
+
   const removeHighlightAnnotation = useCallback(
     (cfiRange: string) => {
-      const rendition = renditionRef.current;
-      if (!rendition) return;
-      rendition.annotations.remove(cfiRange, "highlight");
-      highlightsRef.current.delete(cfiRange);
+      removeHighlightDecoration(cfiRange);
     },
-    [highlightsRef],
+    [removeHighlightDecoration],
   );
 
   useEffect(() => {
-    const id = panelApi?.id ?? book.id;
-    highlightDeleteMap.current.set(id, removeHighlightAnnotation);
+    highlightDeleteMap.current.set(book.id, removeHighlightAnnotation);
     return () => {
-      highlightDeleteMap.current.delete(id);
+      highlightDeleteMap.current.delete(book.id);
     };
-  }, [book.id, panelApi, removeHighlightAnnotation, highlightDeleteMap]);
-
-  // With renderer: "always", dockview keeps the DOM alive when the tab is hidden
-  // (instead of removing it). The epub iframe stays intact, so we only need to
-  // reapply theme (in case it changed while hidden) and resize (in case the
-  // container dimensions changed).
-  useEffect(() => {
-    if (!panelApi) return;
-
-    const applyTheme = () => {
-      const rendition = renditionRef.current;
-      if (!rendition) return;
-
-      // Re-resolve and re-register theme colors before selecting
-      registerThemeColors(rendition);
-
-      // Directly inject updated theme CSS into iframe documents
-      const effectiveTheme = resolveTheme(settings.theme);
-      injectThemeColors(rendition, effectiveTheme);
-
-      rendition.themes.select(effectiveTheme);
-    };
-
-    const resizeAndRestore = () => {
-      // Save the current reading position before resize — epubjs resize()
-      // recalculates pagination and can jump to a different page.
-      const cfiBeforeResize = latestCfiRef.current;
-
-      // Resize in case container dimensions changed, then restore position
-      requestAnimationFrame(() => {
-        if (!renditionRef.current) return;
-        // If a navigation occurred since capture, the new position is authoritative.
-        if (latestCfiRef.current !== cfiBeforeResize) return;
-        try {
-          (renditionRef.current as any).resize();
-        } catch {
-          // rendition manager may not be initialized yet
-          return;
-        }
-        if (cfiBeforeResize && !navigationInProgressRef.current) {
-          renditionRef.current.display(cfiBeforeResize).catch(() => {});
-        }
-      });
-    };
-
-    const visDisposable = panelApi.onDidVisibilityChange((e) => {
-      if (e.isVisible) {
-        applyTheme();
-        resizeAndRestore();
-      } else {
-        flushPositionSave();
-      }
-    });
-
-    // Active change only needs theme reapplication — no resize or position
-    // restore. Clicking inside the epub to turn a page also triggers an active
-    // change; resizing here would revert the navigation.
-    const activeDisposable = panelApi.onDidActiveChange((e) => {
-      if (e.isActive) applyTheme();
-    });
-
-    // Resize the epub rendition when the panel dimensions change (e.g. a new
-    // pane is opened or the divider is dragged). We use requestAnimationFrame
-    // to coalesce rapid resize events during drag-resize.
-    let resizeRafId: number | null = null;
-    const dimensionsDisposable = panelApi.onDidDimensionsChange(() => {
-      const rendition = renditionRef.current;
-      if (!rendition) return;
-
-      if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
-
-      const cfiBeforeResize = latestCfiRef.current;
-      resizeRafId = requestAnimationFrame(() => {
-        resizeRafId = null;
-        if (!renditionRef.current) return;
-        // If a navigation occurred since capture, the new position is authoritative.
-        if (latestCfiRef.current !== cfiBeforeResize) return;
-        try {
-          (renditionRef.current as any).resize();
-        } catch {
-          // rendition manager may not be initialized yet
-          return;
-        }
-        if (cfiBeforeResize && !navigationInProgressRef.current) {
-          renditionRef.current.display(cfiBeforeResize).catch(() => {});
-        }
-      });
-    });
-
-    return () => {
-      visDisposable.dispose();
-      activeDisposable.dispose();
-      dimensionsDisposable.dispose();
-      if (resizeRafId !== null) cancelAnimationFrame(resizeRafId);
-    };
-  }, [panelApi, settings.theme, flushPositionSave, navigationInProgressRef]);
+  }, [book.id, removeHighlightAnnotation, highlightDeleteMap]);
 
   const handlePrev = useCallback(() => {
     const rendition = renditionRef.current;
@@ -532,459 +317,91 @@ function WorkspaceBookReaderInner({
     });
   }, [markNavigationInProgress, navigationInProgressRef]);
 
-  const handleUpdateSettings = useCallback(
-    (update: Partial<Settings>) => {
-      // Update local state only — do NOT propagate to global settings.
-      // Theme changes are ignored here (theme stays global).
-      const hasBookPreferenceUpdate =
-        update.fontFamily !== undefined ||
-        update.fontSize !== undefined ||
-        update.lineHeight !== undefined ||
-        "textAlign" in update ||
-        update.readerLayout !== undefined;
-
-      if (!hasBookPreferenceUpdate) return;
-
-      if (update.fontFamily !== undefined) setLocalFontFamily(update.fontFamily);
-      if (update.fontSize !== undefined) setLocalFontSize(update.fontSize);
-      if (update.lineHeight !== undefined) setLocalLineHeight(update.lineHeight);
-      if ("textAlign" in update) setLocalTextAlign(update.textAlign);
-      if (update.readerLayout !== undefined && update.readerLayout !== localReaderLayout) {
-        const cfi = renditionRef.current?.location?.start?.cfi;
-        setLocalReaderLayout(update.readerLayout);
-        if (cfi) {
-          markNavigationInProgress();
-          queueMicrotask(() => {
-            renditionRef.current?.display(cfi).catch((error: unknown) => {
-              console.error("Failed to restore reader position after layout update", error);
-              navigationInProgressRef.current = false;
-            });
-          });
-        }
-      }
-
-      const updatedPrefs: BookPreferences = {
-        fontFamily: update.fontFamily ?? localFontFamily,
-        fontSize: update.fontSize ?? localFontSize,
-        lineHeight: update.lineHeight ?? localLineHeight,
-        textAlign: "textAlign" in update ? update.textAlign : localTextAlign,
-        readerLayout: update.readerLayout ?? localReaderLayout,
-      };
-
-      saveBookPreferences(book.id, updatedPrefs).catch((error) =>
-        console.error("Failed to save book preferences:", error),
-      );
-
-      // Persist overrides in dockview panel params so they survive layout save/restore
-      if (panelApi) {
-        const paramUpdates: Record<string, unknown> = {};
-        if (update.fontFamily !== undefined) paramUpdates.fontFamily = update.fontFamily;
-        if (update.fontSize !== undefined) paramUpdates.fontSize = update.fontSize;
-        if (update.lineHeight !== undefined) paramUpdates.lineHeight = update.lineHeight;
-        if (update.textAlign !== undefined) paramUpdates.textAlign = update.textAlign;
-        if (update.readerLayout !== undefined) paramUpdates.readerLayout = update.readerLayout;
-        if (Object.keys(paramUpdates).length > 0) {
-          panelApi.updateParameters(paramUpdates);
-        }
-      }
-    },
-    [
-      book.id,
-      localFontFamily,
-      localFontSize,
-      localLineHeight,
-      localTextAlign,
-      localReaderLayout,
-      markNavigationInProgress,
-      panelApi,
-    ],
-  );
-
-  const handleSaveHighlight = useCallback(async () => {
-    const highlight = await saveHighlightFromPopover();
-    if (!highlight) return;
-    const attrs = {
-      highlightId: highlight.id,
-      cfiRange: highlight.cfiRange,
-      text: highlight.text,
-    };
-    const appendFn = notebookCallbackMap.current.get(book.id);
-    if (appendFn) {
-      appendFn(attrs);
-      return;
-    }
-    // Notebook panel isn't mounted — write the reference directly to IDB so
-    // the highlight is visible (and deletable) the next time the notebook
-    // opens, instead of silently orphaning it.
-    AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
-      .then(() => {
-        queueMicrotask(() => {
-          window.dispatchEvent(
-            new CustomEvent("sync:entity-updated", {
-              detail: { entity: "notebook" },
-            }),
-          );
-        });
-      })
-      .catch((err) => console.error("Failed to append highlight to notebook:", err));
-  }, [saveHighlightFromPopover, notebookCallbackMap, book.id]);
-
-  const handleAskQuestion = useCallback(async () => {
-    if (!selectionPopover) return;
-
-    try {
-      const highlight = await saveHighlightFromPopover();
-      if (!highlight) return;
-
-      const attrs = {
-        highlightId: highlight.id,
-        cfiRange: highlight.cfiRange,
-        text: highlight.text,
-      };
-      const editorCallbacks = ws.notebookEditorCallbackMap.current.get(book.id);
-      if (editorCallbacks) {
-        editorCallbacks.appendContent([
-          { type: "highlightReference", attrs },
-          { type: "paragraph" },
-        ]);
-      } else {
-        AppRuntime.runPromise(appendHighlightReferenceToNotebook(book.id, attrs))
-          .then(() => {
-            queueMicrotask(() => {
-              window.dispatchEvent(
-                new CustomEvent("sync:entity-updated", {
-                  detail: { entity: "notebook" },
-                }),
-              );
-            });
-          })
-          .catch((err) => console.error("Failed to append highlight to notebook:", err));
-      }
-
-      ws.pendingHighlightPillMap.current.set(book.id, {
-        text: selectionPopover.text,
-        pageLabel: currentPage ? `p${currentPage}` : "",
-      });
-      ws.openChatRef.current?.(book);
-    } catch (err) {
-      console.error("Failed to ask a question about highlight:", err);
-    } finally {
-      dismissPopovers();
-      const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
-      contents?.forEach((content: any) => {
-        content.document?.defaultView?.getSelection()?.removeAllRanges();
-      });
-    }
-  }, [selectionPopover, saveHighlightFromPopover, book, ws, dismissPopovers, currentPage]);
-
-  const handleCopyAsMarkdown = useCallback(async () => {
-    if (!selectionPopover) return;
-
-    await navigator.clipboard.writeText(selectionPopover.text);
-    dismissPopovers();
-
-    const contents = (renditionRef.current as any)?.getContents?.() as any[] | undefined;
-    contents?.forEach((content: any) => {
-      content.document?.defaultView?.getSelection()?.removeAllRanges();
-    });
-  }, [selectionPopover, dismissPopovers]);
-
-  const handleDownload = useCallback(() => {
-    AppRuntime.runPromise(
-      BookService.pipe(
-        Effect.andThen((s) => s.getBookData(book.id)),
-        Effect.catchAll((error) =>
-          Effect.sync(() => {
-            console.error("Failed to download book:", error);
-            return null as ArrayBuffer | null;
-          }),
-        ),
-      ),
-    )
-      .then((data) => {
-        if (!data) return;
-        const format = book.format ?? "epub";
-        const type = format === "pdf" ? "application/pdf" : "application/epub+zip";
-        const blob = new Blob([data], { type });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${book.title.replace(/[\\/:*?"<>|]/g, "-")}.${format}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      })
-      .catch(console.error);
-  }, [book.id, book.title, book.format]);
-
-  const handleCopyPageAsMarkdown = useCallback(() => {
-    const text = renditionRef.current
-      ?.getContents()
-      .map((content: any) => content.document?.body?.innerText ?? "")
-      .join("\n\n")
-      .trim();
-    if (!text) return;
-    navigator.clipboard.writeText(text).catch(console.error);
-  }, []);
-
-  const getCurrentCfi = useCallback(() => {
-    const latestCfi = latestCfiRef.current;
-    if (latestCfi) return latestCfi;
-    const rendition = renditionRef.current as any;
-    let location = rendition?.location;
-    if (!location) {
-      try {
-        location = rendition?.currentLocation?.();
-      } catch {
-        // epubjs may call into an uninitialized internal manager.
-      }
-    }
-    return (location?.start?.cfi as string | undefined) ?? null;
-  }, [latestCfiRef]);
-
-  const currentCfi = getCurrentCfi();
-  const currentBookmark = bookmarks?.find((bookmark) => bookmark.cfi === currentCfi);
-
-  const handleBookmarkPage = useCallback(async () => {
-    const cfi = getCurrentCfi();
-    if (!cfi) return;
-    const existingBookmark = bookmarks?.find((bookmark) => bookmark.cfi === cfi);
-    const now = Date.now();
-
-    await AppRuntime.runPromise(
-      BookmarkService.pipe(
-        Effect.andThen((s) =>
-          existingBookmark
-            ? s.deleteBookmark(existingBookmark.id)
-            : s.saveBookmark({
-                id: `bookmark:${book.id}:cfi:${encodeURIComponent(cfi)}`,
-                bookId: book.id,
-                cfi,
-                label: currentChapterLabel ?? undefined,
-                displayPage: currentPage ?? undefined,
-                createdAt: now,
-                updatedAt: now,
-              }),
-        ),
-      ),
-    );
-    setBookmarkVersion((version) => version + 1);
-    queueMicrotask(() => {
-      window.dispatchEvent(
-        new CustomEvent("sync:entity-updated", { detail: { entity: "bookmark" } }),
-      );
-    });
-  }, [book.id, bookmarks, currentChapterLabel, currentPage, getCurrentCfi]);
-
-  // Delegate to the workspace-level openers so focused-mode cluster rules
-  // (add-tab in right group, no splitting) are applied uniformly.
-  const handleOpenNotebook = useCallback(() => {
-    ws.openNotebookRef.current?.(book);
-  }, [ws, book]);
-
-  // Keep ref in sync so useHighlights click handler always calls latest version
+  const {
+    currentBookmark,
+    handleSaveHighlight,
+    handleAskQuestion,
+    handleExplainThis,
+    handleCopyAsMarkdown,
+    handleDownload,
+    handleCopyPageAsMarkdown,
+    handleOpenSpeedread,
+    handleBookmarkPage,
+    handleOpenNotebook,
+  } = useBookReaderActions({
+    book,
+    bookmarks,
+    bookmarksLoaded,
+    currentChapterLabel,
+    currentPage,
+    latestCfiRef,
+    renditionRef,
+    selectionPopover,
+    saveHighlightFromPopover,
+    dismissPopovers,
+    setSpeedreadWords,
+    setSpeedreadOpen,
+  });
   handleOpenNotebookRef.current = handleOpenNotebook;
 
-  const handleOpenChat = useCallback(() => {
-    ws.openChatRef.current?.(book);
-  }, [ws, book]);
-
   const isScrollMode = localReaderLayout === "scroll";
-
-  // Construct a settings-like object with local typography values for the menu
-  const localSettings: Settings = {
-    ...settings,
-    fontFamily: localFontFamily,
-    fontSize: localFontSize,
-    lineHeight: localLineHeight,
-    textAlign: localTextAlign,
-    readerLayout: localReaderLayout,
-  };
 
   return (
     <div ref={panelRef} className="flex h-full outline-none" tabIndex={0}>
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <div className="relative flex-1 overflow-hidden">
-          {searchOpen && (
-            <div className="absolute top-0 right-0 left-0 z-10">
-              <SearchBar
-                query={searchQuery}
-                onQueryChange={handleSearchQueryChange}
-                resultCount={searchResults.length}
-                currentIndex={searchIndex}
-                onNext={searchNext}
-                onPrev={searchPrev}
-                onClose={handleSearchClose}
-              />
-            </div>
-          )}
-          <div
-            ref={containerRef}
-            className={cn("h-full overflow-hidden", {
-              "px-4 pt-6 pb-2 md:px-8 md:pt-10 md:pb-4": localReaderLayout,
-            })}
-          />
-          {!isScrollMode && (
-            <div className="pointer-events-none absolute inset-0 z-[5]">
-              {/* Previous page zone: narrow margin on desktop, 25% on mobile */}
-              <button
-                type="button"
-                aria-label="Previous page"
-                className="pointer-events-auto absolute top-0 left-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
-                onPointerUp={handlePrev}
-              />
-              {/* Center zone: toolbar toggle on mobile only */}
-              {isMobile && (
-                <button
-                  type="button"
-                  aria-label="Toggle toolbar"
-                  className="pointer-events-auto absolute top-0 left-1/4 h-full w-1/2 appearance-none border-none bg-transparent p-0"
-                  onPointerUp={toggleToolbar}
-                />
-              )}
-              {/* Next page zone: narrow margin on desktop, 25% on mobile */}
-              <button
-                type="button"
-                aria-label="Next page"
-                className="pointer-events-auto absolute top-0 right-0 h-full w-1/4 cursor-default appearance-none border-none bg-transparent p-0 active:bg-black/5 md:w-12 md:cursor-pointer dark:active:bg-white/5"
-                onPointerUp={handleNext}
-              />
-            </div>
-          )}
-        </div>
-        <div
-          className={cn({ "absolute right-0 bottom-0 left-0 z-20 pt-10": zenMode })}
-          onMouseEnter={zenMode ? showToolbarPersistent : undefined}
-          onMouseLeave={zenMode ? resetToolbarTimer : undefined}
-        >
-          <div
-            className={cn(
-              "relative flex h-10 items-center justify-center px-2 transition-all duration-300 ease-in-out",
-              {
-                "max-h-0 overflow-hidden border-t-0 opacity-0":
-                  (isMobile || zenMode) && !toolbarVisible,
-                "max-h-20 opacity-100": (!isMobile && !zenMode) || toolbarVisible,
-              },
-            )}
-          >
-            <div className="absolute left-2 flex max-w-[calc(100%-8rem)] items-center gap-1.5">
-              {totalPages !== null && currentPage !== null ? (
-                <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
-                  {currentChapterLabel ? (
-                    <>
-                      <span className="max-w-28 truncate sm:max-w-48 md:max-w-64">
-                        {currentChapterLabel}
-                      </span>
-                      <span className="shrink-0">·</span>
-                    </>
-                  ) : null}
-                  <span className="shrink-0 tabular-nums">
-                    {currentPage} / {totalPages}
-                  </span>
-                </div>
-              ) : null}
-            </div>
-            {!isScrollMode && (
-              <div className="hidden items-center gap-4 md:flex">
-                <Button variant="ghost" size="icon" onClick={handlePrev}>
-                  <ChevronLeft className="size-4" />
-                  <span className="sr-only">Previous page</span>
-                </Button>
-                <Button variant="ghost" size="icon" onClick={handleNext}>
-                  <ChevronRight className="size-4" />
-                  <span className="sr-only">Next page</span>
-                </Button>
-              </div>
-            )}
-            <div className="absolute right-2 flex items-center gap-1">
-              {isMobile && (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleSearchOpen}
-                    title="Search in book (Cmd+F)"
-                  >
-                    <Search className="size-4" />
-                    <span className="sr-only">Search in book</span>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleOpenNotebook}
-                    title="Open Notebook"
-                  >
-                    <Notebook className="size-4" />
-                    <span className="sr-only">Open Notebook</span>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleOpenChat}
-                    title="Chat about book"
-                  >
-                    <MessageSquare className="size-4" />
-                    <span className="sr-only">Chat about book</span>
-                  </Button>
-                </>
-              )}
-              {toc.length > 0 && (
-                <Popover open={tocOpen} onOpenChange={setTocOpen}>
-                  <PopoverTrigger
-                    render={<Button variant="ghost" size="icon" title="Table of Contents" />}
-                  >
-                    <TableOfContents className="size-4" />
-                    <span className="sr-only">Table of Contents</span>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    side="top"
-                    align="end"
-                    sideOffset={8}
-                    className="max-h-80 w-64 overflow-y-auto p-1.5"
-                  >
-                    <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                      Table of Contents
-                    </p>
-                    <ul>
-                      <TocList
-                        entries={toc}
-                        onNavigate={(href) => {
-                          navigateToTocHref(href);
-                          setTocOpen(false);
-                        }}
-                      />
-                    </ul>
-                  </PopoverContent>
-                </Popover>
-              )}
-              <ReaderFormattingMenu
-                settings={localSettings}
-                onUpdateSettings={handleUpdateSettings}
-              />
-              <ReaderActionsMenu
-                book={book}
-                onDownload={handleDownload}
-                onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
-                onBookmarkPage={handleBookmarkPage}
-                isBookmarked={Boolean(currentBookmark)}
-              />
-            </div>
-          </div>
-        </div>
-        {/* Portal popovers to document.body to escape dockview's CSS transforms,
-            which create a new containing block and break position:fixed */}
+        <EpubReaderSurface
+          containerRef={containerRef}
+          searchOpen={searchOpen}
+          searchQuery={searchQuery}
+          searchResultsLength={searchResults.length}
+          searchIndex={searchIndex}
+          searchNext={searchNext}
+          searchPrev={searchPrev}
+          onSearchClose={handleSearchClose}
+          onSearchQueryChange={handleSearchQueryChange}
+          loadError={loadError}
+          readerLayout={localReaderLayout}
+          isScrollMode={isScrollMode}
+          isMobile={Boolean(isMobile)}
+          toggleToolbar={toggleToolbar}
+          onPrevious={handlePrev}
+          onNext={handleNext}
+        />
+        <EpubReaderToolbar
+          toc={toc}
+          navigateToTocHref={navigateToTocHref}
+          localSettings={localSettings}
+          onUpdateSettings={handleUpdateSettings}
+          book={book}
+          onSyncToFurthestPage={handleSyncToFurthestPage}
+          onDownload={handleDownload}
+          onCopyPageAsMarkdown={handleCopyPageAsMarkdown}
+          onOpenSpeedread={handleOpenSpeedread}
+          onBookmarkPage={handleBookmarkPage}
+          isBookmarked={Boolean(currentBookmark)}
+          bookmarksLoaded={bookmarksLoaded}
+        />
+        {/* Portal popovers to document.body so position:fixed is viewport-relative. */}
         {selectionPopover &&
           createPortal(
             <HighlightPopover
               position={selectionPopover.position}
               onCopyAsMarkdown={handleCopyAsMarkdown}
               onAskQuestion={handleAskQuestion}
+              onExplain={handleExplainThis}
               onSave={handleSaveHighlight}
               onDismiss={dismissPopovers}
             />,
             document.body,
           )}
+        {speedreadOpen && (
+          <SpeedreadPopout
+            bookId={book.id}
+            open
+            words={speedreadWords}
+            onClose={() => setSpeedreadOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

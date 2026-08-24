@@ -1,9 +1,47 @@
 import { describe, it, expect, vi } from "vitest";
-import { Effect, Layer } from "effect";
 import { createStore, set, get } from "idb-keyval";
-import { BookService, makeBookService } from "~/lib/stores/book-store";
-import type { Book } from "~/lib/stores/book-store";
-import { ReadingPositionService, makePositionService } from "~/lib/stores/position-store";
+import { BookService as LiveBookService, makeBookService } from "~/lib/stores/book-store";
+import type { Book, BookMeta } from "~/lib/stores/book-store";
+import {
+  ReadingPositionService as LiveReadingPositionService,
+  makePositionService,
+} from "~/lib/stores/position-store";
+
+function serviceTag<Service>(initial: Service) {
+  let service = initial;
+  return {
+    pipe: <A>(operation: (value: Service) => Promise<A>) => operation(service),
+    set: (value: Service) => {
+      service = value;
+    },
+  };
+}
+
+type BookService = typeof LiveBookService;
+const BookService = serviceTag(LiveBookService);
+type ReadingPositionService = typeof LiveReadingPositionService;
+const ReadingPositionService = serviceTag(LiveReadingPositionService);
+const Layer = {
+  succeed: <Service>(tag: { set: (service: Service) => void }, service: Service) => {
+    tag.set(service);
+    return undefined;
+  },
+};
+namespace Effect {
+  export type Effect<A, _E = never, _R = never> = Promise<A>;
+}
+const Effect = {
+  andThen: <Service, A>(operation: (service: Service) => Promise<A>) => operation,
+  provide: <A>(promise: Promise<A>, _layer: unknown) => promise,
+  runPromise: <A>(promise: Promise<A>) => promise,
+  runPromiseExit: async <A>(promise: Promise<A>) => {
+    try {
+      return { _tag: "Success" as const, value: await promise };
+    } catch (error) {
+      return { _tag: "Failure" as const, cause: { error } };
+    }
+  },
+};
 
 function makeBook(overrides: Partial<Book> = {}): Book {
   return {
@@ -41,11 +79,16 @@ describe("BookService", () => {
       const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
         Effect.runPromise(Effect.provide(e, bookLayer));
       const book = makeBook();
-      await run(BookService.pipe(Effect.andThen((s) => s.saveBook(book, book.data))));
+      const stamped = await run(
+        BookService.pipe(Effect.andThen((s) => s.saveBook(book, book.data))),
+      );
       const books = await run(BookService.pipe(Effect.andThen((s) => s.getBooks())));
       expect(books).toHaveLength(1);
+      expect(books[0]).toEqual(stamped);
       expect(books[0].id).toBe("book-1");
       expect(books[0].title).toBe("Test Book");
+      expect(stamped.hasLocalFile).toBe(true);
+      expect(stamped.updatedAt).toEqual(expect.any(Number));
     });
 
     it("returns empty array when no books", async () => {
@@ -80,6 +123,76 @@ describe("BookService", () => {
       expect(exit._tag).toBe("Failure");
       if (exit._tag === "Failure") {
         expect((exit.cause as any).error?._tag).toBe("BookNotFoundError");
+      }
+    });
+  });
+
+  describe("updateBookMeta", () => {
+    it("returns the exact timestamp persisted to storage", async () => {
+      const suffix = `test-${++testCounter}-${Date.now()}`;
+      const bookStore = createStore(`book-db-${suffix}`, "books");
+      const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
+      const service = makeBookService({ bookStore, bookDataStore });
+      const updated: BookMeta = {
+        id: "book-1",
+        title: "Updated",
+        author: "Test Author",
+        coverImage: null,
+        format: "epub",
+        updatedAt: 1,
+      };
+
+      const stamped = await service.updateBookMeta(updated);
+      const persisted = await get<BookMeta>(updated.id, bookStore);
+
+      expect(stamped.updatedAt).not.toBe(updated.updatedAt);
+      expect(persisted).toEqual(stamped);
+      expect(persisted?.updatedAt).toBe(stamped.updatedAt);
+    });
+  });
+
+  describe("on-demand download", () => {
+    it("downloads and caches a remote book when local data is missing", async () => {
+      const suffix = `test-${++testCounter}-${Date.now()}`;
+      const bookStore = createStore(`book-db-${suffix}`, "books");
+      const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
+      const remoteBook = {
+        id: "remote-book",
+        title: "Remote Book",
+        author: "Remote Author",
+        coverImage: null,
+        format: "epub" as const,
+        remoteFileUrl: "https://example.com/remote-book.epub",
+        hasLocalFile: false,
+      };
+      const downloaded = new Uint8Array([1, 2, 3, 4]).buffer;
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(downloaded, {
+          status: 200,
+          headers: { "Content-Type": "application/epub+zip" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      try {
+        await set(remoteBook.id, remoteBook, bookStore);
+        const bookLayer = Layer.succeed(BookService, makeBookService({ bookStore, bookDataStore }));
+        const data = await Effect.runPromise(
+          Effect.provide(
+            BookService.pipe(Effect.andThen((service) => service.getBookData(remoteBook.id))),
+            bookLayer,
+          ),
+        );
+
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/sync/files/download?bookId=remote-book&type=file",
+          { credentials: "include" },
+        );
+        expect(Array.from(new Uint8Array(data))).toEqual([1, 2, 3, 4]);
+        expect(await get<ArrayBuffer>(remoteBook.id, bookDataStore)).toEqual(data);
+        expect(await get(remoteBook.id, bookStore)).toMatchObject({ hasLocalFile: true });
+      } finally {
+        vi.unstubAllGlobals();
       }
     });
   });

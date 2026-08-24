@@ -1,93 +1,97 @@
-import { Context, Effect, Layer, Schema } from "effect";
 import { StandardEbooksError, DecodeError } from "~/lib/errors";
 
-// --- Schemas ---
+export interface SEBook {
+  title: string;
+  author: string;
+  urlPath: string;
+  coverUrl: string | null;
+  summary?: string;
+  subjects?: string[];
+}
 
-export const SEBookSchema = Schema.mutable(
-  Schema.Struct({
-    title: Schema.String,
-    author: Schema.String,
-    urlPath: Schema.String,
-    coverUrl: Schema.NullOr(Schema.String),
-    summary: Schema.optional(Schema.String),
-    subjects: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
-  }),
-);
+export interface SESearchResult {
+  books: SEBook[];
+  currentPage: number;
+  totalPages: number;
+}
 
-export type SEBook = typeof SEBookSchema.Type;
-
-export const SESearchResultSchema = Schema.mutable(
-  Schema.Struct({
-    books: Schema.mutable(Schema.Array(SEBookSchema)),
-    currentPage: Schema.Number,
-    totalPages: Schema.Number,
-  }),
-);
-
-export type SESearchResult = typeof SESearchResultSchema.Type;
-
-const decodeSESearchResult = Schema.decodeUnknownSync(SESearchResultSchema);
-const decodeSEBooks = Schema.decodeUnknownSync(Schema.mutable(Schema.Array(SEBookSchema)));
-
-// --- Service ---
-
-export class StandardEbooksService extends Context.Tag("StandardEbooksService")<
-  StandardEbooksService,
-  {
-    readonly searchBooks: (
-      query: string,
-      page?: number,
-    ) => Effect.Effect<SESearchResult, StandardEbooksError | DecodeError>;
-    readonly getNewReleases: () => Effect.Effect<SEBook[], StandardEbooksError | DecodeError>;
-    readonly downloadEpub: (urlPath: string) => Effect.Effect<ArrayBuffer, StandardEbooksError>;
+function decodeBook(value: unknown): SEBook {
+  if (!value || typeof value !== "object") throw new Error("Invalid book");
+  const book = value as Record<string, unknown>;
+  if (
+    typeof book.title !== "string" ||
+    typeof book.author !== "string" ||
+    typeof book.urlPath !== "string" ||
+    (book.coverUrl !== null && typeof book.coverUrl !== "string") ||
+    (book.summary !== undefined && typeof book.summary !== "string") ||
+    (book.subjects !== undefined &&
+      (!Array.isArray(book.subjects) ||
+        book.subjects.some((subject) => typeof subject !== "string")))
+  ) {
+    throw new Error("Invalid book");
   }
->() {}
+  return book as unknown as SEBook;
+}
 
-export const StandardEbooksServiceLive = Layer.succeed(StandardEbooksService, {
-  searchBooks: (query: string, page = 1) =>
-    Effect.gen(function* () {
-      const json = yield* Effect.tryPromise({
-        try: async () => {
-          const params = new URLSearchParams({
-            query,
-            page: String(page),
-          });
-          const res = await fetch(`/api/standard-ebooks/search?${params.toString()}`);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json();
-        },
-        catch: (cause) => new StandardEbooksError({ operation: "searchBooks", cause }),
-      });
-      return yield* Effect.try({
-        try: () => decodeSESearchResult(json),
-        catch: (cause) => new DecodeError({ operation: "searchBooks", cause }),
-      });
-    }),
+function decodeBooks(value: unknown): SEBook[] {
+  if (!Array.isArray(value)) throw new Error("Invalid books response");
+  return value.map(decodeBook);
+}
 
-  getNewReleases: () =>
-    Effect.gen(function* () {
-      const json = yield* Effect.tryPromise({
-        try: async () => {
-          const res = await fetch("/api/standard-ebooks/new-releases");
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json();
-        },
-        catch: (cause) => new StandardEbooksError({ operation: "getNewReleases", cause }),
+export const StandardEbooksService = {
+  async searchBooks(query: string, page = 1): Promise<SESearchResult> {
+    let json: unknown;
+    try {
+      const params = new URLSearchParams({
+        query,
+        page: String(page),
       });
-      return yield* Effect.try({
-        try: () => decodeSEBooks(json),
-        catch: (cause) => new DecodeError({ operation: "getNewReleases", cause }),
-      });
-    }),
+      const res = await fetch(`/api/standard-ebooks/search?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      json = await res.json();
+    } catch (cause) {
+      throw new StandardEbooksError({ operation: "searchBooks", cause });
+    }
+    try {
+      if (!json || typeof json !== "object") throw new Error("Invalid search response");
+      const result = json as Record<string, unknown>;
+      if (typeof result.currentPage !== "number" || typeof result.totalPages !== "number") {
+        throw new Error("Invalid search response");
+      }
+      return {
+        books: decodeBooks(result.books),
+        currentPage: result.currentPage,
+        totalPages: result.totalPages,
+      };
+    } catch (cause) {
+      throw new DecodeError({ operation: "searchBooks", cause });
+    }
+  },
 
-  downloadEpub: (urlPath: string) =>
-    Effect.tryPromise({
-      try: async () => {
-        const params = new URLSearchParams({ path: urlPath });
-        const res = await fetch(`/api/standard-ebooks/download?${params.toString()}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.arrayBuffer();
-      },
-      catch: (cause) => new StandardEbooksError({ operation: "downloadEpub", cause }),
-    }),
-});
+  async getNewReleases(): Promise<SEBook[]> {
+    let json: unknown;
+    try {
+      const res = await fetch("/api/standard-ebooks/new-releases");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      json = await res.json();
+    } catch (cause) {
+      throw new StandardEbooksError({ operation: "getNewReleases", cause });
+    }
+    try {
+      return decodeBooks(json);
+    } catch (cause) {
+      throw new DecodeError({ operation: "getNewReleases", cause });
+    }
+  },
+
+  async downloadEpub(urlPath: string): Promise<ArrayBuffer> {
+    try {
+      const params = new URLSearchParams({ path: urlPath });
+      const res = await fetch(`/api/standard-ebooks/download?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.arrayBuffer();
+    } catch (cause) {
+      throw new StandardEbooksError({ operation: "downloadEpub", cause });
+    }
+  },
+};

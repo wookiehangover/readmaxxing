@@ -1,4 +1,5 @@
 import { sql } from "pg-sql";
+import { clampNullableTimestamp, clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface HighlightTextAnchor {
@@ -62,6 +63,11 @@ export async function upsertHighlight(
 ): Promise<HighlightRow | null> {
   const pool = getPool();
   const textAnchorJson = highlight.textAnchor != null ? JSON.stringify(highlight.textAnchor) : null;
+  // Clamp client-provided timestamps so a skewed clock cannot write
+  // far-future created_at/deleted_at values (a future deleted_at would match
+  // `deleted_at > cursor` on every subsequent pull).
+  const createdAtIso = clampUpdatedAt(highlight.createdAt);
+  const deletedAtIso = clampNullableTimestamp(highlight.deletedAt);
   const result = await pool.query<HighlightRow>(sql`
     INSERT INTO readmax.highlight (id, user_id, book_id, cfi_range, text, color, page_number, text_offset, text_length, text_anchor, note, created_at, updated_at, deleted_at)
     VALUES (
@@ -76,9 +82,9 @@ export async function upsertHighlight(
       ${highlight.textLength ?? null},
       ${textAnchorJson}::jsonb,
       ${highlight.note ?? null},
-      ${highlight.createdAt.toISOString()},
+      ${createdAtIso},
       NOW(),
-      ${highlight.deletedAt?.toISOString() ?? null}
+      ${deletedAtIso}
     )
     ON CONFLICT (id) DO UPDATE
       SET user_id = EXCLUDED.user_id,

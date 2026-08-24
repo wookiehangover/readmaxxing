@@ -22,6 +22,19 @@ import { WorkspaceProvider } from "~/lib/context/workspace-context";
 import { useSync, SyncContext } from "~/lib/sync/use-sync";
 import { COLOR_THEMES } from "~/lib/color-themes";
 import { setSWRegistration } from "~/lib/sw-registry";
+import { AppStoreProvider } from "~/lib/themis/provider";
+
+export async function loader() {
+  if (import.meta.env.DEV) {
+    const { startLocalReadingIngestSweep } = await import("~/lib/reading-agent/dispatch.server");
+    startLocalReadingIngestSweep();
+  }
+  return null;
+}
+
+export function shouldRevalidate() {
+  return false;
+}
 
 // Build a minimal JSON blob of non-default theme CSS variables for the FOUC script.
 // This is serialized at build/SSR time and embedded in the inline script.
@@ -62,12 +75,51 @@ const themeScript = `
 })();
 `;
 
+// One-shot recovery when a stale service-worker shell references hashed assets that
+// no longer exist after a deploy. Soft-refresh keeps the SW; hard-refresh bypasses it.
+// If entry chunks 404, React never boots and the normal update toast cannot appear.
+const staleAssetRecoveryScript = `
+(function() {
+  var key = 'readmax-stale-asset-recover';
+  function isAppAsset(url) {
+    try {
+      var u = new URL(url, location.origin);
+      return u.origin === location.origin && u.pathname.indexOf('/assets/') === 0;
+    } catch (e) {
+      return false;
+    }
+  }
+  window.addEventListener('error', function (event) {
+    var el = event.target;
+    if (!el || (el.tagName !== 'SCRIPT' && el.tagName !== 'LINK')) return;
+    var url = el.src || el.href;
+    if (!url || !isAppAsset(url)) return;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    var done = function () { location.reload(); };
+    if (!('serviceWorker' in navigator)) {
+      done();
+      return;
+    }
+    navigator.serviceWorker.getRegistrations().then(function (regs) {
+      return Promise.all(regs.map(function (reg) { return reg.unregister(); }));
+    }).then(function () {
+      if (!('caches' in window)) return;
+      return caches.keys().then(function (keys) {
+        return Promise.all(keys.map(function (name) { return caches.delete(name); }));
+      });
+    }).then(done, done);
+  }, true);
+})();
+`;
+
 const SITE_ORIGIN = typeof __SITE_ORIGIN__ !== "undefined" ? __SITE_ORIGIN__ : "";
 const SW_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 declare global {
   interface Window {
     __readmaxSWUpdateIntervalId?: number;
+    __readmaxSWVisibilityHandler?: () => void;
   }
 }
 
@@ -76,9 +128,24 @@ function startSWUpdatePolling(registration: ServiceWorkerRegistration) {
     return;
   }
 
-  window.__readmaxSWUpdateIntervalId = window.setInterval(() => {
+  const checkForUpdate = () => {
     registration.update().catch(console.error);
-  }, SW_UPDATE_CHECK_INTERVAL_MS);
+  };
+
+  window.__readmaxSWUpdateIntervalId = window.setInterval(
+    checkForUpdate,
+    SW_UPDATE_CHECK_INTERVAL_MS,
+  );
+
+  // Catch deploys sooner than the hourly poll when the user returns to the tab.
+  if (!window.__readmaxSWVisibilityHandler) {
+    window.__readmaxSWVisibilityHandler = () => {
+      if (document.visibilityState === "visible") {
+        checkForUpdate();
+      }
+    };
+    document.addEventListener("visibilitychange", window.__readmaxSWVisibilityHandler);
+  }
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -92,8 +159,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <link rel="manifest" href="/manifest.webmanifest" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
           rel="preload"
           href="/fonts/Geist[wght].woff2"
@@ -114,10 +179,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           as="font"
           type="font/woff2"
           crossOrigin="anonymous"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Literata:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Source+Serif+4:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
         />
         <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32" />
         <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16" />
@@ -148,6 +209,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         />
         <meta name="twitter:image" content={`${SITE_ORIGIN}/og-image.png`} />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: staleAssetRecoveryScript }} />
         <Meta />
         <Links />
       </head>
@@ -163,8 +225,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function SyncProvider({ children }: { children: React.ReactNode }) {
-  const syncState = useSync();
-  return <SyncContext.Provider value={syncState}>{children}</SyncContext.Provider>;
+  // Actions only — isSyncing/pending live on an external store so status flips
+  // do not re-render the workspace tree under this provider.
+  const syncActions = useSync();
+  return <SyncContext.Provider value={syncActions}>{children}</SyncContext.Provider>;
 }
 
 function SettingsShortcut() {
@@ -225,17 +289,19 @@ function ServiceWorkerRefreshToast() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <SyncProvider>
-        <WorkspaceProvider>
-          <SettingsShortcut />
-          <ServiceWorkerRefreshToast />
-          <CommandBar />
-          <Outlet />
-          <Toaster />
-        </WorkspaceProvider>
-      </SyncProvider>
-    </AuthProvider>
+    <AppStoreProvider>
+      <AuthProvider>
+        <SyncProvider>
+          <WorkspaceProvider>
+            <SettingsShortcut />
+            <ServiceWorkerRefreshToast />
+            <CommandBar />
+            <Outlet />
+            <Toaster />
+          </WorkspaceProvider>
+        </SyncProvider>
+      </AuthProvider>
+    </AppStoreProvider>
   );
 }
 

@@ -1,5 +1,9 @@
 import { get, set, del, entries } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
+import {
+  getChapterUploadCacheStore,
+  remapChapterUploadCache,
+} from "~/lib/stores/chapter-upload-cache-store";
 import { isWellFormedEntry } from "./idb-entry";
 import { appendOnlyMerge, lwwMerge } from "./merge";
 import {
@@ -22,6 +26,7 @@ export interface RemapStores {
   readonly notebookStore: UseStore;
   readonly chatSessionStore: UseStore;
   readonly activeSessionStore: UseStore;
+  readonly chapterUploadCacheStore?: UseStore;
 }
 
 let _defaults: RemapStores | null = null;
@@ -36,6 +41,7 @@ function getDefaultStores(): RemapStores {
       notebookStore: getNotebookStore(),
       chatSessionStore: getChatSessionStore(),
       activeSessionStore: getActiveSessionStore(),
+      chapterUploadCacheStore: getChapterUploadCacheStore(),
     };
   }
   return _defaults;
@@ -77,8 +83,8 @@ function mergeSessionArrays(a: ChatSessionLike[], b: ChatSessionLike[]): ChatSes
 /**
  * Remap all local references from `fromId` to `toId` when cross-device
  * dedup identifies a canonical book id. Moves book data, merges positions,
- * notebooks, highlights, bookmarks, chat sessions, and the active-session pointer,
- * then tombstones the losing book record locally. Idempotent.
+ * notebooks, highlights, bookmarks, chat sessions, the active-session pointer,
+ * and the chapter-upload cache, then tombstones the losing book record locally. Idempotent.
  */
 export async function remapBookId(
   fromId: string,
@@ -96,6 +102,7 @@ export async function remapBookId(
     notebookStore,
     chatSessionStore,
     activeSessionStore,
+    chapterUploadCacheStore,
   } = stores;
 
   const fromData = await get<ArrayBuffer>(fromId, bookDataStore);
@@ -160,6 +167,10 @@ export async function remapBookId(
     const toActive = await get<string>(toId, activeSessionStore);
     if (!toActive) await set(toId, fromActive, activeSessionStore);
     await del(fromId, activeSessionStore);
+  }
+
+  if (chapterUploadCacheStore) {
+    await remapChapterUploadCache(fromId, toId, chapterUploadCacheStore);
   }
 
   const fromBook = await get<Record<string, unknown>>(fromId, bookStore);

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { Effect } from "effect";
 import { BookOpen } from "lucide-react";
 import { useNavigate } from "react-router";
 import {
@@ -12,10 +11,10 @@ import {
   CommandList,
 } from "~/components/ui/command";
 import { BookCover } from "~/components/book-list";
-import { useSyncListener } from "~/hooks/use-sync-listener";
-import { AppRuntime } from "~/lib/effect-runtime";
-import { useOptionalWorkspace } from "~/lib/context/workspace-context";
-import { BookService, type BookMeta } from "~/lib/stores/book-store";
+import { useOptionalWorkspace, type WorkspaceContextValue } from "~/lib/context/workspace-context";
+import { getBookReadingPath } from "~/lib/reading-route";
+import type { BookMeta } from "~/lib/stores/book-store";
+import { useAppStore } from "~/lib/themis/provider";
 
 function isEditableElement(element: Element | null): boolean {
   if (!(element instanceof HTMLElement)) return false;
@@ -43,22 +42,23 @@ function CommandBarBookIcon({ book }: { book: BookMeta }) {
   );
 }
 
+type CommandBarWorkspace = Pick<WorkspaceContextValue, "openBookRef"> | null;
+
+export function openCommandBarBook(
+  book: BookMeta,
+  workspace: CommandBarWorkspace,
+  navigate: (path: string) => void | Promise<void>,
+): void {
+  workspace?.openBookRef.current?.(book);
+  void navigate(getBookReadingPath(book.id));
+}
+
 export function CommandBar() {
   const [open, setOpen] = useState(false);
-  const [books, setBooks] = useState<BookMeta[]>([]);
-  const [hasLoadedBooks, setHasLoadedBooks] = useState(false);
   const navigate = useNavigate();
   const workspace = useOptionalWorkspace();
-  const syncVersion = useSyncListener(["book"]);
-
-  const loadBooks = useCallback(() => {
-    AppRuntime.runPromise(BookService.pipe(Effect.andThen((s) => s.getBooks())))
-      .then((nextBooks) => {
-        setBooks(nextBooks);
-        setHasLoadedBooks(true);
-      })
-      .catch(console.error);
-  }, []);
+  const store = useAppStore();
+  const books = store.booksSelectors.selectAllBooks.useValue();
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -73,24 +73,9 @@ export function CommandBar() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  useEffect(() => {
-    if (!open || hasLoadedBooks) return;
-    loadBooks();
-  }, [hasLoadedBooks, loadBooks, open]);
-
-  useEffect(() => {
-    if (syncVersion === 0 || !hasLoadedBooks) return;
-    loadBooks();
-  }, [hasLoadedBooks, loadBooks, syncVersion]);
-
   const handleSelectBook = useCallback(
     (book: BookMeta) => {
-      const openBook = workspace?.openBookRef.current;
-      if (openBook) {
-        openBook(book);
-      } else {
-        navigate(`/books/${book.id}/details`);
-      }
+      openCommandBarBook(book, workspace, navigate);
       setOpen(false);
     },
     [navigate, workspace],

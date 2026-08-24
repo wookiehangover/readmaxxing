@@ -1,15 +1,14 @@
 import { Library, Check } from "lucide-react";
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import { Button } from "~/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "~/components/ui/dropdown-menu";
+import type { ChatBookSelection } from "~/lib/context/reading-chat-menu-context";
 import { cn } from "~/lib/utils";
-import type { BookSelection } from "./chat-panel";
 
 /**
  * A dropdown checkbox row with a CIRCULAR indicator. We use the raw Base UI
@@ -57,29 +56,27 @@ function CircularCheckboxItem({
 }
 
 /**
- * Header dropdown for choosing which currently-open books are included in the
+ * Reader-menu submenu for choosing which currently-open books are included in the
  * chat. Renders one circular checkbox row per open book. The chat's own book
  * (`ownBookId`) is locked-checked and cannot be toggled off. Returns null when
  * fewer than two books are open (including the standalone reader, which has no
  * open books) so it never appears when there is nothing to choose.
  */
-export function ChatBookSelector({
+export function ChatBookSelectorMenu({
   openBooks,
   selectedBookIds,
   ownBookId,
   onToggleBook,
-}: BookSelection) {
+}: ChatBookSelection) {
   if (openBooks.length < 2) return null;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button variant="ghost" size="icon" title="Select books" className="size-7" />}
-      >
-        <Library className="size-3.5" />
-        <span className="sr-only">Select books</span>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-52">
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <Library />
+        Books in this chat
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="min-w-52">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Books in this chat</DropdownMenuLabel>
           {openBooks.map((book) => {
@@ -97,7 +94,7 @@ export function ChatBookSelector({
             );
           })}
         </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   );
 }

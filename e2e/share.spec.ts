@@ -5,6 +5,7 @@ import {
   installVirtualAuthenticator,
   registerAndSignIn,
   skipIfAuthNotConfigured,
+  waitForAppHydration,
 } from "./helpers/auth";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,10 +28,6 @@ async function clearBrowserStorage(page: Page) {
       if (db.name) indexedDB.deleteDatabase(db.name);
     }
     localStorage.clear();
-    localStorage.setItem(
-      "app-settings",
-      JSON.stringify({ sidebarCollapsed: true, updatedAt: Date.now() }),
-    );
   });
 }
 
@@ -96,20 +93,21 @@ async function uploadTestBook(page: Page) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_EPUB);
 
-  const focusedPill = page
-    .getByRole("tablist", { name: "Open books" })
-    .getByRole("tab", { name: new RegExp(BOOK_TITLE) });
-  const freeformTab = page.locator(".dv-default-tab", { hasText: BOOK_TITLE }).first();
+  const readingShell = page.getByTestId("reading-shell");
+  const libraryBook = page.getByRole("button", { name: "Open Test Book for E2E" });
   await expect
     .poll(
       async () =>
-        (await focusedPill
-          .first()
-          .isVisible()
-          .catch(() => false)) || (await freeformTab.isVisible().catch(() => false)),
-      { timeout: 15_000 },
+        (await readingShell.isVisible().catch(() => false)) ||
+        (await libraryBook.isVisible().catch(() => false)),
+      { timeout: 20_000 },
     )
     .toBe(true);
+
+  if (!(await readingShell.isVisible().catch(() => false))) {
+    await libraryBook.click({ force: true, timeout: 5_000 }).catch(() => {});
+    await expect(readingShell).toBeVisible({ timeout: 20_000 });
+  }
 }
 
 async function waitForBookSyncedForSharing(page: Page) {
@@ -128,9 +126,8 @@ async function waitForBookSyncedForSharing(page: Page) {
 }
 
 async function openBookMenuFromLibrary(page: Page) {
-  await page.getByRole("button", { name: "New Library tab" }).click({ timeout: 10_000 });
-  await expect(page.locator(".dv-default-tab").filter({ hasText: /^Library$/ })).toHaveCount(1);
-
+  await page.goto("/library");
+  await waitForAppHydration(page);
   await page.getByRole("button", { name: "Table view" }).click();
   const bookRow = page.getByRole("row").filter({ hasText: BOOK_TITLE }).first();
   await expect(bookRow).toBeVisible({ timeout: 10_000 });
@@ -180,23 +177,38 @@ async function createShareLink(page: Page, options?: { maxUses?: number; shareCh
 
 async function openShareInNewContext(browser: Browser, shareUrl: string) {
   const context = await browser.newContext();
+  await context.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
   const page = await context.newPage();
   await page.goto(shareUrl);
   return { context, page };
 }
 
-async function expectShareLandingPage(page: Page) {
-  await expect(page.getByRole("heading", { name: BOOK_TITLE })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(`by ${BOOK_AUTHOR}`)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add to Library & Read" })).toBeEnabled();
+async function expectShareReadingShell(page: Page) {
+  const banner = page.getByTestId("share-banner");
+  await expect(banner).toContainText("Readmaxxing", { timeout: 15_000 });
+  await expect(banner).toContainText(BOOK_TITLE, { timeout: 15_000 });
+  await expect(banner).not.toContainText("Shared by");
+  await expect(banner).not.toContainText(BOOK_AUTHOR);
+  await expect(page.getByTestId("reading-shell")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Book surface" })).toBeVisible();
+
+  const readingRail = page.getByRole("complementary", { name: "Reading rail" });
+  await expect(readingRail).toBeVisible();
+  await expect(readingRail.getByRole("tab", { name: "Discuss" })).toBeVisible();
+  await expect(readingRail.getByRole("tab", { name: "Outline" })).toBeVisible();
+  await expect(readingRail.getByRole("tab")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Add to Library" })).toBeEnabled();
 }
 
 async function importSharedBook(page: Page) {
   await Promise.all([
-    page.waitForURL((url) => url.pathname === "/", { timeout: 30_000, waitUntil: "commit" }),
-    page.getByRole("button", { name: "Add to Library & Read" }).click(),
+    page.waitForURL((url) => /^\/books\/[^/]+$/.test(url.pathname), {
+      timeout: 30_000,
+      waitUntil: "commit",
+    }),
+    page.getByRole("button", { name: "Add to Library" }).click(),
   ]);
-  await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+  await waitForAppHydration(page);
 
   await expect
     .poll(
@@ -213,19 +225,22 @@ test.describe("Share", () => {
   test.setTimeout(180_000);
 
   test.beforeEach(async ({ page, context, request }) => {
+    // Skip share tests in CI - they require Vercel Blob storage for book sync
+    test.skip(!!process.env.SKIP_SHARE_TESTS, "Share tests skipped (require Vercel Blob storage)");
+
     await skipIfAuthNotConfigured(request);
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await installVirtualAuthenticator(context, page);
+    await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
 
-    await page.goto("/");
-    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
     await clearBrowserStorage(page);
 
     await registerAndSignIn(page);
     await uploadTestBook(page);
     await waitForBookSyncedForSharing(page);
     await page.reload();
-    await page.waitForSelector(".dv-dockview", { timeout: 15_000 });
+    await waitForAppHydration(page);
     await expect
       .poll(
         async () => {
@@ -247,7 +262,7 @@ test.describe("Share", () => {
     const recipient = await openShareInNewContext(browser, shareUrl);
 
     try {
-      await expectShareLandingPage(recipient.page);
+      await expectShareReadingShell(recipient.page);
       await importSharedBook(recipient.page);
     } finally {
       await recipient.context.close();
@@ -259,7 +274,7 @@ test.describe("Share", () => {
     const firstRecipient = await openShareInNewContext(browser, shareUrl);
 
     try {
-      await expectShareLandingPage(firstRecipient.page);
+      await expectShareReadingShell(firstRecipient.page);
       await importSharedBook(firstRecipient.page);
     } finally {
       await firstRecipient.context.close();
@@ -268,15 +283,13 @@ test.describe("Share", () => {
     const secondRecipient = await openShareInNewContext(browser, shareUrl);
 
     try {
-      await expect(secondRecipient.page.getByRole("heading", { name: BOOK_TITLE })).toBeVisible({
-        timeout: 15_000,
-      });
       await expect(
         secondRecipient.page.getByText("This share link has reached its use limit."),
-      ).toBeVisible();
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(secondRecipient.page.getByTestId("reading-shell")).toHaveCount(0);
       await expect(
-        secondRecipient.page.getByRole("button", { name: "Add to Library & Read" }),
-      ).toBeDisabled();
+        secondRecipient.page.getByRole("button", { name: "Add to Library" }),
+      ).toHaveCount(0);
     } finally {
       await secondRecipient.context.close();
     }

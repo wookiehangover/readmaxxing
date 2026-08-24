@@ -1,5 +1,5 @@
 import { sql } from "pg-sql";
-import { clampUpdatedAt } from "../clamp-timestamp";
+import { clampNullableTimestamp, clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface BookmarkRow {
@@ -46,6 +46,10 @@ export async function upsertBookmark(
 ): Promise<BookmarkRow | null> {
   const pool = getPool();
   const updatedAtIso = clampUpdatedAt(bookmark.updatedAt ?? bookmark.createdAt);
+  // Clamp created_at/deleted_at too: a far-future deleted_at would match
+  // `deleted_at > cursor` on every subsequent pull.
+  const createdAtIso = clampUpdatedAt(bookmark.createdAt);
+  const deletedAtIso = clampNullableTimestamp(bookmark.deletedAt);
   const result = await pool.query<BookmarkRow>(sql`
     INSERT INTO readmax.bookmark (id, user_id, book_id, cfi, label, page_number, display_page, created_at, updated_at, deleted_at)
     VALUES (
@@ -56,9 +60,9 @@ export async function upsertBookmark(
       ${bookmark.label ?? null},
       ${bookmark.pageNumber ?? null},
       ${bookmark.displayPage ?? null},
-      ${bookmark.createdAt.toISOString()},
+      ${createdAtIso},
       ${updatedAtIso},
-      ${bookmark.deletedAt?.toISOString() ?? null}
+      ${deletedAtIso}
     )
     ON CONFLICT (id) DO UPDATE
       SET user_id = EXCLUDED.user_id,

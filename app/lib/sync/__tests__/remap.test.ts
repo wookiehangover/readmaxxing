@@ -14,6 +14,7 @@ function makeStores() {
     notebookStore: createStore(`${suffix}-notebooks`, "notebooks"),
     chatSessionStore: createStore(`${suffix}-sessions`, "sessions"),
     activeSessionStore: createStore(`${suffix}-active`, "active"),
+    chapterUploadCacheStore: createStore(`${suffix}-chapter-uploads`, "uploaded"),
   };
   return stores;
 }
@@ -79,6 +80,17 @@ describe("remapBookId", () => {
     expect(toData!.byteLength).toBe(32);
     const fromData = await get<ArrayBuffer>("from", stores.bookDataStore);
     expect(fromData).toBeUndefined();
+  });
+
+  it("moves the chapter upload marker to the canonical id", async () => {
+    await seedBook(stores, "from");
+    await seedBook(stores, "to");
+    await set("from", 3, stores.chapterUploadCacheStore);
+
+    await remapBookId("from", "to", stores);
+
+    expect(await get("from", stores.chapterUploadCacheStore)).toBeUndefined();
+    expect(await get("to", stores.chapterUploadCacheStore)).toBe(3);
   });
 
   it("merges positions with LWW (newer wins)", async () => {

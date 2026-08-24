@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { Effect, Layer } from "effect";
 import { createStore } from "idb-keyval";
-import { BookmarkService, makeBookmarkService } from "~/lib/stores/bookmark-store";
+import { makeBookmarkService } from "~/lib/stores/bookmark-store";
 import type { Bookmark } from "~/lib/stores/bookmark-store";
 import { clearSyncedChanges, getUnsyncedChanges, markSynced } from "~/lib/sync/change-log";
 
@@ -21,11 +20,11 @@ function makeBookmark(overrides: Partial<Bookmark> = {}): Bookmark {
 
 let testCounter = 0;
 
-function makeTestLayer() {
+function makeTestService() {
   const suffix = `bookmark-test-${++testCounter}-${Date.now()}`;
   const bookmarkStore = createStore(`bookmark-db-${suffix}`, "bookmarks");
 
-  return Layer.succeed(BookmarkService, makeBookmarkService({ bookmarkStore }));
+  return makeBookmarkService({ bookmarkStore });
 }
 
 async function clearChangeLog() {
@@ -41,47 +40,28 @@ describe("BookmarkService", () => {
   });
 
   it("saves and retrieves non-deleted bookmarks for a book", async () => {
-    const layer = makeTestLayer();
-    const run = <A, E>(effect: Effect.Effect<A, E, BookmarkService>) =>
-      Effect.runPromise(Effect.provide(effect, layer));
+    const service = makeTestService();
+    const bookmark = makeBookmark({ displayPage: 12, updatedAt: undefined });
 
-    await run(
-      BookmarkService.pipe(
-        Effect.andThen((service) => service.saveBookmark(makeBookmark({ displayPage: 12 }))),
-      ),
-    );
-    await run(
-      BookmarkService.pipe(
-        Effect.andThen((service) =>
-          service.saveBookmark(makeBookmark({ id: "bookmark-2", bookId: "book-2" })),
-        ),
-      ),
-    );
+    const stamped = await service.saveBookmark(bookmark);
+    await service.saveBookmark(makeBookmark({ id: "bookmark-2", bookId: "book-2" }));
 
-    const bookmarks = await run(
-      BookmarkService.pipe(Effect.andThen((service) => service.getBookmarksByBook("book-1"))),
-    );
+    const bookmarks = await service.getBookmarksByBook("book-1");
     expect(bookmarks).toHaveLength(1);
+    expect(bookmarks[0]).toEqual(stamped);
     expect(bookmarks[0].id).toBe("bookmark-1");
     expect(bookmarks[0].displayPage).toBe(12);
+    expect(stamped.updatedAt).toEqual(expect.any(Number));
   });
 
   it("soft-deletes bookmarks and records the delete change", async () => {
-    const layer = makeTestLayer();
-    const run = <A, E>(effect: Effect.Effect<A, E, BookmarkService>) =>
-      Effect.runPromise(Effect.provide(effect, layer));
+    const service = makeTestService();
 
-    await run(
-      BookmarkService.pipe(Effect.andThen((service) => service.saveBookmark(makeBookmark()))),
-    );
+    await service.saveBookmark(makeBookmark());
     await clearChangeLog();
-    await run(
-      BookmarkService.pipe(Effect.andThen((service) => service.deleteBookmark("bookmark-1"))),
-    );
+    await service.deleteBookmark("bookmark-1");
 
-    const bookmarks = await run(
-      BookmarkService.pipe(Effect.andThen((service) => service.getBookmarksByBook("book-1"))),
-    );
+    const bookmarks = await service.getBookmarksByBook("book-1");
     expect(bookmarks).toEqual([]);
 
     const changes = await getUnsyncedChanges();
@@ -91,27 +71,11 @@ describe("BookmarkService", () => {
   });
 
   it("checks whether a book CFI is already bookmarked", async () => {
-    const layer = makeTestLayer();
-    const run = <A, E>(effect: Effect.Effect<A, E, BookmarkService>) =>
-      Effect.runPromise(Effect.provide(effect, layer));
+    const service = makeTestService();
 
-    await run(
-      BookmarkService.pipe(Effect.andThen((service) => service.saveBookmark(makeBookmark()))),
-    );
+    await service.saveBookmark(makeBookmark());
 
-    await expect(
-      run(
-        BookmarkService.pipe(
-          Effect.andThen((service) => service.isBookmarked("book-1", "epubcfi(/6/4!/4/2)")),
-        ),
-      ),
-    ).resolves.toBe(true);
-    await expect(
-      run(
-        BookmarkService.pipe(
-          Effect.andThen((service) => service.isBookmarked("book-1", "epubcfi(/6/8!/4/2)")),
-        ),
-      ),
-    ).resolves.toBe(false);
+    await expect(service.isBookmarked("book-1", "epubcfi(/6/4!/4/2)")).resolves.toBe(true);
+    await expect(service.isBookmarked("book-1", "epubcfi(/6/8!/4/2)")).resolves.toBe(false);
   });
 });

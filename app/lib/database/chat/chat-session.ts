@@ -1,5 +1,5 @@
 import { sql } from "pg-sql";
-import { clampUpdatedAt } from "../clamp-timestamp";
+import { clampNullableTimestamp, clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface ChatSessionRow {
@@ -55,6 +55,8 @@ export async function upsertSession(
 ): Promise<ChatSessionRow | null> {
   const pool = getPool();
   const updatedAtIso = clampUpdatedAt(session.updatedAt);
+  const createdAtIso = clampUpdatedAt(session.createdAt);
+  const deletedAtIso = clampNullableTimestamp(session.deletedAt);
   const result = await pool.query<ChatSessionRow>(sql`
     INSERT INTO readmax.chat_session (id, user_id, book_id, title, created_at, updated_at, deleted_at)
     VALUES (
@@ -62,9 +64,9 @@ export async function upsertSession(
       ${userId},
       ${session.bookId ?? null},
       ${session.title ?? null},
-      ${session.createdAt.toISOString()},
+      ${createdAtIso},
       ${updatedAtIso},
-      ${session.deletedAt?.toISOString() ?? null}
+      ${deletedAtIso}
     )
     ON CONFLICT (id) DO UPDATE
       SET book_id = EXCLUDED.book_id,

@@ -10,6 +10,14 @@ export function tiptapJsonToMarkdown(doc: JSONContent): string {
   return doc.content.map((node) => serializeNode(node, "")).join("\n\n");
 }
 
+function escapeAttribute(value: unknown): string {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 function serializeNode(node: JSONContent, prefix: string): string {
   switch (node.type) {
     case "heading": {
@@ -49,6 +57,15 @@ function serializeNode(node: JSONContent, prefix: string): string {
     case "highlightReference": {
       const text = node.attrs?.text ?? "";
       return `> "${text}"`;
+    }
+
+    case "outlineIncrement": {
+      const locator = node.attrs?.locator;
+      const page = node.attrs?.page;
+      const locatorAttribute = locator == null ? "" : ` data-locator="${escapeAttribute(locator)}"`;
+      const pageAttribute = page == null ? "" : ` data-page="${escapeAttribute(page)}"`;
+      const body = node.content?.map((child) => serializeNode(child, "")).join("\n\n") ?? "";
+      return `<div data-outline-increment=""${locatorAttribute}${pageAttribute}>\n\n${body}\n\n</div>`;
     }
 
     default:

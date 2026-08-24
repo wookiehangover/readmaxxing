@@ -1,0 +1,464 @@
+import { createStore } from "idb-keyval";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import {
+  makeAnnotationService,
+  type Highlight,
+  type Notebook,
+} from "~/lib/stores/annotations-store";
+import { clearSyncedChanges, getUnsyncedChanges, markSynced } from "~/lib/sync/change-log";
+
+const mocks = vi.hoisted(() => ({
+  cacheNotebook: vi.fn(),
+  runPromise: vi.fn(),
+  service: null as object | null,
+}));
+
+vi.mock("~/lib/stores/annotations-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/lib/stores/annotations-store")>();
+  return {
+    ...actual,
+    AnnotationService: new Proxy(actual.AnnotationService, {
+      get: (_target, property) => {
+        if (mocks.service && Reflect.has(mocks.service, property)) {
+          const value = Reflect.get(mocks.service, property);
+          return typeof value === "function" ? value.bind(mocks.service) : value;
+        }
+        return property === "cacheNotebook" ? mocks.cacheNotebook : mocks.runPromise;
+      },
+    }),
+  };
+});
+
+import { annotationsSaga } from "~/lib/themis/annotations/annotations-sagas";
+import {
+  addHighlightRequested,
+  appendHighlightToNotebookRequested,
+  cacheNotebookRequested,
+  deleteHighlightRequested,
+  hydrateAnnotationsRequested,
+  updateHighlightRequested,
+  updateNotebookRequested,
+} from "~/lib/themis/annotations/annotations-slice";
+import { createAppStore, type AppStore } from "~/lib/themis/store";
+
+const stores: AppStore[] = [];
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+function makeHighlight(overrides: Partial<Highlight> = {}): Highlight {
+  return {
+    id: "highlight-1",
+    bookId: "book-1",
+    cfiRange: "epubcfi(/6/4)",
+    text: "Passage",
+    color: "yellow",
+    createdAt: 1,
+    ...overrides,
+  };
+}
+
+function makeNotebook(): Notebook {
+  return { bookId: "book-1", content: { type: "doc", content: [] }, updatedAt: 2 };
+}
+
+function startStore() {
+  const store = createAppStore();
+  stores.push(store);
+  store.init();
+  store.runSaga(annotationsSaga);
+  return store;
+}
+
+afterEach(() => {
+  for (const store of stores.splice(0)) store.dispose();
+  mocks.cacheNotebook.mockReset();
+  mocks.runPromise.mockReset();
+  mocks.service = null;
+  vi.restoreAllMocks();
+});
+
+describe("annotationsSaga", () => {
+  it("hydrates highlights and a notebook from persistence", async () => {
+    const highlight = makeHighlight();
+    const notebook = makeNotebook();
+    mocks.runPromise.mockResolvedValueOnce([highlight]).mockResolvedValueOnce(notebook);
+    const store = startStore();
+
+    store.dispatch(hydrateAnnotationsRequested("book-1"));
+
+    await vi.waitFor(() =>
+      expect(
+        store.annotationsSelectors.selectHighlightsByBook.select(store.state, "book-1"),
+      ).toEqual([highlight]),
+    );
+    expect(store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")).toEqual(
+      notebook,
+    );
+    expect(mocks.runPromise).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the latest overlapping hydrate result for a book", async () => {
+    const olderHighlight = makeHighlight({ id: "older" });
+    const newerHighlight = makeHighlight({ id: "newer" });
+    const olderHighlights = deferred<Highlight[]>();
+    const olderNotebook = deferred<Notebook | null>();
+    const newerNotebook = { ...makeNotebook(), updatedAt: 3 };
+    mocks.runPromise
+      .mockReturnValueOnce(olderHighlights.promise)
+      .mockReturnValueOnce(olderNotebook.promise)
+      .mockResolvedValueOnce([newerHighlight])
+      .mockResolvedValueOnce(newerNotebook);
+    const store = startStore();
+
+    store.dispatch(hydrateAnnotationsRequested("book-1"));
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledTimes(2));
+    store.dispatch(hydrateAnnotationsRequested("book-1"));
+
+    await vi.waitFor(() =>
+      expect(
+        store.annotationsSelectors.selectHighlightsByBook.select(store.state, "book-1"),
+      ).toEqual([newerHighlight]),
+    );
+    olderHighlights.resolve([olderHighlight]);
+    olderNotebook.resolve(makeNotebook());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(store.annotationsSelectors.selectHighlightsByBook.select(store.state, "book-1")).toEqual(
+      [newerHighlight],
+    );
+    expect(store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")).toEqual(
+      newerNotebook,
+    );
+  });
+
+  it("adds and updates the collection only after persistence succeeds", async () => {
+    const original = makeHighlight();
+    const updated = makeHighlight({ text: "Updated", updatedAt: 3 });
+    const onAdded = vi.fn();
+    const onUpdated = vi.fn();
+    mocks.runPromise
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([original])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([updated]);
+    const store = startStore();
+
+    store.dispatch(addHighlightRequested(original, onAdded));
+    await vi.waitFor(() => expect(onAdded).toHaveBeenCalledWith(original));
+    store.dispatch(updateHighlightRequested("book-1", original.id, { text: "Updated" }, onUpdated));
+
+    await vi.waitFor(() => expect(onUpdated).toHaveBeenCalledWith(updated));
+    expect(store.annotationsSelectors.selectHighlightById.select(store.state, original.id)).toEqual(
+      updated,
+    );
+  });
+
+  it("keeps failed writes out of the collection", async () => {
+    const onFailed = vi.fn();
+    mocks.runPromise.mockRejectedValueOnce(new Error("IDB unavailable"));
+    const store = startStore();
+
+    store.dispatch(addHighlightRequested(makeHighlight(), undefined, onFailed));
+
+    await vi.waitFor(() => expect(onFailed).toHaveBeenCalledWith("IDB unavailable"));
+    expect(store.annotationsSelectors.selectHighlightsByBook.select(store.state, "book-1")).toEqual(
+      [],
+    );
+  });
+
+  it("deletes a highlight only after persistence succeeds", async () => {
+    const highlight = makeHighlight();
+    const onCompleted = vi.fn();
+    mocks.runPromise
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([highlight])
+      .mockResolvedValueOnce(undefined);
+    const store = startStore();
+    store.dispatch(addHighlightRequested(highlight));
+    await vi.waitFor(() =>
+      expect(
+        store.annotationsSelectors.selectHighlightById.select(store.state, highlight.id),
+      ).toEqual(highlight),
+    );
+
+    store.dispatch(deleteHighlightRequested("book-1", highlight.id, onCompleted));
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledOnce());
+    expect(
+      store.annotationsSelectors.selectHighlightById.select(store.state, highlight.id),
+    ).toBeUndefined();
+  });
+
+  it("persists immediate notebook updates and highlight appends before collection updates", async () => {
+    const notebook = makeNotebook();
+    const appended = {
+      ...notebook,
+      content: { type: "doc", content: [{ type: "highlightReference" }] },
+    };
+    mocks.runPromise
+      .mockImplementationOnce(async (persisted: Notebook) => persisted)
+      .mockResolvedValueOnce(notebook)
+      .mockResolvedValueOnce(appended);
+    const store = startStore();
+
+    store.dispatch(updateNotebookRequested("book-1", notebook.content, true));
+    await vi.waitFor(() =>
+      expect(
+        store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1"),
+      ).toMatchObject({
+        bookId: "book-1",
+        content: notebook.content,
+      }),
+    );
+    store.dispatch(
+      appendHighlightToNotebookRequested("book-1", {
+        highlightId: "highlight-1",
+        cfiRange: "epubcfi(/6/4)",
+        text: "Passage",
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(
+        store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1"),
+      ).toEqual(appended),
+    );
+  });
+
+  it("publishes the retained notebook when a highlight append loses LWW", async () => {
+    const suffix = crypto.randomUUID();
+    const service = makeAnnotationService({
+      highlightStore: createStore(`highlight-append-lww-${suffix}`, "highlights"),
+      notebookStore: createStore(`notebook-append-lww-${suffix}`, "notebooks"),
+    });
+    const newer = {
+      ...makeNotebook(),
+      content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "newer" } }] },
+      updatedAt: 2,
+    };
+    await service.saveNotebook(newer);
+    mocks.service = service;
+    vi.spyOn(Date, "now").mockReturnValue(1);
+    const onCompleted = vi.fn();
+    const store = startStore();
+
+    store.dispatch(
+      appendHighlightToNotebookRequested(
+        "book-1",
+        {
+          highlightId: "highlight-1",
+          cfiRange: "epubcfi(/6/4)",
+          text: "Passage",
+        },
+        onCompleted,
+      ),
+    );
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(newer));
+    const selected = store.annotationsSelectors.selectNotebookByBookId.select(
+      store.state,
+      "book-1",
+    );
+    const persisted = await service.getNotebook("book-1");
+    expect(selected).toEqual(persisted);
+    expect(selected).toEqual(newer);
+  });
+
+  it("cancels a stale debounced notebook save before it persists or publishes", async () => {
+    vi.useFakeTimers();
+    try {
+      const staleContent = {
+        type: "doc",
+        content: [{ type: "paragraph", attrs: { id: "stale" } }],
+      };
+      const latestContent = {
+        type: "doc",
+        content: [{ type: "paragraph", attrs: { id: "latest" } }],
+      };
+      mocks.runPromise.mockImplementationOnce(async (persisted: Notebook) => persisted);
+      const store = startStore();
+
+      store.dispatch(updateNotebookRequested("book-1", staleContent, false));
+      await vi.advanceTimersByTimeAsync(0);
+      store.dispatch(updateNotebookRequested("book-1", latestContent, true));
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mocks.runPromise).toHaveBeenCalledOnce();
+      const persisted = mocks.runPromise.mock.calls[0]?.[0] as Notebook;
+      expect(persisted.content).toEqual(latestContent);
+      expect(store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")).toBe(
+        persisted,
+      );
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mocks.runPromise).toHaveBeenCalledOnce();
+      expect(store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")).toBe(
+        persisted,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("publishes newer persisted notebook when an active older save loses LWW", async () => {
+    const suffix = crypto.randomUUID();
+    const service = makeAnnotationService({
+      highlightStore: createStore(`highlight-lww-${suffix}`, "highlights"),
+      notebookStore: createStore(`notebook-lww-${suffix}`, "notebooks"),
+    });
+    const newer = {
+      ...makeNotebook(),
+      content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "newer" } }] },
+      updatedAt: 2,
+    };
+    await service.saveNotebook(newer);
+    mocks.runPromise.mockImplementationOnce((notebook: Notebook) => service.saveNotebook(notebook));
+    const onCompleted = vi.fn();
+    const store = startStore();
+    vi.spyOn(Date, "now").mockReturnValue(1);
+
+    store.dispatch(
+      updateNotebookRequested(
+        "book-1",
+        { type: "doc", content: [{ type: "paragraph", attrs: { id: "older" } }] },
+        true,
+        onCompleted,
+      ),
+    );
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(newer));
+    const selected = store.annotationsSelectors.selectNotebookByBookId.select(
+      store.state,
+      "book-1",
+    );
+    const persisted = await service.getNotebook("book-1");
+    expect(selected).toEqual(persisted);
+    expect(selected).toEqual(newer);
+  });
+
+  it("keeps the latest persisted notebook when an older in-flight save resolves last", async () => {
+    const olderGate = deferred<void>();
+    const olderFinished = deferred<void>();
+    const suffix = crypto.randomUUID();
+    const service = makeAnnotationService({
+      highlightStore: createStore(`highlight-race-${suffix}`, "highlights"),
+      notebookStore: createStore(`notebook-race-${suffix}`, "notebooks"),
+    });
+    mocks.runPromise
+      .mockImplementationOnce(async (notebook: Notebook) => {
+        await olderGate.promise;
+        const persisted = await service.saveNotebook(notebook);
+        olderFinished.resolve();
+        return persisted;
+      })
+      .mockImplementationOnce((notebook: Notebook) => service.saveNotebook(notebook));
+    const store = startStore();
+    vi.spyOn(Date, "now").mockReturnValue(2).mockReturnValueOnce(1);
+    const olderContent = { type: "doc", content: [{ type: "paragraph", attrs: { id: "older" } }] };
+    const latestContent = {
+      type: "doc",
+      content: [{ type: "paragraph", attrs: { id: "latest" } }],
+    };
+
+    store.dispatch(updateNotebookRequested("book-1", olderContent, true));
+    await vi.waitFor(() => expect(mocks.runPromise).toHaveBeenCalledOnce());
+    store.dispatch(updateNotebookRequested("book-1", latestContent, true));
+    await vi.waitFor(() =>
+      expect(
+        store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")?.content,
+      ).toEqual(latestContent),
+    );
+
+    olderGate.resolve();
+    await olderFinished.promise;
+    const selected = store.annotationsSelectors.selectNotebookByBookId.select(
+      store.state,
+      "book-1",
+    );
+    const persisted = await service.getNotebook("book-1");
+    expect(selected).toEqual(persisted);
+    expect(persisted?.content).toEqual(latestContent);
+    expect(selected?.content).toEqual(latestContent);
+  });
+
+  it("caches a server-authoritative notebook without using the change-recording save path", async () => {
+    const notebook = makeNotebook();
+    const onCompleted = vi.fn();
+    mocks.cacheNotebook.mockResolvedValueOnce(notebook);
+    const store = startStore();
+
+    store.dispatch(cacheNotebookRequested(notebook, onCompleted));
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(notebook));
+    expect(mocks.cacheNotebook).toHaveBeenCalledWith(notebook);
+    expect(mocks.runPromise).not.toHaveBeenCalled();
+    expect(store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")).toEqual(
+      notebook,
+    );
+  });
+
+  it("publishes the newer IndexedDB notebook when an older cache snapshot loses LWW", async () => {
+    const pre = await getUnsyncedChanges();
+    if (pre.length > 0) {
+      await markSynced(pre.map((change) => change.id));
+      await clearSyncedChanges();
+    }
+    const suffix = crypto.randomUUID();
+    const service = makeAnnotationService({
+      highlightStore: createStore(`highlight-cache-lww-${suffix}`, "highlights"),
+      notebookStore: createStore(`notebook-cache-lww-${suffix}`, "notebooks"),
+    });
+    const newer = {
+      ...makeNotebook(),
+      content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "newer" } }] },
+      updatedAt: 2,
+    };
+    const older = {
+      ...makeNotebook(),
+      content: { type: "doc", content: [{ type: "paragraph", attrs: { id: "older" } }] },
+      updatedAt: 1,
+    };
+    await service.cacheNotebook(newer);
+    mocks.service = service;
+    const onCompleted = vi.fn();
+    const store = startStore();
+
+    store.dispatch(cacheNotebookRequested(older, onCompleted));
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(newer));
+    const selected = store.annotationsSelectors.selectNotebookByBookId.select(
+      store.state,
+      "book-1",
+    );
+    const persisted = await service.getNotebook("book-1");
+    expect(selected).toEqual(persisted);
+    expect(selected).toEqual(newer);
+    const unsynced = await getUnsyncedChanges();
+    expect(
+      unsynced.filter((change) => change.entity === "notebook" && change.entityId === "book-1"),
+    ).toHaveLength(0);
+  });
+
+  it("keeps a failed server-authoritative notebook cache out of the collection", async () => {
+    const notebook = makeNotebook();
+    mocks.cacheNotebook.mockRejectedValueOnce(new Error("Cache unavailable"));
+    const store = startStore();
+
+    store.dispatch(cacheNotebookRequested(notebook));
+
+    await vi.waitFor(() =>
+      expect(
+        store.annotationsSelectors.selectAnnotationsError.select(store.state, "book-1"),
+      ).toEqual({ _tag: "Error", message: "Cache unavailable" }),
+    );
+    expect(
+      store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1"),
+    ).toBeUndefined();
+  });
+});

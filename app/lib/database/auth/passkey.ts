@@ -10,6 +10,8 @@ export interface PasskeyRow {
   deviceType: string | null;
   backedUp: boolean;
   transports: string | null;
+  name: string | null;
+  lastUsedAt: Date | null;
   createdAt: Date;
 }
 
@@ -49,6 +51,8 @@ export async function savePasskey(data: SavePasskeyData): Promise<PasskeyRow | n
       device_type AS "deviceType",
       backed_up AS "backedUp",
       transports,
+      name,
+      last_used_at AS "lastUsedAt",
       created_at AS "createdAt"
   `);
 
@@ -70,6 +74,8 @@ export async function getPasskeysByUserId(userId: string): Promise<PasskeyRow[]>
       device_type AS "deviceType",
       backed_up AS "backedUp",
       transports,
+      name,
+      last_used_at AS "lastUsedAt",
       created_at AS "createdAt"
     FROM readmax.passkey
     WHERE user_id = ${userId}
@@ -91,6 +97,8 @@ export async function getPasskeyById(credentialId: string): Promise<PasskeyRow |
       device_type AS "deviceType",
       backed_up AS "backedUp",
       transports,
+      name,
+      last_used_at AS "lastUsedAt",
       created_at AS "createdAt"
     FROM readmax.passkey
     WHERE id = ${credentialId}
@@ -111,6 +119,70 @@ export async function updatePasskeyCounter(
     UPDATE readmax.passkey
     SET counter = ${counter}
     WHERE id = ${credentialId}
+  `);
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function deletePasskey(id: string, userId: string): Promise<boolean> {
+  const pool = getPool();
+  const result = await pool.query(sql`
+    DELETE FROM readmax.passkey
+    WHERE id = ${id}
+      AND user_id = ${userId}
+  `);
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function deletePasskeyIfNotLast(
+  id: string,
+  userId: string,
+): Promise<"deleted" | "not_found" | "last_passkey"> {
+  const pool = getPool();
+  const result = await pool.query(sql`
+    DELETE FROM readmax.passkey
+    WHERE id = ${id}
+      AND user_id = ${userId}
+      AND (SELECT COUNT(*) FROM readmax.passkey WHERE user_id = ${userId}) > 1
+  `);
+  if ((result.rowCount ?? 0) > 0) return "deleted";
+  const exists = await pool.query<{ count: string }>(sql`
+    SELECT COUNT(*) AS count FROM readmax.passkey
+    WHERE id = ${id} AND user_id = ${userId}
+  `);
+  return Number(exists.rows[0]?.count ?? 0) > 0 ? "last_passkey" : "not_found";
+}
+
+export async function updatePasskeyName(
+  id: string,
+  userId: string,
+  name: string | null,
+): Promise<boolean> {
+  const pool = getPool();
+  const result = await pool.query(sql`
+    UPDATE readmax.passkey
+    SET name = ${name}
+    WHERE id = ${id}
+      AND user_id = ${userId}
+  `);
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function countPasskeysByUserId(userId: string): Promise<number> {
+  const pool = getPool();
+  const result = await pool.query<{ count: string }>(sql`
+    SELECT COUNT(*) AS count
+    FROM readmax.passkey
+    WHERE user_id = ${userId}
+  `);
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+export async function touchPasskeyLastUsed(id: string): Promise<boolean> {
+  const pool = getPool();
+  const result = await pool.query(sql`
+    UPDATE readmax.passkey
+    SET last_used_at = NOW()
+    WHERE id = ${id}
   `);
   return (result.rowCount ?? 0) > 0;
 }

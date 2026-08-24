@@ -26,3 +26,6 @@ export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 /** Challenge TTL in seconds (5 minutes). */
 export const CHALLENGE_TTL_SECONDS = 5 * 60;
+
+/** Magic link TTL in seconds (15 minutes). */
+export const MAGIC_LINK_TTL_SECONDS = 15 * 60;

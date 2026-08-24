@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from "react";
-import { Schema } from "effect";
+import { useState, useCallback, useEffect, useSyncExternalStore } from "react";
+import { z } from "zod";
 import { recordChange } from "~/lib/sync/change-log";
 
 export type Theme = "light" | "dark" | "system";
@@ -7,8 +7,9 @@ export type ReaderLayout = "single" | "spread" | "scroll";
 export type PdfLayout = "original" | "fit-height" | "fit-width" | "two-page" | "continuous";
 export type WorkspaceSortBy = "title" | "author" | "recent";
 export type LibraryView = "grid" | "table";
-export type LayoutMode = "focused" | "freeform";
+export type StandardEbooksView = "grid" | "table";
 export type TextAlign = "left" | "center" | "right" | "justify" | undefined;
+export type FontWeight = 300 | 400 | 500 | 600 | 700;
 
 // --- Schema ---
 
@@ -16,26 +17,19 @@ export type TextAlign = "left" | "center" | "right" | "justify" | undefined;
  * Font size schema with legacy migration transform.
  * Old values were pixel-based (≤40); new values are percentage-based (>40).
  */
-const LegacyFontSize = Schema.transform(Schema.Unknown, Schema.Number, {
-  strict: true,
-  decode: (val) => {
-    if (typeof val !== "number" || Number.isNaN(val)) return 100;
-    return val <= 40 ? Math.round(val / 0.16) : val;
-  },
-  encode: (val) => val,
-});
+const LegacyFontSize = z.preprocess((val) => {
+  if (typeof val !== "number" || Number.isNaN(val)) return 100;
+  return val <= 40 ? Math.round(val / 0.16) : val;
+}, z.number());
 
 /** Settings that sync across devices via the "settings" entity (LWW). */
-export const SyncedSettingsSchema = Schema.Struct({
-  theme: Schema.optionalWith(Schema.Literal("light", "dark", "system"), {
-    default: () => "system" as const,
-  }),
-  colorTheme: Schema.optionalWith(
-    Schema.Literal("default", "dracula", "nord", "rose-pine", "tokyo-night", "solarized"),
-    { default: () => "default" as const },
-  ),
+export const SyncedSettingsSchema = z.object({
+  theme: z.enum(["light", "dark", "system"]).default("system"),
+  colorTheme: z
+    .enum(["default", "dracula", "nord", "rose-pine", "tokyo-night", "solarized"])
+    .default("default"),
   /** Timestamp of last synced settings change. Used for LWW sync. */
-  updatedAt: Schema.optional(Schema.Number),
+  updatedAt: z.number().optional(),
 });
 
 /** Bounds for `focusedSplitRatio` so a degenerate value can't strand a panel. */
@@ -54,57 +48,41 @@ export function clampFocusedSplitRatio(v: number): number {
 }
 
 /** Settings that stay local to the browser/device and never sync. */
-export const LocalUISettingsSchema = Schema.Struct({
-  readerLayout: Schema.optionalWith(Schema.Literal("single", "spread", "scroll"), {
-    default: () => "single" as const,
-  }),
-  pdfLayout: Schema.optionalWith(
-    Schema.Literal("original", "fit-height", "fit-width", "two-page", "continuous"),
-    { default: () => "fit-height" as const },
-  ),
-  sidebarCollapsed: Schema.optionalWith(Schema.Boolean, { default: () => false }),
-  zenMode: Schema.optionalWith(Schema.Boolean, { default: () => false }),
-  libraryView: Schema.optionalWith(Schema.Literal("grid", "table"), {
-    default: () => "grid" as const,
-  }),
-  workspaceSortBy: Schema.optionalWith(Schema.Literal("title", "author", "recent"), {
-    default: () => "recent" as const,
-  }),
-  layoutMode: Schema.optionalWith(Schema.Literal("focused", "freeform"), {
-    default: () => "focused" as const,
-  }),
+export const LocalUISettingsSchema = z.object({
+  readerLayout: z.enum(["single", "spread", "scroll"]).default("single"),
+  pdfLayout: z
+    .enum(["original", "fit-height", "fit-width", "two-page", "continuous"])
+    .default("fit-height"),
+  sidebarCollapsed: z.boolean().default(false),
+  zenMode: z.boolean().default(false),
+  libraryView: z.enum(["grid", "table"]).default("grid"),
+  standardEbooksView: z.enum(["grid", "table"]).default("grid"),
+  workspaceSortBy: z.enum(["title", "author", "recent"]).default("recent"),
   /**
    * Fraction of the focused-mode workspace allocated to the book-reader group
    * (the right-side chat/notebook group gets `1 - focusedSplitRatio`). Single
    * global value across all clusters. Bounded on read and on write via
    * `clampFocusedSplitRatio`.
    */
-  focusedSplitRatio: Schema.optionalWith(Schema.Number, {
-    default: () => FOCUSED_SPLIT_RATIO_DEFAULT,
-  }),
-  fontFamily: Schema.optionalWith(Schema.String, { default: () => "Literata" }),
-  fontSize: Schema.optionalWith(LegacyFontSize, { default: () => 100 }),
-  lineHeight: Schema.optionalWith(Schema.Number, { default: () => 1.6 }),
-  textAlign: Schema.optional(
-    Schema.Union(
-      Schema.Literal("left"),
-      Schema.Literal("center"),
-      Schema.Literal("right"),
-      Schema.Literal("justify"),
-      Schema.Undefined,
-    ),
-  ),
+  focusedSplitRatio: z.number().default(FOCUSED_SPLIT_RATIO_DEFAULT),
+  fontFamily: z.string().default("Literata"),
+  fontSize: LegacyFontSize.default(100),
+  fontWeight: z
+    .union([z.literal(300), z.literal(400), z.literal(500), z.literal(600), z.literal(700)])
+    .default(400),
+  lineHeight: z.number().default(1.6),
+  textAlign: z.enum(["left", "center", "right", "justify"]).optional(),
 });
 
 /** Backward-compatible merged shape exposed to call sites. */
-export const SettingsSchema = Schema.Struct({
-  ...SyncedSettingsSchema.fields,
-  ...LocalUISettingsSchema.fields,
+export const SettingsSchema = z.object({
+  ...SyncedSettingsSchema.shape,
+  ...LocalUISettingsSchema.shape,
 });
 
-export type SyncedSettings = typeof SyncedSettingsSchema.Type;
-export type LocalUISettings = typeof LocalUISettingsSchema.Type;
-export type Settings = typeof SettingsSchema.Type;
+export type SyncedSettings = z.infer<typeof SyncedSettingsSchema>;
+export type LocalUISettings = z.infer<typeof LocalUISettingsSchema>;
+export type Settings = z.infer<typeof SettingsSchema>;
 
 export const SYNCED_SETTINGS_KEYS = [
   "theme",
@@ -116,17 +94,18 @@ export const LOCAL_UI_SETTINGS_KEYS = [
   "pdfLayout",
   "sidebarCollapsed",
   "libraryView",
+  "standardEbooksView",
   "workspaceSortBy",
-  "layoutMode",
   "focusedSplitRatio",
   "fontFamily",
   "fontSize",
+  "fontWeight",
   "lineHeight",
   "textAlign",
 ] as const satisfies readonly (keyof LocalUISettings)[];
 
-const decodeSynced = Schema.decodeUnknownSync(SyncedSettingsSchema);
-const decodeLocalUI = Schema.decodeUnknownSync(LocalUISettingsSchema);
+const decodeSynced = (input: unknown) => SyncedSettingsSchema.parse(input);
+const decodeLocalUI = (input: unknown) => LocalUISettingsSchema.parse(input);
 
 const STORAGE_KEY = "app-settings";
 const LOCAL_UI_STORAGE_KEY = "app-ui-settings";
@@ -137,14 +116,15 @@ const defaultSettings: Settings = {
   pdfLayout: "fit-height",
   fontFamily: "Literata",
   fontSize: 100,
+  fontWeight: 400,
   lineHeight: 1.6,
   textAlign: undefined,
   sidebarCollapsed: false,
   zenMode: false,
   workspaceSortBy: "recent",
   libraryView: "grid",
+  standardEbooksView: "grid",
   colorTheme: "default",
-  layoutMode: "focused",
   focusedSplitRatio: FOCUSED_SPLIT_RATIO_DEFAULT,
 };
 
@@ -344,6 +324,28 @@ export function useSettings(): [Settings, (update: Partial<Settings>) => void] {
  */
 export function resolveTheme(theme: Theme): "light" | "dark" {
   if (theme !== "system") return theme;
-  if (typeof window === "undefined") return "light";
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+const SYSTEM_THEME_QUERY = "(prefers-color-scheme: dark)";
+
+function subscribeToSystemTheme(onStoreChange: () => void): () => void {
+  const media = window.matchMedia(SYSTEM_THEME_QUERY);
+  media.addEventListener("change", onStoreChange);
+  return () => media.removeEventListener("change", onStoreChange);
+}
+
+function getSystemTheme(): "light" | "dark" {
+  return window.matchMedia(SYSTEM_THEME_QUERY).matches ? "dark" : "light";
+}
+
+/** Resolve a theme setting and react when the operating-system appearance changes. */
+export function useResolvedTheme(theme: Theme): "light" | "dark" {
+  const systemTheme = useSyncExternalStore(
+    subscribeToSystemTheme,
+    getSystemTheme,
+    (): "light" => "light",
+  );
+  return theme === "system" ? systemTheme : theme;
 }

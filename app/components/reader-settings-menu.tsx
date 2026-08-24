@@ -1,17 +1,25 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   Bookmark,
   BookmarkCheck,
   Download,
+  FastForward,
+  Library,
   MoreHorizontal,
-  Minus,
   Plus,
+  SettingsIcon,
   Share2,
+  TableOfContents,
   Type,
+  Zap,
   ClipboardCopyIcon,
+  History,
+  RefreshCw,
 } from "lucide-react";
+import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { ShareDialog } from "~/components/share-dialog";
+import { TocList } from "~/components/book-list";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,8 +35,16 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { useAuth } from "~/lib/context/auth-context";
+import type { TocEntry } from "~/lib/context/reader-context";
+import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { ReaderLayout, PdfLayout, Settings, TextAlign } from "~/lib/settings";
+import { exportNotebookMarkdown } from "~/lib/editor/export-notebook-markdown";
+import { useReadingChatMenuActions } from "~/lib/context/reading-chat-menu-context";
+import { ChatBookSelectorMenu } from "~/components/chat/chat-book-selector";
+import { ChatRecentSessionsMenu } from "~/components/chat/chat-session-menu";
+import { ReaderFormattingStepper } from "~/components/reader-formatting-stepper";
+import { useReadingRailTab } from "~/components/reading-shell/reading-rail-tab-context";
 import { Button } from "./ui/button";
 
 interface ReaderFormattingMenuProps {
@@ -39,10 +55,18 @@ interface ReaderFormattingMenuProps {
 
 interface ReaderActionsMenuProps {
   book?: BookMeta;
-  onDownload: () => void | Promise<void>;
-  onBookmarkPage: () => void | Promise<void>;
+  onSyncToFurthestPage?: () => void | Promise<void>;
+  onDownload?: () => void | Promise<void>;
+  onBookmarkPage?: () => void | Promise<void>;
   onCopyPageAsMarkdown?: () => void;
+  onOpenSpeedread?: () => void;
   isBookmarked?: boolean;
+  bookmarksLoaded?: boolean;
+}
+
+interface ReaderSettingsMenuProps extends ReaderFormattingMenuProps, ReaderActionsMenuProps {
+  toc?: TocEntry[];
+  onNavigateToToc?: (href: string) => void;
 }
 
 const layoutOptions: { value: ReaderLayout; label: string }[] = [
@@ -93,11 +117,143 @@ const textAlignOptions: { value: string; label: string; actualValue: TextAlign }
   { value: "justify", label: "Justify", actualValue: "justify" },
 ];
 
-export function ReaderFormattingMenu({
+function ReaderFormattingMenuItems({
   settings,
   onUpdateSettings,
   isPdf,
 }: ReaderFormattingMenuProps) {
+  return (
+    <>
+      <DropdownMenuGroup>
+        <DropdownMenuLabel>Layout</DropdownMenuLabel>
+        {isPdf ? (
+          <DropdownMenuRadioGroup
+            value={settings.pdfLayout}
+            onValueChange={(value) => onUpdateSettings({ pdfLayout: value as PdfLayout })}
+          >
+            {pdfLayoutOptions.map((option) => (
+              <DropdownMenuRadioItem key={option.value} value={option.value}>
+                {option.label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        ) : (
+          <DropdownMenuRadioGroup
+            value={settings.readerLayout}
+            onValueChange={(value) => onUpdateSettings({ readerLayout: value as ReaderLayout })}
+          >
+            {layoutOptions.map((option) => (
+              <DropdownMenuRadioItem key={option.value} value={option.value}>
+                {option.label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        )}
+      </DropdownMenuGroup>
+
+      {!isPdf && <DropdownMenuSeparator />}
+
+      {!isPdf && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Font: {settings.fontFamily}</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            {fontSections.map((section, index) => (
+              <Fragment key={section.label}>
+                {index > 0 && <DropdownMenuSeparator />}
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>{section.label}</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={settings.fontFamily}
+                    onValueChange={(value) => onUpdateSettings({ fontFamily: value as string })}
+                  >
+                    {section.options.map((option) => (
+                      <DropdownMenuRadioItem key={option.value} value={option.value}>
+                        {option.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuGroup>
+              </Fragment>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
+
+      {!isPdf && <DropdownMenuSeparator />}
+
+      {!isPdf && (
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Size &amp; Spacing</DropdownMenuLabel>
+          <ReaderFormattingStepper
+            label="Size"
+            action="font size"
+            value={`${settings.fontSize}%`}
+            onDecrease={() => onUpdateSettings({ fontSize: Math.max(75, settings.fontSize - 5) })}
+            onIncrease={() => onUpdateSettings({ fontSize: Math.min(200, settings.fontSize + 5) })}
+          />
+          <ReaderFormattingStepper
+            label="Weight"
+            action="font weight"
+            value={String(settings.fontWeight)}
+            onDecrease={() =>
+              onUpdateSettings({
+                fontWeight: Math.max(300, settings.fontWeight - 100) as Settings["fontWeight"],
+              })
+            }
+            onIncrease={() =>
+              onUpdateSettings({
+                fontWeight: Math.min(700, settings.fontWeight + 100) as Settings["fontWeight"],
+              })
+            }
+          />
+          <ReaderFormattingStepper
+            label="Spacing"
+            action="line height"
+            value={settings.lineHeight.toFixed(1)}
+            onDecrease={() =>
+              onUpdateSettings({
+                lineHeight: Math.max(1.0, Math.round((settings.lineHeight - 0.1) * 10) / 10),
+              })
+            }
+            onIncrease={() =>
+              onUpdateSettings({
+                lineHeight: Math.min(2.5, Math.round((settings.lineHeight + 0.1) * 10) / 10),
+              })
+            }
+          />
+        </DropdownMenuGroup>
+      )}
+
+      {!isPdf && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            Align:{" "}
+            {textAlignOptions.find((opt) => opt.actualValue === settings.textAlign)?.label ||
+              "Default"}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup
+              value={settings.textAlign ?? "default"}
+              onValueChange={(value) =>
+                onUpdateSettings({
+                  textAlign: value === "default" ? undefined : (value as TextAlign),
+                })
+              }
+            >
+              {textAlignOptions.map((option) => (
+                <DropdownMenuRadioItem key={option.value} value={option.value}>
+                  {option.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
+    </>
+  );
+}
+
+export function ReaderFormattingMenu(props: ReaderFormattingMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -107,167 +263,88 @@ export function ReaderFormattingMenu({
         <span className="sr-only">Reader formatting</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52 text-xs">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Layout</DropdownMenuLabel>
-          {isPdf ? (
-            <DropdownMenuRadioGroup
-              value={settings.pdfLayout}
-              onValueChange={(value) => onUpdateSettings({ pdfLayout: value as PdfLayout })}
-            >
-              {pdfLayoutOptions.map((option) => (
-                <DropdownMenuRadioItem key={option.value} value={option.value}>
-                  {option.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          ) : (
-            <DropdownMenuRadioGroup
-              value={settings.readerLayout}
-              onValueChange={(value) => onUpdateSettings({ readerLayout: value as ReaderLayout })}
-            >
-              {layoutOptions.map((option) => (
-                <DropdownMenuRadioItem key={option.value} value={option.value}>
-                  {option.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          )}
-        </DropdownMenuGroup>
-
-        {!isPdf && <DropdownMenuSeparator />}
-
-        {!isPdf && (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>Font: {settings.fontFamily}</DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              {fontSections.map((section, index) => (
-                <Fragment key={section.label}>
-                  {index > 0 && <DropdownMenuSeparator />}
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>{section.label}</DropdownMenuLabel>
-                    <DropdownMenuRadioGroup
-                      value={settings.fontFamily}
-                      onValueChange={(value) => onUpdateSettings({ fontFamily: value as string })}
-                    >
-                      {section.options.map((option) => (
-                        <DropdownMenuRadioItem key={option.value} value={option.value}>
-                          {option.label}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuGroup>
-                </Fragment>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        )}
-
-        {!isPdf && <DropdownMenuSeparator />}
-
-        {!isPdf && (
-          <DropdownMenuGroup>
-            <DropdownMenuLabel>Size &amp; Spacing</DropdownMenuLabel>
-            <DropdownMenuItem closeOnClick={false} className="flex items-center justify-between">
-              <span className="text-sm">Size</span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() =>
-                    onUpdateSettings({
-                      fontSize: Math.max(75, settings.fontSize - 5),
-                    })
-                  }
-                  className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
-                  aria-label="Decrease font size"
-                >
-                  <Minus className="size-3" />
-                </button>
-                <span className="w-10 text-center text-sm tabular-nums">{settings.fontSize}%</span>
-                <button
-                  onClick={() =>
-                    onUpdateSettings({
-                      fontSize: Math.min(200, settings.fontSize + 5),
-                    })
-                  }
-                  className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
-                  aria-label="Increase font size"
-                >
-                  <Plus className="size-3" />
-                </button>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem closeOnClick={false} className="flex items-center justify-between">
-              <span className="text-sm">Spacing</span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() =>
-                    onUpdateSettings({
-                      lineHeight: Math.max(1.0, Math.round((settings.lineHeight - 0.1) * 10) / 10),
-                    })
-                  }
-                  className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
-                  aria-label="Decrease line height"
-                >
-                  <Minus className="size-3" />
-                </button>
-                <span className="w-10 text-center text-sm tabular-nums">
-                  {settings.lineHeight.toFixed(1)}
-                </span>
-                <button
-                  onClick={() =>
-                    onUpdateSettings({
-                      lineHeight: Math.min(2.5, Math.round((settings.lineHeight + 0.1) * 10) / 10),
-                    })
-                  }
-                  className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
-                  aria-label="Increase line height"
-                >
-                  <Plus className="size-3" />
-                </button>
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        )}
-
-        {!isPdf && (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              Align:{" "}
-              {textAlignOptions.find((opt) => opt.actualValue === settings.textAlign)?.label ||
-                "Default"}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuRadioGroup
-                value={settings.textAlign ?? "default"}
-                onValueChange={(value) =>
-                  onUpdateSettings({
-                    textAlign: value === "default" ? undefined : (value as TextAlign),
-                  })
-                }
-              >
-                {textAlignOptions.map((option) => (
-                  <DropdownMenuRadioItem key={option.value} value={option.value}>
-                    {option.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        )}
+        <ReaderFormattingMenuItems {...props} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
-export function ReaderActionsMenu({
+function ReaderActionItems({
   book,
+  onSyncToFurthestPage,
   onDownload,
   onBookmarkPage,
   onCopyPageAsMarkdown,
+  onOpenSpeedread,
   isBookmarked,
-}: ReaderActionsMenuProps) {
+  bookmarksLoaded = true,
+  isAuthenticated,
+  onShare,
+}: ReaderActionsMenuProps & { isAuthenticated: boolean; onShare: () => void }) {
+  const BookmarkIcon = isBookmarked ? BookmarkCheck : Bookmark;
+
+  return (
+    <DropdownMenuGroup>
+      {onOpenSpeedread && (
+        <DropdownMenuItem onClick={onOpenSpeedread}>
+          <FastForward className="size-4" />
+          Speedread
+        </DropdownMenuItem>
+      )}
+      {onCopyPageAsMarkdown && (
+        <DropdownMenuItem onClick={onCopyPageAsMarkdown}>
+          <ClipboardCopyIcon className="size-4" />
+          Copy chapter
+        </DropdownMenuItem>
+      )}
+      {isAuthenticated && book && (
+        <DropdownMenuItem onClick={onShare}>
+          <Share2 className="size-4" />
+          Share
+        </DropdownMenuItem>
+      )}
+      {isAuthenticated && book && onSyncToFurthestPage ? (
+        <DropdownMenuItem
+          onClick={() => {
+            void Promise.resolve(onSyncToFurthestPage()).catch(console.error);
+          }}
+        >
+          <RefreshCw className="size-4" />
+          Sync to furthest page
+        </DropdownMenuItem>
+      ) : null}
+      {onDownload ? (
+        <DropdownMenuItem
+          onClick={() => {
+            void Promise.resolve(onDownload()).catch(console.error);
+          }}
+        >
+          <Download className="size-4" />
+          Download
+        </DropdownMenuItem>
+      ) : null}
+      {onBookmarkPage ? (
+        <DropdownMenuItem
+          disabled={!bookmarksLoaded}
+          onClick={() => {
+            void Promise.resolve(onBookmarkPage()).catch(console.error);
+          }}
+        >
+          <BookmarkIcon className="size-4" />
+          {!bookmarksLoaded
+            ? "Loading bookmarks…"
+            : isBookmarked
+              ? "Remove bookmark"
+              : "Bookmark page"}
+        </DropdownMenuItem>
+      ) : null}
+    </DropdownMenuGroup>
+  );
+}
+
+function useReaderActionState(book?: BookMeta) {
   const { isAuthenticated } = useAuth();
   const [shareOpen, setShareOpen] = useState(false);
-  const BookmarkIcon = isBookmarked ? BookmarkCheck : Bookmark;
 
   function handleShare() {
     if (!book?.remoteFileUrl) {
@@ -277,6 +354,14 @@ export function ReaderActionsMenu({
     setShareOpen(true);
   }
 
+  return { isAuthenticated, shareOpen, setShareOpen, handleShare };
+}
+
+export function ReaderActionsMenu(props: ReaderActionsMenuProps) {
+  const { isAuthenticated, shareOpen, setShareOpen, handleShare } = useReaderActionState(
+    props.book,
+  );
+
   return (
     <>
       <DropdownMenu>
@@ -285,36 +370,146 @@ export function ReaderActionsMenu({
           <span className="sr-only">Reader actions</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52 text-xs">
+          <ReaderActionItems {...props} isAuthenticated={isAuthenticated} onShare={handleShare} />
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ShareDialog book={props.book ?? null} open={shareOpen} onOpenChange={setShareOpen} />
+    </>
+  );
+}
+
+export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
+  const navigate = useNavigate();
+  const book = props.book;
+  const bookId = book?.id;
+  const workspace = useOptionalWorkspace();
+  const { isAuthenticated, shareOpen, setShareOpen, handleShare } = useReaderActionState(book);
+  const registeredChatActions = useReadingChatMenuActions();
+  const chatActions = registeredChatActions?.bookId === book?.id ? registeredChatActions : null;
+  const { activeTab } = useReadingRailTab();
+  const hasActions = Boolean(
+    props.onDownload ||
+    props.onBookmarkPage ||
+    props.onCopyPageAsMarkdown ||
+    props.onOpenSpeedread ||
+    (isAuthenticated && book),
+  );
+
+  useEffect(() => {
+    if (!workspace || !bookId || !props.onNavigateToToc) return;
+    const onNavigateToToc = props.onNavigateToToc;
+    workspace.tocNavigationMap.current.set(bookId, onNavigateToToc);
+    return () => {
+      if (workspace.tocNavigationMap.current.get(bookId) === onNavigateToToc)
+        workspace.tocNavigationMap.current.delete(bookId);
+    };
+  }, [bookId, props.onNavigateToToc, workspace]);
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" title="Reader menu" />}>
+          <MoreHorizontal className="size-4" />
+          <span className="sr-only">Reader menu</span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52 text-xs">
           <DropdownMenuGroup>
-            {onCopyPageAsMarkdown && (
-              <DropdownMenuItem onClick={onCopyPageAsMarkdown}>
-                <ClipboardCopyIcon className="size-4" />
-                Copy chapter
-              </DropdownMenuItem>
-            )}
-            {isAuthenticated && book && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Type className="size-4" />
+                Formatting
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-52 text-xs">
+                <ReaderFormattingMenuItems {...props} />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            {hasActions ? (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Zap className="size-4" />
+                  Actions
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-52 text-xs">
+                  <ReaderActionItems
+                    {...props}
+                    isAuthenticated={isAuthenticated}
+                    onShare={handleShare}
+                  />
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ) : null}
+            {props.toc && props.toc.length > 0 && props.onNavigateToToc ? (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <TableOfContents className="size-4" />
+                  Table of Contents
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-80 w-64 overflow-y-auto p-1.5">
+                  <ul>
+                    <TocList entries={props.toc} onNavigate={props.onNavigateToToc} />
+                  </ul>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            ) : null}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            {isAuthenticated && book ? (
               <DropdownMenuItem onClick={handleShare}>
                 <Share2 className="size-4" />
                 Share
               </DropdownMenuItem>
-            )}
-            <DropdownMenuItem
-              onClick={() => {
-                void Promise.resolve(onDownload()).catch(console.error);
-              }}
-            >
-              <Download className="size-4" />
-              Download
+            ) : null}
+            <DropdownMenuItem onClick={() => navigate("/library")}>
+              <Library className="size-4" />
+              Library
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => {
-                void Promise.resolve(onBookmarkPage()).catch(console.error);
-              }}
-            >
-              <BookmarkIcon className="size-4" />
-              {isBookmarked ? "Remove bookmark" : "Bookmark page"}
+            <DropdownMenuItem onClick={() => navigate("/settings")}>
+              <SettingsIcon className="size-4" />
+              Settings
             </DropdownMenuItem>
           </DropdownMenuGroup>
+          {book && activeTab === "Notes" ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem
+                  onClick={() => {
+                    void exportNotebookMarkdown(book.id, book.title).catch(console.error);
+                  }}
+                >
+                  <Download className="size-4" />
+                  Export as Markdown
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </>
+          ) : null}
+          {chatActions ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <History />
+                    Recent
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-64 text-xs">
+                    <ChatRecentSessionsMenu
+                      bookId={chatActions.bookId}
+                      activeSessionId={chatActions.activeSessionId}
+                      onSwitchSession={chatActions.onSwitchSession}
+                      onNewSession={chatActions.onNewSession}
+                    />
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                <ChatBookSelectorMenu {...chatActions.bookSelection} />
+                <DropdownMenuItem onClick={chatActions.onNewSession}>
+                  <Plus />
+                  New chat
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       <ShareDialog book={book ?? null} open={shareOpen} onOpenChange={setShareOpen} />

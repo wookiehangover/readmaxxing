@@ -37,18 +37,38 @@ describe("truncateTitle", () => {
 });
 
 describe("sortBooks", () => {
-  const bookA = makeBook({ id: "1", title: "Alpha", author: "Zara" });
-  const bookB = makeBook({ id: "2", title: "Beta", author: "Alice" });
-  const bookC = makeBook({ id: "3", title: "Charlie", author: "Mike" });
+  const bookA = makeBook({ id: "1", title: "Alpha", author: "Zara Aaronson" });
+  const bookB = makeBook({ id: "2", title: "Beta", author: "Alice Zimmer" });
+  const bookC = makeBook({ id: "3", title: "Charlie", author: "Mike Brown" });
 
   it("sorts by title alphabetically", () => {
     const result = sortBooks([bookC, bookA, bookB], "title", undefined);
     expect(result.map((b) => b.title)).toEqual(["Alpha", "Beta", "Charlie"]);
   });
 
-  it("sorts by author alphabetically", () => {
+  it("sorts by author surname", () => {
     const result = sortBooks([bookA, bookC, bookB], "author", undefined);
-    expect(result.map((b) => b.author)).toEqual(["Alice", "Mike", "Zara"]);
+    expect(result.map((b) => b.author)).toEqual(["Zara Aaronson", "Mike Brown", "Alice Zimmer"]);
+  });
+
+  it("sorts single-word, empty, and tied-surname authors", () => {
+    const emptyAuthor = makeBook({ id: "4", title: "Delta", author: "   " });
+    const singleName = makeBook({ id: "5", title: "Echo", author: "Cher" });
+    const laterSmith = makeBook({ id: "6", title: "Foxtrot", author: "Jane Smith" });
+    const earlierSmith = makeBook({ id: "7", title: "Golf", author: "Adam Smith" });
+
+    const result = sortBooks(
+      [laterSmith, singleName, bookB, emptyAuthor, earlierSmith],
+      "author",
+      undefined,
+    );
+    expect(result.map((b) => b.author)).toEqual([
+      "   ",
+      "Cher",
+      "Adam Smith",
+      "Jane Smith",
+      "Alice Zimmer",
+    ]);
   });
 
   it("sorts by recent using lastOpenedMap (most recent first)", () => {
@@ -86,21 +106,21 @@ describe("sortBooksForTable", () => {
   const bookA = makeBook({
     id: "1",
     title: "Alpha",
-    author: "Zara",
+    author: "Zara Aaronson",
     format: "epub",
     updatedAt: 300,
   });
   const bookB = makeBook({
     id: "2",
     title: "Beta",
-    author: "Alice",
+    author: "Alice Zimmer",
     format: "pdf",
     updatedAt: 100,
   });
   const bookC = makeBook({
     id: "3",
     title: "Charlie",
-    author: "Mike",
+    author: "Mike Brown",
     format: "epub",
     updatedAt: 200,
   });
@@ -113,11 +133,11 @@ describe("sortBooksForTable", () => {
     expect(desc.map((b) => b.id)).toEqual(["3", "2", "1"]);
   });
 
-  it("sorts by author asc and desc", () => {
+  it("sorts by author surname asc and desc", () => {
     const asc = sortBooksForTable([bookA, bookB, bookC], "author", "asc", undefined);
-    expect(asc.map((b) => b.author)).toEqual(["Alice", "Mike", "Zara"]);
+    expect(asc.map((b) => b.author)).toEqual(["Zara Aaronson", "Mike Brown", "Alice Zimmer"]);
     const desc = sortBooksForTable([bookA, bookB, bookC], "author", "desc", undefined);
-    expect(desc.map((b) => b.author)).toEqual(["Zara", "Mike", "Alice"]);
+    expect(desc.map((b) => b.author)).toEqual(["Alice Zimmer", "Mike Brown", "Zara Aaronson"]);
   });
 
   it("sorts by format asc and desc", () => {
