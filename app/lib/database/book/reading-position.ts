@@ -9,6 +9,7 @@ export interface ReadingPositionRow {
   bookId: string;
   cfi: string | null;
   updatedAt: Date;
+  cursorTimestamp?: string;
 }
 
 const POSITION_COLUMNS = sql`
@@ -108,15 +109,17 @@ export async function getPositionsByUserSince(
   cursor: Date,
   limit?: number,
   cursorId?: string | null,
+  exactCursorTimestamp?: string,
 ): Promise<ReadingPositionRow[]> {
   const pool = getPool();
+  const cursorTimestamp = exactCursorTimestamp ?? cursor.toISOString();
   const result = await pool.query<ReadingPositionRow>(sql`
-    SELECT ${POSITION_COLUMNS}
+    SELECT ${POSITION_COLUMNS}, updated_at::text AS "cursorTimestamp"
     FROM readmax.reading_position
     WHERE user_id = ${userId}
       AND (
-        updated_at > ${cursor.toISOString()}
-        OR (${cursorId ?? null} IS NOT NULL AND updated_at = ${cursor.toISOString()} AND book_id > ${cursorId ?? null})
+        updated_at > ${cursorTimestamp}
+        OR (updated_at = ${cursorTimestamp} AND book_id > ${cursorId ?? null})
       )
     ORDER BY updated_at ASC, book_id ASC
     LIMIT ${limit ?? null}

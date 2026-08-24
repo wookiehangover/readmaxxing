@@ -13,6 +13,7 @@ export interface BookmarkRow {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  cursorTimestamp?: string;
 }
 
 export interface UpsertBookmarkData {
@@ -102,16 +103,18 @@ export async function getBookmarksByUser(
   since?: Date,
   limit?: number,
   cursorId?: string | null,
+  exactCursorTimestamp?: string,
 ): Promise<BookmarkRow[]> {
   const pool = getPool();
   if (since) {
+    const cursorTimestamp = exactCursorTimestamp ?? since.toISOString();
     const result = await pool.query<BookmarkRow>(sql`
-      SELECT ${BOOKMARK_COLUMNS}
+      SELECT ${BOOKMARK_COLUMNS}, updated_at::text AS "cursorTimestamp"
       FROM readmax.bookmark
       WHERE user_id = ${userId}
         AND (
-          updated_at > ${since.toISOString()}
-          OR (${cursorId ?? null} IS NOT NULL AND updated_at = ${since.toISOString()} AND id > ${cursorId ?? null})
+          updated_at > ${cursorTimestamp}
+          OR (updated_at = ${cursorTimestamp} AND id > ${cursorId ?? null})
         )
       ORDER BY updated_at ASC, id ASC
       LIMIT ${limit ?? null}

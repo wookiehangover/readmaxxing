@@ -62,6 +62,9 @@ export async function pullChanges(ctx: PullContext): Promise<void> {
     }
 
     const result: SyncPullResponse = await res.json();
+    const chatSessionsHaveMore = result.changes.some(
+      (group) => group.entity === "chat_session" && group.hasMore,
+    );
 
     syncDebugLog("pull-response", {
       groupCount: result.changes.length,
@@ -73,6 +76,11 @@ export async function pullChanges(ctx: PullContext): Promise<void> {
     for (const group of result.changes) {
       const merger = ENTITY_MERGERS[group.entity];
       if (!merger) continue;
+
+      if (group.entity === "chat_message" && chatSessionsHaveMore) {
+        entitiesWithMore.push(group.entity);
+        continue;
+      }
 
       for (const record of group.records) {
         await merger(record as Record<string, unknown>);

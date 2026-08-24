@@ -9,6 +9,7 @@ export interface NotebookRow {
   bookId: string;
   content: unknown;
   updatedAt: Date;
+  cursorTimestamp?: string;
 }
 
 const NOTEBOOK_COLUMNS = sql`
@@ -59,15 +60,17 @@ export async function getNotebooksByUserSince(
   cursor: Date,
   limit?: number,
   cursorId?: string | null,
+  exactCursorTimestamp?: string,
 ): Promise<NotebookRow[]> {
   const pool = getPool();
+  const cursorTimestamp = exactCursorTimestamp ?? cursor.toISOString();
   const result = await pool.query<NotebookRow>(sql`
-    SELECT ${NOTEBOOK_COLUMNS}
+    SELECT ${NOTEBOOK_COLUMNS}, updated_at::text AS "cursorTimestamp"
     FROM readmax.notebook
     WHERE user_id = ${userId}
       AND (
-        updated_at > ${cursor.toISOString()}
-        OR (${cursorId ?? null} IS NOT NULL AND updated_at = ${cursor.toISOString()} AND book_id > ${cursorId ?? null})
+        updated_at > ${cursorTimestamp}
+        OR (updated_at = ${cursorTimestamp} AND book_id > ${cursorId ?? null})
       )
     ORDER BY updated_at ASC, book_id ASC
     LIMIT ${limit ?? null}

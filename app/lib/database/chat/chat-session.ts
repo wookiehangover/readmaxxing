@@ -11,6 +11,7 @@ export interface ChatSessionRow {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  cursorTimestamp?: string;
 }
 
 export interface ChatMessageRow {
@@ -20,6 +21,7 @@ export interface ChatMessageRow {
   content: string | null;
   parts: unknown | null;
   createdAt: Date;
+  cursorTimestamp?: string;
 }
 
 const SESSION_COLUMNS = sql`
@@ -134,15 +136,17 @@ export async function getSessionsByUserSince(
   cursor: Date,
   limit?: number,
   cursorId?: string | null,
+  exactCursorTimestamp?: string,
 ): Promise<ChatSessionRow[]> {
   const pool = getPool();
+  const cursorTimestamp = exactCursorTimestamp ?? cursor.toISOString();
   const result = await pool.query<ChatSessionRow>(sql`
-    SELECT ${SESSION_COLUMNS}
+    SELECT ${SESSION_COLUMNS}, updated_at::text AS "cursorTimestamp"
     FROM readmax.chat_session
     WHERE user_id = ${userId}
       AND (
-        updated_at > ${cursor.toISOString()}
-        OR (${cursorId ?? null} IS NOT NULL AND updated_at = ${cursor.toISOString()} AND id > ${cursorId ?? null})
+        updated_at > ${cursorTimestamp}
+        OR (updated_at = ${cursorTimestamp} AND id > ${cursorId ?? null})
       )
     ORDER BY updated_at ASC, id ASC
     LIMIT ${limit ?? null}
@@ -240,8 +244,10 @@ export async function getMessagesByUserSince(
   cursor: Date,
   limit?: number,
   cursorId?: string | null,
+  exactCursorTimestamp?: string,
 ): Promise<ChatMessageRow[]> {
   const pool = getPool();
+  const cursorTimestamp = exactCursorTimestamp ?? cursor.toISOString();
   const result = await pool.query<ChatMessageRow>(sql`
     SELECT
       m.id,
@@ -249,13 +255,14 @@ export async function getMessagesByUserSince(
       m.role,
       m.content,
       m.parts,
-      m.created_at AS "createdAt"
+      m.created_at AS "createdAt",
+      m.created_at::text AS "cursorTimestamp"
     FROM readmax.chat_message m
     JOIN readmax.chat_session s ON s.id = m.session_id
     WHERE s.user_id = ${userId}
       AND (
-        m.created_at > ${cursor.toISOString()}
-        OR (${cursorId ?? null} IS NOT NULL AND m.created_at = ${cursor.toISOString()} AND m.id > ${cursorId ?? null})
+        m.created_at > ${cursorTimestamp}
+        OR (m.created_at = ${cursorTimestamp} AND m.id > ${cursorId ?? null})
       )
     ORDER BY m.created_at ASC, m.id ASC
     LIMIT ${limit ?? null}

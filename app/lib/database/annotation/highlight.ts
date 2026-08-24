@@ -23,6 +23,7 @@ export interface HighlightRow {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  cursorTimestamp?: string;
 }
 
 export interface UpsertHighlightData {
@@ -126,15 +127,17 @@ export async function getHighlightsByUserSince(
   cursor: Date,
   limit?: number,
   cursorId?: string | null,
+  exactCursorTimestamp?: string,
 ): Promise<HighlightRow[]> {
   const pool = getPool();
+  const cursorTimestamp = exactCursorTimestamp ?? cursor.toISOString();
   const result = await pool.query<HighlightRow>(sql`
-    SELECT ${HIGHLIGHT_COLUMNS}
+    SELECT ${HIGHLIGHT_COLUMNS}, updated_at::text AS "cursorTimestamp"
     FROM readmax.highlight
     WHERE user_id = ${userId}
       AND (
-        updated_at > ${cursor.toISOString()}
-        OR (${cursorId ?? null} IS NOT NULL AND updated_at = ${cursor.toISOString()} AND id > ${cursorId ?? null})
+        updated_at > ${cursorTimestamp}
+        OR (updated_at = ${cursorTimestamp} AND id > ${cursorId ?? null})
       )
     ORDER BY updated_at ASC, id ASC
     LIMIT ${limit ?? null}

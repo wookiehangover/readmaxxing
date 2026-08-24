@@ -60,6 +60,24 @@ describe("parseCursorsParam", () => {
     expect(cursorIdsByEntity.highlight).toBeNull();
   });
 
+  it("preserves PostgreSQL microseconds when parsing an encoded keyset cursor", () => {
+    const exactTimestamp = "2026-04-22 12:00:00.123456+00";
+    const payload: SyncCursor[] = [
+      {
+        entityType: "book",
+        cursor: encodePullCursor(new Date(exactTimestamp), "book-1", exactTimestamp),
+      },
+    ];
+
+    const { cursorsByEntity, cursorTimestampsByEntity, cursorIdsByEntity, error } =
+      parseCursorsParam(JSON.stringify(payload));
+
+    expect(error).toBeUndefined();
+    expect(cursorsByEntity.book.toISOString()).toBe("2026-04-22T12:00:00.123Z");
+    expect(cursorTimestampsByEntity.book).toBe(exactTimestamp);
+    expect(cursorIdsByEntity.book).toBe("book-1");
+  });
+
   it("returns a 400-ready error for malformed JSON", () => {
     const { error } = parseCursorsParam("not-json");
     expect(error).toMatch(/invalid.*json/i);

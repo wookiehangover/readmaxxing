@@ -108,7 +108,7 @@ export interface SyncPullResponse {
   changes: Array<{
     entity: EntityType;
     records: unknown[];
-    /** Updated cursor value for this entity type (ISO 8601 timestamp). */
+    /** Updated opaque keyset cursor, or a legacy ISO 8601 timestamp. */
     cursor: string;
     /** Whether more records exist beyond the returned batch. */
     hasMore: boolean;
@@ -124,7 +124,7 @@ export interface SyncPullResponse {
 /** Tracks the last-pulled timestamp for a single entity type. */
 export interface SyncCursor {
   entityType: EntityType;
-  /** ISO 8601 timestamp of the most recently pulled record for this entity type. */
+  /** Opaque keyset cursor, or a legacy ISO 8601 timestamp. */
   cursor: string;
 }
 

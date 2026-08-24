@@ -30,7 +30,7 @@ function parseLimit(value: string | null): number {
   return Math.min(parsed, MAX_PULL_LIMIT);
 }
 
-function appendBatch<T extends { updatedAt?: Date; createdAt?: Date }>(
+function appendBatch<T extends { updatedAt?: Date; createdAt?: Date; cursorTimestamp?: string }>(
   changes: SyncPullResponse["changes"],
   entity: EntityType,
   rows: T[],
@@ -48,8 +48,8 @@ function appendBatch<T extends { updatedAt?: Date; createdAt?: Date }>(
 
   changes.push({
     entity,
-    records,
-    cursor: encodePullCursor(cursor, idOf(lastRecord)),
+    records: records.map(({ cursorTimestamp: _cursorTimestamp, ...record }) => record),
+    cursor: encodePullCursor(cursor, idOf(lastRecord), lastRecord.cursorTimestamp),
     hasMore,
   });
 }
@@ -73,6 +73,7 @@ export async function loader({ request }: { request: Request }) {
   // behavior.
   const {
     cursorsByEntity,
+    cursorTimestampsByEntity,
     cursorIdsByEntity,
     error: cursorsError,
   } = parseCursorsParam(cursorsParam);
@@ -92,7 +93,13 @@ export async function loader({ request }: { request: Request }) {
     const since = cursorsByEntity[entityType];
     switch (entityType) {
       case "book": {
-        const books = await getBooksByUserSince(userId, since, queryLimit, cursorIdsByEntity.book);
+        const books = await getBooksByUserSince(
+          userId,
+          since,
+          queryLimit,
+          cursorIdsByEntity.book,
+          cursorTimestampsByEntity.book,
+        );
         appendBatch(changes, "book", books, limit, "updatedAt", (book) => book.id);
         break;
       }
@@ -103,6 +110,7 @@ export async function loader({ request }: { request: Request }) {
           since,
           queryLimit,
           cursorIdsByEntity.position,
+          cursorTimestampsByEntity.position,
         );
         appendBatch(
           changes,
@@ -121,6 +129,7 @@ export async function loader({ request }: { request: Request }) {
           since,
           queryLimit,
           cursorIdsByEntity.highlight,
+          cursorTimestampsByEntity.highlight,
         );
         appendBatch(
           changes,
@@ -139,6 +148,7 @@ export async function loader({ request }: { request: Request }) {
           since,
           queryLimit,
           cursorIdsByEntity.bookmark,
+          cursorTimestampsByEntity.bookmark,
         );
         appendBatch(changes, "bookmark", bookmarks, limit, "updatedAt", (bookmark) => bookmark.id);
         break;
@@ -150,6 +160,7 @@ export async function loader({ request }: { request: Request }) {
           since,
           queryLimit,
           cursorIdsByEntity.notebook,
+          cursorTimestampsByEntity.notebook,
         );
         appendBatch(
           changes,
@@ -168,6 +179,7 @@ export async function loader({ request }: { request: Request }) {
           since,
           queryLimit,
           cursorIdsByEntity.chat_session,
+          cursorTimestampsByEntity.chat_session,
         );
         appendBatch(changes, "chat_session", sessions, limit, "updatedAt", (session) => session.id);
         break;
@@ -179,6 +191,7 @@ export async function loader({ request }: { request: Request }) {
           since,
           queryLimit,
           cursorIdsByEntity.chat_message,
+          cursorTimestampsByEntity.chat_message,
         );
         appendBatch(changes, "chat_message", messages, limit, "createdAt", (message) => message.id);
         break;
