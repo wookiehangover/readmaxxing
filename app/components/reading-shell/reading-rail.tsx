@@ -23,8 +23,8 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 
-const desktopTabs = ["Notes", "Discuss", "Outline", "Details"] as const;
-const mobileTabs = ["Read", ...desktopTabs] as const;
+const desktopTabs = ["Notes", "Discuss", "Outline"] as const;
+const mobileTabs = ["Read", ...desktopTabs, "Details"] as const;
 
 export function ReadingRail({
   mobile = false,
@@ -52,6 +52,8 @@ export function ReadingRail({
   const navigateToToc = activeBookId ? workspace.findTocNavigationForBook(activeBookId) : undefined;
   const chapterLabel = location?.chapterLabel;
   const hasTocShortcut = Boolean(chapterLabel && toc?.length && navigateToToc);
+  const visibleDesktopTabs =
+    activeTab === "Details" ? ([...desktopTabs, "Details"] as const) : desktopTabs;
 
   useEffect(() => {
     const rememberedTab = getRememberedMobileReadingTab(activeBookId);
@@ -149,7 +151,7 @@ export function ReadingRail({
           aria-label="Reading tools"
           className="relative flex min-w-0 flex-1 items-center gap-5"
         >
-          {desktopTabs.map((tab) => (
+          {visibleDesktopTabs.map((tab) => (
             <Tabs.Tab
               key={tab}
               value={tab}
