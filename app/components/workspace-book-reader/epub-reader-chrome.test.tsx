@@ -64,17 +64,24 @@ describe("EpubReaderToolbar", () => {
 
     expect(surface.classList).toContain("mx-auto");
     expect(surface.classList).toContain("max-w-[72ch]");
+    expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
   });
 
-  it.each(["spread", "scroll"] as const)(
-    "leaves the %s surface at full available width",
-    (readerLayout) => {
-      const surface = renderReaderSurface(readerLayout);
+  it("centers and constrains the two-column spread surface", () => {
+    const surface = renderReaderSurface("spread");
 
-      expect(surface.classList).not.toContain("mx-auto");
-      expect(surface.classList).not.toContain("max-w-[72ch]");
-    },
-  );
+    expect(surface.classList).toContain("mx-auto");
+    expect(surface.classList).toContain("max-w-[calc(144ch+64px)]");
+    expect(surface.classList).not.toContain("max-w-[72ch]");
+  });
+
+  it("leaves the scroll surface at full available width", () => {
+    const surface = renderReaderSurface("scroll");
+
+    expect(surface.classList).not.toContain("mx-auto");
+    expect(surface.classList).not.toContain("max-w-[72ch]");
+    expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
+  });
 
   it("renders only the rail menu when mounted in the reading shell", () => {
     const container = document.body.appendChild(document.createElement("div"));

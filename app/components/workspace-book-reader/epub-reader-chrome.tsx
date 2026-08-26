@@ -67,6 +67,7 @@ export function EpubReaderSurface({
         className={cn("h-full overflow-hidden", {
           "px-10 pt-6 pb-2 md:px-16 md:pt-10 md:pb-4": readerLayout,
           "mx-auto max-w-[72ch]": readerLayout === "single",
+          "mx-auto max-w-[calc(144ch+64px)]": readerLayout === "spread",
         })}
       />
       {loadError && (
