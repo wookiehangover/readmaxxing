@@ -1,7 +1,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Settings } from "~/lib/settings";
+import type { ReaderLayout, Settings } from "~/lib/settings";
 
 vi.mock("~/components/reading-shell/reading-rail-menu-portal", () => ({
   ReadingRailMenuPortal: ({ children }: { children: React.ReactNode }) => (
@@ -23,6 +23,35 @@ import {
 
 let root: Root | null = null;
 
+function renderReaderSurface(readerLayout: ReaderLayout) {
+  const container = document.body.appendChild(document.createElement("div"));
+  const containerRef = React.createRef<HTMLDivElement>();
+  root = createRoot(container);
+  act(() =>
+    root?.render(
+      <EpubReaderSurface
+        containerRef={containerRef}
+        searchOpen={false}
+        searchQuery=""
+        searchResultsLength={0}
+        searchIndex={0}
+        searchNext={vi.fn()}
+        searchPrev={vi.fn()}
+        onSearchClose={vi.fn()}
+        onSearchQueryChange={vi.fn()}
+        loadError={false}
+        readerLayout={readerLayout}
+        isScrollMode={readerLayout === "scroll"}
+        isMobile={false}
+        toggleToolbar={vi.fn()}
+        onPrevious={vi.fn()}
+        onNext={vi.fn()}
+      />,
+    ),
+  );
+  return containerRef.current!;
+}
+
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
@@ -30,6 +59,23 @@ afterEach(() => {
 });
 
 describe("EpubReaderToolbar", () => {
+  it("centers and constrains the single-page surface", () => {
+    const surface = renderReaderSurface("single");
+
+    expect(surface.classList).toContain("mx-auto");
+    expect(surface.classList).toContain("max-w-[72ch]");
+  });
+
+  it.each(["spread", "scroll"] as const)(
+    "leaves the %s surface at full available width",
+    (readerLayout) => {
+      const surface = renderReaderSurface(readerLayout);
+
+      expect(surface.classList).not.toContain("mx-auto");
+      expect(surface.classList).not.toContain("max-w-[72ch]");
+    },
+  );
+
   it("renders only the rail menu when mounted in the reading shell", () => {
     const container = document.body.appendChild(document.createElement("div"));
     root = createRoot(container);
