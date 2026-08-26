@@ -119,9 +119,10 @@ function RegisterChatActions({ actions }: { actions: ReadingChatMenuActions }) {
 }
 
 function RailTabControls() {
-  const { setActiveTab } = useReadingRailTab();
+  const { activeTab, setActiveTab } = useReadingRailTab();
   return (
     <>
+      <output data-testid="active-rail-tab">{activeTab}</output>
       {(["Notes", "Discuss", "Outline"] satisfies ReadingRailTab[]).map((tab) => (
         <button
           key={tab}
@@ -304,16 +305,32 @@ describe("ReaderSettingsMenu", () => {
     expect(signedOut.container.textContent).not.toContain("Sync to furthest page");
   });
 
-  it("shows notebook export only on Notes and never shows Details", async () => {
+  it("opens Details for a book-backed menu and keeps notebook export scoped to Notes", async () => {
     const rendered = renderMenu();
+    const findDetailsItem = () =>
+      Array.from(rendered.container.querySelectorAll<HTMLElement>("[role='menuitem']")).find(
+        (item) => item.textContent?.trim() === "Details",
+      );
     const findExportItem = () =>
       Array.from(rendered.container.querySelectorAll<HTMLElement>("[role='menuitem']")).find(
         (item) => item.textContent?.includes("Export as Markdown"),
       );
 
-    expect(rendered.container.textContent).not.toContain("Details");
+    expect(findDetailsItem()).toBeDefined();
     expect(findExportItem()?.parentElement?.previousElementSibling?.getAttribute("role")).toBe(
       "separator",
+    );
+
+    act(() => findDetailsItem()?.click());
+    expect(rendered.container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe(
+      "Details",
+    );
+    expect(findExportItem()).toBeUndefined();
+
+    act(() =>
+      rendered.container
+        .querySelector<HTMLButtonElement>("[data-testid='set-rail-tab-Notes']")
+        ?.click(),
     );
 
     await act(async () => findExportItem()?.click());
@@ -338,6 +355,16 @@ describe("ReaderSettingsMenu", () => {
     );
     expect(findExportItem()).not.toBeUndefined();
     expect(navigate.mock.calls.some(([path]) => path === "/books/book-1/details")).toBe(false);
+  });
+
+  it("hides Details when the reader menu has no book", () => {
+    const rendered = renderMenu({ guest: true });
+
+    expect(
+      Array.from(rendered.container.querySelectorAll<HTMLElement>("[role='menuitem']")).some(
+        (item) => item.textContent?.trim() === "Details",
+      ),
+    ).toBe(false);
   });
 
   it("keeps formatting updates in the nested menu", () => {

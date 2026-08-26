@@ -88,18 +88,25 @@ test.describe("Workspace route", () => {
     });
   });
 
-  test("desktop reader opens Details from the final reading tab", async ({ page }) => {
+  test("desktop reader opens Details from the reader menu", async ({ page }) => {
     await uploadAndOpenBook(page);
 
     const tabs = page.getByRole("tablist", { name: "Reading tools" });
     const detailsTab = tabs.getByRole("tab", { name: "Details", exact: true });
 
+    await expect(tabs.getByRole("tab")).toHaveText(["Notes", "Discuss", "Outline"]);
+    await page.getByRole("button", { name: "Reader menu" }).first().click();
+    await page.getByRole("menuitem", { name: "Details", exact: true }).click();
+
     await expect(tabs.getByRole("tab")).toHaveText(["Notes", "Discuss", "Outline", "Details"]);
-    await detailsTab.click();
     await expect(detailsTab).toHaveAttribute("aria-selected", "true");
     await expect(
       page.getByRole("tabpanel").getByRole("heading", { name: "Test Book for E2E", exact: true }),
     ).toBeVisible();
+
+    await tabs.getByRole("tab", { name: "Notes", exact: true }).click();
+    await expect(tabs.getByRole("tab")).toHaveText(["Notes", "Discuss", "Outline"]);
+    await expect(detailsTab).toHaveCount(0);
   });
 
   test("mobile reader switches every full-screen tab and keeps the book mounted", async ({

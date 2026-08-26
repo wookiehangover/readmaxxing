@@ -4,6 +4,7 @@ import {
   BookmarkCheck,
   Download,
   FastForward,
+  Info,
   Library,
   MoreHorizontal,
   Plus,
@@ -386,7 +387,7 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
   const { isAuthenticated, shareOpen, setShareOpen, handleShare } = useReaderActionState(book);
   const registeredChatActions = useReadingChatMenuActions();
   const chatActions = registeredChatActions?.bookId === book?.id ? registeredChatActions : null;
-  const { activeTab } = useReadingRailTab();
+  const { activeTab, setActiveTab } = useReadingRailTab();
   const hasActions = Boolean(
     props.onDownload ||
     props.onBookmarkPage ||
@@ -454,6 +455,12 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
+            {book ? (
+              <DropdownMenuItem onClick={() => setActiveTab("Details")}>
+                <Info className="size-4" />
+                Details
+              </DropdownMenuItem>
+            ) : null}
             {isAuthenticated && book ? (
               <DropdownMenuItem onClick={handleShare}>
                 <Share2 className="size-4" />
