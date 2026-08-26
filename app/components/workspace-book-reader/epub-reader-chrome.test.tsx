@@ -1,6 +1,6 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReaderLayout, Settings } from "~/lib/settings";
 
 vi.mock("~/components/reading-shell/reading-rail-menu-portal", () => ({
@@ -22,6 +22,25 @@ import {
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let root: Root | null = null;
+let resizeReaderPane: (width: number) => void;
+
+beforeEach(() => {
+  class MockResizeObserver {
+    constructor(callback: ResizeObserverCallback) {
+      resizeReaderPane = (width) =>
+        callback(
+          [{ contentRect: { width } } as unknown as ResizeObserverEntry],
+          this as unknown as ResizeObserver,
+        );
+    }
+
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  }
+
+  vi.stubGlobal("ResizeObserver", MockResizeObserver);
+});
 
 function renderReaderSurface(readerLayout: ReaderLayout) {
   const container = document.body.appendChild(document.createElement("div"));
@@ -56,31 +75,51 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   document.body.innerHTML = "";
+  vi.unstubAllGlobals();
 });
+
+function setReaderPaneWidth(width: number) {
+  act(() => resizeReaderPane(width));
+}
 
 describe("EpubReaderToolbar", () => {
   it("centers and constrains the single-page surface", () => {
     const surface = renderReaderSurface("single");
 
-    expect(surface.classList).toContain("mx-auto");
-    expect(surface.classList).toContain("max-w-[72ch]");
-    expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
+    for (const width of [799.9, 800]) {
+      setReaderPaneWidth(width);
+      expect(surface.classList).toContain("mx-auto");
+      expect(surface.classList).toContain("max-w-[72ch]");
+      expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
+    }
   });
 
-  it("centers and constrains the two-column spread surface", () => {
+  it("matches the requested spread cap to the effective column count", () => {
     const surface = renderReaderSurface("spread");
 
     expect(surface.classList).toContain("mx-auto");
+    setReaderPaneWidth(799.9);
+    expect(surface.classList).toContain("max-w-[72ch]");
+    expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
+
+    setReaderPaneWidth(800);
     expect(surface.classList).toContain("max-w-[calc(144ch+64px)]");
     expect(surface.classList).not.toContain("max-w-[72ch]");
+
+    setReaderPaneWidth(799.9);
+    expect(surface.classList).toContain("max-w-[72ch]");
+    expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
   });
 
   it("leaves the scroll surface at full available width", () => {
     const surface = renderReaderSurface("scroll");
 
-    expect(surface.classList).not.toContain("mx-auto");
-    expect(surface.classList).not.toContain("max-w-[72ch]");
-    expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
+    for (const width of [799.9, 800]) {
+      setReaderPaneWidth(width);
+      expect(surface.classList).not.toContain("mx-auto");
+      expect(surface.classList).not.toContain("max-w-[72ch]");
+      expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
+    }
   });
 
   it("renders only the rail menu when mounted in the reading shell", () => {

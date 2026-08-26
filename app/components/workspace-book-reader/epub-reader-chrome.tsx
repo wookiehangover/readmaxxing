@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+import { DEFAULT_MIN_SPREAD_WIDTH } from "@readmaxxing/epub-successor";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { SearchBar } from "~/components/search-bar";
 import type { TocEntry } from "~/lib/context/reader-context";
@@ -8,6 +10,27 @@ import { ReadingRailMenuPortal } from "~/components/reading-shell/reading-rail-m
 
 function blurPageTurnControl(event: React.PointerEvent<HTMLButtonElement>) {
   event.currentTarget.blur();
+}
+
+function useReaderPaneSupportsSpread() {
+  const readerPaneRef = useRef<HTMLDivElement>(null);
+  const [supportsSpread, setSupportsSpread] = useState(false);
+
+  useEffect(() => {
+    const readerPane = readerPaneRef.current;
+    if (!readerPane || typeof ResizeObserver === "undefined") return;
+
+    const update = (width: number) => setSupportsSpread(width >= DEFAULT_MIN_SPREAD_WIDTH);
+    update(readerPane.getBoundingClientRect().width);
+
+    const observer = new ResizeObserver((entries) => {
+      update(entries[0]?.contentRect.width ?? readerPane.getBoundingClientRect().width);
+    });
+    observer.observe(readerPane);
+    return () => observer.disconnect();
+  }, []);
+
+  return { readerPaneRef, supportsSpread };
 }
 
 interface EpubReaderSurfaceProps {
@@ -47,8 +70,10 @@ export function EpubReaderSurface({
   onPrevious,
   onNext,
 }: EpubReaderSurfaceProps) {
+  const { readerPaneRef, supportsSpread } = useReaderPaneSupportsSpread();
+
   return (
-    <div className="relative flex-1 overflow-hidden">
+    <div ref={readerPaneRef} className="relative flex-1 overflow-hidden">
       {searchOpen && (
         <div className="absolute top-0 right-0 left-0 z-10">
           <SearchBar
@@ -66,8 +91,10 @@ export function EpubReaderSurface({
         ref={containerRef}
         className={cn("h-full overflow-hidden", {
           "px-10 pt-6 pb-2 md:px-16 md:pt-10 md:pb-4": readerLayout,
-          "mx-auto max-w-[72ch]": readerLayout === "single",
-          "mx-auto max-w-[calc(144ch+64px)]": readerLayout === "spread",
+          "mx-auto": readerLayout === "single" || readerLayout === "spread",
+          "max-w-[72ch]":
+            readerLayout === "single" || (readerLayout === "spread" && !supportsSpread),
+          "max-w-[calc(144ch+64px)]": readerLayout === "spread" && supportsSpread,
         })}
       />
       {loadError && (
