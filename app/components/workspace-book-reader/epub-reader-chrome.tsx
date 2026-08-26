@@ -12,7 +12,14 @@ function blurPageTurnControl(event: React.PointerEvent<HTMLButtonElement>) {
   event.currentTarget.blur();
 }
 
-function useReaderPaneSupportsSpread() {
+function getInlinePadding(element: HTMLElement) {
+  const style = getComputedStyle(element);
+  const start = Number.parseFloat(style.paddingInlineStart);
+  const end = Number.parseFloat(style.paddingInlineEnd);
+  return (Number.isFinite(start) ? start : 0) + (Number.isFinite(end) ? end : 0);
+}
+
+function useReaderPaneSupportsSpread(readerHostRef: React.RefObject<HTMLDivElement | null>) {
   const readerPaneRef = useRef<HTMLDivElement>(null);
   const [supportsSpread, setSupportsSpread] = useState(false);
 
@@ -20,7 +27,11 @@ function useReaderPaneSupportsSpread() {
     const readerPane = readerPaneRef.current;
     if (!readerPane || typeof ResizeObserver === "undefined") return;
 
-    const update = (width: number) => setSupportsSpread(width >= DEFAULT_MIN_SPREAD_WIDTH);
+    const update = (width: number) => {
+      const effectiveWidth =
+        width - (readerHostRef.current ? getInlinePadding(readerHostRef.current) : 0);
+      setSupportsSpread(effectiveWidth >= DEFAULT_MIN_SPREAD_WIDTH);
+    };
     update(readerPane.getBoundingClientRect().width);
 
     const observer = new ResizeObserver((entries) => {
@@ -28,7 +39,7 @@ function useReaderPaneSupportsSpread() {
     });
     observer.observe(readerPane);
     return () => observer.disconnect();
-  }, []);
+  }, [readerHostRef]);
 
   return { readerPaneRef, supportsSpread };
 }
@@ -70,7 +81,7 @@ export function EpubReaderSurface({
   onPrevious,
   onNext,
 }: EpubReaderSurfaceProps) {
-  const { readerPaneRef, supportsSpread } = useReaderPaneSupportsSpread();
+  const { readerPaneRef, supportsSpread } = useReaderPaneSupportsSpread(containerRef);
 
   return (
     <div ref={readerPaneRef} className="relative flex-1 overflow-hidden">

@@ -23,8 +23,10 @@ import {
 
 let root: Root | null = null;
 let resizeReaderPane: (width: number) => void;
+let inlinePadding = 128;
 
 beforeEach(() => {
+  inlinePadding = 128;
   class MockResizeObserver {
     constructor(callback: ResizeObserverCallback) {
       resizeReaderPane = (width) =>
@@ -40,6 +42,16 @@ beforeEach(() => {
   }
 
   vi.stubGlobal("ResizeObserver", MockResizeObserver);
+  vi.stubGlobal(
+    "getComputedStyle",
+    vi.fn(
+      () =>
+        ({
+          paddingInlineStart: `${inlinePadding / 2}px`,
+          paddingInlineEnd: `${inlinePadding / 2}px`,
+        }) as CSSStyleDeclaration,
+    ),
+  );
 });
 
 function renderReaderSurface(readerLayout: ReaderLayout) {
@@ -86,7 +98,7 @@ describe("EpubReaderToolbar", () => {
   it("centers and constrains the single-page surface", () => {
     const surface = renderReaderSurface("single");
 
-    for (const width of [799.9, 800]) {
+    for (const width of [927, 928]) {
       setReaderPaneWidth(width);
       expect(surface.classList).toContain("mx-auto");
       expect(surface.classList).toContain("max-w-[72ch]");
@@ -98,23 +110,36 @@ describe("EpubReaderToolbar", () => {
     const surface = renderReaderSurface("spread");
 
     expect(surface.classList).toContain("mx-auto");
-    setReaderPaneWidth(799.9);
+    setReaderPaneWidth(927);
     expect(surface.classList).toContain("max-w-[72ch]");
     expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
 
-    setReaderPaneWidth(800);
+    setReaderPaneWidth(928);
     expect(surface.classList).toContain("max-w-[calc(144ch+64px)]");
     expect(surface.classList).not.toContain("max-w-[72ch]");
 
-    setReaderPaneWidth(799.9);
+    setReaderPaneWidth(927);
     expect(surface.classList).toContain("max-w-[72ch]");
     expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
+  });
+
+  it("accounts for the current responsive inline padding", () => {
+    const surface = renderReaderSurface("spread");
+    inlinePadding = 80;
+
+    setReaderPaneWidth(879);
+    expect(surface.classList).toContain("max-w-[72ch]");
+    expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
+
+    setReaderPaneWidth(880);
+    expect(surface.classList).toContain("max-w-[calc(144ch+64px)]");
+    expect(surface.classList).not.toContain("max-w-[72ch]");
   });
 
   it("leaves the scroll surface at full available width", () => {
     const surface = renderReaderSurface("scroll");
 
-    for (const width of [799.9, 800]) {
+    for (const width of [927, 928]) {
       setReaderPaneWidth(width);
       expect(surface.classList).not.toContain("mx-auto");
       expect(surface.classList).not.toContain("max-w-[72ch]");
