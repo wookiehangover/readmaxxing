@@ -27,6 +27,7 @@ export type {
   NavigatorPreferences,
   Relocation,
 } from "./navigator/navigator";
+export { DEFAULT_MIN_SPREAD_WIDTH } from "./navigator/paginated";
 export { visibleViewportText } from "./navigator/visible-text";
 export type { VisibleViewportGeometry } from "./navigator/visible-text";
 export {
