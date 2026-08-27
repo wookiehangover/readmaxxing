@@ -271,6 +271,8 @@ export class DecorationLayer extends EventTarget {
         : false,
     );
     if (!entry) return;
+    event.preventDefault();
+    event.stopPropagation();
     this.#emit("decoration-click", {
       decoration: entry.decoration,
       clientX: event.clientX,

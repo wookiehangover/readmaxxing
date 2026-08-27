@@ -117,7 +117,9 @@ describe("decoration rendering", () => {
     ] as unknown as DOMRectList);
     const layer = createDecorationLayer({ document, section, rendering: "overlay" });
     const clicked: string[] = [];
+    const pageControls = vi.fn();
     layer.on("decoration-click", ({ decoration: hit }) => clicked.push(hit.id));
+    document.addEventListener("click", pageControls);
 
     layer.add(decoration);
     const second = { ...decoration, id: "note-2", style: { variant: "highlight" as const } };
@@ -126,9 +128,17 @@ describe("decoration rendering", () => {
     expect(overlay.querySelectorAll("span")).toHaveLength(2);
     expect((overlay.lastElementChild as HTMLElement).style.zIndex).toBe("2");
 
-    document.dispatchEvent(new MouseEvent("click", { clientX: 20, clientY: 25 }));
+    const click = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 20,
+      clientY: 25,
+    });
+    document.querySelector("p")!.dispatchEvent(click);
     await Promise.resolve();
     expect(clicked).toEqual(["note-2"]);
+    expect(click.defaultPrevented).toBe(true);
+    expect(pageControls).not.toHaveBeenCalled();
     layer.destroy();
     expect(document.querySelector("[data-epub-decoration-overlay]")).toBeNull();
   });

@@ -1,4 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+  createDecorationLayer,
+  locatorFromRange,
+  normalizePublicationPath,
+  type Decoration,
+  type SectionMetadata,
+} from "@readmaxxing/epub-successor";
 import { registerEpubContentInteractions } from "~/hooks/epub-content-interactions";
 
 interface TouchPoint {
@@ -107,5 +114,79 @@ describe("registerEpubContentInteractions", () => {
     swipe(contentDocument, 180, 80);
     expect(onPrevious).toHaveBeenCalledOnce();
     expect(onNext).toHaveBeenCalledOnce();
+  });
+
+  it("lets an existing decoration consume a click before mobile page controls", async () => {
+    let contentHook: ((content: { document: Document }) => void) | undefined;
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    const onToggleToolbar = vi.fn();
+    const contentDocument = documentFixture();
+    contentDocument.body.innerHTML = "<p>Alpha target omega</p>";
+    const text = contentDocument.querySelector("p")!.firstChild as Text;
+    const range = contentDocument.createRange();
+    range.setStart(text, 6);
+    range.setEnd(text, 12);
+    const rangePrototype = Object.getPrototypeOf(range) as Range;
+    const getClientRects = vi.spyOn(rangePrototype, "getClientRects").mockReturnValue([
+      {
+        left: 150,
+        right: 250,
+        top: 20,
+        bottom: 40,
+        width: 100,
+        height: 20,
+      },
+    ] as unknown as DOMRectList);
+    const section: SectionMetadata = {
+      href: normalizePublicationPath("chapter.xhtml"),
+      spineIndex: 0,
+      spineLength: 1,
+      spineId: "chapter",
+    };
+    const decoration: Decoration = {
+      id: "highlight-1",
+      locator: locatorFromRange(range, section),
+      style: { variant: "highlight" },
+    };
+    const layer = createDecorationLayer({
+      document: contentDocument,
+      section,
+      rendering: "overlay",
+    });
+    const onDecorationClick = vi.fn();
+    layer.on("decoration-click", onDecorationClick);
+    layer.add(decoration);
+    const cleanup = registerEpubContentInteractions(
+      {
+        hooks: {
+          content: {
+            register: (callback) => {
+              contentHook = callback;
+            },
+          },
+        },
+      },
+      { isPaginatedMobile: () => true, onPrevious, onNext, onToggleToolbar },
+    );
+    contentHook?.({ document: contentDocument });
+
+    contentDocument.querySelector("p")!.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 200,
+        clientY: 30,
+      }),
+    );
+    await Promise.resolve();
+
+    expect(onDecorationClick).toHaveBeenCalledOnce();
+    expect(onPrevious).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
+    expect(onToggleToolbar).not.toHaveBeenCalled();
+    cleanup();
+    layer.destroy();
+    getClientRects.mockRestore();
   });
 });
