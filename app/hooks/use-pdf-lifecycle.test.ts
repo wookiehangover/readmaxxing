@@ -187,24 +187,53 @@ describe("shouldSavePdfPageChange", () => {
 });
 
 describe("preparePdfPageForCarousel", () => {
-  it("loads and renders the exact requested page before exposing it", async () => {
+  it("waits for the exact page render to finish after data-loaded is set", async () => {
     const div = document.createElement("div");
-    const pageView = { div, pdfPage: null as unknown, setPdfPage: vi.fn() };
+    div.dataset.loaded = "true";
+    const pageView = {
+      div,
+      pdfPage: null as unknown,
+      renderingState: 1,
+      setPdfPage: vi.fn(),
+    };
     const pdfPage = { pageNumber: 2 };
     const doc = { numPages: 3, getPage: vi.fn().mockResolvedValue(pdfPage) };
+    const eventHandlers = new Map<string, (event: { pageNumber?: number }) => void>();
+    const eventBus = {
+      on: vi.fn((name: string, handler: (event: { pageNumber?: number }) => void) =>
+        eventHandlers.set(name, handler),
+      ),
+      off: vi.fn((name: string) => eventHandlers.delete(name)),
+    };
     const viewer = {
       pagesCount: 3,
+      eventBus,
       getPageView: vi.fn(() => pageView),
       renderingQueue: {
-        renderView: vi.fn(() => queueMicrotask(() => (div.dataset.loaded = "true"))),
+        isViewFinished: vi.fn(() => pageView.renderingState === 3),
+        renderView: vi.fn(),
       },
     };
 
-    await expect(preparePdfPageForCarousel(viewer, doc, 2)).resolves.toBe(true);
+    const resolved = vi.fn();
+    const preparation = preparePdfPageForCarousel(viewer, doc, 2);
+    void preparation.then(resolved);
+    await vi.waitFor(() => expect(viewer.renderingQueue.renderView).toHaveBeenCalledWith(pageView));
+    await Promise.resolve();
+    expect(resolved).not.toHaveBeenCalled();
+
+    eventHandlers.get("pagerendered")?.({ pageNumber: 1 });
+    await Promise.resolve();
+    expect(resolved).not.toHaveBeenCalled();
+
+    pageView.renderingState = 3;
+    eventHandlers.get("pagerendered")?.({ pageNumber: 2 });
+    await expect(preparation).resolves.toBe(true);
     expect(viewer.getPageView).toHaveBeenCalledWith(1);
     expect(doc.getPage).toHaveBeenCalledWith(2);
     expect(pageView.setPdfPage).toHaveBeenCalledWith(pdfPage);
     expect(viewer.renderingQueue.renderView).toHaveBeenCalledWith(pageView);
+    expect(eventBus.off).toHaveBeenCalledWith("pagerendered", expect.any(Function));
   });
 
   it("rejects out-of-range and unavailable page views", async () => {

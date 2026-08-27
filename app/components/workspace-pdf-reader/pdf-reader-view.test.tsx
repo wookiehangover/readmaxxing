@@ -209,7 +209,7 @@ describe("mobile paginated gestures", () => {
       page.dataset.pageNumber = String(pageNumber);
       page.dataset.loaded = "true";
       page.textContent = `Page ${pageNumber}`;
-      return { div: page };
+      return { div: page, renderingState: 3 };
     });
     const viewerRef = { current: { getPageView: (index: number) => pages[index] } };
     const preparePageForCarousel = vi.fn().mockResolvedValue(true);
@@ -260,7 +260,7 @@ describe("mobile paginated gestures", () => {
     const page = document.createElement("div");
     page.dataset.pageNumber = "1";
     page.dataset.loaded = "true";
-    const viewerRef = { current: { getPageView: () => ({ div: page }) } };
+    const viewerRef = { current: { getPageView: () => ({ div: page, renderingState: 3 }) } };
     const { container, goToPage } = renderView({ isMobile: true, viewerRef });
     vi.spyOn(container, "getBoundingClientRect").mockReturnValue({
       width: 400,
@@ -292,7 +292,7 @@ describe("mobile paginated gestures", () => {
     const page = document.createElement("div");
     page.dataset.pageNumber = "1";
     page.dataset.loaded = "true";
-    const viewerRef = { current: { getPageView: () => ({ div: page }) } };
+    const viewerRef = { current: { getPageView: () => ({ div: page, renderingState: 3 }) } };
     const { container, goToPage } = renderView({ isMobile: true, viewerRef });
     vi.spyOn(container, "getBoundingClientRect").mockReturnValue({
       width: 400,
@@ -323,8 +323,12 @@ describe("mobile paginated gestures", () => {
     current.textContent = "Current page";
     const loading = document.createElement("div");
     loading.dataset.pageNumber = "2";
+    loading.dataset.loaded = "true";
     loading.textContent = "Stale loading content";
-    const pages = [{ div: current }, { div: loading }];
+    const pages = [
+      { div: current, renderingState: 3 },
+      { div: loading, renderingState: 1 },
+    ];
     const viewerRef = { current: { getPageView: (index: number) => pages[index] } };
     const { container } = renderView({ isMobile: true, viewerRef });
     vi.spyOn(container, "getBoundingClientRect").mockReturnValue({
@@ -353,7 +357,7 @@ describe("mobile paginated gestures", () => {
     const page = document.createElement("div");
     page.dataset.pageNumber = "1";
     page.dataset.loaded = "true";
-    const viewerRef = { current: { getPageView: () => ({ div: page }) } };
+    const viewerRef = { current: { getPageView: () => ({ div: page, renderingState: 3 }) } };
     const { container, goToPage } = renderView({ isMobile: true, viewerRef });
     vi.spyOn(container, "getBoundingClientRect").mockReturnValue({
       width: 400,

@@ -8,6 +8,7 @@ import {
 const PDF_CAROUSEL_SETTLE_MS = 180;
 const PDF_CAROUSEL_EDGE_RESISTANCE = 0.3;
 const PDF_CAROUSEL_MAX_EDGE_PROGRESS = 0.12;
+const PDF_RENDERING_FINISHED = 3;
 
 interface PdfPageCarouselOptions {
   container: HTMLElement;
@@ -32,11 +33,12 @@ interface CarouselLayer {
 }
 
 function cloneRenderedPage(viewer: any, pageNumber: number): HTMLElement | null {
-  const source = viewer?.getPageView?.(pageNumber - 1)?.div as HTMLElement | undefined;
+  const pageView = viewer?.getPageView?.(pageNumber - 1);
+  const source = pageView?.div as HTMLElement | undefined;
   if (
     !source ||
     source.dataset.pageNumber !== String(pageNumber) ||
-    source.dataset.loaded !== "true"
+    pageView.renderingState !== PDF_RENDERING_FINISHED
   ) {
     return null;
   }

@@ -56,6 +56,14 @@ export interface UsePdfLifecycleReturn {
 }
 
 const pendingCarouselPages = new WeakMap<object, Promise<boolean>>();
+const PDF_RENDERING_FINISHED = 3;
+
+function isPdfPageRenderFinished(viewer: any, pageView: any): boolean {
+  if (typeof viewer.renderingQueue?.isViewFinished === "function") {
+    return viewer.renderingQueue.isViewFinished(pageView);
+  }
+  return pageView.renderingState === PDF_RENDERING_FINISHED;
+}
 
 export function preparePdfPageForCarousel(
   viewer: any,
@@ -68,7 +76,7 @@ export function preparePdfPageForCarousel(
 
   const pageView = viewer.getPageView?.(pageNumber - 1);
   if (!pageView?.div) return Promise.resolve(false);
-  if (pageView.div.dataset.loaded === "true") return Promise.resolve(true);
+  if (isPdfPageRenderFinished(viewer, pageView)) return Promise.resolve(true);
 
   const pending = pendingCarouselPages.get(pageView);
   if (pending) return pending;
@@ -76,30 +84,39 @@ export function preparePdfPageForCarousel(
   const preparation = (async () => {
     try {
       if (!pageView.pdfPage) pageView.setPdfPage(await doc.getPage(pageNumber));
-      if (pageView.div.dataset.loaded === "true") return true;
+      if (isPdfPageRenderFinished(viewer, pageView)) return true;
 
+      const eventBus = viewer.eventBus;
+      if (!eventBus?.on || !eventBus?.off) {
+        if (viewer.renderingQueue?.renderView) viewer.renderingQueue.renderView(pageView);
+        else await pageView.draw?.();
+        return isPdfPageRenderFinished(viewer, pageView);
+      }
+
+      let finishRender: (available: boolean) => void = () => {};
       const rendered = new Promise<boolean>((resolve) => {
-        if (typeof MutationObserver === "undefined") {
-          resolve(false);
-          return;
-        }
-
-        const observer = new MutationObserver(() => {
-          if (pageView.div.dataset.loaded !== "true") return;
-          observer.disconnect();
+        let settled = false;
+        const finish = (available: boolean) => {
+          if (settled) return;
+          settled = true;
+          eventBus.off("pagerendered", handlePageRendered);
           clearTimeout(timeout);
-          resolve(true);
-        });
+          resolve(available);
+        };
+        const handlePageRendered = (event: { pageNumber?: number }) => {
+          if (event.pageNumber !== pageNumber) return;
+          finish(isPdfPageRenderFinished(viewer, pageView));
+        };
         const timeout = window.setTimeout(() => {
-          observer.disconnect();
-          resolve(false);
+          finish(false);
         }, 5000);
-        observer.observe(pageView.div, { attributes: true, attributeFilter: ["data-loaded"] });
+        finishRender = finish;
+        eventBus.on("pagerendered", handlePageRendered);
       });
 
       if (viewer.renderingQueue?.renderView) viewer.renderingQueue.renderView(pageView);
       else await pageView.draw?.();
-      if (pageView.div.dataset.loaded === "true") return true;
+      if (isPdfPageRenderFinished(viewer, pageView)) finishRender(true);
       return rendered;
     } catch {
       return false;

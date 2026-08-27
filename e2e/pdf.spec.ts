@@ -114,33 +114,56 @@ test.describe("PDF support", () => {
     await expect(nextBtn).toBeVisible({ timeout: 5_000 });
   });
 
-  test("mobile swipes navigate one paginated PDF page in each direction", async ({ page }) => {
+  test("mobile PDF carousel tracks, snaps back, and navigates one page", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await uploadTestPdf(page);
     const pdfContainer = page.getByTestId("pdf-container");
     await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("1 / 2", { exact: true })).toBeVisible();
 
-    const swipe = (startX: number, endX: number) =>
+    const dispatchTouch = (
+      type: "touchstart" | "touchmove" | "touchend",
+      x: number,
+      time: number,
+    ) =>
       pdfContainer.evaluate(
-        (container, { startX, endX }) => {
-          const point = (clientX: number) => ({ identifier: 1, clientX, clientY: 200 });
-          const dispatch = (type: string, touches: object[], changedTouches: object[]) => {
-            const event = new Event(type, { bubbles: true, cancelable: true });
-            Object.defineProperties(event, {
-              touches: { value: touches },
-              changedTouches: { value: changedTouches },
-            });
-            container.dispatchEvent(event);
-          };
-          dispatch("touchstart", [point(startX)], [point(startX)]);
-          dispatch("touchend", [], [point(endX)]);
+        (container, { type, x, time }) => {
+          const point = { identifier: 1, clientX: x, clientY: 200 };
+          const event = new Event(type, { bubbles: true, cancelable: true });
+          Object.defineProperties(event, {
+            touches: { value: type === "touchend" ? [] : [point] },
+            changedTouches: { value: [point] },
+            timeStamp: { value: time },
+          });
+          container.dispatchEvent(event);
         },
-        { startX, endX },
+        { type, x, time },
       );
 
-    await swipe(300, 100);
+    await dispatchTouch("touchstart", 300, 10);
+    await dispatchTouch("touchmove", 250, 210);
+    const currentFrame = pdfContainer.locator("[data-pdf-carousel-page='1']");
+    await expect
+      .poll(() => currentFrame.evaluate((element) => (element as HTMLElement).style.transform))
+      .toContain("-50px");
+    await dispatchTouch("touchend", 250, 410);
+    await expect(page.getByText("1 / 2", { exact: true })).toBeVisible();
+    await expect(pdfContainer.locator("[data-pdf-page-carousel]")).toHaveCount(0);
+
+    await dispatchTouch("touchstart", 300, 500);
+    await dispatchTouch("touchmove", 140, 700);
+    await expect
+      .poll(() => currentFrame.evaluate((element) => (element as HTMLElement).style.transform))
+      .toContain("-160px");
+    await expect(
+      pdfContainer.locator("[data-pdf-carousel-page='2'] .page[data-page-number='2']"),
+    ).toHaveCount(1);
+    await dispatchTouch("touchend", 100, 900);
     await expect(page.getByText("2 / 2", { exact: true })).toBeVisible();
-    await swipe(100, 300);
+
+    await dispatchTouch("touchstart", 100, 1000);
+    await dispatchTouch("touchmove", 260, 1200);
+    await dispatchTouch("touchend", 300, 1400);
     await expect(page.getByText("1 / 2", { exact: true })).toBeVisible();
   });
 
