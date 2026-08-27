@@ -69,6 +69,7 @@ vi.mock("pdfjs-dist/web/pdf_viewer.mjs", () => ({
 import {
   observePdfViewerResize,
   pdfChapterLabelForPage,
+  preparePdfPageForCarousel,
   shouldSavePdfPageChange,
   usePdfLifecycle,
 } from "~/hooks/use-pdf-lifecycle";
@@ -182,6 +183,37 @@ describe("shouldSavePdfPageChange", () => {
 
   it("saves a page change after restore", () => {
     expect(shouldSavePdfPageChange(true, 12, 13)).toBe(true);
+  });
+});
+
+describe("preparePdfPageForCarousel", () => {
+  it("loads and renders the exact requested page before exposing it", async () => {
+    const div = document.createElement("div");
+    const pageView = { div, pdfPage: null as unknown, setPdfPage: vi.fn() };
+    const pdfPage = { pageNumber: 2 };
+    const doc = { numPages: 3, getPage: vi.fn().mockResolvedValue(pdfPage) };
+    const viewer = {
+      pagesCount: 3,
+      getPageView: vi.fn(() => pageView),
+      renderingQueue: {
+        renderView: vi.fn(() => queueMicrotask(() => (div.dataset.loaded = "true"))),
+      },
+    };
+
+    await expect(preparePdfPageForCarousel(viewer, doc, 2)).resolves.toBe(true);
+    expect(viewer.getPageView).toHaveBeenCalledWith(1);
+    expect(doc.getPage).toHaveBeenCalledWith(2);
+    expect(pageView.setPdfPage).toHaveBeenCalledWith(pdfPage);
+    expect(viewer.renderingQueue.renderView).toHaveBeenCalledWith(pageView);
+  });
+
+  it("rejects out-of-range and unavailable page views", async () => {
+    const doc = { numPages: 2, getPage: vi.fn() };
+    const viewer = { pagesCount: 2, getPageView: vi.fn(() => undefined) };
+
+    await expect(preparePdfPageForCarousel(viewer, doc, 0)).resolves.toBe(false);
+    await expect(preparePdfPageForCarousel(viewer, doc, 2)).resolves.toBe(false);
+    expect(doc.getPage).not.toHaveBeenCalled();
   });
 });
 

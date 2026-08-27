@@ -146,18 +146,28 @@ function SharedPdfReader({
     },
     [updateSettings],
   );
-  const { toc, currentPage, totalPages, bookProgress, goToPage, goNext, goPrev, loadError } =
-    usePdfLifecycle({
-      bookId: book.id,
-      containerRef,
-      loadData,
-      initialPosition: currentCfi,
-      persistPosition: false,
-      pdfLayout,
-      theme: resolvedTheme,
-      fontSize: settings.fontSize,
-      onRelocated: showToolbar,
-    });
+  const {
+    toc,
+    currentPage,
+    totalPages,
+    bookProgress,
+    goToPage,
+    goNext,
+    goPrev,
+    preparePageForCarousel,
+    viewerRef,
+    loadError,
+  } = usePdfLifecycle({
+    bookId: book.id,
+    containerRef,
+    loadData,
+    initialPosition: currentCfi,
+    persistPosition: false,
+    pdfLayout,
+    theme: resolvedTheme,
+    fontSize: settings.fontSize,
+    onRelocated: showToolbar,
+  });
 
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-testid="shared-pdf-reader">
@@ -165,6 +175,8 @@ function SharedPdfReader({
         book={book}
         readOnly
         containerRef={containerRef}
+        viewerRef={viewerRef}
+        preparePageForCarousel={preparePageForCarousel}
         localSettings={localSettings}
         onUpdateSettings={onUpdateSettings}
         searchOpen={false}

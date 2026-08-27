@@ -46,12 +46,68 @@ export interface UsePdfLifecycleReturn {
   goToPage: (page: number) => void;
   goNext: () => void;
   goPrev: () => void;
+  preparePageForCarousel: (page: number) => Promise<boolean>;
   flushPositionSave: () => void;
   pdfDocRef: React.RefObject<any>;
   /** Reference to the PDFViewer instance for search/highlight integration */
   viewerRef: React.RefObject<any>;
   /** Reference to the EventBus instance for search/highlight integration */
   eventBusRef: React.RefObject<any>;
+}
+
+const pendingCarouselPages = new WeakMap<object, Promise<boolean>>();
+
+export function preparePdfPageForCarousel(
+  viewer: any,
+  doc: any,
+  pageNumber: number,
+): Promise<boolean> {
+  if (!viewer || !doc || pageNumber < 1 || pageNumber > (viewer.pagesCount || doc.numPages || 0)) {
+    return Promise.resolve(false);
+  }
+
+  const pageView = viewer.getPageView?.(pageNumber - 1);
+  if (!pageView?.div) return Promise.resolve(false);
+  if (pageView.div.dataset.loaded === "true") return Promise.resolve(true);
+
+  const pending = pendingCarouselPages.get(pageView);
+  if (pending) return pending;
+
+  const preparation = (async () => {
+    try {
+      if (!pageView.pdfPage) pageView.setPdfPage(await doc.getPage(pageNumber));
+      if (pageView.div.dataset.loaded === "true") return true;
+
+      const rendered = new Promise<boolean>((resolve) => {
+        if (typeof MutationObserver === "undefined") {
+          resolve(false);
+          return;
+        }
+
+        const observer = new MutationObserver(() => {
+          if (pageView.div.dataset.loaded !== "true") return;
+          observer.disconnect();
+          clearTimeout(timeout);
+          resolve(true);
+        });
+        const timeout = window.setTimeout(() => {
+          observer.disconnect();
+          resolve(false);
+        }, 5000);
+        observer.observe(pageView.div, { attributes: true, attributeFilter: ["data-loaded"] });
+      });
+
+      if (viewer.renderingQueue?.renderView) viewer.renderingQueue.renderView(pageView);
+      else await pageView.draw?.();
+      if (pageView.div.dataset.loaded === "true") return true;
+      return rendered;
+    } catch {
+      return false;
+    }
+  })().finally(() => pendingCarouselPages.delete(pageView));
+
+  pendingCarouselPages.set(pageView, preparation);
+  return preparation;
 }
 
 export interface PdfChapterStart {
@@ -244,6 +300,11 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     const viewer = viewerRef.current;
     if (viewer) viewer.previousPage();
   }, []);
+
+  const preparePageForCarousel = useCallback(
+    (page: number) => preparePdfPageForCarousel(viewerRef.current, pdfDocRef.current, page),
+    [],
+  );
 
   const navigateToPosition = useCallback(
     (cfi: string) => {
@@ -557,6 +618,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     goToPage,
     goNext,
     goPrev,
+    preparePageForCarousel,
     flushPositionSave,
     pdfDocRef,
     viewerRef,
