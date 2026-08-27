@@ -180,7 +180,32 @@ function setupPaginated(preferences: NavigatorPreferences = {}) {
     security: { resourceProvider: provider },
     settleTimeoutMs: 100,
   });
-  return { container, navigator };
+  return { container, navigator, provider };
+}
+
+async function finishInteractiveNeighbor(
+  container: HTMLElement,
+  load: (frame: HTMLIFrameElement) => void = (frame) => frame.dispatchEvent(new Event("load")),
+): Promise<HTMLIFrameElement> {
+  await waitForFrameCount(container, 2);
+  const frame = Array.from(container.querySelectorAll("iframe")).at(-1)!;
+  await vi.waitFor(() => expect(frame.contentDocument?.querySelector("h1")).not.toBeNull());
+  Object.defineProperties(frame, {
+    clientWidth: { configurable: true, value: 800 },
+    clientHeight: { configurable: true, value: 600 },
+  });
+  const content = frame.contentDocument!;
+  for (const scrolling of [content.documentElement, content.body]) {
+    Object.defineProperties(scrolling, {
+      scrollWidth: { configurable: true, value: 2_048 },
+      clientWidth: { configurable: true, value: 800 },
+      scrollHeight: { configurable: true, value: 600 },
+      clientHeight: { configurable: true, value: 600 },
+    });
+  }
+  load(frame);
+  await vi.waitFor(() => expect(frame.style.visibility).toBe("visible"));
+  return frame;
 }
 
 function mockFrameAnimationFrames(frame: HTMLIFrameElement) {
@@ -651,18 +676,116 @@ describe("paginated Navigator", () => {
     navigator.destroy();
   });
 
-  it("does not start an interactive turn without an adjacent column", async () => {
+  it("prepares the next spine section, tracks it with the drag, and promotes it once", async () => {
+    const { container, navigator } = setupPaginated();
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    navigator.restoreProgression(1);
+    const outgoing = container.querySelector("iframe")!;
+    const relocations: Relocation[] = [];
+    navigator.addEventListener("relocation", (event) => {
+      relocations.push((event as CustomEvent<Relocation>).detail);
+    });
+
+    expect(navigator.beginInteractivePageTurn("next")).toBe(true);
+    expect(navigator.updateInteractivePageTurn(-300)).toBe(true);
+    const incoming = await finishInteractiveNeighbor(container);
+
+    expect(outgoing.style.transform).toBe("translate3d(-300px, 0, 0)");
+    expect(incoming.style.transform).toBe("translate3d(500px, 0, 0)");
+    expect(incoming.style.pointerEvents).toBe("none");
+    expect(relocations).toHaveLength(0);
+
+    await expect(navigator.endInteractivePageTurn(true)).resolves.toBe(true);
+    expect(container.querySelectorAll("iframe")).toHaveLength(1);
+    expect(container.querySelector("iframe")).toBe(incoming);
+    expect(incoming.style.transform).toBe("");
+    expect(incoming.style.position).toBe("");
+    expect(incoming.style.pointerEvents).toBe("");
+    expect(navigator.currentRelocation?.spineIndex).toBe(1);
+    expect(relocations).toHaveLength(1);
+    navigator.destroy();
+  });
+
+  it("prepares the previous spine at its last spread and removes it on cancellation", async () => {
+    const { container, navigator } = setupPaginated();
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 1 }), navigator);
+    const outgoing = container.querySelector("iframe")!;
+    const relocation = vi.fn();
+    navigator.addEventListener("relocation", relocation);
+
+    const load = suppressAutomaticFrameLoads();
+    expect(navigator.beginInteractivePageTurn("previous")).toBe(true);
+    navigator.updateInteractivePageTurn(300);
+    const incoming = await finishInteractiveNeighbor(container, load);
+    const incomingScrolling =
+      incoming.contentDocument!.scrollingElement ?? incoming.contentDocument!.documentElement;
+
+    expect(incomingScrolling.scrollLeft).toBe(1_248);
+    expect(outgoing.style.transform).toBe("translate3d(300px, 0, 0)");
+    expect(incoming.style.transform).toBe("translate3d(-500px, 0, 0)");
+
+    await expect(navigator.cancelInteractivePageTurn()).resolves.toBe(false);
+    await Promise.resolve();
+    expect(container.querySelectorAll("iframe")).toHaveLength(1);
+    expect(container.querySelector("iframe")).toBe(outgoing);
+    expect(outgoing.style.transform).toBe("");
+    expect(navigator.currentRelocation?.spineIndex).toBe(1);
+    expect(relocation).not.toHaveBeenCalled();
+    expect(URL.revokeObjectURL).toHaveBeenCalledOnce();
+    navigator.destroy();
+  });
+
+  it("applies resistance at a publication edge and cannot commit it", async () => {
     const { container, navigator } = setupPaginated();
     await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
     const frame = container.querySelector("iframe")!;
     const scrolling =
       frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
 
-    expect(navigator.beginInteractivePageTurn("previous")).toBe(false);
-    expect(navigator.updateInteractivePageTurn(200)).toBe(false);
+    expect(navigator.beginInteractivePageTurn("previous")).toBe(true);
+    expect(navigator.updateInteractivePageTurn(200)).toBe(true);
+    expect(frame.style.transform).toBe("translate3d(40px, 0, 0)");
     await expect(navigator.endInteractivePageTurn(true)).resolves.toBe(false);
     expect(scrolling.scrollLeft).toBe(0);
+    expect(frame.style.transform).toBe("");
+    expect(navigator.currentRelocation?.spineIndex).toBe(0);
     navigator.destroy();
+  });
+
+  it("releases a prepared cross-spine turn when superseded or destroyed", async () => {
+    const { container, navigator } = setupPaginated();
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    navigator.restoreProgression(1);
+
+    expect(navigator.beginInteractivePageTurn("next")).toBe(true);
+    await finishInteractiveNeighbor(container);
+    await navigator.setPreferences({ fontSize: 110 });
+    await Promise.resolve();
+    expect(container.querySelectorAll("iframe")).toHaveLength(1);
+    expect(URL.revokeObjectURL).toHaveBeenCalledOnce();
+
+    navigator.restoreProgression(1);
+    expect(navigator.beginInteractivePageTurn("next")).toBe(true);
+    await finishInteractiveNeighbor(container);
+    navigator.destroy();
+    await Promise.resolve();
+
+    expect(container.querySelectorAll("iframe")).toHaveLength(0);
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(3);
+  });
+
+  it("aborts pending cross-spine preparation when destroyed", async () => {
+    const { container, navigator, provider } = setupPaginated();
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    navigator.restoreProgression(1);
+    provider.delayedPath = "OPS/two.xhtml";
+
+    expect(navigator.beginInteractivePageTurn("next")).toBe(true);
+    await vi.waitFor(() => expect(provider.reads).toContain("OPS/two.xhtml"));
+    navigator.destroy();
+    await vi.waitFor(() => expect(container.querySelectorAll("iframe")).toHaveLength(0));
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledOnce();
   });
 
   it("snaps an interrupted turn before calculating the next target", async () => {
