@@ -255,14 +255,14 @@ export function usePdfHighlights({
     }
   }, [applyHighlightOverlay]);
 
-  /** Register mouseup handler on the container to detect text selection. */
+  /** Detect completed mouse, pen, or touch selections without synthesized mouse duplicates. */
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       const selection = window.getSelection();
-      if (!selection || selection.isCollapsed) return;
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
 
       const rawText = selection.toString();
       const trimmedText = rawText.trim();
@@ -307,8 +307,8 @@ export function usePdfHighlights({
       });
     };
 
-    el.addEventListener("mouseup", handleMouseUp);
-    return () => el.removeEventListener("mouseup", handleMouseUp);
+    el.addEventListener("pointerup", handlePointerUp);
+    return () => el.removeEventListener("pointerup", handlePointerUp);
   }, [containerRef]);
 
   /** Save the current selection as a highlight. */
