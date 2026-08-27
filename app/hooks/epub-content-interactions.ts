@@ -1,6 +1,12 @@
 import { addPageSwipeRecognizer } from "~/hooks/page-swipe-recognizer";
 
 interface EpubContentSource {
+  readonly navigator?: {
+    beginInteractivePageTurn(direction: "previous" | "next"): boolean;
+    updateInteractivePageTurn(displacement: number): boolean;
+    endInteractivePageTurn(commit: boolean): Promise<boolean>;
+    cancelInteractivePageTurn(): Promise<boolean>;
+  };
   readonly hooks: {
     readonly content: {
       register(callback: (content: { readonly document: Document }) => void): void;
@@ -30,8 +36,10 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 
 function addDocumentInteractions(
   document: Document,
+  source: EpubContentSource,
   options: EpubContentInteractionsOptions,
 ): () => void {
+  let interactiveTurn = false;
   let suppressNextClick = false;
   let suppressionTimer: ReturnType<typeof setTimeout> | null = null;
   const suppressSyntheticClick = () => {
@@ -49,8 +57,29 @@ function addDocumentInteractions(
   };
   const removeSwipeRecognizer = addPageSwipeRecognizer(document, {
     getSelection: () => document.getSelection(),
-    onPrevious: () => runSwipe(options.onPrevious),
-    onNext: () => runSwipe(options.onNext),
+    onStart: ({ direction }) => {
+      if (!options.isPaginatedMobile()) return;
+      suppressSyntheticClick();
+      interactiveTurn = source.navigator?.beginInteractivePageTurn(direction) ?? false;
+    },
+    onProgress: ({ displacement }) => {
+      if (interactiveTurn) source.navigator?.updateInteractivePageTurn(displacement);
+    },
+    onRelease: ({ direction, displacement, intent }) => {
+      if (interactiveTurn) {
+        interactiveTurn = false;
+        source.navigator?.updateInteractivePageTurn(displacement);
+        void source.navigator?.endInteractivePageTurn(intent === "complete").catch(() => {});
+        return;
+      }
+      if (intent !== "complete") return;
+      runSwipe(direction === "next" ? options.onNext : options.onPrevious);
+    },
+    onCancel: () => {
+      if (!interactiveTurn) return;
+      interactiveTurn = false;
+      void source.navigator?.cancelInteractivePageTurn().catch(() => {});
+    },
   });
   const handleClick = (event: MouseEvent) => {
     if (!options.isPaginatedMobile()) return;
@@ -83,7 +112,7 @@ export function registerEpubContentInteractions(
   let stopped = false;
   source.hooks.content.register(({ document }) => {
     if (stopped || cleanups.has(document)) return;
-    cleanups.set(document, addDocumentInteractions(document, options));
+    cleanups.set(document, addDocumentInteractions(document, source, options));
   });
   return () => {
     stopped = true;

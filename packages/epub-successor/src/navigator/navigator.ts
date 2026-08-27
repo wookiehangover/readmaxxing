@@ -17,10 +17,12 @@ import {
   alignPaginationToRange,
   animateScrollToPage,
   captureFirstVisibleElement,
+  currentLogicalOffset,
   currentSpreadIndex,
   lastSpreadPageIndex,
   paginatedProgression,
   scrollToPage,
+  scrollLeftFromLogicalOffset,
   type PageScrollAnimation,
   type PaginatedLayoutState,
 } from "./paginated";
@@ -45,6 +47,7 @@ const DEFAULT_SETTLE_TIMEOUT_MS = 3_000;
 const DEFAULT_PAGE_TURN_DURATION_MS = 250;
 
 export type NavigatorState = "idle" | "loading" | "settling" | "settled";
+export type InteractivePageTurnDirection = "previous" | "next";
 
 export interface NavigatorSecurityOptions {
   readonly resourceProvider: ResourceProvider;
@@ -101,6 +104,14 @@ interface PreparedSection {
 
 interface ActivePageMove {
   readonly mount: SectionMount;
+  snapPageIndex: number;
+  interactive?: {
+    readonly direction: InteractivePageTurnDirection;
+    readonly originPageIndex: number;
+    readonly originLogicalOffset: number;
+    readonly targetPageIndex: number;
+    readonly targetLogicalOffset: number;
+  };
   animation?: PageScrollAnimation;
 }
 
@@ -298,6 +309,92 @@ export class Navigator extends EventTarget {
     if (index === undefined || index === 0) return false;
     await this.#display({ spineIndex: index - 1 }, true);
     return true;
+  }
+
+  beginInteractivePageTurn(direction: InteractivePageTurnDirection): boolean {
+    this.#assertLive();
+    this.#cancelPageMove(true);
+    const mount = this.#active;
+    const pagination = mount?.pagination;
+    if (!mount || !pagination || this.#state !== "settled") return false;
+
+    const spread = currentSpreadIndex(pagination);
+    const targetSpread = direction === "next" ? spread + 1 : spread - 1;
+    const targetPageIndex = targetSpread * pagination.pagesPerSpread;
+    if (targetSpread < 0 || targetPageIndex >= pagination.pageCount) return false;
+
+    const originPageIndex = spread * pagination.pagesPerSpread;
+    this.#pageMove = {
+      mount,
+      snapPageIndex: originPageIndex,
+      interactive: {
+        direction,
+        originPageIndex,
+        originLogicalOffset: currentLogicalOffset(pagination),
+        targetPageIndex,
+        targetLogicalOffset: Math.min(
+          pagination.maxOffset,
+          targetPageIndex * pagination.columnStride,
+        ),
+      },
+    };
+    return true;
+  }
+
+  updateInteractivePageTurn(displacement: number): boolean {
+    const move = this.#pageMove;
+    const turn = move?.interactive;
+    const pagination = move?.mount.pagination;
+    if (!move || !turn || !pagination) return false;
+
+    const requested = turn.originLogicalOffset - (Number.isFinite(displacement) ? displacement : 0);
+    const minimum = Math.min(turn.originLogicalOffset, turn.targetLogicalOffset);
+    const maximum = Math.max(turn.originLogicalOffset, turn.targetLogicalOffset);
+    const logicalOffset = Math.min(maximum, Math.max(minimum, requested));
+    pagination.scrolling.scrollLeft = scrollLeftFromLogicalOffset(
+      logicalOffset,
+      pagination.maxOffset,
+      pagination.direction,
+      pagination.rtlScrollType,
+    );
+    return true;
+  }
+
+  async endInteractivePageTurn(commit: boolean): Promise<boolean> {
+    const move = this.#pageMove;
+    const turn = move?.interactive;
+    const pagination = move?.mount.pagination;
+    if (!move || !turn || !pagination) return false;
+
+    const targetPageIndex = commit ? turn.targetPageIndex : turn.originPageIndex;
+    move.snapPageIndex = targetPageIndex;
+    if (this.#shouldAnimatePageTurn()) {
+      const span = Math.abs(turn.targetLogicalOffset - turn.originLogicalOffset);
+      const targetLogicalOffset = commit ? turn.targetLogicalOffset : turn.originLogicalOffset;
+      const remaining = Math.abs(targetLogicalOffset - currentLogicalOffset(pagination));
+      const duration = span > 0 ? this.#pageTurnDurationMs() * Math.min(1, remaining / span) : 0;
+      move.animation = animateScrollToPage(
+        pagination,
+        targetPageIndex,
+        duration,
+        this.#container.ownerDocument.defaultView ?? undefined,
+      );
+      await move.animation.finished;
+    } else scrollToPage(pagination, targetPageIndex);
+
+    if (this.#pageMove !== move) return false;
+    try {
+      await this.#finishPageMove(move.mount, move, commit);
+    } catch (cause) {
+      if (this.#pageMove === move) throw cause;
+    } finally {
+      if (this.#pageMove === move) this.#pageMove = undefined;
+    }
+    return commit;
+  }
+
+  cancelInteractivePageTurn(): Promise<boolean> {
+    return this.endInteractivePageTurn(false);
   }
 
   async setPreferences(update: NavigatorPreferences): Promise<Relocation | undefined> {
@@ -756,7 +853,7 @@ export class Navigator extends EventTarget {
       mount.scrollScheduler?.cancelAnimationFrame(mount.scrollFrame);
       mount.scrollFrame = undefined;
     }
-    const move: ActivePageMove = { mount };
+    const move: ActivePageMove = { mount, snapPageIndex: pageIndex };
     this.#pageMove = move;
     if (this.#shouldAnimatePageTurn()) {
       move.animation = animateScrollToPage(
@@ -781,7 +878,9 @@ export class Navigator extends EventTarget {
     const move = this.#pageMove;
     if (!move) return;
     this.#pageMove = undefined;
-    move.animation?.cancel(snapToTarget);
+    if (move.animation) move.animation.cancel(snapToTarget);
+    else if (snapToTarget && move.mount.pagination)
+      scrollToPage(move.mount.pagination, move.snapPageIndex);
   }
 
   #shouldAnimatePageTurn(): boolean {
@@ -797,12 +896,17 @@ export class Navigator extends EventTarget {
     return Number.isFinite(duration) ? Math.max(0, duration) : DEFAULT_PAGE_TURN_DURATION_MS;
   }
 
-  async #finishPageMove(mount: SectionMount, move?: ActivePageMove): Promise<void> {
+  async #finishPageMove(
+    mount: SectionMount,
+    move?: ActivePageMove,
+    emitRelocation = true,
+  ): Promise<void> {
     const view = this.#container.ownerDocument.defaultView;
     const signal = this.#operation?.signal;
     if (!view || !signal) return;
     await nextAnimationFrame(view, signal);
     if (
+      emitRelocation &&
       this.#active === mount &&
       !signal.aborted &&
       !this.#destroyed &&

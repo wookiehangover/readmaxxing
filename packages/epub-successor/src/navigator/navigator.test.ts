@@ -559,6 +559,112 @@ describe("paginated Navigator", () => {
     navigator.destroy();
   });
 
+  it("tracks an interactive turn and emits one relocation after committing", async () => {
+    const { container, navigator } = setupPaginated({
+      pageTurnAnimation: "slide",
+      pageTurnDurationMs: 250,
+    });
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    const frame = container.querySelector("iframe")!;
+    const scrolling =
+      frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
+    const frames = mockFrameAnimationFrames(frame);
+    const relocations: Relocation[] = [];
+    navigator.addEventListener("relocation", (event) => {
+      relocations.push((event as CustomEvent<Relocation>).detail);
+    });
+
+    expect(navigator.beginInteractivePageTurn("next")).toBe(true);
+    expect(navigator.updateInteractivePageTurn(-300)).toBe(true);
+    expect(scrolling.scrollLeft).toBe(300);
+    expect(relocations).toHaveLength(0);
+
+    const release = navigator.endInteractivePageTurn(true);
+    await frames.waitForPending();
+    frames.runNext(0);
+    frames.runNext(200);
+    await frames.waitForPending();
+    frames.runNext(216);
+
+    await expect(release).resolves.toBe(true);
+    expect(scrolling.scrollLeft).toBe(864);
+    expect(relocations).toHaveLength(1);
+    expect(relocations[0]?.localProgression).toBe(0.5);
+    navigator.destroy();
+  });
+
+  it("settles an interactive cancellation back without emitting a relocation", async () => {
+    const { container, navigator } = setupPaginated({
+      pageTurnAnimation: "slide",
+      pageTurnDurationMs: 250,
+    });
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    const frame = container.querySelector("iframe")!;
+    const scrolling =
+      frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
+    const frames = mockFrameAnimationFrames(frame);
+    const relocation = vi.fn();
+    navigator.addEventListener("relocation", relocation);
+
+    expect(navigator.beginInteractivePageTurn("next")).toBe(true);
+    navigator.updateInteractivePageTurn(-300);
+    expect(scrolling.scrollLeft).toBe(300);
+
+    const cancellation = navigator.cancelInteractivePageTurn();
+    await frames.waitForPending();
+    frames.runNext(0);
+    frames.runNext(100);
+    frame.contentWindow!.dispatchEvent(new Event("scroll"));
+    await frames.waitForPending();
+    frames.runNext(116);
+
+    await expect(cancellation).resolves.toBe(false);
+    expect(scrolling.scrollLeft).toBe(0);
+    expect(relocation).not.toHaveBeenCalled();
+    navigator.destroy();
+  });
+
+  it("keeps direct tracking but skips interactive settling with reduced motion", async () => {
+    const { container, navigator } = setupPaginated({
+      pageTurnAnimation: "slide",
+      pageTurnDurationMs: 250,
+    });
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    vi.spyOn(container.ownerDocument.defaultView!, "matchMedia").mockReturnValue({
+      matches: true,
+    } as MediaQueryList);
+    const frame = container.querySelector("iframe")!;
+    const scrolling =
+      frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
+    const frames = mockFrameAnimationFrames(frame);
+
+    expect(navigator.beginInteractivePageTurn("next")).toBe(true);
+    navigator.updateInteractivePageTurn(-300);
+    expect(scrolling.scrollLeft).toBe(300);
+
+    const release = navigator.endInteractivePageTurn(true);
+    expect(scrolling.scrollLeft).toBe(864);
+    await frames.waitForPending();
+    frames.runNext(0);
+
+    await expect(release).resolves.toBe(true);
+    navigator.destroy();
+  });
+
+  it("does not start an interactive turn without an adjacent column", async () => {
+    const { container, navigator } = setupPaginated();
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    const frame = container.querySelector("iframe")!;
+    const scrolling =
+      frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
+
+    expect(navigator.beginInteractivePageTurn("previous")).toBe(false);
+    expect(navigator.updateInteractivePageTurn(200)).toBe(false);
+    await expect(navigator.endInteractivePageTurn(true)).resolves.toBe(false);
+    expect(scrolling.scrollLeft).toBe(0);
+    navigator.destroy();
+  });
+
   it("snaps an interrupted turn before calculating the next target", async () => {
     const { container, navigator } = setupPaginated({
       pageTurnAnimation: "slide",
@@ -697,7 +803,10 @@ describe("paginated Navigator", () => {
     });
     resizeCallback(
       [
-        { target: container, contentRect: { width: 0, height: 0 } } as unknown as ResizeObserverEntry,
+        {
+          target: container,
+          contentRect: { width: 0, height: 0 },
+        } as unknown as ResizeObserverEntry,
       ],
       observer,
     );

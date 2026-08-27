@@ -43,6 +43,88 @@ function documentFixture() {
 }
 
 describe("registerEpubContentInteractions", () => {
+  it("drives same-section navigator turns without invoking legacy page callbacks", async () => {
+    let contentHook: ((content: { document: Document }) => void) | undefined;
+    const navigator = {
+      beginInteractivePageTurn: vi.fn(() => true),
+      updateInteractivePageTurn: vi.fn(() => true),
+      endInteractivePageTurn: vi.fn(async () => true),
+      cancelInteractivePageTurn: vi.fn(async () => false),
+    };
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    registerEpubContentInteractions(
+      {
+        navigator,
+        hooks: {
+          content: {
+            register: (callback) => {
+              contentHook = callback;
+            },
+          },
+        },
+      },
+      { isPaginatedMobile: () => true, onPrevious, onNext, onToggleToolbar: vi.fn() },
+    );
+    const contentDocument = documentFixture();
+    contentHook?.({ document: contentDocument });
+    const start = { identifier: 1, clientX: 300, clientY: 50 };
+    const middle = { identifier: 1, clientX: 180, clientY: 52 };
+    const end = { identifier: 1, clientX: 100, clientY: 52 };
+
+    contentDocument.dispatchEvent(touchEvent("touchstart", [start], [start], 10));
+    contentDocument.dispatchEvent(touchEvent("touchmove", [middle], [middle], 50));
+    contentDocument.dispatchEvent(touchEvent("touchend", [], [end], 90));
+    await Promise.resolve();
+
+    expect(navigator.beginInteractivePageTurn).toHaveBeenCalledWith("next");
+    expect(navigator.updateInteractivePageTurn).toHaveBeenNthCalledWith(1, -120);
+    expect(navigator.updateInteractivePageTurn).toHaveBeenLastCalledWith(-200);
+    expect(navigator.endInteractivePageTurn).toHaveBeenCalledWith(true);
+    expect(onPrevious).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it("returns an interactive turn to origin after a sub-threshold release", async () => {
+    let contentHook: ((content: { document: Document }) => void) | undefined;
+    const navigator = {
+      beginInteractivePageTurn: vi.fn(() => true),
+      updateInteractivePageTurn: vi.fn(() => true),
+      endInteractivePageTurn: vi.fn(async () => false),
+      cancelInteractivePageTurn: vi.fn(async () => false),
+    };
+    registerEpubContentInteractions(
+      {
+        navigator,
+        hooks: {
+          content: {
+            register: (callback) => {
+              contentHook = callback;
+            },
+          },
+        },
+      },
+      {
+        isPaginatedMobile: () => true,
+        onPrevious: vi.fn(),
+        onNext: vi.fn(),
+        onToggleToolbar: vi.fn(),
+      },
+    );
+    const contentDocument = documentFixture();
+    contentHook?.({ document: contentDocument });
+    const start = { identifier: 1, clientX: 300, clientY: 50 };
+    const middle = { identifier: 1, clientX: 260, clientY: 51 };
+    const end = { identifier: 1, clientX: 250, clientY: 51 };
+
+    contentDocument.dispatchEvent(touchEvent("touchstart", [start], [start], 10));
+    contentDocument.dispatchEvent(touchEvent("touchmove", [middle], [middle], 20));
+    contentDocument.dispatchEvent(touchEvent("touchend", [], [end], 300));
+    await Promise.resolve();
+
+    expect(navigator.endInteractivePageTurn).toHaveBeenCalledWith(false);
+  });
+
   it("wires natural-direction swipes for current and remounted content documents", () => {
     let contentHook: ((content: { document: Document }) => void) | undefined;
     const onPrevious = vi.fn();
