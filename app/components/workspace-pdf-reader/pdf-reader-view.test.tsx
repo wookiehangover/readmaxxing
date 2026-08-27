@@ -47,42 +47,51 @@ function renderView(overrides: Partial<React.ComponentProps<typeof PdfReaderView
   const host = document.body.appendChild(document.createElement("div"));
   const containerRef = React.createRef<HTMLDivElement>();
   root = createRoot(host);
-  act(() =>
-    root?.render(
-      <PdfReaderView
-        containerRef={containerRef}
-        viewerRef={{ current: null }}
-        preparePageForCarousel={vi.fn().mockResolvedValue(false)}
-        localSettings={{} as Settings}
-        onUpdateSettings={vi.fn()}
-        book={{ id: "pdf-1", title: "PDF", author: "Author", coverImage: null, format: "pdf" }}
-        searchOpen={false}
-        searchQuery=""
-        searchResultCount={0}
-        searchIndex={0}
-        searchNext={vi.fn()}
-        searchPrev={vi.fn()}
-        onSearchOpen={vi.fn()}
-        onSearchClose={vi.fn()}
-        onSearchQueryChange={vi.fn()}
-        isScrollMode={false}
-        isMobile={false}
-        toggleToolbar={toggleToolbar}
-        goPrev={goPrev}
-        goNext={goNext}
-        toolbarVisible
-        totalPages={2}
-        currentPage={1}
-        bookProgress={50}
-        toc={[]}
-        tocOpen={false}
-        setTocOpen={vi.fn()}
-        goToPage={goToPage}
-        {...overrides}
-      />,
-    ),
-  );
-  return { container: containerRef.current!, goPrev, goNext, goToPage, host, toggleToolbar };
+  let props: React.ComponentProps<typeof PdfReaderView> = {
+    containerRef,
+    viewerRef: { current: null },
+    preparePageForCarousel: vi.fn().mockResolvedValue(false),
+    localSettings: {} as Settings,
+    onUpdateSettings: vi.fn(),
+    book: { id: "pdf-1", title: "PDF", author: "Author", coverImage: null, format: "pdf" },
+    searchOpen: false,
+    searchQuery: "",
+    searchResultCount: 0,
+    searchIndex: 0,
+    searchNext: vi.fn(),
+    searchPrev: vi.fn(),
+    onSearchOpen: vi.fn(),
+    onSearchClose: vi.fn(),
+    onSearchQueryChange: vi.fn(),
+    isScrollMode: false,
+    isMobile: false,
+    toggleToolbar,
+    goPrev,
+    goNext,
+    toolbarVisible: true,
+    totalPages: 2,
+    currentPage: 1,
+    bookProgress: 50,
+    toc: [],
+    tocOpen: false,
+    setTocOpen: vi.fn(),
+    goToPage,
+    ...overrides,
+  };
+  const render = () => root?.render(<PdfReaderView {...props} />);
+  act(render);
+  return {
+    container: containerRef.current!,
+    goPrev,
+    goNext,
+    goToPage,
+    host,
+    toggleToolbar,
+    rerender(next: Partial<React.ComponentProps<typeof PdfReaderView>>) {
+      props = { ...props, ...next };
+      act(render);
+    },
+  };
 }
 
 it("releases pointer focus while keeping PDF page turns keyboard activatable", () => {
@@ -410,5 +419,66 @@ describe("mobile paginated gestures", () => {
       );
     });
     expect(goNext).not.toHaveBeenCalled();
+  });
+
+  it("leaves interactive content in control of touch gestures", () => {
+    const { container, goToPage, toggleToolbar } = renderView({ isMobile: true });
+    const link = container.appendChild(document.createElement("a"));
+    const start = { identifier: 1, clientX: 180, clientY: 50 };
+    const end = { identifier: 1, clientX: 80, clientY: 50 };
+
+    act(() => {
+      link.dispatchEvent(touchEvent("touchstart", [start], [start], 10));
+      link.dispatchEvent(touchEvent("touchmove", [end], [end], 20));
+      link.dispatchEvent(touchEvent("touchend", [], [end], 30));
+      link.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 80 }));
+    });
+
+    expect(container.querySelector("[data-pdf-page-carousel]")).toBeNull();
+    expect(goToPage).not.toHaveBeenCalled();
+    expect(toggleToolbar).not.toHaveBeenCalled();
+  });
+
+  it("removes an active carousel on layout changes and unmount", () => {
+    const page = document.createElement("div");
+    page.dataset.pageNumber = "1";
+    const viewerRef = { current: { getPageView: () => ({ div: page, renderingState: 3 }) } };
+    const view = renderView({ isMobile: true, viewerRef });
+    const viewerElement = document.createElement("div");
+    viewerElement.className = "pdfViewer";
+    view.container.append(viewerElement);
+    vi.spyOn(view.container, "getBoundingClientRect").mockReturnValue({
+      width: 400,
+      height: 600,
+    } as DOMRect);
+    const start = { identifier: 1, clientX: 220, clientY: 50 };
+
+    act(() => {
+      view.container.dispatchEvent(touchEvent("touchstart", [start], [start], 10));
+      view.container.dispatchEvent(
+        touchEvent("touchmove", [{ ...start, clientX: 120 }], [{ ...start, clientX: 120 }], 210),
+      );
+    });
+    expect(view.container.querySelector("[data-pdf-page-carousel]")).not.toBeNull();
+    expect(viewerElement.style.visibility).toBe("hidden");
+
+    view.rerender({ isScrollMode: true });
+    expect(view.container.querySelector("[data-pdf-page-carousel]")).toBeNull();
+    expect(viewerElement.style.visibility).toBe("");
+
+    view.rerender({ isScrollMode: false });
+    act(() => {
+      view.container.dispatchEvent(touchEvent("touchstart", [start], [start], 300));
+      view.container.dispatchEvent(
+        touchEvent("touchmove", [{ ...start, clientX: 120 }], [{ ...start, clientX: 120 }], 500),
+      );
+    });
+    expect(view.container.querySelector("[data-pdf-page-carousel]")).not.toBeNull();
+
+    act(() => root?.unmount());
+    root = null;
+    expect(view.container.querySelector("[data-pdf-page-carousel]")).toBeNull();
+    expect(viewerElement.style.visibility).toBe("");
+    expect(view.goToPage).not.toHaveBeenCalled();
   });
 });

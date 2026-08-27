@@ -735,6 +735,33 @@ describe("paginated Navigator", () => {
     navigator.destroy();
   });
 
+  it("promotes a committed previous spine once and clears its carousel styles", async () => {
+    const { container, navigator } = setupPaginated();
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 1 }), navigator);
+    const outgoing = container.querySelector("iframe")!;
+    const relocation = vi.fn();
+    navigator.addEventListener("relocation", relocation);
+
+    const load = suppressAutomaticFrameLoads();
+    expect(navigator.beginInteractivePageTurn("previous")).toBe(true);
+    navigator.updateInteractivePageTurn(300);
+    const incoming = await finishInteractiveNeighbor(container, load);
+    const incomingScrolling =
+      incoming.contentDocument!.scrollingElement ?? incoming.contentDocument!.documentElement;
+
+    await expect(navigator.endInteractivePageTurn(true)).resolves.toBe(true);
+    expect(container.querySelectorAll("iframe")).toHaveLength(1);
+    expect(container.querySelector("iframe")).toBe(incoming);
+    expect(incomingScrolling.scrollLeft).toBe(1_248);
+    expect(incoming.style.transform).toBe("");
+    expect(incoming.style.transition).toBe("");
+    expect(incoming.style.pointerEvents).toBe("");
+    expect(navigator.currentRelocation?.spineIndex).toBe(0);
+    expect(relocation).toHaveBeenCalledOnce();
+    expect(outgoing.isConnected).toBe(false);
+    navigator.destroy();
+  });
+
   it("applies resistance at a publication edge and cannot commit it", async () => {
     const { container, navigator } = setupPaginated();
     await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);

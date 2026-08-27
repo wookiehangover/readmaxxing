@@ -57,6 +57,7 @@ function addDocumentInteractions(
   };
   const removeSwipeRecognizer = addPageSwipeRecognizer(document, {
     getSelection: () => document.getSelection(),
+    shouldStart: (event) => !isInteractiveTarget(event.target),
     onStart: ({ direction }) => {
       if (!options.isPaginatedMobile()) return;
       suppressSyntheticClick();

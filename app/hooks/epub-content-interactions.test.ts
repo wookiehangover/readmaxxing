@@ -198,6 +198,41 @@ describe("registerEpubContentInteractions", () => {
     expect(onNext).toHaveBeenCalledOnce();
   });
 
+  it("leaves interactive content in control of touch gestures", () => {
+    let contentHook: ((content: { document: Document }) => void) | undefined;
+    const navigator = {
+      beginInteractivePageTurn: vi.fn(() => true),
+      updateInteractivePageTurn: vi.fn(() => true),
+      endInteractivePageTurn: vi.fn(async () => true),
+      cancelInteractivePageTurn: vi.fn(async () => false),
+    };
+    const onNext = vi.fn();
+    registerEpubContentInteractions(
+      {
+        navigator,
+        hooks: { content: { register: (callback) => (contentHook = callback) } },
+      },
+      {
+        isPaginatedMobile: () => true,
+        onPrevious: vi.fn(),
+        onNext,
+        onToggleToolbar: vi.fn(),
+      },
+    );
+    const contentDocument = documentFixture();
+    const link = contentDocument.body.appendChild(contentDocument.createElement("a"));
+    contentHook?.({ document: contentDocument });
+    const start = { identifier: 1, clientX: 180, clientY: 50 };
+    const end = { identifier: 1, clientX: 80, clientY: 50 };
+
+    link.dispatchEvent(touchEvent("touchstart", [start], [start], 10));
+    link.dispatchEvent(touchEvent("touchmove", [end], [end], 20));
+    link.dispatchEvent(touchEvent("touchend", [], [end], 30));
+
+    expect(navigator.beginInteractivePageTurn).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
   it("lets an existing decoration consume a click before mobile page controls", async () => {
     let contentHook: ((content: { document: Document }) => void) | undefined;
     const onPrevious = vi.fn();

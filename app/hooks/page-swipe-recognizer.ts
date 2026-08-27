@@ -40,6 +40,7 @@ export interface PageSwipeRecognizerOptions {
   readonly minVelocity?: number;
   readonly dominanceRatio?: number;
   readonly getSelection?: () => Selection | null;
+  readonly shouldStart?: (event: TouchEvent) => boolean;
 }
 
 interface GestureSample {
@@ -102,6 +103,7 @@ export function addPageSwipeRecognizer(
     minVelocity = PAGE_SWIPE_MIN_VELOCITY_PX_MS,
     dominanceRatio = PAGE_SWIPE_DOMINANCE_RATIO,
     getSelection = () => getTargetSelection(target),
+    shouldStart = () => true,
   }: PageSwipeRecognizerOptions,
 ): () => void {
   let session: GestureSession | null = null;
@@ -159,6 +161,10 @@ export function addPageSwipeRecognizer(
   const handleTouchStart = (event: TouchEvent) => {
     if (event.touches.length !== 1) {
       cancel("multi-touch");
+      return;
+    }
+    if (!shouldStart(event)) {
+      session = null;
       return;
     }
     const touch = event.touches[0];

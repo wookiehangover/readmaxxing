@@ -9,6 +9,7 @@ const PDF_CAROUSEL_SETTLE_MS = 180;
 const PDF_CAROUSEL_EDGE_RESISTANCE = 0.3;
 const PDF_CAROUSEL_MAX_EDGE_PROGRESS = 0.12;
 const PDF_RENDERING_FINISHED = 3;
+const INTERACTIVE_SELECTOR = "a, button, input, textarea, select, summary, [contenteditable]";
 
 interface PdfPageCarouselOptions {
   container: HTMLElement;
@@ -220,6 +221,8 @@ export function addPdfPageCarousel({
     },
     getViewportWidth: () => container.getBoundingClientRect().width || container.clientWidth,
     getSelection,
+    shouldStart: (event) =>
+      !(event.target instanceof Element && event.target.closest(INTERACTIVE_SELECTOR)),
     onStart: begin,
     onProgress: (swipe) => applyDisplacement(swipe),
     onRelease: (swipe) => settle(swipe.intent, swipe.direction),

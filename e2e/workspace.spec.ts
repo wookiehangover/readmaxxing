@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Frame, type Page } from "@playwright/test";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { waitForAppHydration } from "./helpers/auth";
@@ -109,9 +109,7 @@ test.describe("Workspace route", () => {
     await expect(detailsTab).toHaveCount(0);
   });
 
-  test("mobile reader switches every full-screen tab and keeps the book mounted", async ({
-    page,
-  }) => {
+  test("mobile EPUB tracks, settles, and stays mounted across reader tabs", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await uploadTestBook(page);
 
@@ -139,32 +137,67 @@ test.describe("Workspace route", () => {
         return `${scrolling.scrollLeft}:${element.ownerDocument.body.textContent?.trim()}`;
       });
     const initialPageState = await readPageState();
-    const swipe = async (from: number, to: number) => {
+    const getContentFrame = async () => {
       const frame = await (await iframe.elementHandle())?.contentFrame();
       if (!frame) throw new Error("Could not get EPUB content frame");
+      return frame;
+    };
+    const dispatchTouch = async (
+      frame: Frame,
+      type: "touchstart" | "touchmove" | "touchend",
+      x: number,
+      time: number,
+    ) => {
       await frame.evaluate(
-        ({ from, to }) => {
-          const start = { identifier: 1, clientX: from, clientY: 100 };
-          const end = { identifier: 1, clientX: to, clientY: 102 };
-          const dispatch = (type: string, touches: unknown[], changedTouches: unknown[]) => {
-            const event = new Event(type, { bubbles: true });
-            Object.defineProperties(event, {
-              touches: { value: touches },
-              changedTouches: { value: changedTouches },
-            });
-            document.dispatchEvent(event);
-          };
-          dispatch("touchstart", [start], [start]);
-          dispatch("touchend", [], [end]);
+        ({ type, x, time }) => {
+          const point = { identifier: 1, clientX: x, clientY: 100 };
+          const event = new Event(type, { bubbles: true, cancelable: true });
+          Object.defineProperties(event, {
+            touches: { value: type === "touchend" ? [] : [point] },
+            changedTouches: { value: [point] },
+            timeStamp: { value: time },
+          });
+          document.dispatchEvent(event);
         },
-        { from, to },
+        { type, x, time },
       );
     };
-
-    await swipe(280, 100);
-    await expect.poll(readPageState).not.toBe(initialPageState);
-    await swipe(100, 280);
+    const snapBackFrame = await getContentFrame();
+    await dispatchTouch(snapBackFrame, "touchstart", 280, 10);
+    await dispatchTouch(snapBackFrame, "touchmove", 230, 210);
+    await expect
+      .poll(() => iframe.evaluate((element) => (element as HTMLElement).style.transform))
+      .toContain("-50px");
+    await dispatchTouch(snapBackFrame, "touchend", 230, 410);
     await expect.poll(readPageState).toBe(initialPageState);
+    await expect(bookSurface.locator("iframe")).toHaveCount(1);
+    await expect
+      .poll(() => iframe.evaluate((element) => (element as HTMLElement).style.transform))
+      .toBe("");
+
+    const commitFrame = await getContentFrame();
+    await dispatchTouch(commitFrame, "touchstart", 280, 500);
+    await dispatchTouch(commitFrame, "touchmove", 100, 700);
+    await expect
+      .poll(() => iframe.evaluate((element) => (element as HTMLElement).style.transform))
+      .toContain("-180px");
+    await expect(bookSurface.locator("iframe")).toHaveCount(2);
+    const incomingFrame = bookSurface.locator("iframe").nth(1);
+    await expect
+      .poll(() =>
+        incomingFrame.evaluate((element) => {
+          const match = (element as HTMLElement).style.transform.match(/translate3d\(([-\d.]+)px/);
+          return match ? Number(match[1]) : 0;
+        }),
+      )
+      .toBeGreaterThan(0);
+    await dispatchTouch(commitFrame, "touchend", 100, 900);
+    await expect.poll(readPageState).not.toBe(initialPageState);
+    await expect(bookSurface.locator("iframe")).toHaveCount(1);
+    await expect
+      .poll(() => iframe.evaluate((element) => (element as HTMLElement).style.transform))
+      .toBe("");
+
     await iframe.evaluate((element) => element.setAttribute("data-mobile-reader-test", "mounted"));
 
     const currentFrame = await (await iframe.elementHandle())?.contentFrame();

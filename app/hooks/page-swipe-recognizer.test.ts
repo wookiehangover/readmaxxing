@@ -211,6 +211,20 @@ describe("addPageSwipeRecognizer", () => {
     expect(onNext).not.toHaveBeenCalled();
   });
 
+  it("does not start a session when the consumer rejects the touch target", () => {
+    const shouldStart = vi.fn(() => false);
+    const { target, onStart, onNext, onRelease } = setup({ shouldStart });
+
+    start(target, point(200, 50), 10);
+    move(target, point(100, 50), 20);
+    end(target, point(80, 50), 30);
+
+    expect(shouldStart).toHaveBeenCalledOnce();
+    expect(onStart).not.toHaveBeenCalled();
+    expect(onRelease).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
   it("removes all behavior during cleanup", () => {
     const { target, onStart, onPrevious, onNext, cleanup } = setup();
     cleanup();
