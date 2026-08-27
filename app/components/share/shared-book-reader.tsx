@@ -76,6 +76,8 @@ function SharedEpubReader({
       registerSelectionHandler: () => {},
       renditionRef,
       onRelocated: showToolbar,
+      isMobile: Boolean(isMobile),
+      onToggleToolbar: toggleToolbar,
     });
   const go = useCallback(
     (direction: "prev" | "next") => {
@@ -105,7 +107,6 @@ function SharedEpubReader({
         readerLayout={readerLayout}
         isScrollMode={readerLayout === "scroll"}
         isMobile={Boolean(isMobile)}
-        toggleToolbar={toggleToolbar}
         onPrevious={() => go("prev")}
         onNext={() => go("next")}
       />

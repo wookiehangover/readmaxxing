@@ -74,7 +74,6 @@ function renderReaderSurface(readerLayout: ReaderLayout) {
         readerLayout={readerLayout}
         isScrollMode={readerLayout === "scroll"}
         isMobile={false}
-        toggleToolbar={vi.fn()}
         onPrevious={vi.fn()}
         onNext={vi.fn()}
       />,
@@ -202,7 +201,6 @@ describe("EpubReaderToolbar", () => {
           readerLayout="spread"
           isScrollMode={false}
           isMobile={false}
-          toggleToolbar={vi.fn()}
           onPrevious={onPrevious}
           onNext={onNext}
         />,
@@ -230,5 +228,35 @@ describe("EpubReaderToolbar", () => {
       expect(handler).toHaveBeenCalledTimes(2);
       expect(document.activeElement).toBe(button);
     }
+  });
+
+  it("does not place interactive chrome over selectable mobile publication content", () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    root = createRoot(container);
+    act(() =>
+      root?.render(
+        <EpubReaderSurface
+          containerRef={React.createRef<HTMLDivElement>()}
+          searchOpen={false}
+          searchQuery=""
+          searchResultsLength={0}
+          searchIndex={0}
+          searchNext={vi.fn()}
+          searchPrev={vi.fn()}
+          onSearchClose={vi.fn()}
+          onSearchQueryChange={vi.fn()}
+          loadError={false}
+          readerLayout="spread"
+          isScrollMode={false}
+          isMobile
+          onPrevious={vi.fn()}
+          onNext={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(container.querySelector("[aria-label='Previous page']")).toBeNull();
+    expect(container.querySelector("[aria-label='Toggle toolbar']")).toBeNull();
+    expect(container.querySelector("[aria-label='Next page']")).toBeNull();
   });
 });

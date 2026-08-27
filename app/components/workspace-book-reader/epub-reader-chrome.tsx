@@ -58,7 +58,6 @@ interface EpubReaderSurfaceProps {
   readerLayout: ReaderLayout;
   isScrollMode: boolean;
   isMobile: boolean;
-  toggleToolbar: () => void;
   onPrevious: () => void;
   onNext: () => void;
 }
@@ -77,7 +76,6 @@ export function EpubReaderSurface({
   readerLayout,
   isScrollMode,
   isMobile,
-  toggleToolbar,
   onPrevious,
   onNext,
 }: EpubReaderSurfaceProps) {
@@ -118,7 +116,7 @@ export function EpubReaderSurface({
           </p>
         </div>
       )}
-      {!isScrollMode && (
+      {!isScrollMode && !isMobile && (
         <div className="pointer-events-none absolute inset-0 z-[5]">
           <button
             type="button"
@@ -129,14 +127,6 @@ export function EpubReaderSurface({
           >
             ←
           </button>
-          {isMobile && (
-            <button
-              type="button"
-              aria-label="Toggle toolbar"
-              className="pointer-events-auto absolute top-0 left-1/4 h-full w-1/2 appearance-none border-none bg-transparent p-0"
-              onPointerUp={toggleToolbar}
-            />
-          )}
           <button
             type="button"
             aria-label="Next page"
