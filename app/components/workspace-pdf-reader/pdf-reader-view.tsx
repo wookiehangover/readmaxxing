@@ -6,6 +6,7 @@ import {
   Search,
   TableOfContents,
 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { TocList } from "~/components/book-list";
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { SearchBar } from "~/components/search-bar";
@@ -16,9 +17,15 @@ import type { Settings } from "~/lib/settings";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { cn } from "~/lib/utils";
 import { ReadingRailMenuPortal } from "~/components/reading-shell/reading-rail-menu-portal";
+import { addPageSwipeRecognizer } from "~/hooks/page-swipe-recognizer";
 
 function blurPageTurnControl(event: React.PointerEvent<HTMLButtonElement>) {
   event.currentTarget.blur();
+}
+
+function hasSelectedText(): boolean {
+  const selection = window.getSelection();
+  return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
 }
 
 interface PdfReaderViewProps {
@@ -94,6 +101,48 @@ export function PdfReaderView({
   setTocOpen,
   goToPage,
 }: PdfReaderViewProps) {
+  const lastSwipeAtRef = useRef(0);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !isMobile || isScrollMode) return;
+
+    const turnPage = (direction: "previous" | "next") => {
+      lastSwipeAtRef.current = Date.now();
+      if (direction === "previous") goPrev();
+      else goNext();
+    };
+    const removeSwipeRecognizer = addPageSwipeRecognizer(container, {
+      onPrevious: () => turnPage("previous"),
+      onNext: () => turnPage("next"),
+      getSelection: () => window.getSelection(),
+    });
+    const handleTap = (event: MouseEvent) => {
+      if (
+        event.button !== 0 ||
+        event.defaultPrevented ||
+        Date.now() - lastSwipeAtRef.current < 700 ||
+        hasSelectedText()
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (target instanceof Element && target.closest("a, button, input, select, textarea")) return;
+
+      const rect = container.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      if (x < rect.width / 4) goPrev();
+      else if (x > (rect.width * 3) / 4) goNext();
+      else toggleToolbar();
+    };
+
+    container.addEventListener("click", handleTap);
+    return () => {
+      removeSwipeRecognizer();
+      container.removeEventListener("click", handleTap);
+    };
+  }, [containerRef, goNext, goPrev, isMobile, isScrollMode, toggleToolbar]);
+
   return (
     <>
       <ReadingRailMenuPortal>
@@ -137,7 +186,7 @@ export function PdfReaderView({
           className="absolute inset-0 overflow-auto"
           data-testid="pdf-container"
         />
-        {!isScrollMode && (
+        {!isScrollMode && !isMobile && (
           <div className="pointer-events-none absolute inset-0 z-[5]">
             <button
               type="button"
@@ -146,14 +195,6 @@ export function PdfReaderView({
               onClick={goPrev}
               onPointerUp={blurPageTurnControl}
             />
-            {isMobile && (
-              <button
-                type="button"
-                aria-label="Toggle toolbar"
-                className="pointer-events-auto absolute top-0 left-1/4 h-full w-1/2 appearance-none border-none bg-transparent p-0"
-                onPointerUp={toggleToolbar}
-              />
-            )}
             <button
               type="button"
               aria-label="Next page"

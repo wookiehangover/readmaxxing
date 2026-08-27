@@ -34,6 +34,24 @@ async function uploadTestPdf(page: Page) {
   }
 }
 
+async function completeTouchSelection(page: Page) {
+  await page
+    .locator("[data-testid='pdf-container'] .textLayer span")
+    .first()
+    .evaluate((span) => {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(span);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      span.dispatchEvent(
+        new PointerEvent("pointerup", { bubbles: true, pointerType: "touch", isPrimary: true }),
+      );
+      span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      span.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+}
+
 test.describe("PDF support", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
@@ -94,6 +112,36 @@ test.describe("PDF support", () => {
     const nextBtn = page.locator("[data-testid='pdf-next']");
     await expect(prevBtn).toBeVisible({ timeout: 5_000 });
     await expect(nextBtn).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("mobile swipes navigate one paginated PDF page in each direction", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await uploadTestPdf(page);
+    const pdfContainer = page.getByTestId("pdf-container");
+    await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+
+    const swipe = (startX: number, endX: number) =>
+      pdfContainer.evaluate(
+        (container, { startX, endX }) => {
+          const point = (clientX: number) => ({ identifier: 1, clientX, clientY: 200 });
+          const dispatch = (type: string, touches: object[], changedTouches: object[]) => {
+            const event = new Event(type, { bubbles: true, cancelable: true });
+            Object.defineProperties(event, {
+              touches: { value: touches },
+              changedTouches: { value: changedTouches },
+            });
+            container.dispatchEvent(event);
+          };
+          dispatch("touchstart", [point(startX)], [point(startX)]);
+          dispatch("touchend", [], [point(endX)]);
+        },
+        { startX, endX },
+      );
+
+    await swipe(300, 100);
+    await expect(page.getByText("2 / 2", { exact: true })).toBeVisible();
+    await swipe(100, 300);
+    await expect(page.getByText("1 / 2", { exact: true })).toBeVisible();
   });
 
   test("PDF reader settings menu opens", async ({ page }) => {
@@ -191,6 +239,22 @@ test.describe("PDF support", () => {
     // The highlight popover should appear with the "Add to Notebook" button
     const highlightBtn = page.getByRole("button", { name: "Add to Notebook" });
     await expect(highlightBtn).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("touch-completed PDF selection opens one saveable highlight popover", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await uploadTestPdf(page);
+    const pdfContainer = page.getByTestId("pdf-container");
+    await expect(pdfContainer.locator(".textLayer").first()).toBeAttached({ timeout: 10_000 });
+
+    await completeTouchSelection(page);
+
+    const highlightButton = page.getByRole("button", { name: "Add to Notebook" });
+    await expect(highlightButton).toHaveCount(1);
+    await highlightButton.click();
+    await expect(pdfContainer.locator(".pdf-highlight-overlay").first()).toBeAttached({
+      timeout: 5_000,
+    });
   });
 
   test("saving a highlight persists it as a visible overlay", async ({ page }) => {

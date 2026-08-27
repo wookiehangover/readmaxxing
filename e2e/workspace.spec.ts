@@ -113,7 +113,7 @@ test.describe("Workspace route", () => {
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await uploadAndOpenBook(page);
+    await uploadTestBook(page);
 
     const mobileReader = page.getByTestId("mobile-reading-tabs");
     const tabs = mobileReader.getByRole("tablist", { name: "Reading sections" });
@@ -121,36 +121,87 @@ test.describe("Workspace route", () => {
     const iframe = bookSurface.locator("iframe").first();
 
     await expect(tabs).toBeVisible();
-    await expect(tabs.getByRole("tab")).toHaveText([
-      "Read",
-      "Notes",
-      "Discuss",
-      "Outline",
-      "Details",
-    ]);
+    await expect(tabs.getByRole("tab")).toHaveText(["Read", "Notes", "Discuss", "Outline"]);
     await expect(tabs.getByRole("tab", { name: "Read", exact: true })).toHaveAttribute(
       "aria-selected",
       "true",
     );
     await expect(bookSurface).toBeVisible();
     await expect(iframe).toBeAttached();
+    await expect(page.getByRole("button", { name: "Previous page" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Next page" })).toHaveCount(0);
     await iframe.evaluate((element) => element.setAttribute("data-mobile-reader-test", "mounted"));
 
-    for (const name of ["Notes", "Discuss", "Outline", "Details"]) {
+    const epubHtml = page.frameLocator("iframe").first().locator("html");
+    const readPageState = () =>
+      epubHtml.evaluate((element) => {
+        const scrolling = element.ownerDocument.scrollingElement ?? element;
+        return `${scrolling.scrollLeft}:${element.ownerDocument.body.textContent?.trim()}`;
+      });
+    const initialPageState = await readPageState();
+    const swipe = async (from: number, to: number) => {
+      const frame = await (await iframe.elementHandle())?.contentFrame();
+      if (!frame) throw new Error("Could not get EPUB content frame");
+      await frame.evaluate(
+        ({ from, to }) => {
+          const start = { identifier: 1, clientX: from, clientY: 100 };
+          const end = { identifier: 1, clientX: to, clientY: 102 };
+          const dispatch = (type: string, touches: unknown[], changedTouches: unknown[]) => {
+            const event = new Event(type, { bubbles: true });
+            Object.defineProperties(event, {
+              touches: { value: touches },
+              changedTouches: { value: changedTouches },
+            });
+            document.dispatchEvent(event);
+          };
+          dispatch("touchstart", [start], [start]);
+          dispatch("touchend", [], [end]);
+        },
+        { from, to },
+      );
+    };
+
+    await swipe(280, 100);
+    await expect.poll(readPageState).not.toBe(initialPageState);
+    await swipe(100, 280);
+    await expect.poll(readPageState).toBe(initialPageState);
+    await iframe.evaluate((element) => element.setAttribute("data-mobile-reader-test", "mounted"));
+
+    const currentFrame = await (await iframe.elementHandle())?.contentFrame();
+    if (!currentFrame) throw new Error("Could not get remounted EPUB content frame");
+    await currentFrame.evaluate(() => {
+      const paragraph = document.querySelector("p");
+      if (!paragraph) throw new Error("No paragraph found in EPUB");
+      const range = document.createRange();
+      range.selectNodeContents(paragraph);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    });
+    const addToNotebook = page.getByRole("button", { name: "Add to Notebook" });
+    await expect(addToNotebook).toBeVisible();
+    await addToNotebook.click();
+
+    for (const name of ["Notes", "Discuss", "Outline"]) {
       const tab = tabs.getByRole("tab", { name, exact: true });
       await tab.click();
       await expect(tab).toHaveAttribute("aria-selected", "true");
       await expect(bookSurface).toBeAttached();
       await expect(iframe).toHaveAttribute("data-mobile-reader-test", "mounted");
 
-      if (name === "Details") {
-        await expect(
-          mobileReader
-            .getByRole("tabpanel")
-            .getByRole("heading", { name: "Test Book for E2E", exact: true }),
-        ).toBeVisible();
-      }
+      if (name === "Notes") await expect(page.locator("blockquote").first()).toBeVisible();
     }
+
+    await page.getByRole("button", { name: "Reader menu" }).click();
+    await page.getByRole("menuitem", { name: "Details", exact: true }).click();
+    await expect(
+      mobileReader
+        .getByRole("tabpanel")
+        .getByRole("heading", { name: "Test Book for E2E", exact: true }),
+    ).toBeVisible();
+    await expect(bookSurface).toBeAttached();
+    await expect(iframe).toHaveAttribute("data-mobile-reader-test", "mounted");
 
     await tabs.getByRole("tab", { name: "Read", exact: true }).click();
     await expect(bookSurface).toBeVisible();

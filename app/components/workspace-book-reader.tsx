@@ -248,6 +248,8 @@ function WorkspaceBookReaderInner({
     },
     onSearchOpen: handleSearchOpenFromIframe,
     onRelocated: showToolbar,
+    isMobile: Boolean(isMobile),
+    onToggleToolbar: toggleToolbar,
     panelRef,
     bookRef,
     renditionRef,
@@ -363,7 +365,6 @@ function WorkspaceBookReaderInner({
           readerLayout={localReaderLayout}
           isScrollMode={isScrollMode}
           isMobile={Boolean(isMobile)}
-          toggleToolbar={toggleToolbar}
           onPrevious={handlePrev}
           onNext={handleNext}
         />

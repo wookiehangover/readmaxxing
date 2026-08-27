@@ -11,6 +11,7 @@ import {
 } from "@readmaxxing/epub-successor";
 import { toast } from "sonner";
 import { usePositionNudge } from "~/hooks/use-position-nudge";
+import { registerEpubContentInteractions } from "~/hooks/epub-content-interactions";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 import type { TocEntry } from "~/lib/context/reader-context";
 import { isEditableElement } from "~/lib/dom-utils";
@@ -134,6 +135,8 @@ export interface UseEpubLifecycleConfig {
   onCleanupToc?: () => void;
   onSearchOpen?: () => void;
   onRelocated?: () => void;
+  isMobile?: boolean;
+  onToggleToolbar?: () => void;
   panelRef?: React.RefObject<HTMLDivElement | null>;
   bookRef?: React.MutableRefObject<any | null>;
   renditionRef?: React.MutableRefObject<any | null>;
@@ -360,6 +363,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     let publisherPages: PublisherPageMap | null = null;
     let layoutRestoreInProgress = false;
     let mobileLayoutObserver: ResizeObserver | null = null;
+    let removeContentInteractions: (() => void) | null = null;
     if (persistPosition) registerActiveReader(bookId);
     setHasRestoredPosition(false);
     setLoadError(false);
@@ -586,6 +590,21 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       );
 
       const observedDocuments = new WeakSet<Document>();
+      const turnPage = (direction: "prev" | "next") => {
+        if (!rendition) return;
+        markNavigationInProgress();
+        void rendition[direction]().catch((error) => {
+          clearNavigationInProgress();
+          console.error("Failed to navigate publication", error);
+        });
+      };
+      removeContentInteractions = registerEpubContentInteractions(rendition, {
+        isPaginatedMobile: () =>
+          Boolean(configRef.current.isMobile) && configRef.current.readerLayout !== "scroll",
+        onPrevious: () => turnPage("prev"),
+        onNext: () => turnPage("next"),
+        onToggleToolbar: () => configRef.current.onToggleToolbar?.(),
+      });
       rendition.hooks.content.register(({ document }: { document: Document }) => {
         if (observedDocuments.has(document)) return;
         observedDocuments.add(document);
@@ -699,6 +718,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       configRef.current.onReadingUnitChange?.(null);
       configRef.current.onCleanupToc?.();
       mobileLayoutObserver?.disconnect();
+      removeContentInteractions?.();
       rendition?.destroy();
       provider?.close();
       navigatorRef.current = null;

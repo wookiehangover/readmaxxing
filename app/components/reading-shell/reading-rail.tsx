@@ -5,6 +5,7 @@ import { ChatPanel } from "~/components/chat/chat-panel";
 import {
   getRememberedMobileReadingTab,
   MOBILE_READING_TAB_EVENT,
+  MOBILE_READING_TABS,
   rememberMobileReadingTab,
   type MobileReadingTab,
 } from "~/components/reading-shell/mobile-reading-tabs";
@@ -24,7 +25,6 @@ import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 
 const desktopTabs = ["Notes", "Discuss", "Outline"] as const;
-const mobileTabs = ["Read", ...desktopTabs, "Details"] as const;
 
 export function ReadingRail({
   mobile = false,
@@ -118,7 +118,7 @@ export function ReadingRail({
             aria-label="Reading sections"
             className="relative flex min-w-0 flex-1 items-center gap-5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            {mobileTabs.map((tab) => (
+            {MOBILE_READING_TABS.map((tab) => (
               <Tabs.Tab
                 key={tab}
                 value={tab}

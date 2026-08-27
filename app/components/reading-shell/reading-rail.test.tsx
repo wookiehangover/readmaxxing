@@ -268,6 +268,18 @@ function clickTab(container: HTMLElement, label: string) {
   act(() => button?.click());
 }
 
+async function openDetailsFromReaderMenu(container: HTMLElement) {
+  const menuButton = container.querySelector<HTMLButtonElement>("button[title='Reader menu']");
+  await act(async () => {
+    menuButton?.click();
+    await Promise.resolve();
+  });
+  const detailsItem = Array.from(
+    document.body.querySelectorAll<HTMLElement>("[role='menuitem']"),
+  ).find((item) => item.textContent?.trim() === "Details");
+  act(() => detailsItem?.click());
+}
+
 function visiblePanel(container: HTMLElement) {
   return Array.from(container.querySelectorAll<HTMLElement>("[role='tabpanel']")).find(
     (panel) => !panel.hidden,
@@ -310,7 +322,7 @@ afterEach(() => {
 });
 
 describe("ReadingRail", () => {
-  it("mirrors the desktop rail in the mobile bottom row", () => {
+  it("shows the supported mobile sections in the bottom row", () => {
     const container = renderMobileRail();
     const rail = container.firstElementChild!;
     const tabList = container.querySelector("[aria-label='Reading sections']")!;
@@ -318,13 +330,7 @@ describe("ReadingRail", () => {
     const bottomRow = tabList.parentElement!;
     const indicator = tabList.querySelector("[role='presentation']");
 
-    expect(tabs.map((tab) => tab.textContent)).toEqual([
-      "Read",
-      "Notes",
-      "Discuss",
-      "Outline",
-      "Details",
-    ]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Read", "Notes", "Discuss", "Outline"]);
     expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
     expect(rail.className).toContain("h-full");
     expect(rail.lastElementChild).toBe(bottomRow);
@@ -344,14 +350,14 @@ describe("ReadingRail", () => {
     expect(indicator?.className).toContain("transition-[left]");
   });
 
-  it("switches Read, Notes, Discuss, Outline, and Details while keeping the book mounted", () => {
+  it("opens Details from the reader menu and keeps the book mounted", async () => {
     const container = renderMobileRail();
     const bookSurface = container.querySelector("[data-testid='book-surface']");
     const readPanel = bookSurface?.closest<HTMLElement>("[role='tabpanel']");
 
     expect(bookSurface).not.toBeNull();
     expect(readPanel?.hidden).toBe(false);
-    for (const tab of ["Notes", "Discuss", "Outline", "Details"] as const) {
+    for (const tab of ["Notes", "Discuss", "Outline"] as const) {
       clickTab(container, tab);
       expect(
         Array.from(container.querySelectorAll("button"))
@@ -364,14 +370,20 @@ describe("ReadingRail", () => {
       expect(container.querySelector("[data-testid='book-surface']")).toBe(bookSurface);
       expect(readPanel?.hidden).toBe(true);
       expect(readPanel?.hasAttribute("data-hidden")).toBe(true);
-
-      if (tab === "Details") {
-        const detailsPanel = activePanel?.querySelector("[data-testid='reading-details-panel']");
-        expect(detailsPanel?.getAttribute("data-book-id")).toBe("book-1");
-        expect(detailsPanel?.getAttribute("data-mobile")).toBe("true");
-        expect(detailsPanel?.textContent).toBe("The Power Broker");
-      }
     }
+
+    await openDetailsFromReaderMenu(container);
+    const detailsPanel = visiblePanel(container)?.querySelector(
+      "[data-testid='reading-details-panel']",
+    );
+    expect(detailsPanel?.getAttribute("data-book-id")).toBe("book-1");
+    expect(detailsPanel?.getAttribute("data-mobile")).toBe("true");
+    expect(detailsPanel?.textContent).toBe("The Power Broker");
+    expect(
+      container.querySelector("[aria-label='Reading sections'] [aria-selected='true']"),
+    ).toBeNull();
+    expect(container.querySelector("[data-testid='book-surface']")).toBe(bookSurface);
+    expect(readPanel?.hidden).toBe(true);
 
     clickTab(container, "Read");
     expect(
@@ -404,19 +416,34 @@ describe("ReadingRail", () => {
     ).toBe("true");
   });
 
-  it("applies a requested tab that was persisted before the rail mounted", () => {
-    openMobileReadingTab("Details", "book-1");
+  it("ignores a legacy remembered Details value when the rail mounts", () => {
+    window.sessionStorage.setItem("reading-shell:mobile-tab:book-1", "Details");
 
     const container = renderMobileRail();
 
     expect(
       Array.from(container.querySelectorAll("button"))
-        .find((tab) => tab.textContent === "Details")
+        .find((tab) => tab.textContent === "Read")
         ?.getAttribute("aria-selected"),
     ).toBe("true");
+    expect(visiblePanel(container)?.getAttribute("aria-label")).toBe("Book surface");
+  });
+
+  it("returns to the last visible tab after Details is active and the rail remounts", async () => {
+    let container = renderMobileRail();
+    clickTab(container, "Outline");
+    await openDetailsFromReaderMenu(container);
+
     expect(
       visiblePanel(container)?.querySelector("[data-testid='reading-details-panel']"),
     ).not.toBe(null);
+
+    container = remountMobileRail();
+    expect(
+      Array.from(container.querySelectorAll("button"))
+        .find((tab) => tab.textContent === "Outline")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
   });
 
   it("does not force Read when the mobile effect reruns or the rail remounts", () => {
@@ -441,7 +468,7 @@ describe("ReadingRail", () => {
 
   it("remembers the last mobile tab independently for each book", () => {
     let container = renderMobileRail();
-    clickTab(container, "Details");
+    clickTab(container, "Outline");
 
     workspace.activeClusterBookIdRef.current = "book-2";
     container = remountMobileRail();
@@ -456,14 +483,9 @@ describe("ReadingRail", () => {
     container = remountMobileRail();
     expect(
       Array.from(container.querySelectorAll("button"))
-        .find((tab) => tab.textContent === "Details")
+        .find((tab) => tab.textContent === "Outline")
         ?.getAttribute("aria-selected"),
     ).toBe("true");
-    expect(
-      visiblePanel(container)
-        ?.querySelector("[data-testid='reading-details-panel']")
-        ?.getAttribute("data-book-id"),
-    ).toBe("book-1");
 
     workspace.activeClusterBookIdRef.current = "book-2";
     container = remountMobileRail();
