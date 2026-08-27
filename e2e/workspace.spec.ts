@@ -121,13 +121,7 @@ test.describe("Workspace route", () => {
     const iframe = bookSurface.locator("iframe").first();
 
     await expect(tabs).toBeVisible();
-    await expect(tabs.getByRole("tab")).toHaveText([
-      "Read",
-      "Notes",
-      "Discuss",
-      "Outline",
-      "Details",
-    ]);
+    await expect(tabs.getByRole("tab")).toHaveText(["Read", "Notes", "Discuss", "Outline"]);
     await expect(tabs.getByRole("tab", { name: "Read", exact: true })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -189,7 +183,7 @@ test.describe("Workspace route", () => {
     await expect(addToNotebook).toBeVisible();
     await addToNotebook.click();
 
-    for (const name of ["Notes", "Discuss", "Outline", "Details"]) {
+    for (const name of ["Notes", "Discuss", "Outline"]) {
       const tab = tabs.getByRole("tab", { name, exact: true });
       await tab.click();
       await expect(tab).toHaveAttribute("aria-selected", "true");
@@ -197,15 +191,17 @@ test.describe("Workspace route", () => {
       await expect(iframe).toHaveAttribute("data-mobile-reader-test", "mounted");
 
       if (name === "Notes") await expect(page.locator("blockquote").first()).toBeVisible();
-
-      if (name === "Details") {
-        await expect(
-          mobileReader
-            .getByRole("tabpanel")
-            .getByRole("heading", { name: "Test Book for E2E", exact: true }),
-        ).toBeVisible();
-      }
     }
+
+    await page.getByRole("button", { name: "Reader menu" }).click();
+    await page.getByRole("menuitem", { name: "Details", exact: true }).click();
+    await expect(
+      mobileReader
+        .getByRole("tabpanel")
+        .getByRole("heading", { name: "Test Book for E2E", exact: true }),
+    ).toBeVisible();
+    await expect(bookSurface).toBeAttached();
+    await expect(iframe).toHaveAttribute("data-mobile-reader-test", "mounted");
 
     await tabs.getByRole("tab", { name: "Read", exact: true }).click();
     await expect(bookSurface).toBeVisible();
