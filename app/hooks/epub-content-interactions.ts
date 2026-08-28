@@ -19,6 +19,13 @@ interface EpubContentInteractionsOptions {
   readonly onPrevious: () => void;
   readonly onNext: () => void;
   readonly onToggleToolbar: () => void;
+  readonly onInteractiveNavigationStart?: () => void;
+  readonly onInteractiveNavigationAbort?: () => void;
+}
+
+interface InteractiveNavigationLifecycle {
+  abortPending(): void;
+  commit(navigation: () => Promise<boolean>): void;
 }
 
 const INTERACTIVE_SELECTOR =
@@ -50,6 +57,7 @@ function addDocumentInteractions(
   document: Document,
   source: EpubContentSource,
   options: EpubContentInteractionsOptions,
+  interactiveNavigation: InteractiveNavigationLifecycle,
 ): () => void {
   let interactiveTurn = false;
   let suppressNextClick = false;
@@ -73,6 +81,7 @@ function addDocumentInteractions(
     onStart: ({ direction }) => {
       if (!options.isPaginatedMobile()) return;
       suppressSyntheticClick();
+      interactiveNavigation.abortPending();
       interactiveTurn = source.navigator?.beginInteractivePageTurn(direction) ?? false;
     },
     onProgress: ({ displacement }) => {
@@ -82,7 +91,13 @@ function addDocumentInteractions(
       if (interactiveTurn) {
         interactiveTurn = false;
         source.navigator?.updateInteractivePageTurn(displacement);
-        void source.navigator?.endInteractivePageTurn(intent === "complete").catch(() => {});
+        const navigator = source.navigator;
+        if (!navigator) return;
+        if (intent === "complete") {
+          interactiveNavigation.commit(() => navigator.endInteractivePageTurn(true));
+        } else {
+          void navigator.endInteractivePageTurn(false).catch(() => {});
+        }
         return;
       }
       if (intent !== "complete") return;
@@ -125,14 +140,53 @@ export function registerEpubContentInteractions(
   options: EpubContentInteractionsOptions,
 ): () => void {
   const cleanups = new Map<Document, () => void>();
+  let pendingInteractiveNavigation: object | null = null;
+  const abortPending = () => {
+    if (!pendingInteractiveNavigation) return;
+    pendingInteractiveNavigation = null;
+    options.onInteractiveNavigationAbort?.();
+  };
+  const interactiveNavigation: InteractiveNavigationLifecycle = {
+    abortPending,
+    commit(navigation) {
+      abortPending();
+      const attempt = {};
+      pendingInteractiveNavigation = attempt;
+      options.onInteractiveNavigationStart?.();
+      let result: Promise<boolean>;
+      try {
+        result = navigation();
+      } catch {
+        pendingInteractiveNavigation = null;
+        options.onInteractiveNavigationAbort?.();
+        return;
+      }
+      void result.then(
+        (completed) => {
+          if (pendingInteractiveNavigation !== attempt) return;
+          pendingInteractiveNavigation = null;
+          if (!completed) options.onInteractiveNavigationAbort?.();
+        },
+        () => {
+          if (pendingInteractiveNavigation !== attempt) return;
+          pendingInteractiveNavigation = null;
+          options.onInteractiveNavigationAbort?.();
+        },
+      );
+    },
+  };
   let stopped = false;
   source.hooks.content.register(({ document }) => {
     if (stopped || cleanups.has(document)) return;
-    cleanups.set(document, addDocumentInteractions(document, source, options));
+    cleanups.set(
+      document,
+      addDocumentInteractions(document, source, options, interactiveNavigation),
+    );
   });
   return () => {
     stopped = true;
     for (const cleanup of cleanups.values()) cleanup();
     cleanups.clear();
+    abortPending();
   };
 }

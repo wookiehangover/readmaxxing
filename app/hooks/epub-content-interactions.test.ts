@@ -7,6 +7,7 @@ import {
   type SectionMetadata,
 } from "@readmaxxing/epub-successor";
 import { registerEpubContentInteractions } from "~/hooks/epub-content-interactions";
+import { getReadingPositionRestoreTarget } from "~/lib/position-utils";
 
 interface TouchPoint {
   readonly identifier: number;
@@ -45,14 +46,39 @@ function documentFixture() {
 describe("registerEpubContentInteractions", () => {
   it("drives same-section navigator turns without invoking legacy page callbacks", async () => {
     let contentHook: ((content: { document: Document }) => void) | undefined;
+    let navigationInProgress = false;
+    let restoreTarget: ReturnType<typeof getReadingPositionRestoreTarget> | undefined;
+    const currentPosition = {
+      cfi: "epubcfi(/6/4!/4/2/8:20)",
+      localProgression: 0.62,
+      spineIndex: 1,
+    };
     const navigator = {
       beginInteractivePageTurn: vi.fn(() => true),
       updateInteractivePageTurn: vi.fn(() => true),
-      endInteractivePageTurn: vi.fn(async () => true),
+      endInteractivePageTurn: vi.fn(async () => {
+        restoreTarget = getReadingPositionRestoreTarget(
+          currentPosition,
+          {
+            cfi: "epubcfi(/6/4!/4/2/4:10)",
+            localProgression: 0.3,
+            spineIndex: 1,
+          },
+          {
+            layoutHasSize: true,
+            layoutChangeInProgress: true,
+            navigationInProgress,
+          },
+        );
+        return true;
+      }),
       cancelInteractivePageTurn: vi.fn(async () => false),
     };
     const onPrevious = vi.fn();
     const onNext = vi.fn();
+    const onInteractiveNavigationAbort = vi.fn(() => {
+      navigationInProgress = false;
+    });
     registerEpubContentInteractions(
       {
         navigator,
@@ -64,7 +90,16 @@ describe("registerEpubContentInteractions", () => {
           },
         },
       },
-      { isPaginatedMobile: () => true, onPrevious, onNext, onToggleToolbar: vi.fn() },
+      {
+        isPaginatedMobile: () => true,
+        onPrevious,
+        onNext,
+        onToggleToolbar: vi.fn(),
+        onInteractiveNavigationStart: () => {
+          navigationInProgress = true;
+        },
+        onInteractiveNavigationAbort,
+      },
     );
     const contentDocument = documentFixture();
     contentHook?.({ document: contentDocument });
@@ -81,6 +116,8 @@ describe("registerEpubContentInteractions", () => {
     expect(navigator.updateInteractivePageTurn).toHaveBeenNthCalledWith(1, -120);
     expect(navigator.updateInteractivePageTurn).toHaveBeenLastCalledWith(-200);
     expect(navigator.endInteractivePageTurn).toHaveBeenCalledWith(true);
+    expect(restoreTarget).toBeNull();
+    expect(onInteractiveNavigationAbort).not.toHaveBeenCalled();
     expect(onPrevious).not.toHaveBeenCalled();
     expect(onNext).not.toHaveBeenCalled();
   });
@@ -93,6 +130,8 @@ describe("registerEpubContentInteractions", () => {
       endInteractivePageTurn: vi.fn(async () => false),
       cancelInteractivePageTurn: vi.fn(async () => false),
     };
+    const onInteractiveNavigationStart = vi.fn();
+    const onInteractiveNavigationAbort = vi.fn();
     registerEpubContentInteractions(
       {
         navigator,
@@ -109,6 +148,8 @@ describe("registerEpubContentInteractions", () => {
         onPrevious: vi.fn(),
         onNext: vi.fn(),
         onToggleToolbar: vi.fn(),
+        onInteractiveNavigationStart,
+        onInteractiveNavigationAbort,
       },
     );
     const contentDocument = documentFixture();
@@ -123,6 +164,8 @@ describe("registerEpubContentInteractions", () => {
     await Promise.resolve();
 
     expect(navigator.endInteractivePageTurn).toHaveBeenCalledWith(false);
+    expect(onInteractiveNavigationStart).not.toHaveBeenCalled();
+    expect(onInteractiveNavigationAbort).not.toHaveBeenCalled();
   });
 
   it("wires natural-direction swipes for current and remounted content documents", () => {
@@ -237,6 +280,8 @@ describe("registerEpubContentInteractions", () => {
       cancelInteractivePageTurn: vi.fn(async () => false),
     };
     const onNext = vi.fn();
+    const onInteractiveNavigationStart = vi.fn();
+    const onInteractiveNavigationAbort = vi.fn();
     registerEpubContentInteractions(
       {
         navigator,
@@ -247,6 +292,8 @@ describe("registerEpubContentInteractions", () => {
         onPrevious: vi.fn(),
         onNext,
         onToggleToolbar: vi.fn(),
+        onInteractiveNavigationStart,
+        onInteractiveNavigationAbort,
       },
     );
     const contentDocument = documentFixture();
@@ -261,6 +308,8 @@ describe("registerEpubContentInteractions", () => {
 
     expect(navigator.beginInteractivePageTurn).not.toHaveBeenCalled();
     expect(onNext).not.toHaveBeenCalled();
+    expect(onInteractiveNavigationStart).not.toHaveBeenCalled();
+    expect(onInteractiveNavigationAbort).not.toHaveBeenCalled();
   });
 
   it("lets an existing decoration consume a click before mobile page controls", async () => {

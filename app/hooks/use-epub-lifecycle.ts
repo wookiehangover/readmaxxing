@@ -606,6 +606,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         onPrevious: () => turnPage("prev"),
         onNext: () => turnPage("next"),
         onToggleToolbar: () => configRef.current.onToggleToolbar?.(),
+        onInteractiveNavigationStart: markNavigationInProgress,
+        onInteractiveNavigationAbort: clearNavigationInProgress,
       });
       rendition.hooks.content.register(({ document }: { document: Document }) => {
         if (observedDocuments.has(document)) return;
