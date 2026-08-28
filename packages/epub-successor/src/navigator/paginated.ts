@@ -172,18 +172,17 @@ function padStyle(document: Document): HTMLStyleElement {
 /**
  * Page geometry for multi-column layout.
  *
- * Inline (horizontal) body padding is intentionally 0. Side padding on a
- * multicol body only appears at scrollLeft=0, so page 1 looks offset from
- * later pages / when navigating back. Horizontal chrome belongs on the host
- * container around the iframe. Body only keeps neutral vertical padding.
- *
- * Columns pack the full viewport width so every page turn shares the same
- * origin (no first-page-only inset).
+ * By default, columns pack the full iframe width and horizontal chrome belongs
+ * on the host container. A single-page inline margin instead keeps the iframe
+ * full-width, narrows each column, and repeats both resting margins as the
+ * inter-column gap. That lets moving text paint through the margin while every
+ * settled page shares the same inset.
  */
 export function pageChromeInsets(
   viewportWidth: number,
   columnGap: number,
   pagesPerSpread: 1 | 2,
+  pageInlineMargin = 0,
 ): {
   readonly padBlock: number;
   readonly padInlineStart: number;
@@ -191,14 +190,20 @@ export function pageChromeInsets(
   readonly geometry: ColumnGeometry;
 } {
   const width = contained(viewportWidth, 1);
-  const gap = Math.min(snapped(columnGap), Math.max(0, width - pagesPerSpread));
-  // Full-width pack: n*columnWidth + (n-1)*gap <= width, no leftover as side pad.
-  const geometry = calculateColumnGeometry(width, gap, pagesPerSpread, 0);
+  const margin =
+    pagesPerSpread === 1
+      ? Math.min(snapped(pageInlineMargin), Math.floor(Math.max(0, width - 1) / 2))
+      : 0;
+  const gap =
+    margin > 0 ? margin * 2 : Math.min(snapped(columnGap), Math.max(0, width - pagesPerSpread));
+  // A single-page margin becomes the gap between adjacent columns, keeping
+  // every resting text column inset while the iframe still fills the viewport.
+  const geometry = calculateColumnGeometry(width, gap, pagesPerSpread, margin * 2);
 
   return {
     padBlock: DEFAULT_BLOCK_PADDING,
-    padInlineStart: 0,
-    padInlineEnd: 0,
+    padInlineStart: margin,
+    padInlineEnd: margin,
     geometry,
   };
 }
@@ -209,21 +214,26 @@ export function applyPaginatedLayout(
   pagesPerSpread: 1 | 2,
   direction: "ltr" | "rtl",
   columnGap = DEFAULT_COLUMN_GAP,
+  pageInlineMargin = 0,
 ): ColumnGeometry {
-  const chrome = pageChromeInsets(viewport.width, columnGap, pagesPerSpread);
+  const chrome = pageChromeInsets(viewport.width, columnGap, pagesPerSpread, pageInlineMargin);
   const height = contained(viewport.height, 1);
   const contentHeight = Math.max(1, height - chrome.padBlock * 2);
   const imageInlinePosition = direction === "rtl" ? "right" : "left";
+  const bodyPadding =
+    chrome.padInlineStart === 0 && chrome.padInlineEnd === 0
+      ? `${chrome.padBlock}px 0`
+      : `${chrome.padBlock}px ${chrome.padInlineEnd}px ${chrome.padBlock}px ${chrome.padInlineStart}px`;
   // Reset any spread padding from a previous layout before re-measuring.
   padStyle(document).textContent = "";
   // Do not set background here — theme/preference CSS owns html+body paint.
-  // Horizontal padding stays 0 so every column page aligns the same.
+  // A configured single-page margin is part of the repeated column geometry.
   layoutStyle(document).textContent =
     `html{height:${height}px !important;width:${chrome.geometry.viewportWidth}px !important;` +
     `overflow:hidden !important;direction:${direction} !important;}` +
     `body{box-sizing:border-box !important;height:${height}px !important;min-height:0 !important;` +
     `margin:0 !important;` +
-    `padding:${chrome.padBlock}px 0 !important;` +
+    `padding:${bodyPadding} !important;` +
     `column-fill:auto !important;column-gap:${chrome.geometry.columnGap}px !important;` +
     `column-width:${chrome.geometry.columnWidth}px !important;overflow:visible !important;}` +
     `blockquote:has(img){box-sizing:border-box !important;inline-size:auto !important;` +
@@ -257,6 +267,18 @@ export function measurePaginatedLayout(
   const scrolling = document.scrollingElement ?? document.documentElement;
   padStyle(document).textContent = "";
   let pageCount = calculatePageCount(scrolling.scrollWidth, geometry);
+  // A single-page inset is encoded as half of the repeated inter-column gap.
+  // Chromium's multicol scrollWidth stops at the final content edge, omitting
+  // that trailing half-gap. Count from the natural extent first, then widen the
+  // body to the last full stride so the terminal column is not clamped early.
+  if (
+    geometry.pagesPerSpread === 1 &&
+    geometry.columnGap > 0 &&
+    geometry.columnStride === geometry.viewportWidth
+  ) {
+    padStyle(document).textContent =
+      `body{width:${pageCount * geometry.columnStride}px !important;}`;
+  }
   // Two-page spreads: widen the body to a whole number of spreads so the last
   // spread starts on a spread boundary (trailing column stays blank). With an
   // odd column count the final turn's target offset exceeds maxOffset, the

@@ -17,6 +17,8 @@ export interface NavigatorPreferences {
   readonly flow?: NavigatorFlow;
   readonly spread?: NavigatorSpread;
   readonly minSpreadWidth?: number;
+  /** Resting inline margin inside a single-page paginated viewport. */
+  readonly pageInlineMargin?: number;
   readonly pageTurnAnimation?: "none" | "slide";
   readonly pageTurnDurationMs?: number;
 }

@@ -46,12 +46,85 @@ export interface UsePdfLifecycleReturn {
   goToPage: (page: number) => void;
   goNext: () => void;
   goPrev: () => void;
+  preparePageForCarousel: (page: number) => Promise<boolean>;
   flushPositionSave: () => void;
   pdfDocRef: React.RefObject<any>;
   /** Reference to the PDFViewer instance for search/highlight integration */
   viewerRef: React.RefObject<any>;
   /** Reference to the EventBus instance for search/highlight integration */
   eventBusRef: React.RefObject<any>;
+}
+
+const pendingCarouselPages = new WeakMap<object, Promise<boolean>>();
+const PDF_RENDERING_FINISHED = 3;
+
+function isPdfPageRenderFinished(viewer: any, pageView: any): boolean {
+  if (typeof viewer.renderingQueue?.isViewFinished === "function") {
+    return viewer.renderingQueue.isViewFinished(pageView);
+  }
+  return pageView.renderingState === PDF_RENDERING_FINISHED;
+}
+
+export function preparePdfPageForCarousel(
+  viewer: any,
+  doc: any,
+  pageNumber: number,
+): Promise<boolean> {
+  if (!viewer || !doc || pageNumber < 1 || pageNumber > (viewer.pagesCount || doc.numPages || 0)) {
+    return Promise.resolve(false);
+  }
+
+  const pageView = viewer.getPageView?.(pageNumber - 1);
+  if (!pageView?.div) return Promise.resolve(false);
+  if (isPdfPageRenderFinished(viewer, pageView)) return Promise.resolve(true);
+
+  const pending = pendingCarouselPages.get(pageView);
+  if (pending) return pending;
+
+  const preparation = (async () => {
+    try {
+      if (!pageView.pdfPage) pageView.setPdfPage(await doc.getPage(pageNumber));
+      if (isPdfPageRenderFinished(viewer, pageView)) return true;
+
+      const eventBus = viewer.eventBus;
+      if (!eventBus?.on || !eventBus?.off) {
+        if (viewer.renderingQueue?.renderView) viewer.renderingQueue.renderView(pageView);
+        else await pageView.draw?.();
+        return isPdfPageRenderFinished(viewer, pageView);
+      }
+
+      let finishRender: (available: boolean) => void = () => {};
+      const rendered = new Promise<boolean>((resolve) => {
+        let settled = false;
+        const finish = (available: boolean) => {
+          if (settled) return;
+          settled = true;
+          eventBus.off("pagerendered", handlePageRendered);
+          clearTimeout(timeout);
+          resolve(available);
+        };
+        const handlePageRendered = (event: { pageNumber?: number }) => {
+          if (event.pageNumber !== pageNumber) return;
+          finish(isPdfPageRenderFinished(viewer, pageView));
+        };
+        const timeout = window.setTimeout(() => {
+          finish(false);
+        }, 5000);
+        finishRender = finish;
+        eventBus.on("pagerendered", handlePageRendered);
+      });
+
+      if (viewer.renderingQueue?.renderView) viewer.renderingQueue.renderView(pageView);
+      else await pageView.draw?.();
+      if (isPdfPageRenderFinished(viewer, pageView)) finishRender(true);
+      return rendered;
+    } catch {
+      return false;
+    }
+  })().finally(() => pendingCarouselPages.delete(pageView));
+
+  pendingCarouselPages.set(pageView, preparation);
+  return preparation;
 }
 
 export interface PdfChapterStart {
@@ -244,6 +317,11 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     const viewer = viewerRef.current;
     if (viewer) viewer.previousPage();
   }, []);
+
+  const preparePageForCarousel = useCallback(
+    (page: number) => preparePdfPageForCarousel(viewerRef.current, pdfDocRef.current, page),
+    [],
+  );
 
   const navigateToPosition = useCallback(
     (cfi: string) => {
@@ -557,6 +635,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     goToPage,
     goNext,
     goPrev,
+    preparePageForCarousel,
     flushPositionSave,
     pdfDocRef,
     viewerRef,

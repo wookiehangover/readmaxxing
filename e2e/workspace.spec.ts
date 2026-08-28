@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Frame, type Page } from "@playwright/test";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { waitForAppHydration } from "./helpers/auth";
@@ -109,9 +109,7 @@ test.describe("Workspace route", () => {
     await expect(detailsTab).toHaveCount(0);
   });
 
-  test("mobile reader switches every full-screen tab and keeps the book mounted", async ({
-    page,
-  }) => {
+  test("mobile EPUB tracks, settles, and stays mounted across reader tabs", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await uploadTestBook(page);
 
@@ -132,6 +130,27 @@ test.describe("Workspace route", () => {
     await expect(page.getByRole("button", { name: "Next page" })).toHaveCount(0);
     await iframe.evaluate((element) => element.setAttribute("data-mobile-reader-test", "mounted"));
 
+    const surfaceBox = await bookSurface.boundingBox();
+    const frameBox = await iframe.boundingBox();
+    if (!surfaceBox || !frameBox) throw new Error("Could not measure mobile EPUB geometry");
+    expect(frameBox.x).toBeCloseTo(surfaceBox.x, 0);
+    expect(frameBox.x + frameBox.width).toBeCloseTo(surfaceBox.x + surfaceBox.width, 0);
+    const restingGeometry = await page
+      .frameLocator("iframe")
+      .first()
+      .locator("body")
+      .evaluate((body) => {
+        const style = getComputedStyle(body);
+        return {
+          viewportWidth: body.ownerDocument.documentElement.clientWidth,
+          paddingLeft: Number.parseFloat(style.paddingLeft),
+          paddingRight: Number.parseFloat(style.paddingRight),
+        };
+      });
+    expect(restingGeometry.viewportWidth).toBeCloseTo(frameBox.width, 0);
+    expect(restingGeometry.paddingLeft).toBe(40);
+    expect(restingGeometry.paddingRight).toBe(40);
+
     const epubHtml = page.frameLocator("iframe").first().locator("html");
     const readPageState = () =>
       epubHtml.evaluate((element) => {
@@ -139,32 +158,61 @@ test.describe("Workspace route", () => {
         return `${scrolling.scrollLeft}:${element.ownerDocument.body.textContent?.trim()}`;
       });
     const initialPageState = await readPageState();
-    const swipe = async (from: number, to: number) => {
+    const getContentFrame = async () => {
       const frame = await (await iframe.elementHandle())?.contentFrame();
       if (!frame) throw new Error("Could not get EPUB content frame");
+      return frame;
+    };
+    const dispatchTouch = async (
+      frame: Frame,
+      type: "touchstart" | "touchmove" | "touchend",
+      x: number,
+      time: number,
+    ) => {
       await frame.evaluate(
-        ({ from, to }) => {
-          const start = { identifier: 1, clientX: from, clientY: 100 };
-          const end = { identifier: 1, clientX: to, clientY: 102 };
-          const dispatch = (type: string, touches: unknown[], changedTouches: unknown[]) => {
-            const event = new Event(type, { bubbles: true });
-            Object.defineProperties(event, {
-              touches: { value: touches },
-              changedTouches: { value: changedTouches },
-            });
-            document.dispatchEvent(event);
-          };
-          dispatch("touchstart", [start], [start]);
-          dispatch("touchend", [], [end]);
+        ({ type, x, time }) => {
+          const point = { identifier: 1, clientX: x, clientY: 100 };
+          const event = new Event(type, { bubbles: true, cancelable: true });
+          Object.defineProperties(event, {
+            touches: { value: type === "touchend" ? [] : [point] },
+            changedTouches: { value: [point] },
+            timeStamp: { value: time },
+          });
+          document.dispatchEvent(event);
         },
-        { from, to },
+        { type, x, time },
       );
     };
-
-    await swipe(280, 100);
-    await expect.poll(readPageState).not.toBe(initialPageState);
-    await swipe(100, 280);
+    const snapBackFrame = await getContentFrame();
+    await dispatchTouch(snapBackFrame, "touchstart", 280, 10);
+    await dispatchTouch(snapBackFrame, "touchmove", 230, 210);
+    await expect
+      .poll(() => iframe.evaluate((element) => (element as HTMLElement).style.transform))
+      .toBe("");
+    await expect(bookSurface.locator("iframe")).toHaveCount(1);
     await expect.poll(readPageState).toBe(initialPageState);
+    await dispatchTouch(snapBackFrame, "touchend", 230, 410);
+    await expect.poll(readPageState).toBe(initialPageState);
+    await expect(bookSurface.locator("iframe")).toHaveCount(1);
+    await expect
+      .poll(() => iframe.evaluate((element) => (element as HTMLElement).style.transform))
+      .toBe("");
+
+    const commitFrame = await getContentFrame();
+    await dispatchTouch(commitFrame, "touchstart", 280, 500);
+    await dispatchTouch(commitFrame, "touchmove", 100, 700);
+    await expect
+      .poll(() => iframe.evaluate((element) => (element as HTMLElement).style.transform))
+      .toBe("");
+    await expect(bookSurface.locator("iframe")).toHaveCount(1);
+    await expect.poll(readPageState).toBe(initialPageState);
+    await dispatchTouch(commitFrame, "touchend", 100, 900);
+    await expect.poll(readPageState).not.toBe(initialPageState);
+    await expect(bookSurface.locator("iframe")).toHaveCount(1);
+    await expect
+      .poll(() => iframe.evaluate((element) => (element as HTMLElement).style.transform))
+      .toBe("");
+
     await iframe.evaluate((element) => element.setAttribute("data-mobile-reader-test", "mounted"));
 
     const currentFrame = await (await iframe.elementHandle())?.contentFrame();
@@ -206,6 +254,108 @@ test.describe("Workspace route", () => {
     await tabs.getByRole("tab", { name: "Read", exact: true }).click();
     await expect(bookSurface).toBeVisible();
     await expect(iframe).toHaveAttribute("data-mobile-reader-test", "mounted");
+  });
+
+  test("mobile EPUB keeps the final real page aligned to the repeated inset", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await uploadTestBook(page);
+
+    const bookSurface = page
+      .getByTestId("mobile-reading-tabs")
+      .locator(":scope > [aria-label='Book surface']");
+    const iframe = bookSurface.locator("iframe").first();
+    await expect(iframe).toBeAttached();
+    const frame = await (await iframe.elementHandle())?.contentFrame();
+    if (!frame) throw new Error("Could not get EPUB content frame");
+
+    await frame.evaluate(() => {
+      const body = document.body;
+      const style = getComputedStyle(body);
+      const pageHeight =
+        document.documentElement.clientHeight -
+        Number.parseFloat(style.paddingTop) -
+        Number.parseFloat(style.paddingBottom);
+      body.replaceChildren(
+        ...["first", "middle", "final"].map((name) => {
+          const page = document.createElement("div");
+          page.style.height = `${pageHeight}px`;
+          const marker = document.createElement("div");
+          marker.dataset.pageMarker = name;
+          marker.textContent = name;
+          page.append(marker);
+          return page;
+        }),
+      );
+    });
+
+    // Force the navigator to remeasure the synthetic three-page section.
+    await page.setViewportSize({ width: 391, height: 844 });
+    await expect.poll(() => frame.evaluate(() => document.documentElement.clientWidth)).toBe(391);
+    await expect
+      .poll(() =>
+        frame.evaluate(() => {
+          const scrolling = document.scrollingElement ?? document.documentElement;
+          return scrolling.scrollWidth / scrolling.clientWidth;
+        }),
+      )
+      .toBe(3);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect
+      .poll(() =>
+        frame.evaluate(() => {
+          const scrolling = document.scrollingElement ?? document.documentElement;
+          return scrolling.scrollWidth / scrolling.clientWidth;
+        }),
+      )
+      .toBe(3);
+
+    const markerBox = (name: string) =>
+      frame.locator(`[data-page-marker="${name}"]`).evaluate((marker) => {
+        const rect = marker.getBoundingClientRect();
+        return { left: rect.left, right: rect.right };
+      });
+    const first = await markerBox("first");
+    const dispatchTouch = async (
+      type: "touchstart" | "touchmove" | "touchend",
+      x: number,
+      time: number,
+    ) => {
+      await frame.evaluate(
+        ({ type, x, time }) => {
+          const point = { identifier: 1, clientX: x, clientY: 100 };
+          const event = new Event(type, { bubbles: true, cancelable: true });
+          Object.defineProperties(event, {
+            touches: { value: type === "touchend" ? [] : [point] },
+            changedTouches: { value: [point] },
+            timeStamp: { value: time },
+          });
+          document.dispatchEvent(event);
+        },
+        { type, x, time },
+      );
+    };
+    const turnNext = async (time: number, expectedOffset: number) => {
+      await dispatchTouch("touchstart", 300, time);
+      await dispatchTouch("touchmove", 100, time + 200);
+      await dispatchTouch("touchend", 100, time + 400);
+      await expect
+        .poll(() =>
+          frame.evaluate(() =>
+            Math.round((document.scrollingElement ?? document.documentElement).scrollLeft),
+          ),
+        )
+        .toBe(expectedOffset);
+    };
+
+    await turnNext(100, 390);
+    const middle = await markerBox("middle");
+    await turnNext(600, 780);
+    const final = await markerBox("final");
+
+    expect(middle.left).toBeCloseTo(first.left, 0);
+    expect(middle.right).toBeCloseTo(first.right, 0);
+    expect(final.left).toBeCloseTo(first.left, 0);
+    expect(final.right).toBeCloseTo(first.right, 0);
   });
 
   test("reader has navigation buttons", async ({ page }) => {

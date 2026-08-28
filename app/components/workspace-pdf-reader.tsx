@@ -106,7 +106,9 @@ function WorkspacePdfReaderInner({
     goToPage,
     goNext,
     goPrev,
+    preparePageForCarousel,
     pdfDocRef,
+    viewerRef,
     eventBusRef,
   } = usePdfLifecycle({
     bookId: book.id,
@@ -295,6 +297,8 @@ function WorkspacePdfReaderInner({
     >
       <PdfReaderView
         containerRef={containerRef}
+        viewerRef={viewerRef}
+        preparePageForCarousel={preparePageForCarousel}
         localSettings={localSettings}
         onUpdateSettings={handleUpdateSettings}
         book={book}

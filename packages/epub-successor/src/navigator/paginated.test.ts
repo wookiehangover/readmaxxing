@@ -105,6 +105,39 @@ describe("paginated page math", () => {
     expect(odd.geometry.columnWidth * 2 + odd.geometry.columnGap).toBeLessThanOrEqual(801);
   });
 
+  it("keeps a single-page reading inset inside a full-width viewport", () => {
+    const chrome = pageChromeInsets(390, 64, 1, 40);
+
+    expect(chrome).toMatchObject({
+      padInlineStart: 40,
+      padInlineEnd: 40,
+      geometry: {
+        viewportWidth: 390,
+        columnWidth: 310,
+        columnGap: 80,
+        columnStride: 390,
+        pagesPerSpread: 1,
+      },
+    });
+
+    const doc = document.implementation.createHTMLDocument();
+    applyPaginatedLayout(doc, { width: 390, height: 844 }, 1, "ltr", 64, 40);
+    const css = doc.getElementById("epub-successor-pagination-style")?.textContent ?? "";
+    expect(css).toContain("html{height:844px !important;width:390px");
+    expect(css).toContain("padding:24px 40px 24px 40px");
+    expect(css).toContain("column-gap:80px");
+    expect(css).toContain("column-width:310px");
+
+    applyPaginatedLayout(doc, { width: 390, height: 844 }, 1, "rtl", 64, 40);
+    const rtlCss = doc.getElementById("epub-successor-pagination-style")?.textContent ?? "";
+    expect(rtlCss).toContain("direction:rtl");
+    expect(rtlCss).toContain("padding:24px 40px 24px 40px");
+  });
+
+  it("does not apply the single-page inset to two-page spreads", () => {
+    expect(pageChromeInsets(800, 64, 2, 40)).toEqual(pageChromeInsets(800, 64, 2));
+  });
+
   it("uses full width for single-page columns", () => {
     const single = pageChromeInsets(800, 64, 1);
     expect(single.padInlineStart).toBe(0);
@@ -279,6 +312,52 @@ describe("paginated page math", () => {
     expect(state.pageCount).toBe(5);
     expect(doc.getElementById("epub-successor-pagination-pad")?.textContent).toBe("");
   });
+
+  it.each([
+    ["before", 2 * 390 - 1, 2],
+    ["on", 2 * 390, 2],
+    ["after", 2 * 390 + 1, 3],
+  ] as const)(
+    "pads an inset single-page extent ending %s a column boundary without adding a page",
+    (_position, naturalWidth, expectedPages) => {
+      const geometry = pageChromeInsets(390, 64, 1, 40).geometry;
+      const doc = measurableDocument(naturalWidth, geometry.viewportWidth);
+
+      const state = measurePaginatedLayout(doc, geometry, "ltr");
+
+      expect(state.pageCount).toBe(expectedPages);
+      expect(state.maxOffset).toBe((expectedPages - 1) * geometry.columnStride);
+      expect(doc.getElementById("epub-successor-pagination-pad")?.textContent).toContain(
+        `width:${expectedPages * geometry.columnStride}px`,
+      );
+      scrollToPage(state, expectedPages - 1);
+      expect(state.scrolling.scrollLeft).toBe((expectedPages - 1) * geometry.columnStride);
+    },
+  );
+
+  it.each(["ltr", "rtl"] as const)(
+    "restores the omitted terminal inset to the final %s page stride",
+    (direction) => {
+      const geometry = pageChromeInsets(390, 64, 1, 40).geometry;
+      // Three content columns end at x=1,130; Chromium omits the final 40px
+      // body inset from the natural multicol scroll extent.
+      const doc = measurableDocument(3 * geometry.columnStride - 40, geometry.viewportWidth);
+
+      const state = measurePaginatedLayout(doc, geometry, direction);
+
+      expect(state.pageCount).toBe(3);
+      expect(state.maxOffset).toBe(2 * geometry.columnStride);
+      scrollToPage(state, 2);
+      expect(state.scrolling.scrollLeft).toBe(
+        scrollLeftFromLogicalOffset(
+          2 * geometry.columnStride,
+          state.maxOffset,
+          direction,
+          state.rtlScrollType,
+        ),
+      );
+    },
+  );
 
   it("maps a clamped final two-page spread to its final progression", () => {
     const geometry = calculateColumnGeometry(800, 32, 2);

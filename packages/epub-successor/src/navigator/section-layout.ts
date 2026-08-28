@@ -172,7 +172,14 @@ export async function settleSection(
       options.preferences.spread,
       options.preferences.minSpreadWidth,
     );
-    const geometry = applyPaginatedLayout(document, viewport, pagesPerSpread, options.direction);
+    const geometry = applyPaginatedLayout(
+      document,
+      viewport,
+      pagesPerSpread,
+      options.direction,
+      undefined,
+      options.preferences.pageInlineMargin,
+    );
     restoreElementAnchor(target);
     const fonts = document.fonts?.ready;
     if (fonts)

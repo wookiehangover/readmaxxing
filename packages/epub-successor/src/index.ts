@@ -24,6 +24,7 @@ export { createNavigator, Navigator } from "./navigator/navigator";
 export type {
   CreateNavigatorOptions,
   DisplayTarget,
+  InteractivePageTurnDirection,
   NavigatorPreferences,
   Relocation,
 } from "./navigator/navigator";

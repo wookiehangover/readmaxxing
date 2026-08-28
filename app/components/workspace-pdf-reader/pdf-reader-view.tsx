@@ -17,7 +17,7 @@ import type { Settings } from "~/lib/settings";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { cn } from "~/lib/utils";
 import { ReadingRailMenuPortal } from "~/components/reading-shell/reading-rail-menu-portal";
-import { addPageSwipeRecognizer } from "~/hooks/page-swipe-recognizer";
+import { addPdfPageCarousel } from "~/hooks/pdf-page-carousel";
 
 function blurPageTurnControl(event: React.PointerEvent<HTMLButtonElement>) {
   event.currentTarget.blur();
@@ -30,6 +30,8 @@ function hasSelectedText(): boolean {
 
 interface PdfReaderViewProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
+  viewerRef: React.RefObject<any>;
+  preparePageForCarousel: (page: number) => Promise<boolean>;
   localSettings: Settings;
   onUpdateSettings: (update: Partial<Settings>) => void;
   book: BookMeta;
@@ -67,6 +69,8 @@ interface PdfReaderViewProps {
 
 export function PdfReaderView({
   containerRef,
+  viewerRef,
+  preparePageForCarousel,
   localSettings,
   onUpdateSettings,
   book,
@@ -102,19 +106,25 @@ export function PdfReaderView({
   goToPage,
 }: PdfReaderViewProps) {
   const lastSwipeAtRef = useRef(0);
+  const currentPageRef = useRef(currentPage);
+  const totalPagesRef = useRef(totalPages);
+  currentPageRef.current = currentPage;
+  totalPagesRef.current = totalPages;
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !isMobile || isScrollMode) return;
 
-    const turnPage = (direction: "previous" | "next") => {
-      lastSwipeAtRef.current = Date.now();
-      if (direction === "previous") goPrev();
-      else goNext();
-    };
-    const removeSwipeRecognizer = addPageSwipeRecognizer(container, {
-      onPrevious: () => turnPage("previous"),
-      onNext: () => turnPage("next"),
+    const removePageCarousel = addPdfPageCarousel({
+      container,
+      getViewer: () => viewerRef.current,
+      getCurrentPage: () => currentPageRef.current,
+      getTotalPages: () => totalPagesRef.current,
+      preparePage: preparePageForCarousel,
+      onNavigate: goToPage,
+      onGestureStart: () => {
+        lastSwipeAtRef.current = Date.now();
+      },
       getSelection: () => window.getSelection(),
     });
     const handleTap = (event: MouseEvent) => {
@@ -138,10 +148,20 @@ export function PdfReaderView({
 
     container.addEventListener("click", handleTap);
     return () => {
-      removeSwipeRecognizer();
+      removePageCarousel();
       container.removeEventListener("click", handleTap);
     };
-  }, [containerRef, goNext, goPrev, isMobile, isScrollMode, toggleToolbar]);
+  }, [
+    containerRef,
+    goNext,
+    goPrev,
+    goToPage,
+    isMobile,
+    isScrollMode,
+    preparePageForCarousel,
+    toggleToolbar,
+    viewerRef,
+  ]);
 
   return (
     <>
