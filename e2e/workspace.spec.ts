@@ -167,7 +167,9 @@ test.describe("Workspace route", () => {
     await dispatchTouch(snapBackFrame, "touchmove", 230, 210);
     await expect
       .poll(() => iframe.evaluate((element) => (element as HTMLElement).style.transform))
-      .toContain("-50px");
+      .toBe("");
+    await expect(bookSurface.locator("iframe")).toHaveCount(1);
+    await expect.poll(readPageState).toBe(initialPageState);
     await dispatchTouch(snapBackFrame, "touchend", 230, 410);
     await expect.poll(readPageState).toBe(initialPageState);
     await expect(bookSurface.locator("iframe")).toHaveCount(1);
@@ -180,17 +182,9 @@ test.describe("Workspace route", () => {
     await dispatchTouch(commitFrame, "touchmove", 100, 700);
     await expect
       .poll(() => iframe.evaluate((element) => (element as HTMLElement).style.transform))
-      .toContain("-180px");
-    await expect(bookSurface.locator("iframe")).toHaveCount(2);
-    const incomingFrame = bookSurface.locator("iframe").nth(1);
-    await expect
-      .poll(() =>
-        incomingFrame.evaluate((element) => {
-          const match = (element as HTMLElement).style.transform.match(/translate3d\(([-\d.]+)px/);
-          return match ? Number(match[1]) : 0;
-        }),
-      )
-      .toBeGreaterThan(0);
+      .toBe("");
+    await expect(bookSurface.locator("iframe")).toHaveCount(1);
+    await expect.poll(readPageState).toBe(initialPageState);
     await dispatchTouch(commitFrame, "touchend", 100, 900);
     await expect.poll(readPageState).not.toBe(initialPageState);
     await expect(bookSurface.locator("iframe")).toHaveCount(1);

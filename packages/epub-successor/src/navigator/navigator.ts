@@ -114,13 +114,7 @@ interface SameSectionInteractiveTurn {
 interface SpineInteractiveTurn {
   readonly kind: "spine";
   readonly direction: InteractivePageTurnDirection;
-  readonly originPageIndex: number;
   readonly targetSpineIndex: number;
-  readonly controller: AbortController;
-  preparation?: Promise<SectionMount | undefined>;
-  mount?: SectionMount;
-  ready: boolean;
-  displacement: number;
 }
 
 interface EdgeInteractiveTurn {
@@ -183,7 +177,6 @@ export class Navigator extends EventTarget {
   #destroyed = false;
   #resizeQueued = false;
   #pageMove?: ActivePageMove;
-  #interactivePreparationId = 0;
   #overlayCount = 0;
   #containerPosition?: string;
 
@@ -364,20 +357,13 @@ export class Navigator extends EventTarget {
         return true;
       }
 
-      const controller = new AbortController();
       const turn: SpineInteractiveTurn = {
         kind: "spine",
         direction,
-        originPageIndex,
         targetSpineIndex,
-        controller,
-        ready: false,
-        displacement: 0,
       };
       const move: ActivePageMove = { mount, snapPageIndex: originPageIndex, interactive: turn };
       this.#pageMove = move;
-      mount.frame.style.willChange = "transform";
-      turn.preparation = this.#prepareInteractiveNeighbor(move, turn);
       return true;
     }
 
@@ -405,7 +391,9 @@ export class Navigator extends EventTarget {
     const pagination = move?.mount.pagination;
     if (!move || !turn || !pagination) return false;
 
-    if (turn.kind !== "same-section") {
+    if (turn.kind === "spine") return true;
+
+    if (turn.kind === "edge") {
       const finiteDisplacement = Number.isFinite(displacement) ? displacement : 0;
       const width = pagination.viewportWidth;
       const directional =
@@ -413,10 +401,8 @@ export class Navigator extends EventTarget {
           ? Math.max(-width, Math.min(0, finiteDisplacement))
           : Math.min(width, Math.max(0, finiteDisplacement));
       turn.displacement =
-        turn.kind === "edge"
-          ? Math.sign(directional) * Math.min(width * 0.12, Math.abs(directional) * 0.2)
-          : directional;
-      this.#applyInteractiveFrameTransforms(move, turn.displacement);
+        Math.sign(directional) * Math.min(width * 0.12, Math.abs(directional) * 0.2);
+      this.#applyEdgeTransform(move, turn.displacement);
       return true;
     }
 
@@ -440,7 +426,7 @@ export class Navigator extends EventTarget {
     if (!move || !turn || !pagination) return false;
 
     if (turn.kind === "edge") {
-      await this.#settleInteractiveFrames(move, 0);
+      await this.#settleEdgeTurn(move, 0);
       if (this.#pageMove !== move) return false;
       this.#clearInteractiveFrameStyles(move.mount.frame);
       this.#pageMove = undefined;
@@ -963,16 +949,7 @@ export class Navigator extends EventTarget {
     if (!move) return;
     this.#pageMove = undefined;
     const interactive = move.interactive;
-    if (interactive?.kind === "spine") {
-      interactive.controller.abort();
-      if (interactive.mount) {
-        this.#unmount(interactive.mount);
-        interactive.mount = undefined;
-      }
-      this.#clearInteractiveFrameStyles(move.mount.frame);
-      move.animation?.cancel(false);
-      return;
-    }
+    if (interactive?.kind === "spine") return;
     if (interactive?.kind === "edge") {
       this.#clearInteractiveFrameStyles(move.mount.frame);
       move.animation?.cancel(false);
@@ -983,110 +960,27 @@ export class Navigator extends EventTarget {
       scrollToPage(move.mount.pagination, move.snapPageIndex);
   }
 
-  async #prepareInteractiveNeighbor(
-    move: ActivePageMove,
-    turn: SpineInteractiveTurn,
-  ): Promise<SectionMount | undefined> {
-    const link = this.publication.readingOrder[turn.targetSpineIndex]!;
-    const href = normalizePublicationPath(withoutFragment(link.href));
-    let prepared: PreparedSection | undefined;
-    let mount: SectionMount | undefined;
-    try {
-      prepared = await this.#prepareSection(
-        href,
-        turn.targetSpineIndex,
-        `interactive-${++this.#interactivePreparationId}`,
-        turn.controller.signal,
-      );
-      throwIfAborted(turn.controller.signal);
-      if (this.#pageMove !== move || this.#active !== move.mount) throw abortError();
-      mount = this.#mount(prepared, move.mount.operationId, move.mount);
-      prepared = undefined;
-      turn.mount = mount;
-      mount.frame.style.pointerEvents = "none";
-      await this.#waitForLoad(mount.frame, turn.controller.signal);
-      await this.#settle(mount, undefined, turn.controller.signal);
-      if (turn.direction === "previous" && mount.pagination) {
-        scrollToPage(
-          mount.pagination,
-          lastSpreadPageIndex(mount.pagination.pageCount, mount.pagination.pagesPerSpread),
-        );
-      }
-      throwIfAborted(turn.controller.signal);
-      if (this.#pageMove !== move || this.#active !== move.mount) throw abortError();
-      this.#installInternalLinkListener(mount);
-      turn.ready = true;
-      mount.frame.style.visibility = "visible";
-      this.#applyInteractiveFrameTransforms(move, turn.displacement);
-      return mount;
-    } catch {
-      prepared?.documentLease.dispose();
-      prepared?.scope.dispose();
-      if (mount) this.#unmount(mount);
-      if (turn.mount === mount) turn.mount = undefined;
-      return undefined;
-    }
-  }
-
   async #endSpineInteractiveTurn(
     move: ActivePageMove,
     turn: SpineInteractiveTurn,
     commit: boolean,
   ): Promise<boolean> {
-    if (!commit && !turn.ready) {
-      turn.controller.abort();
-      if (turn.mount) {
-        this.#unmount(turn.mount);
-        turn.mount = undefined;
-      }
-      this.#clearInteractiveFrameStyles(move.mount.frame);
-      if (this.#pageMove === move) this.#pageMove = undefined;
-      return false;
-    }
-
-    const neighbor = await turn.preparation;
-    if (!neighbor || this.#pageMove !== move || this.#active !== move.mount) {
-      this.#clearInteractiveFrameStyles(move.mount.frame);
-      if (this.#pageMove === move) this.#pageMove = undefined;
-      return false;
-    }
-
-    const width = move.mount.pagination?.viewportWidth ?? move.mount.frame.clientWidth;
-    const targetDisplacement = commit ? (turn.direction === "next" ? -width : width) : 0;
-    await this.#settleInteractiveFrames(move, targetDisplacement);
     if (this.#pageMove !== move || this.#active !== move.mount) return false;
-
-    this.#clearInteractiveFrameStyles(move.mount.frame);
-    if (!commit) {
-      this.#unmount(neighbor);
-      turn.mount = undefined;
-      this.#pageMove = undefined;
-      return false;
-    }
-
-    this.#active = neighbor;
-    turn.mount = undefined;
-    this.#releaseOverlay(neighbor);
-    this.#unmount(move.mount);
     this.#pageMove = undefined;
-    this.#emitRelocation(neighbor);
+    if (!commit) return false;
+    await this.#display({ spineIndex: turn.targetSpineIndex }, turn.direction === "previous");
     return true;
   }
 
-  #applyInteractiveFrameTransforms(move: ActivePageMove, displacement: number): void {
+  #applyEdgeTransform(move: ActivePageMove, displacement: number): void {
     const turn = move.interactive;
-    if (!turn || turn.kind === "same-section") return;
+    if (!turn || turn.kind !== "edge") return;
     move.mount.frame.style.transform = `translate3d(${displacement}px, 0, 0)`;
-    if (turn.kind !== "spine" || !turn.ready || !turn.mount) return;
-    const width = move.mount.pagination?.viewportWidth ?? move.mount.frame.clientWidth;
-    const neighborOffset = displacement + (turn.direction === "next" ? width : -width);
-    turn.mount.frame.style.willChange = "transform";
-    turn.mount.frame.style.transform = `translate3d(${neighborOffset}px, 0, 0)`;
   }
 
-  async #settleInteractiveFrames(move: ActivePageMove, displacement: number): Promise<void> {
+  async #settleEdgeTurn(move: ActivePageMove, displacement: number): Promise<void> {
     const turn = move.interactive;
-    if (!turn || turn.kind === "same-section") return;
+    if (!turn || turn.kind !== "edge") return;
     const width = move.mount.pagination?.viewportWidth ?? move.mount.frame.clientWidth;
     const remaining = Math.abs(displacement - turn.displacement);
     const duration =
@@ -1096,10 +990,9 @@ export class Navigator extends EventTarget {
     if (duration > 0) {
       const transition = `transform ${duration}ms ease-out`;
       move.mount.frame.style.transition = transition;
-      if (turn.kind === "spine" && turn.mount) turn.mount.frame.style.transition = transition;
     }
     turn.displacement = displacement;
-    this.#applyInteractiveFrameTransforms(move, displacement);
+    this.#applyEdgeTransform(move, displacement);
     if (duration === 0) return;
     await new Promise<void>((resolve) => {
       const view = this.#container.ownerDocument.defaultView;
