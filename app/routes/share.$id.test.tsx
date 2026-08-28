@@ -24,7 +24,7 @@ vi.mock("~/components/share/shared-book-reader", () => ({
   },
 }));
 
-import SharePage from "./share.$id";
+import SharePage, { meta } from "./share.$id";
 import { importSharedBookRequested } from "~/lib/themis/books/books-slice";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -44,6 +44,7 @@ function availableShare({
   return {
     status: "available",
     id: "share-1",
+    shareUrl: "https://readmaxxing.test/share/share-1",
     shareChats: false,
     fileUrl,
     book: {
@@ -90,6 +91,76 @@ afterEach(() => {
 });
 
 describe("SharePage", () => {
+  it("builds book-specific document and social metadata from loader data", () => {
+    const descriptors = meta({ loaderData: availableShare() } as Parameters<typeof meta>[0]);
+
+    expect(descriptors).toEqual(
+      expect.arrayContaining([
+        { title: "Shared Book — Shared on Readmaxxing" },
+        {
+          tagName: "link",
+          rel: "canonical",
+          href: "https://readmaxxing.test/share/share-1",
+        },
+        { name: "description", content: "By Reader. Open this shared book on Readmaxxing." },
+        { property: "og:url", content: "https://readmaxxing.test/share/share-1" },
+        { property: "og:site_name", content: "Readmaxxing" },
+        { property: "og:type", content: "article" },
+        { property: "og:title", content: "Shared Book — Shared on Readmaxxing" },
+        {
+          property: "og:description",
+          content: "By Reader. Open this shared book on Readmaxxing.",
+        },
+        { property: "og:image", content: "https://example.com/cover.jpg" },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:title", content: "Shared Book — Shared on Readmaxxing" },
+        {
+          name: "twitter:description",
+          content: "By Reader. Open this shared book on Readmaxxing.",
+        },
+        { name: "twitter:image", content: "https://example.com/cover.jpg" },
+      ]),
+    );
+  });
+
+  it("uses the absolute Readmaxxing image fallback for a coverless share", () => {
+    const loaderData = availableShare();
+    loaderData.book!.coverUrl = null;
+
+    const descriptors = meta({ loaderData } as Parameters<typeof meta>[0]);
+
+    expect(descriptors).toEqual(
+      expect.arrayContaining([
+        { property: "og:image", content: "https://readmaxxing.test/og-image.png" },
+        { name: "twitter:image", content: "https://readmaxxing.test/og-image.png" },
+      ]),
+    );
+  });
+
+  it("uses non-sensitive fallback metadata for an unavailable share", () => {
+    const loaderData = {
+      ...availableShare(),
+      status: "expired" as const,
+      message: "This share link has expired.",
+    };
+
+    const descriptors = meta({ loaderData } as Parameters<typeof meta>[0]);
+
+    expect(descriptors).toEqual(
+      expect.arrayContaining([
+        { title: "Shared book — Readmaxxing" },
+        {
+          name: "description",
+          content: "This shared book is unavailable. Read and discuss books on Readmaxxing.",
+        },
+        { property: "og:image", content: "https://readmaxxing.test/og-image.png" },
+        { name: "twitter:image", content: "https://readmaxxing.test/og-image.png" },
+      ]),
+    );
+    expect(JSON.stringify(descriptors)).not.toContain("Shared Book");
+    expect(JSON.stringify(descriptors)).not.toContain("Reader");
+  });
+
   it.each([
     ["EPUB", "epub", "epubcfi(/6/4!/4/2)", "shared-epub-reader"],
     ["PDF", "pdf", "page:12", "shared-pdf-reader"],
@@ -177,6 +248,7 @@ describe("SharePage", () => {
     renderPage({
       status: "expired",
       id: "share-1",
+      shareUrl: "https://readmaxxing.test/share/share-1",
       shareChats: false,
       message: "This share link has expired.",
       book: availableShare().book,

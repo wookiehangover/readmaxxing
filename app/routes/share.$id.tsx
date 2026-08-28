@@ -16,6 +16,7 @@ import { signDownloadToken } from "~/lib/share-download-token";
 import type { BookFormat } from "~/lib/stores/book-store";
 import { importSharedBookRequested } from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
+import type { Route } from "./+types/share.$id";
 
 type ShareStatus = "available" | "expired" | "exhausted" | "not_found" | "unavailable";
 
@@ -30,6 +31,7 @@ interface ShareBookData {
 interface ShareLoaderData {
   status: ShareStatus;
   id: string;
+  shareUrl: string;
   shareChats: boolean;
   fileUrl?: string | null;
   message?: string;
@@ -38,11 +40,6 @@ interface ShareLoaderData {
     id: string;
     displayName: string | null;
   };
-}
-
-interface LoaderArgs {
-  request: Request;
-  params: { id: string };
 }
 
 interface ComponentProps {
@@ -61,12 +58,18 @@ function normalizeFormat(format: string | null | undefined): BookFormat {
   return format === "pdf" ? "pdf" : "epub";
 }
 
-export async function loader({ request, params }: LoaderArgs): Promise<ShareLoaderData> {
+export async function loader({ request, params }: Route.LoaderArgs): Promise<ShareLoaderData> {
   const id = params.id;
+  const shareUrl = new URL(request.url);
+  shareUrl.search = "";
+  shareUrl.hash = "";
+  const absoluteShareUrl = shareUrl.toString();
+
   if (!process.env.DATABASE_URL) {
     return {
       status: "unavailable",
       id,
+      shareUrl: absoluteShareUrl,
       shareChats: false,
       message: "Sharing is not configured for this deployment.",
     };
@@ -77,6 +80,7 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     return {
       status: "not_found",
       id,
+      shareUrl: absoluteShareUrl,
       shareChats: false,
       message: "This share link could not be found.",
     };
@@ -91,6 +95,7 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     return {
       status: "not_found",
       id,
+      shareUrl: absoluteShareUrl,
       shareChats: shareLink.shareChats,
       message: "The shared book is no longer available.",
     };
@@ -109,6 +114,7 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     return {
       status: "expired",
       id,
+      shareUrl: absoluteShareUrl,
       shareChats: shareLink.shareChats,
       book: bookData,
       sharer: sharerData,
@@ -120,6 +126,7 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
     return {
       status: "exhausted",
       id,
+      shareUrl: absoluteShareUrl,
       shareChats: shareLink.shareChats,
       book: bookData,
       sharer: sharerData,
@@ -132,6 +139,7 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
   return {
     status: "available",
     id,
+    shareUrl: absoluteShareUrl,
     shareChats: shareLink.shareChats,
     fileUrl: fileToken
       ? new URL(
@@ -144,22 +152,25 @@ export async function loader({ request, params }: LoaderArgs): Promise<ShareLoad
   };
 }
 
-export function meta({ data }: { data?: ShareLoaderData }) {
-  const title = data?.book
-    ? `📖 ${data.book.title} — Shared on Readmaxxing`
-    : "Shared book — Readmaxxing";
-  const description = data?.book
-    ? `by ${data.book.author} — Open to start reading`
-    : "Open a shared book on Readmaxxing";
-  const image = data?.book?.coverUrl ?? "/og-image.png";
+export function meta({ loaderData }: Route.MetaArgs) {
+  const book = loaderData?.status === "available" ? loaderData.book : undefined;
+  const shareUrl = loaderData?.shareUrl ?? "https://readmaxxing.invalid/share/unavailable";
+  const title = book ? `${book.title} — Shared on Readmaxxing` : "Shared book — Readmaxxing";
+  const description = book
+    ? `By ${book.author}. Open this shared book on Readmaxxing.`
+    : "This shared book is unavailable. Read and discuss books on Readmaxxing.";
+  const image = book?.coverUrl ?? new URL("/og-image.png", shareUrl).toString();
 
   return [
     { title },
+    { tagName: "link", rel: "canonical", href: shareUrl },
     { name: "description", content: description },
+    { property: "og:url", content: shareUrl },
+    { property: "og:site_name", content: "Readmaxxing" },
+    { property: "og:type", content: "article" },
     { property: "og:title", content: title },
     { property: "og:description", content: description },
     { property: "og:image", content: image },
-    { property: "og:type", content: "article" },
     { name: "twitter:card", content: "summary_large_image" },
     { name: "twitter:title", content: title },
     { name: "twitter:description", content: description },

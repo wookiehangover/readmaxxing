@@ -115,6 +115,27 @@ const staleAssetRecoveryScript = `
 
 const SITE_ORIGIN = typeof __SITE_ORIGIN__ !== "undefined" ? __SITE_ORIGIN__ : "";
 const SW_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const SITE_DESCRIPTION =
+  "AI-assisted ebook reader with multi-pane layout, highlights, notes, and hundreds of free books.";
+
+export function meta(_args: Route.MetaArgs) {
+  return [
+    { title: "Readmaxxing" },
+    { name: "description", content: SITE_DESCRIPTION },
+    { property: "og:type", content: "website" },
+    { property: "og:site_name", content: "Readmaxxing" },
+    { property: "og:title", content: "Readmaxxing" },
+    { property: "og:description", content: SITE_DESCRIPTION },
+    { property: "og:image", content: `${SITE_ORIGIN}/og-image.png` },
+    { property: "og:image:width", content: "1360" },
+    { property: "og:image:height", content: "768" },
+    { property: "og:image:type", content: "image/png" },
+    { name: "twitter:card", content: "summary_large_image" },
+    { name: "twitter:title", content: "Readmaxxing" },
+    { name: "twitter:description", content: SITE_DESCRIPTION },
+    { name: "twitter:image", content: `${SITE_ORIGIN}/og-image.png` },
+  ];
+}
 
 declare global {
   interface Window {
@@ -190,24 +211,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           media="(prefers-color-scheme: dark)"
         />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
-        <meta property="og:type" content="website" />
-        <meta property="og:site_name" content="Readmaxxing" />
-        <meta property="og:title" content="Readmaxxing" />
-        <meta
-          property="og:description"
-          content="AI-assisted ebook reader with multi-pane layout, highlights, notes, and hundreds of free books."
-        />
-        <meta property="og:image" content={`${SITE_ORIGIN}/og-image.png`} />
-        <meta property="og:image:width" content="1360" />
-        <meta property="og:image:height" content="768" />
-        <meta property="og:image:type" content="image/png" />
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Readmaxxing" />
-        <meta
-          name="twitter:description"
-          content="AI-assisted ebook reader with multi-pane layout, highlights, notes, and hundreds of free books."
-        />
-        <meta name="twitter:image" content={`${SITE_ORIGIN}/og-image.png`} />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <script dangerouslySetInnerHTML={{ __html: staleAssetRecoveryScript }} />
         <Meta />
