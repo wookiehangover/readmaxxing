@@ -256,6 +256,108 @@ test.describe("Workspace route", () => {
     await expect(iframe).toHaveAttribute("data-mobile-reader-test", "mounted");
   });
 
+  test("mobile EPUB keeps the final real page aligned to the repeated inset", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await uploadTestBook(page);
+
+    const bookSurface = page
+      .getByTestId("mobile-reading-tabs")
+      .locator(":scope > [aria-label='Book surface']");
+    const iframe = bookSurface.locator("iframe").first();
+    await expect(iframe).toBeAttached();
+    const frame = await (await iframe.elementHandle())?.contentFrame();
+    if (!frame) throw new Error("Could not get EPUB content frame");
+
+    await frame.evaluate(() => {
+      const body = document.body;
+      const style = getComputedStyle(body);
+      const pageHeight =
+        document.documentElement.clientHeight -
+        Number.parseFloat(style.paddingTop) -
+        Number.parseFloat(style.paddingBottom);
+      body.replaceChildren(
+        ...["first", "middle", "final"].map((name) => {
+          const page = document.createElement("div");
+          page.style.height = `${pageHeight}px`;
+          const marker = document.createElement("div");
+          marker.dataset.pageMarker = name;
+          marker.textContent = name;
+          page.append(marker);
+          return page;
+        }),
+      );
+    });
+
+    // Force the navigator to remeasure the synthetic three-page section.
+    await page.setViewportSize({ width: 391, height: 844 });
+    await expect.poll(() => frame.evaluate(() => document.documentElement.clientWidth)).toBe(391);
+    await expect
+      .poll(() =>
+        frame.evaluate(() => {
+          const scrolling = document.scrollingElement ?? document.documentElement;
+          return scrolling.scrollWidth / scrolling.clientWidth;
+        }),
+      )
+      .toBe(3);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect
+      .poll(() =>
+        frame.evaluate(() => {
+          const scrolling = document.scrollingElement ?? document.documentElement;
+          return scrolling.scrollWidth / scrolling.clientWidth;
+        }),
+      )
+      .toBe(3);
+
+    const markerBox = (name: string) =>
+      frame.locator(`[data-page-marker="${name}"]`).evaluate((marker) => {
+        const rect = marker.getBoundingClientRect();
+        return { left: rect.left, right: rect.right };
+      });
+    const first = await markerBox("first");
+    const dispatchTouch = async (
+      type: "touchstart" | "touchmove" | "touchend",
+      x: number,
+      time: number,
+    ) => {
+      await frame.evaluate(
+        ({ type, x, time }) => {
+          const point = { identifier: 1, clientX: x, clientY: 100 };
+          const event = new Event(type, { bubbles: true, cancelable: true });
+          Object.defineProperties(event, {
+            touches: { value: type === "touchend" ? [] : [point] },
+            changedTouches: { value: [point] },
+            timeStamp: { value: time },
+          });
+          document.dispatchEvent(event);
+        },
+        { type, x, time },
+      );
+    };
+    const turnNext = async (time: number, expectedOffset: number) => {
+      await dispatchTouch("touchstart", 300, time);
+      await dispatchTouch("touchmove", 100, time + 200);
+      await dispatchTouch("touchend", 100, time + 400);
+      await expect
+        .poll(() =>
+          frame.evaluate(() =>
+            Math.round((document.scrollingElement ?? document.documentElement).scrollLeft),
+          ),
+        )
+        .toBe(expectedOffset);
+    };
+
+    await turnNext(100, 390);
+    const middle = await markerBox("middle");
+    await turnNext(600, 780);
+    const final = await markerBox("final");
+
+    expect(middle.left).toBeCloseTo(first.left, 0);
+    expect(middle.right).toBeCloseTo(first.right, 0);
+    expect(final.left).toBeCloseTo(first.left, 0);
+    expect(final.right).toBeCloseTo(first.right, 0);
+  });
+
   test("reader has navigation buttons", async ({ page }) => {
     await uploadAndOpenBook(page);
 

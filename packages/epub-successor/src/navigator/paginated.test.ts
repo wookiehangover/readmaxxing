@@ -313,6 +313,52 @@ describe("paginated page math", () => {
     expect(doc.getElementById("epub-successor-pagination-pad")?.textContent).toBe("");
   });
 
+  it.each([
+    ["before", 2 * 390 - 1, 2],
+    ["on", 2 * 390, 2],
+    ["after", 2 * 390 + 1, 3],
+  ] as const)(
+    "pads an inset single-page extent ending %s a column boundary without adding a page",
+    (_position, naturalWidth, expectedPages) => {
+      const geometry = pageChromeInsets(390, 64, 1, 40).geometry;
+      const doc = measurableDocument(naturalWidth, geometry.viewportWidth);
+
+      const state = measurePaginatedLayout(doc, geometry, "ltr");
+
+      expect(state.pageCount).toBe(expectedPages);
+      expect(state.maxOffset).toBe((expectedPages - 1) * geometry.columnStride);
+      expect(doc.getElementById("epub-successor-pagination-pad")?.textContent).toContain(
+        `width:${expectedPages * geometry.columnStride}px`,
+      );
+      scrollToPage(state, expectedPages - 1);
+      expect(state.scrolling.scrollLeft).toBe((expectedPages - 1) * geometry.columnStride);
+    },
+  );
+
+  it.each(["ltr", "rtl"] as const)(
+    "restores the omitted terminal inset to the final %s page stride",
+    (direction) => {
+      const geometry = pageChromeInsets(390, 64, 1, 40).geometry;
+      // Three content columns end at x=1,130; Chromium omits the final 40px
+      // body inset from the natural multicol scroll extent.
+      const doc = measurableDocument(3 * geometry.columnStride - 40, geometry.viewportWidth);
+
+      const state = measurePaginatedLayout(doc, geometry, direction);
+
+      expect(state.pageCount).toBe(3);
+      expect(state.maxOffset).toBe(2 * geometry.columnStride);
+      scrollToPage(state, 2);
+      expect(state.scrolling.scrollLeft).toBe(
+        scrollLeftFromLogicalOffset(
+          2 * geometry.columnStride,
+          state.maxOffset,
+          direction,
+          state.rtlScrollType,
+        ),
+      );
+    },
+  );
+
   it("maps a clamped final two-page spread to its final progression", () => {
     const geometry = calculateColumnGeometry(800, 32, 2);
     const scrolling = document.createElement("div");

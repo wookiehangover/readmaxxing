@@ -267,6 +267,18 @@ export function measurePaginatedLayout(
   const scrolling = document.scrollingElement ?? document.documentElement;
   padStyle(document).textContent = "";
   let pageCount = calculatePageCount(scrolling.scrollWidth, geometry);
+  // A single-page inset is encoded as half of the repeated inter-column gap.
+  // Chromium's multicol scrollWidth stops at the final content edge, omitting
+  // that trailing half-gap. Count from the natural extent first, then widen the
+  // body to the last full stride so the terminal column is not clamped early.
+  if (
+    geometry.pagesPerSpread === 1 &&
+    geometry.columnGap > 0 &&
+    geometry.columnStride === geometry.viewportWidth
+  ) {
+    padStyle(document).textContent =
+      `body{width:${pageCount * geometry.columnStride}px !important;}`;
+  }
   // Two-page spreads: widen the body to a whole number of spreads so the last
   // spread starts on a spread boundary (trailing column stays blank). With an
   // odd column count the final turn's target offset exceeds maxOffset, the
