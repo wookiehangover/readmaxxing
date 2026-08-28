@@ -105,6 +105,39 @@ describe("paginated page math", () => {
     expect(odd.geometry.columnWidth * 2 + odd.geometry.columnGap).toBeLessThanOrEqual(801);
   });
 
+  it("keeps a single-page reading inset inside a full-width viewport", () => {
+    const chrome = pageChromeInsets(390, 64, 1, 40);
+
+    expect(chrome).toMatchObject({
+      padInlineStart: 40,
+      padInlineEnd: 40,
+      geometry: {
+        viewportWidth: 390,
+        columnWidth: 310,
+        columnGap: 80,
+        columnStride: 390,
+        pagesPerSpread: 1,
+      },
+    });
+
+    const doc = document.implementation.createHTMLDocument();
+    applyPaginatedLayout(doc, { width: 390, height: 844 }, 1, "ltr", 64, 40);
+    const css = doc.getElementById("epub-successor-pagination-style")?.textContent ?? "";
+    expect(css).toContain("html{height:844px !important;width:390px");
+    expect(css).toContain("padding:24px 40px 24px 40px");
+    expect(css).toContain("column-gap:80px");
+    expect(css).toContain("column-width:310px");
+
+    applyPaginatedLayout(doc, { width: 390, height: 844 }, 1, "rtl", 64, 40);
+    const rtlCss = doc.getElementById("epub-successor-pagination-style")?.textContent ?? "";
+    expect(rtlCss).toContain("direction:rtl");
+    expect(rtlCss).toContain("padding:24px 40px 24px 40px");
+  });
+
+  it("does not apply the single-page inset to two-page spreads", () => {
+    expect(pageChromeInsets(800, 64, 2, 40)).toEqual(pageChromeInsets(800, 64, 2));
+  });
+
   it("uses full width for single-page columns", () => {
     const single = pageChromeInsets(800, 64, 1);
     expect(single.padInlineStart).toBe(0);

@@ -34,6 +34,18 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
   return Boolean((target as Element).closest(INTERACTIVE_SELECTOR));
 }
 
+function publicationTapBounds(document: Document, viewportWidth: number) {
+  const style = document.defaultView?.getComputedStyle(document.body) ?? document.body.style;
+  const left = Number.parseFloat(style?.paddingLeft ?? "0");
+  const right = Number.parseFloat(style?.paddingRight ?? "0");
+  const insetLeft = Number.isFinite(left) ? left : 0;
+  const insetRight = Number.isFinite(right) ? right : 0;
+  return {
+    start: insetLeft,
+    width: Math.max(0, viewportWidth - insetLeft - insetRight),
+  };
+}
+
 function addDocumentInteractions(
   document: Document,
   source: EpubContentSource,
@@ -92,8 +104,11 @@ function addDocumentInteractions(
       return;
     const width = document.documentElement.clientWidth || document.defaultView?.innerWidth || 0;
     if (!width) return;
-    if (event.clientX < width / 4) options.onPrevious();
-    else if (event.clientX > (width * 3) / 4) options.onNext();
+    const bounds = publicationTapBounds(document, width);
+    const x = event.clientX - bounds.start;
+    if (x < 0 || x > bounds.width) return;
+    if (x < bounds.width / 4) options.onPrevious();
+    else if (x > (bounds.width * 3) / 4) options.onNext();
     else options.onToggleToolbar();
   };
   document.addEventListener("click", handleClick);

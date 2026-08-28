@@ -99,7 +99,8 @@ export function EpubReaderSurface({
       <div
         ref={containerRef}
         className={cn("h-full overflow-hidden", {
-          "px-10 pt-6 pb-2 md:px-16 md:pt-10 md:pb-4": readerLayout,
+          "pt-6 pb-2 md:pt-10 md:pb-4": readerLayout,
+          "px-10 md:px-16": readerLayout && (!isMobile || isScrollMode),
           "mx-auto": readerLayout === "single" || readerLayout === "spread",
           "max-w-[72ch]":
             readerLayout === "single" || (readerLayout === "spread" && !supportsSpread),

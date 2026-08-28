@@ -604,6 +604,32 @@ describe("paginated Navigator", () => {
     navigator.destroy();
   });
 
+  it("tracks and cancels inside a full-width frame while retaining the resting inset", async () => {
+    const { container, navigator } = setupPaginated({ pageInlineMargin: 40 });
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    const frame = container.querySelector("iframe")!;
+    const scrolling =
+      frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
+    const css =
+      frame.contentDocument!.getElementById("epub-successor-pagination-style")?.textContent ?? "";
+
+    expect(frame.style.width).toBe("800px");
+    expect(css).toContain("width:800px");
+    expect(css).toContain("padding:24px 40px 24px 40px");
+    expect(css).toContain("column-width:720px");
+    expect(css).toContain("column-gap:80px");
+    expect(navigator.beginInteractivePageTurn("next")).toBe(true);
+    expect(navigator.updateInteractivePageTurn(-40)).toBe(true);
+    expect(scrolling.scrollLeft).toBe(40);
+
+    await expect(navigator.cancelInteractivePageTurn()).resolves.toBe(false);
+    expect(scrolling.scrollLeft).toBe(0);
+    expect(frame.style.transform).toBe("");
+    expect(frame.style.transition).toBe("");
+    expect(frame.style.willChange).toBe("");
+    navigator.destroy();
+  });
+
   it("settles an interactive cancellation back without emitting a relocation", async () => {
     const { container, navigator } = setupPaginated({
       pageTurnAnimation: "slide",

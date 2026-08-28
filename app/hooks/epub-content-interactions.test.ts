@@ -198,6 +198,36 @@ describe("registerEpubContentInteractions", () => {
     expect(onNext).toHaveBeenCalledOnce();
   });
 
+  it("keeps tap zones on the resting content area when the iframe spans its margins", () => {
+    let contentHook: ((content: { document: Document }) => void) | undefined;
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    const onToggleToolbar = vi.fn();
+    registerEpubContentInteractions(
+      {
+        hooks: {
+          content: {
+            register: (callback) => {
+              contentHook = callback;
+            },
+          },
+        },
+      },
+      { isPaginatedMobile: () => true, onPrevious, onNext, onToggleToolbar },
+    );
+    const contentDocument = documentFixture();
+    contentDocument.body.style.paddingLeft = "40px";
+    contentDocument.body.style.paddingRight = "40px";
+    contentHook?.({ document: contentDocument });
+
+    for (const x of [20, 60, 200, 340, 380])
+      contentDocument.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: x }));
+
+    expect(onPrevious).toHaveBeenCalledOnce();
+    expect(onToggleToolbar).toHaveBeenCalledOnce();
+    expect(onNext).toHaveBeenCalledOnce();
+  });
+
   it("leaves interactive content in control of touch gestures", () => {
     let contentHook: ((content: { document: Document }) => void) | undefined;
     const navigator = {

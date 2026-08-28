@@ -130,6 +130,27 @@ test.describe("Workspace route", () => {
     await expect(page.getByRole("button", { name: "Next page" })).toHaveCount(0);
     await iframe.evaluate((element) => element.setAttribute("data-mobile-reader-test", "mounted"));
 
+    const surfaceBox = await bookSurface.boundingBox();
+    const frameBox = await iframe.boundingBox();
+    if (!surfaceBox || !frameBox) throw new Error("Could not measure mobile EPUB geometry");
+    expect(frameBox.x).toBeCloseTo(surfaceBox.x, 0);
+    expect(frameBox.x + frameBox.width).toBeCloseTo(surfaceBox.x + surfaceBox.width, 0);
+    const restingGeometry = await page
+      .frameLocator("iframe")
+      .first()
+      .locator("body")
+      .evaluate((body) => {
+        const style = getComputedStyle(body);
+        return {
+          viewportWidth: body.ownerDocument.documentElement.clientWidth,
+          paddingLeft: Number.parseFloat(style.paddingLeft),
+          paddingRight: Number.parseFloat(style.paddingRight),
+        };
+      });
+    expect(restingGeometry.viewportWidth).toBeCloseTo(frameBox.width, 0);
+    expect(restingGeometry.paddingLeft).toBe(40);
+    expect(restingGeometry.paddingRight).toBe(40);
+
     const epubHtml = page.frameLocator("iframe").first().locator("html");
     const readPageState = () =>
       epubHtml.evaluate((element) => {

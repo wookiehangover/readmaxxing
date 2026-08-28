@@ -54,7 +54,7 @@ beforeEach(() => {
   );
 });
 
-function renderReaderSurface(readerLayout: ReaderLayout) {
+function renderReaderSurface(readerLayout: ReaderLayout, isMobile = false) {
   const container = document.body.appendChild(document.createElement("div"));
   const containerRef = React.createRef<HTMLDivElement>();
   root = createRoot(container);
@@ -73,7 +73,7 @@ function renderReaderSurface(readerLayout: ReaderLayout) {
         loadError={false}
         readerLayout={readerLayout}
         isScrollMode={readerLayout === "scroll"}
-        isMobile={false}
+        isMobile={isMobile}
         onPrevious={vi.fn()}
         onNext={vi.fn()}
       />,
@@ -144,6 +144,24 @@ describe("EpubReaderToolbar", () => {
       expect(surface.classList).not.toContain("max-w-[72ch]");
       expect(surface.classList).not.toContain("max-w-[calc(144ch+64px)]");
     }
+  });
+
+  it("moves mobile paginated chrome into the iframe viewport", () => {
+    const surface = renderReaderSurface("single", true);
+    const viewport = surface.parentElement!;
+
+    expect(viewport.classList).toContain("overflow-hidden");
+    expect(surface.classList).toContain("overflow-hidden");
+    expect(surface.classList).not.toContain("px-10");
+    expect(surface.classList).not.toContain("md:px-16");
+    expect(surface.classList).toContain("max-w-[72ch]");
+  });
+
+  it("keeps host padding for mobile continuous scroll", () => {
+    const surface = renderReaderSurface("scroll", true);
+
+    expect(surface.classList).toContain("px-10");
+    expect(surface.classList).toContain("md:px-16");
   });
 
   it("renders only the rail menu when mounted in the reading shell", () => {

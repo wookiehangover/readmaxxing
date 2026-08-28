@@ -65,6 +65,7 @@ export { resolveTocNavigationTarget } from "~/lib/epub/successor-toc";
 export type { TocNavigationTarget } from "~/lib/epub/successor-toc";
 
 const LAYOUT_POSITION_GUARD_MS = 4000;
+const MOBILE_PAGINATED_INLINE_MARGIN = 40;
 
 function hasLayoutSize(element: HTMLElement): boolean {
   const rect = element.getBoundingClientRect();
@@ -166,14 +167,15 @@ function readerPreferences(config: UseEpubLifecycleConfig): NavigatorPreferences
   return {
     flow: layout === "scroll" ? "scrolled" : "paginated",
     spread: layout === "spread" ? "double" : "single",
+    pageInlineMargin: config.isMobile && layout !== "scroll" ? MOBILE_PAGINATED_INLINE_MARGIN : 0,
     pageTurnAnimation: layout === "scroll" ? "none" : "slide",
     fontFamily: config.fontFamily,
     fontSize: config.fontSize,
     lineHeight: config.lineHeight,
     theme,
-    // Page chrome (epubjs-style body insets) is applied by the navigator
-    // paginated layout, not preference margins — body padding must participate
-    // in column geometry or two-page spreads show a next-column sliver.
+    // Page chrome is layout geometry, not the user's typography margin setting.
+    // Mobile single-page insets live inside the full-width iframe; desktop and
+    // scroll insets remain on the host surface.
     preferenceCss: `${getTypographyCss(
       config.fontFamily,
       config.fontSize,
