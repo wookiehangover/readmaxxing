@@ -15,7 +15,7 @@ requires:
   - core/import-boundaries
   - core/state-serialization
 sources:
-  - @augmentcode/themis/docs/SAGAS.md#saga-manager
+  - "@augmentcode/themis/docs/SAGAS.md#saga-manager"
   - public configured Store instance API
   - package-internal saga manager implementation
 triggers:

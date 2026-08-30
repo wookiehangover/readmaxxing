@@ -16,7 +16,7 @@ sources:
   - "@augmentcode/themis/react-store"
   - "@preact/signals-react"
   - "@preact/signals-react/runtime"
-  - @augmentcode/themis/docs/SELECTORS.md
+  - "@augmentcode/themis/docs/SELECTORS.md"
   - ../signals/SKILL.md
 triggers:
   - React selector

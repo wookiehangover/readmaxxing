@@ -18,8 +18,8 @@ sources:
   - ./selector-lifecycle/SKILL.md
   - ./selector-scheduling/SKILL.md
   - ./migration/SKILL.md
-  - @augmentcode/themis/README.md
-  - @augmentcode/themis/docs/SELECTORS.md
+  - "@augmentcode/themis/README.md"
+  - "@augmentcode/themis/docs/SELECTORS.md"
   - "@augmentcode/themis/react-store"
 triggers:
   - ReactStore

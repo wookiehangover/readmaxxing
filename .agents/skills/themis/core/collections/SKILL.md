@@ -14,7 +14,7 @@ requires:
   - core
   - core/reducers
 sources:
-  - @augmentcode/themis/docs/COLLECTIONS.md
+  - "@augmentcode/themis/docs/COLLECTIONS.md"
   - "@augmentcode/themis/utils/collections/collection-utils"
 triggers:
   - create collection

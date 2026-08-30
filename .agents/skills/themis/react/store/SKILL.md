@@ -10,8 +10,8 @@ requires:
   - core/import-boundaries
 sources:
   - "@augmentcode/themis/react-store"
-  - @augmentcode/themis/docs/ARCHITECTURE.md
-  - @augmentcode/themis/README.md
+  - "@augmentcode/themis/docs/ARCHITECTURE.md"
+  - "@augmentcode/themis/README.md"
 triggers:
   - ReactStore
   - react-store import

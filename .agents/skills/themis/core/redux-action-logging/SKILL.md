@@ -3,7 +3,8 @@ name: core/redux-action-logging
 description: >-
   Opt-in Redux action logging for Store, ReactStore, and StreamingStore. Covers
   the construction-time logReduxActions option, grouped console records,
-  presentation styles, unchanged-state output, and lazy path-keyed changes.
+  presentation styles, immutable `reduxAction` stream events, unchanged-state
+  output, and lazy path-keyed changes.
 type: sub-skill
 requires:
   - core
@@ -39,9 +40,16 @@ Use the constructor corresponding to the app's Store family; do not combine
 Svelte, React, and Streaming lifecycle patterns in one app. The option is
 shared by all three families and is disabled when omitted or set to `false`.
 
+The Store exposes six read-only Kefir streams through `traceStreams`:
+`selectorDetail`, `selectorSummary`, `selectorCadence`, `sagaMonitor`,
+`runtimeError`, and `reduxAction`. `reduxAction` is produced by pure middleware:
+it calls `next(action)` before publishing one shallow-immutable event with the
+action, previous/next state references, and `stateChanged`. Errors and return
+values from `next` are preserved, and failed dispatches do not publish an event.
+
 ## 2. Read one action's group
 
-The logger prints a one-time `🔧 Redux Logger Active` legend, then renders each
+With no `loggerFactory`, StoreRuntime's default logger prints a one-time `🔧 Redux Logger Active` legend, then renders each
 dispatched action with `console.groupCollapsed`. Expand the action group before
 interpreting it:
 
@@ -77,9 +85,21 @@ changes from the group title alone.
 ## 3. Keep logging opt-in and temporary
 
 There is no dev-mode switch, localStorage toggle, global debug-console toggle,
-or runtime enable/disable API for this logger. The logger is installed only
-when the normalized constructor option is `true`; omitted and `false` options
-do not add logger middleware or logger dispatch work.
+or runtime enable/disable API for this logger. The pure logger middleware and
+the default StoreRuntime rendering are installed only when the normalized
+constructor option is `true`; omitted and `false` options do not publish action
+events or attach the default logger.
+
+Pass a typed `loggerFactory` to replace default console rendering. It receives
+the same six read-only streams and may return a disposer; it does not also
+attach the built-in legend or Redux console groups. The factory is attached at
+initialization, disposed with the Store, and reattached on a later successful
+initialization.
+
+Selector aggregation is independent of action logging: `summaryEnabled: true`
+is the sole switch that allocates and periodically publishes selector summaries.
+Detailed selector categories may be enabled without allocating a summary
+collector, and action events never change that behavior.
 
 To disable logging, omit the option or set `logReduxActions: false` **and
 construct a new Store instance**. Changing an options object, calling `init()`
