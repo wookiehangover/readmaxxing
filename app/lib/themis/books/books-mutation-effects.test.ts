@@ -111,16 +111,14 @@ describe("book mutation persistence", () => {
   });
 
   it("deletes highlights before deleting the book", async () => {
-    const highlights = ["one", "two"].map(
-      (id): Highlight => ({
-        id,
-        bookId: "book-1",
-        cfiRange: id,
-        text: id,
-        color: "yellow",
-        createdAt: 1,
-      }),
-    );
+    const highlights = ["one", "two"].map((id): Highlight => ({
+      id,
+      bookId: "book-1",
+      cfiRange: id,
+      text: id,
+      color: "yellow",
+      createdAt: 1,
+    }));
     const operations: string[] = [];
     mocks.getHighlightsByBook.mockResolvedValueOnce(highlights);
     mocks.deleteHighlight.mockImplementation(async (id: string) => {

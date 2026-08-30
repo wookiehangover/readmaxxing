@@ -3,7 +3,7 @@ name: core/selector-tracing
 description: >-
   Diagnose Store-created selector performance from opt-in interval aggregates
   and privacy-safe lifetime summaries. Covers the flat traceSelectors contract,
-  execution, cache, invalidation, argument, result, and cadence records,
+  execution, cache, invalidation, argument, result, cadence, and Redux action records,
   bounded p95 interpretation, lifecycle, and production safety across all Store
   families.
 type: sub-skill
@@ -77,11 +77,46 @@ rejected. Its eleven fields are:
 | `summaryEnabled` | `false` | Retains a lifetime, non-resetting `getSelectorTraceSummary()` snapshot. |
 | `summaryIntervalMs` | `1000` | Automatic period-aggregate interval in milliseconds. |
 
-`traceSelectors: true` enables all six event categories with zero thresholds and
-automatic period aggregates, but does not retain lifetime snapshots. `undefined`
-and `false` disable every category and aggregate timer. Object fields are independent: enabling invalidation does not enable
+`traceSelectors: true` enables all six event categories with zero thresholds but
+does not allocate summaries. Set `summaryEnabled: true` to allocate the bounded
+collector and publish period aggregates while retaining lifetime snapshots.
+`undefined` and `false` disable every category and aggregate timer. Object fields are independent: enabling invalidation does not enable
 execution, arguments, results, cache, or cadence. All threshold fields must be
 finite and non-negative; category and `summaryEnabled` fields must be boolean.
+
+## 2a. Store-owned logging streams
+
+Every Store family exposes the same read-only `traceStreams` collection. The
+public `StoreTraceStreams` and `StoreLoggerFactory` types are available from
+`@augmentcode/themis/types` and re-exported by each Store-family entrypoint.
+The collection contains six Kefir observables: `selectorDetail`,
+`selectorSummary`, `selectorCadence`, `sagaMonitor`, `runtimeError`, and
+`reduxAction`. It does not expose emitters or permit consumers to publish events.
+
+When `logReduxActions: true`, Store-owned Redux middleware produces one
+`reduxAction` event only after `next(action)` succeeds. The event contains the
+action plus previous/next state references and a `stateChanged` flag; it does not
+eagerly compute a diff. StoreRuntime's default logger renders that stream with
+the existing legend, grouped titles, action record, and lazy path-keyed state
+diff. A `loggerFactory` replaces the default logger while still receiving all
+six streams. Action and state payloads may contain application data; redact
+secrets before sharing them.
+
+With no `loggerFactory`, StoreRuntime attaches the default console logger and
+preserves the existing severity and `[themis]` prefixes. A custom factory
+receives only this Store instance's streams and may return one disposer, so
+custom logging does not duplicate default console output:
+
+```ts
+const loggerFactory: StoreLoggerFactory = (streams) => {
+  const subscription = streams.runtimeError.observe(reportRuntimeError);
+  return () => subscription.unsubscribe();
+};
+```
+
+The returned disposer runs during `store.dispose()` and before a successful
+re-initialization attaches the factory again. Dispose stream subscriptions and
+the Store initializer when the owning code path ends.
 
 The legacy `store.traceSelectors()` compatibility method can activate the same
 event preset in any build when construction used omitted or `false` tracing
@@ -90,10 +125,11 @@ override it.
 
 ## 3. Read console aggregates as evidence
 
-Selector metadata is collected without per-call console output. Each non-empty
-interval emits one `console.info` call with the `[themis] selector trace summary`
-prefix and the exact aggregate shape `{ intervalMs, selectors }`. Each selector
-row follows `SelectorTracePeriodSummary` exactly:
+Selector metadata is collected without per-call console output. When
+`summaryEnabled: true`, each non-empty interval emits one `console.info` call
+with the `[themis] selector trace summary` prefix and the exact aggregate shape
+`{ intervalMs, selectors }`. Each selector row follows
+`SelectorTracePeriodSummary` exactly:
 
 | Field | Meaning |
 | --- | --- |
@@ -135,9 +171,9 @@ They do not expose state or selector values.
 
 ## 4. Aggregate summaries
 
-Period aggregation is automatic whenever selector tracing is enabled. Set
-`summaryEnabled: true` when a privacy-preserving, non-resetting lifetime snapshot
-is also required, then read it with:
+Set `summaryEnabled: true`—the sole switch that allocates the summary collector—
+for privacy-preserving per-selector aggregation, then
+read a non-resetting snapshot with:
 
 ```ts
 const summaries = store.getSelectorTraceSummary();
@@ -163,11 +199,13 @@ it is a bounded-window percentile, not a percentile over every lifetime event.
 Do not treat it as an exact long-term tail latency. Cache, invalidation, and
 result summaries retain metadata only, never argument, result, or state values.
 
-After `init()`, enabled tracing starts one interval using `summaryIntervalMs`.
-Each non-empty period emits exactly one aggregate; idle periods are silent.
-Repeated `init()` calls do not create duplicate intervals. The initializer
-disposer and `store.dispose()` stop the interval and clear pending period data.
-Cadence subscribe and tick diagnostics remain immediate rather than aggregated.
+After `init()`, `summaryEnabled: true` starts one interval using
+`summaryIntervalMs`. Each non-empty period emits exactly one aggregate; idle
+periods are silent. Without `summaryEnabled`, no summary collector or interval
+is allocated, even when detailed tracing categories are enabled. Repeated
+`init()` calls do not create duplicate intervals. The initializer disposer and
+`store.dispose()` stop the interval and clear pending period data. Cadence
+subscribe and tick diagnostics remain immediate rather than aggregated.
 
 ## 5. Store-family symmetry and lifecycle
 
@@ -202,8 +240,9 @@ sagas. Do not infer a tracing failure from the absence of records before
 
 Tracing remains disabled by default in production as well as development. When
 explicitly enabled, production constructor options, the legacy activation
-method, reporters, summary collectors, summary timers, console output, and
-category-specific tracing work are active. Default and `false` configurations
+method, reporters, and category-specific tracing work are active. When
+`summaryEnabled` is true, summary collectors, summary timers, and aggregate
+output are active as well. Default and `false` configurations
 are silent and should not allocate diagnostic work. Keep tracing omitted or
 `false` in normal builds and remove temporary diagnostic configuration after the
 investigation.
@@ -218,8 +257,8 @@ characters and is not a state snapshot.
 ## 7. Common mistakes
 
 - **Expecting `true` to retain lifetime summaries:** `true` enables six event
-  categories and automatic period aggregates; explicitly set `summaryEnabled:
-  true` for lifetime collection.
+  categories only; explicitly set `summaryEnabled: true` for the collector,
+  period aggregates, and lifetime collection.
 - **Using nested or array configuration:** the contract is one flat object;
   unknown properties, arrays, and invalid numeric values are rejected.
 - **Reading trace thresholds as global filters:** `minDurationMs` and
@@ -256,7 +295,8 @@ characters and is not a state snapshot.
    verify Store/source boundaries before comparing intervals.
 6. Enable cadence only when scheduling is suspected. Compare immediate
    subscription and tick messages with aggregate selector records; cadence
-   messages contain no selector payload.
+   messages contain no selector payload. RAF tick timestamps use the normalized
+   wall-clock timestamp used by the legacy console payload.
 7. For a repeatable comparison, enable summaries, capture frozen snapshots
    before and after the change, compare counts, invalidation labels, cache
    ratios, and bounded p95, then dispose and turn tracing off.

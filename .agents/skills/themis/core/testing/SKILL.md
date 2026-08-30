@@ -17,7 +17,7 @@ requires:
   - core/sagas
   - core/state-integrity
 sources:
-  - @augmentcode/themis/docs/TESTING.md
+  - "@augmentcode/themis/docs/TESTING.md"
   - ../SKILL.md
 triggers:
   - vi mock typed-redux-saga

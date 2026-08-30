@@ -17,8 +17,8 @@ sources:
   - ./svelte/SKILL.md
   - ./react/SKILL.md
   - ./streaming/SKILL.md
-  - @augmentcode/themis/README.md
-  - @augmentcode/themis/docs/ARCHITECTURE.md
+  - "@augmentcode/themis/README.md"
+  - "@augmentcode/themis/docs/ARCHITECTURE.md"
 triggers:
   - themis
   - skill router
