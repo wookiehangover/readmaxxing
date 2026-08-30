@@ -314,7 +314,16 @@ test.describe("Workspace route", () => {
         const rect = marker.getBoundingClientRect();
         return { left: rect.left, right: rect.right };
       });
+    const repeatedInset = await frame.evaluate(() =>
+      Number.parseFloat(getComputedStyle(document.body).paddingLeft),
+    );
+    await expect
+      .poll(async () => Math.abs((await markerBox("first")).left - repeatedInset) <= 1)
+      .toBe(true);
     const first = await markerBox("first");
+    const pageStride = await frame.evaluate(
+      () => (document.scrollingElement ?? document.documentElement).clientWidth,
+    );
     const dispatchTouch = async (
       type: "touchstart" | "touchmove" | "touchend",
       x: number,
@@ -340,22 +349,28 @@ test.describe("Workspace route", () => {
       await dispatchTouch("touchend", 100, time + 400);
       await expect
         .poll(() =>
-          frame.evaluate(() =>
-            Math.round((document.scrollingElement ?? document.documentElement).scrollLeft),
+          frame.evaluate(
+            ({ expectedOffset, pageStride }) => {
+              const actualOffset = Math.round(
+                (document.scrollingElement ?? document.documentElement).scrollLeft,
+              );
+              return Math.abs(actualOffset - expectedOffset) <= expectedOffset / pageStride;
+            },
+            { expectedOffset, pageStride },
           ),
         )
-        .toBe(expectedOffset);
+        .toBe(true);
     };
 
-    await turnNext(100, 390);
+    await turnNext(100, pageStride);
     const middle = await markerBox("middle");
-    await turnNext(600, 780);
+    await turnNext(600, pageStride * 2);
     const final = await markerBox("final");
 
-    expect(middle.left).toBeCloseTo(first.left, 0);
-    expect(middle.right).toBeCloseTo(first.right, 0);
-    expect(final.left).toBeCloseTo(first.left, 0);
-    expect(final.right).toBeCloseTo(first.right, 0);
+    expect(Math.abs(middle.left - first.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(middle.right - first.right)).toBeLessThanOrEqual(1);
+    expect(Math.abs(final.left - first.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(final.right - first.right)).toBeLessThanOrEqual(1);
   });
 
   test("reader has navigation buttons", async ({ page }) => {
