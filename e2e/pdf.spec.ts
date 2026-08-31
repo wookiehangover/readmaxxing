@@ -159,12 +159,44 @@ test.describe("PDF support", () => {
       pdfContainer.locator("[data-pdf-carousel-page='2'] .page[data-page-number='2']"),
     ).toHaveCount(1);
     await dispatchTouch("touchend", 100, 900);
-    await expect(page.getByText("2 / 2", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Book surface").getByText("2 / 2", { exact: true })).toBeVisible();
 
     await dispatchTouch("touchstart", 100, 1000);
     await dispatchTouch("touchmove", 260, 1200);
     await dispatchTouch("touchend", 300, 1400);
     await expect(page.getByText("1 / 2", { exact: true })).toBeVisible();
+  });
+
+  test("touch-capable tablet swipes PDF pages without using the phone layout", async ({ page }) => {
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 5 }),
+    );
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.reload();
+    await waitForAppHydration(page);
+    await uploadTestPdf(page);
+
+    const pdfContainer = page.getByTestId("pdf-container");
+    await expect(pdfContainer.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("mobile-reading-tabs")).toHaveCount(0);
+    await expect(page.getByTestId("pdf-next")).toBeVisible();
+    await pdfContainer.evaluate((container) => {
+      const start = { identifier: 1, clientX: 700, clientY: 200 };
+      const end = { identifier: 1, clientX: 400, clientY: 202 };
+      for (const [type, touches, point, time] of [
+        ["touchstart", [start], start, 10],
+        ["touchend", [], end, 200],
+      ] as const) {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperties(event, {
+          touches: { value: touches },
+          changedTouches: { value: [point] },
+          timeStamp: { value: time },
+        });
+        container.dispatchEvent(event);
+      }
+    });
+    await expect(page.getByLabel("Book surface").getByText("2 / 2", { exact: true })).toBeVisible();
   });
 
   test("PDF reader settings menu opens", async ({ page }) => {

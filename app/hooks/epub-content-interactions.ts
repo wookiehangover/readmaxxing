@@ -15,7 +15,7 @@ interface EpubContentSource {
 }
 
 interface EpubContentInteractionsOptions {
-  readonly isPaginatedMobile: () => boolean;
+  readonly isPageSwipingEnabled: () => boolean;
   readonly onPrevious: () => void;
   readonly onNext: () => void;
   readonly onToggleToolbar: () => void;
@@ -71,7 +71,7 @@ function addDocumentInteractions(
     }, 500);
   };
   const runSwipe = (callback: () => void) => {
-    if (!options.isPaginatedMobile()) return;
+    if (!options.isPageSwipingEnabled()) return;
     suppressSyntheticClick();
     callback();
   };
@@ -79,7 +79,7 @@ function addDocumentInteractions(
     getSelection: () => document.getSelection(),
     shouldStart: (event) => !isInteractiveTarget(event.target),
     onStart: ({ direction }) => {
-      if (!options.isPaginatedMobile()) return;
+      if (!options.isPageSwipingEnabled()) return;
       suppressSyntheticClick();
       interactiveNavigation.abortPending();
       interactiveTurn = source.navigator?.beginInteractivePageTurn(direction) ?? false;
@@ -110,7 +110,7 @@ function addDocumentInteractions(
     },
   });
   const handleClick = (event: MouseEvent) => {
-    if (!options.isPaginatedMobile()) return;
+    if (!options.isPageSwipingEnabled()) return;
     if (suppressNextClick) {
       suppressNextClick = false;
       return;

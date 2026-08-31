@@ -137,6 +137,7 @@ export interface UseEpubLifecycleConfig {
   onSearchOpen?: () => void;
   onRelocated?: () => void;
   isMobile?: boolean;
+  enablePageSwiping?: boolean;
   onToggleToolbar?: () => void;
   panelRef?: React.RefObject<HTMLDivElement | null>;
   bookRef?: React.MutableRefObject<any | null>;
@@ -601,8 +602,9 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         });
       };
       removeContentInteractions = registerEpubContentInteractions(rendition, {
-        isPaginatedMobile: () =>
-          Boolean(configRef.current.isMobile) && configRef.current.readerLayout !== "scroll",
+        isPageSwipingEnabled: () =>
+          Boolean(configRef.current.enablePageSwiping) &&
+          configRef.current.readerLayout !== "scroll",
         onPrevious: () => turnPage("prev"),
         onNext: () => turnPage("next"),
         onToggleToolbar: () => configRef.current.onToggleToolbar?.(),

@@ -7,6 +7,7 @@ import {
 import { PdfReaderView } from "~/components/workspace-pdf-reader/pdf-reader-view";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useIsMobile } from "~/hooks/use-mobile";
+import { useHasTouchCapability } from "~/hooks/use-touch-capability";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import {
@@ -43,6 +44,7 @@ function SharedEpubReader({
   const containerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<SuccessorRenditionAdapter | null>(null);
   const isMobile = useIsMobile();
+  const hasTouchCapability = useHasTouchCapability();
   const [settings, updateSettings] = useSettings();
   const resolvedTheme = useResolvedTheme(settings.theme);
   const [readerLayout, setReaderLayout] = useState<ReaderLayout>("spread");
@@ -77,6 +79,7 @@ function SharedEpubReader({
       renditionRef,
       onRelocated: showToolbar,
       isMobile: Boolean(isMobile),
+      enablePageSwiping: isMobile || hasTouchCapability,
       onToggleToolbar: toggleToolbar,
     });
   const go = useCallback(
@@ -133,6 +136,7 @@ function SharedPdfReader({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
+  const hasTouchCapability = useHasTouchCapability();
   const [settings, updateSettings] = useSettings();
   const resolvedTheme = useResolvedTheme(settings.theme);
   const [pdfLayout, setPdfLayout] = useState<PdfLayout>(settings.pdfLayout);
@@ -190,6 +194,7 @@ function SharedPdfReader({
         onSearchQueryChange={() => {}}
         isScrollMode={pdfLayout === "continuous"}
         isMobile={Boolean(isMobile)}
+        enablePageSwiping={isMobile || hasTouchCapability}
         toggleToolbar={toggleToolbar}
         goPrev={goPrev}
         goNext={goNext}

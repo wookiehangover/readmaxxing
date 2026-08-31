@@ -91,7 +91,7 @@ describe("registerEpubContentInteractions", () => {
         },
       },
       {
-        isPaginatedMobile: () => true,
+        isPageSwipingEnabled: () => true,
         onPrevious,
         onNext,
         onToggleToolbar: vi.fn(),
@@ -144,7 +144,7 @@ describe("registerEpubContentInteractions", () => {
         },
       },
       {
-        isPaginatedMobile: () => true,
+        isPageSwipingEnabled: () => true,
         onPrevious: vi.fn(),
         onNext: vi.fn(),
         onToggleToolbar: vi.fn(),
@@ -182,7 +182,7 @@ describe("registerEpubContentInteractions", () => {
           },
         },
       },
-      { isPaginatedMobile: () => true, onPrevious, onNext, onToggleToolbar: vi.fn() },
+      { isPageSwipingEnabled: () => true, onPrevious, onNext, onToggleToolbar: vi.fn() },
     );
     const firstDocument = documentFixture();
     const remountedDocument = documentFixture();
@@ -216,7 +216,7 @@ describe("registerEpubContentInteractions", () => {
           },
         },
       },
-      { isPaginatedMobile: () => enabled, onPrevious, onNext, onToggleToolbar },
+      { isPageSwipingEnabled: () => enabled, onPrevious, onNext, onToggleToolbar },
     );
     const contentDocument = documentFixture();
     contentHook?.({ document: contentDocument });
@@ -256,7 +256,7 @@ describe("registerEpubContentInteractions", () => {
           },
         },
       },
-      { isPaginatedMobile: () => true, onPrevious, onNext, onToggleToolbar },
+      { isPageSwipingEnabled: () => true, onPrevious, onNext, onToggleToolbar },
     );
     const contentDocument = documentFixture();
     contentDocument.body.style.paddingLeft = "40px";
@@ -288,7 +288,7 @@ describe("registerEpubContentInteractions", () => {
         hooks: { content: { register: (callback) => (contentHook = callback) } },
       },
       {
-        isPaginatedMobile: () => true,
+        isPageSwipingEnabled: () => true,
         onPrevious: vi.fn(),
         onNext,
         onToggleToolbar: vi.fn(),
@@ -363,7 +363,7 @@ describe("registerEpubContentInteractions", () => {
           },
         },
       },
-      { isPaginatedMobile: () => true, onPrevious, onNext, onToggleToolbar },
+      { isPageSwipingEnabled: () => true, onPrevious, onNext, onToggleToolbar },
     );
     contentHook?.({ document: contentDocument });
 
