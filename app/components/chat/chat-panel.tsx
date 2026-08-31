@@ -26,6 +26,7 @@ import { useRemappedBookId } from "./use-remapped-book-id";
 interface ChatPanelProps {
   bookId: string;
   bookTitle: string;
+  isVisible?: boolean;
 }
 
 function lastMessageSignature(message: UIMessage | undefined): string {
@@ -56,7 +57,7 @@ function messagesDiffer(current: UIMessage[], next: UIMessage[]): boolean {
   );
 }
 
-export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
+export function ChatPanel({ bookId, bookTitle, isVisible = true }: ChatPanelProps) {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const { pendingChatPromptMap } = useWorkspace();
   const store = useAppStore();
@@ -466,6 +467,7 @@ export function ChatPanel({ bookId, bookTitle }: ChatPanelProps) {
           (isAuthenticated && resumeAfterAuth ? (pendingMessage ?? undefined) : undefined)
         }
         onResumeComplete={handleResumeComplete}
+        isVisible={isVisible}
       />
       {(onboardingOpen || isLoggedOutDemoSession) && (
         <OnboardingDialog
