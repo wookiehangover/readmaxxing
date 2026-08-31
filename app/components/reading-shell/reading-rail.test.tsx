@@ -11,6 +11,7 @@ const readingLocation = {
 
 const tocEntries = [{ label: "Chapter One", href: "chapter-1.xhtml" }];
 const navigateToToc = vi.hoisted(() => vi.fn());
+const scrollToEnd = vi.hoisted(() => vi.fn());
 const themis = vi.hoisted(() => {
   const books = [
     {
@@ -32,7 +33,7 @@ const themis = vi.hoisted(() => {
     id: "session-1",
     bookId: "book-1",
     title: "New chat",
-    messages: [],
+    messages: [{ id: "message-1", role: "user", parts: [{ type: "text", text: "Hello" }] }],
     createdAt: 1,
     updatedAt: 1,
   };
@@ -131,6 +132,25 @@ vi.mock("~/components/ui/scroll-area", () => ({
     </div>
   ),
 }));
+vi.mock("~/components/ui/message-scroller", () => ({
+  MessageScrollerProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  MessageScroller: (props: React.ComponentProps<"div">) => (
+    <div data-slot="message-scroller" {...props} />
+  ),
+  MessageScrollerViewport: (props: React.ComponentProps<"div">) => (
+    <div data-slot="message-scroller-viewport" {...props} />
+  ),
+  MessageScrollerContent: (props: React.ComponentProps<"div">) => (
+    <div data-slot="message-scroller-content" {...props} />
+  ),
+  MessageScrollerItem: ({
+    messageId,
+    ...props
+  }: React.ComponentProps<"div"> & { messageId: string }) => (
+    <div data-message-id={messageId} {...props} />
+  ),
+  useMessageScroller: () => ({ scrollToEnd }),
+}));
 vi.mock("~/components/tiptap-editor", async () => {
   const ReactModule = await vi.importActual<typeof import("react")>("react");
   return {
@@ -166,7 +186,7 @@ vi.mock("~/components/chat/chat-utils", async () => {
     ...actual,
     createChatTransport: () => ({}),
     createDemoIntroChat: () => null,
-    toUIMessages: () => [],
+    toUIMessages: (messages: unknown[]) => messages,
     uiMessagesToChatMessages: () => [],
   };
 });
@@ -306,6 +326,7 @@ beforeEach(() => {
     href: "chapter-1.xhtml",
   });
   navigateToToc.mockReset();
+  scrollToEnd.mockReset();
   themis.store.dispatch.mockReset();
   window.sessionStorage.clear();
   vi.stubGlobal(
@@ -508,15 +529,22 @@ describe("ReadingRail", () => {
       expect(panel?.className).toBe("min-h-0 flex-1 overflow-hidden outline-none");
       expect(panel?.classList.contains("px-6")).toBe(false);
 
-      const scrollArea = panel?.querySelector("[data-slot='scroll-area']");
-      const viewport = scrollArea?.querySelector("[data-slot='scroll-area-viewport']");
+      const scrollArea = panel?.querySelector(
+        "[data-slot='scroll-area'], [data-slot='message-scroller']",
+      );
+      const viewport = scrollArea?.querySelector(
+        "[data-slot='scroll-area-viewport'], [data-slot='message-scroller-viewport']",
+      );
       for (const scroller of [scrollArea, viewport]) {
         expect(scroller?.classList.contains("px-6")).toBe(false);
         expect(scroller?.classList.contains("pl-6")).toBe(false);
         expect(scroller?.classList.contains("pr-6")).toBe(false);
       }
 
-      const content = viewport?.firstElementChild ?? null;
+      const content =
+        viewport?.querySelector("[data-slot='message-scroller-content']") ??
+        viewport?.firstElementChild ??
+        null;
       expect(content?.classList.contains("pr-6")).toBe(true);
       expect(content?.classList.contains("pl-6")).toBe(true);
       expect(content?.classList.contains("md:pl-0")).toBe(true);
@@ -556,12 +584,30 @@ describe("ReadingRail", () => {
       clickTab(container, tab);
       if (tab === "Discuss") await flushAsyncWork();
       const panel = visiblePanel(container);
-      const scrollArea = panel?.querySelector("[data-slot='scroll-area']");
-      const viewport = scrollArea?.querySelector("[data-slot='scroll-area-viewport']");
+      const scrollArea = panel?.querySelector(
+        "[data-slot='scroll-area'], [data-slot='message-scroller']",
+      );
+      const viewport = scrollArea?.querySelector(
+        "[data-slot='scroll-area-viewport'], [data-slot='message-scroller-viewport']",
+      );
       expect(panel?.classList.contains("px-6")).toBe(false);
       expect(scrollArea?.classList.contains("pr-6")).toBe(false);
       expect(viewport?.classList.contains("pr-6")).toBe(false);
     }
+  });
+
+  it("restores the latest chat position whenever Discuss becomes visible", async () => {
+    const container = renderRail();
+
+    clickTab(container, "Discuss");
+    await flushAsyncWork();
+    expect(scrollToEnd).toHaveBeenCalledWith({ behavior: "auto" });
+
+    const callsAfterFirstOpen = scrollToEnd.mock.calls.length;
+    clickTab(container, "Notes");
+    clickTab(container, "Discuss");
+    await flushAsyncWork();
+    expect(scrollToEnd.mock.calls.length).toBeGreaterThan(callsAfterFirstOpen);
   });
 
   it("shows Details contextually and removes it after another desktop tab is selected", async () => {

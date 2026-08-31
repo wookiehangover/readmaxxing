@@ -34,6 +34,7 @@ export function ChatPanelInner({
   simulateDemoStream,
   resumeMessage,
   onResumeComplete,
+  isVisible = true,
 }: {
   bookId: string;
   bookTitle: string;
@@ -50,6 +51,7 @@ export function ChatPanelInner({
   simulateDemoStream?: boolean;
   resumeMessage?: string;
   onResumeComplete?: () => void;
+  isVisible?: boolean;
 }) {
   const store = useAppStore();
   const activeSession = store.chatSessionsSelectors.selectActiveSessionByBook.useValue(bookId);
@@ -353,6 +355,7 @@ export function ChatPanelInner({
         selectedBookTitles={selectedBookTitles}
         sendMessage={handleSendMessage}
         isPreparingForChat={isPreparingForChat}
+        isVisible={isVisible}
       />
       <ChatInput
         textareaRef={textareaRef}
