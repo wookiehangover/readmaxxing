@@ -9,6 +9,7 @@ import { SpeedreadPopout } from "~/components/speedread-popout";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useHighlights } from "~/hooks/use-highlights";
 import { useIsMobile } from "~/hooks/use-mobile";
+import { useHasTouchCapability } from "~/hooks/use-touch-capability";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { useToolbarAutoHide } from "~/hooks/use-toolbar-auto-hide";
 import { useWorkspace } from "~/lib/context/workspace-context";
@@ -130,6 +131,7 @@ function WorkspaceBookReaderInner({
   const { tocMap, tocChangeListener, chatContextMap, tempHighlightMap, highlightDeleteMap } =
     useWorkspace();
   const isMobile = useIsMobile();
+  const hasTouchCapability = useHasTouchCapability();
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<SuccessorBookAdapter | null>(null);
@@ -249,6 +251,7 @@ function WorkspaceBookReaderInner({
     onSearchOpen: handleSearchOpenFromIframe,
     onRelocated: showToolbar,
     isMobile: Boolean(isMobile),
+    enablePageSwiping: isMobile || hasTouchCapability,
     onToggleToolbar: toggleToolbar,
     panelRef,
     bookRef,

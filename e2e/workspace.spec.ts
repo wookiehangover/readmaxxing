@@ -88,6 +88,57 @@ test.describe("Workspace route", () => {
     });
   });
 
+  test("touch-capable tablet swipes EPUB pages without using the phone layout", async ({
+    page,
+  }) => {
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, "maxTouchPoints", { configurable: true, value: 5 }),
+    );
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.reload();
+    await waitForAppHydration(page);
+    await uploadAndOpenBook(page);
+
+    await expect(page.getByTestId("reading-shell")).toBeVisible();
+    await expect(page.getByTestId("mobile-reading-tabs")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Next page" }).first()).toBeVisible();
+    // The chapter label is published after the initial EPUB relocation settles.
+    await expect(
+      page.getByRole("button", { name: /Open table of contents, current chapter/ }),
+    ).toBeVisible();
+    const iframe = page.locator("[aria-label='Book surface'] iframe").first();
+    // Columns share the same document text; chapter changes can reset scrollLeft.
+    const readPageState = () =>
+      iframe
+        .contentFrame()
+        .locator("html")
+        .evaluate((element) => {
+          const scrolling = element.ownerDocument.scrollingElement ?? element;
+          return `${scrolling.scrollLeft}:${element.ownerDocument.body.textContent?.trim()}`;
+        });
+    const initialPageState = await readPageState();
+    await iframe
+      .contentFrame()
+      .locator("html")
+      .evaluate((element) => {
+        const start = { identifier: 1, clientX: 700, clientY: 200 };
+        const end = { identifier: 1, clientX: 400, clientY: 202 };
+        for (const [type, touches, point, time] of [
+          ["touchstart", [start], start, 10],
+          ["touchend", [], end, 200],
+        ] as const) {
+          const event = new Event(type, { bubbles: true, cancelable: true });
+          Object.defineProperties(event, {
+            touches: { value: touches },
+            changedTouches: { value: [point] },
+            timeStamp: { value: time },
+          });
+          element.ownerDocument.dispatchEvent(event);
+        }
+      });
+    await expect.poll(readPageState).not.toBe(initialPageState);
+  });
+
   test("desktop reader opens Details from the reader menu", async ({ page }) => {
     await uploadAndOpenBook(page);
 

@@ -52,6 +52,7 @@ interface PdfReaderViewProps {
   onSearchQueryChange: (query: string) => void;
   isScrollMode: boolean;
   isMobile: boolean;
+  enablePageSwiping: boolean;
   toggleToolbar: () => void;
   goPrev: () => void;
   goNext: () => void;
@@ -91,6 +92,7 @@ export function PdfReaderView({
   onSearchQueryChange,
   isScrollMode,
   isMobile,
+  enablePageSwiping,
   toggleToolbar,
   goPrev,
   goNext,
@@ -113,7 +115,7 @@ export function PdfReaderView({
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !isMobile || isScrollMode) return;
+    if (!container || !enablePageSwiping || isScrollMode) return;
 
     const removePageCarousel = addPdfPageCarousel({
       container,
@@ -156,7 +158,7 @@ export function PdfReaderView({
     goNext,
     goPrev,
     goToPage,
-    isMobile,
+    enablePageSwiping,
     isScrollMode,
     preparePageForCarousel,
     toggleToolbar,

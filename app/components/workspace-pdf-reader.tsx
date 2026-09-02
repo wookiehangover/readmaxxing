@@ -6,6 +6,7 @@ import type { PdfLayout, Settings } from "~/lib/settings";
 import { HighlightPopover } from "~/components/highlight-popover";
 import { useAppStore } from "~/lib/themis/provider";
 import { useIsMobile } from "~/hooks/use-mobile";
+import { useHasTouchCapability } from "~/hooks/use-touch-capability";
 import { usePdfLifecycle } from "~/hooks/use-pdf-lifecycle";
 import { useReadingLocation } from "~/hooks/use-reading-location";
 import { usePdfSearch } from "~/hooks/use-pdf-search";
@@ -63,6 +64,7 @@ function WorkspacePdfReaderInner({
 }) {
   const { tocMap, tocChangeListener } = useWorkspace();
   const isMobile = useIsMobile();
+  const hasTouchCapability = useHasTouchCapability();
   const panelRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -318,6 +320,7 @@ function WorkspacePdfReaderInner({
         onSearchQueryChange={handleSearchQueryChange}
         isScrollMode={isScrollMode}
         isMobile={Boolean(isMobile)}
+        enablePageSwiping={isMobile || hasTouchCapability}
         toggleToolbar={toggleToolbar}
         goPrev={goPrev}
         goNext={goNext}

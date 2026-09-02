@@ -65,6 +65,7 @@ function renderView(overrides: Partial<React.ComponentProps<typeof PdfReaderView
     onSearchQueryChange: vi.fn(),
     isScrollMode: false,
     isMobile: false,
+    enablePageSwiping: overrides.enablePageSwiping ?? overrides.isMobile ?? false,
     toggleToolbar,
     goPrev,
     goNext,
@@ -122,6 +123,7 @@ it("releases pointer focus while keeping PDF page turns keyboard activatable", (
         onSearchQueryChange={vi.fn()}
         isScrollMode={false}
         isMobile={false}
+        enablePageSwiping={false}
         toggleToolbar={vi.fn()}
         goPrev={goPrev}
         goNext={goNext}
@@ -181,10 +183,11 @@ it("releases pointer focus while keeping PDF page turns keyboard activatable", (
   }
 });
 
-describe("mobile paginated gestures", () => {
-  it("turns one page per swipe without a tap-zone overlay", () => {
+describe("paginated touch gestures", () => {
+  it("turns one page per swipe on a touch-capable tablet without mobile chrome", () => {
     const { container, goToPage, host, toggleToolbar } = renderView({
-      isMobile: true,
+      isMobile: false,
+      enablePageSwiping: true,
       currentPage: 2,
       totalPages: 3,
     });
@@ -207,7 +210,7 @@ describe("mobile paginated gestures", () => {
       container.dispatchEvent(touchEvent("touchend", [], [start], 300));
     });
     expect(goToPage).toHaveBeenCalledWith(1);
-    expect(host.querySelector("[aria-label='Previous page']")).toBeNull();
+    expect(host.querySelector("[aria-label='Previous page']")).not.toBeNull();
   });
 
   it("tracks the finger with the current and rendered next page", () => {

@@ -49,7 +49,7 @@ function setup(endInteractivePageTurn: () => Promise<boolean>) {
       hooks: { content: { register: (callback) => (contentHook = callback) } },
     },
     {
-      isPaginatedMobile: () => true,
+      isPageSwipingEnabled: () => true,
       onToggleToolbar: vi.fn(),
       ...callbacks,
     },
