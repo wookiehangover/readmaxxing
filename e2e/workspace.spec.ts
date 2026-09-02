@@ -102,8 +102,21 @@ test.describe("Workspace route", () => {
     await expect(page.getByTestId("reading-shell")).toBeVisible();
     await expect(page.getByTestId("mobile-reading-tabs")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Next page" }).first()).toBeVisible();
+    // The chapter label is published after the initial EPUB relocation settles.
+    await expect(
+      page.getByRole("button", { name: /Open table of contents, current chapter/ }),
+    ).toBeVisible();
     const iframe = page.locator("[aria-label='Book surface'] iframe").first();
-    const initialText = await iframe.contentFrame().locator("body").innerText();
+    // Columns share the same document text; chapter changes can reset scrollLeft.
+    const readPageState = () =>
+      iframe
+        .contentFrame()
+        .locator("html")
+        .evaluate((element) => {
+          const scrolling = element.ownerDocument.scrollingElement ?? element;
+          return `${scrolling.scrollLeft}:${element.ownerDocument.body.textContent?.trim()}`;
+        });
+    const initialPageState = await readPageState();
     await iframe
       .contentFrame()
       .locator("html")
@@ -123,9 +136,7 @@ test.describe("Workspace route", () => {
           element.ownerDocument.dispatchEvent(event);
         }
       });
-    await expect
-      .poll(() => iframe.contentFrame().locator("body").innerText())
-      .not.toBe(initialText);
+    await expect.poll(readPageState).not.toBe(initialPageState);
   });
 
   test("desktop reader opens Details from the reader menu", async ({ page }) => {
