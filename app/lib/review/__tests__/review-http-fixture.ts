@@ -100,7 +100,8 @@ export async function reviewHttpFixture() {
             : [
                 {
                   start: 0,
-                  end: 4,
+                  // Simulate the offset miscount observed in the live model sample.
+                  end: 3,
                   quote: submittedAnswer.slice(0, 4),
                   issue: "insufficient_evidence",
                 },

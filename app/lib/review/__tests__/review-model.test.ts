@@ -216,22 +216,54 @@ describe("private, solution-free grading", () => {
     {
       verdict: "fail",
       issues: ["insufficient_evidence"],
-      annotations: [{ start: 0, end: 5, quote: "wrong", issue: "insufficient_evidence" }],
-    },
-    {
-      verdict: "fail",
-      issues: ["insufficient_evidence"],
       annotations: [{ start: 2, end: 5, quote: "The", issue: "off_topic" }],
     },
-    {
-      verdict: "fail",
-      issues: ["insufficient_evidence"],
-      annotations: [{ start: 0, end: 999, quote: answer, issue: "insufficient_evidence" }],
-    },
-  ])("rejects inconsistent, leaking, or unanchored model output (%#)", async (object) => {
+  ])("rejects inconsistent or leaking model output (%#)", async (object) => {
     mocks.generate.mockResolvedValue({ object });
     await expect(gradeReviewAnswer(options)).rejects.toMatchObject({ code: "grading_failed" });
   });
+
+  it.each([
+    {
+      text: "My favorite breakfast is pancakes.",
+      quote: "My favorite breakfast is pancakes.",
+      start: 0,
+      end: 31,
+      expected: [{ start: 0, end: 34 }],
+    },
+    {
+      text: " 😀 Alpha claims evidence. ",
+      quote: "Alpha",
+      start: 3,
+      end: 8,
+      expected: [{ start: 4, end: 9 }],
+    },
+    { text: "claim x claim", quote: "claim", start: 1, end: 6, expected: [] },
+    { text: "aaaa", quote: "aa", start: 3, end: 4, expected: [] },
+    { text: answer, quote: "missing quote", start: 0, end: 999, expected: [] },
+    { text: "claim x claim", quote: "claim", start: 8, end: 13, expected: [{ start: 8, end: 13 }] },
+  ])(
+    "retains a nonpass grade with only exact, unambiguous answer annotations (%#)",
+    async ({ text, quote, start, end, expected }) => {
+      mocks.generate.mockResolvedValue({
+        object: {
+          verdict: "fail",
+          issues: ["insufficient_evidence"],
+          annotations: [{ start, end, quote, issue: "insufficient_evidence" }],
+        },
+      });
+      const result = await gradeReviewAnswer({ ...options, plainText: text });
+      expect(result.verdict).toBe("fail");
+      expect(result.feedback).toBe("Your answer needs more specific support from the chapter.");
+      expect(result.annotations).toEqual(
+        expected.map((span) => ({
+          ...span,
+          quote,
+          feedback: "Your answer needs more specific support from the chapter.",
+        })),
+      );
+    },
+  );
 
   it("never promotes answer instructions into model instructions", async () => {
     const injection =

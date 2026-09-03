@@ -3,7 +3,34 @@ import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { unzipSync, strFromU8 } from "fflate";
 import { parseHTML } from "linkedom";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+const observations = vi.hoisted(
+  () => [] as { schemaName?: string; object?: unknown; errorName?: string }[],
+);
+// Observe the real SDK result without altering it. This diagnoses model anchors rejected by production validation.
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+  return {
+    ...actual,
+    generateObject: async (options: Parameters<typeof actual.generateObject>[0]) => {
+      const schemaName =
+        "schemaName" in options && typeof options.schemaName === "string"
+          ? options.schemaName
+          : undefined;
+      try {
+        const result = await actual.generateObject(options);
+        observations.push({ schemaName, object: result.object });
+        return result;
+      } catch (error) {
+        observations.push({
+          schemaName,
+          errorName: error instanceof Error ? error.name : "UnknownError",
+        });
+        throw error;
+      }
+    },
+  };
+});
 import {
   generateReviewQuestion,
   gradeReviewAnswer,
@@ -34,7 +61,7 @@ it.skipIf(process.env.RUN_REVIEW_LIVE_SAMPLE !== "1")(
       partial:
         "Nick presents himself as someone who reserves judgment. He moves to West Egg and visits Daisy and Tom in East Egg. The dinner shows that their wealthy life is not happy: Tom receives a call from another woman, and Daisy sounds disappointed. At the end Gatsby reaches toward a green light across the water. These details suggest that money does not guarantee contentment.",
       strong:
-        "Nick's claim to reserve judgment is a qualification on his authority, not proof that his account is neutral. His father's advice connects judgment to unequal advantages, yet Nick sorts the people he meets into sharply evaluated social types. His family history and access to Daisy also place him inside the privileged world he describes. The reader therefore receives an observant account shaped by attraction and discomfort rather than an impartial survey.\n\nThe dinner makes the gap between material comfort and secure belonging concrete. Tom's physical dominance and racial assertions turn inherited advantage into a claim to authority; the interrupted meal exposes how little that authority depends on care for Daisy. Her remark about hoping her daughter is a beautiful fool can be read as cynicism about the roles available to women in that setting, although Nick's uncertainty about her sincerity cautions against treating it as a complete confession. Jordan's detached manner offers another response to the same social environment.\n\nGatsby's reaching toward the distant green light changes the chapter's emphasis from possession to desire. Nick sees the gesture but cannot yet establish its object or motive, so it supports an interpretation of longing without licensing a later-chapter explanation. The contrast with Tom matters: one figure occupies and asserts his place, while the other reaches beyond his immediate position. If the chapter ended with the dinner alone, wealth's defensiveness would dominate; ending with an obscure aspiration leaves open whether desire offers an alternative or repeats the same dependence on status. That ambiguity is a limit on Nick's knowledge and on this reading, not an invitation to invent Gatsby's history.",
+        "Nick initially treats the move East as a chance to begin again: he wants to learn the bond business, imagines recovering the concentrated energies of a student, and is reassured by a stranger asking directions near his new home. His evening in East Egg complicates that hopeful belonging. Kinship and hospitality give him access to a world of effortless money, but the dinner exposes domination, marital dishonesty and practiced performances rather than the clarity of purpose he wanted. He is charmed and repelled at once; the final sight of Gatsby preserves the possibility of aspiration without proving that this social world can satisfy it.\n\nNick's claim to reserve judgment is a qualification on his authority, not proof that his account is neutral. His father's advice connects judgment to unequal advantages, yet Nick sorts the people he meets into sharply evaluated social types. His family history and access to Daisy also place him inside the privileged world he describes. The reader therefore receives an observant account shaped by attraction and discomfort rather than an impartial survey.\n\nThe dinner makes the gap between material comfort and secure belonging concrete. Tom's physical dominance and racial assertions turn inherited advantage into a claim to authority; the interrupted meal exposes how little that authority depends on care for Daisy. Her remark about hoping her daughter is a beautiful fool can be read as cynicism about the roles available to women in that setting, although Nick's uncertainty about her sincerity cautions against treating it as a complete confession. Jordan's detached manner offers another response to the same social environment.\n\nGatsby's reaching toward the distant green light changes the chapter's emphasis from possession to desire. Nick sees the gesture but cannot yet establish its object or motive, so it supports an interpretation of longing without licensing a later-chapter explanation. The contrast with Tom matters: one figure occupies and asserts his place, while the other reaches beyond his immediate position. If the chapter ended with the dinner alone, wealth's defensiveness would dominate; ending with an obscure aspiration leaves open whether desire offers an alternative or repeats the same dependence on status. That ambiguity is a limit on Nick's knowledge and on this reading, not an invitation to invent Gatsby's history.",
     };
     const difficulties = ["friendly", "tyler_cowen"] as const;
     const gradingLevels = ["reading_group", "tyler_cowen"] as const;
@@ -73,8 +100,21 @@ it.skipIf(process.env.RUN_REVIEW_LIVE_SAMPLE !== "1")(
     const results = report.results as unknown[];
     try {
       const questions: ReviewQuestionRecord[] = [];
+      const previous = process.env.REVIEW_LIVE_QUESTIONS_FILE
+        ? JSON.parse(await readFile(process.env.REVIEW_LIVE_QUESTIONS_FILE, "utf8"))
+        : null;
+      if (previous) {
+        expect(previous.sourceSha256).toBe(report.sourceSha256);
+        expect(previous.generationInstructions).toEqual(report.generationInstructions);
+        expect(previous.model).toBe(REVIEW_MODEL);
+        report.reusedQuestionsFrom = process.env.REVIEW_LIVE_QUESTIONS_FILE;
+      }
       for (const difficulty of difficulties) {
-        const generated = await generateReviewQuestion(chapterText, difficulty);
+        const generated =
+          previous?.results.find(
+            (result: { operation: string; difficulty: string }) =>
+              result.operation === "generation" && result.difficulty === difficulty,
+          )?.question ?? (await generateReviewQuestion(chapterText, difficulty));
         const question = {
           ...generated,
           id: `sample-${difficulty}`,
@@ -88,11 +128,11 @@ it.skipIf(process.env.RUN_REVIEW_LIVE_SAMPLE !== "1")(
         results.push({ operation: "generation", difficulty, question });
         expect(question.question.length).toBeGreaterThanOrEqual(160);
       }
+      let failedGrades = 0;
       for (const grading of gradingLevels) {
         for (const [label, plainText] of Object.entries(answers)) {
           const question = questions[0];
-          const judgment = await gradeReviewAnswer({ chapterText, question, plainText, grading });
-          results.push({
+          const sampled: Record<string, unknown> = {
             operation: "grading",
             grading,
             answerLabel: label,
@@ -102,19 +142,35 @@ it.skipIf(process.env.RUN_REVIEW_LIVE_SAMPLE !== "1")(
               rubric: question.rubric,
               submittedAnswer: plainText,
             }),
-            judgment,
-          });
+          };
+          try {
+            sampled.judgment = await gradeReviewAnswer({
+              chapterText,
+              question,
+              plainText,
+              grading,
+            });
+          } catch (error) {
+            failedGrades++;
+            sampled.failure =
+              error instanceof ReviewApiFailure
+                ? { code: error.code, message: error.message }
+                : { name: error instanceof Error ? error.name : "UnknownError" };
+          }
+          results.push(sampled);
         }
       }
-      report.status = "sampled";
+      report.status = failedGrades ? "sampled_with_failures" : "sampled";
+      expect(failedGrades).toBe(0);
     } catch (error) {
-      report.status = "unavailable_or_failed";
+      report.status ??= "unavailable_or_failed";
       report.failure =
         error instanceof ReviewApiFailure
           ? { code: error.code, message: error.message }
           : { name: error instanceof Error ? error.name : "UnknownError" };
       throw error;
     } finally {
+      report.sdkObservations = observations;
       await mkdir(".intent/artifacts", { recursive: true });
       await writeFile(
         ".intent/artifacts/final-live-review-sample.json",

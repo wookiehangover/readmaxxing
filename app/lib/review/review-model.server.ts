@@ -167,22 +167,29 @@ export async function gradeReviewAnswer(options: {
     ) {
       throw new Error("Inconsistent verdict");
     }
-    for (const annotation of judgment.annotations) {
+    const annotations = judgment.annotations.flatMap((annotation) => {
+      if (!judgment.issues.includes(annotation.issue)) throw new Error("Invalid annotation issue");
+      let { start, end } = annotation;
       if (
-        annotation.end <= annotation.start ||
-        annotation.end > options.plainText.length ||
-        options.plainText.slice(annotation.start, annotation.end) !== annotation.quote ||
-        !judgment.issues.includes(annotation.issue)
-      )
-        throw new Error("Invalid answer anchor");
-    }
+        end <= start ||
+        end > options.plainText.length ||
+        options.plainText.slice(start, end) !== annotation.quote
+      ) {
+        // Models can quote the answer correctly but miscount UTF-16 offsets. Repair only an
+        // exact, unique quote; ambiguous/missing optional annotations must not discard a grade.
+        start = options.plainText.indexOf(annotation.quote);
+        if (start < 0 || options.plainText.indexOf(annotation.quote, start + 1) >= 0) return [];
+        end = start + annotation.quote.length;
+      }
+      return [{ ...annotation, start, end }];
+    });
     const grade = reviewGradeSchema.parse({
       verdict: judgment.verdict,
       feedback:
         judgment.verdict === "pass"
           ? "Your answer meets the review criteria at the selected grading level."
           : [...new Set(judgment.issues)].map((issue) => critique[issue]).join(" "),
-      annotations: judgment.annotations.map(({ start, end, quote, issue }) => ({
+      annotations: annotations.map(({ start, end, quote, issue }) => ({
         start,
         end,
         quote,
