@@ -43,6 +43,11 @@ export function createReviewsSelectors(store: AppStoreCore) {
     const assignment = selectReviewAssignment.select(state, bookId);
     return cache && assignment ? (getItem(cache.questions, assignment.questionId) ?? null) : null;
   });
+  const selectReviewAssignmentCurrent = store.createSelector((state, bookId: string) => {
+    const cache = selectReviewCache.select(state, bookId);
+    const assignment = selectReviewAssignment.select(state, bookId);
+    return !!(assignment && cache?.currentAssignmentIds.includes(assignment.id));
+  });
   const selectReviewDraft = store.createSelector((state, bookId: string) => {
     const cache = selectReviewCache.select(state, bookId);
     const assignment = selectReviewAssignment.select(state, bookId);
@@ -83,8 +88,12 @@ export function createReviewsSelectors(store: AppStoreCore) {
   const selectLatestReviewAttempt = store.createSelector(
     (state, bookId: string) => selectReviewAttempts.select(state, bookId).at(-1) ?? null,
   );
-  const selectReviewPassed = store.createSelector((state, bookId: string) =>
-    selectReviewAttemptRecords.select(state, bookId).some((attempt) => attempt.verdict === "pass"),
+  const selectReviewPassed = store.createSelector(
+    (state, bookId: string) =>
+      selectReviewAssignmentCurrent.select(state, bookId) &&
+      selectReviewAttemptRecords
+        .select(state, bookId)
+        .some((attempt) => attempt.verdict === "pass"),
   );
   const selectReviewLocked = store.createSelector(
     (state, bookId: string) =>
@@ -125,6 +134,7 @@ export function createReviewsSelectors(store: AppStoreCore) {
     (state, bookId: string) =>
       selectReviewPreferences.select(state, bookId).enabled &&
       selectReviewQuestion.select(state, bookId) !== null &&
+      selectReviewAssignmentCurrent.select(state, bookId) &&
       selectReviewAnswerMeetsThreshold.select(state, bookId) &&
       selectReviewRequirement.select(state, bookId) === null &&
       state.reviews.requests.submit.token === null,
@@ -137,6 +147,7 @@ export function createReviewsSelectors(store: AppStoreCore) {
     selectReviewPreferences,
     selectReviewCheckpoint,
     selectReviewAssignment,
+    selectReviewAssignmentCurrent,
     selectReviewQuestion,
     selectReviewDraft,
     selectReviewDocument,

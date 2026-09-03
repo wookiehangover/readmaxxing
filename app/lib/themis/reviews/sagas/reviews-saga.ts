@@ -39,21 +39,29 @@ import {
 import type { ReviewOperation, ReviewTask, ReviewWorker } from "../reviews-types";
 
 const scopeActions = [openReviewBook, authSessionCleared, authSessionFailed, authSessionResolved];
+const authorityActions = [
+  reviewRequestStarted,
+  reviewRequestFailed,
+  reviewQuestionReceived,
+  reviewProgressReceived,
+  reviewAttemptReceived,
+];
 const questionActions = [
   retryReviewQuestion,
   reviewCheckpointEntered,
   reviewCacheLoaded,
   setReviewsEnabled,
+  ...authorityActions,
   ...scopeActions,
 ];
 const progressActions = [
   refreshReviewProgress,
   reviewCacheLoaded,
-  reviewQuestionReceived,
   editReviewDraft,
   setReviewGrading,
   setReviewsEnabled,
   reviewCheckpointEntered,
+  ...authorityActions,
   ...scopeActions,
 ];
 const submitActions = [
@@ -62,6 +70,7 @@ const submitActions = [
   setReviewGrading,
   setReviewsEnabled,
   reviewCheckpointEntered,
+  ...authorityActions,
   ...scopeActions,
 ];
 
@@ -74,7 +83,12 @@ function* withChapterRecovery<Args extends unknown[], Result>(
     return yield* call(request, ...args);
   } catch (cause) {
     if (reviewClientError(cause).code !== "chapters_unavailable") throw cause;
-    yield* call(reuploadBookChapters, bookId);
+    try {
+      yield* call(reuploadBookChapters, bookId);
+    } catch {
+      // A failed repair does not undo the server's source-unavailable finding.
+      throw cause;
+    }
     return yield* call(request, ...args);
   }
 }
@@ -272,7 +286,7 @@ export function createReviewsSaga(store: AppStore) {
         if (requestGeneration === state.generation) continue;
       } else if (
         action.type === reviewCacheLoaded.type ||
-        action.type === reviewQuestionReceived.type
+        authorityActions.some((creator) => creator.type === action.type)
       ) {
         if ((action.payload as [number])[0] !== state.generation) continue;
       } else {

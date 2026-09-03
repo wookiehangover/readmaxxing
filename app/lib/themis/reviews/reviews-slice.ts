@@ -20,7 +20,7 @@ import {
   authSessionFailed,
   authSessionResolved,
 } from "~/lib/themis/auth-session/auth-session-slice";
-import { mergeReviewProgress, reviewAssignmentId } from "./reviews-records";
+import { invalidateReviewSource, mergeReviewProgress, reviewAssignmentId } from "./reviews-records";
 import type { ReviewCache, ReviewOperation, ReviewsState, ReviewSubmission } from "./reviews-types";
 
 export const openReviewBook = createAction<[bookId: string | null]>("reviews/openBook");
@@ -267,13 +267,40 @@ reducer.with(editReviewDraft, (state, { payload }) => {
 reducer.with(reviewRequestStarted, (state, { payload: [generation, operation, token] }) =>
   generation !== state.generation || !state.cache
     ? state
-    : { ...state, requests: { ...state.requests, [operation]: { token, error: null } } },
+    : {
+        ...state,
+        requests: {
+          ...state.requests,
+          // A read begun before this write cannot reconcile its newer result.
+          ...(operation !== "progress" ? { progress: { token: null, error: null } } : {}),
+          [operation]: { token, error: null },
+        },
+      },
 );
-reducer.with(reviewRequestFailed, (state, { payload: [generation, operation, token, error] }) =>
-  !accepts(state, generation, operation, token)
-    ? state
-    : { ...state, requests: { ...state.requests, [operation]: { token: null, error } } },
-);
+reducer.with(reviewRequestFailed, (state, { payload: [generation, operation, token, error] }) => {
+  if (!accepts(state, generation, operation, token) || !state.cache) return state;
+  const sourceInvalid = [
+    "source_changed",
+    "unsupported_source",
+    "chapters_unavailable",
+    "book_not_found",
+  ].includes(error.code);
+  return {
+    ...state,
+    cache: sourceInvalid
+      ? invalidateReviewSource(
+          state.cache,
+          operation === "progress" || error.code === "book_not_found"
+            ? null
+            : state.cache.activeChapterKey,
+        )
+      : state.cache,
+    requests: {
+      ...(sourceInvalid ? emptyRequests() : state.requests),
+      [operation]: { token: null, error },
+    },
+  };
+});
 reducer.with(reviewQuestionReceived, (state, { payload: [generation, token, response] }) => {
   if (!accepts(state, generation, "question", token) || !state.cache) return state;
   const { chapter, question, progress } = response;
@@ -289,6 +316,11 @@ reducer.with(reviewQuestionReceived, (state, { payload: [generation, token, resp
   )
     return state;
   const { key: _key, ...boundary } = chapter.boundary;
+  const previous = getItem(state.cache.checkpoints, chapter.chapterKey);
+  const assignmentId = reviewAssignmentId(chapter.chapterKey, chapter.sourceFingerprint);
+  const changed =
+    previous?.sourceFingerprint !== chapter.sourceFingerprint ||
+    getItem(state.cache.assignments, assignmentId)?.questionId !== question.id;
   let cache = mergeReviewProgress(state.cache, { progress: [progress], attempts: [] });
   cache = {
     ...cache,
@@ -303,18 +335,37 @@ reducer.with(reviewQuestionReceived, (state, { payload: [generation, token, resp
   return {
     ...state,
     cache,
-    requests: { ...state.requests, question: { token: null, error: null } },
+    requests: {
+      ...state.requests,
+      progress: { token: null, error: null },
+      ...(changed ? { submit: { token: null, error: null } } : {}),
+      question: { token: null, error: null },
+    },
   };
 });
-reducer.with(reviewProgressReceived, (state, { payload: [generation, token, response] }) =>
-  !accepts(state, generation, "progress", token) || !state.cache
-    ? state
-    : {
-        ...state,
-        cache: mergeReviewProgress(state.cache, response),
-        requests: { ...state.requests, progress: { token: null, error: null } },
-      },
-);
+reducer.with(reviewProgressReceived, (state, { payload: [generation, token, response] }) => {
+  if (!accepts(state, generation, "progress", token) || !state.cache) return state;
+  const cache = mergeReviewProgress(state.cache, response, "snapshot");
+  const checkpoint = cache.activeChapterKey
+    ? getItem(cache.checkpoints, cache.activeChapterKey)
+    : null;
+  const id = checkpoint?.sourceFingerprint
+    ? reviewAssignmentId(checkpoint.key, checkpoint.sourceFingerprint)
+    : null;
+  const changed =
+    id &&
+    (!cache.currentAssignmentIds.includes(id) ||
+      getItem(cache.assignments, id)?.questionId !==
+        getItem(state.cache.assignments, id)?.questionId);
+  return {
+    ...state,
+    cache,
+    requests: {
+      ...(changed ? emptyRequests() : state.requests),
+      progress: { token: null, error: null },
+    },
+  };
+});
 reducer.with(reviewSubmissionPrepared, (state, { payload: [generation, submission] }) =>
   state.generation !== generation || !state.cache
     ? state
@@ -329,13 +380,18 @@ reducer.with(reviewAttemptReceived, (state, { payload: [generation, token, respo
     submission.id !== attempt.id ||
     attempt.userId !== state.userId ||
     attempt.bookId !== state.bookId ||
+    progress.userId !== attempt.userId ||
+    progress.bookId !== attempt.bookId ||
+    progress.chapterKey !== attempt.chapterKey ||
+    progress.sourceFingerprint !== attempt.sourceFingerprint ||
+    progress.questionId !== attempt.questionId ||
     reviewAssignmentId(attempt.chapterKey, attempt.sourceFingerprint) !== submission.draftId
   )
     return state;
   return {
     ...state,
     cache: mergeReviewProgress(state.cache, { attempts: [attempt], progress: [progress] }),
-    requests: { ...state.requests, submit: { token: null, error: null } },
+    requests: emptyRequests(),
   };
 });
 

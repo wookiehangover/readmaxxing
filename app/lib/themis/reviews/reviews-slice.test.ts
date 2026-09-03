@@ -19,6 +19,7 @@ import {
   reviewProgressReceived,
   reviewQuestionReceived,
   reviewRequestStarted,
+  reviewRequestFailed,
   reviewSubmissionPrepared,
   reviewsInitialState,
   reviewsReducer,
@@ -232,4 +233,188 @@ describe("canonical review state and derived selectors", () => {
     expect(store.state.reviews).toBe(changed);
     expect(store.reviewsSelectors.selectReviewLocked.select(store.state, "book-1")).toBe(true);
   });
+
+  it("reconciles full snapshots without deleting historical questions, attempts, drafts or locators", () => {
+    const store = setup();
+    assign(store);
+    receiveAttempt(store, "passed", "pass", 2);
+    const cache = store.state.reviews.cache!;
+    const generation = store.state.reviews.generation;
+    store.dispatch(reviewRequestStarted(generation, "progress", "replacement"));
+    store.dispatch(
+      reviewProgressReceived(generation, "replacement", { progress: [], attempts: [] }),
+    );
+    expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-1")).toBe(false);
+    expect(store.reviewsSelectors.selectReviewCanSubmit.select(store.state, "book-1")).toBe(false);
+    expect(store.reviewsSelectors.selectReviewLocked.select(store.state, "book-1")).toBe(true);
+    expect(store.state.reviews.cache).toEqual({ ...cache, currentAssignmentIds: [] });
+    expect(store.reviewsSelectors.selectReviewDocument.select(store.state, "book-1")).toEqual(
+      document(),
+    );
+    expect(store.reviewsSelectors.selectReviewAttempts.select(store.state, "book-1")).toHaveLength(
+      1,
+    );
+  });
+
+  it.each([
+    "unsupported_source",
+    "source_changed",
+    "chapters_unavailable",
+    "book_not_found",
+  ] as const)(
+    "revokes source eligibility on %s and rejects a delayed pre-error progress snapshot",
+    (code) => {
+      const store = setup();
+      assign(store);
+      receiveAttempt(store, "passed", "pass", 2);
+      const generation = store.state.reviews.generation;
+      store.dispatch(reviewRequestStarted(generation, "question", "source-check"));
+      store.dispatch(reviewRequestStarted(generation, "progress", "old-pass"));
+      store.dispatch(
+        reviewRequestFailed(generation, "question", "source-check", {
+          code,
+          error: "Source cannot be used",
+        }),
+      );
+      const failed = store.state.reviews;
+      store.dispatch(
+        reviewProgressReceived(generation, "old-pass", {
+          progress: [questionResponse().progress],
+          attempts: [],
+        }),
+      );
+      expect(store.state.reviews).toBe(failed);
+      expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-1")).toBe(false);
+      expect(store.reviewsSelectors.selectReviewDocument.select(store.state, "book-1")).toEqual(
+        document(),
+      );
+      expect(
+        store.reviewsSelectors.selectReviewQuestion.select(store.state, "book-1"),
+      ).not.toBeNull();
+    },
+  );
+
+  it.each(["unavailable", "generation_failed", "grading_failed", "invalid_request"] as const)(
+    "keeps source eligibility and the cached pass on transient or answer failure %s",
+    (code) => {
+      const store = setup();
+      assign(store);
+      receiveAttempt(store, "passed", "pass", 2);
+      const cache = store.state.reviews.cache;
+      const generation = store.state.reviews.generation;
+      store.dispatch(reviewRequestStarted(generation, "question", "retry"));
+      store.dispatch(
+        reviewRequestFailed(generation, "question", "retry", { code, error: "Retry" }),
+      );
+      expect(store.state.reviews.cache).toBe(cache);
+      expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-1")).toBe(true);
+    },
+  );
+
+  it("keeps other chapter assignments when question and submission replies are partial", () => {
+    const store = setup();
+    assign(store);
+    receiveAttempt(store, "passed", "pass", 2);
+    const next = { ...boundary, key: "review-v1:1:0", start: { ...boundary.start, spineIndex: 1 } };
+    store.dispatch(reviewCheckpointEntered("book-1", 1, next, "next-locator"));
+    const generation = store.state.reviews.generation;
+    store.dispatch(reviewRequestStarted(generation, "question", "next"));
+    store.dispatch(
+      reviewQuestionReceived(generation, "next", questionResponse("book-1", "user-1", next)),
+    );
+    expect(store.state.reviews.cache?.currentAssignmentIds).toEqual([
+      reviewAssignmentId(boundary.key, fingerprint),
+      reviewAssignmentId(next.key, fingerprint),
+    ]);
+    store.dispatch(reviewCheckpointEntered("book-1", 0, boundary, null));
+    expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-1")).toBe(true);
+  });
+
+  it.each(["before", "during"] as const)(
+    "rejects old progress started %s a new question request",
+    (order) => {
+      const store = setup();
+      assign(store);
+      receiveAttempt(store, "passed", "pass", 2);
+      const generation = store.state.reviews.generation;
+      if (order === "before") store.dispatch(reviewRequestStarted(generation, "progress", "old"));
+      store.dispatch(reviewRequestStarted(generation, "question", "new"));
+      if (order === "during") store.dispatch(reviewRequestStarted(generation, "progress", "old"));
+      const response = questionResponse();
+      const nextFingerprint = `review-text-v1:${"b".repeat(64)}`;
+      store.dispatch(
+        reviewQuestionReceived(generation, "new", {
+          chapter: { ...response.chapter, sourceFingerprint: nextFingerprint },
+          question: {
+            ...response.question,
+            id: "replacement-question",
+            sourceFingerprint: nextFingerprint,
+          },
+          progress: {
+            ...response.progress,
+            questionId: "replacement-question",
+            sourceFingerprint: nextFingerprint,
+          },
+        }),
+      );
+      const fresh = store.state.reviews;
+      store.dispatch(
+        reviewProgressReceived(generation, "old", { progress: [response.progress], attempts: [] }),
+      );
+      expect(store.state.reviews).toBe(fresh);
+      expect(store.state.reviews.cache?.currentAssignmentIds).toEqual([
+        reviewAssignmentId(boundary.key, nextFingerprint),
+      ]);
+      expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-1")).toBe(false);
+      expect(store.state.reviews.cache?.attempts.ids).toEqual(["passed"]);
+    },
+  );
+
+  it.each(["snapshot-first", "attempt-first"] as const)(
+    "arbitrates concurrent grading and source reconciliation: %s",
+    (order) => {
+      const store = setup();
+      assign(store);
+      const generation = store.state.reviews.generation;
+      const assignmentId = reviewAssignmentId(boundary.key, fingerprint);
+      store.dispatch(editReviewDraft("book-1", assignmentId, document(), 2));
+      store.dispatch(
+        reviewSubmissionPrepared(generation, {
+          id: "pass",
+          draftId: assignmentId,
+          draftRevision: 1,
+          grading: "reading_group",
+        }),
+      );
+      store.dispatch(reviewRequestStarted(generation, "submit", "grading"));
+      store.dispatch(reviewRequestStarted(generation, "progress", "snapshot"));
+      const snapshot = reviewProgressReceived(generation, "snapshot", {
+        progress: [],
+        attempts: [],
+      });
+      const attempt = reviewAttemptReceived(
+        generation,
+        "grading",
+        submitResponse({
+          id: "pass",
+          bookId: "book-1",
+          chapterKey: boundary.key,
+          questionId: questionResponse().question.id,
+          grading: "reading_group",
+          document: document(),
+          plainText: "A thoughtful answer with more than thirty characters.",
+        }),
+      );
+      store.dispatch(order === "snapshot-first" ? snapshot : attempt);
+      const accepted = store.state.reviews;
+      store.dispatch(order === "snapshot-first" ? attempt : snapshot);
+      expect(store.state.reviews).toBe(accepted);
+      expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-1")).toBe(
+        order === "attempt-first",
+      );
+      expect(store.reviewsSelectors.selectReviewDocument.select(store.state, "book-1")).toEqual(
+        document(),
+      );
+    },
+  );
 });

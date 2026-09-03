@@ -72,7 +72,19 @@ beforeEach(() => {
     ),
   );
   mocks.submit.mockImplementation(async (request: ReviewSubmitRequest) => submitResponse(request));
-  mocks.progress.mockResolvedValue({ progress: [], attempts: [] });
+  mocks.progress.mockImplementation(async (bookId: string) => ({
+    // A complete snapshot includes assignments already created by question requests.
+    progress: mocks.question.mock.calls
+      .filter(([request]) => request.bookId === bookId)
+      .map(
+        ([request]) =>
+          questionResponse(bookId, "user-1", {
+            ...boundary,
+            key: request.chapterKey,
+          }).progress,
+      ),
+    attempts: [],
+  }));
   mocks.reupload.mockResolvedValue(undefined);
 });
 afterEach(() => {
@@ -381,6 +393,43 @@ describe("review workflows through the configured ReactStore runtime", () => {
     store.dispose();
     expect(remove).toHaveBeenCalledWith("online", expect.any(Function));
     expect(remove).toHaveBeenCalledWith("offline", expect.any(Function));
+  });
+  it("aborts a progress read started during generation when a newer question arrives", async () => {
+    const store = await setup();
+    await begin(store);
+    const question = deferred<ReviewQuestionResponse>();
+    const progress = deferred<{ progress: []; attempts: [] }>();
+    mocks.question.mockReturnValueOnce(question.promise);
+    mocks.progress.mockReturnValueOnce(progress.promise);
+    store.dispatch(retryReviewQuestion("book-1"));
+    store.dispatch(refreshReviewProgress("book-1"));
+    const signal = mocks.progress.mock.calls.at(-1)![1];
+    question.resolve(questionResponse());
+    await vi.waitFor(() => expect(signal.aborted).toBe(true));
+    progress.resolve({ progress: [], attempts: [] });
+    await Promise.resolve();
+    expect(store.reviewsSelectors.selectReviewAssignmentCurrent.select(store.state, "book-1")).toBe(
+      true,
+    );
+  });
+  it("aborts a pending grade when a newer full snapshot invalidates its source", async () => {
+    const store = await setup();
+    await begin(store);
+    edit(store);
+    const grade = deferred<ReviewSubmitResponse>();
+    mocks.submit.mockReturnValueOnce(grade.promise);
+    store.dispatch(submitReviewAnswer("book-1"));
+    await vi.waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));
+    const [request, signal] = mocks.submit.mock.calls[0];
+    mocks.progress.mockResolvedValueOnce({ progress: [], attempts: [] });
+    store.dispatch(refreshReviewProgress("book-1"));
+    await vi.waitFor(() => expect(signal.aborted).toBe(true));
+    grade.resolve(submitResponse(request));
+    await Promise.resolve();
+    expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-1")).toBe(false);
+    expect(store.reviewsSelectors.selectReviewDocument.select(store.state, "book-1")).toEqual(
+      document(),
+    );
   });
   it("hydrates authoritative completed attempts after a question assignment even if the startup progress request was cancelled", async () => {
     const initial = deferred<{ progress: []; attempts: [] }>();

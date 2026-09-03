@@ -2,6 +2,7 @@ import { get, set } from "idb-keyval";
 import { z } from "zod";
 import { getReviewsStore } from "~/lib/sync/stores";
 import type { ReviewCache } from "~/lib/themis/reviews/reviews-types";
+import { reviewAssignmentId } from "~/lib/themis/reviews/reviews-records";
 import {
   reviewBoundarySchema,
   reviewDifficultySchema,
@@ -27,16 +28,14 @@ function collection<T extends z.ZodType, K extends string>(item: T, idField: K) 
         ),
     );
 }
-const documentJson = z
-  .string()
-  .max(1_000_000)
-  .refine((value) => {
-    try {
-      return reviewSubmitRequestSchema.shape.document.safeParse(JSON.parse(value)).success;
-    } catch {
-      return false;
-    }
-  });
+// Local drafts may exceed the grading payload limit and must remain editable.
+const documentJson = z.string().refine((value) => {
+  try {
+    return reviewSubmitRequestSchema.shape.document.safeParse(JSON.parse(value)).success;
+  } catch {
+    return false;
+  }
+});
 const assignment = z.object({
   id: z.string(),
   chapterKey: z.string(),
@@ -68,6 +67,7 @@ const cacheSchema = z.object({
     "key",
   ),
   assignments: collection(assignment, "id"),
+  currentAssignmentIds: z.array(z.string()).optional(),
   questions: collection(
     z.object({
       id: z.string(),
@@ -132,7 +132,16 @@ export async function loadReviewCache(userId: string, bookId: string): Promise<R
   ) {
     throw new Error("Review cache belongs to a different account or book");
   }
-  return cache;
+  // Older caches predate explicit server membership; their checkpoint references
+  // were the last known assignments. The next complete refresh reconciles them.
+  const currentAssignmentIds =
+    cache.currentAssignmentIds ??
+    cache.checkpoints.ids.flatMap((key) => {
+      const fingerprint = cache.checkpoints.map[key]?.sourceFingerprint;
+      const id = fingerprint ? reviewAssignmentId(key, fingerprint) : null;
+      return id && cache.assignments.map[id] ? [id] : [];
+    });
+  return { ...cache, currentAssignmentIds };
 }
 
 // Transport queues only, never a second owner of review data. Serialize writes so

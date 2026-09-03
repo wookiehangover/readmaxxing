@@ -70,6 +70,36 @@ describe("review IndexedDB persistence", () => {
     expect(await loadReviewCache("a:b", "c")).toEqual(first);
     expect(await loadReviewCache("a", "b:c")).toEqual(second);
   });
+  it("restores pre-membership caches and persists explicit invalidation across reload", async () => {
+    const cache = mergeReviewProgress(emptyReviewCache("user-1", "book-1"), {
+      progress: [questionResponse().progress],
+      attempts: [],
+    });
+    cache.checkpoints = upsertItem(cache.checkpoints, {
+      ...boundary,
+      chapterIndex: 0,
+      sourceFingerprint: fingerprint,
+      returnLocator: "return-cfi",
+    });
+    const { currentAssignmentIds, ...legacy } = cache;
+    await set(JSON.stringify(["user-1", "book-1"]), legacy, getReviewsStore());
+    expect((await loadReviewCache("user-1", "book-1"))?.currentAssignmentIds).toEqual(
+      currentAssignmentIds,
+    );
+    await saveReviewCache({ ...cache, currentAssignmentIds: [] });
+    expect((await loadReviewCache("user-1", "book-1"))?.currentAssignmentIds).toEqual([]);
+  });
+  it("round-trips an oversized draft without imposing grading limits on local editing", async () => {
+    const cache = emptyReviewCache("user-1", "book-1");
+    cache.drafts = upsertItem(cache.drafts, {
+      id: "draft",
+      documentJson: JSON.stringify(document("x".repeat(1_000_001))),
+      revision: 1,
+      updatedAt: 1,
+    });
+    await saveReviewCache(cache);
+    expect(await loadReviewCache("user-1", "book-1")).toEqual(cache);
+  });
   it("serializes competing writes so the newest draft/settings win", async () => {
     const initial = emptyReviewCache("user-1", "book-1");
     const enabled = { ...initial, preferences: { ...initial.preferences, enabled: true } };

@@ -52,6 +52,8 @@ export interface ReviewCache {
   preferences: ReviewPreferences;
   checkpoints: Collection<ReviewCheckpoint, "key">;
   assignments: Collection<ReviewAssignment, "id">;
+  /** Server-authorized membership, separate from retained historical records. */
+  currentAssignmentIds: string[];
   questions: Collection<ReviewQuestionDTO, "id">;
   attempts: Collection<ReviewAttempt, "id">;
   drafts: Collection<ReviewLocalDraft, "id">;

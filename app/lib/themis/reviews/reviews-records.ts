@@ -19,6 +19,7 @@ export function emptyReviewCache(userId: string, bookId: string): ReviewCache {
     preferences: { ...DEFAULT_REVIEW_PREFERENCES },
     checkpoints: createCollection("key"),
     assignments: createCollection("id"),
+    currentAssignmentIds: [],
     questions: createCollection("id"),
     attempts: createCollection("id"),
     drafts: createCollection("id"),
@@ -47,14 +48,21 @@ export function normalizeReviewAttempt({
 export function mergeReviewProgress(
   cache: ReviewCache,
   response: ReviewProgressResponse,
+  mode: "patch" | "snapshot" = "patch",
 ): ReviewCache {
   let assignments = cache.assignments;
   let attempts = cache.attempts;
+  let currentAssignmentIds = mode === "snapshot" ? [] : cache.currentAssignmentIds;
   for (const progress of response.progress) {
     if (progress.userId !== cache.userId || progress.bookId !== cache.bookId) continue;
     const { chapterKey, sourceFingerprint, questionId } = progress;
+    const id = reviewAssignmentId(chapterKey, sourceFingerprint);
+    currentAssignmentIds = currentAssignmentIds.filter(
+      (currentId) => getItem(assignments, currentId)?.chapterKey !== chapterKey,
+    );
+    currentAssignmentIds.push(id);
     assignments = upsertItem(assignments, {
-      id: reviewAssignmentId(chapterKey, sourceFingerprint),
+      id,
       chapterKey,
       sourceFingerprint,
       questionId,
@@ -65,7 +73,23 @@ export function mergeReviewProgress(
     if (!getItem(attempts, attempt.id))
       attempts = upsertItem(attempts, normalizeReviewAttempt(attempt));
   }
-  return assignments === cache.assignments && attempts === cache.attempts
+  if (
+    currentAssignmentIds.length === cache.currentAssignmentIds.length &&
+    currentAssignmentIds.every((id, index) => id === cache.currentAssignmentIds[index])
+  )
+    currentAssignmentIds = cache.currentAssignmentIds;
+  return assignments === cache.assignments &&
+    attempts === cache.attempts &&
+    currentAssignmentIds === cache.currentAssignmentIds
     ? cache
-    : { ...cache, assignments, attempts };
+    : { ...cache, assignments, attempts, currentAssignmentIds };
+}
+
+export function invalidateReviewSource(cache: ReviewCache, chapterKey: string | null): ReviewCache {
+  const currentAssignmentIds = cache.currentAssignmentIds.filter(
+    (id) => chapterKey !== null && getItem(cache.assignments, id)?.chapterKey !== chapterKey,
+  );
+  return currentAssignmentIds.length === cache.currentAssignmentIds.length
+    ? cache
+    : { ...cache, currentAssignmentIds };
 }
