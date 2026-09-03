@@ -12,6 +12,7 @@ test.beforeAll(async () => {
   server = await createServer({
     configFile: false,
     root,
+    esbuild: { jsx: "automatic" },
     resolve: { alias: { "~": `${root}/app` } },
     server: { host: "127.0.0.1", port: 0 },
     plugins: [
@@ -35,7 +36,59 @@ test.afterAll(async () => {
   await server?.close();
 });
 
+test("review ownership survives live switches and parent Store teardown", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.route("**/api/**", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: "{}",
+    }),
+  );
+  await page.goto(`${baseURL}review-navigation-fixture`);
+  const result = await page.evaluate(async () => {
+    const modulePath = "/e2e/fixtures/review-navigation-lifecycle.tsx";
+    const { exerciseReviewTeardown } = await import(modulePath);
+    return exerciseReviewTeardown();
+  });
+  expect(result).toEqual({ opened: true, switched: true, closed: true, newerOwnerRetained: true });
+  expect(errors).toEqual([]);
+});
+
 for (const mode of ["single", "double", "scrolled"] as const) {
+  for (const method of ["buttons", "gesture"] as const) {
+    test(`locked continuation returns to its prior fragment endpoint in ${mode} using ${method}`, async ({
+      page,
+    }) => {
+      await page.route("**/api/reviews/**", (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "Offline fixture" }),
+        }),
+      );
+      await page.goto(`${baseURL}review-navigation-fixture`);
+      const result = await page.evaluate(
+        async ({ mode, method }) => {
+          const modulePath = "/e2e/fixtures/review-navigation.ts";
+          const { exerciseContinuation } = await import(modulePath);
+          return exerciseContinuation(mode, method);
+        },
+        { mode, method },
+      );
+      expect(result.atPriorEnd, JSON.stringify(result.endGeometry)).toBe(true);
+      expect(result).toMatchObject({
+        forward: true,
+        backSpine: 0,
+        sameChapter: true,
+        atPriorEnd: true,
+        firstHidden: true,
+        locked: true,
+        earlierBlocked: true,
+      });
+    });
+  }
   test(`extracted first-fragment whitespace admits spine starts in ${mode} while preserving later locks`, async ({
     page,
   }) => {

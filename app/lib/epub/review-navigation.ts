@@ -151,9 +151,9 @@ export class ReviewNavigation implements NavigatorNavigationPolicy, ReviewNaviga
       direction === "next" &&
       current.spineIndex < unitLastSpine(unit, this.source.documents.length)
     )
-      return undefined;
+      return this.source.target(unit, "start", current.spineIndex + 1);
     if (direction === "previous" && current.spineIndex > unit.boundary.start.spineIndex)
-      return undefined;
+      return this.source.target(unit, "end", current.spineIndex - 1);
     if (this.enabled && this.confirming) return false;
     if (this.enabled && direction === "next" && !this.passed(unit)) {
       const location = this.rendition?.location?.start;

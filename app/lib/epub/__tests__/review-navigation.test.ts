@@ -264,7 +264,11 @@ describe("one review admission policy", () => {
   it("waits through continuation spines, triggers the final chapter, and restores the captured continuation locator", async () => {
     const s = await setup();
     s.selectUnit(1, 0, "tail");
-    expect(s.start()).toBeUndefined();
+    expect(s.start()).toMatchObject({
+      spineIndex: 1,
+      position: "start",
+      contentRange: { key: s.units[1]!.boundary.key },
+    });
     s.selectUnit(1, 1, "continued");
     expect(s.start()).toBe(false);
     await vi.waitFor(() =>

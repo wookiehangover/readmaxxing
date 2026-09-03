@@ -10,6 +10,7 @@ import { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
 import { createAppStore } from "~/lib/themis/store";
 import { authSessionResolved } from "~/lib/themis/auth-session/auth-session-slice";
 import { emptyReviewCache } from "~/lib/themis/reviews/reviews-records";
+import { createReviewsSaga } from "~/lib/themis/reviews/sagas/reviews-saga";
 import {
   openReviewBook,
   reviewCacheLoaded,
@@ -19,7 +20,7 @@ import {
 } from "~/lib/themis/reviews/reviews-slice";
 
 /** Runs in a native browser: no hand-authored boundaries or DOM Range mocks. */
-export async function exerciseSpineStart(mode: "single" | "double" | "scrolled") {
+async function createReviewNavigationFixture(mode: "single" | "double" | "scrolled") {
   const xhtml = (body: string) =>
     `<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Whitespace fixture</title></head><body>${body}</body></html>`;
   const files = {
@@ -32,7 +33,12 @@ export async function exerciseSpineStart(mode: "single" | "double" | "scrolled")
       '<nav epub:type="toc"><ol><li><a href="one.xhtml#first">First</a></li><li><a href="one.xhtml#second">Second</a></li></ol></nav>',
     ),
     "EPUB/one.xhtml": xhtml(
-      ' \n<h1 id="first">FIRST CHAPTER</h1><p>First body.</p><h1 id="second">SECOND CHAPTER</h1><p>Second body.</p>',
+      ' \n<h1 id="first">FIRST CHAPTER</h1><p>First body.</p><h1 id="second">SECOND CHAPTER</h1>' +
+        Array.from(
+          { length: 20 },
+          (_, i) =>
+            `<p id="second-${i}">${"Second body with enough detail to span many pages. ".repeat(15)}</p>`,
+        ).join(""),
     ),
     "EPUB/two.xhtml": xhtml(" \n<p>Second chapter continuation.</p>"),
   };
@@ -73,6 +79,20 @@ export async function exerciseSpineStart(mode: "single" | "double" | "scrolled")
   });
   const rendition = new SuccessorRenditionAdapter(publication, nav);
   policy.rendition = rendition;
+  const cleanup = () => {
+    policy.destroy();
+    rendition.destroy();
+    nav.destroy();
+    store.dispose();
+    provider.close();
+    container.remove();
+  };
+  return { source, store, nav, rendition, policy, cleanup };
+}
+
+export async function exerciseSpineStart(mode: "single" | "double" | "scrolled") {
+  const { source, store, nav, rendition, policy, cleanup } =
+    await createReviewNavigationFixture(mode);
   try {
     const first = source.units[0]!;
     const second = source.units[1]!;
@@ -112,11 +132,84 @@ export async function exerciseSpineStart(mode: "single" | "double" | "scrolled")
       reload,
     };
   } finally {
-    policy.destroy();
-    rendition.destroy();
-    nav.destroy();
-    store.dispose();
-    provider.close();
-    container.remove();
+    cleanup();
+  }
+}
+
+export async function exerciseContinuation(
+  mode: "single" | "double" | "scrolled",
+  method: "buttons" | "gesture",
+) {
+  const { source, store, nav, rendition, policy, cleanup } =
+    await createReviewNavigationFixture(mode);
+  store.runSaga(createReviewsSaga(store));
+  const waitFor = async (predicate: () => boolean) => {
+    for (let i = 0; i < 100 && !predicate(); i++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+  };
+  const turn = async (direction: "next" | "previous") => {
+    if (method === "buttons") await (direction === "next" ? nav.next() : nav.previous());
+    else if (mode === "scrolled") {
+      nav.contentDocument!.defaultView!.dispatchEvent(
+        new WheelEvent("wheel", { deltaY: direction === "next" ? 100 : -100 }),
+      );
+    } else {
+      nav.beginInteractivePageTurn(direction);
+      nav.updateInteractivePageTurn(direction === "next" ? -800 : 800);
+      await nav.endInteractivePageTurn(true);
+    }
+  };
+  try {
+    const second = source.units[1]!;
+    await rendition.display("EPUB/one.xhtml#second");
+    nav.restoreProgression(1);
+    await turn("next");
+    await waitFor(() => nav.currentRelocation?.spineIndex === 1);
+    const forward = nav.currentRelocation?.spineIndex === 1;
+    // The continuation fits on one page: its next turn records the real return
+    // locator through the existing saga, then page back clears only visibility.
+    await nav.next();
+    await waitFor(() => store.reviewsSelectors.selectReviewVisible.select(store.state, "fixture"));
+    await policy.backToChapter();
+    nav.restoreProgression(0);
+    await turn("previous");
+    await waitFor(() => nav.currentRelocation?.spineIndex === 0);
+    // Let native scroll/relocation callbacks run too: programmatic arrival at
+    // the end must not immediately bounce forward to the continuation again.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const backSpine = nav.currentRelocation?.spineIndex;
+    const sameChapter = nav.currentContentRange?.key === second.boundary.key;
+    const doc = nav.contentDocument!;
+    const last = doc.getElementById("second-19")?.getBoundingClientRect();
+    const atPriorEnd =
+      !!last &&
+      last.bottom > 0 &&
+      last.top < doc.documentElement.clientHeight &&
+      last.right > 0 &&
+      last.left < doc.documentElement.clientWidth;
+    const firstHidden = !doc.body.innerText.includes("FIRST CHAPTER");
+    const locked = store.reviewsSelectors.selectReviewLocked.select(store.state, "fixture");
+    // At the first fragment's start, another back turn must not enter First.
+    nav.restoreProgression(0);
+    await nav.previous();
+    const earlierBlocked =
+      nav.currentContentRange?.key === second.boundary.key &&
+      nav.currentRelocation?.spineIndex === 0;
+    return {
+      forward,
+      backSpine,
+      sameChapter,
+      atPriorEnd,
+      firstHidden,
+      locked,
+      earlierBlocked,
+      endGeometry: {
+        last: last?.toJSON(),
+        width: doc.documentElement.clientWidth,
+        height: doc.documentElement.clientHeight,
+      },
+    };
+  } finally {
+    cleanup();
   }
 }

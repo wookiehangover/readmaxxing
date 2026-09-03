@@ -134,11 +134,16 @@ export class ReviewNavigationSource {
     });
   }
 
-  target(unit: ReviewNavigationUnit, position: "start" | "end" = "start"): DisplayTarget {
+  target(
+    unit: ReviewNavigationUnit,
+    position: "start" | "end" = "start",
+    targetSpine?: number,
+  ): DisplayTarget {
     const spineIndex =
-      position === "start"
+      targetSpine ??
+      (position === "start"
         ? unit.boundary.start.spineIndex
-        : unitLastSpine(unit, this.documents.length);
+        : unitLastSpine(unit, this.documents.length));
     const bounds = unitContentRange(unit, spineIndex);
     return {
       spineIndex,

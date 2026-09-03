@@ -40,6 +40,7 @@ import {
   type NavigatorContentRange,
 } from "./content-range";
 import type { NavigatorNavigationPolicy } from "./navigation-policy";
+import { lastRenderedRange } from "./visible-text";
 
 export type {
   NavigatorFlow,
@@ -107,6 +108,7 @@ interface SectionMount {
   overlaid?: boolean;
   contentRange?: NavigatorContentRange;
   restoreContent?: () => void;
+  scrollTop?: number;
 }
 
 interface PreparedSection {
@@ -790,6 +792,9 @@ export class Navigator extends EventTarget {
 
   #installScrollListener(mount: SectionMount, view: Window): void {
     mount.removeScrollListener?.();
+    const document = mount.frame.contentDocument!;
+    const scrolling = document.scrollingElement ?? document.documentElement;
+    mount.scrollTop = scrolling.scrollTop;
     // WebKit may block callbacks scheduled in a sandboxed publication frame. The
     // listener still observes the publication window, but its coalescing frame
     // belongs to the trusted host document.
@@ -811,10 +816,11 @@ export class Navigator extends EventTarget {
           this.#pageMove?.mount !== mount
         ) {
           this.#emitRelocation(mount);
-          const document = mount.frame.contentDocument!;
-          const scrolling = document.scrollingElement ?? document.documentElement;
+          const previousScrollTop = mount.scrollTop ?? 0;
+          mount.scrollTop = scrolling.scrollTop;
           if (
             !mount.pagination &&
+            scrolling.scrollTop > previousScrollTop &&
             scrolling.scrollTop + scrolling.clientHeight >= scrolling.scrollHeight - 1
           )
             this.#scrollBoundary(mount, "next");
@@ -1138,8 +1144,19 @@ export class Navigator extends EventTarget {
             : bounded(target.localProgression!);
       if (mount.pagination) {
         const state = mount.pagination;
-        const page = Math.round(local * (state.pageCount - 1));
+        // Measure the endpoint from the origin: the root's client rect itself
+        // shifts with horizontal scroll in some browsers.
+        const page = target.position === "end" ? 0 : Math.round(local * (state.pageCount - 1));
         scrollToPage(state, Math.floor(page / state.pagesPerSpread) * state.pagesPerSpread);
+        // Browser column overflow can include an empty terminal column. An
+        // explicit end target restores the last rendered source box instead.
+        const end = target.position === "end" ? lastRenderedRange(document) : undefined;
+        if (end) alignPaginationToRange(state, end);
+        else if (target.position === "end")
+          scrollToPage(
+            state,
+            Math.floor((state.pageCount - 1) / state.pagesPerSpread) * state.pagesPerSpread,
+          );
       } else
         scrolling.scrollTop = local * Math.max(0, scrolling.scrollHeight - scrolling.clientHeight);
     } else if (target.cfi) {
@@ -1156,6 +1173,9 @@ export class Navigator extends EventTarget {
         scrolling.scrollTop += rect.top;
       }
     }
+    // A programmatic arrival at a prior chapter/spine end is a restore, not
+    // forward scrolling. Its queued native scroll event must not advance again.
+    mount.scrollTop = scrolling.scrollTop;
   }
 
   #applyEdgeTransform(move: ActivePageMove, displacement: number): void {

@@ -261,9 +261,12 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   useEffect(() => {
     if (!enabled || !config.reviewContext) return;
     const readerId = reviewReaderId.current;
-    store.dispatch(openReviewBook(bookId, readerId));
+    // Parent cleanup can dispose the Store before this child effect cleans up.
+    // Retain this scope's Redux dispatch instead of reading the disposed getter.
+    const dispatch = store.dispatch;
+    dispatch(openReviewBook(bookId, readerId));
     return () => {
-      store.dispatch(closeReviewBook(readerId));
+      dispatch(closeReviewBook(readerId));
     };
   }, [bookId, enabled, config.reviewContext, store]);
 
