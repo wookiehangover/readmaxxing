@@ -12,6 +12,7 @@ import {
   begin,
   edit,
   pass,
+  holdNextResponse,
 } from "./review-workflow-fixtures";
 import { loadReviewCache } from "~/lib/review/review-cache";
 import { reviewClient } from "~/lib/review/review-client";
@@ -35,7 +36,9 @@ describe("review workflow with real client, routes, storage and ReactStore", () 
         annotations: [{ start: 0, end: 3, quote: "The", issue: "insufficient_evidence" }],
       },
     });
+    const confirmation = holdNextResponse("progress");
     store.dispatch(submitReviewAnswer("book-a"));
+    await confirmation.processed;
     await vi.waitFor(() =>
       expect(
         store.reviewsSelectors.selectLatestReviewAttempt.select(store.state, "book-a")?.verdict,
@@ -51,6 +54,13 @@ describe("review workflow with real client, routes, storage and ReactStore", () 
       "Revised: The narrator changes her mind as new evidence challenges her assumptions.",
     );
     store.dispatch(setReviewGrading("book-a", "elite_professor"));
+    // A verdict is available before the server confirms the current chapter source.
+    // The UI cannot resubmit until that confirmation has restored source authority.
+    expect(store.reviewsSelectors.selectReviewCanSubmit.select(store.state, "book-a")).toBe(false);
+    confirmation.release();
+    await vi.waitFor(() =>
+      expect(store.reviewsSelectors.selectReviewCanSubmit.select(store.state, "book-a")).toBe(true),
+    );
     store.dispatch(submitReviewAnswer("book-a"));
     await vi.waitFor(() =>
       expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-a")).toBe(true),

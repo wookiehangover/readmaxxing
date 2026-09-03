@@ -19,7 +19,7 @@ export default defineConfig({
   },
   use: {
     baseURL,
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
     // Reduce video/screenshot overhead
     video: "retain-on-failure",
     screenshot: "only-on-failure",

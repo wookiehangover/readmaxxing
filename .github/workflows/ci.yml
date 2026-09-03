@@ -102,3 +102,10 @@ jobs:
       - run: pnpm exec playwright install chromium --with-deps
       - run: pnpm build
       - run: pnpm e2e
+      - name: Upload browser failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7

@@ -184,8 +184,13 @@ export async function reachReview(page: Page, mobile: boolean, questionReady = t
   if (mobile) await page.getByRole("tab", { name: "Read", exact: true }).click();
   for (let i = 0; i < 12 && !(await target.isVisible()); i++) {
     // The real EPUB keyboard path handles the chapter endpoint on both screen sizes.
-    await page.locator('[aria-label="Book surface"] iframe').first().waitFor({ state: "visible" });
-    await page.locator('[aria-label="Book surface"] iframe').first().focus();
+    const frame = page.locator('[aria-label="Book surface"] iframe').first();
+    // The question can replace the chapter between the loop check and iframe readiness.
+    await expect
+      .poll(async () => (await target.isVisible()) || (await frame.isVisible()))
+      .toBe(true);
+    if (await target.isVisible()) break;
+    await frame.focus();
     await page.keyboard.press("ArrowRight");
     await expect
       .poll(

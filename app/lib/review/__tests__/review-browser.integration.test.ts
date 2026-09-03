@@ -141,6 +141,7 @@ it.skipIf(!enabled)(
     expect(final.question.difficulty).toBe("tyler_cowen");
     expect(final.chapter.boundary.end).toBeNull();
     await alice.getByRole("button", { name: "Back to chapter" }).click();
+    await browserExpect(answer).toHaveCount(0);
     await browserExpect(alice.locator('[aria-label="Book surface"] iframe').first()).toBeVisible();
     await alice.getByRole("button", { name: final.question.question, exact: true }).click();
     await browserExpect(answer).toBeEmpty();
