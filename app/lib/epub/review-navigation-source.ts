@@ -100,11 +100,21 @@ export class ReviewNavigationSource {
     const spineIndex = this.spineIndex(target);
     const document = this.documents[spineIndex];
     if (!document?.body) return;
+    const units = this.units.filter(
+      (unit) =>
+        spineIndex >= unit.boundary.start.spineIndex &&
+        spineIndex <= unitLastSpine(unit, this.documents.length),
+    );
+    const fragment = target.fragment ?? target.href?.split("#")[1];
+    // A bare spine target means its first readable interval, not body DOM
+    // offset zero: trimmed source offsets can omit whitespace before a heading.
+    // Keep the interval's fragment bounds so clipping and later-chapter locks
+    // still use the same strict range as explicitly anchored navigation.
+    if (!target.cfi && !fragment) return units[0];
     let point: Range | null;
     if (target.cfi) point = resolveCfi(target.cfi, document, { spineIndex });
     else {
       point = document.createRange();
-      const fragment = target.fragment ?? target.href?.split("#")[1];
       const element = fragment ? fragmentElement(document, fragment) : document.body;
       if (!element) return;
       if (element === document.body) point.selectNodeContents(element);
@@ -112,12 +122,7 @@ export class ReviewNavigationSource {
       point.collapse(true);
     }
     if (!point) return;
-    return this.units.find((unit) => {
-      if (
-        spineIndex < unit.boundary.start.spineIndex ||
-        spineIndex > unitLastSpine(unit, this.documents.length)
-      )
-        return false;
+    return units.find((unit) => {
       try {
         return rangeContainsRange(
           contentRange(document, unitContentRange(unit, spineIndex)),
