@@ -182,6 +182,13 @@ for (const mode of ["single", "scroll"] as const) {
       await expect(page.getByRole("tab", { name: "Discuss", exact: true })).toBeVisible();
       await page.getByRole("tab", { name: "Read", exact: true }).tap();
       await expect(page.getByTestId("review-question")).toHaveCount(0);
+      await expect(page.getByRole("tab", { name: "Read", exact: true })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await expect(
+        page.getByRole("region", { name: "Chapter review settings" }),
+      ).not.toBeInViewport();
       await page.screenshot({ path: `.intent/artifacts/final-${mode}-boundary-recovery.png` });
     } finally {
       releaseQuestion();
