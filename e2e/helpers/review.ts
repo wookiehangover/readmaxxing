@@ -165,12 +165,9 @@ export async function installReviewFixture(page: Page) {
   return fixture;
 }
 
-export async function openReviewBook(page: Page) {
+export async function openReviewBook(page: Page, file = resolve("e2e/fixtures/test-book.epub")) {
   await page.goto("/library");
-  await page
-    .locator('input[type="file"][accept=".epub,.pdf"]')
-    .first()
-    .setInputFiles(resolve("e2e/fixtures/test-book.epub"));
+  await page.locator('input[type="file"][accept=".epub,.pdf"]').first().setInputFiles(file);
   // Uploading opens the workspace automatically; wait for that transition to finish.
   await expect(page.getByRole("button", { name: "Reader menu", exact: true })).toBeVisible();
   await openReviewSettings(page);
