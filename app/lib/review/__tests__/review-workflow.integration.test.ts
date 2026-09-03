@@ -415,3 +415,62 @@ it("keeps an oversized draft reloadable after rejecting its submission", async (
     ),
   );
 });
+
+it.each([false, true])(
+  "keeps answer-only prompt limits retryable without revoking source authority (prior pass: %s)",
+  async (previouslyPassed) => {
+    const store = await open();
+    await begin(store);
+    if (previouslyPassed) await pass(store);
+    const before = await reviewClient.progress("book-a", new AbortController().signal);
+    const history = store.state.reviews.cache!.attempts;
+    const questionRequests = responses.filter((response) =>
+      response.url.endsWith("/question"),
+    ).length;
+    edit(store, "界".repeat(60_000));
+    store.dispatch(submitReviewAnswer("book-a"));
+    await vi.waitFor(() =>
+      expect(store.state.reviews.requests.submit.error?.code).toBe("invalid_request"),
+    );
+    expect(store.state.reviews.requests.submit.error?.error).toContain("Shorten the answer");
+    expect(responses.filter((response) => response.url.endsWith("/attempts")).at(-1)?.status).toBe(
+      400,
+    );
+    expect(await reviewClient.progress("book-a", new AbortController().signal)).toEqual(before);
+    expect(store.state.reviews.cache!.attempts).toBe(history);
+    expect(store.reviewsSelectors.selectReviewAnswerText.select(store.state, "book-a")).toBe(
+      "界".repeat(60_000),
+    );
+    expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-a")).toBe(
+      previouslyPassed,
+    );
+    expect(store.reviewsSelectors.selectReviewLocked.select(store.state, "book-a")).toBe(
+      !previouslyPassed,
+    );
+    edit(store, "A corrected answer long enough to submit with chapter evidence.");
+    expect(store.reviewsSelectors.selectReviewCanSubmit.select(store.state, "book-a")).toBe(true);
+    store.dispatch(submitReviewAnswer("book-a"));
+    await vi.waitFor(() =>
+      expect(store.state.reviews.cache!.attempts.ids).toHaveLength(previouslyPassed ? 2 : 1),
+    );
+    expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-a")).toBe(true);
+    expect(responses.filter((response) => response.url.endsWith("/question"))).toHaveLength(
+      questionRequests,
+    );
+  },
+);
+
+it("invalidates a historical pass when submission detects an actually replaced oversized chapter", async () => {
+  const store = await open();
+  await begin(store);
+  await pass(store);
+  await replaceChapters(chapters("x".repeat(80_001)));
+  edit(store, "A revised answer to the old chapter that cannot review its replacement.");
+  store.dispatch(submitReviewAnswer("book-a"));
+  await vi.waitFor(() =>
+    expect(store.state.reviews.requests.submit.error?.code).toBe("source_changed"),
+  );
+  expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-a")).toBe(false);
+  expect(store.reviewsSelectors.selectReviewLocked.select(store.state, "book-a")).toBe(true);
+  expect(store.reviewsSelectors.selectReviewAttempts.select(store.state, "book-a")).toHaveLength(1);
+});
