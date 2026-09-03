@@ -190,12 +190,20 @@ reducer.with(setReviewDifficulty, (state, { payload: [bookId, difficulty] }) => 
 reducer.with(setReviewGrading, (state, { payload: [bookId, grading] }) => {
   if (!state.cache || bookId !== state.bookId || state.cache.preferences.grading === grading)
     return state;
+  const checkpoint = state.cache.activeChapterKey
+    ? getItem(state.cache.checkpoints, state.cache.activeChapterKey)
+    : null;
+  const current =
+    checkpoint?.sourceFingerprint &&
+    state.cache.currentAssignmentIds.includes(
+      reviewAssignmentId(checkpoint.key, checkpoint.sourceFingerprint),
+    );
   return {
     ...state,
     requests: {
       ...state.requests,
       submit: { token: null, error: null },
-      progress: { token: null, error: null },
+      progress: current ? { token: null, error: null } : state.requests.progress,
     },
     cache: { ...state.cache, preferences: { ...state.cache.preferences, grading } },
   };
@@ -251,7 +259,11 @@ reducer.with(editReviewDraft, (state, { payload }) => {
     requests: {
       ...state.requests,
       submit: { token: null, error: null },
-      progress: { token: null, error: null },
+      // Editing cannot cancel confirmation of an already completed write. It
+      // still invalidates reads that could import a not-yet-accepted grade.
+      progress: cache.currentAssignmentIds.includes(payload.assignmentId)
+        ? { token: null, error: null }
+        : state.requests.progress,
     },
     cache: {
       ...cache,
@@ -334,7 +346,9 @@ reducer.with(reviewQuestionReceived, (state, { payload: [generation, token, resp
   };
   return {
     ...state,
-    cache,
+    // HTTP delivery order cannot prove source freshness. The saga follows every
+    // successful write with a fresh snapshot before this assignment can unlock.
+    cache: invalidateReviewSource(cache, chapter.chapterKey),
     requests: {
       ...state.requests,
       progress: { token: null, error: null },
@@ -390,7 +404,10 @@ reducer.with(reviewAttemptReceived, (state, { payload: [generation, token, respo
     return state;
   return {
     ...state,
-    cache: mergeReviewProgress(state.cache, { attempts: [attempt], progress: [progress] }),
+    cache: invalidateReviewSource(
+      mergeReviewProgress(state.cache, { attempts: [attempt], progress: [progress] }),
+      attempt.chapterKey,
+    ),
     requests: emptyRequests(),
   };
 });

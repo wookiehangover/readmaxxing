@@ -185,7 +185,8 @@ export function createReviewsSaga(store: AppStore) {
     if (
       action.type !== refreshReviewProgress.type &&
       action.type !== reviewCacheLoaded.type &&
-      action.type !== reviewQuestionReceived.type
+      action.type !== reviewQuestionReceived.type &&
+      action.type !== reviewAttemptReceived.type
     )
       return;
     const state = yield* selectors.selectReviewState.effect();
@@ -309,6 +310,7 @@ export function createReviewsSaga(store: AppStore) {
                 refreshReviewProgress.type,
                 reviewCacheLoaded.type,
                 reviewQuestionReceived.type,
+                reviewAttemptReceived.type,
               ].includes(action.type)
             : action.type === submitReviewAnswer.type;
       if (

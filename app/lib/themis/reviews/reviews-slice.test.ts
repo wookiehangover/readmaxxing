@@ -47,6 +47,13 @@ function assign(store: AppStore) {
   const generation = store.state.reviews.generation;
   store.dispatch(reviewRequestStarted(generation, "question", "question-request"));
   store.dispatch(reviewQuestionReceived(generation, "question-request", questionResponse()));
+  store.dispatch(reviewRequestStarted(generation, "progress", "confirmed"));
+  store.dispatch(
+    reviewProgressReceived(generation, "confirmed", {
+      progress: [questionResponse().progress],
+      attempts: [],
+    }),
+  );
 }
 function receiveAttempt(store: AppStore, id: string, verdict: "pass" | "fail", time: number) {
   const generation = store.state.reviews.generation;
@@ -79,6 +86,13 @@ function receiveAttempt(store: AppStore, id: string, verdict: "pass" | "fail", t
         time,
       ),
     ),
+  );
+  store.dispatch(reviewRequestStarted(generation, "progress", "confirmed"));
+  store.dispatch(
+    reviewProgressReceived(generation, "confirmed", {
+      progress: [questionResponse().progress],
+      attempts: [],
+    }),
   );
 }
 afterEach(() => {
@@ -322,6 +336,16 @@ describe("canonical review state and derived selectors", () => {
     store.dispatch(
       reviewQuestionReceived(generation, "next", questionResponse("book-1", "user-1", next)),
     );
+    store.dispatch(reviewRequestStarted(generation, "progress", "confirmed"));
+    store.dispatch(
+      reviewProgressReceived(generation, "confirmed", {
+        progress: [
+          questionResponse().progress,
+          questionResponse("book-1", "user-1", next).progress,
+        ],
+        attempts: [],
+      }),
+    );
     expect(store.state.reviews.cache?.currentAssignmentIds).toEqual([
       reviewAssignmentId(boundary.key, fingerprint),
       reviewAssignmentId(next.key, fingerprint),
@@ -362,9 +386,7 @@ describe("canonical review state and derived selectors", () => {
         reviewProgressReceived(generation, "old", { progress: [response.progress], attempts: [] }),
       );
       expect(store.state.reviews).toBe(fresh);
-      expect(store.state.reviews.cache?.currentAssignmentIds).toEqual([
-        reviewAssignmentId(boundary.key, nextFingerprint),
-      ]);
+      expect(store.state.reviews.cache?.currentAssignmentIds).toEqual([]);
       expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-1")).toBe(false);
       expect(store.state.reviews.cache?.attempts.ids).toEqual(["passed"]);
     },
@@ -409,9 +431,7 @@ describe("canonical review state and derived selectors", () => {
       const accepted = store.state.reviews;
       store.dispatch(order === "snapshot-first" ? attempt : snapshot);
       expect(store.state.reviews).toBe(accepted);
-      expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-1")).toBe(
-        order === "attempt-first",
-      );
+      expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-1")).toBe(false);
       expect(store.reviewsSelectors.selectReviewDocument.select(store.state, "book-1")).toEqual(
         document(),
       );
