@@ -86,12 +86,14 @@ function fullChapter(text: string): void {
     );
   }
 }
-function boundedPrompt(data: unknown): string {
+function boundedPrompt(data: unknown, purpose: "generation" | "grading"): string {
   const prompt = JSON.stringify(data);
   if (Buffer.byteLength(prompt, "utf8") > REVIEW_MAX_PROMPT_BYTES) {
     throw new ReviewApiFailure(
-      "unsupported_source",
-      "The full chapter and answer exceed the review size limit. Shorten the answer or disable reviews to continue reading.",
+      purpose === "grading" ? "invalid_request" : "unsupported_source",
+      purpose === "grading"
+        ? "This answer is too large to grade with the full chapter. Shorten the answer and submit it again."
+        : "The full chapter exceeds the review size limit. You can disable reviews to continue reading.",
     );
   }
   return prompt;
@@ -102,7 +104,7 @@ export async function generateReviewQuestion(
   difficulty: ReviewDifficulty,
 ): Promise<GeneratedReviewQuestion> {
   fullChapter(text);
-  const prompt = boundedPrompt({ chapterText: text });
+  const prompt = boundedPrompt({ chapterText: text }, "generation");
   try {
     const result = await generateObject({
       model: gateway(REVIEW_MODEL),
@@ -137,12 +139,15 @@ export async function gradeReviewAnswer(options: {
   grading: ReviewGradingLevel;
 }): Promise<ReviewJudgment> {
   fullChapter(options.chapterText);
-  const prompt = boundedPrompt({
-    chapterText: options.chapterText,
-    question: options.question.question,
-    rubric: options.question.rubric,
-    submittedAnswer: options.plainText,
-  });
+  const prompt = boundedPrompt(
+    {
+      chapterText: options.chapterText,
+      question: options.question.question,
+      rubric: options.question.rubric,
+      submittedAnswer: options.plainText,
+    },
+    "grading",
+  );
   try {
     const result = await generateObject({
       model: gateway(REVIEW_MODEL),

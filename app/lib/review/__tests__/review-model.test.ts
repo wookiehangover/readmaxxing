@@ -246,10 +246,26 @@ describe("private, solution-free grading", () => {
     expect(result.feedback).toBe("Your answer needs to address the question directly.");
   });
 
-  it("rejects an oversized combined prompt without clipping the answer", async () => {
+  it("rejects an oversized answer as an invalid request and allows a shortened resubmission", async () => {
     await expect(
       gradeReviewAnswer({ ...options, plainText: "界".repeat(60_000) }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(mocks.generate).not.toHaveBeenCalled();
+    mocks.generate.mockResolvedValue({ object: { verdict: "pass", issues: [], annotations: [] } });
+    await expect(gradeReviewAnswer(options)).resolves.toMatchObject({ verdict: "pass" });
+  });
+
+  it("retains unsupported_source for an oversized chapter during grading", async () => {
+    await expect(
+      gradeReviewAnswer({ ...options, chapterText: "x".repeat(REVIEW_MAX_CHAPTER_BYTES + 1) }),
     ).rejects.toMatchObject({ code: "unsupported_source" });
+    expect(mocks.generate).not.toHaveBeenCalled();
+  });
+
+  it("retains unsupported_source when escaped chapter JSON exceeds the generation budget", async () => {
+    await expect(generateReviewQuestion("\u0000".repeat(30_000), "friendly")).rejects.toMatchObject(
+      { code: "unsupported_source" },
+    );
     expect(mocks.generate).not.toHaveBeenCalled();
   });
 
