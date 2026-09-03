@@ -46,7 +46,12 @@ export function createReviewsSelectors(store: AppStoreCore) {
   const selectReviewAssignmentCurrent = store.createSelector((state, bookId: string) => {
     const cache = selectReviewCache.select(state, bookId);
     const assignment = selectReviewAssignment.select(state, bookId);
-    return !!(assignment && cache?.currentAssignmentIds.includes(assignment.id));
+    return !!(
+      assignment &&
+      cache?.currentAssignmentIds.includes(assignment.id) &&
+      ((state.reviews.readerId === null && state.reviews.localSources === null) ||
+        state.reviews.localSources?.[assignment.chapterKey] === assignment.sourceFingerprint)
+    );
   });
   const selectReviewDraft = store.createSelector((state, bookId: string) => {
     const cache = selectReviewCache.select(state, bookId);
@@ -88,13 +93,34 @@ export function createReviewsSelectors(store: AppStoreCore) {
   const selectLatestReviewAttempt = store.createSelector(
     (state, bookId: string) => selectReviewAttempts.select(state, bookId).at(-1) ?? null,
   );
-  const selectReviewPassed = store.createSelector(
-    (state, bookId: string) =>
-      selectReviewAssignmentCurrent.select(state, bookId) &&
-      selectReviewAttemptRecords
-        .select(state, bookId)
-        .some((attempt) => attempt.verdict === "pass"),
+  const selectReviewChapterPassed = store.createSelector(
+    (state, bookId: string, key: string, fingerprint: string) => {
+      const cache = selectReviewCache.select(state, bookId);
+      const id = reviewAssignmentId(key, fingerprint);
+      const assignment = cache ? getItem(cache.assignments, id) : null;
+      return !!(
+        cache &&
+        assignment &&
+        cache.currentAssignmentIds.includes(id) &&
+        ((state.reviews.readerId === null && state.reviews.localSources === null) ||
+          state.reviews.localSources?.[key] === fingerprint) &&
+        getItems(cache.attempts).some(
+          (attempt) =>
+            attempt.chapterKey === key &&
+            attempt.sourceFingerprint === fingerprint &&
+            attempt.questionId === assignment.questionId &&
+            attempt.verdict === "pass",
+        )
+      );
+    },
   );
+  const selectReviewPassed = store.createSelector((state, bookId: string) => {
+    const checkpoint = selectReviewCheckpoint.select(state, bookId);
+    return !!(
+      checkpoint?.sourceFingerprint &&
+      selectReviewChapterPassed.select(state, bookId, checkpoint.key, checkpoint.sourceFingerprint)
+    );
+  });
   const selectReviewLocked = store.createSelector(
     (state, bookId: string) =>
       selectReviewPreferences.select(state, bookId).enabled &&
@@ -155,6 +181,7 @@ export function createReviewsSelectors(store: AppStoreCore) {
     selectReviewAttempts,
     selectLatestReviewAttempt,
     selectReviewPassed,
+    selectReviewChapterPassed,
     selectReviewLocked,
     selectReviewVisible,
     selectReviewRequirement,

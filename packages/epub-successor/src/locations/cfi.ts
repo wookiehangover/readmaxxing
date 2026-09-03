@@ -315,12 +315,11 @@ function resolvePath(document: Document, path: CfiPath): readonly [Node, number]
     current = next;
   }
   const offset = path.offset ?? 0;
-  const maximum =
-    current.nodeType === Node.TEXT_NODE
-      ? (current.nodeValue?.length ?? 0)
-      : current.childNodes.length;
+  const isText =
+    current.nodeType === Node.TEXT_NODE || current.nodeType === Node.CDATA_SECTION_NODE;
+  const maximum = isText ? (current.nodeValue?.length ?? 0) : current.childNodes.length;
   if (offset > maximum) return null;
-  if (path.textAssertion !== undefined && current.nodeType === Node.TEXT_NODE) {
+  if (path.textAssertion !== undefined && isText) {
     const text = current.nodeValue ?? "";
     const { before, after } = path.textAssertion;
     if (before !== undefined && !text.slice(0, offset).endsWith(before)) return null;

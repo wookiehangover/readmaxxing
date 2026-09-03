@@ -23,7 +23,12 @@ import {
 import { invalidateReviewSource, mergeReviewProgress, reviewAssignmentId } from "./reviews-records";
 import type { ReviewCache, ReviewOperation, ReviewsState, ReviewSubmission } from "./reviews-types";
 
-export const openReviewBook = createAction<[bookId: string | null]>("reviews/openBook");
+export const openReviewBook =
+  createAction<[bookId: string | null, readerId?: string]>("reviews/openBook");
+export const closeReviewBook = createAction<[readerId: string]>("reviews/closeBook");
+export const reviewLocalSourcesObserved = createAction<
+  [readerId: string, sources: Record<string, string>]
+>("reviews/localSourcesObserved");
 export const setReviewsEnabled =
   createAction<[bookId: string, enabled: boolean]>("reviews/setEnabled");
 export const setReviewDifficulty =
@@ -99,6 +104,8 @@ const emptyRequests = (): ReviewsState["requests"] => ({
   submit: { token: null, error: null },
 });
 export const reviewsInitialState: ReviewsState = {
+  readerId: null,
+  localSources: null,
   bookId: null,
   userId: null,
   generation: 0,
@@ -117,6 +124,8 @@ function changeScope(
   if (state.userId === userId && state.bookId === bookId) return state;
   return {
     ...reviewsInitialState,
+    readerId: bookId === state.bookId ? state.readerId : null,
+    localSources: bookId === state.bookId ? state.localSources : null,
     online: state.online,
     userId,
     bookId,
@@ -139,8 +148,18 @@ function accepts(
 }
 
 const reducer = createReducer<ReviewsState>(reviewsInitialState);
-reducer.with(openReviewBook, (state, { payload: [bookId] }) =>
-  changeScope(state, state.userId, bookId),
+reducer.with(openReviewBook, (state, { payload: [bookId, readerId] }) => {
+  const next = changeScope(state, state.userId, bookId);
+  const owner = readerId ?? null;
+  return next.readerId === owner ? next : { ...next, readerId: owner, localSources: null };
+});
+reducer.with(closeReviewBook, (state, { payload: [readerId] }) =>
+  state.readerId === readerId ? changeScope(state, state.userId, null) : state,
+);
+reducer.with(reviewLocalSourcesObserved, (state, { payload: [readerId, sources] }) =>
+  state.readerId !== readerId || state.localSources === sources
+    ? state
+    : { ...state, localSources: sources },
 );
 reducer.with(authSessionResolved, (state, { payload: [user] }) =>
   changeScope(state, user?.id ?? null, state.bookId),

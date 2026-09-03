@@ -264,21 +264,33 @@ describe("successor position compatibility", () => {
     await rendition.display("OPS/chapter.xhtml#page=3");
 
     expect(display.mock.calls).toEqual([
-      [{ href: normalizePublicationPath("OPS/chapter.xhtml") }],
-      [{ href: normalizePublicationPath("OPS/chapter.xhtml") }],
+      [
+        {
+          href: normalizePublicationPath("OPS/chapter.xhtml"),
+          cfi: positions[1]!.locations.cfi,
+          localProgression: 0,
+        },
+      ],
+      [
+        {
+          href: normalizePublicationPath("OPS/chapter.xhtml"),
+          cfi: positions[2]!.locations.cfi,
+          localProgression: 0.5,
+        },
+      ],
     ]);
-    expect(restoreProgression.mock.calls).toEqual([[0], [0.5]]);
+    expect(restoreProgression).not.toHaveBeenCalled();
   });
 
-  it("keeps CFI display navigation on the existing CFI path", async () => {
+  it("admits and positions a CFI atomically without an intermediate spine-start display", async () => {
     const { navigator, display, restoreProgression } = createMockNavigator();
     const rendition = new SuccessorRenditionAdapter(publication, navigator);
     const cfi = "epubcfi(/6/4!/4)";
 
     await rendition.display(cfi, { localProgression: 0.5 });
 
-    expect(display).toHaveBeenCalledWith({ spineIndex: 1 });
-    expect(restoreProgression).toHaveBeenCalledWith(0.5);
+    expect(display).toHaveBeenCalledExactlyOnceWith({ spineIndex: 1, cfi, localProgression: 0.5 });
+    expect(restoreProgression).not.toHaveBeenCalled();
   });
 
   it("extracts the spine index from stored standard CFIs", () => {

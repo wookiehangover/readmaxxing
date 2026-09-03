@@ -66,9 +66,12 @@ export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookRe
 
   // Register the placeholder immediately — no waiting for book data.
   useEffect(() => {
+    realNavRef.current = null;
     navigationMap.current.set(bookId, placeholderNav);
     return () => {
-      navigationMap.current.delete(bookId);
+      realNavRef.current = null;
+      if (navigationMap.current.get(bookId) === placeholderNav)
+        navigationMap.current.delete(bookId);
     };
   }, [bookId, placeholderNav, navigationMap]);
 
@@ -107,6 +110,7 @@ export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookRe
 
   return (
     <WorkspaceBookReaderInner
+      key={book.id}
       book={book}
       panelTypography={panelTypography}
       onRenditionReady={onRenditionReady}
@@ -227,6 +231,7 @@ function WorkspaceBookReaderInner({
     markNavigationInProgress,
   } = useEpubLifecycle({
     bookId: book.id,
+    reviewContext: true,
     containerRef,
     readerLayout: localReaderLayout,
     fontFamily: localFontFamily,
@@ -277,6 +282,13 @@ function WorkspaceBookReaderInner({
   const store = useAppStore();
   const bookmarks = store.bookmarksSelectors.selectBookmarksByBook.useValue(book.id);
   const bookmarksLoaded = store.bookmarksSelectors.selectBookmarksLoaded.useValue(book.id);
+  const reviewsEnabled = store.reviewsSelectors.selectReviewPreferences(book.id);
+  const reviewLocked = store.reviewsSelectors.selectReviewLocked(book.id);
+  useEffect(() => {
+    // A pre-existing popout may contain a full-spine snapshot. Opening it again
+    // reads the navigator's newly bounded chapter after the preference change.
+    setSpeedreadOpen(false);
+  }, [reviewsEnabled.value.enabled]);
 
   useEffect(() => {
     store.dispatch(hydrateBookmarksRequested(book.id));
@@ -398,7 +410,7 @@ function WorkspaceBookReaderInner({
             />,
             document.body,
           )}
-        {speedreadOpen && (
+        {speedreadOpen && !reviewLocked.value && (
           <SpeedreadPopout
             bookId={book.id}
             open

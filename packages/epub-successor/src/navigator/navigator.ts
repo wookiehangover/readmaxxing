@@ -19,7 +19,6 @@ import {
   captureFirstVisibleElement,
   currentLogicalOffset,
   currentSpreadIndex,
-  lastSpreadPageIndex,
   paginatedProgression,
   scrollToPage,
   scrollLeftFromLogicalOffset,
@@ -33,6 +32,14 @@ import {
   type NavigatorPreferences,
 } from "./preferences";
 import { nextAnimationFrame, settleSection } from "./section-layout";
+import { resolveCfi } from "../locations/cfi";
+import {
+  applyContentRange,
+  contentRange,
+  rangeContainsRange,
+  type NavigatorContentRange,
+} from "./content-range";
+import type { NavigatorNavigationPolicy } from "./navigation-policy";
 
 export type {
   NavigatorFlow,
@@ -61,12 +68,17 @@ export interface CreateNavigatorOptions {
   readonly preferences?: NavigatorPreferences;
   readonly security: NavigatorSecurityOptions;
   readonly settleTimeoutMs?: number;
+  readonly navigationPolicy?: NavigatorNavigationPolicy;
 }
 
 export interface DisplayTarget {
   readonly href?: PublicationPath;
   readonly spineIndex?: number;
   readonly fragment?: string;
+  readonly cfi?: string;
+  readonly localProgression?: number;
+  readonly position?: "start" | "end";
+  readonly contentRange?: NavigatorContentRange;
 }
 
 export interface Relocation {
@@ -93,6 +105,8 @@ interface SectionMount {
   settledWidth?: number;
   settledHeight?: number;
   overlaid?: boolean;
+  contentRange?: NavigatorContentRange;
+  restoreContent?: () => void;
 }
 
 interface PreparedSection {
@@ -179,10 +193,12 @@ export class Navigator extends EventTarget {
   #pageMove?: ActivePageMove;
   #overlayCount = 0;
   #containerPosition?: string;
+  readonly #navigationPolicy?: NavigatorNavigationPolicy;
 
   constructor(publication: Publication, options: CreateNavigatorOptions) {
     super();
     this.publication = publication;
+    this.#navigationPolicy = options.navigationPolicy;
     this.#container = options.container;
     this.#preferences = {
       ...options.preferences,
@@ -223,12 +239,26 @@ export class Navigator extends EventTarget {
     return this.#active?.frame.contentDocument ?? null;
   }
 
+  get currentContentRange(): NavigatorContentRange | undefined {
+    return this.#active?.contentRange;
+  }
+
+  allowsMovement(direction: "next" | "previous" | "restore" | "speedread"): boolean {
+    return this.#navigationPolicy?.allowMovement(direction) ?? true;
+  }
+
   async display(target: DisplayTarget): Promise<Relocation> {
     return this.#display(target, false);
   }
 
   async #display(target: DisplayTarget, positionAtEnd: boolean): Promise<Relocation> {
     this.#assertLive();
+    const admitted = this.#navigationPolicy?.resolve(target) ?? target;
+    if (admitted === false) {
+      if (this.#relocation) return this.#relocation;
+      throw abortError();
+    }
+    target = admitted;
     this.#cancelPageMove(true);
     const resolved = this.#resolveTarget(target);
 
@@ -239,10 +269,11 @@ export class Navigator extends EventTarget {
       existing &&
       existing.spineIndex === resolved.spineIndex &&
       existing.href === resolved.href &&
+      existing.contentRange?.key === target.contentRange?.key &&
       existing.frame.contentDocument &&
       (this.#state === "settled" || this.#state === "settling")
     ) {
-      return this.#redisplayMounted(existing, resolved.fragment);
+      return this.#redisplayMounted(existing, resolved.fragment, target);
     }
 
     const operationId = ++this.#operationId;
@@ -265,17 +296,15 @@ export class Navigator extends EventTarget {
       mount = this.#mount(prepared, operationId, outgoing);
       prepared = undefined;
       await this.#waitForLoad(mount.frame, controller.signal);
+      mount.contentRange = target.contentRange;
+      mount.restoreContent = applyContentRange(mount.frame.contentDocument!, target.contentRange);
       this.#installInternalLinkListener(mount);
       this.#assertCurrent(operationId, controller.signal);
       this.#setState("settling");
       await this.#settle(mount, resolved.fragment, controller.signal);
       this.#assertCurrent(operationId, controller.signal);
-      if (positionAtEnd && mount.pagination) {
-        scrollToPage(
-          mount.pagination,
-          lastSpreadPageIndex(mount.pagination.pageCount, mount.pagination.pagesPerSpread),
-        );
-      }
+      this.#positionMount(mount, { ...target, position: positionAtEnd ? "end" : target.position });
+      if (this.#navigationPolicy && !this.#navigationPolicy.allowCommit(target)) throw abortError();
       this.#revealMount(mount);
       this.#assertCurrent(operationId, controller.signal);
       this.#active = mount;
@@ -296,6 +325,7 @@ export class Navigator extends EventTarget {
 
   async next(): Promise<boolean> {
     this.#assertLive();
+    if (!this.allowsMovement("next")) return false;
     this.#cancelPageMove(true);
     const mount = this.#active;
     const index = mount?.spineIndex;
@@ -307,6 +337,12 @@ export class Navigator extends EventTarget {
         return true;
       }
     }
+    const boundary = this.#boundaryTarget("next");
+    if (boundary === false) return false;
+    if (boundary) {
+      await this.display(boundary);
+      return true;
+    }
     if (index === undefined || index + 1 >= this.publication.readingOrder.length) return false;
     await this.display({ spineIndex: index + 1 });
     return true;
@@ -314,6 +350,7 @@ export class Navigator extends EventTarget {
 
   async previous(): Promise<boolean> {
     this.#assertLive();
+    if (!this.allowsMovement("previous")) return false;
     this.#cancelPageMove(true);
     const mount = this.#active;
     const index = mount?.spineIndex;
@@ -324,6 +361,12 @@ export class Navigator extends EventTarget {
         return true;
       }
     }
+    const boundary = this.#boundaryTarget("previous");
+    if (boundary === false) return false;
+    if (boundary) {
+      await this.display(boundary);
+      return true;
+    }
     if (index === undefined || index === 0) return false;
     await this.#display({ spineIndex: index - 1 }, true);
     return true;
@@ -331,6 +374,7 @@ export class Navigator extends EventTarget {
 
   beginInteractivePageTurn(direction: InteractivePageTurnDirection): boolean {
     this.#assertLive();
+    if (!this.allowsMovement(direction)) return false;
     this.#cancelPageMove(true);
     const mount = this.#active;
     const pagination = mount?.pagination;
@@ -424,12 +468,23 @@ export class Navigator extends EventTarget {
     const turn = move?.interactive;
     const pagination = move?.mount.pagination;
     if (!move || !turn || !pagination) return false;
+    if (commit && !this.allowsMovement(turn.direction)) {
+      this.#cancelPageMove(true);
+      return false;
+    }
 
     if (turn.kind === "edge") {
       await this.#settleEdgeTurn(move, 0);
       if (this.#pageMove !== move) return false;
       this.#clearInteractiveFrameStyles(move.mount.frame);
       this.#pageMove = undefined;
+      if (commit) {
+        const target = this.#boundaryTarget(turn.direction);
+        if (target) {
+          await this.display(target);
+          return true;
+        }
+      }
       return false;
     }
 
@@ -504,6 +559,11 @@ export class Navigator extends EventTarget {
     if (range.startContainer.ownerDocument !== document) {
       throw new TypeError("Range must belong to the mounted section document");
     }
+    if (
+      !this.allowsMovement("restore") ||
+      (mount.contentRange && !rangeContainsRange(contentRange(document, mount.contentRange), range))
+    )
+      return this.#relocation!;
 
     const anchor =
       range.startContainer.nodeType === Node.ELEMENT_NODE
@@ -533,7 +593,13 @@ export class Navigator extends EventTarget {
     if (!mount || this.#state !== "settled") {
       throw new Error("No settled publication section is mounted");
     }
+    if (!this.allowsMovement("restore")) return this.#relocation!;
     if (!mount.pagination) {
+      const scrolling =
+        mount.frame.contentDocument!.scrollingElement ??
+        mount.frame.contentDocument!.documentElement;
+      scrolling.scrollTop =
+        bounded(localProgression) * Math.max(0, scrolling.scrollHeight - scrolling.clientHeight);
       return this.#emitRelocation(mount, captureFirstVisibleElement(mount.frame.contentDocument!));
     }
     const state = mount.pagination;
@@ -641,6 +707,8 @@ export class Navigator extends EventTarget {
         frame.style.minHeight = `${height}px`;
       }
     }
+    // Even the first mount must be clipped and positioned before it can paint.
+    frame.style.visibility = "hidden";
     frame.src = prepared.documentLease.url;
     const mount: SectionMount = { ...prepared, operationId, frame, overlaid: overlay };
     if (overlay) this.#beginOverlay();
@@ -660,8 +728,8 @@ export class Navigator extends EventTarget {
   }
 
   #revealMount(mount: SectionMount): void {
-    if (!mount.overlaid) return;
     mount.frame.style.visibility = "visible";
+    if (!mount.overlaid) return;
     this.#releaseOverlay(mount);
   }
 
@@ -737,12 +805,51 @@ export class Navigator extends EventTarget {
         return;
       mount.scrollFrame = scheduler.requestAnimationFrame(() => {
         mount.scrollFrame = undefined;
-        if (this.#active === mount && this.#state === "settled" && this.#pageMove?.mount !== mount)
+        if (
+          this.#active === mount &&
+          this.#state === "settled" &&
+          this.#pageMove?.mount !== mount
+        ) {
           this.#emitRelocation(mount);
+          const document = mount.frame.contentDocument!;
+          const scrolling = document.scrollingElement ?? document.documentElement;
+          if (
+            !mount.pagination &&
+            scrolling.scrollTop + scrolling.clientHeight >= scrolling.scrollHeight - 1
+          )
+            this.#scrollBoundary(mount, "next");
+        }
       });
     };
+    const wheel = (event: WheelEvent) => {
+      if (!mount.pagination && event.deltaY !== 0)
+        this.#scrollBoundary(mount, event.deltaY > 0 ? "next" : "previous");
+    };
+    let touchY: number | undefined;
+    const touchStart = (event: TouchEvent) => {
+      touchY = event.touches[0]?.clientY;
+    };
+    const touchEnd = (event: TouchEvent) => {
+      const end = event.changedTouches[0]?.clientY;
+      if (
+        !mount.pagination &&
+        touchY !== undefined &&
+        end !== undefined &&
+        Math.abs(end - touchY) > 20
+      )
+        this.#scrollBoundary(mount, end < touchY ? "next" : "previous");
+      touchY = undefined;
+    };
     view.addEventListener("scroll", scroll, true);
-    mount.removeScrollListener = () => view.removeEventListener("scroll", scroll, true);
+    view.addEventListener("wheel", wheel, { passive: true });
+    view.addEventListener("touchstart", touchStart, { passive: true });
+    view.addEventListener("touchend", touchEnd, { passive: true });
+    mount.removeScrollListener = () => {
+      view.removeEventListener("scroll", scroll, true);
+      view.removeEventListener("wheel", wheel);
+      view.removeEventListener("touchstart", touchStart);
+      view.removeEventListener("touchend", touchEnd);
+    };
   }
 
   #installInternalLinkListener(mount: SectionMount): void {
@@ -793,7 +900,11 @@ export class Navigator extends EventTarget {
     return relocation;
   }
 
-  async #redisplayMounted(mount: SectionMount, fragment: string | undefined): Promise<Relocation> {
+  async #redisplayMounted(
+    mount: SectionMount,
+    fragment: string | undefined,
+    target: DisplayTarget,
+  ): Promise<Relocation> {
     const operationId = ++this.#operationId;
     this.#operation?.abort();
     const controller = new AbortController();
@@ -811,6 +922,8 @@ export class Navigator extends EventTarget {
         : (mount.visibleAnchor ?? captureFirstVisibleElement(document));
       await this.#settle(mount, fragment, controller.signal, anchor);
       this.#assertCurrent(operationId, controller.signal);
+      if (this.#navigationPolicy && !this.#navigationPolicy.allowCommit(target)) throw abortError();
+      this.#positionMount(mount, target);
       this.#setState("settled");
       return this.#emitRelocation(mount, anchor);
     } catch (cause) {
@@ -968,8 +1081,81 @@ export class Navigator extends EventTarget {
     if (this.#pageMove !== move || this.#active !== move.mount) return false;
     this.#pageMove = undefined;
     if (!commit) return false;
+    const target = this.#boundaryTarget(turn.direction);
+    if (target === false) return false;
+    if (target) {
+      await this.display(target);
+      return true;
+    }
     await this.#display({ spineIndex: turn.targetSpineIndex }, turn.direction === "previous");
     return true;
+  }
+
+  #boundaryTarget(direction: "next" | "previous") {
+    if (!this.#navigationPolicy) return undefined;
+    // A rapid turn may have snapped a pending animation to its destination.
+    // Capture that actual page before the host records its return locator.
+    if (this.#active && this.#state === "settled") this.#emitRelocation(this.#active);
+    return this.#relocation
+      ? this.#navigationPolicy?.boundary(direction, this.#relocation)
+      : undefined;
+  }
+
+  #scrollBoundary(mount: SectionMount, direction: "next" | "previous"): void {
+    if (
+      !this.#navigationPolicy ||
+      this.#active !== mount ||
+      this.#state !== "settled" ||
+      !this.allowsMovement(direction)
+    )
+      return;
+    const document = mount.frame.contentDocument!;
+    const scrolling = document.scrollingElement ?? document.documentElement;
+    if (
+      direction === "next"
+        ? scrolling.scrollTop + scrolling.clientHeight < scrolling.scrollHeight - 1
+        : scrolling.scrollTop > 1
+    )
+      return;
+    const target = this.#boundaryTarget(direction);
+    if (target === false) return;
+    const spineIndex = mount.spineIndex + (direction === "next" ? 1 : -1);
+    if (!target && !this.publication.readingOrder[spineIndex]) return;
+    void this.display(
+      target ?? { spineIndex, position: direction === "next" ? "start" : "end" },
+    ).catch(() => {});
+  }
+
+  #positionMount(mount: SectionMount, target: DisplayTarget): void {
+    const document = mount.frame.contentDocument!;
+    const scrolling = document.scrollingElement ?? document.documentElement;
+    if (target.localProgression !== undefined || target.position) {
+      const local =
+        target.position === "end"
+          ? 1
+          : target.position === "start"
+            ? 0
+            : bounded(target.localProgression!);
+      if (mount.pagination) {
+        const state = mount.pagination;
+        const page = Math.round(local * (state.pageCount - 1));
+        scrollToPage(state, Math.floor(page / state.pagesPerSpread) * state.pagesPerSpread);
+      } else
+        scrolling.scrollTop = local * Math.max(0, scrolling.scrollHeight - scrolling.clientHeight);
+    } else if (target.cfi) {
+      const range = resolveCfi(target.cfi, document, { spineIndex: mount.spineIndex });
+      if (
+        !range ||
+        (mount.contentRange &&
+          !rangeContainsRange(contentRange(document, mount.contentRange), range))
+      )
+        throw new RangeError("CFI could not be resolved inside its content range");
+      if (mount.pagination) alignPaginationToRange(mount.pagination, range);
+      else {
+        const rect = range.getBoundingClientRect();
+        scrolling.scrollTop += rect.top;
+      }
+    }
   }
 
   #applyEdgeTransform(move: ActivePageMove, displacement: number): void {

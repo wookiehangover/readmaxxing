@@ -1,4 +1,5 @@
 export const EPUB_SUCCESSOR_PACKAGE_NAME = "@readmaxxing/epub-successor";
+export { assembleSectionDocument } from "./content-pipeline/content-pipeline";
 
 export { createDecorationLayer, DecorationLayer } from "./decorations/decorations";
 export type {
@@ -21,6 +22,9 @@ export type {
   OpenPublicationResult,
 } from "./epub-parser/publication";
 export { createNavigator, Navigator } from "./navigator/navigator";
+export type { NavigatorNavigationPolicy } from "./navigator/navigation-policy";
+export { contentRange, fragmentElement, rangeContainsRange } from "./navigator/content-range";
+export type { NavigatorContentRange } from "./navigator/content-range";
 export type {
   CreateNavigatorOptions,
   DisplayTarget,

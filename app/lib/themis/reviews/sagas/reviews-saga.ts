@@ -15,6 +15,7 @@ import { emptyReviewCache } from "../reviews-records";
 import {
   editReviewDraft,
   openReviewBook,
+  closeReviewBook,
   refreshReviewProgress,
   retryReviewPersistence,
   retryReviewQuestion,
@@ -38,7 +39,13 @@ import {
 } from "../reviews-slice";
 import type { ReviewOperation, ReviewTask, ReviewWorker } from "../reviews-types";
 
-const scopeActions = [openReviewBook, authSessionCleared, authSessionFailed, authSessionResolved];
+const scopeActions = [
+  openReviewBook,
+  closeReviewBook,
+  authSessionCleared,
+  authSessionFailed,
+  authSessionResolved,
+];
 const authorityActions = [
   reviewRequestStarted,
   reviewRequestFailed,

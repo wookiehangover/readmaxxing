@@ -9,6 +9,7 @@ import {
   type PaginatedLayoutState,
 } from "./paginated";
 import { applyPreferences, type NavigatorPreferences } from "./preferences";
+import { fragmentElement } from "./content-range";
 
 interface SettleSectionOptions {
   readonly frame: HTMLIFrameElement;
@@ -96,17 +97,6 @@ async function decodeVisibleImages(document: Document, signal: AbortSignal): Pro
   );
 }
 
-function fragmentTarget(document: Document, fragment: string | undefined): Element | undefined {
-  if (!fragment) return undefined;
-  let decoded = fragment.replace(/^#/, "");
-  try {
-    decoded = decodeURIComponent(decoded);
-  } catch {
-    // Invalid author encoding is treated as a literal fragment.
-  }
-  return document.getElementById(decoded) ?? document.getElementsByName(decoded)[0];
-}
-
 function frameViewport(frame: HTMLIFrameElement, container: HTMLElement) {
   const frameRect = frame.getBoundingClientRect();
   const containerRect = container.getBoundingClientRect();
@@ -142,7 +132,9 @@ export async function settleSection(
   // Safari may refuse to execute rAF callbacks in that window.
   const scheduler = options.container.ownerDocument.defaultView ?? view;
   applyPreferences(document, options.preferences);
-  const target = options.anchor ?? fragmentTarget(document, options.fragment);
+  const target =
+    options.anchor ??
+    (options.fragment ? (fragmentElement(document, options.fragment) ?? undefined) : undefined);
   if (options.preferences.flow !== "paginated") {
     options.frame.style.width = "100%";
     clearPaginatedLayout(document);

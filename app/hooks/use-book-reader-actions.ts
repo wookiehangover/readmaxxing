@@ -182,6 +182,7 @@ export function useBookReaderActions({
   }, [renditionRef]);
 
   const handleOpenSpeedread = useCallback(() => {
+    if (renditionRef.current?.navigator?.allowsMovement("speedread") === false) return;
     const text = (renditionRef.current?.getContents?.() ?? [])
       .map((content) => content.document?.body?.innerText ?? "")
       .join("\n\n");

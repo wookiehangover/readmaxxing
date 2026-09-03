@@ -72,6 +72,9 @@ export interface ReviewRequest {
 }
 
 export interface ReviewsState {
+  readerId: string | null;
+  /** Fingerprints observed in the active local EPUB, independent of server history. */
+  localSources: Record<string, string> | null;
   bookId: string | null;
   userId: string | null;
   generation: number;
