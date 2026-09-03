@@ -3,7 +3,11 @@ import { strToU8, zipSync } from "fflate";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { extractBookChapters } from "../epub-text-extract";
 import { ensureEpubServerDom } from "../server-dom";
-import { collectReviewAnchorOffsets, reviewBoundaryContains } from "../review-chapter-boundaries";
+import {
+  buildReviewChapterBoundaries,
+  collectReviewAnchorOffsets,
+  reviewBoundaryContains,
+} from "../review-chapter-boundaries";
 import { fingerprintReviewChapter } from "~/lib/review/chapter-identity";
 import { logicalChapterIndex } from "../successor-toc";
 
@@ -157,4 +161,46 @@ describe("review chapter boundaries", () => {
     );
     expect(collectReviewAnchorOffsets(document)).toEqual({ one: 0, empty: 3, two: 3 });
   });
+
+  it.each(["First body.", "First 😀 body."])(
+    "retains separate fragment chapters after CDATA containing %s",
+    (firstText) => {
+      const document = new DOMParser().parseFromString(
+        xhtml(' \n<p id="first"></p><h1 id="second">Second</h1><p>Second body.</p> \n'),
+        "application/xhtml+xml",
+      );
+      // happy-dom cannot parse or create CDATA. Model its public CharacterData
+      // surface to exercise source offsets for the native nodeType 4 case.
+      const cdata = document.createTextNode(firstText);
+      Object.defineProperty(cdata, "nodeType", { value: 4 });
+      document.getElementById("first")!.appendChild(cdata);
+      const text = document.body.textContent!.trim();
+      expect(text).toBe(`${firstText}SecondSecond body.`);
+      const anchors = collectReviewAnchorOffsets(document);
+      expect(anchors).toEqual({ first: 0, second: firstText.length });
+      const href = "one.xhtml";
+      const boundaries = buildReviewChapterBoundaries(
+        {
+          index: 0,
+          title: "First",
+          text,
+          spineStart: 0,
+          spineEnd: 1,
+          segments: [{ spineIndex: 0, href, start: 0, end: text.length }],
+        },
+        [
+          { title: "First", href: `${href}#first` },
+          { title: "Second", href: `${href}#second` },
+        ],
+        [{ href }],
+        [{ index: 0, href, text, anchors }],
+      );
+      expect(boundaries).toHaveLength(2);
+      expect(
+        boundaries.map((boundary) => text.slice(boundary.startOffset, boundary.endOffset)),
+      ).toEqual([firstText, "SecondSecond body."]);
+      expect(boundaries[0]!.end).toEqual(boundaries[1]!.start);
+      expect(boundaries[1]!.start.textOffset).toBe(firstText.length);
+    },
+  );
 });

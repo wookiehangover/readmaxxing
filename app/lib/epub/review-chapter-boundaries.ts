@@ -12,7 +12,8 @@ export function collectReviewAnchorOffsets(document: Document): Record<string, n
   const anchors: Record<string, number> = Object.create(null);
   let offset = 0;
   function visit(node: Node) {
-    if (node.nodeType === 3) {
+    // Both text and CDATA contribute to source body.textContent in XHTML.
+    if (node.nodeType === 3 || node.nodeType === 4) {
       offset += node.textContent?.length ?? 0;
       return;
     }
