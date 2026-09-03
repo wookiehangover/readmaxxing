@@ -18,6 +18,9 @@ import type { ChatSessionsState } from "~/lib/themis/chat-sessions/chat-sessions
 import { createReadingPositionsSelectors } from "~/lib/themis/reading-positions/reading-positions-selectors";
 import { readingPositionsReducer } from "~/lib/themis/reading-positions/reading-positions-slice";
 import type { ReadingPositionsState } from "~/lib/themis/reading-positions/reading-positions-types";
+import { createReviewsSelectors } from "~/lib/themis/reviews/reviews-selectors";
+import { reviewsReducer } from "~/lib/themis/reviews/reviews-slice";
+import type { ReviewsState } from "~/lib/themis/reviews/reviews-types";
 import { createWorkspaceRestoreSelectors } from "~/lib/themis/workspace-restore/workspace-restore-selectors";
 import { workspaceRestoreReducer } from "~/lib/themis/workspace-restore/workspace-restore-slice";
 import type { WorkspaceRestoreState } from "~/lib/themis/workspace-restore/workspace-restore-types";
@@ -30,6 +33,7 @@ export type AppStoreCore = ReactStore<
     books: BooksState;
     chatSessions: ChatSessionsState;
     readingPositions: ReadingPositionsState;
+    reviews: ReviewsState;
     workspaceRestore: WorkspaceRestoreState;
   },
   {
@@ -39,6 +43,7 @@ export type AppStoreCore = ReactStore<
     books: typeof booksReducer;
     chatSessions: typeof chatSessionsReducer;
     readingPositions: typeof readingPositionsReducer;
+    reviews: typeof reviewsReducer;
     workspaceRestore: typeof workspaceRestoreReducer;
   }
 >;
@@ -51,6 +56,7 @@ export function createAppStore() {
     books: booksReducer,
     chatSessions: chatSessionsReducer,
     readingPositions: readingPositionsReducer,
+    reviews: reviewsReducer,
     workspaceRestore: workspaceRestoreReducer,
   });
   return Object.assign(store, {
@@ -60,6 +66,7 @@ export function createAppStore() {
     booksSelectors: createBooksSelectors(store),
     chatSessionsSelectors: createChatSessionsSelectors(store),
     readingPositionsSelectors: createReadingPositionsSelectors(store),
+    reviewsSelectors: createReviewsSelectors(store),
     workspaceRestoreSelectors: createWorkspaceRestoreSelectors(store),
   });
 }

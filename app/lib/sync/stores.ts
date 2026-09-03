@@ -19,6 +19,7 @@ let _activeSessionStore: UseStore | null = null;
 let _chatMessagesStore: UseStore | null = null;
 let _syncFlagsStore: UseStore | null = null;
 let _chapterQuestionsStore: UseStore | null = null;
+let _reviewsStore: UseStore | null = null;
 
 /** Book metadata (BookMeta records, key = bookId). */
 export function getBookStore(): UseStore {
@@ -103,4 +104,10 @@ export function getChapterQuestionsStore(): UseStore {
   if (!_chapterQuestionsStore)
     _chapterQuestionsStore = createStore("ebook-reader-chapter-questions", "questions");
   return _chapterQuestionsStore;
+}
+
+/** Account/book-scoped review preferences, drafts, navigation facts and server cache. */
+export function getReviewsStore(): UseStore {
+  if (!_reviewsStore) _reviewsStore = createStore("ebook-reader-reviews", "reviews");
+  return _reviewsStore;
 }
