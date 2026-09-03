@@ -1,3 +1,4 @@
+import { selectReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-slice";
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,7 +18,6 @@ import { createAppStore, type AppStore } from "~/lib/themis/store";
 
 const mocks = vi.hoisted(() => ({
   navigateInCluster: vi.fn(),
-  openMobileReadingTab: vi.fn(),
   syncVersion: 0,
 }));
 
@@ -32,10 +32,6 @@ vi.mock("~/lib/themis/provider", () => ({ useAppStore: () => store }));
 
 vi.mock("~/hooks/use-sync-listener", () => ({
   useSyncListener: () => mocks.syncVersion,
-}));
-
-vi.mock("~/components/reading-shell/mobile-reading-tabs", () => ({
-  openMobileReadingTab: mocks.openMobileReadingTab,
 }));
 
 vi.mock("~/components/ui/scroll-area", () => ({
@@ -106,7 +102,6 @@ function findRow(label: string) {
 beforeEach(() => {
   mocks.navigateInCluster.mockReset();
   mocks.navigateInCluster.mockResolvedValue(undefined);
-  mocks.openMobileReadingTab.mockReset();
   mocks.syncVersion = 0;
   store = createAppStore();
   store.init();
@@ -268,7 +263,7 @@ describe("ReadingDetailsPanel", () => {
 
     expect(mocks.navigateInCluster).toHaveBeenNthCalledWith(1, book.id, historyEntry.cfi);
     expect(mocks.navigateInCluster).toHaveBeenNthCalledWith(2, book.id, bookmark.cfi);
-    expect(mocks.openMobileReadingTab).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalledWith(selectReadingRailTab(book.id, "Read"));
   });
 
   it("navigates PDF page targets and returns mobile readers to Read", async () => {
@@ -284,8 +279,10 @@ describe("ReadingDetailsPanel", () => {
 
     expect(mocks.navigateInCluster).toHaveBeenNthCalledWith(1, book.id, "page:12");
     expect(mocks.navigateInCluster).toHaveBeenNthCalledWith(2, book.id, "page:28");
-    expect(mocks.openMobileReadingTab).toHaveBeenCalledTimes(2);
-    expect(mocks.openMobileReadingTab).toHaveBeenCalledWith("Read", book.id);
+    expect(
+      dispatch.mock.calls.filter(([action]) => action.type === selectReadingRailTab.type),
+    ).toHaveLength(2);
+    expect(dispatch).toHaveBeenCalledWith(selectReadingRailTab(book.id, "Read"));
   });
 
   it("navigates PDF bookmarks that only contain a synced display page", async () => {

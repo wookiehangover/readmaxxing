@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import type { Bookmark as BookmarkRecord } from "~/lib/stores/bookmark-store";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { SelectionPopover, useHighlights } from "~/hooks/use-highlights";
-import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
+import { selectReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-slice";
 import type { SuccessorRenditionAdapter } from "~/lib/epub/successor-reader-adapter";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { tokenizeSpeedreadText } from "~/lib/speedread";
@@ -104,7 +104,7 @@ export function useBookReaderActions({
         text: selectionPopover.text,
         pageLabel: currentPage ? `p${currentPage}` : "",
       });
-      openMobileReadingTab("Discuss");
+      store.dispatch(selectReadingRailTab(book.id, "Discuss"));
       workspace.openChatRef.current?.(book);
     } catch (error) {
       console.error("Failed to ask a question about highlight:", error);
@@ -131,7 +131,7 @@ export function useBookReaderActions({
       .map((line) => `> ${line}`)
       .join("\n")}`;
     workspace.pendingChatPromptMap.current.set(book.id, message);
-    openMobileReadingTab("Discuss");
+    store.dispatch(selectReadingRailTab(book.id, "Discuss"));
     workspace.openChatRef.current?.(book);
     queueMicrotask(() => {
       window.dispatchEvent(
@@ -140,7 +140,7 @@ export function useBookReaderActions({
     });
     dismissPopovers();
     clearSelection();
-  }, [book, clearSelection, dismissPopovers, selectionPopover, workspace]);
+  }, [book, clearSelection, dismissPopovers, selectionPopover, store, workspace]);
 
   const handleCopyAsMarkdown = useCallback(async () => {
     if (!selectionPopover) return;
@@ -227,13 +227,13 @@ export function useBookReaderActions({
   }, [book.id, bookmarks, bookmarksLoaded, currentChapterLabel, currentPage, getCurrentCfi, store]);
 
   const handleOpenNotebook = useCallback(() => {
-    openMobileReadingTab("Notes");
+    store.dispatch(selectReadingRailTab(book.id, "Notes"));
     workspace.openNotebookRef.current?.(book);
-  }, [book, workspace.openNotebookRef]);
+  }, [book, store, workspace.openNotebookRef]);
   const handleOpenChat = useCallback(() => {
-    openMobileReadingTab("Discuss");
+    store.dispatch(selectReadingRailTab(book.id, "Discuss"));
     workspace.openChatRef.current?.(book);
-  }, [book, workspace.openChatRef]);
+  }, [book, store, workspace.openChatRef]);
 
   return {
     currentBookmark,

@@ -1,8 +1,10 @@
+vi.mock("~/lib/themis/provider", () => ({ useAppStore: () => railStore }));
+import { createAppStore } from "~/lib/themis/store";
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReadingRailMenuPortal } from "~/components/reading-shell/reading-rail-menu-portal";
-import { ReadingRailTabProvider } from "~/components/reading-shell/reading-rail-tab-context";
+import { ReadingRailProvider } from "~/components/reading-shell/reading-rail-context";
 import { SharedReadingRail } from "./shared-reading-rail";
 
 vi.mock("streamdown", () => ({
@@ -35,6 +37,7 @@ vi.mock("~/components/ui/message-scroller", () => ({
 }));
 
 const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+let railStore: ReturnType<typeof createAppStore>;
 let container: HTMLDivElement;
 let root: Root;
 
@@ -73,9 +76,9 @@ function responseFor(input: RequestInfo | URL): Response {
 
 async function renderRail(included: boolean, strict = false) {
   const rail = (
-    <ReadingRailTabProvider>
+    <ReadingRailProvider scope="share:share/1">
       <SharedReadingRail shareId="share/1" bookTitle="Shared Book" included={included} />
-    </ReadingRailTabProvider>
+    </ReadingRailProvider>
   );
   await act(async () => {
     root.render(strict ? <React.StrictMode>{rail}</React.StrictMode> : rail);
@@ -85,7 +88,7 @@ async function renderRail(included: boolean, strict = false) {
 async function renderMobileRail(included: boolean) {
   await act(async () => {
     root.render(
-      <ReadingRailTabProvider>
+      <ReadingRailProvider scope="share:share/1" mobile>
         <SharedReadingRail
           mobile
           bookSurface={
@@ -100,7 +103,7 @@ async function renderMobileRail(included: boolean) {
           bookTitle="Shared Book"
           included={included}
         />
-      </ReadingRailTabProvider>,
+      </ReadingRailProvider>,
     );
   });
 }
@@ -109,10 +112,15 @@ async function selectTab(name: string) {
   const tab = Array.from(container.querySelectorAll("[role='tab']")).find(
     (candidate) => candidate.textContent === name,
   ) as HTMLButtonElement | undefined;
-  await act(async () => tab?.click());
+  await act(async () => {
+    tab?.click();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  });
 }
 
 beforeEach(() => {
+  railStore = createAppStore();
+  railStore.init();
   fetchMock.mockReset().mockImplementation(async (input) => responseFor(input));
   vi.stubGlobal("fetch", fetchMock);
   container = document.body.appendChild(document.createElement("div"));
@@ -122,6 +130,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  railStore.dispose();
   vi.unstubAllGlobals();
 });
 

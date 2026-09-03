@@ -1,12 +1,10 @@
+import type { ReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-types";
 import { useEffect, useState, type ReactNode } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { AlertCircle, ListTree, MessageCircle } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { READING_RAIL_MENU_ID } from "~/components/reading-shell/reading-rail-menu-portal";
-import {
-  useReadingRailTab,
-  type ReadingRailTab,
-} from "~/components/reading-shell/reading-rail-tab-context";
+import { useReadingRail } from "~/components/reading-shell/reading-rail-context";
 import { TiptapEditor } from "~/components/tiptap-editor";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Bubble, BubbleContent } from "~/components/ui/bubble";
@@ -277,13 +275,11 @@ export function SharedReadingRail({
   mobile?: boolean;
   bookSurface?: ReactNode;
 }) {
-  const { activeTab, setActiveTab } = useReadingRailTab();
+  const { activeTab, setActiveTab } = useReadingRail();
   const notebookState = useSharedEndpoint<{ markdown: string }>(
     `/api/share/${encodeURIComponent(shareId)}/notebook`,
     included,
   );
-  const waitingForNotebook =
-    included && (notebookState.status === "idle" || notebookState.status === "loading");
   const showNotes =
     included && notebookState.status === "ready" && Boolean(notebookState.data.markdown.trim());
   const availableTabs = showNotes ? tabs : tabs.filter((tab) => tab !== "Notes");
@@ -295,20 +291,6 @@ export function SharedReadingRail({
     : activeTab === "Read" || (!showNotes && activeTab === "Notes")
       ? "Discuss"
       : activeTab;
-
-  useEffect(() => {
-    if (mobile) setActiveTab("Read");
-  }, [mobile, setActiveTab]);
-
-  useEffect(() => {
-    if (
-      !mobile &&
-      !waitingForNotebook &&
-      (activeTab === "Read" || (!showNotes && activeTab === "Notes"))
-    ) {
-      setActiveTab("Discuss");
-    }
-  }, [activeTab, mobile, setActiveTab, showNotes, waitingForNotebook]);
 
   const panels = (
     <>

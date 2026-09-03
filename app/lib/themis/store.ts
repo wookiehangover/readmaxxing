@@ -1,3 +1,6 @@
+import { createReadingRailSelectors } from "~/lib/themis/reading-rail/reading-rail-selectors";
+import { readingRailReducer } from "~/lib/themis/reading-rail/reading-rail-slice";
+import type { ReadingRailState } from "~/lib/themis/reading-rail/reading-rail-types";
 import { ReactStore } from "@augmentcode/themis/react-store";
 
 import { createAnnotationsSelectors } from "~/lib/themis/annotations/annotations-selectors";
@@ -34,6 +37,7 @@ export type AppStoreCore = ReactStore<
     chatSessions: ChatSessionsState;
     readingPositions: ReadingPositionsState;
     reviews: ReviewsState;
+    readingRail: ReadingRailState;
     workspaceRestore: WorkspaceRestoreState;
   },
   {
@@ -44,6 +48,7 @@ export type AppStoreCore = ReactStore<
     chatSessions: typeof chatSessionsReducer;
     readingPositions: typeof readingPositionsReducer;
     reviews: typeof reviewsReducer;
+    readingRail: typeof readingRailReducer;
     workspaceRestore: typeof workspaceRestoreReducer;
   }
 >;
@@ -57,16 +62,19 @@ export function createAppStore() {
     chatSessions: chatSessionsReducer,
     readingPositions: readingPositionsReducer,
     reviews: reviewsReducer,
+    readingRail: readingRailReducer,
     workspaceRestore: workspaceRestoreReducer,
   });
+  const reviewsSelectors = createReviewsSelectors(store);
   return Object.assign(store, {
+    readingRailSelectors: createReadingRailSelectors(store, reviewsSelectors),
     annotationsSelectors: createAnnotationsSelectors(store),
     authSessionSelectors: createAuthSessionSelectors(store),
     bookmarksSelectors: createBookmarksSelectors(store),
     booksSelectors: createBooksSelectors(store),
     chatSessionsSelectors: createChatSessionsSelectors(store),
     readingPositionsSelectors: createReadingPositionsSelectors(store),
-    reviewsSelectors: createReviewsSelectors(store),
+    reviewsSelectors,
     workspaceRestoreSelectors: createWorkspaceRestoreSelectors(store),
   });
 }

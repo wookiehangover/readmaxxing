@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { ReadingRail } from "~/components/reading-shell/reading-rail";
-import { ReadingRailTabProvider } from "~/components/reading-shell/reading-rail-tab-context";
+import { ReadingRailProvider } from "~/components/reading-shell/reading-rail-context";
 import { ReadingSplit } from "~/components/reading-shell/reading-split";
 import { WorkspaceBookReader } from "~/components/workspace-book-reader";
 import { WorkspacePdfReader } from "~/components/workspace-pdf-reader";
@@ -45,7 +45,11 @@ export function ReadingShell() {
   );
 
   return (
-    <ReadingRailTabProvider>
+    <ReadingRailProvider
+      scope={activeBookId ?? ""}
+      mobile={isMobile === true}
+      privateBookId={book?.format === "pdf" ? null : activeBookId}
+    >
       <ReadingChatMenuProvider>
         {isMobile === true ? (
           <ReadingRail mobile bookSurface={bookSurface} />
@@ -53,6 +57,6 @@ export function ReadingShell() {
           <ReadingSplit book={bookSurface} rail={<ReadingRail />} />
         )}
       </ReadingChatMenuProvider>
-    </ReadingRailTabProvider>
+    </ReadingRailProvider>
   );
 }

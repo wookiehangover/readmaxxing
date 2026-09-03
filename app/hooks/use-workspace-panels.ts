@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
+import { selectReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-slice";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { getBookReadingPath, getReadingBookId } from "~/lib/reading-route";
 import type { BookMeta } from "~/lib/stores/book-store";
@@ -52,10 +52,10 @@ export function useWorkspacePanels(): UseWorkspacePanelsResult {
 
   const openReadingTool = useCallback(
     (book: BookMeta, tab: "Notes" | "Discuss" | "Outline") => {
-      openMobileReadingTab(tab, book.id);
+      store.dispatch(selectReadingRailTab(book.id, tab));
       navigateToBook(book);
     },
-    [navigateToBook],
+    [navigateToBook, store],
   );
 
   const openNotebook = useCallback(
