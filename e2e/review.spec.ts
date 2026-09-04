@@ -15,6 +15,14 @@ for (const mobile of [false, true]) {
       mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 },
     );
     const fixture = await installReviewFixture(page);
+    let releaseQuestion!: () => void;
+    const questionGate = new Promise<void>((resolve) => {
+      releaseQuestion = resolve;
+    });
+    await page.route("**/api/reviews/question", async (route) => {
+      await questionGate;
+      await route.fallback();
+    });
     await openReviewBook(page);
     await expect(page.getByRole("switch", { name: "Chapter reviews" })).not.toBeChecked();
     await expect(
@@ -43,12 +51,51 @@ for (const mobile of [false, true]) {
       path: `.intent/artifacts/review-${mobile ? "mobile" : "desktop"}-settings.png`,
       animations: "disabled",
     });
-    await reachReview(page, mobile);
+    await reachReview(page, mobile, "preparing");
+    const preparation = page
+      .getByRole("status")
+      .filter({ hasText: "Preparing your chapter question…" });
+    await expect(preparation.first()).toBeVisible();
+    for (const status of await preparation.all()) {
+      await expect(status).toHaveCSS("border-width", "0px");
+      await expect(status.locator("span")).toHaveCSS("animation-name", "tw-shimmer");
+    }
+    await page.screenshot({
+      path: `.intent/artifacts/review-refinement-${mobile ? "mobile" : "desktop"}-loading.png`,
+      animations: "disabled",
+    });
+    if (mobile) {
+      await page.getByRole("tab", { name: "Review", exact: true }).click();
+      await expect(page.getByRole("switch", { name: "Chapter reviews" })).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Open chapter review" })).toHaveCount(0);
+      await page.screenshot({
+        path: ".intent/artifacts/review-refinement-mobile-loading-settings.png",
+        animations: "disabled",
+      });
+      await page.getByRole("tab", { name: "Read", exact: true }).click();
+    }
+    releaseQuestion();
+    await expect(page.getByTestId("review-question")).toBeVisible();
+    await expect(page.getByRole("button", { name: questionText })).toHaveCount(0);
+    await expect(page.getByText("Current question", { exact: false })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Discuss", exact: true })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Outline", exact: true })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Notes", exact: true })).toBeVisible();
     await expect(page.getByTestId("review-question")).toHaveCSS("font-size", "20px");
     await expect(page.getByTestId("review-question")).toHaveCSS("font-family", /Literata/);
+    const pane = page.getByRole("region", { name: "Chapter review", exact: true });
+    const back = page.getByRole("button", { name: "Back to chapter" });
+    const paneBox = (await pane.boundingBox())!;
+    const backBox = (await back.boundingBox())!;
+    const questionBox = (await page.getByTestId("review-question").boundingBox())!;
+    const padding = await pane.evaluate((element) => ({
+      left: parseFloat(getComputedStyle(element).paddingLeft),
+      top: parseFloat(getComputedStyle(element).paddingTop),
+    }));
+    expect(backBox.x).toBeCloseTo(paneBox.x + padding.left, 0);
+    expect(backBox.y).toBeCloseTo(paneBox.y + padding.top, 0);
+    expect(questionBox.y).toBeGreaterThan(backBox.y + backBox.height);
+    if (!mobile) expect(questionBox.x).toBeGreaterThan(backBox.x + 20);
     const answer = page.getByRole("textbox", { name: "Your answer" });
     await expect(answer).toHaveCSS("font-family", /Geist/);
     await answer.fill("😀".repeat(30));
@@ -68,7 +115,21 @@ for (const mobile of [false, true]) {
     expect(await frameHandle?.evaluate((element) => element.isConnected)).toBe(true);
     await expect(page.getByRole("tab", { name: "Discuss", exact: true })).toHaveCount(0);
     if (mobile) await page.getByRole("tab", { name: "Review", exact: true }).click();
-    await page.getByRole("button", { name: questionText }).click();
+    const sidebarQuestion = page.getByRole("button", { name: questionText, exact: true });
+    await expect(sidebarQuestion).toBeVisible();
+    await expect(page.getByText("Current question", { exact: false })).toBeVisible();
+    const clamp = await sidebarQuestion.locator("span").evaluate((element) => ({
+      height: element.getBoundingClientRect().height,
+      lineHeight: parseFloat(getComputedStyle(element).lineHeight),
+      fullHeight: element.scrollHeight,
+    }));
+    expect(clamp.height).toBeCloseTo(clamp.lineHeight * 2, 0);
+    expect(clamp.fullHeight).toBeGreaterThan(clamp.height);
+    await page.screenshot({
+      path: `.intent/artifacts/review-refinement-${mobile ? "mobile" : "desktop"}-backtracked.png`,
+      animations: "disabled",
+    });
+    await sidebarQuestion.click();
     await expect(answer).toHaveText(draft);
     await page.getByRole("tab", { name: "Notes", exact: true }).click();
     await expect(page.getByRole("tab", { name: "Notes", exact: true })).toHaveAttribute(
@@ -76,7 +137,16 @@ for (const mobile of [false, true]) {
       "true",
     );
     await page.getByRole("tab", { name: "Review", exact: true }).click();
-    await page.getByRole("button", { name: questionText }).click();
+    await expect(sidebarQuestion).toHaveCount(0);
+    await expect(page.getByText("Current question", { exact: false })).toHaveCount(0);
+    await expect(page.getByRole("switch", { name: "Chapter reviews" })).toBeEnabled();
+    if (mobile) {
+      await page.screenshot({
+        path: ".intent/artifacts/review-refinement-mobile-question-settings.png",
+        animations: "disabled",
+      });
+      await page.getByRole("tab", { name: "Read", exact: true }).click();
+    }
     await expect(answer).toHaveText(draft);
     await page.screenshot({
       path: `.intent/artifacts/review-${mobile ? "mobile" : "desktop"}-question.png`,
@@ -145,7 +215,8 @@ test("mobile generation recovery and offline exit remain reachable", async ({ pa
     .getByRole("region", { name: "Chapter review settings" })
     .getByRole("button", { name: "Retry question", exact: true })
     .click();
-  await page.getByRole("button", { name: questionText }).click();
+  await expect(page.getByRole("button", { name: questionText })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Read", exact: true }).click();
   const answer = page.getByRole("textbox", { name: "Your answer" });
   await answer.fill("A thoughtful answer remains editable while the network is unavailable.");
   await context.setOffline(true);

@@ -151,15 +151,53 @@ describe("Review UI with canonical Redux and real TipTap", () => {
         <ReviewPanel bookId="book-1" />
       </>,
     );
+    expect(buttons(questionResponse().question.question)).toHaveLength(0);
+    expect(container.textContent).not.toContain("Current question");
     await update(() => buttons("Back to chapter")[0].click());
     expect(navigation.current.backToChapter).toHaveBeenCalledOnce();
     expect(store.reviewsSelectors.selectReviewLocked.select(store.state, "book-1")).toBe(true);
     expect(store.reviewsSelectors.selectReviewVisible.select(store.state, "book-1")).toBe(false);
+    expect(buttons(questionResponse().question.question)).toHaveLength(1);
+    expect(container.textContent).toContain("Current question");
     await update(() => buttons(questionResponse().question.question)[0].click());
     expect(store.reviewsSelectors.selectReviewVisible.select(store.state, "book-1")).toBe(true);
+    expect(buttons(questionResponse().question.question)).toHaveLength(0);
+    expect(container.textContent).not.toContain("Current question");
     expect(store.reviewsSelectors.selectReviewAnswerText.select(store.state, "book-1")).toContain(
       "My answer remains",
     );
+  });
+  it("announces question preparation on both surfaces and retains retry alerts on failure", async () => {
+    store.dispatch(setReviewsEnabled("book-1", true));
+    store.dispatch(reviewCheckpointEntered("book-1", 0, boundary, "saved"));
+    const generation = store.state.reviews.generation;
+    store.dispatch(reviewRequestStarted(generation, "question", "pending"));
+    render(
+      <>
+        <ReviewPanel bookId="book-1" />
+        <ReviewPage bookId="book-1" fontFamily="Literata" navigation={navigation} />
+      </>,
+    );
+    const statuses = container.querySelectorAll('[role="status"]');
+    expect(statuses).toHaveLength(2);
+    for (const status of statuses) {
+      expect(status.textContent).toBe("Preparing your chapter question…");
+      expect(status.closest('[aria-live="polite"]')).not.toBeNull();
+    }
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(buttons("Open chapter review")).toHaveLength(0);
+    expect(container.querySelector('[role="switch"]')?.hasAttribute("data-disabled")).toBe(false);
+    await update(() =>
+      store.dispatch(
+        reviewRequestFailed(generation, "question", "pending", {
+          code: "generation_failed",
+          error: "The question could not be generated. Try again.",
+        }),
+      ),
+    );
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelectorAll('[role="alert"]')).toHaveLength(2);
+    expect(buttons("Retry question")).toHaveLength(2);
   });
   it("keeps disable and editing available offline and after a local save failure", async () => {
     assign();

@@ -48,21 +48,20 @@ export function ReviewPage({
     <section
       data-review-editor
       aria-label="Chapter review"
-      className="absolute inset-0 flex flex-col overflow-y-auto bg-background px-6 py-6 md:px-16 md:py-10"
+      className="absolute inset-0 flex flex-col gap-6 overflow-y-auto bg-background px-6 py-6 md:px-16 md:py-10"
     >
+      <Button
+        size="sm"
+        variant="ghost"
+        className="self-start"
+        onClick={() => {
+          void navigation.current?.backToChapter().catch(console.error);
+        }}
+      >
+        <ArrowLeft data-icon="inline-start" />
+        Back to chapter
+      </Button>
       <div className="mx-auto flex w-full max-w-[65ch] flex-1 flex-col gap-6">
-        <div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              void navigation.current?.backToChapter().catch(console.error);
-            }}
-          >
-            <ArrowLeft data-icon="inline-start" />
-            Back to chapter
-          </Button>
-        </div>
         {question && (
           <h1
             ref={heading}

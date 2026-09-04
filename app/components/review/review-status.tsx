@@ -23,6 +23,7 @@ export function ReviewStatus({ bookId }: { bookId: string }) {
   const submit = selectors.selectReviewRequest(bookId, "submit").value;
   const enabled = selectors.selectReviewPreferences(bookId).value.enabled;
   let message: string | null = null;
+  let preparing = false;
   let retry: "progress" | "question" | null = null;
   if (enabled) {
     if (progress?.token && question && !current)
@@ -30,8 +31,10 @@ export function ReviewStatus({ bookId }: { bookId: string }) {
     else if (progress?.error) {
       message = progress.error.error;
       retry = "progress";
-    } else if (generation?.token) message = "Preparing your chapter question…";
-    else if (generation?.error) {
+    } else if (generation?.token) {
+      message = "Preparing your chapter question…";
+      preparing = true;
+    } else if (generation?.error) {
       message = generation.error.error;
       retry = "question";
     } else if (question && !current) {
@@ -78,27 +81,32 @@ export function ReviewStatus({ bookId }: { bookId: string }) {
           </Button>
         </Alert>
       )}
-      {message && (
-        <Alert role={retry || submit?.error ? "alert" : "status"}>
-          <AlertDescription>{message}</AlertDescription>
-          {retry && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={requirement !== null}
-              onClick={() =>
-                store.dispatch(
-                  retry === "progress"
-                    ? refreshReviewProgress(bookId)
-                    : retryReviewQuestion(bookId),
-                )
-              }
-            >
-              {retry === "progress" ? "Retry confirmation" : "Retry question"}
-            </Button>
-          )}
-        </Alert>
-      )}
+      {message &&
+        (preparing ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            <span className="shimmer">{message}</span>
+          </p>
+        ) : (
+          <Alert role={retry || submit?.error ? "alert" : "status"}>
+            <AlertDescription>{message}</AlertDescription>
+            {retry && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={requirement !== null}
+                onClick={() =>
+                  store.dispatch(
+                    retry === "progress"
+                      ? refreshReviewProgress(bookId)
+                      : retryReviewQuestion(bookId),
+                  )
+                }
+              >
+                {retry === "progress" ? "Retry confirmation" : "Retry question"}
+              </Button>
+            )}
+          </Alert>
+        ))}
     </div>
   );
 }

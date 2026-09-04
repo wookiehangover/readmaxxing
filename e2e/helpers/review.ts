@@ -177,10 +177,17 @@ export async function openReviewSettings(page: Page) {
   await page.getByRole("menuitem", { name: "Review", exact: true }).click();
   await expect(page.getByRole("switch", { name: "Chapter reviews" })).toBeVisible();
 }
-export async function reachReview(page: Page, mobile: boolean, questionReady = true) {
-  const target = questionReady
-    ? page.getByTestId("review-question")
-    : page.getByRole("button", { name: "Retry question", exact: true }).first();
+export async function reachReview(
+  page: Page,
+  mobile: boolean,
+  questionReady: boolean | "preparing" = true,
+) {
+  const target =
+    questionReady === "preparing"
+      ? page.getByRole("status").filter({ hasText: "Preparing your chapter question…" }).first()
+      : questionReady
+        ? page.getByTestId("review-question")
+        : page.getByRole("button", { name: "Retry question", exact: true }).first();
   if (mobile) await page.getByRole("tab", { name: "Read", exact: true }).click();
   for (let i = 0; i < 12 && !(await target.isVisible()); i++) {
     // The real EPUB keyboard path handles the chapter endpoint on both screen sizes.

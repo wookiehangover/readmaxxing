@@ -33,6 +33,7 @@ export function ReviewPanel({ bookId }: { bookId: string }) {
   const requirement = store.reviewsSelectors.selectReviewRequirement(bookId).value;
   const checkpoint = store.reviewsSelectors.selectReviewCheckpoint(bookId).value;
   const locked = store.reviewsSelectors.selectReviewLocked(bookId).value;
+  const reviewVisible = store.reviewsSelectors.selectReviewVisible(bookId).value;
   const enableUnavailable =
     !preferences.enabled &&
     (requirement === "sign_in" || requirement === "loading" || requirement === "storage");
@@ -110,7 +111,7 @@ export function ReviewPanel({ bookId }: { bookId: string }) {
         )}
       </FieldGroup>
       <ReviewStatus bookId={bookId} />
-      {preferences.enabled && (question || checkpoint) && (
+      {preferences.enabled && !reviewVisible && (question || checkpoint) && (
         <div className="flex flex-col gap-2">
           <p className="text-xs text-muted-foreground">
             {locked ? "Current question" : "Chapter reviewed"}
@@ -118,13 +119,13 @@ export function ReviewPanel({ bookId }: { bookId: string }) {
           </p>
           <Button
             variant="ghost"
-            className="h-auto justify-start whitespace-normal text-left"
+            className="h-auto min-w-0 justify-start whitespace-normal text-left"
             onClick={() => {
               store.dispatch(showReview(bookId));
               if (mobile) setActiveTab("Read");
             }}
           >
-            {question?.question ?? "Open chapter review"}
+            <span className="line-clamp-2">{question?.question ?? "Open chapter review"}</span>
           </Button>
         </div>
       )}
