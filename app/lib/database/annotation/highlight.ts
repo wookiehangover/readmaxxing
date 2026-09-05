@@ -106,13 +106,35 @@ export async function upsertHighlight(
           mutation_at = EXCLUDED.mutation_at,
           deleted_at = EXCLUDED.deleted_at
       WHERE readmax.highlight.user_id = EXCLUDED.user_id
-        AND (EXCLUDED.mutation_at > COALESCE(readmax.highlight.mutation_at, readmax.highlight.updated_at)
-          OR (EXCLUDED.mutation_at = COALESCE(readmax.highlight.mutation_at, readmax.highlight.updated_at)
-              AND EXCLUDED.deleted_at IS NOT NULL AND readmax.highlight.deleted_at IS NULL))
+        AND ((EXCLUDED.deleted_at IS NOT NULL
+                AND (readmax.highlight.deleted_at IS NULL OR EXCLUDED.deleted_at > readmax.highlight.deleted_at))
+          OR (EXCLUDED.deleted_at IS NULL AND readmax.highlight.deleted_at IS NULL
+                AND EXCLUDED.mutation_at > COALESCE(readmax.highlight.mutation_at, readmax.highlight.updated_at)))
     RETURNING ${HIGHLIGHT_COLUMNS}
   `);
 
   if (result.rows.length === 0) {
+    // Old producers can reuse a millisecond for distinct edits. Without a
+    // later source clock, retaining the conflict is safer than acknowledging
+    // data we did not store or allowing retries to overwrite each other.
+    const collision = await pool.query(sql`
+      SELECT id FROM readmax.highlight
+      WHERE id = ${highlight.id} AND user_id = ${userId}
+        AND deleted_at IS NULL AND ${deletedAtIso}::timestamptz IS NULL
+        AND COALESCE(mutation_at, updated_at) = ${mutationAt}
+        AND (book_id IS DISTINCT FROM ${highlight.bookId}
+          OR cfi_range IS DISTINCT FROM COALESCE(${highlight.cfiRange ?? null}, cfi_range)
+          OR text IS DISTINCT FROM ${highlight.text ?? null}
+          OR color IS DISTINCT FROM ${highlight.color ?? null}
+          OR page_number IS DISTINCT FROM ${highlight.pageNumber ?? null}
+          OR text_offset IS DISTINCT FROM ${highlight.textOffset ?? null}
+          OR text_length IS DISTINCT FROM ${highlight.textLength ?? null}
+          OR text_anchor IS DISTINCT FROM COALESCE(${textAnchorJson}::jsonb, text_anchor)
+          OR created_at IS DISTINCT FROM ${createdAtIso}::timestamptz
+          OR note IS DISTINCT FROM COALESCE(${highlight.note ?? null}, note))
+    `);
+    if (collision.rows.length > 0)
+      throw new Error("Conflicting highlight edits share a mutation timestamp");
     return null;
   }
   return result.rows[0];
@@ -167,8 +189,7 @@ export async function softDeleteHighlight(
         mutation_at = ${mutationAt}
     WHERE id = ${highlightId}
       AND user_id = ${userId}
-      AND (${mutationAt}::timestamptz > COALESCE(mutation_at, updated_at)
-        OR (${mutationAt}::timestamptz = COALESCE(mutation_at, updated_at) AND deleted_at IS NULL))
+      AND (deleted_at IS NULL OR ${mutationAt}::timestamptz > deleted_at)
   `);
   if (deletedAt && !result.rowCount) {
     // Legacy deletes can lack the book ID needed to insert a tombstone. Keep

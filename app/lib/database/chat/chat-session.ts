@@ -85,6 +85,16 @@ export async function upsertSession(
   `);
 
   if (result.rows.length === 0) {
+    const collision = await pool.query(sql`
+      SELECT id FROM readmax.chat_session
+      WHERE id = ${session.id} AND user_id = ${userId}
+        AND deleted_at IS NULL AND ${deletedAtIso}::timestamptz IS NULL
+        AND COALESCE(mutation_at, updated_at) = ${mutationAt}
+        AND (book_id IS DISTINCT FROM ${session.bookId ?? null}
+          OR title IS DISTINCT FROM ${session.title ?? null})
+    `);
+    if (collision.rows.length > 0)
+      throw new Error("Conflicting chat session edits share a mutation timestamp");
     return null;
   }
   return result.rows[0];

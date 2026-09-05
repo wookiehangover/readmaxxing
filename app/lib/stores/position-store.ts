@@ -122,7 +122,7 @@ export function makePositionService(stores: PositionServiceStores) {
 
         const record: PositionRecord = {
           cfi,
-          updatedAt: Date.now(),
+          updatedAt: Math.max(Date.now(), (existing?.updatedAt ?? 0) + 1),
           ...(localProgression !== undefined ? { localProgression } : {}),
           ...(spineIndex !== undefined ? { spineIndex } : {}),
         };
