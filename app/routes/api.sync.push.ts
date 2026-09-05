@@ -19,7 +19,13 @@ import type { SyncPushRequest, SyncPushResponse, ChangeEntry } from "~/lib/sync/
 export async function processEntry(
   userId: string,
   entry: ChangeEntry,
-): Promise<{ accepted: boolean; reason?: string; canonicalId?: string }> {
+): Promise<{ accepted: boolean; reason?: string; retryable?: boolean; canonicalId?: string }> {
+  if (entry.operation !== "put" && entry.operation !== "delete") {
+    return { accepted: false, reason: "Unsupported operation", retryable: false };
+  }
+  if (entry.operation === "put" && (!entry.data || typeof entry.data !== "object")) {
+    return { accepted: false, reason: "Invalid mutation data", retryable: false };
+  }
   switch (entry.entity) {
     case "book": {
       if (entry.operation === "put") {
@@ -219,6 +225,7 @@ export async function processEntry(
       return {
         accepted: false,
         reason: "chat_message entries are not accepted via /api/sync/push",
+        retryable: false,
       };
     }
 
@@ -232,7 +239,11 @@ export async function processEntry(
 
     default: {
       console.warn(`[sync/push] Skipping unsupported entity type: ${entry.entity}`);
-      return { accepted: false, reason: `Unsupported entity type: ${entry.entity}` };
+      return {
+        accepted: false,
+        reason: `Unsupported entity type: ${entry.entity}`,
+        retryable: false,
+      };
     }
   }
 }
@@ -255,7 +266,7 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (!body.changes || !Array.isArray(body.changes)) {
+  if (!body || !Array.isArray(body.changes)) {
     return Response.json({ error: "Missing or invalid 'changes' array" }, { status: 400 });
   }
 
@@ -286,13 +297,18 @@ export async function action({ request }: { request: Request }) {
           result.canonicalId ? { id: entry.id, canonicalId: result.canonicalId } : { id: entry.id },
         );
       } else {
-        rejected.push({ id: entry.id, reason: result.reason ?? "Unknown error" });
+        rejected.push({
+          id: entry.id,
+          reason: result.reason ?? "Unknown error",
+          retryable: result.retryable !== false,
+        });
       }
     } catch (err) {
       console.error(`[sync/push] Error processing entry ${entry.id}:`, err);
       rejected.push({
         id: entry.id,
         reason: err instanceof Error ? err.message : "Internal error",
+        retryable: true,
       });
     }
   }
@@ -308,5 +324,12 @@ export async function action({ request }: { request: Request }) {
     serverTimestamp: new Date().toISOString(),
   };
 
-  return Response.json(response);
+  // Old clients delete all rejected non-book changes on 2xx. Fail the whole
+  // request for them if anything is transient; replayed writes use existing
+  // entity IDs/timestamps and the DAL's idempotent conflict handling.
+  const status =
+    body.supportsRetryableRejections !== true && rejected.some((entry) => entry.retryable)
+      ? 503
+      : 200;
+  return Response.json(response, { status });
 }

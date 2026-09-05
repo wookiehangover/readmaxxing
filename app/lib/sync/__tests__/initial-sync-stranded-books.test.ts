@@ -2,7 +2,7 @@ import { clear, createStore, set } from "idb-keyval";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 import type { BookMeta } from "~/lib/stores/book-store";
-import { getUnsyncedChanges, recordChange } from "../change-log";
+import { getUnsyncedChanges, recordChange, recordPushFailures } from "../change-log";
 import { runInitialSyncIfNeeded } from "../initial-sync";
 import { pushChangesWithResult } from "../push";
 import { getBookDataStore, getBookStore, getPositionStore, getSyncFlagsStore } from "../stores";
@@ -147,3 +147,27 @@ describe("runInitialSyncIfNeeded stranded-book recovery", () => {
     expect(await getUnsyncedChanges()).toEqual([]);
   });
 });
+
+it.each([true, false])(
+  "startup preserves retained book failures without resetting delivery state (retryable=%s)",
+  async (retryable) => {
+    const book = makeBook("retained-book");
+    await Promise.all([
+      set(INITIAL_SYNC_KEY, true, getSyncFlagsStore()),
+      set(book.id, book, getBookStore()),
+      set(book.id, new ArrayBuffer(8), getBookDataStore()),
+    ]);
+    const change = await recordChange({
+      entity: "book",
+      entityId: book.id,
+      operation: "put",
+      data: book,
+      timestamp: 1234,
+    });
+    await recordPushFailures([{ id: change.id, reason: "retained failure", retryable }]);
+    const before = await getUnsyncedChanges();
+    await runInitialSyncIfNeeded();
+    await runInitialSyncIfNeeded();
+    expect(await getUnsyncedChanges()).toEqual(before);
+  },
+);

@@ -1,20 +1,10 @@
-import { createStore, get, set, del, entries } from "idb-keyval";
-import type { UseStore } from "idb-keyval";
+import { set, del, entries, promisifyRequest } from "idb-keyval";
 import { ulid } from "ulid";
 import { isWellFormedEntry } from "./idb-entry";
-import type { ChangeEntry } from "./types";
+import { getChangeLogStore } from "./stores";
+import type { ChangeEntry, SyncPushResponse } from "./types";
 
-// ---------------------------------------------------------------------------
-// idb-keyval store (lazy-initialized for SSR safety)
-// ---------------------------------------------------------------------------
-
-let _changeLogStore: ReturnType<typeof createStore> | null = null;
 let positionPushTimer: ReturnType<typeof setTimeout> | null = null;
-
-function getChangeLogStore(): UseStore {
-  if (!_changeLogStore) _changeLogStore = createStore("ebook-reader-changelog", "changes");
-  return _changeLogStore;
-}
 
 function isUnsyncedChangeEntry(entry: unknown): entry is ChangeEntry {
   return (
@@ -44,7 +34,7 @@ function isNonNullIDBValidKey(key: unknown): key is IDBValidKey {
  * Automatically generates a ULID and marks the entry as unsynced.
  */
 export async function recordChange(
-  entry: Omit<ChangeEntry, "id" | "synced">,
+  entry: Omit<ChangeEntry, "id" | "synced" | "failure">,
 ): Promise<ChangeEntry> {
   const change: ChangeEntry = {
     ...entry,
@@ -74,7 +64,7 @@ export async function recordChange(
 }
 
 /**
- * Retrieve all unsynced changes, ordered by ULID (chronological).
+ * Retrieve all unsynced changes, including retained failures, ordered by ULID.
  */
 export async function getUnsyncedChanges(): Promise<ChangeEntry[]> {
   const all = await entries<string, ChangeEntry>(getChangeLogStore());
@@ -89,15 +79,16 @@ export async function getUnsyncedChanges(): Promise<ChangeEntry[]> {
  * Mark a batch of changes as synced after successful push.
  */
 export async function markSynced(ids: string[]): Promise<void> {
-  const store = getChangeLogStore();
-  await Promise.all(
-    ids.map(async (id) => {
-      const entry = await get<ChangeEntry>(id, store);
-      if (entry) {
-        await set(id, { ...entry, synced: true }, store);
-      }
-    }),
-  );
+  await getChangeLogStore()("readwrite", (store) => {
+    for (const id of ids) {
+      const request = store.get(id);
+      request.onsuccess = () => {
+        const entry = request.result as ChangeEntry | undefined;
+        if (entry) store.put({ ...entry, synced: true }, id);
+      };
+    }
+    return promisifyRequest(store.transaction);
+  });
 }
 
 /**
@@ -113,4 +104,45 @@ export async function clearSyncedChanges(): Promise<number> {
   );
   await Promise.all(synced.map(([key]) => del(key, store)));
   return synced.length;
+}
+
+/** Whether a retained mutation may participate in the next automatic push. */
+export function isChangeReadyToPush(change: ChangeEntry, now = Date.now()): boolean {
+  return (
+    !change.failure || (change.failure.retryable && (change.failure.nextAttemptAt ?? 0) <= now)
+  );
+}
+
+/** Persist failures atomically without recreating acknowledged/deleted entries. */
+export async function recordPushFailures(
+  failures: SyncPushResponse["rejected"],
+  now = Date.now(),
+): Promise<void> {
+  await getChangeLogStore()("readwrite", (store) => {
+    for (const failure of failures) {
+      const request = store.get(failure.id);
+      request.onsuccess = () => {
+        const entry = request.result as ChangeEntry | undefined;
+        if (!entry || entry.synced) return;
+        const attempts = (entry.failure?.attempts ?? 0) + 1;
+        const retryable = failure.retryable !== false;
+        // Start at the normal push interval; cap delay at 30 minutes, never attempts.
+        const delay = Math.min(30_000 * 2 ** Math.min(attempts - 1, 6), 1_800_000);
+        store.put(
+          {
+            ...entry,
+            failure: {
+              reason: failure.reason,
+              retryable,
+              attempts,
+              lastAttemptAt: now,
+              ...(retryable ? { nextAttemptAt: now + delay } : {}),
+            },
+          },
+          failure.id,
+        );
+      };
+    }
+    return promisifyRequest(store.transaction);
+  });
 }

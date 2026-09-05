@@ -9,6 +9,7 @@ import {
 } from "./file-uploads";
 import {
   PUSH_BATCH_SIZE,
+  PushRejectedError,
   pushChanges as pushChangesImpl,
   pushChangesWithResult,
   type PushContext,
@@ -160,12 +161,16 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
     });
 
   const doRecoverFiles = async () => {
-    const pushResult = await pushChangesWithResult(pushContext);
-    const hasUnacceptedBookPut =
-      pushResult !== null &&
-      (await getUnsyncedChanges()).some(
-        (change) => change.entity === "book" && change.operation === "put",
-      );
+    let rejected: PushRejectedError | undefined;
+    try {
+      await pushChangesWithResult(pushContext);
+    } catch (error) {
+      if (!(error instanceof PushRejectedError)) throw error;
+      rejected = error;
+    }
+    const hasUnacceptedBookPut = (await getUnsyncedChanges()).some(
+      (change) => change.entity === "book" && change.operation === "put",
+    );
 
     if (!hasUnacceptedBookPut) {
       resetUploadBackoff(fileUploadContext);
@@ -175,7 +180,10 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
       });
     }
 
+    // Still push URL changes recorded by recovery, while keeping partial
+    // metadata failures visible through runCycle's normal error callbacks.
     await doPush();
+    if (rejected) throw rejected;
   };
 
   return {
