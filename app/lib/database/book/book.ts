@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { sql } from "pg-sql";
 import { clampNullableTimestamp, clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
@@ -14,6 +15,7 @@ export interface BookRow {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  canonicalId?: string | null;
   cursorTimestamp?: string;
 }
 
@@ -24,6 +26,8 @@ export interface UpsertBookData {
   format?: string | null;
   fileHash?: string | null;
   updatedAt?: Date;
+  fileBlobUrl?: string | null;
+  coverBlobUrl?: string | null;
   deletedAt?: Date | null;
 }
 
@@ -37,41 +41,40 @@ const BOOK_COLUMNS = sql`
   file_blob_url AS "fileBlobUrl",
   file_hash AS "fileHash",
   created_at AS "createdAt",
-  updated_at AS "updatedAt",
-  deleted_at AS "deletedAt"
+  COALESCE(mutation_at, updated_at) AS "updatedAt",
+  deleted_at AS "deletedAt",
+  canonical_id AS "canonicalId"
 `;
 
-export async function upsertBook(userId: string, book: UpsertBookData): Promise<BookRow | null> {
-  const pool = getPool();
-  const ts = clampUpdatedAt(book.updatedAt);
+export async function upsertBook(
+  userId: string,
+  book: UpsertBookData,
+  client?: PoolClient,
+): Promise<BookRow | null> {
+  const pool = client ?? getPool();
+  const mutationAt = (book.updatedAt ?? new Date()).toISOString();
   const shouldUpdateDeletedAt = book.deletedAt !== undefined;
-  const deletedAtIso = clampNullableTimestamp(book.deletedAt);
+  const deletedAtIso = clampNullableTimestamp(book.deletedAt, undefined, Date.parse(mutationAt));
   const result = await pool.query<BookRow>(sql`
-    INSERT INTO readmax.book (id, user_id, title, author, format, file_hash, updated_at, deleted_at)
-    VALUES (${book.id}, ${userId}, ${book.title ?? null}, ${book.author ?? null}, ${book.format ?? null}, ${book.fileHash ?? null}, ${ts}, ${deletedAtIso})
+    INSERT INTO readmax.book (id, user_id, title, author, format, file_hash, updated_at, deleted_at, mutation_at, file_blob_url, cover_blob_url)
+    VALUES (${book.id}, ${userId}, ${book.title ?? null}, ${book.author ?? null}, ${book.format ?? null}, ${book.fileHash ?? null}, clock_timestamp(), ${deletedAtIso}, ${mutationAt}, ${book.fileBlobUrl ?? null}, ${book.coverBlobUrl ?? null})
     ON CONFLICT (id) DO UPDATE
       SET title = COALESCE(EXCLUDED.title, readmax.book.title),
           author = COALESCE(EXCLUDED.author, readmax.book.author),
           format = COALESCE(EXCLUDED.format, readmax.book.format),
           file_hash = COALESCE(EXCLUDED.file_hash, readmax.book.file_hash),
-          updated_at = CASE
-            WHEN EXCLUDED.updated_at = readmax.book.updated_at
-              AND EXCLUDED.deleted_at IS NULL
-              AND readmax.book.deleted_at IS NOT NULL
-            THEN readmax.book.updated_at + INTERVAL '1 millisecond'
-            ELSE EXCLUDED.updated_at
-          END,
+          file_blob_url = COALESCE(EXCLUDED.file_blob_url, readmax.book.file_blob_url),
+          cover_blob_url = COALESCE(EXCLUDED.cover_blob_url, readmax.book.cover_blob_url),
+          updated_at = GREATEST(clock_timestamp(), readmax.book.updated_at + INTERVAL '1 microsecond'),
+          mutation_at = EXCLUDED.mutation_at,
           deleted_at = CASE
             WHEN ${shouldUpdateDeletedAt} THEN EXCLUDED.deleted_at
             ELSE readmax.book.deleted_at
           END
-      WHERE EXCLUDED.updated_at > readmax.book.updated_at
-         OR (
-           ${shouldUpdateDeletedAt}
-           AND EXCLUDED.updated_at = readmax.book.updated_at
-           AND EXCLUDED.deleted_at IS NULL
-           AND readmax.book.deleted_at IS NOT NULL
-         )
+      WHERE readmax.book.user_id = EXCLUDED.user_id
+        AND (EXCLUDED.mutation_at > COALESCE(readmax.book.mutation_at, readmax.book.updated_at)
+          OR (EXCLUDED.mutation_at = COALESCE(readmax.book.mutation_at, readmax.book.updated_at)
+              AND EXCLUDED.deleted_at IS NOT NULL AND readmax.book.deleted_at IS NULL))
     RETURNING ${BOOK_COLUMNS}
   `);
 
@@ -135,15 +138,25 @@ export async function getBookByIdForUser(bookId: string, userId: string): Promis
   return result.rows[0];
 }
 
-export async function softDeleteBook(userId: string, bookId: string): Promise<boolean> {
-  const pool = getPool();
+export async function softDeleteBook(
+  userId: string,
+  bookId: string,
+  deletedAt?: Date,
+  client?: PoolClient,
+): Promise<boolean> {
+  const pool = client ?? getPool();
+  const mutationAt = (deletedAt ?? new Date()).toISOString();
   const result = await pool.query(sql`
-    UPDATE readmax.book
-    SET deleted_at = NOW(),
-        updated_at = NOW()
-    WHERE id = ${bookId}
-      AND user_id = ${userId}
-      AND deleted_at IS NULL
+    INSERT INTO readmax.book (id, user_id, deleted_at, updated_at, mutation_at)
+    VALUES (${bookId}, ${userId}, ${mutationAt}, clock_timestamp(), ${mutationAt})
+    ON CONFLICT (id) DO UPDATE
+      SET deleted_at = EXCLUDED.deleted_at,
+          updated_at = GREATEST(clock_timestamp(), readmax.book.updated_at + INTERVAL '1 microsecond'),
+          mutation_at = EXCLUDED.mutation_at
+      WHERE readmax.book.user_id = EXCLUDED.user_id
+        AND (EXCLUDED.mutation_at > COALESCE(readmax.book.mutation_at, readmax.book.updated_at)
+          OR (EXCLUDED.mutation_at = COALESCE(readmax.book.mutation_at, readmax.book.updated_at)
+              AND readmax.book.deleted_at IS NULL))
   `);
   return (result.rowCount ?? 0) > 0;
 }
@@ -158,8 +171,9 @@ export async function softDeleteBook(userId: string, bookId: string): Promise<bo
 export async function findBookByUserAndHash(
   userId: string,
   fileHash: string,
+  client?: PoolClient,
 ): Promise<BookRow | null> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const result = await pool.query<BookRow>(sql`
     SELECT ${BOOK_COLUMNS}
     FROM readmax.book
@@ -208,7 +222,7 @@ export async function updateBookBlobUrls(
     UPDATE readmax.book
     SET file_blob_url = COALESCE(${urls.fileBlobUrl ?? null}, file_blob_url),
         cover_blob_url = COALESCE(${urls.coverBlobUrl ?? null}, cover_blob_url),
-        updated_at = NOW()
+        updated_at = GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond')
     WHERE id = ${bookId}
     RETURNING ${BOOK_COLUMNS}
   `);

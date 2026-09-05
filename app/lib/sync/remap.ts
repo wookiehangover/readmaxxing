@@ -1,11 +1,15 @@
-import { get, set, del, entries } from "idb-keyval";
+import { entries, get } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import {
   getChapterUploadCacheStore,
   remapChapterUploadCache,
 } from "~/lib/stores/chapter-upload-cache-store";
+import { isFurtherAlong } from "~/lib/position-compare";
 import { isWellFormedEntry } from "./idb-entry";
-import { appendOnlyMerge, lwwMerge } from "./merge";
+import { appendOnlyMerge, setUnionMerge } from "./merge";
+import { moveRemapRecord } from "./remap-records";
+import { remapBookmarkId } from "./remap-references";
+import type { ChangeEntry } from "./types";
 import {
   getActiveSessionStore,
   getBookmarkStore,
@@ -15,12 +19,14 @@ import {
   getHighlightStore,
   getNotebookStore,
   getPositionStore,
+  getRemotePositionStore,
 } from "./stores";
 
 export interface RemapStores {
   readonly bookStore: UseStore;
   readonly bookDataStore: UseStore;
   readonly positionStore: UseStore;
+  readonly remotePositionStore?: UseStore;
   readonly highlightStore: UseStore;
   readonly bookmarkStore: UseStore;
   readonly notebookStore: UseStore;
@@ -30,12 +36,13 @@ export interface RemapStores {
 }
 
 let _defaults: RemapStores | null = null;
-function getDefaultStores(): RemapStores {
+export function getDefaultRemapStores(): RemapStores {
   if (!_defaults) {
     _defaults = {
       bookStore: getBookStore(),
       bookDataStore: getBookDataStore(),
       positionStore: getPositionStore(),
+      remotePositionStore: getRemotePositionStore(),
       highlightStore: getHighlightStore(),
       bookmarkStore: getBookmarkStore(),
       notebookStore: getNotebookStore(),
@@ -69,113 +76,178 @@ function mergeSessionArrays(a: ChatSessionLike[], b: ChatSessionLike[]): ChatSes
       byId.set(s.id, s);
       continue;
     }
+    const existingMessageIds = new Set((existing.messages ?? []).map((message) => message.id));
     const messages = appendOnlyMerge<ChatMessageLike>(
       existing.messages ?? [],
-      s.messages ?? [],
+      (s.messages ?? []).filter((message) => !existingMessageIds.has(message.id)),
       (m) => m.id,
     );
-    const winner = s.updatedAt >= existing.updatedAt ? s : existing;
+    const winner = s.updatedAt > existing.updatedAt ? s : existing;
     byId.set(s.id, { ...winner, messages });
   }
   return Array.from(byId.values());
 }
 
-/**
- * Remap all local references from `fromId` to `toId` when cross-device
- * dedup identifies a canonical book id. Moves book data, merges positions,
- * notebooks, highlights, bookmarks, chat sessions, the active-session pointer,
- * and the chapter-upload cache, then tombstones the losing book record locally. Idempotent.
- */
+type LocalRecord = Record<string, unknown>;
+
+function newer(source: LocalRecord, target?: LocalRecord): LocalRecord {
+  return !target || Number(source.updatedAt ?? 0) > Number(target.updatedAt ?? 0) ? source : target;
+}
+
+function positionWinner(source: LocalRecord, target?: LocalRecord): LocalRecord {
+  if (!target) return source;
+  if (isFurtherAlong(String(source.cfi), String(target.cfi))) return source;
+  if (isFurtherAlong(String(target.cfi), String(source.cfi))) return target;
+  return newer(source, target);
+}
+
+export interface RemapOptions {
+  /** Durable outbox write must finish before removing a surviving local snapshot. */
+  retainReplay?: (
+    entry: Pick<ChangeEntry, "entity" | "entityId" | "operation" | "data" | "timestamp">,
+  ) => Promise<void>;
+  checkActive?: () => void;
+}
+
+/** Idempotent per-database moves. Production callers first persist an owned journal intent. */
 export async function remapBookId(
   fromId: string,
   toId: string,
-  stores: RemapStores = getDefaultStores(),
-): Promise<void> {
-  if (!fromId || !toId || fromId === toId) return;
+  stores: RemapStores = getDefaultRemapStores(),
+  options: RemapOptions = {},
+): Promise<boolean> {
+  if (!fromId || !toId || fromId === toId) return false;
+  let changed = false;
+  const remap = { fromId, toId };
+  const replay = (entity: ChangeEntry["entity"], entityId: string) =>
+    options.retainReplay &&
+    ((data: LocalRecord) =>
+      options.retainReplay!({
+        entity,
+        entityId,
+        data,
+        operation: data.deletedAt != null ? "delete" : "put",
+        timestamp: Number(data.updatedAt ?? data.createdAt ?? 0),
+      }));
+  const move = async <T>(
+    store: UseStore,
+    from: string,
+    to: string,
+    merge: (source: T, target: T | undefined) => T | undefined,
+    extra: Parameters<typeof moveRemapRecord<T>>[4] = {},
+  ) => {
+    changed =
+      (await moveRemapRecord(store, from, to, merge, {
+        checkActive: options.checkActive,
+        ...extra,
+      })) || changed;
+  };
 
-  const {
-    bookStore,
-    bookDataStore,
-    positionStore,
-    highlightStore,
-    bookmarkStore,
-    notebookStore,
-    chatSessionStore,
-    activeSessionStore,
-    chapterUploadCacheStore,
-  } = stores;
-
-  const fromData = await get<ArrayBuffer>(fromId, bookDataStore);
-  if (fromData) {
-    const toData = await get<ArrayBuffer>(toId, bookDataStore);
-    if (!toData) await set(toId, fromData, bookDataStore);
-    await del(fromId, bookDataStore);
+  await move<ArrayBuffer>(stores.bookDataStore, fromId, toId, (source, target) => target ?? source);
+  await move<LocalRecord>(stores.positionStore, fromId, toId, positionWinner, {
+    prepare: replay("position", fromId),
+  });
+  if (stores.remotePositionStore) {
+    await move<LocalRecord>(stores.remotePositionStore, fromId, toId, positionWinner);
   }
-
-  const fromPos = await get<{ cfi: string; updatedAt: number }>(fromId, positionStore);
-  if (fromPos) {
-    const toPos = await get<{ cfi: string; updatedAt: number }>(toId, positionStore);
-    const winner = toPos ? lwwMerge(toPos, fromPos) : fromPos;
-    if (winner !== toPos) await set(toId, winner, positionStore);
-    await del(fromId, positionStore);
-  }
-
-  const fromNotebook = await get<{ bookId: string; updatedAt: number; content: unknown }>(
+  await move<LocalRecord>(
+    stores.notebookStore,
     fromId,
-    notebookStore,
+    toId,
+    (source, target) => newer({ ...source, bookId: toId }, target),
+    { prepare: replay("notebook", fromId) },
   );
-  if (fromNotebook) {
-    const rewritten = { ...fromNotebook, bookId: toId };
-    const toNotebook = await get<{ bookId: string; updatedAt: number; content: unknown }>(
-      toId,
-      notebookStore,
+
+  for (const entry of await entries<string, LocalRecord>(stores.highlightStore)) {
+    if (!isWellFormedEntry(entry)) continue;
+    const [id, record] = entry;
+    if (record?.bookId !== fromId) continue;
+    await move<LocalRecord>(
+      stores.highlightStore,
+      id,
+      id,
+      (source) => ({ ...source, bookId: toId }),
+      {
+        matches: (source) => source.bookId === fromId,
+        prepare: replay("highlight", id),
+      },
     );
-    const winner = toNotebook ? lwwMerge(toNotebook, rewritten) : rewritten;
-    if (winner !== toNotebook) await set(toId, winner, notebookStore);
-    await del(fromId, notebookStore);
   }
-
-  const allHighlights = await entries<string, Record<string, unknown>>(highlightStore);
-  for (const entry of allHighlights) {
+  for (const entry of await entries<string, LocalRecord>(stores.bookmarkStore)) {
     if (!isWellFormedEntry(entry)) continue;
-    const [hId, h] = entry;
-    if (!h || h.bookId !== fromId) continue;
-    await set(hId, { ...h, bookId: toId }, highlightStore);
+    const [id, record] = entry;
+    if (record?.bookId !== fromId) continue;
+    const canonicalId = remapBookmarkId(id, remap);
+    await move<LocalRecord>(
+      stores.bookmarkStore,
+      id,
+      canonicalId,
+      (source, target) => {
+        const rewritten = { ...source, id: canonicalId, bookId: toId };
+        if (!target || id === canonicalId) return rewritten;
+        return setUnionMerge([target], [rewritten], (item) => String(item.id))[0];
+      },
+      {
+        matches: (source) => source.bookId === fromId,
+        prepare: replay("bookmark", id),
+      },
+    );
   }
 
-  const allBookmarks = await entries<string, Record<string, unknown>>(bookmarkStore);
-  for (const entry of allBookmarks) {
-    if (!isWellFormedEntry(entry)) continue;
-    const [bookmarkId, bookmark] = entry;
-    if (!bookmark || bookmark.bookId !== fromId) continue;
-    const newId = bookmarkId.replace(`bookmark:${fromId}:`, `bookmark:${toId}:`);
-    await del(bookmarkId, bookmarkStore);
-    await set(newId, { ...bookmark, id: newId, bookId: toId }, bookmarkStore);
+  await move<ChatSessionLike[]>(
+    stores.chatSessionStore,
+    fromId,
+    toId,
+    (source, target) =>
+      mergeSessionArrays(
+        target ?? [],
+        source.map((s) => ({ ...s, bookId: toId })),
+      ),
+    {
+      prepare:
+        options.retainReplay &&
+        (async (sessions) => {
+          for (const session of sessions) {
+            await replay("chat_session", session.id)!(session);
+          }
+          // Messages are server-authored and cannot be republished through
+          // sync/push. Their IDs and cached content move with their session.
+        }),
+    },
+  );
+  await move<string>(stores.activeSessionStore, fromId, toId, (source, target) => target ?? source);
+  if (stores.chapterUploadCacheStore) {
+    if ((await get(fromId, stores.chapterUploadCacheStore)) !== undefined) {
+      options.checkActive?.();
+      await remapChapterUploadCache(fromId, toId, stores.chapterUploadCacheStore);
+      changed = true;
+    }
   }
 
-  const fromSessions = await get<ChatSessionLike[]>(fromId, chatSessionStore);
-  if (fromSessions && fromSessions.length > 0) {
-    const toSessions = (await get<ChatSessionLike[]>(toId, chatSessionStore)) ?? [];
-    const remapped = fromSessions.map((s) => ({ ...s, bookId: toId }));
-    const merged = mergeSessionArrays(toSessions, remapped);
-    await set(toId, merged, chatSessionStore);
-    await del(fromId, chatSessionStore);
-  }
-
-  const fromActive = await get<string>(fromId, activeSessionStore);
-  if (fromActive) {
-    const toActive = await get<string>(toId, activeSessionStore);
-    if (!toActive) await set(toId, fromActive, activeSessionStore);
-    await del(fromId, activeSessionStore);
-  }
-
-  if (chapterUploadCacheStore) {
-    await remapChapterUploadCache(fromId, toId, chapterUploadCacheStore);
-  }
-
-  const fromBook = await get<Record<string, unknown>>(fromId, bookStore);
-  if (fromBook && fromBook.deletedAt == null) {
-    const now = Date.now();
-    await set(fromId, { ...fromBook, deletedAt: now, updatedAt: now }, bookStore);
-  }
+  // The alias marker is local bookkeeping, not a new source mutation. Keep its
+  // clock, and do not use its synthetic tombstone to delete the canonical book.
+  await move<LocalRecord>(
+    stores.bookStore,
+    fromId,
+    toId,
+    (source, target) => {
+      // Canonical metadata comes from the server. A losing alias is not a
+      // newer rename/restore, even if its local mutation clock is higher.
+      if (!target) return undefined;
+      return {
+        ...target,
+        hasLocalFile: target?.hasLocalFile || source.hasLocalFile,
+        coverImage: target?.coverImage ?? source.coverImage,
+      };
+    },
+    {
+      matches: (source) => source.canonicalId !== toId,
+      keepSource: (source) => ({
+        ...source,
+        canonicalId: toId,
+        deletedAt: source.deletedAt ?? source.updatedAt ?? 0,
+      }),
+    },
+  );
+  return changed;
 }

@@ -198,14 +198,20 @@ export async function loader({ request }: { request: Request }) {
       }
 
       case "settings": {
-        const settingsRow = await getSettingsSince(userId, since);
+        const settingsRow = await getSettingsSince(
+          userId,
+          since,
+          cursorTimestampsByEntity.settings,
+        );
         if (settingsRow) {
-          changes.push({
-            entity: "settings",
-            records: [settingsRow],
-            cursor: settingsRow.updatedAt.toISOString(),
-            hasMore: false,
-          });
+          appendBatch(
+            changes,
+            "settings",
+            [settingsRow],
+            limit,
+            "updatedAt",
+            (record) => record.userId,
+          );
         }
         break;
       }

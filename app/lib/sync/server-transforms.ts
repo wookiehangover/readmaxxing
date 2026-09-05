@@ -49,6 +49,7 @@ export function serverBookToLocal(record: Record<string, unknown>): Record<strin
     remoteCoverUrl: (record.coverBlobUrl as string) ?? undefined,
     remoteFileUrl: (record.fileBlobUrl as string) ?? undefined,
     fileHash: (record.fileHash as string) ?? undefined,
+    ...(typeof record.canonicalId === "string" ? { canonicalId: record.canonicalId } : {}),
     updatedAt: toTimestamp(record.updatedAt),
     deletedAt: toOptionalTimestamp(record.deletedAt),
   };

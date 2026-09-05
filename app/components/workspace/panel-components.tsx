@@ -35,8 +35,13 @@ export function WorkspaceNotebookPanel({
   );
 
   const handleUnregisterAppendHighlight = useCallback(
-    (bookId: string) => {
-      notebookCallbackMap.current.delete(bookId);
+    (
+      bookId: string,
+      fn: (attrs: { highlightId: string; cfiRange: string; text: string }) => void,
+    ) => {
+      if (notebookCallbackMap.current.get(bookId) === fn) {
+        notebookCallbackMap.current.delete(bookId);
+      }
     },
     [notebookCallbackMap],
   );
@@ -57,6 +62,7 @@ export function WorkspaceNotebookPanel({
 
   return (
     <WorkspaceNotebook
+      key={bookId}
       bookId={bookId}
       bookTitle={bookTitle}
       chromeless={chromeless}

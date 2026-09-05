@@ -14,7 +14,7 @@ import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-edito
 import type { JSONContent } from "@tiptap/react";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
-import { useWorkspace } from "~/lib/context/workspace-context";
+import { useWorkspace, type NotebookEditorCallbacks } from "~/lib/context/workspace-context";
 import { downloadNotebookMarkdown } from "~/lib/editor/export-notebook-markdown";
 import { cn } from "~/lib/utils";
 import { useAppStore } from "~/lib/themis/provider";
@@ -24,6 +24,7 @@ import {
 } from "~/lib/themis/annotations/annotations-slice";
 
 const NOTES_EMPTY_PLACEHOLDER = "If you're not writing, you're not reading";
+const EMPTY_NOTEBOOK: JSONContent = { type: "doc", content: [{ type: "paragraph" }] };
 
 interface WorkspaceNotebookProps {
   bookId: string;
@@ -35,7 +36,10 @@ interface WorkspaceNotebookProps {
     bookId: string,
     fn: (attrs: HighlightReferenceAttrs) => void,
   ) => void;
-  onUnregisterAppendHighlight?: (bookId: string) => void;
+  onUnregisterAppendHighlight?: (
+    bookId: string,
+    fn: (attrs: HighlightReferenceAttrs) => void,
+  ) => void;
 }
 
 export function WorkspaceNotebook({
@@ -63,10 +67,9 @@ export function WorkspaceNotebook({
   const lastContentRef = useRef<string | null>(null);
   // Flag to suppress handleUpdate saves when content is set from a sync pull
   const fromSyncRef = useRef(false);
-  // Track the latest unsaved content so it can be flushed on unmount.
-  const pendingContentRef = useRef<JSONContent | null>(null);
-  const bookIdRef = useRef(bookId);
-  bookIdRef.current = bookId;
+  // Each object is a save generation owned by the book that produced it.
+  const pendingSaveRef = useRef<{ bookId: string; content: JSONContent } | null>(null);
+  const mountedRef = useRef(true);
   const content = notebook?.content;
 
   useEffect(() => {
@@ -75,27 +78,22 @@ export function WorkspaceNotebook({
 
   // Reconcile authoritative collection changes into the mounted editor.
   useEffect(() => {
-    if (!content) return;
-    const newContentStr = JSON.stringify(content);
-    if (lastContentRef.current === null) {
-      lastContentRef.current = newContentStr;
-      return;
-    }
-    if (pendingContentRef.current || newContentStr === lastContentRef.current) return;
+    if (!editorReady || !editorRef.current) return;
+    const nextContent = content ?? EMPTY_NOTEBOOK;
+    const newContentStr = JSON.stringify(nextContent);
+    if (pendingSaveRef.current || newContentStr === lastContentRef.current) return;
     lastContentRef.current = newContentStr;
-    if (!editorRef.current) return;
     fromSyncRef.current = true;
-    editorRef.current.setContent(content);
+    editorRef.current.setContent(nextContent);
     fromSyncRef.current = false;
-  }, [content]);
+  }, [content, editorReady]);
 
   const flushSave = useCallback(() => {
-    const pendingContent = pendingContentRef.current;
-    if (!pendingContent) return;
-    pendingContentRef.current = null;
-    const currentBookId = bookIdRef.current;
+    const pendingSave = pendingSaveRef.current;
+    if (!pendingSave) return;
+    pendingSaveRef.current = null;
     store.dispatch(
-      updateNotebookRequested(currentBookId, pendingContent, true, undefined, (error) =>
+      updateNotebookRequested(pendingSave.bookId, pendingSave.content, true, undefined, (error) =>
         console.error("Failed to flush notebook save:", error),
       ),
     );
@@ -104,7 +102,8 @@ export function WorkspaceNotebook({
   const handleUpdate = useCallback(
     (newContent: JSONContent) => {
       // Skip saving when content was set from a sync pull (not a user edit)
-      if (fromSyncRef.current) return;
+      // Tiptap also emits an update while configuring its initial editable state.
+      if (!editorReady || !mountedRef.current || fromSyncRef.current) return;
 
       // Notify chat panel of content changes so read_notes sees current content
       const changeCallback = notebookContentChangeMap.current.get(bookId);
@@ -114,40 +113,47 @@ export function WorkspaceNotebook({
       }
 
       // Track pending content for flush-on-unmount
-      pendingContentRef.current = newContent;
+      const pendingSave = { bookId, content: newContent };
+      pendingSaveRef.current = pendingSave;
       store.dispatch(
         updateNotebookRequested(
           bookId,
           newContent,
           false,
           () => {
-            if (pendingContentRef.current === newContent) pendingContentRef.current = null;
+            if (!mountedRef.current || pendingSaveRef.current !== pendingSave) return;
+            pendingSaveRef.current = null;
             lastContentRef.current = JSON.stringify(newContent);
           },
           (error) => console.error("Failed to save notebook:", error),
         ),
       );
     },
-    [bookId, notebookContentChangeMap, store],
+    [bookId, editorReady, notebookContentChangeMap, store],
   );
 
   // Flush any pending debounced save on unmount
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       flushSave();
     };
   }, [flushSave]);
 
   // Register the appendHighlightReference callback so the workspace can push highlights here
   useEffect(() => {
+    if (!editorReady) return;
+    let registered = true;
     const appendFn = (attrs: HighlightReferenceAttrs) => {
-      editorRef.current?.appendHighlightReference(attrs);
+      if (registered) editorRef.current?.appendHighlightReference(attrs);
     };
     onRegisterAppendHighlight?.(bookId, appendFn);
     return () => {
-      onUnregisterAppendHighlight?.(bookId);
+      registered = false;
+      onUnregisterAppendHighlight?.(bookId, appendFn);
     };
-  }, [bookId, onRegisterAppendHighlight, onUnregisterAppendHighlight]);
+  }, [bookId, editorReady, onRegisterAppendHighlight, onUnregisterAppendHighlight]);
 
   // Register editor callbacks for live-sync from chat tool handlers.
   // Only register once the Tiptap editor is ready so that tool handlers
@@ -155,28 +161,35 @@ export function WorkspaceNotebook({
   // dropping content via the not-yet-functional imperative ref.
   useEffect(() => {
     if (!editorReady) return;
-    notebookEditorCallbackMap.current.set(bookId, {
+    const isCurrent = () => notebookEditorCallbackMap.current.get(bookId) === callbacks;
+    const callbacks: NotebookEditorCallbacks = {
       appendContent: (nodes) => {
-        editorRef.current?.appendContent(nodes);
+        if (isCurrent()) editorRef.current?.appendContent(nodes);
       },
       setContent: (content) => {
-        editorRef.current?.setContent(content);
+        if (isCurrent()) editorRef.current?.setContent(content);
       },
       getContent: () => {
-        return editorRef.current?.getContent() ?? { type: "doc", content: [] };
+        return (
+          (isCurrent() ? editorRef.current?.getContent() : undefined) ?? {
+            type: "doc",
+            content: [],
+          }
+        );
       },
       getTopLevelNodeCount: () => {
-        return editorRef.current?.getTopLevelNodeCount() ?? 0;
+        return (isCurrent() ? editorRef.current?.getTopLevelNodeCount() : undefined) ?? 0;
       },
       replaceContentFrom: (fromIndex, nodes) => {
-        editorRef.current?.replaceContentFrom(fromIndex, nodes);
+        if (isCurrent()) editorRef.current?.replaceContentFrom(fromIndex, nodes);
       },
       seedLastContent: (newContent) => {
-        lastContentRef.current = JSON.stringify(newContent);
+        if (isCurrent()) lastContentRef.current = JSON.stringify(newContent);
       },
-    });
+    };
+    notebookEditorCallbackMap.current.set(bookId, callbacks);
     return () => {
-      notebookEditorCallbackMap.current.delete(bookId);
+      if (isCurrent()) notebookEditorCallbackMap.current.delete(bookId);
     };
   }, [bookId, editorReady, notebookEditorCallbackMap]);
 

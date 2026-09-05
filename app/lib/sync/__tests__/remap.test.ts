@@ -195,6 +195,36 @@ describe("remapBookId", () => {
     expect(fromActive).toBeUndefined();
   });
 
+  it("preserves canonical message content when the source has an older copy of the same message", async () => {
+    const source = {
+      id: "s",
+      bookId: "from",
+      updatedAt: 100,
+      messages: [
+        { id: "m", content: "old" },
+        { id: "extra", content: "retained" },
+      ],
+    };
+    const target = {
+      id: "s",
+      bookId: "to",
+      updatedAt: 200,
+      messages: [{ id: "m", content: "corrected" }],
+    };
+    await set("from", [source], stores.chatSessionStore);
+    await set("to", [target], stores.chatSessionStore);
+    await remapBookId("from", "to", stores);
+    expect(await get("to", stores.chatSessionStore)).toEqual([
+      {
+        ...target,
+        messages: [
+          { id: "m", content: "corrected" },
+          { id: "extra", content: "retained" },
+        ],
+      },
+    ]);
+  });
+
   it("preserves existing active-session pointer on target", async () => {
     await seedBook(stores, "from");
     await seedBook(stores, "to");

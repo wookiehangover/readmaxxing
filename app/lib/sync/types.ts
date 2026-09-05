@@ -48,6 +48,19 @@ export interface ChangeEntry {
   timestamp: number;
   /** Whether this change has been successfully pushed to the server. */
   synced: boolean;
+  /** Owner of remap/recovery work; absent on legacy and signed-out mutations. */
+  ownerId?: string;
+  /** Delivery identity changes when a queued snapshot is canonicalized, not its source clock. */
+  revision?: number;
+  /** Durable delivery failure; the original mutation remains available for recovery. */
+  failure?: {
+    reason: string;
+    retryable: boolean;
+    attempts: number;
+    lastAttemptAt: number;
+    /** Absent for permanent failures, which are excluded from automatic delivery. */
+    nextAttemptAt?: number;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +71,8 @@ export interface ChangeEntry {
 export interface SyncPushRequest {
   /** Ordered batch of unsynced changes. */
   changes: ChangeEntry[];
+  /** Client retains rejected mutations and understands per-entry retryability. */
+  supportsRetryableRejections?: boolean;
 }
 
 /** Server response after processing a push batch. */
@@ -77,6 +92,8 @@ export interface SyncPushResponse {
   rejected: Array<{
     id: string;
     reason: string;
+    /** Omitted by older servers: clients must conservatively retry. */
+    retryable?: boolean;
   }>;
   /** Server timestamp at the time of processing (ISO 8601). */
   serverTimestamp: string;

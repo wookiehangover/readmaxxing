@@ -15,6 +15,7 @@ CREATE TABLE readmax.highlight (
     text_anchor JSONB,
     note TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    mutation_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ
 );
@@ -31,6 +32,7 @@ CREATE TABLE readmax.notebook (
     user_id UUID NOT NULL REFERENCES readmax.user(id),
     book_id TEXT NOT NULL,
     content JSONB,
+    mutation_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, book_id)
 );

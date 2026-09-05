@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { sql } from "pg-sql";
 import { clampNullableTimestamp, clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
@@ -37,22 +38,23 @@ const BOOKMARK_COLUMNS = sql`
   page_number AS "pageNumber",
   display_page AS "displayPage",
   created_at AS "createdAt",
-  updated_at AS "updatedAt",
+  COALESCE(mutation_at, updated_at) AS "updatedAt",
   deleted_at AS "deletedAt"
 `;
 
 export async function upsertBookmark(
   userId: string,
   bookmark: UpsertBookmarkData,
+  client?: PoolClient,
 ): Promise<BookmarkRow | null> {
-  const pool = getPool();
-  const updatedAtIso = clampUpdatedAt(bookmark.updatedAt ?? bookmark.createdAt);
-  // Clamp created_at/deleted_at too: a far-future deleted_at would match
-  // `deleted_at > cursor` on every subsequent pull.
-  const createdAtIso = clampUpdatedAt(bookmark.createdAt);
-  const deletedAtIso = clampNullableTimestamp(bookmark.deletedAt);
+  const pool = client ?? getPool();
+  const mutationAt = (bookmark.updatedAt ?? bookmark.createdAt).toISOString();
+  const sourceTime = Date.parse(mutationAt);
+  // Ancillary metadata must normalize identically even when delivery is retried.
+  const createdAtIso = clampUpdatedAt(bookmark.createdAt, undefined, sourceTime);
+  const deletedAtIso = clampNullableTimestamp(bookmark.deletedAt, undefined, sourceTime);
   const result = await pool.query<BookmarkRow>(sql`
-    INSERT INTO readmax.bookmark (id, user_id, book_id, cfi, label, page_number, display_page, created_at, updated_at, deleted_at)
+    INSERT INTO readmax.bookmark (id, user_id, book_id, cfi, label, page_number, display_page, created_at, updated_at, deleted_at, mutation_at)
     VALUES (
       ${bookmark.id},
       ${userId},
@@ -62,8 +64,9 @@ export async function upsertBookmark(
       ${bookmark.pageNumber ?? null},
       ${bookmark.displayPage ?? null},
       ${createdAtIso},
-      ${updatedAtIso},
-      ${deletedAtIso}
+      clock_timestamp(),
+      ${deletedAtIso},
+      ${mutationAt}
     )
     ON CONFLICT (id) DO UPDATE
       SET user_id = EXCLUDED.user_id,
@@ -73,9 +76,14 @@ export async function upsertBookmark(
           page_number = EXCLUDED.page_number,
           display_page = EXCLUDED.display_page,
           created_at = EXCLUDED.created_at,
-          updated_at = EXCLUDED.updated_at,
+          updated_at = GREATEST(clock_timestamp(), readmax.bookmark.updated_at + INTERVAL '1 microsecond'),
+          mutation_at = EXCLUDED.mutation_at,
           deleted_at = EXCLUDED.deleted_at
-      WHERE EXCLUDED.updated_at > readmax.bookmark.updated_at
+      WHERE readmax.bookmark.user_id = EXCLUDED.user_id
+        AND ((EXCLUDED.deleted_at IS NOT NULL
+                AND (readmax.bookmark.deleted_at IS NULL OR EXCLUDED.deleted_at > readmax.bookmark.deleted_at))
+          OR (EXCLUDED.deleted_at IS NULL AND readmax.bookmark.deleted_at IS NULL
+                AND EXCLUDED.mutation_at > COALESCE(readmax.bookmark.mutation_at, readmax.bookmark.updated_at)))
     RETURNING ${BOOKMARK_COLUMNS}
   `);
 
@@ -85,16 +93,32 @@ export async function upsertBookmark(
   return result.rows[0];
 }
 
-export async function softDeleteBookmark(userId: string, bookmarkId: string): Promise<boolean> {
-  const pool = getPool();
+export async function softDeleteBookmark(
+  userId: string,
+  bookmarkId: string,
+  deletedAt?: Date,
+  client?: PoolClient,
+): Promise<boolean> {
+  const pool = client ?? getPool();
+  const mutationAt = (deletedAt ?? new Date()).toISOString();
   const result = await pool.query(sql`
     UPDATE readmax.bookmark
-    SET deleted_at = NOW(),
-        updated_at = NOW()
+    SET deleted_at = ${mutationAt},
+        updated_at = GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond'),
+        mutation_at = ${mutationAt}
     WHERE id = ${bookmarkId}
       AND user_id = ${userId}
-      AND deleted_at IS NULL
+      AND (deleted_at IS NULL OR ${mutationAt}::timestamptz > deleted_at)
   `);
+  if (deletedAt && !result.rowCount) {
+    // Legacy deletes can lack the book ID needed to insert a tombstone. Keep
+    // the mutation retryable until its target exists instead of losing it.
+    const existing = await pool.query(sql`
+      SELECT id FROM readmax.bookmark WHERE id = ${bookmarkId} AND user_id = ${userId}
+    `);
+    if (existing.rows.length === 0)
+      throw new Error("Cannot persist bookmark deletion without its book ID");
+  }
   return (result.rowCount ?? 0) > 0;
 }
 
