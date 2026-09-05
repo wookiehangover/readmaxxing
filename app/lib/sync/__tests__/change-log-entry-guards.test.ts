@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChangeEntry } from "../types";
+import { clear, get, set } from "idb-keyval";
+import { getChangeLogStore } from "../stores";
 
 const entriesMock = vi.hoisted(() => vi.fn());
-const delMock = vi.hoisted(() => vi.fn());
 
 vi.mock("idb-keyval", async (importOriginal) => {
   const actual = await importOriginal<typeof import("idb-keyval")>();
   return {
     ...actual,
     entries: entriesMock,
-    del: delMock,
   };
 });
 
@@ -28,9 +28,9 @@ function makeChange(overrides: Partial<ChangeEntry> = {}): ChangeEntry {
 }
 
 describe("change-log entry guards", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     entriesMock.mockReset();
-    delMock.mockReset();
+    await clear(getChangeLogStore());
   });
 
   it("getUnsyncedChanges skips malformed IDB entries", async () => {
@@ -50,18 +50,15 @@ describe("change-log entry guards", () => {
   it("clearSyncedChanges skips malformed IDB entries", async () => {
     const synced = makeChange({ id: "01H00000000000000000000003", synced: true });
     const stringSynced = { ...makeChange({ id: "01H00000000000000000000005" }), synced: "false" };
-    entriesMock.mockResolvedValueOnce([
-      undefined,
-      ["string-value", "not-a-change"],
-      [null, synced],
-      ["string-synced", stringSynced],
-      ["unsynced", makeChange({ id: "01H00000000000000000000004" })],
-      ["synced", synced],
-    ]);
-    delMock.mockResolvedValue(undefined);
-
+    const store = getChangeLogStore();
+    await set("string-value", "not-a-change", store);
+    await set("missing", undefined, store);
+    await set("string-synced", stringSynced, store);
+    await set("unsynced", makeChange({ id: "01H00000000000000000000004" }), store);
+    await set("synced", synced, store);
     await expect(clearSyncedChanges()).resolves.toBe(1);
-    expect(delMock).toHaveBeenCalledOnce();
-    expect(delMock).toHaveBeenCalledWith("synced", expect.anything());
+    expect(await get("synced", store)).toBeUndefined();
+    expect(await get("string-synced", store)).toEqual(stringSynced);
+    expect(await get("unsynced", store)).toMatchObject({ synced: false });
   });
 });

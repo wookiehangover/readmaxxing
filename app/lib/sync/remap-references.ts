@@ -10,19 +10,30 @@ export function remapBookmarkId(id: string, { fromId, toId }: BookIdRemap): stri
   return id.startsWith(prefix) ? `bookmark:${toId}:${id.slice(prefix.length)}` : id;
 }
 
+export function referencesRemappedBook(change: ChangeEntry, remap: BookIdRemap): boolean {
+  if (change.entity === "settings") return false;
+  const ids = [remap.fromId, remap.toId];
+  if (["book", "notebook", "position"].includes(change.entity) && ids.includes(change.entityId))
+    return true;
+  if (
+    change.entity === "bookmark" &&
+    ids.some((id) => change.entityId.startsWith(`bookmark:${id}:`))
+  )
+    return true;
+  return (
+    !!change.data &&
+    typeof change.data === "object" &&
+    "bookId" in change.data &&
+    typeof change.data.bookId === "string" &&
+    ids.includes(change.data.bookId)
+  );
+}
+
 /** Only protocol identity fields are references; user text/TipTap content is opaque. */
 export function remapChange(change: ChangeEntry, remap: BookIdRemap): ChangeEntry {
-  // Deleting a losing book acknowledges that alias only. Redirecting this to
-  // the canonical book would turn cleanup into deletion of the shared copy.
-  if (
-    change.entity === "book" &&
-    (change.operation === "delete" ||
-      (change.data &&
-        typeof change.data === "object" &&
-        "deletedAt" in change.data &&
-        change.data.deletedAt != null))
-  )
-    return change;
+  // Book alias puts/deletes acknowledge the alias without changing canonical
+  // metadata. Even after an interrupted ACK they must retry as alias requests.
+  if (change.entity === "book") return change;
   const { fromId, toId } = remap;
   let entityId = change.entityId;
   if (["book", "notebook", "position"].includes(change.entity) && entityId === fromId) {

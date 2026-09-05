@@ -156,6 +156,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
   const doPull = () =>
     pullChangesImpl({
+      userId: config.userId,
       isStopped,
       onAuthExpired: config.onAuthExpired,
     });
@@ -168,7 +169,7 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
       if (!(error instanceof PushRejectedError)) throw error;
       rejected = error;
     }
-    const hasUnacceptedBookPut = (await getUnsyncedChanges()).some(
+    const hasUnacceptedBookPut = (await getUnsyncedChanges(config.userId)).some(
       (change) => change.entity === "book" && change.operation === "put",
     );
 
