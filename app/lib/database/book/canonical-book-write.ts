@@ -32,7 +32,7 @@ async function readBook(client: PoolClient, userId: string, id: string) {
   return book;
 }
 
-async function resolveBook(
+export async function resolveCanonicalBook(
   client: PoolClient,
   userId: string,
   id: string,
@@ -70,7 +70,7 @@ async function resolveBook(
 }
 
 async function deduplicateBook(client: PoolClient, userId: string, entry: ChangeEntry) {
-  const existing = await resolveBook(client, userId, entry.entityId);
+  const existing = await resolveCanonicalBook(client, userId, entry.entityId);
   if (existing && existing.id !== entry.entityId) return existing.id;
   const data = entry.data as { fileHash?: unknown; deletedAt?: unknown } | null;
   // A normal tombstone is never evidence of an alias. Nor should a deletion
@@ -86,7 +86,7 @@ async function deduplicateBook(client: PoolClient, userId: string, entry: Change
     return;
   const match = await findBookByUserAndHash(userId, data.fileHash, client);
   if (!match || match.id === entry.entityId) return;
-  const canonical = await resolveBook(client, userId, match.id);
+  const canonical = await resolveCanonicalBook(client, userId, match.id);
   if (!canonical || canonical.deletedAt) throw new Error("Canonical book is unavailable");
   const timestamp = new Date(entry.timestamp).toISOString();
   const alias = await client.query(sql`
@@ -126,19 +126,19 @@ async function normalizeDependent(client: PoolClient, userId: string, entry: Cha
     `);
     const fromId = aliases.rows[0]?.id;
     if (fromId) {
-      const canonical = await resolveBook(client, userId, fromId);
+      const canonical = await resolveCanonicalBook(client, userId, fromId);
       entityId = remapBookmarkId(entityId, { fromId, toId: canonical!.id });
       bookId ??= canonical!.id;
-      const embedded = await resolveBook(client, userId, bookId);
+      const embedded = await resolveCanonicalBook(client, userId, bookId);
       if ((embedded?.id ?? bookId) !== canonical!.id)
         throw new Error("Conflicting bookmark book references");
     }
   }
   if (!bookId) return entry;
-  const canonical = await resolveBook(client, userId, bookId);
+  const canonical = await resolveCanonicalBook(client, userId, bookId);
   const canonicalId = canonical?.id ?? bookId;
   if (entry.entity === "notebook" || entry.entity === "position") {
-    const keyBook = await resolveBook(client, userId, entry.entityId);
+    const keyBook = await resolveCanonicalBook(client, userId, entry.entityId);
     if ((keyBook?.id ?? entry.entityId) !== canonicalId)
       throw new Error("Conflicting book references");
     entityId = canonicalId;
@@ -159,25 +159,34 @@ export async function withCanonicalBookWrite(
     )
   )
     return write(entry);
+  return withBookOwnerTransaction(
+    userId,
+    async (client) => {
+      if (entry.entity === "book") {
+        const canonicalId = await deduplicateBook(client, userId, entry);
+        // Root alias snapshots never become canonical metadata writes.
+        return canonicalId ? { accepted: true, canonicalId } : write(entry, client);
+      }
+      return write(await normalizeDependent(client, userId, entry), client);
+    },
+    (result) => result.accepted,
+  );
+}
+
+/** Shared by sync and current server producers, including active chat tools. */
+export async function withBookOwnerTransaction<T>(
+  userId: string,
+  execute: (client: PoolClient) => Promise<T>,
+  shouldCommit: (result: T) => boolean = () => true,
+): Promise<T> {
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    // Every corrected sync write for this owner participates, so an alias and
-    // its dependent moves cannot race a stale-client write between resolution
-    // and persistence. Hash uniqueness remains the database's final guard.
     await client.query(
       sql`SELECT pg_advisory_xact_lock(hashtext(${userId}), hashtext('sync-book-alias'))`,
     );
-    let result: WriteResult;
-    if (entry.entity === "book") {
-      const canonicalId = await deduplicateBook(client, userId, entry);
-      // Alias puts/deletes only acknowledge the mapping. In particular, a stale
-      // losing-book snapshot cannot restore or delete the canonical book.
-      result = canonicalId ? { accepted: true, canonicalId } : await write(entry, client);
-    } else {
-      result = await write(await normalizeDependent(client, userId, entry), client);
-    }
-    await client.query(result.accepted ? "COMMIT" : "ROLLBACK");
+    const result = await execute(client);
+    await client.query(shouldCommit(result) ? "COMMIT" : "ROLLBACK");
     return result;
   } catch (error) {
     await client.query("ROLLBACK").catch(console.error);
