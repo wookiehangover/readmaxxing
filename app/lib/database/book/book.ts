@@ -47,7 +47,7 @@ export async function upsertBook(userId: string, book: UpsertBookData): Promise<
   const pool = getPool();
   const mutationAt = (book.updatedAt ?? new Date()).toISOString();
   const shouldUpdateDeletedAt = book.deletedAt !== undefined;
-  const deletedAtIso = clampNullableTimestamp(book.deletedAt);
+  const deletedAtIso = clampNullableTimestamp(book.deletedAt, undefined, Date.parse(mutationAt));
   const result = await pool.query<BookRow>(sql`
     INSERT INTO readmax.book (id, user_id, title, author, format, file_hash, updated_at, deleted_at, mutation_at, file_blob_url, cover_blob_url)
     VALUES (${book.id}, ${userId}, ${book.title ?? null}, ${book.author ?? null}, ${book.format ?? null}, ${book.fileHash ?? null}, clock_timestamp(), ${deletedAtIso}, ${mutationAt}, ${book.fileBlobUrl ?? null}, ${book.coverBlobUrl ?? null})

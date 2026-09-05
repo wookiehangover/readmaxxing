@@ -47,10 +47,10 @@ export async function upsertBookmark(
 ): Promise<BookmarkRow | null> {
   const pool = getPool();
   const mutationAt = (bookmark.updatedAt ?? bookmark.createdAt).toISOString();
-  // Clamp created_at/deleted_at too: a far-future deleted_at would match
-  // `deleted_at > cursor` on every subsequent pull.
-  const createdAtIso = clampUpdatedAt(bookmark.createdAt);
-  const deletedAtIso = clampNullableTimestamp(bookmark.deletedAt);
+  const sourceTime = Date.parse(mutationAt);
+  // Ancillary metadata must normalize identically even when delivery is retried.
+  const createdAtIso = clampUpdatedAt(bookmark.createdAt, undefined, sourceTime);
+  const deletedAtIso = clampNullableTimestamp(bookmark.deletedAt, undefined, sourceTime);
   const result = await pool.query<BookmarkRow>(sql`
     INSERT INTO readmax.bookmark (id, user_id, book_id, cfi, label, page_number, display_page, created_at, updated_at, deleted_at, mutation_at)
     VALUES (
