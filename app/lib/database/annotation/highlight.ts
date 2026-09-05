@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { sql } from "pg-sql";
 import { clampNullableTimestamp, clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
@@ -62,8 +63,9 @@ const HIGHLIGHT_COLUMNS = sql`
 export async function upsertHighlight(
   userId: string,
   highlight: UpsertHighlightData,
+  client?: PoolClient,
 ): Promise<HighlightRow | null> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const textAnchorJson = highlight.textAnchor != null ? JSON.stringify(highlight.textAnchor) : null;
   // Use the original mutation clock so clamped metadata stays identical on replay.
   const mutationAt = (highlight.updatedAt ?? highlight.createdAt).toISOString();
@@ -178,8 +180,9 @@ export async function softDeleteHighlight(
   userId: string,
   highlightId: string,
   deletedAt?: Date,
+  client?: PoolClient,
 ): Promise<boolean> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const mutationAt = (deletedAt ?? new Date()).toISOString();
   const result = await pool.query(sql`
     UPDATE readmax.highlight

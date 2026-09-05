@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { sql } from "pg-sql";
 import { clampNullableTimestamp, clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
@@ -44,8 +45,9 @@ const BOOKMARK_COLUMNS = sql`
 export async function upsertBookmark(
   userId: string,
   bookmark: UpsertBookmarkData,
+  client?: PoolClient,
 ): Promise<BookmarkRow | null> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const mutationAt = (bookmark.updatedAt ?? bookmark.createdAt).toISOString();
   const sourceTime = Date.parse(mutationAt);
   // Ancillary metadata must normalize identically even when delivery is retried.
@@ -95,8 +97,9 @@ export async function softDeleteBookmark(
   userId: string,
   bookmarkId: string,
   deletedAt?: Date,
+  client?: PoolClient,
 ): Promise<boolean> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const mutationAt = (deletedAt ?? new Date()).toISOString();
   const result = await pool.query(sql`
     UPDATE readmax.bookmark

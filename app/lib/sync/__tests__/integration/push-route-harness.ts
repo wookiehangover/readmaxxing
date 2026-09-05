@@ -151,6 +151,7 @@ beforeAll(async () => {
     "database/migrations/008-bookmarks.sql",
     "database/migrations/009-bookmark-display-page.sql",
     "database/migrations/021-sync-mutation-ordering.sql",
+    "database/migrations/022-book-canonical-alias.sql",
   ]) {
     await db.exec(await readFile(path, "utf8"));
   }

@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { sql } from "pg-sql";
 import { clampNullableTimestamp, clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
@@ -54,8 +55,9 @@ export async function upsertSession(
     updatedAt: Date;
     deletedAt?: Date | null;
   },
+  client?: PoolClient,
 ): Promise<ChatSessionRow | null> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const mutationAt = session.updatedAt.toISOString();
   const sourceTime = Date.parse(mutationAt);
   const createdAtIso = clampUpdatedAt(session.createdAt, undefined, sourceTime);
@@ -175,8 +177,9 @@ export async function softDeleteSession(
   userId: string,
   sessionId: string,
   deletedAt?: Date,
+  client?: PoolClient,
 ): Promise<boolean> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const mutationAt = (deletedAt ?? new Date()).toISOString();
   const result = await pool.query(sql`
     INSERT INTO readmax.chat_session (id, user_id, deleted_at, updated_at, mutation_at)

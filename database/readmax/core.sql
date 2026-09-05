@@ -80,6 +80,7 @@ CREATE TABLE readmax.book (
     cover_blob_url TEXT,
     file_blob_url TEXT,
     file_hash TEXT,
+    canonical_id TEXT, -- Explicit dedup alias only; ordinary deletions stay NULL.
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     mutation_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
