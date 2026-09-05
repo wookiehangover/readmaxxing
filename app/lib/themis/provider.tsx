@@ -8,6 +8,12 @@ import { booksSaga } from "~/lib/themis/books/books-sagas";
 import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { chatSessionsSaga } from "~/lib/themis/chat-sessions/chat-sessions-sagas";
 import { readingPositionsSaga } from "~/lib/themis/reading-positions/reading-positions-sagas";
+// Root runtime owns saga startup/teardown after store.init(), before children render.
+// eslint-disable-next-line themis/react-forbidden-component-import
+import { createReviewsSaga } from "~/lib/themis/reviews/sagas/reviews-saga";
+// Root runtime owns saga startup after Store.init.
+// eslint-disable-next-line themis/react-forbidden-component-import
+import { readingRailSaga } from "~/lib/themis/reading-rail/sagas/reading-rail-saga";
 import { createAppStore, type AppStore } from "~/lib/themis/store";
 import { workspaceRestoreSaga } from "~/lib/themis/workspace-restore/workspace-restore-sagas";
 import { hydrateWorkspaceRestore } from "~/lib/themis/workspace-restore/workspace-restore-slice";
@@ -29,6 +35,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     const cancelBooksSaga = store.runSaga(booksSaga);
     const cancelChatSessionsSaga = store.runSaga(chatSessionsSaga);
     const cancelReadingPositionsSaga = store.runSaga(readingPositionsSaga);
+    const cancelReadingRailSaga = store.runSaga(readingRailSaga);
+    const cancelReviewsSaga = store.runSaga(createReviewsSaga(store));
     const cancelWorkspaceRestoreSaga = store.runSaga(workspaceRestoreSaga);
     store.dispatch(refreshAuthSessionRequested());
     store.dispatch(hydrateBooks());
@@ -37,6 +45,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelWorkspaceRestoreSaga();
+      cancelReviewsSaga();
+      cancelReadingRailSaga();
       cancelReadingPositionsSaga();
       cancelChatSessionsSaga();
       cancelBooksSaga();

@@ -1,3 +1,6 @@
+vi.mock("~/lib/themis/provider", () => ({ useAppStore: () => railStore }));
+import { createAppStore } from "~/lib/themis/store";
+import type { ReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-types";
 import React, { act, createContext, useContext, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -84,10 +87,11 @@ import {
   type ReadingChatMenuActions,
 } from "~/lib/context/reading-chat-menu-context";
 import {
-  ReadingRailTabProvider,
-  useReadingRailTab,
-  type ReadingRailTab,
-} from "~/components/reading-shell/reading-rail-tab-context";
+  ReadingRailProvider,
+  useReadingRail,
+} from "~/components/reading-shell/reading-rail-context";
+
+let railStore: ReturnType<typeof createAppStore>;
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -119,7 +123,7 @@ function RegisterChatActions({ actions }: { actions: ReadingChatMenuActions }) {
 }
 
 function RailTabControls() {
-  const { activeTab, setActiveTab } = useReadingRailTab();
+  const { activeTab, setActiveTab } = useReadingRail();
   return (
     <>
       <output data-testid="active-rail-tab">{activeTab}</output>
@@ -167,7 +171,7 @@ function renderMenu({
   root = createRoot(container);
   act(() =>
     root?.render(
-      <ReadingRailTabProvider>
+      <ReadingRailProvider scope="book-1" privateBookId={isPdf || guest ? null : "book-1"}>
         <ReadingChatMenuProvider>
           <RailTabControls />
           {withChatActions ? <RegisterChatActions actions={chatActions} /> : null}
@@ -196,7 +200,7 @@ function renderMenu({
             onNavigateToToc={onNavigateToToc}
           />
         </ReadingChatMenuProvider>
-      </ReadingRailTabProvider>,
+      </ReadingRailProvider>,
     ),
   );
   return {
@@ -210,6 +214,8 @@ function renderMenu({
 }
 
 beforeEach(() => {
+  railStore = createAppStore();
+  railStore.init();
   auth.isAuthenticated = true;
   navigate.mockReset();
   exportNotebookMarkdown.mockClear();
@@ -221,6 +227,7 @@ afterEach(() => {
   container?.remove();
   root = null;
   container = null;
+  railStore.dispose();
 });
 
 describe("ReaderSettingsMenu", () => {
@@ -321,38 +328,45 @@ describe("ReaderSettingsMenu", () => {
       "separator",
     );
 
-    act(() => findDetailsItem()?.click());
+    await act(async () => {
+      findDetailsItem()?.click();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
     expect(rendered.container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe(
       "Details",
     );
     expect(findExportItem()).toBeUndefined();
 
-    act(() =>
+    await act(async () => {
       rendered.container
         .querySelector<HTMLButtonElement>("[data-testid='set-rail-tab-Notes']")
-        ?.click(),
-    );
+        ?.click();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
 
     await act(async () => findExportItem()?.click());
     expect(exportNotebookMarkdown).toHaveBeenCalledWith("book-1", "Book");
 
-    act(() =>
+    await act(async () => {
       rendered.container
         .querySelector<HTMLButtonElement>("[data-testid='set-rail-tab-Discuss']")
-        ?.click(),
-    );
+        ?.click();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
     expect(findExportItem()).toBeUndefined();
-    act(() =>
+    await act(async () => {
       rendered.container
         .querySelector<HTMLButtonElement>("[data-testid='set-rail-tab-Outline']")
-        ?.click(),
-    );
+        ?.click();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
     expect(findExportItem()).toBeUndefined();
-    act(() =>
+    await act(async () => {
       rendered.container
         .querySelector<HTMLButtonElement>("[data-testid='set-rail-tab-Notes']")
-        ?.click(),
-    );
+        ?.click();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
     expect(findExportItem()).not.toBeUndefined();
     expect(navigate.mock.calls.some(([path]) => path === "/books/book-1/details")).toBe(false);
   });
@@ -393,6 +407,7 @@ describe("ReaderSettingsMenu", () => {
   it("hides font weight for PDF books", () => {
     const rendered = renderMenu({ isPdf: true });
 
+    expect(rendered.container.textContent).not.toContain("Review");
     expect(rendered.container.textContent).not.toContain("Weight");
     expect(
       rendered.container.querySelector('button[aria-label="Increase font weight"]'),
@@ -402,6 +417,7 @@ describe("ReaderSettingsMenu", () => {
   it("includes reader actions without Outline", () => {
     const rendered = renderMenu();
 
+    expect(rendered.container.textContent).toContain("Review");
     expect(rendered.container.textContent).toContain("Speedread");
     expect(rendered.container.textContent).toContain("Copy chapter");
     expect(rendered.container.textContent).toContain("Share");
@@ -416,6 +432,7 @@ describe("ReaderSettingsMenu", () => {
 
     expect(rendered.container.textContent).toContain("Formatting");
     expect(rendered.container.textContent).toContain("Table of Contents");
+    expect(rendered.container.textContent).not.toContain("Review");
     expect(rendered.container.textContent).not.toContain("Actions");
     expect(rendered.container.textContent).not.toContain("Share");
     expect(rendered.container.textContent).not.toContain("Sync to furthest page");

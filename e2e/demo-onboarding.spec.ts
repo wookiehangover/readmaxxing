@@ -95,12 +95,25 @@ function relevantAuthenticatedRequest(request: Request): CapturedRequest | null 
 
 async function prepareExistingAccount(page: Page) {
   await page.goto("/login");
+  const verification = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/api/auth/register-verify" &&
+      response.request().method() === "POST",
+  );
   await page.getByRole("button", { name: "Create account" }).click();
-  await waitForAppHydration(page);
+  const response = await verification;
+  expect(response.ok()).toBe(true);
+  const registration = (await response.json()) as { verified: boolean; userId: string };
+  expect(registration.verified).toBe(true);
+  const session = await page.request.get("/api/auth/session");
+  expect(session.ok()).toBe(true);
+  expect((await session.json()).user?.id).toBe(registration.userId);
 
+  // Setup needs a real passkey/account, independent of the subsequent library render.
+  // Leave the app before logging out so its pending navigation/sync cannot race cleanup.
+  await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
   const logout = await page.request.post("/api/auth/logout");
   expect(logout.ok()).toBe(true);
-  await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
   await page.evaluate(async () => {
     localStorage.clear();
     const databases = await indexedDB.databases();

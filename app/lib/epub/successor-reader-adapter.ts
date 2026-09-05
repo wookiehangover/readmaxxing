@@ -571,19 +571,8 @@ export class SuccessorRenditionAdapter {
     if (spineIndex === null || !this.publication.readingOrder[spineIndex]) {
       throw new RangeError("CFI does not identify a publication spine item");
     }
-    // Mount the spine item (settles at section start).
-    await this.navigator.display({ spineIndex });
-    // Prefer stored section-local progression when available — it round-trips
-    // exactly with paginated page turns and avoids CFI geometry off-by-ones.
-    if (options?.localProgression !== undefined && Number.isFinite(options.localProgression)) {
-      return this.navigator.restoreProgression(options.localProgression);
-    }
-    // Fallback: map the resolved CFI range onto a column with floor-based math.
-    const document = this.navigator.contentDocument;
-    if (!document) throw new Error("Publication section is not mounted");
-    const range = resolveCfi(cfi, document, sectionMetadata(this.publication, spineIndex));
-    if (!range) throw new RangeError("CFI could not be resolved in its publication section");
-    return this.navigator.restoreRange(range);
+    // One admission and one relocation: never expose/persist a transient spine start.
+    return this.navigator.display({ spineIndex, cfi, ...options });
   }
 
   async #displayPage(href: PublicationPath, page: number): Promise<Relocation> {
@@ -615,11 +604,13 @@ export class SuccessorRenditionAdapter {
       throw new RangeError(`Publication page ${page} does not belong to ${href}`);
     }
 
-    const relocation = await this.navigator.display({ href });
-    // Generated position CFIs can drift from the mounted DOM; local progression is stable here.
-    if (position) return this.navigator.restoreProgression(position.locations.progression);
-    if (firstPage === lastPage) return relocation;
-    return this.navigator.restoreProgression((page - firstPage) / (lastPage - firstPage));
+    return this.navigator.display({
+      href,
+      ...(position?.locations.cfi ? { cfi: position.locations.cfi } : {}),
+      localProgression:
+        position?.locations.progression ??
+        (firstPage === lastPage ? 0 : (page - firstPage) / (lastPage - firstPage)),
+    });
   }
 
   #compatibilityLocation(relocation: Relocation): CompatibilityLocation {

@@ -32,6 +32,7 @@ interface TiptapEditorProps {
   compact?: boolean;
   editable?: boolean;
   placeholder?: string;
+  ariaLabel?: string;
   onUpdate?: (content: JSONContent) => void;
   onBlur?: () => void;
   onNavigateToHighlight?: (cfi: string) => void | Promise<void>;
@@ -140,6 +141,7 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     compact = false,
     editable = true,
     placeholder,
+    ariaLabel,
     onUpdate,
     onBlur,
     onNavigateToHighlight,
@@ -174,6 +176,11 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       content: [{ type: "paragraph" }],
     },
     editable,
+    editorProps: {
+      attributes: ariaLabel
+        ? { role: "textbox", "aria-label": ariaLabel, "aria-multiline": "true" }
+        : {},
+    },
     onCreate: ({ editor }) => setIsEmpty(editor.isEmpty),
     onTransaction: ({ editor }) => setIsEmpty(editor.isEmpty),
     onUpdate: ({ editor }) => {

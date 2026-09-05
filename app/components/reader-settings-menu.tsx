@@ -16,6 +16,7 @@ import {
   ClipboardCopyIcon,
   History,
   RefreshCw,
+  MessageSquareText,
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
@@ -45,7 +46,7 @@ import { useReadingChatMenuActions } from "~/lib/context/reading-chat-menu-conte
 import { ChatBookSelectorMenu } from "~/components/chat/chat-book-selector";
 import { ChatRecentSessionsMenu } from "~/components/chat/chat-session-menu";
 import { ReaderFormattingStepper } from "~/components/reader-formatting-stepper";
-import { useReadingRailTab } from "~/components/reading-shell/reading-rail-tab-context";
+import { useReadingRail } from "~/components/reading-shell/reading-rail-context";
 import { Button } from "./ui/button";
 
 interface ReaderFormattingMenuProps {
@@ -387,7 +388,7 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
   const { isAuthenticated, shareOpen, setShareOpen, handleShare } = useReaderActionState(book);
   const registeredChatActions = useReadingChatMenuActions();
   const chatActions = registeredChatActions?.bookId === book?.id ? registeredChatActions : null;
-  const { activeTab, setActiveTab } = useReadingRailTab();
+  const { activeTab, setActiveTab } = useReadingRail();
   const hasActions = Boolean(
     props.onDownload ||
     props.onBookmarkPage ||
@@ -455,6 +456,12 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
+            {book && book.format !== "pdf" && !props.isPdf ? (
+              <DropdownMenuItem onClick={() => setActiveTab("Review")}>
+                <MessageSquareText data-icon="inline-start" />
+                Review
+              </DropdownMenuItem>
+            ) : null}
             {book ? (
               <DropdownMenuItem onClick={() => setActiveTab("Details")}>
                 <Info className="size-4" />

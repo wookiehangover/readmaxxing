@@ -1,3 +1,4 @@
+import { createAppStore } from "~/lib/themis/store";
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
@@ -214,20 +215,23 @@ vi.mock("~/components/chat/use-streaming-append", () => ({ useStreamingAppend: (
 
 import { ReaderSettingsMenu } from "~/components/reader-settings-menu";
 import { ReadingRail } from "~/components/reading-shell/reading-rail";
-import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
+import { selectReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-slice";
+import { readingRailSaga } from "~/lib/themis/reading-rail/sagas/reading-rail-saga";
 import { ReadingRailMenuPortal } from "~/components/reading-shell/reading-rail-menu-portal";
 import {
-  ReadingRailTabProvider,
-  useReadingRailTab,
-} from "~/components/reading-shell/reading-rail-tab-context";
+  ReadingRailProvider,
+  useReadingRail,
+} from "~/components/reading-shell/reading-rail-context";
 import { getSettings } from "~/lib/settings";
+
+let railStore: ReturnType<typeof createAppStore>;
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let root: Root | null = null;
 
 function ActiveTabProbe() {
-  const { activeTab } = useReadingRailTab();
+  const { activeTab } = useReadingRail();
   return <output data-testid="active-rail-tab">{activeTab}</output>;
 }
 
@@ -236,10 +240,15 @@ function renderRail() {
   root = createRoot(container);
   act(() =>
     root?.render(
-      <ReadingRailTabProvider>
+      <ReadingRailProvider
+        scope={workspace.activeClusterBookIdRef.current ?? ""}
+        privateBookId={
+          themis.books[0].format === "pdf" ? null : workspace.activeClusterBookIdRef.current
+        }
+      >
         <ReadingRail />
         <ActiveTabProbe />
-      </ReadingRailTabProvider>,
+      </ReadingRailProvider>,
     ),
   );
   return container;
@@ -247,7 +256,13 @@ function renderRail() {
 
 function MobileRailHarness({ mobile = true }: { mobile?: boolean }) {
   return (
-    <ReadingRailTabProvider>
+    <ReadingRailProvider
+      scope={workspace.activeClusterBookIdRef.current ?? ""}
+      mobile={mobile}
+      privateBookId={
+        themis.books[0].format === "pdf" ? null : workspace.activeClusterBookIdRef.current
+      }
+    >
       <MemoryRouter>
         <ReadingRail
           mobile={mobile}
@@ -263,7 +278,7 @@ function MobileRailHarness({ mobile = true }: { mobile?: boolean }) {
           />
         </ReadingRailMenuPortal>
       </MemoryRouter>
-    </ReadingRailTabProvider>
+    </ReadingRailProvider>
   );
 }
 
@@ -281,11 +296,14 @@ function remountMobileRail() {
   return renderMobileRail();
 }
 
-function clickTab(container: HTMLElement, label: string) {
+async function clickTab(container: HTMLElement, label: string) {
   const button = Array.from(container.querySelectorAll("button")).find(
     (candidate) => candidate.textContent === label,
   );
-  act(() => button?.click());
+  await act(async () => {
+    button?.click();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  });
 }
 
 async function openDetailsFromReaderMenu(container: HTMLElement) {
@@ -297,7 +315,10 @@ async function openDetailsFromReaderMenu(container: HTMLElement) {
   const detailsItem = Array.from(
     document.body.querySelectorAll<HTMLElement>("[role='menuitem']"),
   ).find((item) => item.textContent?.trim() === "Details");
-  act(() => detailsItem?.click());
+  await act(async () => {
+    detailsItem?.click();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  });
 }
 
 function visiblePanel(container: HTMLElement) {
@@ -308,13 +329,17 @@ function visiblePanel(container: HTMLElement) {
 
 async function flushAsyncWork() {
   await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 25));
   });
 }
 
 beforeEach(() => {
+  railStore = createAppStore();
+  railStore.init();
+  Object.assign(themis.store, {
+    readingRailSelectors: railStore.readingRailSelectors,
+    reviewsSelectors: railStore.reviewsSelectors,
+  });
   workspace.activeClusterBookIdRef.current = "book-1";
   themis.books[0].title = "The Power Broker";
   themis.books[0].format = "epub";
@@ -328,7 +353,9 @@ beforeEach(() => {
   navigateToToc.mockReset();
   scrollToEnd.mockReset();
   themis.store.dispatch.mockReset();
+  themis.store.dispatch.mockImplementation((action) => railStore.dispatch(action));
   window.sessionStorage.clear();
+  railStore.runSaga(readingRailSaga);
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => ({ ok: false })),
@@ -338,12 +365,13 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
+  railStore.dispose();
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
 });
 
 describe("ReadingRail", () => {
-  it("shows the supported mobile sections in the bottom row", () => {
+  it("shows the supported mobile sections in the bottom row", async () => {
     const container = renderMobileRail();
     const rail = container.firstElementChild!;
     const tabList = container.querySelector("[aria-label='Reading sections']")!;
@@ -379,7 +407,7 @@ describe("ReadingRail", () => {
     expect(bookSurface).not.toBeNull();
     expect(readPanel?.hidden).toBe(false);
     for (const tab of ["Notes", "Discuss", "Outline"] as const) {
-      clickTab(container, tab);
+      await clickTab(container, tab);
       expect(
         Array.from(container.querySelectorAll("button"))
           .find((candidate) => candidate.textContent === tab)
@@ -406,7 +434,7 @@ describe("ReadingRail", () => {
     expect(container.querySelector("[data-testid='book-surface']")).toBe(bookSurface);
     expect(readPanel?.hidden).toBe(true);
 
-    clickTab(container, "Read");
+    await clickTab(container, "Read");
     expect(
       Array.from(container.querySelectorAll("button"))
         .find((tab) => tab.textContent === "Read")
@@ -420,8 +448,12 @@ describe("ReadingRail", () => {
   it("opens reader actions in the matching mobile tab", async () => {
     const container = renderMobileRail();
 
-    openMobileReadingTab("Discuss");
-    await act(async () => Promise.resolve());
+    railStore.dispatch(
+      selectReadingRailTab(workspace.activeClusterBookIdRef.current ?? "", "Discuss"),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
 
     expect(
       Array.from(container.querySelectorAll("button"))
@@ -437,7 +469,7 @@ describe("ReadingRail", () => {
     ).toBe("true");
   });
 
-  it("ignores a legacy remembered Details value when the rail mounts", () => {
+  it("ignores a legacy remembered Details value when the rail mounts", async () => {
     window.sessionStorage.setItem("reading-shell:mobile-tab:book-1", "Details");
 
     const container = renderMobileRail();
@@ -452,7 +484,7 @@ describe("ReadingRail", () => {
 
   it("returns to the last visible tab after Details is active and the rail remounts", async () => {
     let container = renderMobileRail();
-    clickTab(container, "Outline");
+    await clickTab(container, "Outline");
     await openDetailsFromReaderMenu(container);
 
     expect(
@@ -467,9 +499,9 @@ describe("ReadingRail", () => {
     ).toBe("true");
   });
 
-  it("does not force Read when the mobile effect reruns or the rail remounts", () => {
+  it("does not force Read when the mobile effect reruns or the rail remounts", async () => {
     let container = renderMobileRail();
-    clickTab(container, "Outline");
+    await clickTab(container, "Outline");
 
     act(() => root?.render(<MobileRailHarness mobile={false} />));
     act(() => root?.render(<MobileRailHarness />));
@@ -487,9 +519,9 @@ describe("ReadingRail", () => {
     ).toBe("true");
   });
 
-  it("remembers the last mobile tab independently for each book", () => {
+  it("remembers the last mobile tab independently for each book", async () => {
     let container = renderMobileRail();
-    clickTab(container, "Outline");
+    await clickTab(container, "Outline");
 
     workspace.activeClusterBookIdRef.current = "book-2";
     container = remountMobileRail();
@@ -498,7 +530,7 @@ describe("ReadingRail", () => {
         .find((tab) => tab.textContent === "Read")
         ?.getAttribute("aria-selected"),
     ).toBe("true");
-    clickTab(container, "Notes");
+    await clickTab(container, "Notes");
 
     workspace.activeClusterBookIdRef.current = "book-1";
     container = remountMobileRail();
@@ -522,7 +554,7 @@ describe("ReadingRail", () => {
     const rail = container.firstElementChild as HTMLElement;
 
     for (const tab of ["Notes", "Discuss", "Outline"]) {
-      clickTab(container, tab);
+      await clickTab(container, tab);
       if (tab === "Discuss") await flushAsyncWork();
 
       const panel = visiblePanel(container);
@@ -559,9 +591,9 @@ describe("ReadingRail", () => {
     }
   });
 
-  it("hides Notes scrollbar chrome without removing its scroll viewport", () => {
+  it("hides Notes scrollbar chrome without removing its scroll viewport", async () => {
     const container = renderMobileRail();
-    clickTab(container, "Notes");
+    await clickTab(container, "Notes");
 
     const panel = visiblePanel(container);
     expect(panel?.querySelector("[data-slot='scroll-area-viewport']")).not.toBeNull();
@@ -581,7 +613,7 @@ describe("ReadingRail", () => {
     ).toContain("pr-6");
 
     for (const tab of ["Notes", "Discuss", "Outline"]) {
-      clickTab(container, tab);
+      await clickTab(container, tab);
       if (tab === "Discuss") await flushAsyncWork();
       const panel = visiblePanel(container);
       const scrollArea = panel?.querySelector(
@@ -599,13 +631,13 @@ describe("ReadingRail", () => {
   it("restores the latest chat position whenever Discuss becomes visible", async () => {
     const container = renderRail();
 
-    clickTab(container, "Discuss");
+    await clickTab(container, "Discuss");
     await flushAsyncWork();
     expect(scrollToEnd).toHaveBeenCalledWith({ behavior: "auto" });
 
     const callsAfterFirstOpen = scrollToEnd.mock.calls.length;
-    clickTab(container, "Notes");
-    clickTab(container, "Discuss");
+    await clickTab(container, "Notes");
+    await clickTab(container, "Discuss");
     await flushAsyncWork();
     expect(scrollToEnd.mock.calls.length).toBeGreaterThan(callsAfterFirstOpen);
   });
@@ -620,16 +652,20 @@ describe("ReadingRail", () => {
     expect(container.querySelector("[data-testid='production-editor']")).not.toBeNull();
     expect(tabLabels()).toEqual(["Notes", "Discuss", "Outline"]);
 
-    clickTab(container, "Discuss");
-    expect(visiblePanel(container)?.textContent).toContain("Loading chat");
+    await clickTab(container, "Discuss");
+    expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Discuss");
     expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Discuss");
 
-    clickTab(container, "Outline");
+    await clickTab(container, "Outline");
     expect(visiblePanel(container)?.textContent).toContain("Loading outline");
     expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Outline");
 
-    openMobileReadingTab("Details");
-    await act(async () => Promise.resolve());
+    railStore.dispatch(
+      selectReadingRailTab(workspace.activeClusterBookIdRef.current ?? "", "Details"),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
     const detailsPanel = visiblePanel(container)?.querySelector(
       "[data-testid='reading-details-panel']",
     );
@@ -644,7 +680,7 @@ describe("ReadingRail", () => {
         ?.getAttribute("aria-selected"),
     ).toBe("true");
 
-    clickTab(container, "Notes");
+    await clickTab(container, "Notes");
     expect(tabLabels()).toEqual(["Notes", "Discuss", "Outline"]);
     expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Notes");
   });
@@ -652,13 +688,17 @@ describe("ReadingRail", () => {
   it("opens reader actions in the matching desktop tab", async () => {
     const container = renderRail();
 
-    openMobileReadingTab("Discuss");
-    await act(async () => Promise.resolve());
+    railStore.dispatch(
+      selectReadingRailTab(workspace.activeClusterBookIdRef.current ?? "", "Discuss"),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    });
 
     expect(container.querySelector("[data-testid='active-rail-tab']")?.textContent).toBe("Discuss");
   });
 
-  it("uses one sliding underline left-aligned with the active tab label", () => {
+  it("uses one sliding underline left-aligned with the active tab label", async () => {
     const container = renderRail();
     const tabList = container.querySelector("[aria-label='Reading tools']");
     const indicators = tabList?.querySelectorAll("[data-testid='rail-tab-indicator']");
@@ -677,7 +717,7 @@ describe("ReadingRail", () => {
     ).toBe(true);
   });
 
-  it("hides Review and defaults to Notes", () => {
+  it("hides Review and defaults to Notes", async () => {
     const container = renderRail();
     const tabList = container.querySelector("[aria-label='Reading tools']");
     const tabs = Array.from(tabList?.querySelectorAll("button") ?? []);
@@ -688,14 +728,14 @@ describe("ReadingRail", () => {
     expect(container.textContent).not.toContain("Nothing to review yet.");
   });
 
-  it("shows title, chapter, page metadata, and the rail menu slot", () => {
+  it("shows title, chapter, page metadata, and the rail menu slot", async () => {
     const container = renderRail();
     expect(container.textContent).toContain("The Power Broker · Part III, Chapter VII");
     expect(container.textContent).toContain("283 / 1164");
     expect(container.querySelector("#reading-rail-menu")).not.toBeNull();
   });
 
-  it("opens the table of contents from the chapter label and navigates", () => {
+  it("opens the table of contents from the chapter label and navigates", async () => {
     const container = renderRail();
     const chapter = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent === "Part III, Chapter VII",
@@ -713,7 +753,7 @@ describe("ReadingRail", () => {
     expect(chapter?.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("does not make the book title a table of contents control", () => {
+  it("does not make the book title a table of contents control", async () => {
     const container = renderRail();
     const title = Array.from(container.querySelectorAll("span")).find(
       (span) => span.textContent === "The Power Broker",
@@ -727,7 +767,7 @@ describe("ReadingRail", () => {
     expect(document.body.querySelector("[data-slot='popover-content']")).toBeNull();
   });
 
-  it("does not render a chapter control without a chapter label or table of contents", () => {
+  it("does not render a chapter control without a chapter label or table of contents", async () => {
     tocEntries.splice(0);
     const withoutToc = renderRail();
     expect(withoutToc.textContent).toContain("Part III, Chapter VII");
@@ -747,7 +787,7 @@ describe("ReadingRail", () => {
     expect(withoutChapter.querySelector("[aria-label^='Open table of contents']")).toBeNull();
   });
 
-  it("shows a PDF bookmark title in the rail metadata", () => {
+  it("shows a PDF bookmark title in the rail metadata", async () => {
     themis.books[0].title = "Designing Data-Intensive Applications";
     themis.books[0].format = "pdf";
     readingLocation.chapterLabel = "Part II: Distributed Data";

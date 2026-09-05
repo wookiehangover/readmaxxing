@@ -1,3 +1,6 @@
+import { ReviewPage } from "~/components/review/review-page";
+import { useSignals } from "@preact/signals-react/runtime";
+import { cn } from "~/lib/utils";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { createPortal } from "react-dom";
 import { useReaderSearch } from "~/hooks/use-reader-search";
@@ -66,9 +69,12 @@ export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookRe
 
   // Register the placeholder immediately — no waiting for book data.
   useEffect(() => {
+    realNavRef.current = null;
     navigationMap.current.set(bookId, placeholderNav);
     return () => {
-      navigationMap.current.delete(bookId);
+      realNavRef.current = null;
+      if (navigationMap.current.get(bookId) === placeholderNav)
+        navigationMap.current.delete(bookId);
     };
   }, [bookId, placeholderNav, navigationMap]);
 
@@ -107,6 +113,7 @@ export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookRe
 
   return (
     <WorkspaceBookReaderInner
+      key={book.id}
       book={book}
       panelTypography={panelTypography}
       onRenditionReady={onRenditionReady}
@@ -128,6 +135,7 @@ function WorkspaceBookReaderInner({
   /** Called once the rendition is ready so the outer component can connect the real navigate callback */
   onRenditionReady?: (navigateToCfi: (cfi: string) => void) => void;
 }) {
+  useSignals();
   const { tocMap, tocChangeListener, chatContextMap, tempHighlightMap, highlightDeleteMap } =
     useWorkspace();
   const isMobile = useIsMobile();
@@ -225,8 +233,10 @@ function WorkspaceBookReaderInner({
     latestCfiRef,
     navigationInProgressRef,
     markNavigationInProgress,
+    reviewNavigation,
   } = useEpubLifecycle({
     bookId: book.id,
+    reviewContext: true,
     containerRef,
     readerLayout: localReaderLayout,
     fontFamily: localFontFamily,
@@ -277,6 +287,14 @@ function WorkspaceBookReaderInner({
   const store = useAppStore();
   const bookmarks = store.bookmarksSelectors.selectBookmarksByBook.useValue(book.id);
   const bookmarksLoaded = store.bookmarksSelectors.selectBookmarksLoaded.useValue(book.id);
+  const reviewsEnabled = store.reviewsSelectors.selectReviewPreferences(book.id);
+  const reviewVisible = store.reviewsSelectors.selectReviewVisible(book.id);
+  const reviewLocked = store.reviewsSelectors.selectReviewLocked(book.id);
+  useEffect(() => {
+    // A pre-existing popout may contain a full-spine snapshot. Opening it again
+    // reads the navigator's newly bounded chapter after the preference change.
+    setSpeedreadOpen(false);
+  }, [reviewsEnabled.value.enabled]);
 
   useEffect(() => {
     store.dispatch(hydrateBookmarksRequested(book.id));
@@ -354,23 +372,32 @@ function WorkspaceBookReaderInner({
   return (
     <div ref={panelRef} className="flex h-full outline-none" tabIndex={0}>
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <EpubReaderSurface
-          containerRef={containerRef}
-          searchOpen={searchOpen}
-          searchQuery={searchQuery}
-          searchResultsLength={searchResults.length}
-          searchIndex={searchIndex}
-          searchNext={searchNext}
-          searchPrev={searchPrev}
-          onSearchClose={handleSearchClose}
-          onSearchQueryChange={handleSearchQueryChange}
-          loadError={loadError}
-          readerLayout={localReaderLayout}
-          isScrollMode={isScrollMode}
-          isMobile={Boolean(isMobile)}
-          onPrevious={handlePrev}
-          onNext={handleNext}
-        />
+        <div
+          className={cn("flex min-h-0 flex-1 flex-col", { invisible: reviewVisible.value })}
+          inert={reviewVisible.value}
+          aria-hidden={reviewVisible.value || undefined}
+        >
+          <EpubReaderSurface
+            containerRef={containerRef}
+            searchOpen={searchOpen}
+            searchQuery={searchQuery}
+            searchResultsLength={searchResults.length}
+            searchIndex={searchIndex}
+            searchNext={searchNext}
+            searchPrev={searchPrev}
+            onSearchClose={handleSearchClose}
+            onSearchQueryChange={handleSearchQueryChange}
+            loadError={loadError}
+            readerLayout={localReaderLayout}
+            isScrollMode={isScrollMode}
+            isMobile={Boolean(isMobile)}
+            onPrevious={handlePrev}
+            onNext={handleNext}
+          />
+        </div>
+        {reviewVisible.value && (
+          <ReviewPage bookId={book.id} fontFamily={localFontFamily} navigation={reviewNavigation} />
+        )}
         <EpubReaderToolbar
           toc={toc}
           navigateToTocHref={navigateToTocHref}
@@ -398,7 +425,7 @@ function WorkspaceBookReaderInner({
             />,
             document.body,
           )}
-        {speedreadOpen && (
+        {speedreadOpen && !reviewLocked.value && (
           <SpeedreadPopout
             bookId={book.id}
             open

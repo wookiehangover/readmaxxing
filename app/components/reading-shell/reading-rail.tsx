@@ -1,30 +1,20 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { TocList } from "~/components/book-list";
 import { ChatPanel } from "~/components/chat/chat-panel";
-import {
-  getRememberedMobileReadingTab,
-  MOBILE_READING_TAB_EVENT,
-  MOBILE_READING_TABS,
-  rememberMobileReadingTab,
-  type MobileReadingTab,
-} from "~/components/reading-shell/mobile-reading-tabs";
 import { ReadingDetailsPanel } from "~/components/reading-shell/reading-details-panel";
 import { READING_RAIL_MENU_ID } from "~/components/reading-shell/reading-rail-menu-portal";
-import {
-  useReadingRailTab,
-  type ReadingRailTab,
-} from "~/components/reading-shell/reading-rail-tab-context";
+import { useReadingRail } from "~/components/reading-shell/reading-rail-context";
+import type { ReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-types";
+import { ReviewPanel } from "~/components/review/review-panel";
+import { useSignals } from "@preact/signals-react/runtime";
 import { Button } from "~/components/ui/button";
-import { Empty, EmptyHeader, EmptyTitle } from "~/components/ui/empty";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "~/components/ui/popover";
 import { WorkspaceOutlinePanel } from "~/components/workspace/outline-panel";
 import { WorkspaceNotebookPanel } from "~/components/workspace/panel-components";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
-
-const desktopTabs = ["Notes", "Discuss", "Outline"] as const;
 
 export function ReadingRail({
   mobile = false,
@@ -33,9 +23,10 @@ export function ReadingRail({
   mobile?: boolean;
   bookSurface?: ReactNode;
 }) {
+  useSignals();
   const workspace = useWorkspace();
   const store = useAppStore();
-  const { activeTab, setActiveTab } = useReadingRailTab();
+  const { activeTab, setActiveTab } = useReadingRail();
   const activeBookId = useSyncExternalStore(
     workspace.subscribeClusterChanges,
     () => workspace.activeClusterBookIdRef.current,
@@ -52,43 +43,42 @@ export function ReadingRail({
   const navigateToToc = activeBookId ? workspace.findTocNavigationForBook(activeBookId) : undefined;
   const chapterLabel = location?.chapterLabel;
   const hasTocShortcut = Boolean(chapterLabel && toc?.length && navigateToToc);
-  const visibleDesktopTabs =
-    activeTab === "Details" ? ([...desktopTabs, "Details"] as const) : desktopTabs;
-
-  useEffect(() => {
-    const rememberedTab = getRememberedMobileReadingTab(activeBookId);
-    if (mobile) setActiveTab(rememberedTab ?? "Read");
-    else if (rememberedTab && rememberedTab !== "Read") setActiveTab(rememberedTab);
-    const handleOpenTab = (event: Event) => {
-      const tab = (event as CustomEvent<MobileReadingTab>).detail;
-      if (mobile) rememberMobileReadingTab(activeBookId, tab);
-      setActiveTab(tab);
-    };
-    window.addEventListener(MOBILE_READING_TAB_EVENT, handleOpenTab);
-    return () => window.removeEventListener(MOBILE_READING_TAB_EVENT, handleOpenTab);
-  }, [activeBookId, mobile, setActiveTab]);
+  const reviewAvailable = Boolean(book && book.format !== "pdf");
+  const reviewLocked =
+    store.reviewsSelectors.selectReviewLocked(activeBookId ?? "").value && reviewAvailable;
+  const desktopTabs: ReadingRailTab[] = reviewLocked
+    ? ["Notes", "Review"]
+    : ["Notes", "Discuss", "Outline"];
+  if (activeTab === "Details" || (activeTab === "Review" && !reviewLocked && reviewAvailable))
+    desktopTabs.push(activeTab);
+  const visibleMobileTabs: ReadingRailTab[] = [
+    "Read",
+    ...desktopTabs.filter((tab) => tab !== "Details"),
+  ];
 
   const panels = book ? (
     <>
       <Tabs.Panel value="Notes" className="min-h-0 flex-1 overflow-hidden outline-none">
         <WorkspaceNotebookPanel bookId={book.id} bookTitle={book.title} chromeless />
       </Tabs.Panel>
-      <Tabs.Panel value="Discuss" className="min-h-0 flex-1 overflow-hidden outline-none">
-        <ChatPanel bookId={book.id} bookTitle={book.title} isVisible={activeTab === "Discuss"} />
-      </Tabs.Panel>
-      <Tabs.Panel value="Outline" className="min-h-0 flex-1 overflow-hidden outline-none">
-        <WorkspaceOutlinePanel bookId={book.id} bookTitle={book.title} chromeless />
-      </Tabs.Panel>
+      {!reviewLocked && (
+        <Tabs.Panel value="Discuss" className="min-h-0 flex-1 overflow-hidden outline-none">
+          <ChatPanel bookId={book.id} bookTitle={book.title} isVisible={activeTab === "Discuss"} />
+        </Tabs.Panel>
+      )}
+      {!reviewLocked && (
+        <Tabs.Panel value="Outline" className="min-h-0 flex-1 overflow-hidden outline-none">
+          <WorkspaceOutlinePanel bookId={book.id} bookTitle={book.title} chromeless />
+        </Tabs.Panel>
+      )}
       <Tabs.Panel value="Details" className="min-h-0 flex-1 overflow-hidden outline-none">
         <ReadingDetailsPanel book={book} mobile={mobile} />
       </Tabs.Panel>
-      <Tabs.Panel value="Review" className="min-h-0 flex-1 overflow-hidden outline-none">
-        <Empty className="h-full pr-6">
-          <EmptyHeader>
-            <EmptyTitle>Nothing to review yet.</EmptyTitle>
-          </EmptyHeader>
-        </Empty>
-      </Tabs.Panel>
+      {reviewAvailable && (
+        <Tabs.Panel value="Review" className="min-h-0 flex-1 overflow-hidden outline-none">
+          <ReviewPanel bookId={book.id} />
+        </Tabs.Panel>
+      )}
     </>
   ) : null;
 
@@ -97,11 +87,7 @@ export function ReadingRail({
       <Tabs.Root
         className="flex h-full min-h-0 flex-col bg-background"
         value={activeTab}
-        onValueChange={(value) => {
-          const tab = value as MobileReadingTab;
-          rememberMobileReadingTab(activeBookId, tab);
-          setActiveTab(tab);
-        }}
+        onValueChange={(value) => setActiveTab(value as ReadingRailTab)}
         data-testid="mobile-reading-tabs"
       >
         <Tabs.Panel
@@ -118,7 +104,7 @@ export function ReadingRail({
             aria-label="Reading sections"
             className="relative flex min-w-0 flex-1 items-center gap-5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            {MOBILE_READING_TABS.map((tab) => (
+            {visibleMobileTabs.map((tab) => (
               <Tabs.Tab
                 key={tab}
                 value={tab}
@@ -151,7 +137,7 @@ export function ReadingRail({
           aria-label="Reading tools"
           className="relative flex min-w-0 flex-1 items-center gap-5"
         >
-          {visibleDesktopTabs.map((tab) => (
+          {desktopTabs.map((tab) => (
             <Tabs.Tab
               key={tab}
               value={tab}

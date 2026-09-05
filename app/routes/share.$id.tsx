@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { SharedBookReader } from "~/components/share/shared-book-reader";
 import { SharedReadingRail } from "~/components/share/shared-reading-rail";
-import { ReadingRailTabProvider } from "~/components/reading-shell/reading-rail-tab-context";
+import { ReadingRailProvider } from "~/components/reading-shell/reading-rail-context";
 import { ReadingSplit } from "~/components/reading-shell/reading-split";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
@@ -304,7 +304,7 @@ export default function SharePage({ loaderData }: ComponentProps) {
         </div>
       </header>
       <div className="min-h-0 flex-1">
-        <ReadingRailTabProvider>
+        <ReadingRailProvider scope={`share:${loaderData.id}`} mobile={isMobile === true}>
           {isMobile === true ? (
             <SharedReadingRail
               mobile
@@ -325,7 +325,7 @@ export default function SharePage({ loaderData }: ComponentProps) {
               }
             />
           )}
-        </ReadingRailTabProvider>
+        </ReadingRailProvider>
       </div>
     </main>
   );

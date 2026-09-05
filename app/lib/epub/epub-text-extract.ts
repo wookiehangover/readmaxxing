@@ -1,6 +1,11 @@
 import { openPublication, openZipResourceProvider } from "@readmaxxing/epub-successor";
 import type { Link, TocEntry } from "@readmaxxing/epub-successor";
 import { extractCompatibleToc } from "~/lib/epub/successor-reader-adapter";
+import {
+  buildReviewChapterBoundaries,
+  collectReviewAnchorOffsets,
+} from "./review-chapter-boundaries";
+import type { ReviewChapterBoundary } from "~/lib/review/review-types";
 
 export interface BookChapterSegment {
   spineIndex: number;
@@ -17,12 +22,15 @@ export interface BookChapter {
   spineEnd: number;
   /** Absent on chapters extracted before per-spine bookkeeping was added. */
   segments?: BookChapterSegment[];
+  /** Missing: old extraction. Empty: incomplete source or unresolved TOC anchors. */
+  reviewBoundaries?: ReviewChapterBoundary[];
 }
 
 interface SpineTextItem {
   index: number;
   href: string;
   text: string;
+  anchors: Record<string, number>;
 }
 
 interface TocChapterStart {
@@ -30,7 +38,7 @@ interface TocChapterStart {
   spineStart: number;
 }
 
-export function joinSpineTextSegments(spineTexts: readonly SpineTextItem[]): {
+export function joinSpineTextSegments(spineTexts: readonly Omit<SpineTextItem, "anchors">[]): {
   text: string;
   segments: BookChapterSegment[];
 } {
@@ -91,9 +99,9 @@ function flattenTocToUsefulEntries(entries: readonly TocEntry[]): readonly TocEn
 
     // EPUB TOCs often use top-level entries for "Part" containers and nested
     // entries for the actual readable chapters. The chat model needs the same
-    // logical chapter units a reader sees, so prefer leaf entries; when leaves
-    // point into the same spine file, later range building dedupes them because
-    // spine-level extraction cannot safely split by fragment anchors.
+    // logical chapter units a reader sees, so prefer leaf entries. Preserve the
+    // legacy chat grouping by spine start; reviewBoundaries separately subdivide
+    // that text at fragment anchors without renumbering existing chat locations.
     if (children.length > 0) {
       return flattenTocToUsefulEntries(children);
     }
@@ -184,7 +192,12 @@ export async function extractBookChapters(data: ArrayBuffer): Promise<BookChapte
         const document = new DOMParser().parseFromString(source, "application/xhtml+xml");
         const text = document.body?.textContent?.trim() ?? "";
 
-        spineTexts.push({ index: i, href: item.href, text });
+        spineTexts.push({
+          index: i,
+          href: item.href,
+          text,
+          anchors: collectReviewAnchorOffsets(document),
+        });
       } catch (err) {
         console.warn(`Failed to load spine item "${item.href}":`, err);
         continue;
@@ -192,8 +205,18 @@ export async function extractBookChapters(data: ArrayBuffer): Promise<BookChapte
     }
 
     const tocStarts = buildTocChapterStarts(spineItems, toc);
+    const withReviewBoundaries = (chapters: BookChapter[]) =>
+      chapters.map((chapter) => ({
+        ...chapter,
+        reviewBoundaries: buildReviewChapterBoundaries(
+          chapter,
+          flattenTocToUsefulEntries(toc),
+          spineItems,
+          spineTexts,
+        ),
+      }));
     if (tocStarts.length === 0) {
-      return buildFallbackChapters(spineTexts);
+      return withReviewBoundaries(buildFallbackChapters(spineTexts));
     }
 
     // Keep the tocStarts position as the chapter index even when empty-text
@@ -221,7 +244,7 @@ export async function extractBookChapters(data: ArrayBuffer): Promise<BookChapte
       })
       .filter((chapter): chapter is BookChapter => chapter !== null);
 
-    return chapters.length > 0 ? chapters : buildFallbackChapters(spineTexts);
+    return withReviewBoundaries(chapters.length > 0 ? chapters : buildFallbackChapters(spineTexts));
   } finally {
     provider.close();
   }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
-import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
+import { selectReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-slice";
 import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell";
 import { useAppStore } from "~/lib/themis/provider";
 import { appendHighlightToNotebookRequested } from "~/lib/themis/annotations/annotations-slice";
@@ -141,7 +141,7 @@ export function usePdfWorkspacePanels({
         text: highlight.text,
         pageLabel: `p${currentPage}`,
       });
-      openMobileReadingTab("Discuss");
+      store.dispatch(selectReadingRailTab(book.id, "Discuss"));
       ws.openChatRef.current?.(book);
       dismissPopovers();
       window.getSelection()?.removeAllRanges();
@@ -168,7 +168,7 @@ export function usePdfWorkspacePanels({
       .map((line) => `> ${line}`)
       .join("\n")}`;
     ws.pendingChatPromptMap.current.set(book.id, message);
-    openMobileReadingTab("Discuss");
+    store.dispatch(selectReadingRailTab(book.id, "Discuss"));
     ws.openChatRef.current?.(book);
     queueMicrotask(() => {
       window.dispatchEvent(
@@ -177,22 +177,22 @@ export function usePdfWorkspacePanels({
     });
     dismissPopovers();
     window.getSelection()?.removeAllRanges();
-  }, [book, dismissPopovers, selectionText, ws.openChatRef, ws.pendingChatPromptMap]);
+  }, [book, dismissPopovers, selectionText, store, ws.openChatRef, ws.pendingChatPromptMap]);
 
   // Delegate to the workspace-level openers so focused-mode cluster rules
   // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
-    openMobileReadingTab("Notes");
+    store.dispatch(selectReadingRailTab(book.id, "Notes"));
     ws.openNotebookRef.current?.(book);
-  }, [ws, book]);
+  }, [ws, book, store]);
 
   // Keep ref in sync so usePdfHighlights click handler always calls latest version
   handleOpenNotebookRef.current = handleOpenNotebook;
 
   const handleOpenChat = useCallback(() => {
-    openMobileReadingTab("Discuss");
+    store.dispatch(selectReadingRailTab(book.id, "Discuss"));
     ws.openChatRef.current?.(book);
-  }, [ws, book]);
+  }, [ws, book, store]);
 
   // Populate chatContextMap with current page text for AI chat
   // Prefer the already-loaded pdfDocRef to avoid re-creating the document per page

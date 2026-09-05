@@ -1,3 +1,5 @@
+import { createAppStore, type AppStore } from "~/lib/themis/store";
+let store: AppStore;
 import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router";
@@ -14,7 +16,7 @@ vi.mock("~/hooks/use-mobile", () => ({
 }));
 
 vi.mock("~/lib/themis/provider", () => ({
-  useAppStore: () => ({ dispatch: mocks.dispatch }),
+  useAppStore: () => store,
 }));
 
 vi.mock("~/components/share/shared-book-reader", () => ({
@@ -78,7 +80,10 @@ function renderPage(
 }
 
 beforeEach(() => {
-  mocks.dispatch.mockReset();
+  store = createAppStore();
+  store.init();
+  mocks.dispatch.mockReset().mockImplementation(store.dispatch);
+  Object.defineProperty(store, "dispatch", { configurable: true, value: mocks.dispatch });
   mocks.sharedReader.mockReset();
   mocks.mobileViewport.current = false;
   container = document.body.appendChild(document.createElement("div"));
@@ -88,6 +93,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  store.dispose();
 });
 
 describe("SharePage", () => {

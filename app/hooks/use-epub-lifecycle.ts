@@ -53,6 +53,13 @@ import { registerActiveReader, unregisterActiveReader } from "~/lib/sync/active-
 import { loadBookDataRequested } from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
 import {
+  closeReviewBook,
+  openReviewBook,
+  reviewLocalSourcesObserved,
+} from "~/lib/themis/reviews/reviews-slice";
+import { loadReviewNavigationSource } from "~/lib/epub/review-navigation-source";
+import { ReviewNavigation, type ReviewNavigationControls } from "~/lib/epub/review-navigation";
+import {
   flushReadingPositionRequested,
   hydrateLocationCacheRequested,
   hydrateReadingPositionsRequested,
@@ -113,6 +120,8 @@ export interface ChatContextEntry {
 }
 
 export interface UseEpubLifecycleConfig {
+  /** Only the active, private EPUB owns a review context. Public/PDF readers omit this. */
+  reviewContext?: boolean;
   bookId: string;
   containerRef: React.RefObject<HTMLDivElement | null>;
   loadData?: () => Promise<ArrayBuffer>;
@@ -145,6 +154,7 @@ export interface UseEpubLifecycleConfig {
 }
 
 export interface UseEpubLifecycleReturn {
+  reviewNavigation: React.RefObject<ReviewNavigationControls | null>;
   bookRef: React.MutableRefObject<any | null>;
   renditionRef: React.MutableRefObject<any | null>;
   loadError: boolean;
@@ -221,6 +231,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   const bookRef = config.bookRef ?? internalBookRef;
   const renditionRef = config.renditionRef ?? internalRenditionRef;
   const navigatorRef = useRef<Navigator | null>(null);
+  const reviewNavigation = useRef<ReviewNavigation | null>(null);
+  const reviewReaderId = useRef(crypto.randomUUID());
   const configRef = useRef(config);
   configRef.current = config;
   const latestCfiRef = useRef<string | null>(null);
@@ -239,6 +251,24 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   const [loadError, setLoadError] = useState(false);
   const ws = useOptionalWorkspace();
   const store = useAppStore();
+  // Plain values are needed for the third-party navigator's lifecycle/dependencies.
+  const reviewRequirement = store.reviewsSelectors.selectReviewRequirement.useValue(bookId);
+  const reviewPreferences = store.reviewsSelectors.selectReviewPreferences.useValue(bookId);
+  const reviewReady =
+    !config.reviewContext || (reviewRequirement !== "loading" && reviewRequirement !== "storage");
+  const reviewEnabled = !!config.reviewContext && reviewPreferences.enabled;
+
+  useEffect(() => {
+    if (!enabled || !config.reviewContext) return;
+    const readerId = reviewReaderId.current;
+    // Parent cleanup can dispose the Store before this child effect cleans up.
+    // Retain this scope's Redux dispatch instead of reading the disposed getter.
+    const dispatch = store.dispatch;
+    dispatch(openReviewBook(bookId, readerId));
+    return () => {
+      dispatch(closeReviewBook(readerId));
+    };
+  }, [bookId, enabled, config.reviewContext, store]);
 
   const clearNavigationInProgress = useCallback(() => {
     navigationInProgressRef.current = false;
@@ -306,10 +336,15 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       const rendition = renditionRef.current as SuccessorRenditionAdapter | null;
       if (!rendition) return;
       markNavigationInProgress();
-      void displayCfiWithFallback(rendition, cfi).catch((error) => {
-        clearNavigationInProgress();
-        console.warn("CFI navigation failed:", error);
-      });
+      void displayCfiWithFallback(rendition, cfi)
+        .then(() => {
+          markNavigationInProgress();
+          rendition.navigator.reportRelocation();
+        })
+        .catch((error) => {
+          clearNavigationInProgress();
+          console.warn("CFI navigation failed:", error);
+        });
     },
     [clearNavigationInProgress, displayCfiWithFallback, markNavigationInProgress, renditionRef],
   );
@@ -353,7 +388,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   });
 
   useEffect(() => {
-    if (!enabled || !containerRef.current) return;
+    if (!enabled || !reviewReady || !containerRef.current) return;
     const container = containerRef.current;
     const controller = new AbortController();
     let cancelled = false;
@@ -383,8 +418,13 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     }
 
     const saveRelocation = (cfi: string, relocation: Relocation) => {
+      // A chapter-clipped percentage is not a full-spine percentage. Its exact
+      // return-page geometry belongs only in the review's opaque locator.
+      const localProgression = rendition?.navigator.currentContentRange
+        ? undefined
+        : relocation.localProgression;
       latestLayoutRef.current = {
-        localProgression: relocation.localProgression,
+        localProgression,
         spineIndex: relocation.spineIndex,
       };
       latestCfiRef.current = cfi;
@@ -395,7 +435,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           bookId,
           cfi,
           ...(panelId !== undefined ? { panelId } : {}),
-          localProgression: relocation.localProgression,
+          localProgression,
           spineIndex: relocation.spineIndex,
         }),
       );
@@ -556,10 +596,28 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       const compatibilityBook = createSuccessorBookAdapter(publication, provider);
       bookAdapter = compatibilityBook as unknown as ReaderBookLike;
       bookRef.current = compatibilityBook;
+      let review: ReviewNavigation | null = null;
+      if (reviewEnabled) {
+        const source = await loadReviewNavigationSource(data, publication, provider);
+        if (cancelled) return;
+        const readerId = reviewReaderId.current;
+        store.dispatch(
+          reviewLocalSourcesObserved(
+            readerId,
+            Object.fromEntries(source.units.map((unit) => [unit.boundary.key, unit.fingerprint])),
+          ),
+        );
+        review = new ReviewNavigation(store, bookId, readerId, source, () => {
+          const rect = container.getBoundingClientRect();
+          return JSON.stringify([readerPreferences(configRef.current), rect.width, rect.height]);
+        });
+        reviewNavigation.current = review;
+      }
       const navigator = createNavigator(publication, {
         container,
         preferences: readerPreferences(configRef.current),
         security: { resourceProvider: provider },
+        navigationPolicy: review ?? undefined,
       });
       navigatorRef.current = navigator;
       setToc(tocData);
@@ -587,6 +645,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       }
 
       rendition = new SuccessorRenditionAdapter(publication, navigator, positions, publisherPages);
+      if (review) review.rendition = rendition;
       renditionRef.current = rendition;
       navigator.addEventListener("relocation", (event) =>
         handleRelocation((event as CustomEvent<Relocation>).detail),
@@ -615,6 +674,12 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         if (observedDocuments.has(document)) return;
         observedDocuments.add(document);
         document.addEventListener("keydown", (event) => {
+          const target = event.target as Element | null;
+          if (
+            event.defaultPrevented ||
+            target?.closest?.("input, textarea, select, [contenteditable], [data-review-editor]")
+          )
+            return;
           if ((event.metaKey || event.ctrlKey) && event.key === "f") {
             event.preventDefault();
             configRef.current.onSearchOpen?.();
@@ -664,7 +729,31 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
       }
       suppressPositionSaveRef.current = true;
       try {
-        if (startPosition) {
+        if (review) {
+          const initialTarget = review.initialTarget(
+            startPosition
+              ? {
+                  spineIndex: spineIndexFromCfi(startPosition.cfi) ?? 0,
+                  cfi: startPosition.cfi,
+                  localProgression: startPosition.localProgression,
+                }
+              : { spineIndex: 0 },
+          );
+          try {
+            await navigator.display(initialTarget);
+          } catch (error) {
+            if (cancelled || (error instanceof DOMException && error.name === "AbortError"))
+              throw error;
+            await navigator.display(review.fallbackTarget(initialTarget));
+          }
+          latestCfiRef.current = rendition.location?.start.cfi ?? null;
+          latestLayoutRef.current = {
+            spineIndex: navigator.currentRelocation?.spineIndex,
+            localProgression: navigator.currentContentRange
+              ? undefined
+              : navigator.currentRelocation?.localProgression,
+          };
+        } else if (startPosition) {
           await displayCfiWithFallback(rendition, startPosition.cfi, {
             localProgression: startPosition.localProgression,
           });
@@ -690,7 +779,14 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (configRef.current.readerLayout === "scroll" || isEditableElement()) return;
+      const target = event.target as Element | null;
+      if (
+        event.defaultPrevented ||
+        configRef.current.readerLayout === "scroll" ||
+        isEditableElement() ||
+        target?.closest?.("input, textarea, select, [contenteditable], [data-review-editor]")
+      )
+        return;
       if (ws?.activeClusterBookIdRef.current && ws.activeClusterBookIdRef.current !== bookId)
         return;
       if (!rendition || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
@@ -712,6 +808,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
 
     return () => {
       cancelled = true;
+      reviewNavigation.current?.destroy();
+      reviewNavigation.current = null;
       controller.abort();
       document.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("pagehide", flushPositionSave);
@@ -744,6 +842,8 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     markNavigationInProgress,
     navigateToCfi,
     persistPosition,
+    reviewReady,
+    reviewEnabled,
     renditionRef,
     store,
     ws,
@@ -768,6 +868,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
   ]);
 
   return {
+    reviewNavigation,
     bookRef,
     renditionRef,
     loadError,

@@ -3,7 +3,7 @@ import { useSignals } from "@preact/signals-react/runtime";
 import { History, EllipsisIcon } from "lucide-react";
 import { CoverImage } from "~/components/book-grid/cover-image";
 import { CoverPlaceholder } from "~/components/book-grid/cover-placeholder";
-import { openMobileReadingTab } from "~/components/reading-shell/mobile-reading-tabs";
+import { selectReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-slice";
 import {
   Empty,
   EmptyDescription,
@@ -106,7 +106,7 @@ export function ReadingDetailsPanel({
 
   async function navigateToLocation(target: string) {
     await workspace.navigateInCluster(book.id, target);
-    if (mobile) openMobileReadingTab("Read", book.id);
+    if (mobile) store.dispatch(selectReadingRailTab(book.id, "Read"));
   }
 
   const historyEntries = [...readingHistory.value].sort(
