@@ -1,5 +1,11 @@
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
-import { clearSyncedChanges, getUnsyncedChanges, markSynced } from "./change-log";
+import {
+  clearSyncedChanges,
+  getUnsyncedChanges,
+  isChangeReadyToPush,
+  markSynced,
+  recordPushFailures,
+} from "./change-log";
 import { type FileUploadContext, uploadPendingFiles } from "./file-uploads";
 import { remapBookId } from "./remap";
 import { syncDebugLog } from "./sync-debug";
@@ -12,8 +18,6 @@ import type { ChangeEntry, EntityType, SyncPushRequest, SyncPushResponse } from 
  * are drained across multiple requests scheduled back-to-back.
  */
 export const PUSH_BATCH_SIZE = 50;
-const MAX_REJECTED_BOOK_PUSH_ATTEMPTS = 3;
-const rejectedBookPushAttempts = new Map<string, number>();
 
 function isReservedDemoChange(change: ChangeEntry): boolean {
   if (change.entityId === DEMO_BOOK_ID || change.entityId === DEMO_CHAT_SESSION.id) return true;
@@ -28,14 +32,25 @@ function isReservedDemoChange(change: ChangeEntry): boolean {
   );
 }
 
+/** A completed push left durable failures; unrelated owned files may still recover. */
+export class PushRejectedError extends Error {}
+
+function reportRetainedFailures(pending: ChangeEntry[]): void {
+  const failed = pending.filter((change) => change.failure);
+  if (failed.length === 0) return;
+  const first = failed[0];
+  throw new PushRejectedError(
+    `Push incomplete: ${failed.length} retained change(s). ${first.entity} ${first.entityId}: ${first.failure!.reason}`,
+  );
+}
+
 export interface PushContext {
   fileUploadContext: FileUploadContext;
   isStopped: () => boolean;
   onAuthExpired?: () => void;
   /**
-   * Called when the sent batch was full, signaling more pending changes may
-   * remain. The engine schedules an immediate follow-up push so backlogs
-   * drain without waiting for the interval timer.
+   * Called when eligible changes remain, including mutations created during
+   * this request. Failed entries wait for their persisted retry deadline.
    */
   scheduleFollowUpPush: () => void;
 }
@@ -49,7 +64,6 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
   if (reservedChanges.length > 0) {
     await markSynced(reservedChanges.map((change) => change.id));
     await clearSyncedChanges();
-    for (const change of reservedChanges) rejectedBookPushAttempts.delete(change.id);
     pending = pending.filter((change) => !isReservedDemoChange(change));
     if (pending.length === 0) return null;
   }
@@ -57,76 +71,75 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
   // Cap each request at PUSH_BATCH_SIZE so the server handler stays well
   // under Vercel's function timeout. Remaining entries drain on follow-up
   // pushes scheduled below.
-  const changes = pending.slice(0, PUSH_BATCH_SIZE);
-  const hadFullBatch = changes.length >= PUSH_BATCH_SIZE;
+  const now = Date.now();
+  const changes = pending
+    .filter((change) => isChangeReadyToPush(change, now))
+    .slice(0, PUSH_BATCH_SIZE);
+  if (changes.length === 0) {
+    reportRetainedFailures(pending);
+    return null;
+  }
 
   syncDebugLog("push-start", {
     changeCount: changes.length,
     pendingTotal: pending.length,
   });
 
-  const body: SyncPushRequest = { changes };
-  const res = await fetch("/api/sync/push", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  if (res.status === 401) {
-    ctx.onAuthExpired?.();
-    return null;
-  }
-  if (!res.ok) {
-    throw new Error(`Push failed: ${res.status} ${res.statusText}`);
-  }
-
-  const result: SyncPushResponse = await res.json();
-  const rejected = result.rejected ?? [];
-  const changesById = new Map(changes.map((change) => [change.id, change]));
-  syncDebugLog("push-response", {
-    accepted: result.accepted.length,
-    rejected: rejected.length,
-  });
-
-  const terminalRejectedIds: string[] = [];
-  for (const entry of rejected) {
-    const change = changesById.get(entry.id);
-    if (change?.entity === "book" && change.operation === "put") {
-      const attempts = (rejectedBookPushAttempts.get(entry.id) ?? 0) + 1;
-      if (attempts < MAX_REJECTED_BOOK_PUSH_ATTEMPTS) {
-        rejectedBookPushAttempts.set(entry.id, attempts);
-        console.warn(
-          "[sync] Book metadata push rejected; will retry:",
-          entry.id,
-          change.entityId,
-          entry.reason,
-        );
-        continue;
-      }
-
-      rejectedBookPushAttempts.delete(entry.id);
-      console.warn(
-        "[sync] Book metadata push rejected; retry limit reached:",
-        entry.id,
-        change.entityId,
-        entry.reason,
-      );
-    } else {
-      console.warn("[sync] Push entry rejected by server:", entry.id, entry.reason);
+  const body: SyncPushRequest = { changes, supportsRetryableRejections: true };
+  let result: SyncPushResponse;
+  let authExpired = false;
+  try {
+    const res = await fetch("/api/sync/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401) {
+      authExpired = true;
+      ctx.onAuthExpired?.();
+      throw new Error("Push failed: authentication expired");
     }
-    terminalRejectedIds.push(entry.id);
+    if (!res.ok) throw new Error(`Push failed: ${res.status} ${res.statusText}`);
+    result = await res.json();
+    if (!Array.isArray(result.accepted)) throw new Error("Push response missing acknowledgments");
+  } catch (err) {
+    // An unknown HTTP/network outcome is not an acknowledgment. Keep all data.
+    // Authentication can retry immediately once the session is restored.
+    if (!authExpired) {
+      await recordPushFailures(
+        changes.map((change) => ({
+          id: change.id,
+          reason: err instanceof Error ? err.message : "Push failed",
+          retryable: true,
+        })),
+      );
+    }
+    throw err;
   }
 
-  const acceptedIds = result.accepted.map((entry) => entry.id);
-  for (const id of acceptedIds) {
-    rejectedBookPushAttempts.delete(id);
+  const changesById = new Map(changes.map((change) => [change.id, change]));
+  const rejectedById = new Map((result.rejected ?? []).map((entry) => [entry.id, entry]));
+  const acceptedIds = result.accepted
+    .filter((entry) => changesById.has(entry.id) && !rejectedById.has(entry.id))
+    .map((entry) => entry.id);
+  const acceptedIdSet = new Set(acceptedIds);
+  const failures = changes
+    .filter((change) => !acceptedIdSet.has(change.id))
+    .map(
+      (change) =>
+        rejectedById.get(change.id) ?? {
+          id: change.id,
+          reason: "Server did not acknowledge change",
+          retryable: true,
+        },
+    );
+  syncDebugLog("push-response", { accepted: acceptedIds.length, rejected: failures.length });
+  for (const entry of failures) {
+    console.warn("[sync] Push entry retained after failure:", entry.id, entry.reason);
   }
-
-  // Keep rejected book upserts available for a bounded later retry while
-  // draining accepted and terminal entries so they cannot starve the queue.
-  const syncedIds = [...acceptedIds, ...terminalRejectedIds];
-  if (syncedIds.length > 0) {
-    await markSynced(syncedIds);
+  await recordPushFailures(failures);
+  if (acceptedIds.length > 0) {
+    await markSynced(acceptedIds);
     await clearSyncedChanges();
   }
 
@@ -135,7 +148,7 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
   const affectedEntities = new Set<EntityType>();
   const bookIdRemaps: Array<{ fromId: string; toId: string }> = [];
   for (const entry of result.accepted) {
-    if (!entry.canonicalId) continue;
+    if (!entry.canonicalId || !acceptedIdSet.has(entry.id)) continue;
     const change = changesById.get(entry.id);
     if (!change || change.entity !== "book") continue;
     if (change.entityId === entry.canonicalId) continue;
@@ -167,10 +180,9 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
 
   // The upload pass scans every local book, so wait until all queued book
   // upserts were accepted before exposing their files to the ownership check.
-  const acceptedIdSet = new Set(acceptedIds);
+  pending = await getUnsyncedChanges();
   const hasUnacceptedBookUpsert = pending.some(
-    (change) =>
-      change.entity === "book" && change.operation === "put" && !acceptedIdSet.has(change.id),
+    (change) => change.entity === "book" && change.operation === "put",
   );
   if (!hasUnacceptedBookUpsert) {
     uploadPendingFiles(ctx.fileUploadContext, { isStopped: ctx.isStopped }).catch((err) =>
@@ -178,12 +190,12 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
     );
   }
 
-  // If the batch was full there are (likely) more pending changes. Schedule
-  // an immediate follow-up push so a backlog drains quickly without waiting
-  // for the interval timer.
-  if (hadFullBatch && !ctx.isStopped()) {
+  // Rereading the outbox also preserves mutations recorded while fetch was in
+  // flight. Deferred/permanent failures never occupy the next batch's slots.
+  if (pending.some((change) => isChangeReadyToPush(change)) && !ctx.isStopped()) {
     ctx.scheduleFollowUpPush();
   }
+  reportRetainedFailures(pending);
 
   return result;
 }

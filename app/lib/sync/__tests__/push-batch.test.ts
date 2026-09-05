@@ -81,7 +81,7 @@ describe("pushChanges batching", () => {
     expect(await getUnsyncedChanges()).toHaveLength(0);
   });
 
-  it("drains rejected entries from the changelog and logs their reasons", async () => {
+  it("retains legacy rejections with their data and reasons while acknowledgments drain", async () => {
     for (let i = 0; i < 5; i++) {
       await recordChange({
         entity: "position",
@@ -117,10 +117,16 @@ describe("pushChanges batching", () => {
     const engine = makeSyncEngine({ userId: "user-test" });
     await engine.pushChanges();
 
-    // Rejected entries must not re-appear on the next getUnsyncedChanges
-    // (i.e. they drained from the changelog) and must not be re-sent on a
-    // follow-up push.
-    expect(await getUnsyncedChanges()).toHaveLength(0);
+    const retained = await getUnsyncedChanges();
+    expect(retained.map((change) => change.id)).toEqual(rejectIds);
+    for (const change of retained) {
+      expect(change.data).toEqual(pendingBefore.find((entry) => entry.id === change.id)!.data);
+      expect(change.failure).toMatchObject({
+        reason: "stale-entity",
+        retryable: true,
+        attempts: 1,
+      });
+    }
 
     fetchMock.mockClear();
     await engine.pushChanges();
@@ -184,12 +190,13 @@ describe("pushChanges batching", () => {
       expect.arrayContaining([bookChange.id, positionChange.id]),
     );
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Book"),
+      expect.stringContaining("retained"),
       bookChange.id,
-      bookChange.entityId,
       "database connection temporarily unavailable",
     );
 
+    const [retained] = await getUnsyncedChanges();
+    vi.spyOn(Date, "now").mockReturnValue(retained.failure!.nextAttemptAt!);
     await engine.pushChanges();
 
     expect(sentBatches).toHaveLength(2);
@@ -201,7 +208,7 @@ describe("pushChanges batching", () => {
     warnSpy.mockRestore();
   });
 
-  it("drains a permanently rejected book after bounded retries without blocking unrelated changes", async () => {
+  it("retains a permanently rejected book without automatic retries or blocking unrelated changes", async () => {
     const bookChange = await recordChange({
       entity: "book",
       entityId: "permanently-invalid-book",
@@ -227,7 +234,7 @@ describe("pushChanges batching", () => {
           accepted: body.changes
             .filter((change) => change.id !== bookChange.id)
             .map((change) => ({ id: change.id })),
-          rejected: [{ id: bookChange.id, reason: "invalid book metadata" }],
+          rejected: [{ id: bookChange.id, reason: "invalid book metadata", retryable: false }],
           serverTimestamp: new Date().toISOString(),
         }),
       } as unknown as Response;
@@ -246,10 +253,16 @@ describe("pushChanges batching", () => {
     expect(await getUnsyncedChanges()).toEqual([expect.objectContaining({ id: bookChange.id })]);
 
     await engine.pushChanges();
-    expect(await getUnsyncedChanges()).toHaveLength(0);
+    expect(await getUnsyncedChanges()).toEqual([
+      expect.objectContaining({
+        id: bookChange.id,
+        data: bookChange.data,
+        failure: expect.objectContaining({ retryable: false, attempts: 1 }),
+      }),
+    ]);
 
     await engine.pushChanges();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(uploadSpy).not.toHaveBeenCalled();
 
     uploadSpy.mockRestore();

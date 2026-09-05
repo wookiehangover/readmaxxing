@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getUnsyncedChanges } from "../change-log";
 import { resetUploadBackoff, uploadPendingFiles } from "../file-uploads";
 import { pullChanges } from "../pull";
-import { pushChanges, pushChangesWithResult, type PushContext } from "../push";
+import { PushRejectedError, pushChanges, pushChangesWithResult, type PushContext } from "../push";
 import { makeSyncEngine } from "../sync-engine";
 
 vi.mock("../change-log", async (importOriginal) => ({
@@ -20,11 +20,13 @@ vi.mock("../pull", () => ({
   pullChanges: vi.fn(async () => undefined),
 }));
 
-vi.mock("../push", () => {
+vi.mock("../push", async (importOriginal) => {
+  const { PushRejectedError } = await importOriginal<typeof import("../push")>();
   const pushChanges = vi.fn(async (_context: PushContext) => undefined);
 
   return {
     PUSH_BATCH_SIZE: 50,
+    PushRejectedError,
     pushChanges,
     pushChangesWithResult: vi.fn(async (context) => {
       await pushChanges(context);
@@ -123,22 +125,20 @@ describe("sync-engine startup and manual file recovery", () => {
       getUnsyncedChangesMock.mockResolvedValueOnce([rejectedBookChange]);
       pushChangesWithResultMock.mockImplementationOnce(async (context) => {
         await pushChanges(context);
-        return {
-          accepted: [],
-          rejected: [{ id: rejectedBookChange.id, reason: "temporarily unavailable" }],
-          serverTimestamp: "2026-08-21T00:00:00.000Z",
-        };
+        throw new PushRejectedError("temporarily unavailable");
       });
 
-      const engine = makeSyncEngine({ userId: "user-test" });
+      const onSyncError = vi.fn();
+      const engine = makeSyncEngine({ userId: "user-test", onSyncError });
 
       try {
         if (recoveryMode === "startup") {
           engine.startSync();
           await vi.waitFor(() => expect(pushChangesMock).toHaveBeenCalledTimes(2));
         } else {
-          await engine.triggerManualPush();
+          await expect(engine.triggerManualPush()).rejects.toThrow("temporarily unavailable");
         }
+        expect(onSyncError).toHaveBeenCalledWith(expect.any(PushRejectedError));
 
         expect(resetUploadBackoffMock).not.toHaveBeenCalled();
         expect(uploadPendingFilesMock).not.toHaveBeenCalled();
@@ -182,14 +182,12 @@ describe("sync-engine startup and manual file recovery", () => {
     ]);
     pushChangesWithResultMock.mockImplementationOnce(async (context) => {
       await pushChanges(context);
-      return {
-        accepted: [],
-        rejected: [{ id: "rejected-position-change", reason: "temporarily unavailable" }],
-        serverTimestamp: "2026-08-21T00:00:00.000Z",
-      };
+      throw new PushRejectedError("temporarily unavailable");
     });
 
-    await makeSyncEngine({ userId: "user-test" }).triggerManualPush();
+    await expect(makeSyncEngine({ userId: "user-test" }).triggerManualPush()).rejects.toThrow(
+      "temporarily unavailable",
+    );
 
     expect(resetUploadBackoffMock).toHaveBeenCalledOnce();
     expect(uploadPendingFilesMock).toHaveBeenCalledOnce();

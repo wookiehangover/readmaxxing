@@ -338,6 +338,15 @@ describe("integration: signed-out book import and authenticated sync startup", (
 
     const engine = await startAuthenticatedSync();
 
+    await vi.waitFor(async () => {
+      expect((await getUnsyncedChanges()).some((change) => change.failure?.retryable)).toBe(true);
+    });
+    const retained = (await getUnsyncedChanges()).filter((change) => change.failure?.retryable);
+    vi.spyOn(Date, "now").mockReturnValue(
+      Math.max(...retained.map((change) => change.failure!.nextAttemptAt!)),
+    );
+    await engine.pushChanges();
+
     await vi.waitFor(() => {
       expect(server.pushes.length).toBeGreaterThanOrEqual(2);
       expect(server.books.has(book.id)).toBe(true);
