@@ -48,6 +48,10 @@ export interface ChangeEntry {
   timestamp: number;
   /** Whether this change has been successfully pushed to the server. */
   synced: boolean;
+  /** Owner of remap/recovery work; absent on legacy and signed-out mutations. */
+  ownerId?: string;
+  /** Delivery identity changes when a queued snapshot is canonicalized, not its source clock. */
+  revision?: number;
   /** Durable delivery failure; the original mutation remains available for recovery. */
   failure?: {
     reason: string;
