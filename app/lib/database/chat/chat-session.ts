@@ -57,8 +57,9 @@ export async function upsertSession(
 ): Promise<ChatSessionRow | null> {
   const pool = getPool();
   const mutationAt = session.updatedAt.toISOString();
-  const createdAtIso = clampUpdatedAt(session.createdAt);
-  const deletedAtIso = clampNullableTimestamp(session.deletedAt);
+  const sourceTime = Date.parse(mutationAt);
+  const createdAtIso = clampUpdatedAt(session.createdAt, undefined, sourceTime);
+  const deletedAtIso = clampNullableTimestamp(session.deletedAt, undefined, sourceTime);
   const result = await pool.query<ChatSessionRow>(sql`
     INSERT INTO readmax.chat_session (id, user_id, book_id, title, created_at, updated_at, deleted_at, mutation_at)
     VALUES (
