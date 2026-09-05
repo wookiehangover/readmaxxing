@@ -5,6 +5,7 @@ SET search_path TO readmax;
 CREATE TABLE readmax.user_settings (
     user_id UUID PRIMARY KEY REFERENCES readmax.user(id),
     settings JSONB,
+    mutation_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

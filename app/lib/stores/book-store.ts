@@ -143,7 +143,8 @@ export function makeBookService(stores: BookServiceStores) {
 
     async updateBookMeta(meta: BookMeta) {
       return storage("updateBookMeta", async () => {
-        const stamped = { ...meta, updatedAt: Date.now() };
+        // A restore must sort after its tombstone even within the same millisecond.
+        const stamped = { ...meta, updatedAt: Math.max(Date.now(), (meta.updatedAt ?? 0) + 1) };
         await set(meta.id, stamped, bookStore);
         recordChange({
           entity: "book",
@@ -310,7 +311,7 @@ export function makeBookService(stores: BookServiceStores) {
       if (raw) {
         // Soft-delete: set deletedAt timestamp, keep data for sync
         const existing = decode("deleteBook.decode", raw);
-        const now = Date.now();
+        const now = Math.max(Date.now(), (existing.updatedAt ?? 0) + 1);
         const tombstone = { ...existing, deletedAt: now, updatedAt: now };
         await storage("deleteBook.write", () => set(id, tombstone, bookStore));
         recordChange({

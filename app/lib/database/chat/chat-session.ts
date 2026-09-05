@@ -31,7 +31,7 @@ const SESSION_COLUMNS = sql`
   title,
   active_stream_id AS "activeStreamId",
   created_at AS "createdAt",
-  updated_at AS "updatedAt",
+  COALESCE(mutation_at, updated_at) AS "updatedAt",
   deleted_at AS "deletedAt"
 `;
 
@@ -56,25 +56,31 @@ export async function upsertSession(
   },
 ): Promise<ChatSessionRow | null> {
   const pool = getPool();
-  const updatedAtIso = clampUpdatedAt(session.updatedAt);
+  const mutationAt = session.updatedAt.toISOString();
   const createdAtIso = clampUpdatedAt(session.createdAt);
   const deletedAtIso = clampNullableTimestamp(session.deletedAt);
   const result = await pool.query<ChatSessionRow>(sql`
-    INSERT INTO readmax.chat_session (id, user_id, book_id, title, created_at, updated_at, deleted_at)
+    INSERT INTO readmax.chat_session (id, user_id, book_id, title, created_at, updated_at, deleted_at, mutation_at)
     VALUES (
       ${session.id},
       ${userId},
       ${session.bookId ?? null},
       ${session.title ?? null},
       ${createdAtIso},
-      ${updatedAtIso},
-      ${deletedAtIso}
+      clock_timestamp(),
+      ${deletedAtIso},
+      ${mutationAt}
     )
     ON CONFLICT (id) DO UPDATE
       SET book_id = EXCLUDED.book_id,
           title = EXCLUDED.title,
-          updated_at = EXCLUDED.updated_at,
+          updated_at = GREATEST(clock_timestamp(), readmax.chat_session.updated_at + INTERVAL '1 microsecond'),
+          mutation_at = EXCLUDED.mutation_at,
           deleted_at = EXCLUDED.deleted_at
+      WHERE readmax.chat_session.user_id = EXCLUDED.user_id
+        AND (EXCLUDED.mutation_at > COALESCE(readmax.chat_session.mutation_at, readmax.chat_session.updated_at)
+          OR (EXCLUDED.mutation_at = COALESCE(readmax.chat_session.mutation_at, readmax.chat_session.updated_at)
+              AND EXCLUDED.deleted_at IS NOT NULL AND readmax.chat_session.deleted_at IS NULL))
     RETURNING ${SESSION_COLUMNS}
   `);
 
@@ -154,15 +160,24 @@ export async function getSessionsByUserSince(
   return result.rows;
 }
 
-export async function softDeleteSession(userId: string, sessionId: string): Promise<boolean> {
+export async function softDeleteSession(
+  userId: string,
+  sessionId: string,
+  deletedAt?: Date,
+): Promise<boolean> {
   const pool = getPool();
+  const mutationAt = (deletedAt ?? new Date()).toISOString();
   const result = await pool.query(sql`
-    UPDATE readmax.chat_session
-    SET deleted_at = NOW(),
-        updated_at = NOW()
-    WHERE id = ${sessionId}
-      AND user_id = ${userId}
-      AND deleted_at IS NULL
+    INSERT INTO readmax.chat_session (id, user_id, deleted_at, updated_at, mutation_at)
+    VALUES (${sessionId}, ${userId}, ${mutationAt}, clock_timestamp(), ${mutationAt})
+    ON CONFLICT (id) DO UPDATE
+      SET deleted_at = EXCLUDED.deleted_at,
+          updated_at = GREATEST(clock_timestamp(), readmax.chat_session.updated_at + INTERVAL '1 microsecond'),
+          mutation_at = EXCLUDED.mutation_at
+      WHERE readmax.chat_session.user_id = EXCLUDED.user_id
+        AND (EXCLUDED.mutation_at > COALESCE(readmax.chat_session.mutation_at, readmax.chat_session.updated_at)
+          OR (EXCLUDED.mutation_at = COALESCE(readmax.chat_session.mutation_at, readmax.chat_session.updated_at)
+              AND readmax.chat_session.deleted_at IS NULL))
   `);
   return (result.rowCount ?? 0) > 0;
 }

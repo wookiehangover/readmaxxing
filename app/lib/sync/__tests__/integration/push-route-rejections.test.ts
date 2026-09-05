@@ -82,7 +82,7 @@ beforeAll(async () => {
   db = new PGlite();
   await db.exec(`CREATE SCHEMA readmax;
     CREATE TABLE readmax.notebook (
-      user_id text, book_id text, content jsonb, updated_at timestamptz,
+      user_id text, book_id text, content jsonb, updated_at timestamptz, mutation_at timestamptz,
       PRIMARY KEY (user_id, book_id)
     );`);
 }, 30_000);

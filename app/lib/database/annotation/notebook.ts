@@ -1,7 +1,6 @@
 import type { JSONContent } from "@tiptap/react";
 import { sql } from "pg-sql";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
-import { clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface NotebookRow {
@@ -16,7 +15,7 @@ const NOTEBOOK_COLUMNS = sql`
   user_id AS "userId",
   book_id AS "bookId",
   content,
-  updated_at AS "updatedAt"
+  COALESCE(mutation_at, updated_at) AS "updatedAt"
 `;
 
 export async function upsertNotebook(
@@ -26,14 +25,15 @@ export async function upsertNotebook(
   updatedAt: Date,
 ): Promise<NotebookRow | null> {
   const pool = getPool();
-  const ts = clampUpdatedAt(updatedAt);
+  const mutationAt = updatedAt.toISOString();
   const result = await pool.query<NotebookRow>(sql`
-    INSERT INTO readmax.notebook (user_id, book_id, content, updated_at)
-    VALUES (${userId}, ${bookId}, ${JSON.stringify(content)}::jsonb, ${ts})
+    INSERT INTO readmax.notebook (user_id, book_id, content, updated_at, mutation_at)
+    VALUES (${userId}, ${bookId}, ${JSON.stringify(content)}::jsonb, clock_timestamp(), ${mutationAt})
     ON CONFLICT (user_id, book_id) DO UPDATE
       SET content = EXCLUDED.content,
-          updated_at = EXCLUDED.updated_at
-      WHERE EXCLUDED.updated_at > readmax.notebook.updated_at
+          updated_at = GREATEST(clock_timestamp(), readmax.notebook.updated_at + INTERVAL '1 microsecond'),
+          mutation_at = EXCLUDED.mutation_at
+      WHERE EXCLUDED.mutation_at > COALESCE(readmax.notebook.mutation_at, readmax.notebook.updated_at)
     RETURNING ${NOTEBOOK_COLUMNS}
   `);
 

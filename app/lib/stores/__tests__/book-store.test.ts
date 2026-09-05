@@ -151,6 +151,33 @@ describe("BookService", () => {
     });
   });
 
+  it("stamps a same-millisecond restore after the original deletion", async () => {
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      const bookStore = createStore(`restore-${++testCounter}`, "books");
+      const bookDataStore = createStore(`restore-data-${testCounter}`, "data");
+      const service = makeBookService({ bookStore, bookDataStore });
+      const restored = await service.updateBookMeta({
+        id: "book",
+        title: "Restored",
+        author: "",
+        format: "epub",
+        coverImage: null,
+        updatedAt: now,
+      });
+      expect(restored.updatedAt).toBe(now + 1);
+      expect(await get("book", bookStore)).toEqual(restored);
+      await service.deleteBook("book");
+      expect(await get("book", bookStore)).toMatchObject({
+        deletedAt: now + 2,
+        updatedAt: now + 2,
+      });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   describe("on-demand download", () => {
     it("downloads and caches a remote book when local data is missing", async () => {
       const suffix = `test-${++testCounter}-${Date.now()}`;

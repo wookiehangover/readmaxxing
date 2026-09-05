@@ -111,7 +111,7 @@ describe("clampNullableTimestamp", () => {
 });
 
 // ---------------------------------------------------------------------------
-// upsertBook — verifies the clamp is actually applied end-to-end through the
+// upsertBook — verifies tombstone clamping and separate ordering clocks through the
 // DB helper. The pool is mocked so we can inspect the SQL parameters that
 // would be bound to Postgres.
 // ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ function extractSqlText(query: SqlQuery): string {
     .join("");
 }
 
-describe("upsertBook (clamped updated_at)", () => {
+describe("upsertBook timestamps", () => {
   const FIXED_NOW = new Date("2026-01-15T12:00:00.000Z").getTime();
 
   beforeEach(() => {
@@ -150,7 +150,7 @@ describe("upsertBook (clamped updated_at)", () => {
     vi.useRealTimers();
   });
 
-  it("writes a clamped updated_at when the client supplies year 9999", async () => {
+  it("clamps a far-future tombstone while keeping the mutation clock stable", async () => {
     const bogusFuture = new Date("9999-12-31T23:59:59.000Z");
     await upsertBook("user-1", {
       id: "book-1",
@@ -158,17 +158,19 @@ describe("upsertBook (clamped updated_at)", () => {
       author: "A",
       format: "epub",
       fileHash: "abc",
-      updatedAt: bogusFuture,
+      updatedAt: new Date(FIXED_NOW),
+      deletedAt: bogusFuture,
     });
 
     expect(queryMock).toHaveBeenCalledTimes(1);
     const boundValues = extractValues(queryMock.mock.calls[0][0]);
-    const updatedAtParam = boundValues[6];
+    const deletedAtParam = boundValues[6];
     const expectedIso = new Date(FIXED_NOW + DEFAULT_UPDATED_AT_SKEW_MS).toISOString();
-    expect(updatedAtParam).toBe(expectedIso);
+    expect(deletedAtParam).toBe(expectedIso);
+    expect(boundValues[7]).toBe(new Date(FIXED_NOW).toISOString());
   });
 
-  it("passes through a reasonable client updated_at unchanged", async () => {
+  it("stores the original mutation time independently of the server pull timestamp", async () => {
     const reasonable = new Date(FIXED_NOW - 60_000);
     await upsertBook("user-1", {
       id: "book-1",
@@ -176,7 +178,8 @@ describe("upsertBook (clamped updated_at)", () => {
     });
 
     const boundValues = extractValues(queryMock.mock.calls[0][0]);
-    expect(boundValues[6]).toBe(reasonable.toISOString());
+    expect(boundValues[7]).toBe(reasonable.toISOString());
+    expect(extractSqlText(queryMock.mock.calls[0][0])).toContain("clock_timestamp()");
   });
 
   it("writes deleted_at as null for restored books and applies it on LWW update", async () => {
@@ -188,10 +191,9 @@ describe("upsertBook (clamped updated_at)", () => {
 
     const query = queryMock.mock.calls[0][0] as SqlQuery;
     const boundValues = extractValues(query);
-    expect(boundValues[7]).toBeNull();
-    expect(boundValues[8]).toBe(true);
+    expect(boundValues[6]).toBeNull();
+    expect(boundValues[10]).toBe(true);
     expect(extractSqlText(query)).toContain("THEN EXCLUDED.deleted_at");
-    expect(extractSqlText(query)).toContain("WHERE EXCLUDED.updated_at > readmax.book.updated_at");
   });
 
   it("writes deleted_at for soft-deleted books", async () => {
@@ -203,8 +205,8 @@ describe("upsertBook (clamped updated_at)", () => {
     });
 
     const boundValues = extractValues(queryMock.mock.calls[0][0] as SqlQuery);
-    expect(boundValues[7]).toBe(deletedAt.toISOString());
-    expect(boundValues[8]).toBe(true);
+    expect(boundValues[6]).toBe(deletedAt.toISOString());
+    expect(boundValues[10]).toBe(true);
   });
 
   it("leaves deleted_at unchanged on conflict when deletedAt is omitted", async () => {
@@ -215,23 +217,8 @@ describe("upsertBook (clamped updated_at)", () => {
 
     const query = queryMock.mock.calls[0][0] as SqlQuery;
     const boundValues = extractValues(query);
-    expect(boundValues[7]).toBeNull();
-    expect(boundValues[8]).toBe(false);
+    expect(boundValues[6]).toBeNull();
+    expect(boundValues[10]).toBe(false);
     expect(extractSqlText(query)).toContain("ELSE readmax.book.deleted_at");
-  });
-
-  it("allows same-timestamp live restores of existing tombstones", async () => {
-    await upsertBook("user-1", {
-      id: "book-1",
-      updatedAt: new Date(FIXED_NOW),
-      deletedAt: null,
-    });
-
-    const query = queryMock.mock.calls[0][0] as SqlQuery;
-    const sqlText = extractSqlText(query);
-    expect(sqlText).toContain("EXCLUDED.updated_at = readmax.book.updated_at");
-    expect(sqlText).toContain("EXCLUDED.deleted_at IS NULL");
-    expect(sqlText).toContain("readmax.book.deleted_at IS NOT NULL");
-    expect(sqlText).toContain("THEN readmax.book.updated_at + INTERVAL '1 millisecond'");
   });
 });

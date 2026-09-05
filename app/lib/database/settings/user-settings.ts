@@ -1,17 +1,17 @@
 import { sql } from "pg-sql";
-import { clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface UserSettingsRow {
   userId: string;
   settings: unknown;
   updatedAt: Date;
+  cursorTimestamp?: string;
 }
 
 const SETTINGS_COLUMNS = sql`
   user_id AS "userId",
   settings,
-  updated_at AS "updatedAt"
+  COALESCE(mutation_at, updated_at) AS "updatedAt"
 `;
 
 export async function upsertSettings(
@@ -20,14 +20,15 @@ export async function upsertSettings(
   updatedAt: Date,
 ): Promise<UserSettingsRow | null> {
   const pool = getPool();
-  const ts = clampUpdatedAt(updatedAt);
+  const mutationAt = updatedAt.toISOString();
   const result = await pool.query<UserSettingsRow>(sql`
-    INSERT INTO readmax.user_settings (user_id, settings, updated_at)
-    VALUES (${userId}, ${JSON.stringify(settings)}::jsonb, ${ts})
+    INSERT INTO readmax.user_settings (user_id, settings, updated_at, mutation_at)
+    VALUES (${userId}, ${JSON.stringify(settings)}::jsonb, clock_timestamp(), ${mutationAt})
     ON CONFLICT (user_id) DO UPDATE
       SET settings = EXCLUDED.settings,
-          updated_at = EXCLUDED.updated_at
-      WHERE EXCLUDED.updated_at > readmax.user_settings.updated_at
+          updated_at = GREATEST(clock_timestamp(), readmax.user_settings.updated_at + INTERVAL '1 microsecond'),
+          mutation_at = EXCLUDED.mutation_at
+      WHERE EXCLUDED.mutation_at > COALESCE(readmax.user_settings.mutation_at, readmax.user_settings.updated_at)
     RETURNING ${SETTINGS_COLUMNS}
   `);
 
@@ -54,13 +55,14 @@ export async function getSettings(userId: string): Promise<UserSettingsRow | nul
 export async function getSettingsSince(
   userId: string,
   cursor: Date,
+  exactCursorTimestamp?: string,
 ): Promise<UserSettingsRow | null> {
   const pool = getPool();
   const result = await pool.query<UserSettingsRow>(sql`
-    SELECT ${SETTINGS_COLUMNS}
+    SELECT ${SETTINGS_COLUMNS}, updated_at::text AS "cursorTimestamp"
     FROM readmax.user_settings
     WHERE user_id = ${userId}
-      AND updated_at > ${cursor.toISOString()}
+      AND updated_at > ${exactCursorTimestamp ?? cursor.toISOString()}
   `);
 
   if (result.rows.length === 0) {

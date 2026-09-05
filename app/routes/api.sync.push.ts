@@ -1,3 +1,4 @@
+import { DEFAULT_UPDATED_AT_SKEW_MS } from "~/lib/database/clamp-timestamp";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { upsertHighlight, softDeleteHighlight } from "~/lib/database/annotation/highlight";
 import { upsertNotebook } from "~/lib/database/annotation/notebook";
@@ -8,7 +9,6 @@ import {
   findBookByUserAndHash,
   insertTombstonedBook,
   getBookByIdForUser,
-  updateBookBlobUrls,
 } from "~/lib/database/book/book";
 import { upsertPosition } from "~/lib/database/book/reading-position";
 import { upsertSession, softDeleteSession } from "~/lib/database/chat/chat-session";
@@ -26,9 +26,22 @@ export async function processEntry(
   if (entry.operation === "put" && (!entry.data || typeof entry.data !== "object")) {
     return { accepted: false, reason: "Invalid mutation data", retryable: false };
   }
+  if (
+    !Number.isFinite(entry.timestamp) ||
+    entry.timestamp > Date.now() + DEFAULT_UPDATED_AT_SKEW_MS ||
+    !Number.isFinite(new Date(entry.timestamp).getTime())
+  ) {
+    return { accepted: false, reason: "Invalid mutation timestamp", retryable: false };
+  }
+  // Keep replay ordering stable. DAL updated_at tracks server pull visibility;
+  // the original outbox clock is stored separately and returned to mergers.
+  const mutationAt = new Date(entry.timestamp);
+  const hasSnapshot = entry.data !== null && typeof entry.data === "object";
+  const hasBookSnapshot =
+    hasSnapshot && typeof (entry.data as { bookId?: unknown }).bookId === "string";
   switch (entry.entity) {
     case "book": {
-      if (entry.operation === "put") {
+      if (entry.operation === "put" || hasSnapshot) {
         const data = entry.data as {
           id: string;
           title?: string | null;
@@ -43,7 +56,7 @@ export async function processEntry(
 
         // Cross-device dedup: if another non-deleted book for this user
         // already has the same file_hash, converge to that canonical id.
-        if (data.fileHash) {
+        if (entry.operation === "put" && data.fileHash) {
           const canonical = await findBookByUserAndHash(userId, data.fileHash);
           if (canonical && canonical.id !== entry.entityId) {
             // Only tombstone the incoming id if it is not already the
@@ -67,24 +80,19 @@ export async function processEntry(
           author: data.author,
           format: data.format,
           fileHash: data.fileHash,
-          updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-          deletedAt: data.deletedAt != null ? new Date(data.deletedAt) : null,
+          updatedAt: mutationAt,
+          deletedAt:
+            entry.operation === "delete"
+              ? mutationAt
+              : data.deletedAt != null
+                ? new Date(data.deletedAt)
+                : null,
+          fileBlobUrl: data.remoteFileUrl,
+          coverBlobUrl: data.remoteCoverUrl,
         };
         await upsertBook(userId, bookData);
-
-        // Persist blob URLs if the client carried them. Additive to the
-        // onUploadCompleted webhook in api.sync.files.upload.ts (the webhook
-        // is still a fast path but no longer the only way a URL reaches the
-        // DB). COALESCE inside updateBookBlobUrls prevents a nullish value
-        // on one side from clobbering an existing non-null column.
-        if (data.remoteCoverUrl || data.remoteFileUrl) {
-          await updateBookBlobUrls(entry.entityId, {
-            coverBlobUrl: data.remoteCoverUrl ?? undefined,
-            fileBlobUrl: data.remoteFileUrl ?? undefined,
-          });
-        }
       } else {
-        await softDeleteBook(userId, entry.entityId);
+        await softDeleteBook(userId, entry.entityId, mutationAt);
       }
       return { accepted: true };
     }
@@ -104,7 +112,7 @@ export async function processEntry(
     }
 
     case "highlight": {
-      if (entry.operation === "put") {
+      if (entry.operation === "put" || hasBookSnapshot) {
         const data = entry.data as {
           id: string;
           bookId: string;
@@ -134,17 +142,23 @@ export async function processEntry(
           textLength: data.textLength,
           textAnchor: data.textAnchor ?? null,
           note: data.note ?? null,
-          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
-          deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
+          createdAt: data.createdAt ? new Date(data.createdAt) : mutationAt,
+          updatedAt: mutationAt,
+          deletedAt:
+            entry.operation === "delete"
+              ? mutationAt
+              : data.deletedAt != null
+                ? new Date(data.deletedAt)
+                : null,
         });
       } else {
-        await softDeleteHighlight(userId, entry.entityId);
+        await softDeleteHighlight(userId, entry.entityId, mutationAt);
       }
       return { accepted: true };
     }
 
     case "bookmark": {
-      if (entry.operation === "put") {
+      if (entry.operation === "put" || hasBookSnapshot) {
         const data = entry.data as {
           id: string;
           bookId: string;
@@ -163,12 +177,17 @@ export async function processEntry(
           label: data.label ?? null,
           pageNumber: data.pageNumber ?? null,
           displayPage: data.displayPage ?? null,
-          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
-          updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-          deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
+          createdAt: data.createdAt ? new Date(data.createdAt) : mutationAt,
+          updatedAt: mutationAt,
+          deletedAt:
+            entry.operation === "delete"
+              ? mutationAt
+              : data.deletedAt != null
+                ? new Date(data.deletedAt)
+                : null,
         });
       } else {
-        await softDeleteBookmark(userId, entry.entityId);
+        await softDeleteBookmark(userId, entry.entityId, mutationAt);
       }
       return { accepted: true };
     }
@@ -180,19 +199,14 @@ export async function processEntry(
           content: unknown;
           updatedAt?: number | null;
         };
-        await upsertNotebook(
-          userId,
-          data.bookId ?? entry.entityId,
-          data.content,
-          data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-        );
+        await upsertNotebook(userId, data.bookId ?? entry.entityId, data.content, mutationAt);
       }
       // delete is a no-op for notebooks
       return { accepted: true };
     }
 
     case "chat_session": {
-      if (entry.operation === "put") {
+      if (entry.operation === "put" || hasBookSnapshot) {
         const data = entry.data as {
           id: string;
           bookId?: string | null;
@@ -205,12 +219,17 @@ export async function processEntry(
           id: entry.entityId,
           bookId: data.bookId,
           title: data.title,
-          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
-          updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-          deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
+          createdAt: data.createdAt ? new Date(data.createdAt) : mutationAt,
+          updatedAt: mutationAt,
+          deletedAt:
+            entry.operation === "delete"
+              ? mutationAt
+              : data.deletedAt != null
+                ? new Date(data.deletedAt)
+                : null,
         });
       } else {
-        await softDeleteSession(userId, entry.entityId);
+        await softDeleteSession(userId, entry.entityId, mutationAt);
       }
       return { accepted: true };
     }

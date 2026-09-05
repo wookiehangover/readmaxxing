@@ -81,6 +81,7 @@ CREATE TABLE readmax.book (
     file_blob_url TEXT,
     file_hash TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    mutation_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ
 );
@@ -96,6 +97,7 @@ CREATE TABLE readmax.reading_position (
     user_id UUID NOT NULL REFERENCES readmax.user(id),
     book_id TEXT NOT NULL,
     cfi TEXT,
+    mutation_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, book_id)
 );
