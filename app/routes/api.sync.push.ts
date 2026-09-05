@@ -1,15 +1,11 @@
+import type { PoolClient } from "pg";
+import { withCanonicalBookWrite } from "~/lib/database/book/canonical-book-write";
 import { DEFAULT_UPDATED_AT_SKEW_MS } from "~/lib/database/clamp-timestamp";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { upsertHighlight, softDeleteHighlight } from "~/lib/database/annotation/highlight";
 import { upsertNotebook } from "~/lib/database/annotation/notebook";
 import { upsertBookmark, softDeleteBookmark } from "~/lib/database/bookmark/bookmark";
-import {
-  upsertBook,
-  softDeleteBook,
-  findBookByUserAndHash,
-  insertTombstonedBook,
-  getBookByIdForUser,
-} from "~/lib/database/book/book";
+import { upsertBook, softDeleteBook } from "~/lib/database/book/book";
 import { upsertPosition } from "~/lib/database/book/reading-position";
 import { upsertSession, softDeleteSession } from "~/lib/database/chat/chat-session";
 import { upsertSettings } from "~/lib/database/settings/user-settings";
@@ -19,6 +15,7 @@ import type { SyncPushRequest, SyncPushResponse, ChangeEntry } from "~/lib/sync/
 export async function processEntry(
   userId: string,
   entry: ChangeEntry,
+  failedBooks?: ReadonlySet<string>,
 ): Promise<{ accepted: boolean; reason?: string; retryable?: boolean; canonicalId?: string }> {
   if (entry.operation !== "put" && entry.operation !== "delete") {
     return { accepted: false, reason: "Unsupported operation", retryable: false };
@@ -33,6 +30,26 @@ export async function processEntry(
   ) {
     return { accepted: false, reason: "Invalid mutation timestamp", retryable: false };
   }
+  const bookId =
+    (entry.data as { bookId?: string } | null)?.bookId ??
+    (entry.entity === "position" || entry.entity === "notebook" ? entry.entityId : undefined);
+  if (
+    ["position", "notebook", "highlight", "bookmark", "chat_session"].includes(entry.entity) &&
+    bookId &&
+    failedBooks?.has(bookId)
+  ) {
+    return {
+      accepted: false,
+      reason: "Parent book mutation failed; retry dependent mutation",
+      retryable: true,
+    };
+  }
+  return withCanonicalBookWrite(userId, entry, (normalized, client) =>
+    applyEntry(userId, normalized, client),
+  );
+}
+
+async function applyEntry(userId: string, entry: ChangeEntry, client?: PoolClient) {
   // Keep replay ordering stable. DAL updated_at tracks server pull visibility;
   // the original outbox clock is stored separately and returned to mergers.
   const mutationAt = new Date(entry.timestamp);
@@ -54,26 +71,6 @@ export async function processEntry(
           deletedAt?: number | null;
         };
 
-        // Cross-device dedup: if another non-deleted book for this user
-        // already has the same file_hash, converge to that canonical id.
-        if (entry.operation === "put" && data.fileHash) {
-          const canonical = await findBookByUserAndHash(userId, data.fileHash);
-          if (canonical && canonical.id !== entry.entityId) {
-            // Only tombstone the incoming id if it is not already the
-            // canonical (or already tombstoned) — keeps the operation
-            // idempotent across retries.
-            const existing = await getBookByIdForUser(entry.entityId, userId);
-            if (!existing || existing.deletedAt == null) {
-              await insertTombstonedBook(userId, {
-                id: entry.entityId,
-                fileHash: data.fileHash,
-                createdAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-              });
-            }
-            return { accepted: true, canonicalId: canonical.id };
-          }
-        }
-
         const bookData = {
           id: entry.entityId,
           title: data.title,
@@ -90,9 +87,9 @@ export async function processEntry(
           fileBlobUrl: data.remoteFileUrl,
           coverBlobUrl: data.remoteCoverUrl,
         };
-        await upsertBook(userId, bookData);
+        await upsertBook(userId, bookData, client);
       } else {
-        await softDeleteBook(userId, entry.entityId, mutationAt);
+        await softDeleteBook(userId, entry.entityId, mutationAt, client);
       }
       return { accepted: true };
     }
@@ -105,6 +102,7 @@ export async function processEntry(
           data.bookId ?? entry.entityId,
           data.cfi ?? null,
           new Date(entry.timestamp),
+          client,
         );
       }
       // delete is a no-op for positions
@@ -131,28 +129,32 @@ export async function processEntry(
           createdAt?: number | null;
           deletedAt?: number | null;
         };
-        await upsertHighlight(userId, {
-          id: entry.entityId,
-          bookId: data.bookId,
-          cfiRange: data.cfiRange,
-          text: data.text,
-          color: data.color,
-          pageNumber: data.pageNumber,
-          textOffset: data.textOffset,
-          textLength: data.textLength,
-          textAnchor: data.textAnchor ?? null,
-          note: data.note ?? null,
-          createdAt: data.createdAt ? new Date(data.createdAt) : mutationAt,
-          updatedAt: mutationAt,
-          deletedAt:
-            entry.operation === "delete"
-              ? mutationAt
-              : data.deletedAt != null
-                ? new Date(data.deletedAt)
-                : null,
-        });
+        await upsertHighlight(
+          userId,
+          {
+            id: entry.entityId,
+            bookId: data.bookId,
+            cfiRange: data.cfiRange,
+            text: data.text,
+            color: data.color,
+            pageNumber: data.pageNumber,
+            textOffset: data.textOffset,
+            textLength: data.textLength,
+            textAnchor: data.textAnchor ?? null,
+            note: data.note ?? null,
+            createdAt: data.createdAt ? new Date(data.createdAt) : mutationAt,
+            updatedAt: mutationAt,
+            deletedAt:
+              entry.operation === "delete"
+                ? mutationAt
+                : data.deletedAt != null
+                  ? new Date(data.deletedAt)
+                  : null,
+          },
+          client,
+        );
       } else {
-        await softDeleteHighlight(userId, entry.entityId, mutationAt);
+        await softDeleteHighlight(userId, entry.entityId, mutationAt, client);
       }
       return { accepted: true };
     }
@@ -170,24 +172,28 @@ export async function processEntry(
           updatedAt?: number | null;
           deletedAt?: number | null;
         };
-        await upsertBookmark(userId, {
-          id: entry.entityId,
-          bookId: data.bookId,
-          cfi: data.cfi ?? null,
-          label: data.label ?? null,
-          pageNumber: data.pageNumber ?? null,
-          displayPage: data.displayPage ?? null,
-          createdAt: data.createdAt ? new Date(data.createdAt) : mutationAt,
-          updatedAt: mutationAt,
-          deletedAt:
-            entry.operation === "delete"
-              ? mutationAt
-              : data.deletedAt != null
-                ? new Date(data.deletedAt)
-                : null,
-        });
+        await upsertBookmark(
+          userId,
+          {
+            id: entry.entityId,
+            bookId: data.bookId,
+            cfi: data.cfi ?? null,
+            label: data.label ?? null,
+            pageNumber: data.pageNumber ?? null,
+            displayPage: data.displayPage ?? null,
+            createdAt: data.createdAt ? new Date(data.createdAt) : mutationAt,
+            updatedAt: mutationAt,
+            deletedAt:
+              entry.operation === "delete"
+                ? mutationAt
+                : data.deletedAt != null
+                  ? new Date(data.deletedAt)
+                  : null,
+          },
+          client,
+        );
       } else {
-        await softDeleteBookmark(userId, entry.entityId, mutationAt);
+        await softDeleteBookmark(userId, entry.entityId, mutationAt, client);
       }
       return { accepted: true };
     }
@@ -199,7 +205,13 @@ export async function processEntry(
           content: unknown;
           updatedAt?: number | null;
         };
-        await upsertNotebook(userId, data.bookId ?? entry.entityId, data.content, mutationAt);
+        await upsertNotebook(
+          userId,
+          data.bookId ?? entry.entityId,
+          data.content,
+          mutationAt,
+          client,
+        );
       }
       // delete is a no-op for notebooks
       return { accepted: true };
@@ -215,21 +227,25 @@ export async function processEntry(
           updatedAt?: number | null;
           deletedAt?: number | null;
         };
-        await upsertSession(userId, {
-          id: entry.entityId,
-          bookId: data.bookId,
-          title: data.title,
-          createdAt: data.createdAt ? new Date(data.createdAt) : mutationAt,
-          updatedAt: mutationAt,
-          deletedAt:
-            entry.operation === "delete"
-              ? mutationAt
-              : data.deletedAt != null
-                ? new Date(data.deletedAt)
-                : null,
-        });
+        await upsertSession(
+          userId,
+          {
+            id: entry.entityId,
+            bookId: data.bookId,
+            title: data.title,
+            createdAt: data.createdAt ? new Date(data.createdAt) : mutationAt,
+            updatedAt: mutationAt,
+            deletedAt:
+              entry.operation === "delete"
+                ? mutationAt
+                : data.deletedAt != null
+                  ? new Date(data.deletedAt)
+                  : null,
+          },
+          client,
+        );
       } else {
-        await softDeleteSession(userId, entry.entityId, mutationAt);
+        await softDeleteSession(userId, entry.entityId, mutationAt, client);
       }
       return { accepted: true };
     }
@@ -308,14 +324,16 @@ export async function action({ request }: { request: Request }) {
   const accepted: SyncPushResponse["accepted"] = [];
   const rejected: SyncPushResponse["rejected"] = [];
 
+  const failedBooks = new Set<string>();
   for (const entry of sortedChanges) {
     try {
-      const result = await processEntry(userId, entry);
+      const result = await processEntry(userId, entry, failedBooks);
       if (result.accepted) {
         accepted.push(
           result.canonicalId ? { id: entry.id, canonicalId: result.canonicalId } : { id: entry.id },
         );
       } else {
+        if (entry.entity === "book") failedBooks.add(entry.entityId);
         rejected.push({
           id: entry.id,
           reason: result.reason ?? "Unknown error",
@@ -323,6 +341,7 @@ export async function action({ request }: { request: Request }) {
         });
       }
     } catch (err) {
+      if (entry.entity === "book") failedBooks.add(entry.entityId);
       console.error(`[sync/push] Error processing entry ${entry.id}:`, err);
       rejected.push({
         id: entry.id,

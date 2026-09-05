@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import type { JSONContent } from "@tiptap/react";
 import { sql } from "pg-sql";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
@@ -23,8 +24,9 @@ export async function upsertNotebook(
   bookId: string,
   content: unknown,
   updatedAt: Date,
+  client?: PoolClient,
 ): Promise<NotebookRow | null> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const mutationAt = updatedAt.toISOString();
   const result = await pool.query<NotebookRow>(sql`
     INSERT INTO readmax.notebook (user_id, book_id, content, updated_at, mutation_at)

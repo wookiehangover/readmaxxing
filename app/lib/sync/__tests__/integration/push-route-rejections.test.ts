@@ -15,7 +15,12 @@ const mocks = vi.hoisted(() => ({
   bookmark: vi.fn(),
   position: vi.fn(),
 }));
-vi.mock("~/lib/database/pool", () => ({ getPool: () => ({ query: mocks.query }) }));
+vi.mock("~/lib/database/pool", () => ({
+  getPool: () => ({
+    query: mocks.query,
+    connect: async () => ({ query: mocks.query, release: () => {} }),
+  }),
+}));
 vi.mock("~/lib/database/auth-middleware", () => ({ requireAuth: mocks.auth }));
 vi.mock("~/lib/database/book/book", () => ({
   upsertBook: vi.fn(),
@@ -81,6 +86,10 @@ function routeFetch() {
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(`CREATE SCHEMA readmax;
+    CREATE TABLE readmax.book (
+      id text PRIMARY KEY, user_id text, canonical_id text, deleted_at timestamptz,
+      file_hash text, updated_at timestamptz, mutation_at timestamptz
+    );
     CREATE TABLE readmax.notebook (
       user_id text, book_id text, content jsonb, updated_at timestamptz, mutation_at timestamptz,
       PRIMARY KEY (user_id, book_id)
@@ -95,7 +104,11 @@ beforeEach(async () => {
   vi.resetAllMocks();
   vi.stubEnv("DATABASE_URL", "postgres://unused");
   mocks.auth.mockResolvedValue({ userId: "user" });
-  mocks.query.mockImplementation((query: SQLQuery) => db.query(query.text, query.values));
+  mocks.query.mockImplementation((query: SQLQuery | string) => {
+    if (typeof query !== "string" && query.text.includes("pg_advisory_xact_lock"))
+      return Promise.resolve({ rows: [], rowCount: 1 });
+    return typeof query === "string" ? db.query(query) : db.query(query.text, query.values);
+  });
   now = Date.now();
   vi.spyOn(Date, "now").mockImplementation(() => now);
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -107,6 +120,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function failNextNotebook(reason: unknown) {
+  const execute = mocks.query.getMockImplementation()!;
+  let pending = true;
+  mocks.query.mockImplementation((query: SQLQuery | string) => {
+    if (
+      pending &&
+      typeof query !== "string" &&
+      query.text.includes("INSERT INTO readmax.notebook")
+    ) {
+      pending = false;
+      return Promise.reject(reason);
+    }
+    return execute(query);
+  });
+}
+
 describe("sync route to durable outbox", () => {
   it.each(["notebook", "highlight", "bookmark", "position"] as const)(
     "retains a transient %s DAL rejection and accepts it after reload/recovery",
@@ -114,8 +143,9 @@ describe("sync route to durable outbox", () => {
       const change = await queue("failed-book", entity);
       now += 1;
       const healthy = await queue("healthy-book");
-      const dal = entity === "notebook" ? mocks.query : mocks[entity];
-      dal.mockRejectedValueOnce(new Error("connection terminated unexpectedly"));
+      const failure = new Error("connection terminated unexpectedly");
+      if (entity === "notebook") failNextNotebook(failure);
+      else mocks[entity].mockRejectedValueOnce(failure);
       const { fetchMock, responses } = routeFetch();
       await expect(pushChangesWithResult(ctx())).rejects.toThrow("Push incomplete");
       expect(responses[0].status).toBe(200);
@@ -157,7 +187,7 @@ describe("sync route to durable outbox", () => {
   it("returns 503 to legacy clients after partial success; replay is idempotent and preserves newer notebook content", async () => {
     const failed = await queue("fails-once");
     const accepted = await queue("accepted-first-time");
-    mocks.query.mockRejectedValueOnce(new Error("temporary database failure"));
+    failNextNotebook(new Error("temporary database failure"));
     const legacyBody = { changes: [failed, accepted] };
     const first = await action({ request: request(legacyBody) });
     expect(first.status).toBe(503);
@@ -239,7 +269,7 @@ it.each([true, undefined])(
   "treats unknown DAL exceptions as retryable for an all-rejected batch (capability=%s)",
   async (supportsRetryableRejections) => {
     const change = await queue("unknown-failure");
-    mocks.query.mockRejectedValueOnce(null);
+    failNextNotebook(null);
     const response = await action({
       request: request({ changes: [change], supportsRetryableRejections }),
     });

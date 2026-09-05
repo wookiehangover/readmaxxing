@@ -44,13 +44,14 @@ export async function upsertPosition(
   bookId: string,
   cfi: string | null,
   updatedAt: Date,
+  transaction?: PoolClient,
 ): Promise<ReadingPositionRow | null> {
   const pool = getPool();
   const ts = updatedAt.toISOString();
-  const client = await pool.connect();
+  const client = transaction ?? (await pool.connect());
 
   try {
-    await client.query("BEGIN");
+    if (!transaction) await client.query("BEGIN");
     await lockPosition(client, userId, bookId);
     const existing = await client.query<ReadingPositionRow>(sql`
       SELECT ${POSITION_COLUMNS}
@@ -62,7 +63,7 @@ export async function upsertPosition(
     const existingRow = existing.rows[0];
 
     if (existingRow && !shouldReplacePosition(existingRow, cfi, ts)) {
-      await client.query("COMMIT");
+      if (!transaction) await client.query("COMMIT");
       return null;
     }
 
@@ -75,13 +76,13 @@ export async function upsertPosition(
             mutation_at = GREATEST(EXCLUDED.mutation_at, COALESCE(readmax.reading_position.mutation_at, readmax.reading_position.updated_at))
       RETURNING ${POSITION_COLUMNS}
     `);
-    await client.query("COMMIT");
+    if (!transaction) await client.query("COMMIT");
     return result.rows[0] ?? null;
   } catch (error) {
-    await client.query("ROLLBACK").catch(console.error);
+    if (!transaction) await client.query("ROLLBACK").catch(console.error);
     throw error;
   } finally {
-    client.release();
+    if (!transaction) client.release();
   }
 }
 

@@ -4,10 +4,11 @@ import type { ChangeEntry } from "~/lib/sync/types";
 vi.mock("~/lib/database/book/book", () => ({
   upsertBook: vi.fn(async () => null),
   softDeleteBook: vi.fn(async () => true),
-  findBookByUserAndHash: vi.fn(async () => null),
-  insertTombstonedBook: vi.fn(async () => null),
-  getBookByIdForUser: vi.fn(async () => null),
   updateBookBlobUrls: vi.fn(async () => null),
+}));
+
+vi.mock("~/lib/database/book/canonical-book-write", () => ({
+  withCanonicalBookWrite: vi.fn(),
 }));
 
 vi.mock("~/lib/database/auth-middleware", () => ({
@@ -32,22 +33,14 @@ vi.mock("~/lib/database/chat/chat-session", () => ({
 vi.mock("~/lib/database/settings/user-settings", () => ({ upsertSettings: vi.fn() }));
 vi.mock("~/lib/database/user/user", () => ({ upsertUser: vi.fn() }));
 
+import { withCanonicalBookWrite } from "~/lib/database/book/canonical-book-write";
 import { processEntry } from "~/routes/api.sync.push";
-import {
-  upsertBook,
-  findBookByUserAndHash,
-  insertTombstonedBook,
-  getBookByIdForUser,
-  updateBookBlobUrls,
-} from "~/lib/database/book/book";
+import { upsertBook, updateBookBlobUrls } from "~/lib/database/book/book";
 import { upsertMessage } from "~/lib/database/chat/chat-session";
 import { upsertBookmark, softDeleteBookmark } from "~/lib/database/bookmark/bookmark";
 import { upsertPosition } from "~/lib/database/book/reading-position";
 
 const upsertBookMock = upsertBook as ReturnType<typeof vi.fn>;
-const findMock = findBookByUserAndHash as ReturnType<typeof vi.fn>;
-const insertTombstoneMock = insertTombstonedBook as ReturnType<typeof vi.fn>;
-const getByIdMock = getBookByIdForUser as ReturnType<typeof vi.fn>;
 const updateUrlsMock = updateBookBlobUrls as ReturnType<typeof vi.fn>;
 const upsertBookmarkMock = upsertBookmark as ReturnType<typeof vi.fn>;
 const softDeleteBookmarkMock = softDeleteBookmark as ReturnType<typeof vi.fn>;
@@ -74,151 +67,59 @@ function makeBookEntry(overrides: Partial<ChangeEntry> = {}): ChangeEntry {
 }
 
 beforeEach(() => {
+  vi.mocked(withCanonicalBookWrite)
+    .mockReset()
+    .mockImplementation((_userId, entry, write) => write(entry));
   upsertBookMock.mockClear();
-  findMock.mockReset();
-  insertTombstoneMock.mockReset();
-  getByIdMock.mockReset();
   updateUrlsMock.mockClear();
   upsertBookmarkMock.mockClear();
   softDeleteBookmarkMock.mockClear();
   upsertPositionMock.mockClear();
 });
 
-describe("processEntry book dedup branch", () => {
-  it("returns canonicalId and tombstones incoming when fileHash matches a different book", async () => {
-    findMock.mockResolvedValue({
-      id: "book-canonical",
-      userId: "u1",
-      fileHash: "hash-abc",
-      deletedAt: null,
+describe("processEntry book transaction contract", () => {
+  it("returns the canonical transaction result with the original entry", async () => {
+    const entry = makeBookEntry();
+    vi.mocked(withCanonicalBookWrite).mockResolvedValueOnce({
+      accepted: true,
+      canonicalId: "book-canonical",
     });
-    getByIdMock.mockResolvedValue(null);
-
-    const result = await processEntry("u1", makeBookEntry());
-
-    expect(result).toEqual({ accepted: true, canonicalId: "book-canonical" });
-    expect(insertTombstoneMock).toHaveBeenCalledWith("u1", {
-      id: "book-new",
-      fileHash: "hash-abc",
-      createdAt: new Date(2000),
+    expect(await processEntry("u1", entry)).toEqual({
+      accepted: true,
+      canonicalId: "book-canonical",
     });
+    expect(withCanonicalBookWrite).toHaveBeenCalledWith("u1", entry, expect.any(Function));
     expect(upsertBookMock).not.toHaveBeenCalled();
   });
 
-  it("does not tombstone when the incoming id is already soft-deleted", async () => {
-    findMock.mockResolvedValue({
-      id: "book-canonical",
-      userId: "u1",
-      fileHash: "hash-abc",
-      deletedAt: null,
-    });
-    getByIdMock.mockResolvedValue({
-      id: "book-new",
-      userId: "u1",
-      deletedAt: new Date(),
-    });
-
-    const result = await processEntry("u1", makeBookEntry());
-
-    expect(result.canonicalId).toBe("book-canonical");
-    expect(insertTombstoneMock).not.toHaveBeenCalled();
-  });
-
-  it("upserts normally when fileHash is missing", async () => {
-    const entry = makeBookEntry({
-      data: { id: "book-new", title: "No hash", updatedAt: 1000 },
-    });
-
-    const result = await processEntry("u1", entry);
-
-    expect(result).toEqual({ accepted: true });
-    expect(findMock).not.toHaveBeenCalled();
-    expect(upsertBookMock).toHaveBeenCalled();
-  });
-
-  it("upserts normally when no existing book matches the fileHash", async () => {
-    findMock.mockResolvedValue(null);
-
-    const result = await processEntry("u1", makeBookEntry());
-
-    expect(result).toEqual({ accepted: true });
-    expect(upsertBookMock).toHaveBeenCalled();
-    expect(insertTombstoneMock).not.toHaveBeenCalled();
-  });
-
   it("passes null deletedAt for restored book put entries", async () => {
-    findMock.mockResolvedValue(null);
-
     await processEntry("u1", makeBookEntry({ data: { id: "book-new", deletedAt: null } }));
 
-    expect(upsertBookMock).toHaveBeenCalledWith("u1", expect.objectContaining({ deletedAt: null }));
+    expect(upsertBookMock).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({ deletedAt: null }),
+      undefined,
+    );
   });
 
   it("passes deletedAt for soft-deleted book put entries", async () => {
-    findMock.mockResolvedValue(null);
-
     await processEntry("u1", makeBookEntry({ data: { id: "book-new", deletedAt: 0 } }));
 
     expect(upsertBookMock).toHaveBeenCalledWith(
       "u1",
       expect.objectContaining({ deletedAt: new Date(0) }),
+      undefined,
     );
   });
 
   it("passes null deletedAt for live book put entries with no deletedAt field", async () => {
-    findMock.mockResolvedValue(null);
-
     await processEntry("u1", makeBookEntry({ data: { id: "book-new", updatedAt: 2000 } }));
 
-    expect(upsertBookMock).toHaveBeenCalledWith("u1", expect.objectContaining({ deletedAt: null }));
-  });
-
-  it("upserts a live new id when only same-hash rows are soft-deleted", async () => {
-    findMock.mockResolvedValue(null);
-    const entry = makeBookEntry({
-      entityId: "book-reupload",
-      data: {
-        id: "book-reupload",
-        title: "Re-upload",
-        fileHash: "hash-abc",
-        remoteFileUrl: "https://blob.vercel-storage.com/file.epub",
-        remoteCoverUrl: "https://blob.vercel-storage.com/cover.jpg",
-        updatedAt: 3000,
-      },
-      timestamp: 3000,
-    });
-
-    const result = await processEntry("u1", entry);
-
-    expect(result).toEqual({ accepted: true });
     expect(upsertBookMock).toHaveBeenCalledWith(
       "u1",
-      expect.objectContaining({ id: "book-reupload", fileHash: "hash-abc", deletedAt: null }),
+      expect.objectContaining({ deletedAt: null }),
+      undefined,
     );
-    expect(insertTombstoneMock).not.toHaveBeenCalled();
-    expect(upsertBookMock).toHaveBeenCalledWith(
-      "u1",
-      expect.objectContaining({
-        id: "book-reupload",
-        fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
-        coverBlobUrl: "https://blob.vercel-storage.com/cover.jpg",
-      }),
-    );
-  });
-
-  it("upserts normally when the matching canonical is the same id (idempotent re-push)", async () => {
-    findMock.mockResolvedValue({
-      id: "book-new",
-      userId: "u1",
-      fileHash: "hash-abc",
-      deletedAt: null,
-    });
-
-    const result = await processEntry("u1", makeBookEntry());
-
-    expect(result).toEqual({ accepted: true });
-    expect(upsertBookMock).toHaveBeenCalled();
-    expect(insertTombstoneMock).not.toHaveBeenCalled();
   });
 });
 
@@ -235,13 +136,18 @@ describe("processEntry position branch", () => {
     });
 
     expect(result).toEqual({ accepted: true });
-    expect(upsertPositionMock).toHaveBeenCalledWith("u1", "book-1", "page:12", new Date(2000));
+    expect(upsertPositionMock).toHaveBeenCalledWith(
+      "u1",
+      "book-1",
+      "page:12",
+      new Date(2000),
+      undefined,
+    );
   });
 });
 
 describe("processEntry book blob URLs", () => {
   it("includes blob URLs in the same version-guarded book upsert", async () => {
-    findMock.mockResolvedValue(null);
     const entry = makeBookEntry({
       data: {
         id: "book-new",
@@ -264,11 +170,11 @@ describe("processEntry book blob URLs", () => {
         fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
         coverBlobUrl: "https://blob.vercel-storage.com/cover.jpg",
       }),
+      undefined,
     );
   });
 
   it("does not call updateBookBlobUrls when neither URL is provided", async () => {
-    findMock.mockResolvedValue(null);
     const entry = makeBookEntry({
       data: { id: "book-new", title: "Test", updatedAt: 2000 },
     });
@@ -280,7 +186,6 @@ describe("processEntry book blob URLs", () => {
   });
 
   it("passes undefined for the missing URL so COALESCE preserves existing DB values", async () => {
-    findMock.mockResolvedValue(null);
     const entry = makeBookEntry({
       data: {
         id: "book-new",
@@ -298,31 +203,18 @@ describe("processEntry book blob URLs", () => {
         fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
         coverBlobUrl: undefined,
       }),
+      undefined,
     );
   });
 
-  it("does not persist URLs on the dedup tombstone branch", async () => {
-    findMock.mockResolvedValue({
-      id: "book-canonical",
-      userId: "u1",
-      fileHash: "hash-abc",
-      deletedAt: null,
+  it("does not persist URLs after the canonical transaction handled a duplicate", async () => {
+    vi.mocked(withCanonicalBookWrite).mockResolvedValueOnce({
+      accepted: true,
+      canonicalId: "book-canonical",
     });
-    getByIdMock.mockResolvedValue(null);
-
-    const result = await processEntry(
-      "u1",
-      makeBookEntry({
-        data: {
-          id: "book-new",
-          fileHash: "hash-abc",
-          remoteFileUrl: "https://blob.vercel-storage.com/file.epub",
-          updatedAt: 2000,
-        },
-      }),
-    );
-
+    const result = await processEntry("u1", makeBookEntry());
     expect(result.canonicalId).toBe("book-canonical");
+    expect(upsertBookMock).not.toHaveBeenCalled();
     expect(updateUrlsMock).not.toHaveBeenCalled();
   });
 });
@@ -349,17 +241,21 @@ describe("processEntry bookmark branch", () => {
     });
 
     expect(result).toEqual({ accepted: true });
-    expect(upsertBookmarkMock).toHaveBeenCalledWith("u1", {
-      id: "bookmark-1",
-      bookId: "book-1",
-      cfi: "epubcfi(/6/2)",
-      label: "Chapter 1",
-      pageNumber: null,
-      displayPage: 12,
-      createdAt: new Date(1000),
-      updatedAt: new Date(2000),
-      deletedAt: null,
-    });
+    expect(upsertBookmarkMock).toHaveBeenCalledWith(
+      "u1",
+      {
+        id: "bookmark-1",
+        bookId: "book-1",
+        cfi: "epubcfi(/6/2)",
+        label: "Chapter 1",
+        pageNumber: null,
+        displayPage: 12,
+        createdAt: new Date(1000),
+        updatedAt: new Date(2000),
+        deletedAt: null,
+      },
+      undefined,
+    );
   });
 
   it("soft-deletes bookmark delete entries", async () => {
@@ -374,7 +270,12 @@ describe("processEntry bookmark branch", () => {
     });
 
     expect(result).toEqual({ accepted: true });
-    expect(softDeleteBookmarkMock).toHaveBeenCalledWith("u1", "bookmark-1", new Date(2000));
+    expect(softDeleteBookmarkMock).toHaveBeenCalledWith(
+      "u1",
+      "bookmark-1",
+      new Date(2000),
+      undefined,
+    );
   });
 });
 
@@ -424,5 +325,24 @@ describe("processEntry chat_message branch", () => {
 
     expect(result.accepted).toBe(false);
     expect(upsertMessageMock).not.toHaveBeenCalled();
+  });
+});
+
+it("keeps permanent validation rejections permanent when the parent book also failed", async () => {
+  const failedBooks = new Set(["book-new"]);
+  const notebook = {
+    ...makeBookEntry(),
+    entity: "notebook" as const,
+    data: { bookId: "book-new" },
+  };
+  expect(await processEntry("u1", { ...notebook, timestamp: Infinity }, failedBooks)).toMatchObject(
+    { accepted: false, retryable: false },
+  );
+  expect(
+    await processEntry("u1", { ...notebook, entity: "chat_message" }, failedBooks),
+  ).toMatchObject({ accepted: false, retryable: false });
+  expect(await processEntry("u1", notebook, failedBooks)).toMatchObject({
+    accepted: false,
+    retryable: true,
   });
 });

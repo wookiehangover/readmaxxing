@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { sql } from "pg-sql";
 import { clampNullableTimestamp, clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
@@ -14,6 +15,7 @@ export interface BookRow {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  canonicalId?: string | null;
   cursorTimestamp?: string;
 }
 
@@ -40,11 +42,16 @@ const BOOK_COLUMNS = sql`
   file_hash AS "fileHash",
   created_at AS "createdAt",
   COALESCE(mutation_at, updated_at) AS "updatedAt",
-  deleted_at AS "deletedAt"
+  deleted_at AS "deletedAt",
+  canonical_id AS "canonicalId"
 `;
 
-export async function upsertBook(userId: string, book: UpsertBookData): Promise<BookRow | null> {
-  const pool = getPool();
+export async function upsertBook(
+  userId: string,
+  book: UpsertBookData,
+  client?: PoolClient,
+): Promise<BookRow | null> {
+  const pool = client ?? getPool();
   const mutationAt = (book.updatedAt ?? new Date()).toISOString();
   const shouldUpdateDeletedAt = book.deletedAt !== undefined;
   const deletedAtIso = clampNullableTimestamp(book.deletedAt, undefined, Date.parse(mutationAt));
@@ -135,8 +142,9 @@ export async function softDeleteBook(
   userId: string,
   bookId: string,
   deletedAt?: Date,
+  client?: PoolClient,
 ): Promise<boolean> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const mutationAt = (deletedAt ?? new Date()).toISOString();
   const result = await pool.query(sql`
     INSERT INTO readmax.book (id, user_id, deleted_at, updated_at, mutation_at)
@@ -163,8 +171,9 @@ export async function softDeleteBook(
 export async function findBookByUserAndHash(
   userId: string,
   fileHash: string,
+  client?: PoolClient,
 ): Promise<BookRow | null> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const result = await pool.query<BookRow>(sql`
     SELECT ${BOOK_COLUMNS}
     FROM readmax.book
