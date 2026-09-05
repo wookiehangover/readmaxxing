@@ -1,7 +1,6 @@
 import type { PoolClient } from "pg";
 import { sql } from "pg-sql";
 import { isFurtherAlong } from "~/lib/position-compare";
-import { clampUpdatedAt } from "../clamp-timestamp";
 import { getPool } from "../pool";
 
 export interface ReadingPositionRow {
@@ -16,7 +15,7 @@ const POSITION_COLUMNS = sql`
   user_id AS "userId",
   book_id AS "bookId",
   cfi,
-  updated_at AS "updatedAt"
+  COALESCE(mutation_at, updated_at) AS "updatedAt"
 `;
 
 async function lockPosition(client: PoolClient, userId: string, bookId: string): Promise<void> {
@@ -34,7 +33,7 @@ function shouldReplacePosition(
     if (isFurtherAlong(cfi, existing.cfi)) return true;
     if (isFurtherAlong(existing.cfi, cfi)) return false;
   }
-  return new Date(updatedAt).getTime() >= existing.updatedAt.getTime();
+  return new Date(updatedAt).getTime() > existing.updatedAt.getTime();
 }
 
 export async function upsertPosition(
@@ -44,7 +43,7 @@ export async function upsertPosition(
   updatedAt: Date,
 ): Promise<ReadingPositionRow | null> {
   const pool = getPool();
-  const ts = clampUpdatedAt(updatedAt);
+  const ts = updatedAt.toISOString();
   const client = await pool.connect();
 
   try {
@@ -64,19 +63,13 @@ export async function upsertPosition(
       return null;
     }
 
-    const storedUpdatedAt =
-      existingRow &&
-      cfi !== existingRow.cfi &&
-      new Date(ts).getTime() <= existingRow.updatedAt.getTime()
-        ? new Date(Math.max(Date.now(), existingRow.updatedAt.getTime() + 1)).toISOString()
-        : ts;
-
     const result = await client.query<ReadingPositionRow>(sql`
-      INSERT INTO readmax.reading_position (user_id, book_id, cfi, updated_at)
-      VALUES (${userId}, ${bookId}, ${cfi}, ${storedUpdatedAt})
+      INSERT INTO readmax.reading_position (user_id, book_id, cfi, updated_at, mutation_at)
+      VALUES (${userId}, ${bookId}, ${cfi}, clock_timestamp(), ${ts})
       ON CONFLICT (user_id, book_id) DO UPDATE
         SET cfi = EXCLUDED.cfi,
-            updated_at = EXCLUDED.updated_at
+            updated_at = GREATEST(clock_timestamp(), readmax.reading_position.updated_at + INTERVAL '1 microsecond'),
+            mutation_at = GREATEST(EXCLUDED.mutation_at, COALESCE(readmax.reading_position.mutation_at, readmax.reading_position.updated_at))
       RETURNING ${POSITION_COLUMNS}
     `);
     await client.query("COMMIT");

@@ -196,10 +196,14 @@ describe("processEntry book dedup branch", () => {
       expect.objectContaining({ id: "book-reupload", fileHash: "hash-abc", deletedAt: null }),
     );
     expect(insertTombstoneMock).not.toHaveBeenCalled();
-    expect(updateUrlsMock).toHaveBeenCalledWith("book-reupload", {
-      fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
-      coverBlobUrl: "https://blob.vercel-storage.com/cover.jpg",
-    });
+    expect(upsertBookMock).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({
+        id: "book-reupload",
+        fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
+        coverBlobUrl: "https://blob.vercel-storage.com/cover.jpg",
+      }),
+    );
   });
 
   it("upserts normally when the matching canonical is the same id (idempotent re-push)", async () => {
@@ -236,7 +240,7 @@ describe("processEntry position branch", () => {
 });
 
 describe("processEntry book blob URLs", () => {
-  it("calls updateBookBlobUrls with both URLs when the client sends them", async () => {
+  it("includes blob URLs in the same version-guarded book upsert", async () => {
     findMock.mockResolvedValue(null);
     const entry = makeBookEntry({
       data: {
@@ -253,10 +257,14 @@ describe("processEntry book blob URLs", () => {
 
     expect(result).toEqual({ accepted: true });
     expect(upsertBookMock).toHaveBeenCalled();
-    expect(updateUrlsMock).toHaveBeenCalledWith("book-new", {
-      fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
-      coverBlobUrl: "https://blob.vercel-storage.com/cover.jpg",
-    });
+    expect(upsertBookMock).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({
+        id: "book-new",
+        fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
+        coverBlobUrl: "https://blob.vercel-storage.com/cover.jpg",
+      }),
+    );
   });
 
   it("does not call updateBookBlobUrls when neither URL is provided", async () => {
@@ -283,10 +291,14 @@ describe("processEntry book blob URLs", () => {
 
     await processEntry("u1", entry);
 
-    expect(updateUrlsMock).toHaveBeenCalledWith("book-new", {
-      fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
-      coverBlobUrl: undefined,
-    });
+    expect(upsertBookMock).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({
+        id: "book-new",
+        fileBlobUrl: "https://blob.vercel-storage.com/file.epub",
+        coverBlobUrl: undefined,
+      }),
+    );
   });
 
   it("does not persist URLs on the dedup tombstone branch", async () => {
@@ -362,7 +374,7 @@ describe("processEntry bookmark branch", () => {
     });
 
     expect(result).toEqual({ accepted: true });
-    expect(softDeleteBookmarkMock).toHaveBeenCalledWith("u1", "bookmark-1");
+    expect(softDeleteBookmarkMock).toHaveBeenCalledWith("u1", "bookmark-1", new Date(2000));
   });
 });
 
