@@ -141,8 +141,12 @@ export async function upsertHighlight(
   return result.rows[0];
 }
 
-export async function getHighlightsByUser(userId: string, limit?: number): Promise<HighlightRow[]> {
-  const pool = getPool();
+export async function getHighlightsByUser(
+  userId: string,
+  limit?: number,
+  client?: PoolClient,
+): Promise<HighlightRow[]> {
+  const pool = client ?? getPool();
   const result = await pool.query<HighlightRow>(sql`
     SELECT ${HIGHLIGHT_COLUMNS}
     FROM readmax.highlight

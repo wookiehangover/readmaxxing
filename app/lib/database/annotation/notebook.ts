@@ -83,8 +83,9 @@ export async function getNotebooksByUserSince(
 export async function getNotebookForUser(
   userId: string,
   bookId: string,
+  client?: PoolClient,
 ): Promise<NotebookRow | null> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const result = await pool.query<NotebookRow>(sql`
     SELECT ${NOTEBOOK_COLUMNS}
     FROM readmax.notebook
@@ -99,8 +100,12 @@ export async function getNotebookForUser(
  * Returns an empty string if no notebook exists or the stored content is not a
  * valid TipTap document.
  */
-export async function getNotebookMarkdownForUser(userId: string, bookId: string): Promise<string> {
-  const row = await getNotebookForUser(userId, bookId);
+export async function getNotebookMarkdownForUser(
+  userId: string,
+  bookId: string,
+  client?: PoolClient,
+): Promise<string> {
+  const row = await getNotebookForUser(userId, bookId, client);
   if (!row || !row.content) return "";
   try {
     return tiptapJsonToMarkdown(row.content as JSONContent);
