@@ -1,4 +1,4 @@
-import { entries, update } from "idb-keyval";
+import { entries, promisifyRequest, update } from "idb-keyval";
 import { assignRemapOwners, remapQueuedChanges, retainRemapReplay } from "./change-log";
 import { getDefaultRemapStores, remapBookId, type RemapStores } from "./remap";
 import type { BookIdRemap } from "./remap-references";
@@ -20,19 +20,46 @@ export async function persistBookRemap(
   toId: string,
 ): Promise<void> {
   if (!ownerId || !fromId || !toId || fromId === toId) return;
-  await update<BookRemapIntent>(
-    intentKey(ownerId, fromId),
-    (existing) => {
-      if (existing) {
-        if (existing.ownerId !== ownerId || existing.toId !== toId) {
-          throw new Error("Conflicting canonical book identity; remap evidence retained");
+  let invalid: Error | undefined;
+  try {
+    await getBookRemapStore()("readwrite", (store) => {
+      const values = store.getAll();
+      const keys = store.getAllKeys();
+      keys.onsuccess = () => {
+        try {
+          const byId = new Map<string, string>();
+          for (const [index, intent] of (values.result as BookRemapIntent[]).entries()) {
+            const ownedKey = intentKey(ownerId, intent.fromId);
+            if (keys.result[index] === ownedKey && intent.ownerId !== ownerId) {
+              throw new Error("Book remap owner mismatch; evidence retained");
+            }
+            if (intent.ownerId !== ownerId) continue;
+            if (keys.result[index] !== ownedKey) {
+              throw new Error("Invalid owned remap identity; evidence retained");
+            }
+            byId.set(intent.fromId, intent.toId);
+          }
+          const target = resolveTarget(toId, byId, fromId);
+          const previousTarget = resolveTarget(fromId, byId);
+          if (previousTarget === target) return;
+          // Aliases are permanent: later authoritative A→D after A→C proves
+          // the old terminal C moved to D. Keep A→C and append C→D atomically,
+          // so surviving C data and stale producers retain their recovery path.
+          // Resolving both ends also makes delayed A→C responses harmless.
+          store.put(
+            { ownerId, fromId: previousTarget, toId: target, complete: false },
+            intentKey(ownerId, previousTarget),
+          );
+        } catch (error) {
+          invalid = error as Error;
+          store.transaction.abort();
         }
-        return existing;
-      }
-      return { ownerId, fromId, toId, complete: false };
-    },
-    getBookRemapStore(),
-  );
+      };
+      return promisifyRequest(store.transaction);
+    });
+  } catch (error) {
+    throw invalid ?? error;
+  }
 }
 
 export async function getBookRemaps(ownerId?: string): Promise<BookRemapIntent[]> {
@@ -48,19 +75,20 @@ export async function getBookRemaps(ownerId?: string): Promise<BookRemapIntent[]
   );
 }
 
+function resolveTarget(id: string, byId: Map<string, string>, forbidden?: string): string {
+  const seen = new Set(forbidden ? [forbidden] : []);
+  for (;;) {
+    if (seen.has(id)) throw new Error("Cyclic canonical book identity; remap evidence retained");
+    seen.add(id);
+    const next = byId.get(id);
+    if (!next) return id;
+    id = next;
+  }
+}
+
 function resolveRemaps(intents: BookRemapIntent[]): BookIdRemap[] {
   const byId = new Map(intents.map((intent) => [intent.fromId, intent.toId]));
-  return intents.map(({ fromId, toId }) => {
-    const seen = new Set([fromId]);
-    while (byId.has(toId)) {
-      if (seen.has(toId))
-        throw new Error("Cyclic canonical book identity; remap evidence retained");
-      seen.add(toId);
-      toId = byId.get(toId)!;
-    }
-    if (seen.has(toId)) throw new Error("Cyclic canonical book identity; remap evidence retained");
-    return { fromId, toId };
-  });
+  return intents.map(({ fromId, toId }) => ({ fromId, toId: resolveTarget(toId, byId, fromId) }));
 }
 
 function publishRemap(key: string, bookIdRemap: BookIdRemap, isStopped?: () => boolean): void {
