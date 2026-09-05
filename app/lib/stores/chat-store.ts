@@ -215,7 +215,10 @@ export const ChatService = {
       await set(bookId, filtered, getSessionStore());
 
       if (deleted) {
-        trackSessionChange({ ...deleted, updatedAt: Date.now() }, "delete");
+        trackSessionChange(
+          { ...deleted, updatedAt: Math.max(Date.now(), deleted.updatedAt + 1) },
+          "delete",
+        );
       }
 
       // If the deleted session was active, clear or reset active
@@ -244,7 +247,11 @@ export const ChatService = {
       const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
       const idx = sessions.findIndex((s) => s.id === sessionId);
       if (idx >= 0) {
-        sessions[idx] = { ...sessions[idx], title, updatedAt: Date.now() };
+        sessions[idx] = {
+          ...sessions[idx],
+          title,
+          updatedAt: Math.max(Date.now(), sessions[idx].updatedAt + 1),
+        };
         await set(bookId, sessions, getSessionStore());
         trackSessionChange(sessions[idx]);
       }

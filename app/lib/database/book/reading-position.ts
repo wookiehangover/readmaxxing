@@ -33,6 +33,9 @@ function shouldReplacePosition(
     if (isFurtherAlong(cfi, existing.cfi)) return true;
     if (isFurtherAlong(existing.cfi, cfi)) return false;
   }
+  if (cfi !== existing.cfi && new Date(updatedAt).getTime() === existing.updatedAt.getTime()) {
+    throw new Error("Conflicting reading positions share a mutation timestamp");
+  }
   return new Date(updatedAt).getTime() > existing.updatedAt.getTime();
 }
 

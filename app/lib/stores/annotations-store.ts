@@ -160,7 +160,7 @@ export function makeAnnotationService(stores: AnnotationServiceStores) {
       } catch (cause) {
         throw new DecodeError({ operation: "updateHighlight", cause });
       }
-      const now = Date.now();
+      const now = Math.max(Date.now(), (existing.updatedAt ?? existing.createdAt) + 1);
       const updated = { ...existing, ...updates, updatedAt: now };
       try {
         await set(id, updated, highlightStore);

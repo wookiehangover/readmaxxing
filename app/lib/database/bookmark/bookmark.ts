@@ -78,9 +78,10 @@ export async function upsertBookmark(
           mutation_at = EXCLUDED.mutation_at,
           deleted_at = EXCLUDED.deleted_at
       WHERE readmax.bookmark.user_id = EXCLUDED.user_id
-        AND (EXCLUDED.mutation_at > COALESCE(readmax.bookmark.mutation_at, readmax.bookmark.updated_at)
-          OR (EXCLUDED.mutation_at = COALESCE(readmax.bookmark.mutation_at, readmax.bookmark.updated_at)
-              AND EXCLUDED.deleted_at IS NOT NULL AND readmax.bookmark.deleted_at IS NULL))
+        AND ((EXCLUDED.deleted_at IS NOT NULL
+                AND (readmax.bookmark.deleted_at IS NULL OR EXCLUDED.deleted_at > readmax.bookmark.deleted_at))
+          OR (EXCLUDED.deleted_at IS NULL AND readmax.bookmark.deleted_at IS NULL
+                AND EXCLUDED.mutation_at > COALESCE(readmax.bookmark.mutation_at, readmax.bookmark.updated_at)))
     RETURNING ${BOOKMARK_COLUMNS}
   `);
 
@@ -104,8 +105,7 @@ export async function softDeleteBookmark(
         mutation_at = ${mutationAt}
     WHERE id = ${bookmarkId}
       AND user_id = ${userId}
-      AND (${mutationAt}::timestamptz > COALESCE(mutation_at, updated_at)
-        OR (${mutationAt}::timestamptz = COALESCE(mutation_at, updated_at) AND deleted_at IS NULL))
+      AND (deleted_at IS NULL OR ${mutationAt}::timestamptz > deleted_at)
   `);
   if (deletedAt && !result.rowCount) {
     // Legacy deletes can lack the book ID needed to insert a tombstone. Keep
