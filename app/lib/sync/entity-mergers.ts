@@ -5,6 +5,7 @@ import { removeSessionLocally } from "~/lib/stores/chat-store";
 import { isWellFormedEntry } from "./idb-entry";
 import { lwwMerge, setUnionMerge } from "./merge";
 import { remapBookId } from "./remap";
+import { persistBookRemap, resumeBookRemaps } from "./remap-journal";
 import {
   serverBookToLocal,
   serverBookmarkToLocal,
@@ -27,12 +28,32 @@ import {
 } from "./stores";
 import type { EntityType } from "./types";
 
-export async function mergeBookRecord(record: Record<string, unknown>): Promise<void> {
+export async function mergeBookRecord(
+  record: Record<string, unknown>,
+  context?: { userId?: string; isStopped?: () => boolean },
+): Promise<void> {
   const store = getBookStore();
   const remoteRecord = serverBookToLocal(record);
   const id = remoteRecord.id as string;
   const remoteHash = remoteRecord.fileHash as string | undefined;
   const remoteDeletedAt = remoteRecord.deletedAt as number | undefined;
+
+  const remap = async (fromId: string, toId: string) => {
+    if (context?.userId) {
+      if (record.userId && record.userId !== context.userId)
+        throw new Error("Book remap owner mismatch");
+      await persistBookRemap(context.userId, fromId, toId);
+      await resumeBookRemaps(context.userId, { isStopped: context.isStopped });
+    } else {
+      // Standalone local merger callers have no authenticated recovery owner.
+      await remapBookId(fromId, toId);
+    }
+  };
+  // A tombstone alone is never an alias. New servers publish explicit evidence;
+  // legacy responses retain the non-deleted file-hash dedup path below.
+  if (typeof record.canonicalId === "string" && record.canonicalId && record.canonicalId !== id) {
+    await remap(id, record.canonicalId);
+  }
 
   // Cross-device dedup on pull: if the incoming non-deleted book matches
   // an existing local book by fileHash under a different id, remap local
@@ -46,21 +67,7 @@ export async function mergeBookRecord(record: Record<string, unknown>): Promise<
       if (!localBook || localId === id) continue;
       if (localBook.deletedAt != null) continue;
       if (localBook.fileHash !== remoteHash) continue;
-      await remapBookId(localId, id);
-      if (typeof window !== "undefined") {
-        queueMicrotask(() => {
-          for (const entity of [
-            "book",
-            "position",
-            "highlight",
-            "bookmark",
-            "notebook",
-            "chat_session",
-          ] as const) {
-            window.dispatchEvent(new CustomEvent("sync:entity-updated", { detail: { entity } }));
-          }
-        });
-      }
+      await remap(localId, id);
       break;
     }
   }
