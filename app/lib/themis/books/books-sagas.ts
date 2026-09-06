@@ -10,6 +10,7 @@ import {
   provisionDemoContent,
 } from "~/lib/onboarding/demo-seed";
 import { persistAdoptedDemoContent } from "~/lib/onboarding/adopt-demo";
+import { prepareAdoptedDemoContent } from "~/lib/onboarding/adopt-demo-local";
 import { DEMO_BOOK_ID, DEMO_BOOK_METADATA, DEMO_EPUB_PATH } from "~/lib/onboarding/demo-content";
 import { parsePdf } from "~/lib/pdf/pdf-service";
 import { AnnotationService } from "~/lib/stores/annotations-store";
@@ -207,8 +208,10 @@ export async function downloadBookForOpen(bookId: string) {
   return book;
 }
 
-async function adoptDemoBook(userId: string) {
-  const result = await persistAdoptedDemoContent(userId);
+async function adoptDemoBook(userId: string, localOnly: boolean) {
+  const result = await (localOnly
+    ? prepareAdoptedDemoContent(userId)
+    : persistAdoptedDemoContent(userId));
   const book = await BookService.getBookIncludingDeleted(result.bookId);
   return { result, book };
 }
@@ -335,9 +338,9 @@ export function* seedDemoBookSaga() {
 }
 
 export function* adoptDemoBookSaga(action: ReturnType<typeof adoptDemoBookRequested>) {
-  const [userId, onCompleted, onFailed] = action.payload;
+  const [userId, onCompleted, onFailed, localOnly = false] = action.payload;
   try {
-    const { result, book } = yield* call(adoptDemoBook, userId);
+    const { result, book } = yield* call(adoptDemoBook, userId, localOnly);
     yield* put(bookAdded(book));
     yield* put(bookDeleted(DEMO_BOOK_ID));
     yield* call(notifyDemoAdoptionCompleted, onCompleted, result);

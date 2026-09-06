@@ -90,7 +90,12 @@ export const replaceBookFileRequested = createAction<
 export const seedDemoBookRequested = createAction("books/seedDemoRequested");
 export const demoBookSeeded = createAction<[bookId: string]>("books/demoSeeded");
 export const adoptDemoBookRequested = createAction<
-  [userId: string, onCompleted: DemoAdoptionCompletedCallback, onFailed: BookMutationFailedCallback]
+  [
+    userId: string,
+    onCompleted: DemoAdoptionCompletedCallback,
+    onFailed: BookMutationFailedCallback,
+    localOnly?: boolean,
+  ]
 >("books/adoptDemoRequested");
 export const deleteBookRequested =
   createAction<[bookId: string, onBookDeleted?: BookDeletedCallback]>("books/deleteRequested");

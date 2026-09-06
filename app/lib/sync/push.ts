@@ -1,4 +1,5 @@
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
+import { rewriteReservedDemoChanges } from "~/lib/onboarding/adopt-demo-local";
 import {
   clearSyncedChanges,
   getUnsyncedChanges,
@@ -60,6 +61,7 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
   return withSyncIdentityLock(async () => {
     if (ctx.isStopped()) return null;
     const ownerId = ctx.fileUploadContext.userId;
+    await rewriteReservedDemoChanges(ownerId);
     await resumeBookRemaps(ownerId, { isStopped: ctx.isStopped });
     if (ctx.isStopped()) return null;
     let pending = await getUnsyncedChanges(ownerId);
@@ -67,11 +69,6 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
 
     const reservedChanges = pending.filter(isReservedDemoChange);
     if (reservedChanges.length > 0) {
-      await markSynced(
-        reservedChanges.map((change) => change.id),
-        reservedChanges,
-      );
-      await clearSyncedChanges();
       pending = pending.filter((change) => !isReservedDemoChange(change));
       if (pending.length === 0) return null;
     }
@@ -176,7 +173,7 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
 
     // The upload pass scans every local book, so wait until all queued book
     // upserts were accepted before exposing their files to the ownership check.
-    pending = await getUnsyncedChanges(ownerId);
+    pending = (await getUnsyncedChanges(ownerId)).filter((change) => !isReservedDemoChange(change));
     const hasUnacceptedBookUpsert = pending.some(
       (change) => change.entity === "book" && change.operation === "put",
     );

@@ -28,7 +28,7 @@ function createDemoAdoptionRequest(userId: string) {
     onFailed = (error) => reject(new Error(error));
   });
 
-  return { action: adoptDemoBookRequested(userId, onCompleted, onFailed), completion };
+  return { action: adoptDemoBookRequested(userId, onCompleted, onFailed, true), completion };
 }
 
 function createAuthSessionRefreshRequest() {
