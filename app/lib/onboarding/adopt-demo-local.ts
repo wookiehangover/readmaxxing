@@ -2,7 +2,10 @@ import { get, set, update, promisifyRequest } from "idb-keyval";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "./demo-content";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { ChatSession } from "~/lib/stores/chat-store";
-import { retainRemapReplay } from "~/lib/sync/change-log";
+import { getUnsyncedChanges, retainRemapReplay } from "~/lib/sync/change-log";
+import { appendOnlyMerge, setUnionMerge } from "~/lib/sync/merge";
+import { moveRemapRecord } from "~/lib/sync/remap-records";
+import { referencesRemappedBook } from "~/lib/sync/remap-references";
 import { getBookRemaps, persistBookRemap, resumeBookRemaps } from "~/lib/sync/remap-journal";
 import { withSyncIdentityLock } from "~/lib/sync/sync-lock";
 import {
@@ -31,9 +34,33 @@ export interface AdoptedDemo {
   sessionId: string;
 }
 
+async function assertAdoptionOwner(userId: string, intent?: DemoAdoptionIntent): Promise<void> {
+  if (intent && intent.ownerId !== userId)
+    throw new Error("Demo adoption belongs to another account.");
+  const remaps = (await getBookRemaps()).filter((remap) => remap.fromId === DEMO_BOOK_ID);
+  if (remaps.some((remap) => remap.ownerId !== userId || remap.toId !== intent?.bookId)) {
+    throw new Error("Demo adoption ownership conflicts with retained recovery evidence.");
+  }
+  const pending = await getUnsyncedChanges();
+  if (
+    pending.some((change) => {
+      if (!change.ownerId || change.ownerId === userId) return false;
+      const data = change.data as Record<string, unknown> | undefined;
+      return (
+        referencesRemappedBook(change, { fromId: DEMO_BOOK_ID, toId: DEMO_BOOK_ID }) ||
+        change.entityId === DEMO_CHAT_SESSION.id ||
+        data?.sessionId === DEMO_CHAT_SESSION.id
+      );
+    })
+  ) {
+    throw new Error("Demo adoption belongs to another account.");
+  }
+}
+
 export async function rewriteReservedDemoChanges(userId: string): Promise<void> {
   const intent = await get<DemoAdoptionIntent>(ADOPTION_KEY, getSyncFlagsStore());
   if (!intent || intent.ownerId !== userId) return;
+  await assertAdoptionOwner(userId, intent);
   await getChangeLogStore()("readwrite", (store) => {
     const request = store.openCursor();
     request.onsuccess = () => {
@@ -101,23 +128,93 @@ export async function resolveAdoptedDemo(userId: string): Promise<AdoptedDemo> {
   };
 }
 
+export async function repairAdoptedDemoSessions(
+  userId: string,
+  isStopped?: () => boolean,
+): Promise<void> {
+  const checkActive = () => {
+    if (isStopped?.()) throw new Error("Demo session repair stopped; recovery evidence retained.");
+  };
+  checkActive();
+  const intent = await get<DemoAdoptionIntent>(ADOPTION_KEY, getSyncFlagsStore());
+  if (!intent || intent.ownerId !== userId) return;
+  await assertAdoptionOwner(userId, intent);
+  const { bookId } = await resolveAdoptedDemo(userId);
+  type Session = ChatSession & { deletedAt?: number | null };
+  const repair = (sessions: Session[]): Session[] => {
+    const reserved = sessions.find((session) => session.id === DEMO_CHAT_SESSION.id);
+    if (!reserved) return sessions;
+    const existing = sessions.find((session) => session.id === intent.sessionId);
+    const existingMessages = existing?.messages ?? [];
+    const existingIds = new Set(existingMessages.map((message) => message.id));
+    const renamed = {
+      ...reserved,
+      id: intent.sessionId,
+      bookId,
+    };
+    const merged = setUnionMerge(existing ? [existing] : [], [renamed], (session) => session.id)[0];
+    return sessions
+      .filter((session) => session.id !== reserved.id && session.id !== intent.sessionId)
+      .concat({
+        ...merged,
+        messages: appendOnlyMerge(
+          existingMessages,
+          (reserved.messages ?? []).filter((message) => !existingIds.has(message.id)),
+          (message) => message.id,
+        ),
+      });
+  };
+  const repaired = await moveRemapRecord<Session[]>(getChatSessionStore(), bookId, bookId, repair, {
+    checkActive,
+    matches: (sessions) => sessions.some((session) => session.id === DEMO_CHAT_SESSION.id),
+    prepare: async (sessions) => {
+      const session = repair(sessions).find((candidate) => candidate.id === intent.sessionId)!;
+      await retainRemapReplay(
+        userId,
+        { fromId: DEMO_BOOK_ID, toId: bookId },
+        {
+          entity: "chat_session",
+          entityId: session.id,
+          operation: session.deletedAt != null ? "delete" : "put",
+          data: session,
+          timestamp: session.updatedAt,
+        },
+      );
+    },
+  });
+  checkActive();
+  const sessions = (await get<ChatSession[]>(bookId, getChatSessionStore())) ?? [];
+  checkActive();
+  await update<string | undefined>(
+    bookId,
+    (active) =>
+      sessions.some((session) => session.id === active)
+        ? active
+        : (sessions.find((session) => session.id === intent.sessionId)?.id ?? sessions[0]?.id),
+    getActiveSessionStore(),
+  );
+  if (repaired && typeof window !== "undefined")
+    queueMicrotask(() => {
+      if (!isStopped?.())
+        window.dispatchEvent(
+          new CustomEvent("sync:entity-updated", {
+            detail: { entity: "chat_session" },
+          }),
+        );
+    });
+}
+
 export async function prepareAdoptedDemoContent(userId: string): Promise<AdoptedDemo> {
   return withSyncIdentityLock(async () => {
     let intent = await get<DemoAdoptionIntent>(ADOPTION_KEY, getSyncFlagsStore());
-    if (intent && intent.ownerId !== userId)
-      throw new Error("Demo adoption belongs to another account.");
+    await assertAdoptionOwner(userId, intent);
     if (!intent) {
       const [book, data, sessions] = await Promise.all([
         get<BookMeta>(DEMO_BOOK_ID, getBookStore()),
         get<ArrayBuffer>(DEMO_BOOK_ID, getBookDataStore()),
         get<ChatSession[]>(DEMO_BOOK_ID, getChatSessionStore()),
       ]);
-      if (
-        !book ||
-        book.deletedAt != null ||
-        !data ||
-        !sessions?.length
-      ) {
+      if (!book || book.deletedAt != null || !data || !sessions?.length) {
         throw new Error("The demo library is incomplete. Reload the page and try again.");
       }
       intent = {
@@ -164,12 +261,7 @@ export async function prepareAdoptedDemoContent(userId: string): Promise<Adopted
     );
     await persistBookRemap(userId, DEMO_BOOK_ID, adopted.bookId);
     await resumeBookRemaps(userId);
-    const result = await resolveAdoptedDemo(userId);
-    const sessions = (await get<ChatSession[]>(result.bookId, getChatSessionStore())) ?? [];
-    await update<string | undefined>(result.bookId,
-      (active) => sessions.some((session) => session.id === active) ? active :
-        sessions.find((session) => session.id === adopted.sessionId)?.id ?? sessions[0]?.id,
-      getActiveSessionStore());
+    await repairAdoptedDemoSessions(userId);
     await set(ADOPTION_KEY, { ...adopted, prepared: true }, getSyncFlagsStore());
     return resolveAdoptedDemo(userId);
   });

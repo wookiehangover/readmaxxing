@@ -178,10 +178,14 @@ export function useSync(): SyncActions {
       return;
     }
 
+    let disposed = false;
     const engine = makeSyncEngine({
       userId,
-      onSyncStart: () => emitSyncStatus({ isSyncing: true }),
+      onSyncStart: () => {
+        if (!disposed) emitSyncStatus({ isSyncing: true });
+      },
       onSyncEnd: ({ success }) => {
+        if (disposed) return;
         if (success) {
           emitSyncStatus({
             isSyncing: false,
@@ -194,31 +198,32 @@ export function useSync(): SyncActions {
         }
       },
       onSyncError: (err) => {
+        if (disposed) return;
         emitSyncStatus({ syncError: err });
         console.error("[sync]", err.message);
       },
       onAuthExpired: () => {
         engine.stopSync();
-        engineRef.current = null;
+        if (engineRef.current === engine) engineRef.current = null;
       },
     });
-
-    engineRef.current = engine;
 
     runInitialSyncIfNeeded()
       .catch((err) => {
         console.error("[sync] Initial sync scan failed:", err);
       })
-      .then(() => runFileHashBackfillIfNeeded())
+      .then(() => (disposed ? undefined : runFileHashBackfillIfNeeded()))
       .catch((err) => {
         console.error("[sync] File hash backfill failed:", err);
       })
-      .then(() => runBlobUrlBackfillIfNeeded())
+      .then(() => (disposed ? undefined : runBlobUrlBackfillIfNeeded()))
       .catch((err) => {
         console.error("[sync] Blob URL backfill failed:", err);
       })
       .finally(() => {
-        engine.startSync();
+        if (disposed) return;
+        engineRef.current = engine;
+        if (navigator.onLine) engine.startSync();
       });
 
     function handleFocus() {
@@ -247,8 +252,9 @@ export function useSync(): SyncActions {
     window.addEventListener("sync:push-needed", handlePushNeeded);
 
     return () => {
+      disposed = true;
       engine.stopSync();
-      engineRef.current = null;
+      if (engineRef.current === engine) engineRef.current = null;
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);

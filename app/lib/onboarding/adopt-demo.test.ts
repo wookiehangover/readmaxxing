@@ -85,6 +85,36 @@ describe("durable demo adoption", () => {
     },
   );
 
+  it.each(["none", "partial", "session"])(
+    "retains unacknowledged %s changes without retrying or uploading chapters",
+    async (mode) => {
+      const fetch = vi.fn(async (_url, init) => {
+        const { changes } = JSON.parse(init.body) as SyncPushRequest;
+        const accepted =
+          mode === "none"
+            ? []
+            : mode === "partial"
+              ? changes.slice(0, 1)
+              : changes.filter((change) => change.entity !== "chat_session");
+        return Response.json({
+          accepted: accepted.map((change) => ({ id: change.id })),
+          rejected:
+            mode === "session"
+              ? changes
+                  .filter((change) => change.entity === "chat_session")
+                  .map((change) => ({ id: change.id, reason: "invalid session", retryable: false }))
+              : [],
+          serverTimestamp: new Date().toISOString(),
+        });
+      });
+      vi.stubGlobal("fetch", fetch);
+      await expect(persistAdoptedDemoContent("reader")).rejects.toThrow();
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(mocks.chapters).not.toHaveBeenCalled();
+      expect((await getUnsyncedChanges()).length).toBeGreaterThan(0);
+    },
+  );
+
   it("preserves an existing root rejection instead of generating an equivalent eligible retry", async () => {
     const book = await get(DEMO_BOOK_ID, stores.getBookStore());
     const root = await recordChange({
@@ -172,20 +202,36 @@ describe("durable demo adoption", () => {
     expect(mocks.chapters).toHaveBeenCalledWith(result.bookId);
   });
 
-  it("drains more than 100 unrelated pending edits", async () => {
-    for (let index = 0; index < 101; index++)
-      await recordChange({
-        entity: "notebook",
-        entityId: `offline-${index}`,
-        operation: "put",
-        data: { content: index },
-        timestamp: index,
-      });
-    const batches = acceptingServer();
-    await persistAdoptedDemoContent("reader");
-    expect(batches.map((batch) => batch.length)).toEqual([50, 50, 5]);
-    expect(await getUnsyncedChanges()).toEqual([]);
-  });
+  it.each([undefined, "canonical"])(
+    "drains more than 100 unrelated pending edits and canonical dependents (%s)",
+    async (canonicalId) => {
+      for (let index = 0; index < 101; index++)
+        await recordChange({
+          entity: "notebook",
+          entityId: `offline-${index}`,
+          operation: "put",
+          data: { content: index },
+          timestamp: index,
+        });
+      const batches = acceptingServer(canonicalId);
+      const adopted = await persistAdoptedDemoContent("reader");
+      expect(batches.slice(0, 2).map((batch) => batch.length)).toEqual([50, 50]);
+      if (canonicalId) {
+        expect(adopted.bookId).toBe(canonicalId);
+        expect(batches.at(-1)).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              entity: "chat_session",
+              data: expect.objectContaining({ bookId: canonicalId }),
+            }),
+            expect.objectContaining({ entity: "notebook", entityId: canonicalId }),
+          ]),
+        );
+      }
+      expect(mocks.chapters).toHaveBeenCalledWith(adopted.bookId);
+      expect(await getUnsyncedChanges()).toEqual([]);
+    },
+  );
 
   it.each([false, true])(
     "retains rejected entries across retries without resetting backoff (retryable %s)",

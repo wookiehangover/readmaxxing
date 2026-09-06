@@ -1,4 +1,5 @@
 import { ENTITY_MERGERS, mergeBookRecord } from "./entity-mergers";
+import { repairAdoptedDemoSessions } from "~/lib/onboarding/adopt-demo-local";
 import { resumeBookRemaps } from "./remap-journal";
 import { getCursor, rewindCursor, setCursor } from "./sync-cursors";
 import { syncDebugLog } from "./sync-debug";
@@ -96,6 +97,7 @@ export async function pullChanges(ctx: PullContext): Promise<void> {
         }
 
         if (ctx.userId) await resumeBookRemaps(ctx.userId, { isStopped: ctx.isStopped });
+        if (ctx.isStopped()) return;
 
         // Opaque keyset cursors do not need timestamp overlap. Legacy ISO-only
         // cursors are still rewound so older server responses preserve the
@@ -122,5 +124,6 @@ export async function pullChanges(ctx: PullContext): Promise<void> {
 
       requestedEntities = entitiesWithMore;
     }
+    if (ctx.userId && !ctx.isStopped()) await repairAdoptedDemoSessions(ctx.userId, ctx.isStopped);
   });
 }

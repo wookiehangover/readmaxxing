@@ -1,5 +1,8 @@
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
-import { rewriteReservedDemoChanges } from "~/lib/onboarding/adopt-demo-local";
+import {
+  repairAdoptedDemoSessions,
+  rewriteReservedDemoChanges,
+} from "~/lib/onboarding/adopt-demo-local";
 import {
   clearSyncedChanges,
   getUnsyncedChanges,
@@ -63,6 +66,8 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
     const ownerId = ctx.fileUploadContext.userId;
     await rewriteReservedDemoChanges(ownerId);
     await resumeBookRemaps(ownerId, { isStopped: ctx.isStopped });
+    if (ctx.isStopped()) return null;
+    await repairAdoptedDemoSessions(ownerId, ctx.isStopped);
     if (ctx.isStopped()) return null;
     let pending = await getUnsyncedChanges(ownerId);
     if (pending.length === 0) return null;
@@ -166,6 +171,7 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
     if (remappedBookIds.length) await markSynced(remappedBookIds, changes);
     await resumeBookRemaps(ownerId, { isStopped: ctx.isStopped });
     if (ctx.isStopped()) return null;
+    await repairAdoptedDemoSessions(ownerId, ctx.isStopped);
     if (acceptedIds.length > 0) {
       await markSynced(acceptedIds, changes);
       await clearSyncedChanges();

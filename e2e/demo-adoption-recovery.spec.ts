@@ -62,6 +62,11 @@ test("one Gatsby survives failed saves, repeated refresh, and existing-account p
   let challenge = "";
   let credential: WebAuthnCredential | undefined;
   let failPush = true;
+  let releasePush!: () => void;
+  const stalledPush = new Promise<void>((resolve) => {
+    releasePush = resolve;
+  });
+  let pushStarted = false;
   let pullCount = 0;
   let verifiedLogins = 0;
   const accepted = new Map<string, LocalRecord>();
@@ -130,6 +135,8 @@ test("one Gatsby survives failed saves, repeated refresh, and existing-account p
         serverTimestamp: new Date().toISOString(),
       };
     } else if (path === "/api/sync/push") {
+      pushStarted = true;
+      await stalledPush;
       const changes = route.request().postDataJSON().changes as LocalRecord[];
       expect(JSON.stringify(changes)).not.toContain(demoId);
       expect(JSON.stringify(changes)).not.toContain(demoSessionId);
@@ -154,12 +161,21 @@ test("one Gatsby survives failed saves, repeated refresh, and existing-account p
     await route.fulfill({ status, json: body });
   });
 
-  await page.goto("/");
-  await expect(page.getByRole("button", { name: "Open The Great Gatsby" })).toBeVisible();
-  await page.goto("/login");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).not.toHaveURL(/\/login$/);
-  await expect(page.getByRole("button", { name: "Open Existing cloud book" })).toBeVisible();
+  try {
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "Open The Great Gatsby" })).toBeVisible();
+    await page.goto("/login");
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page).not.toHaveURL(/\/login$/);
+    await expect.poll(() => pushStarted).toBe(true);
+    await expect(page.getByRole("button", { name: "Open Existing cloud book" })).toBeVisible();
+    expect(requests.some((request) => request.path === "/api/sync/push")).toBe(false);
+    expect((await readRecords(page, "ebook-reader-changelog", "changes")).length).toBeGreaterThan(
+      0,
+    );
+  } finally {
+    releasePush();
+  }
   await expect
     .poll(() =>
       requests.some((request) => request.path === "/api/sync/push" && request.status === 503),
