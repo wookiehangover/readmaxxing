@@ -19,8 +19,7 @@
   translate: 0 0;
   transition:
     transform 950ms cubic-bezier(0.22, 0.8, 0.25, 1),
-    translate 950ms cubic-bezier(0.22, 0.8, 0.25, 1),
-    box-shadow 650ms ease;
+    translate 950ms cubic-bezier(0.22, 0.8, 0.25, 1);
 }
 
 .bookshelf-pages {
@@ -35,7 +34,7 @@
   backface-visibility: hidden;
 }
 
-.bookshelf-stack[data-selection="true"] > li:not([data-selected="true"]) {
+.bookshelf-stack > li[data-receding="true"]:not([data-selected="true"]) {
   transform: perspective(1800px) translate3d(38%, 0, -420px) rotateY(-8deg);
 }
 
@@ -57,7 +56,11 @@
   transform: rotateX(8deg) rotateY(-12deg) rotateZ(90deg) rotateX(-78deg)
     scale3d(var(--selected-scale), var(--selected-scale), var(--selected-scale));
   box-shadow: 5px 8px 24px -8px #0004;
-  transition-delay: 70ms, 0ms, 0ms;
+  transition-delay: 70ms, 0ms;
+}
+
+.bookshelf-stack[data-selection="true"] .bookshelf-volume::after {
+  opacity: 0;
 }
 
 .bookshelf-stack li[data-selected="true"] .bookshelf-book:focus-visible {
@@ -96,7 +99,7 @@ li[data-selected="true"] .bookshelf-actions {
 }
 
 @media (max-width: 767px) {
-  .bookshelf-stack[data-selection="true"] > li:not([data-selected="true"]) {
+  .bookshelf-stack > li[data-receding="true"]:not([data-selected="true"]) {
     transform: none;
   }
 

@@ -83,6 +83,8 @@
   display: block;
   position: relative;
   perspective: 1800px;
+  /* Keep WebKit's projected geometry in the same 3D context as the volume. */
+  transform-style: preserve-3d;
   padding-top: 46px;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
@@ -122,12 +124,21 @@
   border-radius: 2px 3px 4px 2px;
   box-shadow:
     0 2px 3px #0003,
-    0 calc(12px + var(--book-pull) * 0.16) calc(24px + var(--book-pull) * 0.25) -8px #0005;
+    0 12px 24px -8px #0005;
   transform: translate3d(0, calc(var(--book-pull) * -0.04), var(--book-pull));
-  transition:
-    transform 650ms cubic-bezier(0.22, 0.8, 0.25, 1.1),
-    box-shadow 650ms ease;
+  transition: transform 650ms cubic-bezier(0.22, 0.8, 0.25, 1.1);
   transform-style: preserve-3d;
+}
+.bookshelf-volume::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* Fade a fixed shadow instead of repainting its blur on every hover frame. */
+  box-shadow: 0 22px 40px -8px #0005;
+  opacity: calc(var(--book-light) / 0.18);
+  transition: opacity 650ms ease;
 }
 .bookshelf-spine {
   position: relative;
@@ -322,7 +333,8 @@
     transition: none;
   }
   .bookshelf-spine::before,
-  .bookshelf-top::before {
+  .bookshelf-top::before,
+  .bookshelf-volume::after {
     transition: none;
   }
 }
