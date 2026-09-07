@@ -222,7 +222,7 @@ async function waitForStableDemoLibrary(page: Page) {
           }
 
           const login = document.querySelector('a[href="/login"]');
-          const gatsby = document.querySelector('button[aria-label="Open The Great Gatsby"]');
+          const gatsby = document.querySelector('button[aria-label^="Select The Great Gatsby"]');
           const frame = login?.closest(".app-frame");
           if (!(login instanceof HTMLElement) || !(gatsby instanceof HTMLElement) || !frame) {
             return false;
@@ -372,7 +372,7 @@ test.describe("Bundled Gatsby onboarding", () => {
         await page.goto("/");
         await waitForAppHydration(page);
 
-        const gatsby = page.getByRole("button", { name: "Open The Great Gatsby" });
+        const gatsby = page.getByRole("button", { name: "Select The Great Gatsby" });
         await expect
           .poll(() => page.evaluate(() => localStorage.getItem("demo-onboarding")), {
             timeout: 30_000,
@@ -474,6 +474,7 @@ test.describe("Bundled Gatsby onboarding", () => {
         expect(adoptedGatsby).toHaveLength(1);
         expect(adoptedGatsby[0].id).not.toBe(DEMO_BOOK_ID);
         await gatsby.click();
+        await page.getByRole("link", { name: "Read The Great Gatsby" }).click();
         await expect(page.getByTestId("reading-shell")).toBeVisible({ timeout: 30_000 });
 
         const books = await readIndexedDbValue<LocalBook[]>(page, "ebook-reader-db", "books");

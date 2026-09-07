@@ -62,6 +62,8 @@ function WorkspaceBookActionRefs({ onOpenNotebook, onOpenChat }: WorkspaceBookAc
 
 beforeEach(() => {
   localStorage.clear();
+  // These card-layout tests explicitly exercise the saved Grid preference.
+  localStorage.setItem("app-ui-settings", JSON.stringify({ libraryView: "grid" }));
   themisMocks.books = [];
   themisMocks.lastOpenedMap = new Map();
   themisMocks.dispatch.mockReset();

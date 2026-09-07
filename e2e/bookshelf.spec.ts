@@ -119,6 +119,11 @@ test("persists stack layout and shares filtering across all three library views"
 }) => {
   await seedShelf(page);
   await page.goto("/library");
+  await expect(page.getByRole("button", { name: "Stack view" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByRole("button", { name: "Grid view" }).click();
   await page.getByRole("button", { name: "Stack view" }).click();
   await expect(page.getByRole("button", { name: "Stack view" })).toHaveAttribute(
     "aria-pressed",
@@ -278,6 +283,9 @@ test("selection turns the cover left, recedes the stack, and reverses with Escap
     .poll(async () => (await other.boundingBox())!.width)
     .toBeLessThan(original.width * 0.9);
   await expect(page.getByRole("link", { name: "Read A Field Guide by Zora Zenith" })).toBeVisible();
+  // A queued scroll event from bringing the book into view must not dismiss it.
+  await page.locator(".bookshelf").dispatchEvent("scroll");
+  await expect(book).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");
   await expect(book).toHaveAttribute("aria-pressed", "false");
   await expect(book).toBeFocused();

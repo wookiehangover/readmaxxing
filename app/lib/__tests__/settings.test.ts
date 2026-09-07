@@ -31,7 +31,7 @@ const defaultSettings: Settings = {
   textAlign: undefined,
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
-  libraryView: "grid",
+  libraryView: "stack",
   standardEbooksView: "grid",
   pdfLayout: "fit-height",
   colorTheme: "default",
@@ -45,11 +45,11 @@ beforeEach(() => {
 });
 
 describe("getSettings", () => {
-  it("persists stack as a local library layout", () => {
-    saveSettings({ ...getSettings(), libraryView: "stack" });
-    expect(getSettings().libraryView).toBe("stack");
+  it("persists grid as a local library layout", () => {
+    saveSettings({ ...getSettings(), libraryView: "grid" });
+    expect(getSettings().libraryView).toBe("grid");
     expect(JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!)).toMatchObject({
-      libraryView: "stack",
+      libraryView: "grid",
     });
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     expect(recordChange).not.toHaveBeenCalled();

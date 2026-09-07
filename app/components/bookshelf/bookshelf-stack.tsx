@@ -39,11 +39,17 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
     const shelf = window.matchMedia("(min-width: 768px)").matches
       ? trigger.current?.closest(".bookshelf")
       : null;
-    shelf?.addEventListener("scroll", close, { passive: true });
+    const scrollTop = shelf?.scrollTop;
+    const scrollLeft = shelf?.scrollLeft;
+    function onScroll() {
+      // A scroll into view before selection can deliver its event after this listener mounts.
+      if (shelf?.scrollTop !== scrollTop || shelf?.scrollLeft !== scrollLeft) close();
+    }
+    shelf?.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("resize", close);
-      shelf?.removeEventListener("scroll", close);
+      shelf?.removeEventListener("scroll", onScroll);
     };
   }, [selectedId]);
 
