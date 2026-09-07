@@ -6,6 +6,7 @@ import {
   type ShareLinkRow,
 } from "~/lib/database/share/share-link";
 import { signDownloadToken, verifyDownloadToken } from "~/lib/share-download-token";
+import { readLocalFile, useLocalFileStorage } from "~/lib/storage/local-file-storage.server";
 
 function isExpired(shareLink: ShareLinkRow): boolean {
   return shareLink.expiresAt != null && shareLink.expiresAt.getTime() <= Date.now();
@@ -22,14 +23,32 @@ async function getSharedBook(shareLink: ShareLinkRow): Promise<BookRow | null> {
 }
 
 async function streamSharedFile(shareLink: ShareLinkRow, book: BookRow) {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
-    return Response.json({ error: "Blob storage is not configured" }, { status: 500 });
-  }
   if (!book.fileBlobUrl) {
     return Response.json({ error: "No file uploaded for this book" }, { status: 404 });
   }
 
+  if (useLocalFileStorage()) {
+    const file = await readLocalFile({
+      userId: shareLink.userId,
+      bookId: shareLink.bookId,
+      type: "file",
+    });
+    if (!file) {
+      return Response.json({ error: "No file uploaded for this book" }, { status: 404 });
+    }
+    return new Response(new Uint8Array(file.data), {
+      headers: {
+        "Content-Type": file.contentType,
+        "Cache-Control": "no-store",
+        "X-Share-Id": shareLink.id,
+      },
+    });
+  }
+
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!token) {
+    return Response.json({ error: "Blob storage is not configured" }, { status: 500 });
+  }
   const result = await get(book.fileBlobUrl, { access: "private", token });
   if (!result || result.statusCode !== 200 || !result.stream) {
     return Response.json({ error: "Failed to retrieve file from blob storage" }, { status: 502 });
