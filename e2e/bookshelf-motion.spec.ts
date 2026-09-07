@@ -147,6 +147,11 @@ test("the selected book keeps six joined faces and an opaque back cover", async 
   }
   expect(vertices).toHaveLength(8);
   expect(vertices.map((vertex) => vertex.count)).toEqual(Array(8).fill(3));
+  // The resting cover is face-on; turning the same volume reveals its spine.
+  await volume.evaluate((element) => {
+    element.style.transition = "none";
+    element.style.rotate = "y 45deg";
+  });
   const spine = book.locator(".bookshelf-spine");
   expect((await spine.boundingBox())!.width).toBeGreaterThan(10);
   expect(
