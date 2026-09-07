@@ -11,7 +11,8 @@ export async function loader() {
     rpID: getRpId(),
     // Empty allowCredentials enables discoverable credentials (passkeys)
     allowCredentials: [],
-    userVerification: "preferred",
+    // Match verifyAuthenticationResponse's required user verification.
+    userVerification: "required",
   });
 
   // Persist challenge for verification step

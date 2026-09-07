@@ -66,7 +66,10 @@ describe("create-account passkey registration", () => {
 
     expect(mocks.upsertUser).toHaveBeenCalledOnce();
     expect(mocks.generateRegistrationOptions).toHaveBeenCalledWith(
-      expect.objectContaining({ userID: new TextEncoder().encode(body.userId) }),
+      expect.objectContaining({
+        userID: new TextEncoder().encode(body.userId),
+        authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
+      }),
     );
     expect(mocks.saveChallenge).toHaveBeenCalledWith(
       expect.objectContaining({ userId: body.userId }),

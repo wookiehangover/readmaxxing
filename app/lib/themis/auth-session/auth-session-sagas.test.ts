@@ -234,44 +234,68 @@ describe("authSessionSaga", () => {
     expect(mocks.persistAdoptedDemoContent).not.toHaveBeenCalled();
   });
 
-  it("preserves the authenticated session when adopting the demo fails", async () => {
-    mocks.getSession.mockResolvedValueOnce({ user });
-    mocks.hasUnadoptedDemoBook.mockResolvedValueOnce(true);
-    mocks.persistAdoptedDemoContent.mockRejectedValueOnce(new Error("demo adoption failed"));
-    const onCompleted = vi.fn();
-    const onFailed = vi.fn();
-    const store = startStore({ runBooksSaga: true });
+  it.each(["refresh", "register", "signIn"] as const)(
+    "completes %s when optional demo adoption fails",
+    async (operation) => {
+      mocks.getSession.mockResolvedValueOnce({ user });
+      mocks.register.mockResolvedValueOnce({ verified: true, userId: user.id });
+      mocks.signIn.mockResolvedValueOnce({ verified: true, user });
+      mocks.hasUnadoptedDemoBook.mockResolvedValueOnce(true);
+      mocks.persistAdoptedDemoContent.mockRejectedValueOnce(
+        new Error("The demo conversation could not be found."),
+      );
+      const onCompleted = vi.fn();
+      const onFailed = vi.fn();
+      const store = startStore({ runBooksSaga: true });
 
-    store.dispatch(refreshAuthSessionRequested(onCompleted, onFailed));
+      store.dispatch(
+        operation === "refresh"
+          ? refreshAuthSessionRequested(onCompleted, onFailed)
+          : operation === "register"
+            ? registerRequested("Reader", onCompleted, onFailed, true)
+            : signInRequested(onCompleted, onFailed, true),
+      );
 
-    await vi.waitFor(() => expect(onFailed).toHaveBeenCalledOnce());
-    expect(store.authSessionSelectors.selectAuthUser.select(store.state)).toEqual(user);
-    expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(true);
-    expect(store.authSessionSelectors.selectAuthLoading.select(store.state)).toBe(false);
-    expect(store.authSessionSelectors.selectAuthError.select(store.state)).toEqual({
-      _tag: "Error",
-      message: "demo adoption failed",
-    });
-    expect(onCompleted).not.toHaveBeenCalled();
-    expect(onFailed.mock.calls[0]?.[0]).toEqual(new Error("demo adoption failed"));
-  });
+      await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledOnce());
+      expect(store.authSessionSelectors.selectAuthUser.select(store.state)).toEqual(user);
+      expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(true);
+      expect(store.authSessionSelectors.selectAuthLoading.select(store.state)).toBe(false);
+      expect(store.authSessionSelectors.selectAuthError.select(store.state)).toBeNull();
+      expect(onFailed).not.toHaveBeenCalled();
+    },
+  );
 
-  it("preserves the authenticated session when checking local demo state fails", async () => {
+  it("completes session refresh when checking local demo state fails", async () => {
     mocks.getSession.mockResolvedValueOnce({ user });
     mocks.hasUnadoptedDemoBook.mockRejectedValueOnce(new Error("local storage unavailable"));
+    const onCompleted = vi.fn();
     const onFailed = vi.fn();
     const store = startStore();
 
-    store.dispatch(refreshAuthSessionRequested(undefined, onFailed));
+    store.dispatch(refreshAuthSessionRequested(onCompleted, onFailed));
 
-    await vi.waitFor(() => expect(onFailed).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledOnce());
     expect(store.authSessionSelectors.selectAuthUser.select(store.state)).toEqual(user);
     expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(true);
     expect(store.authSessionSelectors.selectAuthLoading.select(store.state)).toBe(false);
-    expect(store.authSessionSelectors.selectAuthError.select(store.state)).toEqual({
-      _tag: "Error",
-      message: "local storage unavailable",
-    });
+    expect(store.authSessionSelectors.selectAuthError.select(store.state)).toBeNull();
+    expect(onFailed).not.toHaveBeenCalled();
+  });
+
+  it("still rejects sign-in when passkey verification fails", async () => {
+    const error = new Error("Verification failed");
+    mocks.signIn.mockRejectedValueOnce(error);
+    const onCompleted = vi.fn();
+    const onFailed = vi.fn();
+    const store = startStore();
+
+    store.dispatch(signInRequested(onCompleted, onFailed, true));
+
+    await vi.waitFor(() => expect(onFailed).toHaveBeenCalledWith(error));
+    expect(onCompleted).not.toHaveBeenCalled();
+    expect(mocks.getSession).not.toHaveBeenCalled();
+    expect(mocks.persistAdoptedDemoContent).not.toHaveBeenCalled();
+    expect(store.authSessionSelectors.selectIsAuthenticated.select(store.state)).toBe(false);
   });
 
   it("resolves a failed refresh as signed out", async () => {

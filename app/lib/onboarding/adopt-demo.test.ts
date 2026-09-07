@@ -147,6 +147,25 @@ describe("adoptDemoContent", () => {
     );
   });
 
+  it.each(["user-session", DEMO_CHAT_SESSION.id, "stale-session"])(
+    "adopts remaining conversations when the seeded conversation is gone (active: %s)",
+    async (activeSessionId) => {
+      const session = { ...DEMO_CHAT_SESSION, id: "user-session", title: "My conversation" };
+      await set(DEMO_BOOK_ID, [session], getChatSessionStore());
+      await set(DEMO_BOOK_ID, activeSessionId, getActiveSessionStore());
+      mocks.push.mockImplementation(async () => acceptedSinceLastPush());
+
+      await expect(persistAdoptedDemoContent("user-1")).resolves.toEqual({
+        bookId: ADOPTED_BOOK_ID,
+        sessionId: session.id,
+      });
+      expect(await get(ADOPTED_BOOK_ID, getChatSessionStore())).toEqual([
+        { ...session, bookId: ADOPTED_BOOK_ID },
+      ]);
+      expect(await get(ADOPTED_BOOK_ID, getActiveSessionStore())).toBe(session.id);
+    },
+  );
+
   it("discards reserved demo metadata before server deduplication can tombstone both books", async () => {
     const reservedChanges = [
       { entity: "book", entityId: DEMO_BOOK_ID, data: { id: DEMO_BOOK_ID } },

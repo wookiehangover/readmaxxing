@@ -52,14 +52,18 @@ async function readSnapshot(bookId: string): Promise<DemoSnapshot> {
 
 function createAdoptedSnapshot(snapshot: DemoSnapshot, bookId: string): DemoSnapshot {
   const demo = snapshot.sessions.find((session) => session.id === DEMO_CHAT_SESSION.id);
-  if (!demo) throw new Error("The demo conversation could not be found.");
 
   // The adopted demo session must always receive a fresh id so it never collides
   // with a user-created session that may have taken over `activeSessionId`.
   const adoptedDemoSessionId = crypto.randomUUID();
   const activeWasUserSession =
-    snapshot.activeSessionId != null && snapshot.activeSessionId !== DEMO_CHAT_SESSION.id;
-  const activeSessionId = activeWasUserSession ? snapshot.activeSessionId : adoptedDemoSessionId;
+    snapshot.activeSessionId !== DEMO_CHAT_SESSION.id &&
+    snapshot.sessions.some((session) => session.id === snapshot.activeSessionId);
+  const activeSessionId = activeWasUserSession
+    ? snapshot.activeSessionId
+    : demo
+      ? adoptedDemoSessionId
+      : snapshot.sessions[0]?.id;
 
   return {
     ...snapshot,
@@ -67,9 +71,9 @@ function createAdoptedSnapshot(snapshot: DemoSnapshot, bookId: string): DemoSnap
     notebook: snapshot.notebook ? { ...snapshot.notebook, bookId } : undefined,
     sessions: snapshot.sessions.map((session) => ({
       ...session,
-      id: session.id === demo.id ? adoptedDemoSessionId : session.id,
+      id: session.id === demo?.id ? adoptedDemoSessionId : session.id,
       bookId,
-      ...(session.id === demo.id ? { updatedAt: Date.now() } : {}),
+      ...(session.id === demo?.id ? { updatedAt: Date.now() } : {}),
     })),
     activeSessionId,
   };

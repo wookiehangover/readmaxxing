@@ -31,7 +31,7 @@ export async function action({ request }: { request: Request }) {
     excludeCredentials,
     authenticatorSelection: {
       residentKey: "preferred",
-      userVerification: "preferred",
+      userVerification: "required",
     },
   });
 

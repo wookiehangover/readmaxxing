@@ -67,6 +67,7 @@ describe("add-passkey registration options", () => {
     expect(mocks.generateRegistrationOptions).toHaveBeenCalledWith(
       expect.objectContaining({
         userID: new TextEncoder().encode("user-1"),
+        authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
         excludeCredentials: [{ id: "credential-1", transports: ["internal", "hybrid"] }],
       }),
     );
