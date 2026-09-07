@@ -6,10 +6,10 @@ import { getUnsyncedChanges, recordChange } from "~/lib/sync/change-log";
 import { persistBookRemap } from "~/lib/sync/remap-journal";
 import { pushChangesWithResult } from "~/lib/sync/push";
 import { pullChanges } from "~/lib/sync/pull";
-import { prepareAdoptedDemoContent } from "./adopt-demo-local";
+import { prepareAdoptedDemoContent, repairAdoptedDemoSessions } from "./adopt-demo-local";
 import { persistAdoptedDemoContent } from "./adopt-demo";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "./demo-content";
-import type { ChatSession } from "~/lib/stores/chat-store";
+import { ChatService, type ChatSession } from "~/lib/stores/chat-store";
 import type { SyncPushRequest } from "~/lib/sync/types";
 
 vi.mock("~/lib/sync/file-uploads", () => ({ uploadPendingFiles: async () => {} }));
@@ -31,6 +31,33 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+it.each(["adopted", DEMO_CHAT_SESSION.id, "stale-session", undefined])(
+  "preserves a real newly created conversation selected during active-pointer repair (previous: %s)",
+  async (previous) => {
+    const adopted = await prepareAdoptedDemoContent("reader");
+    const activeStore = stores.getActiveSessionStore();
+    if (previous !== "adopted") await set(adopted.bookId, previous, activeStore);
+    let newSession!: ChatSession;
+    let inserted = false;
+    vi.spyOn(stores, "getActiveSessionStore").mockReturnValue(async (mode, callback) => {
+      if (mode === "readwrite" && !inserted) {
+        inserted = true;
+        newSession = await ChatService.createSession(adopted.bookId, "New conversation");
+      }
+      return activeStore(mode, callback);
+    });
+    await repairAdoptedDemoSessions("reader");
+    expect(inserted).toBe(true);
+    expect(await get(adopted.bookId, stores.getChatSessionStore())).toContainEqual(newSession);
+    expect(await get(adopted.bookId, activeStore)).toBe(newSession.id);
+    await vi.waitFor(async () =>
+      expect(await getUnsyncedChanges()).toContainEqual(
+        expect.objectContaining({ entity: "chat_session", entityId: newSession.id, synced: false }),
+      ),
+    );
+  },
+);
 
 it("repairs canonical sessions only after their messages merge during the same pull", async () => {
   const adopted = await prepareAdoptedDemoContent("reader");

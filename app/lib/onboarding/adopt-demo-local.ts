@@ -183,12 +183,13 @@ export async function repairAdoptedDemoSessions(
     },
   });
   checkActive();
+  const activeSessionId = await get<string>(bookId, getActiveSessionStore());
   const sessions = (await get<ChatSession[]>(bookId, getChatSessionStore())) ?? [];
   checkActive();
   await update<string | undefined>(
     bookId,
     (active) =>
-      sessions.some((session) => session.id === active)
+      active !== activeSessionId || sessions.some((session) => session.id === active)
         ? active
         : (sessions.find((session) => session.id === intent.sessionId)?.id ?? sessions[0]?.id),
     getActiveSessionStore(),
