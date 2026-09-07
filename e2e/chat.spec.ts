@@ -19,20 +19,7 @@ async function uploadTestBook(page: Page) {
   await fileInput.setInputFiles(TEST_EPUB);
 
   const readingShell = page.getByTestId("reading-shell");
-  const libraryBook = page.getByRole("button", { name: "Open Test Book for E2E" });
-  await expect
-    .poll(
-      async () =>
-        (await readingShell.isVisible().catch(() => false)) ||
-        (await libraryBook.isVisible().catch(() => false)),
-      { timeout: 20_000 },
-    )
-    .toBe(true);
-
-  if (!(await readingShell.isVisible().catch(() => false))) {
-    await libraryBook.click({ force: true, timeout: 5_000 }).catch(() => {});
-    await expect(readingShell).toBeVisible({ timeout: 20_000 });
-  }
+  await expect(readingShell).toBeVisible({ timeout: 20_000 });
 }
 
 // Chapter text matches e2e/fixtures/create-test-epub.mjs. Used to seed the

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { CoverImage } from "~/components/book-grid/cover-image";
+import { BookshelfStack } from "~/components/bookshelf/bookshelf-stack";
 import { CoverPlaceholder } from "~/components/book-grid/cover-placeholder";
 import { AddBookCard } from "~/components/book-grid/add-book-card";
 import { ShareDialog } from "~/components/share-dialog";
@@ -213,6 +214,12 @@ export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps =
       {!hasMatches ? (
         <div className="flex flex-1 items-center justify-center p-6">
           <p className="text-sm text-muted-foreground">No matching books</p>
+        </div>
+      ) : libraryView === "stack" ? (
+        <div className="bookshelf bookshelf-library min-h-0 flex-1">
+          <div className="bookshelf-content">
+            <BookshelfStack books={sortedGridBooks} onOpenBook={handleOpenBook} />
+          </div>
         </div>
       ) : libraryView === "table" ? (
         <div className="flex-1 overflow-hidden p-4 pt-2 md:p-6 md:pt-3">

@@ -95,12 +95,13 @@ function AppFrameContent() {
     }
     activateReadingRoute({
       bookId: readingBookId,
-      books,
+      // Route changes can run before throttled render selectors publish hydrated or added books.
+      books: store.booksSelectors.selectAllBooks.select(store.state),
       activeBookId: ws.activeClusterBookIdRef.current,
       openBook,
       navigate,
     });
-  }, [books, navigate, openBook, readingBookId, ws]);
+  }, [books, navigate, openBook, readingBookId, store, ws]);
 
   // Deprecated compatibility mirror for out-of-scope chat consumers.
   // The slice remains the source of truth for migrated book UI.
@@ -192,7 +193,7 @@ function AppFrameContent() {
             "opacity-0": !frameReady,
           })}
         >
-          {isWorkspaceRoute ? (
+          {isWorkspaceRoute || location.pathname === "/bookshelf" ? (
             <div className="min-h-0 min-w-0 flex-1">
               <Outlet />
             </div>

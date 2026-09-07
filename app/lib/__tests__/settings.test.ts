@@ -31,7 +31,7 @@ const defaultSettings: Settings = {
   textAlign: undefined,
   sidebarCollapsed: false,
   workspaceSortBy: "recent",
-  libraryView: "grid",
+  libraryView: "stack",
   standardEbooksView: "grid",
   pdfLayout: "fit-height",
   colorTheme: "default",
@@ -45,6 +45,16 @@ beforeEach(() => {
 });
 
 describe("getSettings", () => {
+  it("persists grid as a local library layout", () => {
+    saveSettings({ ...getSettings(), libraryView: "grid" });
+    expect(getSettings().libraryView).toBe("grid");
+    expect(JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!)).toMatchObject({
+      libraryView: "grid",
+    });
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(recordChange).not.toHaveBeenCalled();
+  });
+
   it("returns default settings when localStorage is empty", () => {
     expect(getSettings()).toEqual(defaultSettings);
   });

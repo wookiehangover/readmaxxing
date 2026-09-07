@@ -18,20 +18,7 @@ async function uploadTestPdf(page: Page) {
   await fileInput.setInputFiles(TEST_PDF);
 
   const pdfContainer = page.getByTestId("pdf-container");
-  const libraryBook = page.getByRole("button", { name: "Open Test PDF for E2E" });
-  await expect
-    .poll(
-      async () =>
-        (await pdfContainer.isVisible().catch(() => false)) ||
-        (await libraryBook.isVisible().catch(() => false)),
-      { timeout: 20_000 },
-    )
-    .toBe(true);
-
-  if (!(await pdfContainer.isVisible().catch(() => false))) {
-    await libraryBook.click({ force: true, timeout: 5_000 }).catch(() => {});
-    await expect(pdfContainer).toBeVisible({ timeout: 20_000 });
-  }
+  await expect(pdfContainer).toBeVisible({ timeout: 20_000 });
 }
 
 async function completeTouchSelection(page: Page) {
@@ -75,7 +62,7 @@ test.describe("PDF support", () => {
     await uploadTestPdf(page);
     await page.goto("/library");
     await waitForAppHydration(page);
-    await expect(page.getByRole("button", { name: "Open Test PDF for E2E" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Select Test PDF for E2E" })).toBeVisible();
   });
 
   test("PDF shows correct author in the library table", async ({ page }) => {

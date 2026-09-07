@@ -143,15 +143,27 @@ describe("review workflow with real client, routes, storage and ReactStore", () 
       restored.state,
       "book-a",
     )!.id;
+    const question = holdNextResponse("question");
     restored.dispatch(retryReviewQuestion("book-a"));
+    await question.processed;
+    const confirmation = holdNextResponse("progress");
+    question.release();
+    await confirmation.processed;
     await vi.waitFor(() =>
       expect(
         restored.reviewsSelectors.selectReviewQuestion.select(restored.state, "book-a")?.id,
       ).not.toBe(previousQuestion),
     );
+    // The new question is visible before the progress response confirms its source.
     expect(
       restored.reviewsSelectors.selectReviewAssignmentCurrent.select(restored.state, "book-a"),
-    ).toBe(true);
+    ).toBe(false);
+    confirmation.release();
+    await vi.waitFor(() =>
+      expect(
+        restored.reviewsSelectors.selectReviewAssignmentCurrent.select(restored.state, "book-a"),
+      ).toBe(true),
+    );
     expect(restored.reviewsSelectors.selectReviewPassed.select(restored.state, "book-a")).toBe(
       false,
     );

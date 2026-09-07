@@ -1,0 +1,332 @@
+.bookshelf {
+  --shelf-muted: var(--muted-foreground);
+  height: 100%;
+  overflow: auto;
+  color: var(--foreground);
+  background: var(--background);
+  color-scheme: inherit;
+}
+
+.bookshelf :is(a, button, input, select):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 6px;
+}
+
+.bookshelf-content {
+  width: min(680px, calc(100% - 64px));
+  margin: 0 auto;
+  padding-top: 32px;
+}
+.bookshelf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 0;
+}
+.bookshelf-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  color: var(--shelf-muted);
+}
+.bookshelf-search input {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12px;
+  padding: 5px 0;
+}
+.bookshelf-search input::placeholder {
+  color: var(--shelf-muted);
+}
+.bookshelf-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.bookshelf-search button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+.bookshelf-sort select {
+  background: transparent;
+  color: var(--shelf-muted);
+  transition: color 150ms ease;
+  font-size: 12px;
+  padding: 6px 2px;
+  cursor: pointer;
+}
+.bookshelf-sort select:is(:hover, :focus-visible) {
+  color: var(--foreground);
+}
+.bookshelf-sort option {
+  background: var(--background);
+}
+.bookshelf-stack {
+  padding: 64px 8px 48px;
+  margin: 0 -8px;
+  list-style: none;
+  /* Let the soft shadows extend past the stack's narrow content gutters. */
+  overflow: visible;
+}
+.bookshelf-stack li {
+  position: relative;
+  margin-bottom: 28px;
+}
+.bookshelf-book {
+  --book-pull: 0px;
+  --book-light: 0;
+  display: block;
+  position: relative;
+  perspective: 1800px;
+  padding-top: 46px;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transform-origin: 50% 0;
+  animation: bookshelf-drop 1300ms both;
+  animation-delay: calc(min(var(--book-order), 8) * 35ms);
+  /* Samples of a damped spring (damping ratio .68, angular frequency 14). */
+  animation-timing-function: linear(
+    0,
+    0.1759,
+    0.4939,
+    0.7703,
+    0.9467,
+    1.0309,
+    1.0541,
+    1.0466,
+    1.0296,
+    1.014,
+    1.0038,
+    0.9987,
+    0.9971,
+    0.9974,
+    0.9983,
+    0.9992,
+    0.9997,
+    1.0001,
+    1.0002,
+    1.0001,
+    1.0001,
+    1.0001,
+    1
+  );
+}
+.bookshelf-volume {
+  display: block;
+  position: relative;
+  border-radius: 2px 3px 4px 2px;
+  box-shadow:
+    0 2px 3px #0003,
+    0 calc(12px + var(--book-pull) * 0.16) calc(24px + var(--book-pull) * 0.25) -8px #0005;
+  transform: translate3d(0, calc(var(--book-pull) * -0.04), var(--book-pull));
+  transition:
+    transform 650ms cubic-bezier(0.22, 0.8, 0.25, 1.1),
+    box-shadow 650ms ease;
+  transform-style: preserve-3d;
+}
+.bookshelf-spine {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  align-items: center;
+  gap: 24px;
+  min-height: 88px;
+  padding: 20px 28px;
+  color: var(--book-ink);
+  background:
+    linear-gradient(
+      90deg,
+      #00000026,
+      transparent 1.5%,
+      #ffffff0f 3%,
+      transparent 7%,
+      transparent 94%,
+      #00000015 98%,
+      #00000030
+    ),
+    linear-gradient(0deg, #00000026, transparent 12%, #ffffff0d 85%, #ffffff30), var(--book-cloth);
+  border-radius: 2px 3px 4px 2px;
+  border-block: 1px solid #ffffff25;
+  box-shadow: inset 0 -3px 3px #0002;
+}
+.bookshelf-spine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0 2px, #fff5 2px 3px),
+    repeating-linear-gradient(90deg, transparent 0 3px, #0005 3px 4px);
+}
+.bookshelf-spine::before,
+.bookshelf-top::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(110deg, #fff3, #fff 30%, #fff0 65%, #0003);
+  opacity: var(--book-light);
+  transition: opacity 450ms ease;
+}
+.bookshelf-top::before {
+  z-index: 1;
+}
+.bookshelf-book:focus-visible {
+  --book-pull: 64px;
+  --book-light: 0.18;
+}
+.bookshelf-stack li:has(.bookshelf-book:is(:hover, :focus-visible)) {
+  z-index: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .bookshelf-book:hover {
+    --book-pull: 64px;
+    --book-light: 0.18;
+  }
+}
+.bookshelf-author {
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.bookshelf-book-title {
+  font-family: "Literata", Georgia, serif;
+  font-size: clamp(16px, 2.3vw, 21px);
+  line-height: 1.35;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.bookshelf-top {
+  position: absolute;
+  overflow: hidden;
+  bottom: 100%;
+  left: 0;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  background: var(--book-cloth);
+  transform-origin: 50% 100%;
+  transform: rotateX(84deg);
+  backface-visibility: hidden;
+}
+.bookshelf-cover {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(100% * 2 / 3);
+  height: 150%;
+  transform-origin: 0 0;
+  /* The portrait cover's left (bound) edge becomes the near edge, adjoining the spine. */
+  transform: rotate(-90deg) translateX(-100%);
+}
+.bookshelf-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  object-fit: contain;
+}
+.bookshelf-top::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 2px #0003,
+    inset 0 -3px 3px #fff4;
+  background: linear-gradient(0deg, #0002, #00000008 25%, #0000000a);
+}
+.bookshelf-cover-fallback {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 12%;
+  color: var(--book-ink);
+  font-family: "Literata", Georgia, serif;
+  text-align: center;
+  font-size: 32px;
+  overflow-wrap: anywhere;
+}
+.bookshelf-cover-fallback small {
+  font-size: 18px;
+}
+.bookshelf-error {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 48px 0;
+  color: var(--shelf-muted);
+  font-size: 12px;
+}
+.bookshelf-error button {
+  text-decoration: underline;
+  cursor: pointer;
+}
+@keyframes bookshelf-drop {
+  from {
+    /* Begin with a compact, distant stack, then spread into the final spacing. */
+    transform: translate3d(0, calc(-72px - min(var(--book-order), 8) * 64px), 0) scale(0.82);
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+@media (max-width: 600px) {
+  .bookshelf-content {
+    width: calc(100% - 40px);
+    padding-top: 20px;
+  }
+  .bookshelf-stack {
+    padding-top: 40px;
+  }
+  .bookshelf-stack li {
+    margin-bottom: 24px;
+  }
+  .bookshelf-book {
+    padding-top: 26px;
+  }
+  .bookshelf-spine {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+    min-height: 92px;
+    padding: 16px 20px;
+  }
+  .bookshelf-author {
+    font-size: 10px;
+  }
+  .bookshelf-book-title {
+    font-size: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bookshelf-book {
+    animation: none;
+  }
+  .bookshelf-volume {
+    transform: none;
+    transition: none;
+  }
+  .bookshelf-spine::before,
+  .bookshelf-top::before {
+    transition: none;
+  }
+}
+
+.bookshelf-library .bookshelf-content {
+  padding-top: 0;
+}

@@ -14,21 +14,11 @@ async function uploadTestBook(page: Page) {
 
   const readingShell = page.getByTestId("reading-shell");
   const mobileReadingTabs = page.getByTestId("mobile-reading-tabs");
-  const libraryBook = page.getByRole("button", { name: "Open Test Book for E2E" });
-  const readerIsVisible = async () =>
-    (await readingShell.isVisible().catch(() => false)) ||
-    (await mobileReadingTabs.isVisible().catch(() => false));
   await expect
-    .poll(
-      async () => (await readerIsVisible()) || (await libraryBook.isVisible().catch(() => false)),
-      { timeout: 20_000 },
-    )
+    .poll(async () => (await readingShell.isVisible()) || (await mobileReadingTabs.isVisible()), {
+      timeout: 20_000,
+    })
     .toBe(true);
-
-  if (!(await readerIsVisible())) {
-    await libraryBook.click({ force: true, timeout: 5_000 }).catch(() => {});
-    await expect.poll(readerIsVisible, { timeout: 20_000 }).toBe(true);
-  }
 }
 
 /**
@@ -76,7 +66,7 @@ test.describe("Workspace route", () => {
     await uploadTestBook(page);
     await page.goto("/library");
     await waitForAppHydration(page);
-    await expect(page.getByRole("button", { name: "Open Test Book for E2E" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Select Test Book for E2E" })).toBeVisible();
   });
 
   test("uploaded book opens in a reader panel", async ({ page }) => {

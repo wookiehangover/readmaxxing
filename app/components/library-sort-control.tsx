@@ -33,7 +33,7 @@ export function LibrarySortControl({ sortBy, onSortByChange }: LibrarySortContro
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs"
+            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:text-foreground"
             title={`Sort by ${current.label}`}
           />
         }

@@ -31,20 +31,14 @@ test.describe("Mobile library", () => {
     await expect(page.locator('[data-slot="library-header-navigation"]')).toBeHidden();
 
     await page.locator('input[type="file"][accept=".epub,.pdf"]').first().setInputFiles(TEST_EPUB);
-    const libraryBook = page.getByRole("button", { name: "Open Test Book for E2E" });
+    const libraryBook = page.getByRole("button", { name: "Select Test Book for E2E" });
     const mobileReader = page.getByTestId("mobile-reading-tabs");
-    await expect
-      .poll(
-        async () =>
-          (await libraryBook.isVisible().catch(() => false)) ||
-          (await mobileReader.isVisible().catch(() => false)),
-        { timeout: 20_000 },
-      )
-      .toBe(true);
+    await expect(mobileReader).toBeVisible({ timeout: 20_000 });
 
     await page.goto("/library");
     await expect(mobileNavigation).toBeVisible();
     await libraryBook.click();
+    await page.getByRole("link", { name: "Read Test Book for E2E" }).click();
 
     await expect(page).toHaveURL(/\/books\/[^/]+$/);
     await expect(mobileReader).toBeVisible();

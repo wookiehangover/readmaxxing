@@ -6,7 +6,7 @@ export type Theme = "light" | "dark" | "system";
 export type ReaderLayout = "single" | "spread" | "scroll";
 export type PdfLayout = "original" | "fit-height" | "fit-width" | "two-page" | "continuous";
 export type WorkspaceSortBy = "title" | "author" | "recent";
-export type LibraryView = "grid" | "table";
+export type LibraryView = "grid" | "table" | "stack";
 export type StandardEbooksView = "grid" | "table";
 export type TextAlign = "left" | "center" | "right" | "justify" | undefined;
 export type FontWeight = 300 | 400 | 500 | 600 | 700;
@@ -55,7 +55,7 @@ export const LocalUISettingsSchema = z.object({
     .default("fit-height"),
   sidebarCollapsed: z.boolean().default(false),
   zenMode: z.boolean().default(false),
-  libraryView: z.enum(["grid", "table"]).default("grid"),
+  libraryView: z.enum(["grid", "table", "stack"]).default("stack"),
   standardEbooksView: z.enum(["grid", "table"]).default("grid"),
   workspaceSortBy: z.enum(["title", "author", "recent"]).default("recent"),
   /**
@@ -122,7 +122,7 @@ const defaultSettings: Settings = {
   sidebarCollapsed: false,
   zenMode: false,
   workspaceSortBy: "recent",
-  libraryView: "grid",
+  libraryView: "stack",
   standardEbooksView: "grid",
   colorTheme: "default",
   focusedSplitRatio: FOCUSED_SPLIT_RATIO_DEFAULT,

@@ -1,0 +1,119 @@
+.bookshelf-book {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  padding-inline: 0;
+  padding-bottom: 0;
+}
+
+.bookshelf-stack li {
+  transition:
+    transform 950ms cubic-bezier(0.22, 0.8, 0.25, 1),
+    padding-bottom 950ms ease;
+}
+
+.bookshelf-volume {
+  transform-origin: 50% 0;
+  translate: 0 0;
+  transition:
+    transform 950ms cubic-bezier(0.22, 0.8, 0.25, 1),
+    translate 950ms cubic-bezier(0.22, 0.8, 0.25, 1),
+    box-shadow 650ms ease;
+}
+
+.bookshelf-pages {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  width: calc(100% * 2 / 3);
+  height: 100%;
+  transform-origin: 0 0;
+  transform: rotateY(90deg) skewY(-6deg);
+  background: repeating-linear-gradient(0deg, #dedbd2 0 1px, #f5f2ea 1px 3px);
+  backface-visibility: hidden;
+}
+
+.bookshelf-stack[data-selection="true"] > li:not([data-selected="true"]) {
+  transform: perspective(1800px) translate3d(38%, 0, -420px) rotateY(-8deg);
+}
+
+.bookshelf-stack > li[data-selected="true"] {
+  z-index: 3;
+}
+
+.bookshelf-stack[data-selection="true"] .bookshelf-book {
+  --book-pull: 0px;
+  --book-light: 0;
+}
+
+.bookshelf-stack li[data-selected="true"] .bookshelf-book {
+  --book-light: 0.12;
+}
+
+.bookshelf-stack li[data-selected="true"] .bookshelf-volume {
+  translate: var(--selected-x) var(--selected-y);
+  transform: rotateX(8deg) rotateY(-12deg) rotateZ(90deg) rotateX(-78deg)
+    scale3d(var(--selected-scale), var(--selected-scale), var(--selected-scale));
+  box-shadow: 5px 8px 24px -8px #0004;
+  transition-delay: 70ms, 0ms, 0ms;
+}
+
+.bookshelf-stack li[data-selected="true"] .bookshelf-book:focus-visible {
+  outline: none;
+}
+
+.bookshelf-stack li[data-selected="true"] .bookshelf-book:focus-visible .bookshelf-top {
+  outline: 2px solid var(--ring);
+  outline-offset: 6px;
+}
+
+.bookshelf-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: absolute;
+  left: var(--read-x, 50%);
+  top: var(--read-y, 100%);
+  translate: -50% 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  color: var(--foreground);
+  font-size: 14px;
+  transition:
+    opacity 180ms ease,
+    visibility 180ms;
+}
+
+li[data-selected="true"] .bookshelf-actions {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 650ms;
+}
+
+@media (max-width: 767px) {
+  .bookshelf-stack[data-selection="true"] > li:not([data-selected="true"]) {
+    transform: none;
+  }
+
+  .bookshelf-stack > li[data-selected="true"] {
+    padding-bottom: var(--selected-space);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bookshelf-stack li,
+  .bookshelf-volume,
+  .bookshelf-actions {
+    transition: none;
+  }
+}
+
+.bookshelf-read {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
