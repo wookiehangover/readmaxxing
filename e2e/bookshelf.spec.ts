@@ -198,7 +198,7 @@ test("fits long titles on mobile and supports an empty library", async ({ page }
   ).toBeVisible();
 });
 
-test("books spring in from above, stay still on hover, and respect reduced motion", async ({
+test("books spring in from above, pull forward on hover, and respect reduced motion", async ({
   page,
 }) => {
   await seedShelf(page);
@@ -216,11 +216,32 @@ test("books spring in from above, stay still on hover, and respect reduced motio
   const [start, overshoot, settled] = positions;
   expect(start).toBeLessThan(settled - 100);
   expect(overshoot).toBeGreaterThan(settled + 5);
-  const restingBounds = await book.boundingBox();
+  const volume = book.locator(".bookshelf-volume");
+  const restingBounds = (await volume.boundingBox())!;
+  const restingShadow = await volume.evaluate((element) => getComputedStyle(element).boxShadow);
   await book.hover();
-  await expect(book.locator(".bookshelf-volume")).toHaveCSS("transition-duration", "0s");
-  expect(await book.boundingBox()).toEqual(restingBounds);
+  await expect
+    .poll(async () => (await volume.boundingBox())!.width)
+    .toBeGreaterThan(restingBounds.width + 15);
+  await expect(volume).not.toHaveCSS("box-shadow", restingShadow);
+  await expect
+    .poll(() =>
+      book
+        .locator(".bookshelf-spine")
+        .evaluate((element) => getComputedStyle(element, "::before").opacity),
+    )
+    .toBe("0.18");
   await expect(page.locator(".bookshelf-preview")).toHaveCount(0);
+  await page.mouse.move(0, 0);
+  await expect
+    .poll(async () => (await volume.boundingBox())!.width)
+    .toBeCloseTo(restingBounds.width, 1);
+  await book.focus();
+  await expect
+    .poll(async () => (await volume.boundingBox())!.width)
+    .toBeGreaterThan(restingBounds.width + 15);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(book).toHaveCSS("animation-name", "none");
+  await expect(volume).toHaveCSS("transform", "none");
+  await expect(volume).toHaveCSS("transition-duration", "0s");
 });

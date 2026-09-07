@@ -74,8 +74,11 @@
   margin-bottom: 28px;
 }
 .bookshelf-book {
+  --book-pull: 0px;
+  --book-light: 0;
   display: block;
   position: relative;
+  perspective: 1800px;
   padding-top: 46px;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
@@ -114,7 +117,11 @@
   border-radius: 2px 3px 4px 2px;
   box-shadow:
     0 2px 3px #0003,
-    0 12px 24px -8px #0005;
+    0 calc(12px + var(--book-pull) * 0.16) calc(24px + var(--book-pull) * 0.25) -8px #0005;
+  transform: translate3d(0, calc(var(--book-pull) * -0.04), var(--book-pull));
+  transition:
+    transform 650ms cubic-bezier(0.22, 0.8, 0.25, 1.1),
+    box-shadow 650ms ease;
   perspective: 2400px;
   perspective-origin: 50% 0;
   transform-style: preserve-3d;
@@ -153,6 +160,33 @@
   background-image:
     repeating-linear-gradient(0deg, transparent 0 2px, #fff5 2px 3px),
     repeating-linear-gradient(90deg, transparent 0 3px, #0005 3px 4px);
+}
+.bookshelf-spine::before,
+.bookshelf-top::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(110deg, #fff3, #fff 30%, #fff0 65%, #0003);
+  opacity: var(--book-light);
+  transition: opacity 450ms ease;
+}
+.bookshelf-top::before {
+  z-index: 1;
+}
+.bookshelf-book:focus-visible {
+  --book-pull: 64px;
+  --book-light: 0.18;
+}
+.bookshelf-stack li:has(.bookshelf-book:is(:hover, :focus-visible)) {
+  z-index: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .bookshelf-book:hover {
+    --book-pull: 64px;
+    --book-light: 0.18;
+  }
 }
 .bookshelf-author {
   font-size: 12px;
@@ -273,6 +307,14 @@
 @media (prefers-reduced-motion: reduce) {
   .bookshelf-book {
     animation: none;
+  }
+  .bookshelf-volume {
+    transform: none;
+    transition: none;
+  }
+  .bookshelf-spine::before,
+  .bookshelf-top::before {
+    transition: none;
   }
 }
 
