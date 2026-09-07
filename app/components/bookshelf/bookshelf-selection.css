@@ -17,9 +17,11 @@
 .bookshelf-volume {
   transform-origin: 50% 0;
   translate: 0 0;
+  rotate: 0deg;
   transition:
     transform 950ms cubic-bezier(0.22, 0.8, 0.25, 1),
-    translate 950ms cubic-bezier(0.22, 0.8, 0.25, 1);
+    translate 950ms cubic-bezier(0.22, 0.8, 0.25, 1),
+    rotate 450ms cubic-bezier(0.22, 0.8, 0.25, 1);
 }
 
 .bookshelf-pages {
@@ -56,27 +58,27 @@
   transform: rotateX(8deg) rotateY(-12deg) rotateZ(90deg) rotateX(-78deg)
     scale3d(var(--selected-scale), var(--selected-scale), var(--selected-scale));
   box-shadow: 5px 8px 24px -8px #0004;
-  transition-delay: 70ms, 0ms;
+  transition-delay: 70ms, 0ms, 0ms;
 }
 
-/* Rotate independently so hovering never replaces the selection transform. */
+/* Tilt the whole volume independently of the transform that opens it. */
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .bookshelf-stack li[data-selected="true"] .bookshelf-volume:hover {
-    animation: bookshelf-pitch 8s ease-in-out infinite;
+  .bookshelf-stack li[data-selected="true"] .bookshelf-volume {
+    rotate: var(--book-tilt, 0deg);
   }
-}
 
-@keyframes bookshelf-pitch {
-  0%,
-  50%,
-  100% {
-    rotate: x 0deg;
-  }
-  25% {
-    rotate: x 7deg;
-  }
-  75% {
-    rotate: x -7deg;
+  .bookshelf-stack li[data-selected="true"] .bookshelf-cover::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      ellipse at var(--book-glare-x, 50%) var(--book-glare-y, 50%),
+      #fff,
+      transparent 70%
+    );
+    opacity: var(--book-glare-opacity, 0);
+    transition: opacity 450ms ease;
   }
 }
 

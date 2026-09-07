@@ -46,42 +46,57 @@ for (const width of [390, 1280]) {
   });
 }
 
-test("the selected cover slowly pitches in both directions only while hovered", async ({
-  page,
-}) => {
+test("the selected cover follows the pointer and settles when it leaves", async ({ page }) => {
   await seedShelf(page);
   const book = page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" });
   const volume = book.locator(".bookshelf-volume");
   await book.hover();
-  await expect(volume).toHaveCSS("animation-name", "none");
+  await expect(volume).toHaveCSS("rotate", "0deg");
   await book.click();
   await page.mouse.move(0, 0);
   await volume.evaluate(async (element) => {
     await Promise.allSettled(element.getAnimations().map((animation) => animation.finished));
   });
-  const cover = (await book.locator(".bookshelf-top").boundingBox())!;
-  await page.mouse.move(cover.x + cover.width / 2, cover.y + cover.height / 2);
-  await expect(volume).toHaveCSS("animation-name", "bookshelf-pitch");
-  await expect(volume).toHaveCSS("animation-duration", "8s");
-  const samples = await volume.evaluate((element) => {
-    const animation = element.getAnimations().find((item) => item instanceof CSSAnimation)!;
-    animation.pause();
-    return [0, 2000, 6000, 8000].map((time) => {
-      animation.currentTime = time;
-      return {
-        rotate: getComputedStyle(element).rotate,
-        transform: getComputedStyle(element).transform,
-      };
+  const baseTransform = await volume.evaluate((element) => getComputedStyle(element).transform);
+  const cover = (await book.locator(".bookshelf-cover").boundingBox())!;
+  const samples: number[][] = [];
+  for (const [x, y] of [
+    [0.3, 0.3],
+    [0.7, 0.7],
+  ]) {
+    await page.mouse.move(cover.x + cover.width * x, cover.y + cover.height * y);
+    await expect
+      .poll(() => volume.evaluate((element) => element.style.getPropertyValue("--book-tilt")))
+      .not.toBe("");
+    await volume.evaluate(async (element) => {
+      await Promise.allSettled(element.getAnimations().map((animation) => animation.finished));
     });
-  });
-  expect(samples.map((sample) => sample.rotate)).toEqual(["x 0deg", "x 7deg", "x -7deg", "x 0deg"]);
-  expect(new Set(samples.map((sample) => sample.transform)).size).toBe(1);
-  await expect(book).toHaveAttribute("aria-pressed", "true");
+    samples.push(
+      await volume.evaluate((element) =>
+        getComputedStyle(element).rotate.split(" ").map(parseFloat),
+      ),
+    );
+    await expect(volume).toHaveCSS("transform", baseTransform);
+    await expect(book).toHaveAttribute("aria-pressed", "true");
+  }
+  // Opposite corners tilt on both axes; the selection transform remains unchanged.
+  expect(samples[0][0]).toBeGreaterThan(0);
+  expect(samples[0][1]).toBeLessThan(0);
+  expect(samples[1][0]).toBeLessThan(0);
+  expect(samples[1][1]).toBeGreaterThan(0);
+  const glare = book.locator(".bookshelf-cover");
+  await expect
+    .poll(() => glare.evaluate((element) => getComputedStyle(element, "::after").opacity))
+    .toBe("0.2");
   await page.mouse.move(0, 0);
-  await expect(volume).toHaveCSS("animation-name", "none");
+  await expect(volume).toHaveCSS("rotate", "0deg");
+  await expect
+    .poll(() => glare.evaluate((element) => getComputedStyle(element, "::after").opacity))
+    .toBe("0");
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.mouse.move(cover.x + cover.width / 2, cover.y + cover.height / 2);
-  await expect(volume).toHaveCSS("animation-name", "none");
+  await page.mouse.move(cover.x + cover.width * 0.7, cover.y + cover.height * 0.7);
+  await expect(volume).toHaveCSS("rotate", "0deg");
   await page.keyboard.press("Escape");
   await expect(book).toHaveAttribute("aria-pressed", "false");
+  await expect(volume).toHaveCSS("rotate", "0deg");
 });
