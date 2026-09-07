@@ -163,12 +163,15 @@ test("one Gatsby survives failed saves, repeated refresh, and existing-account p
 
   try {
     await page.goto("/");
-    await expect(page.getByRole("button", { name: "Open The Great Gatsby" })).toBeVisible();
+    await expect(page.getByTestId("reading-shell")).toBeVisible();
+    await expect(page.getByTestId("workspace-loading-overlay")).toBeHidden();
+    await page.goto("/library");
+    await expect(page.getByRole("button", { name: "Select The Great Gatsby" })).toBeVisible();
     await page.goto("/login");
     await page.getByRole("button", { name: "Create account" }).click();
     await expect(page).not.toHaveURL(/\/login$/);
     await expect.poll(() => pushStarted).toBe(true);
-    await expect(page.getByRole("button", { name: "Open Existing cloud book" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Select Existing cloud book" })).toBeVisible();
     expect(requests.some((request) => request.path === "/api/sync/push")).toBe(false);
     expect((await readRecords(page, "ebook-reader-changelog", "changes")).length).toBeGreaterThan(
       0,
@@ -192,7 +195,7 @@ test("one Gatsby survives failed saves, repeated refresh, and existing-account p
   expect(initialPending.length).toBeGreaterThan(0);
   for (let refresh = 0; refresh < 3; refresh++) {
     await page.reload();
-    await expect(page.getByRole("button", { name: "Open Existing cloud book" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Select Existing cloud book" })).toBeVisible();
     expect((await activeGatsby()).map((book) => book.id)).toEqual([first[0].id]);
     const pending = await readRecords(page, "ebook-reader-changelog", "changes");
     expect(pending.map((change) => change.id)).toEqual(
