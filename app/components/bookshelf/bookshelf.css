@@ -1,5 +1,4 @@
 .bookshelf {
-  --shelf-muted: var(--muted-foreground);
   height: 100%;
   overflow: auto;
   color: var(--foreground);
@@ -17,55 +16,6 @@
   margin: 0 auto;
   padding-top: 32px;
 }
-.bookshelf-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 0;
-}
-.bookshelf-search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  color: var(--shelf-muted);
-}
-.bookshelf-search input {
-  width: 100%;
-  min-width: 0;
-  background: transparent;
-  color: var(--foreground);
-  font-size: 12px;
-  padding: 5px 0;
-}
-.bookshelf-search input::placeholder {
-  color: var(--shelf-muted);
-}
-.bookshelf-search input::-webkit-search-cancel-button {
-  display: none;
-}
-.bookshelf-search button {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
-}
-.bookshelf-sort select {
-  background: transparent;
-  color: var(--shelf-muted);
-  transition: color 150ms ease;
-  font-size: 12px;
-  padding: 6px 2px;
-  cursor: pointer;
-}
-.bookshelf-sort select:is(:hover, :focus-visible) {
-  color: var(--foreground);
-}
-.bookshelf-sort option {
-  background: var(--background);
-}
 .bookshelf-stack {
   padding: 64px 8px 48px;
   margin: 0 -8px;
@@ -78,6 +28,8 @@
   margin-bottom: 28px;
 }
 .bookshelf-book {
+  container-type: inline-size;
+  --book-depth: calc(100cqw * 2 / 3);
   --book-pull: 0px;
   --book-light: 0;
   display: block;
@@ -129,7 +81,7 @@
   box-shadow:
     0 2px 3px #0003,
     0 12px 24px -8px #0005;
-  transform: translate3d(0, calc(var(--book-pull) * -0.04), var(--book-pull));
+  transform: translate3d(0, calc(var(--book-pull) * -0.04), var(--book-pull)) rotateX(-6deg);
   transition: transform 650ms cubic-bezier(0.22, 0.8, 0.25, 1.1);
   transform-style: preserve-3d;
 }
@@ -145,6 +97,7 @@
   transition: opacity 650ms ease;
 }
 .bookshelf-spine {
+  backface-visibility: hidden;
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
@@ -229,7 +182,7 @@
   aspect-ratio: 3 / 2;
   background: var(--book-cloth);
   transform-origin: 50% 100%;
-  transform: rotateX(84deg);
+  transform: rotateX(90deg);
   backface-visibility: hidden;
 }
 .bookshelf-cover {
@@ -276,18 +229,6 @@
 }
 .bookshelf-cover-fallback small {
   font-size: 18px;
-}
-.bookshelf-error {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  padding: 48px 0;
-  color: var(--shelf-muted);
-  font-size: 12px;
-}
-.bookshelf-error button {
-  text-decoration: underline;
-  cursor: pointer;
 }
 @keyframes bookshelf-drop {
   from {

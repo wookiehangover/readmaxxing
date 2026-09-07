@@ -101,6 +101,7 @@ function waitForMicrotasks() {
 beforeEach(() => {
   storeMocks.dispatch.mockReset();
   storeMocks.dispatch.mockImplementation((action) => {
+    if (action.type === "annotations/appendHighlightToNotebookRequested") return action;
     const [record, onCompleted, onFailed] = action.payload;
     const persist =
       action.type === "annotations/cacheNotebookRequested"
@@ -416,10 +417,11 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
 });
 
 describe("useChatToolHandlers – create_highlight", () => {
-  it("preserves a server CFI without running fuzzy EPUB search", async () => {
+  it.each([true, false])("preserves a server CFI with notebook mounted: %s", async (mounted) => {
     fuzzySearchEpubForCfi.mockClear();
     const appendHighlight = vi.fn();
-    mockNotebookCallbackMap.current.set("book-1", appendHighlight);
+    mockNotebookCallbackMap.current.clear();
+    if (mounted) mockNotebookCallbackMap.current.set("book-1", appendHighlight);
     const { onFinish } = renderHookSimple(() =>
       useChatToolHandlers({
         bookId: "book-1",
@@ -459,11 +461,17 @@ describe("useChatToolHandlers – create_highlight", () => {
     await waitForMicrotasks();
 
     expect(fuzzySearchEpubForCfi).not.toHaveBeenCalled();
-    expect(appendHighlight).toHaveBeenCalledWith({
-      highlightId: "highlight-1",
-      cfiRange,
-      text: "passage",
-    });
+    const attrs = { highlightId: "highlight-1", cfiRange, text: "passage" };
+    if (mounted) {
+      expect(appendHighlight).toHaveBeenCalledWith(attrs);
+    } else {
+      expect(storeMocks.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "annotations/appendHighlightToNotebookRequested",
+          payload: ["book-1", attrs, undefined, console.error],
+        }),
+      );
+    }
   });
 
   it("does not save or append a highlight when server and client CFI resolution fail", async () => {

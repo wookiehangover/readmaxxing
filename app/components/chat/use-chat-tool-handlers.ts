@@ -3,11 +3,11 @@ import type { UIMessage } from "@ai-sdk/react";
 import type { JSONContent } from "@tiptap/react";
 import { BookService } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
 import { normalizeCfiRange } from "~/lib/chat/highlight-tools";
 import { useAppStore } from "~/lib/themis/provider";
 import {
   addHighlightRequested,
+  appendHighlightToNotebookRequested,
   cacheNotebookRequested,
 } from "~/lib/themis/annotations/annotations-slice";
 import { getToolInfo } from "./chat-utils";
@@ -310,7 +310,14 @@ export function useChatToolHandlers({
                   if (appendFn) {
                     appendFn(attrs);
                   } else {
-                    appendHighlightReferenceToNotebook(targetBookId, attrs).catch(console.error);
+                    store.dispatch(
+                      appendHighlightToNotebookRequested(
+                        targetBookId,
+                        attrs,
+                        undefined,
+                        console.error,
+                      ),
+                    );
                   }
                 } else {
                   console.warn(
@@ -375,7 +382,9 @@ export function useChatToolHandlers({
               if (appendFn) {
                 appendFn(attrs);
               } else {
-                appendHighlightReferenceToNotebook(targetBookId, attrs).catch(console.error);
+                store.dispatch(
+                  appendHighlightToNotebookRequested(targetBookId, attrs, undefined, console.error),
+                );
               }
             }
           } catch (err) {

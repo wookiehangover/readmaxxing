@@ -5,6 +5,7 @@ import { CoverImage } from "~/components/book-grid/cover-image";
 import { getBookReadingPath } from "~/lib/reading-route";
 import type { BookMeta } from "~/lib/stores/book-store";
 import { readCoverColors, type CoverColors } from "~/components/bookshelf/cover-color";
+import { useBookTilt } from "~/hooks/use-book-tilt";
 
 // Paired cloth and ink colors keep every generated spine readable, including books without covers.
 const CLOTH_COLORS = [
@@ -34,6 +35,7 @@ export function BookshelfBook({
   onOpenBook?: (book: BookMeta) => void | Promise<void>;
 }) {
   const [coverColors, setCoverColors] = useState<CoverColors | null>(null);
+  const { resetTilt, ...tiltEvents } = useBookTilt(selected);
   const colorIndex =
     Array.from(book.id).reduce(
       (hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0,
@@ -51,12 +53,15 @@ export function BookshelfBook({
         className="bookshelf-book"
         aria-label={`Select ${book.title}${book.author ? ` by ${book.author}` : ""}`}
         aria-pressed={selected}
-        onClick={(event) => onSelect(event.currentTarget)}
+        onClick={(event) => {
+          resetTilt(event.currentTarget.querySelector(".bookshelf-volume")!);
+          onSelect(event.currentTarget);
+        }}
         style={{ "--book-cloth": cloth, "--book-ink": ink, "--book-order": index } as CSSProperties}
       >
         {/* Rebuild the perspective root with its faces; WebKit flattens faces added later. */}
         <span className="bookshelf-scene" data-active={active} key={active ? "active" : "inactive"}>
-          <span className="bookshelf-volume">
+          <span className="bookshelf-volume" {...tiltEvents}>
             {active && (
               <span className="bookshelf-top" aria-hidden="true">
                 <span className="bookshelf-cover">
@@ -79,7 +84,14 @@ export function BookshelfBook({
                 </span>
               </span>
             )}
-            {active && <span className="bookshelf-pages" aria-hidden="true" />}
+            {active && (
+              <>
+                <span className="bookshelf-back" aria-hidden="true" />
+                <span className="bookshelf-pages" aria-hidden="true" />
+                <span className="bookshelf-page-end bookshelf-page-end-start" aria-hidden="true" />
+                <span className="bookshelf-page-end bookshelf-page-end-finish" aria-hidden="true" />
+              </>
+            )}
             <span className="bookshelf-spine">
               <span className="bookshelf-author">{book.author || "Unknown author"}</span>
               <span className="bookshelf-book-title">{book.title}</span>

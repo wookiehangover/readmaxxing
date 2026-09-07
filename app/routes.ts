@@ -7,7 +7,6 @@ export default [
     route("books/:id", "routes/book-reader.tsx"),
     route("books/:id/details", "routes/book-details.tsx"),
     route("library", "routes/workspace-library.tsx"),
-    route("bookshelf", "routes/bookshelf.tsx"),
     route("standard-ebooks", "routes/workspace-standard-ebooks.tsx"),
   ]),
   route("login", "routes/login.tsx"),

@@ -11,7 +11,7 @@ import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node
  * highlight would have no notebook node and therefore no UI for deletion.
  *
  * The annotations saga uses the returned notebook to update the normalized
- * collection after persistence. Legacy chat callers ignore the return value.
+ * collection after persistence, including highlights created by chat tools.
  */
 export function appendHighlightReferenceToNotebook(
   bookId: string,

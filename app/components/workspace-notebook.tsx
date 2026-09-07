@@ -75,19 +75,15 @@ export function WorkspaceNotebook({
 
   // Reconcile authoritative collection changes into the mounted editor.
   useEffect(() => {
-    if (!content) return;
+    if (!content || !editorReady) return;
     const newContentStr = JSON.stringify(content);
-    if (lastContentRef.current === null) {
-      lastContentRef.current = newContentStr;
-      return;
-    }
     if (pendingContentRef.current || newContentStr === lastContentRef.current) return;
     lastContentRef.current = newContentStr;
     if (!editorRef.current) return;
     fromSyncRef.current = true;
     editorRef.current.setContent(content);
     fromSyncRef.current = false;
-  }, [content]);
+  }, [content, editorReady]);
 
   const flushSave = useCallback(() => {
     const pendingContent = pendingContentRef.current;
@@ -138,8 +134,9 @@ export function WorkspaceNotebook({
     };
   }, [flushSave]);
 
-  // Register the appendHighlightReference callback so the workspace can push highlights here
+  // Register only after the editor can receive highlights; otherwise callers persist via the saga.
   useEffect(() => {
+    if (!editorReady) return;
     const appendFn = (attrs: HighlightReferenceAttrs) => {
       editorRef.current?.appendHighlightReference(attrs);
     };
@@ -147,7 +144,7 @@ export function WorkspaceNotebook({
     return () => {
       onUnregisterAppendHighlight?.(bookId);
     };
-  }, [bookId, onRegisterAppendHighlight, onUnregisterAppendHighlight]);
+  }, [bookId, editorReady, onRegisterAppendHighlight, onUnregisterAppendHighlight]);
 
   // Register editor callbacks for live-sync from chat tool handlers.
   // Only register once the Tiptap editor is ready so that tool handlers

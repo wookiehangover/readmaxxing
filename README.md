@@ -105,6 +105,11 @@ Migrations are in `database/migrations/` — apply them sequentially.
 | `pnpm run test`      | Unit tests (Vitest)                     |
 | `pnpm run e2e`       | Playwright end-to-end tests             |
 
+The live chat E2E tests require the configured Postgres and AI services. The
+mid-stream reload test also requires a running Redis instance at `REDIS_URL`;
+setting the URL alone does not enable recovery. For local Redis on port 6379,
+start `redis-server` before running `pnpm e2e`.
+
 Package-scoped commands (from repo root):
 
 ```bash
