@@ -10,6 +10,14 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function seedShelf(page: Page) {
+  // A remote cover also works in WebKit test contexts that cannot persist blobs.
+  await page.route("https://bookshelf.public.blob.vercel-storage.com/cover.svg", (route) =>
+    route.fulfill({
+      contentType: "image/svg+xml",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300"><rect width="200" height="300" fill="#42645d"/><circle cx="100" cy="110" r="55" fill="#dfc785"/></svg>',
+    }),
+  );
   await page.goto("/favicon.svg");
   const epub = (await readFile(TEST_EPUB)).toString("base64");
   await page.evaluate(async (data) => {
@@ -22,18 +30,13 @@ async function seedShelf(page: Page) {
       });
     const metadata = await openStore("ebook-reader-db", "books");
     const files = await openStore("ebook-reader-book-data", "book-data");
-    const cover = new Blob(
-      [
-        '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300"><rect width="200" height="300" fill="#42645d"/><circle cx="100" cy="110" r="55" fill="#dfc785"/></svg>',
-      ],
-      { type: "image/svg+xml" },
-    );
     const records = [
       {
         id: "shelf-local",
         title: "A Field Guide",
         author: "Zora Zenith",
-        coverImage: cover,
+        coverImage: null,
+        remoteCoverUrl: "https://bookshelf.public.blob.vercel-storage.com/cover.svg",
         hasLocalFile: true,
       },
       {
@@ -216,11 +219,13 @@ test("books spring in from above, pull forward on hover, and respect reduced mot
     animation.pause();
     const timing = animation.effect!.getComputedTiming();
     const duration = Number(timing.duration);
-    return Array.from({ length: 21 }, (_, index) => {
+    const samples = Array.from({ length: 21 }, (_, index) => {
       animation.currentTime = (timing.delay ?? 0) + (duration * index) / 20;
       const rect = element.getBoundingClientRect();
       return { top: rect.top, width: rect.width };
     });
+    animation.finish();
+    return samples;
   });
   const start = positions[0];
   const settled = positions.at(-1)!;
@@ -230,12 +235,16 @@ test("books spring in from above, pull forward on hover, and respect reduced mot
   expect(Math.max(...positions.map((position) => position.top))).toBeGreaterThan(settled.top + 5);
   const volume = book.locator(".bookshelf-volume");
   const restingBounds = (await volume.boundingBox())!;
-  const restingShadow = await volume.evaluate((element) => getComputedStyle(element).boxShadow);
+  await expect
+    .poll(() => volume.evaluate((element) => getComputedStyle(element, "::after").opacity))
+    .toBe("0");
   await book.hover();
   await expect
     .poll(async () => (await volume.boundingBox())!.width)
     .toBeGreaterThan(restingBounds.width + 15);
-  await expect(volume).not.toHaveCSS("box-shadow", restingShadow);
+  await expect
+    .poll(() => volume.evaluate((element) => getComputedStyle(element, "::after").opacity))
+    .toBe("1");
   await expect
     .poll(() =>
       book
@@ -256,6 +265,68 @@ test("books spring in from above, pull forward on hover, and respect reduced mot
   await expect(book).toHaveCSS("animation-name", "none");
   await expect(volume).toHaveCSS("transform", "none");
   await expect(volume).toHaveCSS("transition-duration", "0s");
+});
+
+test("large stacks only animate nearby rows and can select books after scrolling", async ({
+  page,
+}) => {
+  await seedShelf(page);
+  await page.evaluate(async () => {
+    const request = indexedDB.open("ebook-reader-db", 1);
+    await new Promise<void>((resolveDb, reject) => {
+      request.onsuccess = () => {
+        const db = request.result;
+        const transaction = db.transaction("books", "readwrite");
+        for (let index = 0; index < 100; index++) {
+          const id = `large-shelf-${index}`;
+          transaction.objectStore("books").put(
+            {
+              id,
+              title: `Volume ${String(index).padStart(3, "0")}`,
+              author: "Large Library",
+              format: "epub",
+              coverImage: null,
+              hasLocalFile: true,
+            },
+            id,
+          );
+        }
+        transaction.oncomplete = () => {
+          db.close();
+          resolveDb();
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  });
+  for (const route of ["/bookshelf", "/library"]) {
+    await page.goto(route);
+    const rows = page.locator(".bookshelf-stack > li");
+    await expect(rows).toHaveCount(103);
+    await page.locator(".bookshelf-book").evaluateAll((books) => {
+      books.forEach((book) => book.getAnimations().forEach((animation) => animation.finish()));
+    });
+    const first = page.getByRole("button", { name: "Select Volume 000 by Large Library" });
+    const last = page.getByRole("button", { name: "Select Volume 099 by Large Library" });
+    await first.click();
+    await expect(first).toHaveAttribute("aria-pressed", "true");
+    const receding = page.locator('.bookshelf-stack > li[data-receding="true"]');
+    expect(await receding.count()).toBeGreaterThan(1);
+    expect(await receding.count()).toBeLessThan(12);
+    await expect(last.locator("..")).toHaveCSS("transform", "none");
+    await page.keyboard.press("Escape");
+    await last.scrollIntoViewIfNeeded();
+    await last.click();
+    await expect(last).toHaveAttribute("aria-pressed", "true");
+    await expect(first.locator("..")).toHaveCSS("transform", "none");
+    expect(await receding.count()).toBeLessThan(12);
+    await page.locator(".bookshelf").evaluate((shelf) => {
+      shelf.scrollTop = 0;
+    });
+    await expect(last).toHaveAttribute("aria-pressed", "false");
+    await expect(receding).toHaveCount(0);
+  }
 });
 
 test("selection turns the cover left, recedes the stack, and reverses with Escape or a stack click", async ({
@@ -299,6 +370,39 @@ test("selection turns the cover left, recedes the stack, and reverses with Escap
   await expect(page.locator(".bookshelf-stack")).toHaveAttribute("data-selection", "false");
   await page.getByRole("searchbox").fill("");
   await expect(book).toHaveAttribute("aria-pressed", "false");
+});
+
+test("pointer dismissal does not add a focus ring, while Escape restores keyboard focus", async ({
+  page,
+}) => {
+  await seedShelf(page);
+  for (const route of ["/bookshelf", "/library"]) {
+    await page.goto(route);
+    const book = page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" });
+    const other = page.getByRole("button", { name: "Select Remote reading copy by Ada Adams" });
+    // Safari leaves the search field focused when a book is clicked.
+    await page.getByRole(route === "/bookshelf" ? "searchbox" : "textbox").focus();
+    await book.click();
+    await expect(book).toHaveAttribute("aria-pressed", "true");
+    await other.click();
+    await expect(book).toHaveAttribute("aria-pressed", "false");
+    await expect(book).not.toBeFocused();
+    await expect(book).toHaveCSS("outline-style", "none");
+
+    await book.focus();
+    await page.keyboard.press("Enter");
+    await expect(book).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("link", { name: "Read A Field Guide by Zora Zenith" }).focus();
+    await page.keyboard.press("Escape");
+    await expect(book).toHaveAttribute("aria-pressed", "false");
+    await expect(book).toBeFocused();
+    await expect(book).toHaveCSS("outline-style", "none");
+    await expect(book.locator(".bookshelf-book-title")).toHaveCSS(
+      "text-decoration-line",
+      "underline",
+    );
+    await expect(book.locator(".bookshelf-top")).toHaveCSS("outline-style", "none");
+  }
 });
 
 test("mobile selection stays inline and reserves room for the upright cover", async ({ page }) => {

@@ -15,6 +15,7 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
     layout: string;
     open: boolean;
     style: CSSProperties;
+    recedingIds: string[];
   } | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const layout = books.map((book) => book.id).join("\0");
@@ -22,7 +23,6 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
 
   function close() {
     setSelection((current) => current && { ...current, open: false });
-    trigger.current?.focus({ preventScroll: true });
   }
 
   useEffect(() => {
@@ -31,6 +31,8 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
       if (event.key === "Escape" && !event.defaultPrevented) {
         event.preventDefault();
         close();
+        // Pointer dismissal must not manufacture a keyboard focus ring in Safari.
+        trigger.current?.focus({ preventScroll: true });
       }
     }
     // The placement is measured in viewport coordinates; return before that viewport changes.
@@ -77,11 +79,22 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
       : shelf.top + shelf.height * 0.48;
     const x = centerX - rect.left - width / 2 - (width / 3) * scale * Math.cos(Math.PI / 30);
     const y = centerY - rect.top - volume.offsetTop;
+    // Promoting every row to a new 3D layer stalls WebKit on large libraries.
+    // Include a gutter for nearby books; desktop scrolling dismisses selection.
+    const recedingIds = mobile
+      ? []
+      : books
+          .filter((_, index) => {
+            const row = button.closest("ol")!.children[index].getBoundingClientRect();
+            return row.bottom > shelf.top - 200 && row.top < shelf.bottom + 200;
+          })
+          .map((candidate) => candidate.id);
     trigger.current = button;
     setSelection({
       id: book.id,
       layout,
       open: true,
+      recedingIds,
       style: {
         "--selected-x": `${x}px`,
         "--selected-y": `${y}px`,
@@ -106,6 +119,7 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
         <li
           key={book.id}
           data-selected={selectedId === book.id}
+          data-receding={Boolean(selectedId && selection?.recedingIds.includes(book.id))}
           style={selection?.id === book.id ? selection.style : undefined}
         >
           <BookshelfBook
