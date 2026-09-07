@@ -67,11 +67,27 @@ describe("review workflow with real client, routes, storage and ReactStore", () 
     );
     expect(await count("review_attempt")).toBe(2);
     store.dispose();
+    const reloadQuestion = holdNextResponse("question");
     const restored = await open();
+    expect((await reloadQuestion.processed).status).toBe(200);
+    const reloadConfirmation = holdNextResponse("progress");
+    reloadQuestion.release();
+    expect((await reloadConfirmation.processed).status).toBe(200);
     await vi.waitFor(() =>
       expect(
         restored.reviewsSelectors.selectReviewAttempts.select(restored.state, "book-a"),
       ).toHaveLength(2),
+    );
+    expect(
+      restored.reviewsSelectors.selectReviewAssignmentCurrent.select(restored.state, "book-a"),
+    ).toBe(false);
+    expect(restored.reviewsSelectors.selectReviewLocked.select(restored.state, "book-a")).toBe(
+      true,
+    );
+    expect(restored.state.reviews.requests.progress.token).not.toBeNull();
+    reloadConfirmation.release();
+    await vi.waitFor(() =>
+      expect(restored.state.reviews.requests.progress).toEqual({ token: null, error: null }),
     );
     expect(restored.reviewsSelectors.selectReviewLocked.select(restored.state, "book-a")).toBe(
       false,
@@ -83,6 +99,22 @@ describe("review workflow with real client, routes, storage and ReactStore", () 
     expect(
       restored.reviewsSelectors.selectReviewAnswerText.select(restored.state, "book-a"),
     ).toContain("Revised:");
+  });
+  it("restores a confirmed pass from IndexedDB while offline without server recovery", async () => {
+    const store = await open();
+    await begin(store);
+    await pass(store);
+    store.dispose();
+    vi.stubGlobal("navigator", { onLine: false });
+    const responseCount = responses.length;
+    const restored = await open();
+    expect(restored.reviewsSelectors.selectReviewAttempts.select(restored.state, "book-a")).toEqual(
+      [expect.objectContaining({ verdict: "pass" })],
+    );
+    expect(restored.reviewsSelectors.selectReviewLocked.select(restored.state, "book-a")).toBe(
+      false,
+    );
+    expect(responses).toHaveLength(responseCount);
   });
   it("recovers an actual chapters_unavailable response once", async () => {
     await replaceChapters([{ index: 0, text: TEXT }]);
