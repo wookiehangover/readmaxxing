@@ -82,10 +82,7 @@
   --book-light: 0;
   display: block;
   position: relative;
-  perspective: 1800px;
-  /* Keep WebKit's projected geometry in the same 3D context as the volume. */
-  transform-style: preserve-3d;
-  padding-top: 46px;
+  padding-top: 0;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
   transform-origin: 50% 0;
@@ -117,6 +114,13 @@
     1.0001,
     1
   );
+}
+.bookshelf-scene {
+  display: block;
+  position: relative;
+  padding-top: 46px;
+  perspective: 1800px;
+  transform-style: preserve-3d;
 }
 .bookshelf-volume {
   display: block;
@@ -310,7 +314,7 @@
   .bookshelf-stack li {
     margin-bottom: 24px;
   }
-  .bookshelf-book {
+  .bookshelf-scene {
     padding-top: 26px;
   }
   .bookshelf-spine {
@@ -351,11 +355,11 @@
 }
 
 /* Offscreen rows retain their spine layout without images or compositor layers. */
-.bookshelf-stack > li[data-active="false"] .bookshelf-book {
+.bookshelf-scene[data-active="false"] {
   perspective: none;
   transform-style: flat;
 }
-.bookshelf-stack > li[data-active="false"] .bookshelf-volume {
+.bookshelf-scene[data-active="false"] .bookshelf-volume {
   transform: none;
   translate: none;
   transform-style: flat;
