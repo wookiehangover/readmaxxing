@@ -401,7 +401,7 @@ test.describe("Chat (server-authoritative)", () => {
     const marker = `E2E-GOLDEN-${Date.now()}`;
     await sendChatMessage(
       page,
-      `Call edit_notes exactly once with this exact code argument: const highlight = notebook.find({ type: "highlightReference", text: "quick brown fox" })[0]; if (highlight) notebook.insertAfter(highlight, "${marker}"); Do not call any other tool.`,
+      `Call read_notes first, then call edit_notes exactly once with this exact code argument: const highlight = notebook.find({ type: "highlightReference", text: "quick brown fox" })[0]; if (highlight) notebook.insertAfter(highlight, "${marker}"); Call only read_notes and edit_notes.`,
     );
     await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeEnabled({
       timeout: 90_000,
@@ -428,7 +428,7 @@ test.describe("Chat (server-authoritative)", () => {
     const marker = "E2E-INLINE-" + Date.now();
     await sendChatMessage(
       page,
-      `Call the edit_notes tool exactly once with this exact code argument: const highlight = notebook.find({ type: "highlightReference" })[0]; if (highlight) notebook.insertAfter(highlight, "${marker}"); Do not use any other tools, and do not use append or prepend.`,
+      `Call read_notes first, then call edit_notes exactly once with this exact code argument: const highlight = notebook.find({ type: "highlightReference" })[0]; if (highlight) notebook.insertAfter(highlight, "${marker}"); Call only read_notes and edit_notes, and do not use append or prepend.`,
     );
     await expect(page.locator(ASSISTANT_BUBBLE).first()).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeEnabled({
@@ -470,7 +470,7 @@ test.describe("Chat (server-authoritative)", () => {
     const markerB = `MARKER-B-${suffix}`;
     await sendChatMessage(
       page,
-      `Call edit_notes exactly once with this exact code argument: const highlights = notebook.find({ type: "highlightReference" }); const first = highlights.find((block) => block.text.includes("${firstText}")); const second = highlights.find((block) => block.text.includes("${secondText}")); if (first && second) { notebook.insertAfter(first, "${markerA}"); notebook.insertAfter(second, "${markerB}"); } Do not call any other tool.`,
+      `Call read_notes first, then call edit_notes exactly once with this exact code argument: const highlights = notebook.find({ type: "highlightReference" }); const first = highlights.find((block) => block.text.includes("${firstText}")); const second = highlights.find((block) => block.text.includes("${secondText}")); if (first && second) { notebook.insertAfter(first, "${markerA}"); notebook.insertAfter(second, "${markerB}"); } Call only read_notes and edit_notes.`,
     );
     await expect(page.locator(ASSISTANT_BUBBLE).first()).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('textarea[placeholder*="Ask"]').first()).toBeEnabled({

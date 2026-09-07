@@ -59,6 +59,27 @@
   transition-delay: 70ms, 0ms;
 }
 
+/* Rotate independently so hovering never replaces the selection transform. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .bookshelf-stack li[data-selected="true"] .bookshelf-volume:hover {
+    animation: bookshelf-pitch 8s ease-in-out infinite;
+  }
+}
+
+@keyframes bookshelf-pitch {
+  0%,
+  50%,
+  100% {
+    rotate: x 0deg;
+  }
+  25% {
+    rotate: x 7deg;
+  }
+  75% {
+    rotate: x -7deg;
+  }
+}
+
 .bookshelf-stack[data-selection="true"] .bookshelf-volume::after {
   opacity: 0;
 }

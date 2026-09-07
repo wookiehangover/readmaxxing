@@ -15,16 +15,15 @@ test("shows the library, filters and sorts, and opens a local book", async ({ pa
   const books = page.getByRole("list", { name: "Your books" }).getByRole("button");
   await expect(books).toHaveCount(3);
   await expect(books.first()).toHaveAccessibleName("Select Remote reading copy by Ada Adams");
-  await page.getByRole("combobox", { name: "Sort bookshelf" }).selectOption("title");
+  await page.getByRole("button", { name: "Sort library by Author" }).click();
+  await page.getByRole("menuitemradio", { name: "Title", exact: true }).click();
   await expect(books.first()).toHaveAccessibleName("Select A Field Guide by Zora Zenith");
-  await page.getByRole("searchbox").fill("ZORA");
+  await page.getByRole("textbox", { name: "Search books" }).fill("ZORA");
   await expect(books).toHaveCount(1);
-  await page.getByRole("searchbox").fill("no such book");
+  await page.getByRole("textbox", { name: "Search books" }).fill("no such book");
   await expect(page.getByRole("list", { name: "Your books" }).getByRole("button")).toHaveCount(0);
-  await expect(page.getByRole("status").filter({ hasText: "No books found." })).toHaveText(
-    "No books found.",
-  );
-  await page.getByRole("button", { name: "Clear search", exact: true }).first().click();
+  await expect(page.getByText("No matching books", { exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "Search books" }).fill("");
   await expect(books).toHaveCount(3);
   await page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" }).focus();
   await page.keyboard.press("Enter");
@@ -72,9 +71,9 @@ test("persists stack layout and shares filtering across all three library views"
   await expect(page.getByTestId("reading-shell")).toBeVisible();
 });
 
-test("uses the app theme in light and dark mode without toolbar borders", async ({ page }) => {
+test("uses the app theme in light and dark mode", async ({ page }) => {
   await seedShelf(page);
-  const shelf = page.getByRole("main", { name: "Bookshelf", exact: true });
+  const shelf = page.locator(".bookshelf");
   const backgrounds: string[] = [];
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
@@ -92,8 +91,6 @@ test("uses the app theme in light and dark mode without toolbar borders", async 
     backgrounds.push(colors.background);
   }
   expect(backgrounds[0]).not.toBe(backgrounds[1]);
-  await expect(page.locator(".bookshelf-toolbar")).toHaveCSS("border-top-width", "0px");
-  await expect(page.locator(".bookshelf-toolbar")).toHaveCSS("border-bottom-width", "0px");
 });
 
 test("downloads a remote book through the existing reader", async ({ page }) => {
@@ -112,13 +109,13 @@ test("downloads a remote book through the existing reader", async ({ page }) => 
 
 test("fits long titles on mobile and supports an empty library", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/bookshelf");
-  await expect(page.getByRole("searchbox", { name: "Search bookshelf" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Sort bookshelf" })).toBeVisible();
+  await page.goto("/library");
+  await expect(page.getByRole("textbox", { name: "Search books" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sort library by Author" })).toBeVisible();
   await expect(page.getByRole("list", { name: "Your books" }).getByRole("button")).toHaveCount(0);
   await seedShelf(page);
   await expect(page.getByRole("list", { name: "Your books" }).getByRole("button")).toHaveCount(3);
-  const shelf = page.getByRole("main", { name: "Bookshelf", exact: true });
+  const shelf = page.locator(".bookshelf");
   expect(await shelf.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expect(
     page
@@ -221,33 +218,31 @@ test("large stacks only animate nearby rows and can select books after scrolling
       request.onerror = () => reject(request.error);
     });
   });
-  for (const route of ["/bookshelf", "/library"]) {
-    await page.goto(route);
-    const rows = page.locator(".bookshelf-stack > li");
-    await expect(rows).toHaveCount(103);
-    await page.locator(".bookshelf-book").evaluateAll((books) => {
-      books.forEach((book) => book.getAnimations().forEach((animation) => animation.finish()));
-    });
-    const first = page.getByRole("button", { name: "Select Volume 000 by Large Library" });
-    const last = page.getByRole("button", { name: "Select Volume 099 by Large Library" });
-    await first.click();
-    await expect(first).toHaveAttribute("aria-pressed", "true");
-    const receding = page.locator('.bookshelf-stack > li[data-receding="true"]');
-    expect(await receding.count()).toBeGreaterThan(1);
-    expect(await receding.count()).toBeLessThan(12);
-    await expect(last.locator("..")).toHaveCSS("transform", "none");
-    await page.keyboard.press("Escape");
-    await last.scrollIntoViewIfNeeded();
-    await last.click();
-    await expect(last).toHaveAttribute("aria-pressed", "true");
-    await expect(first.locator("..")).toHaveCSS("transform", "none");
-    expect(await receding.count()).toBeLessThan(12);
-    await page.locator(".bookshelf").evaluate((shelf) => {
-      shelf.scrollTop = 0;
-    });
-    await expect(last).toHaveAttribute("aria-pressed", "false");
-    await expect(receding).toHaveCount(0);
-  }
+  await page.goto("/library");
+  const rows = page.locator(".bookshelf-stack > li");
+  await expect(rows).toHaveCount(103);
+  await page.locator(".bookshelf-book").evaluateAll((books) => {
+    books.forEach((book) => book.getAnimations().forEach((animation) => animation.finish()));
+  });
+  const first = page.getByRole("button", { name: "Select Volume 000 by Large Library" });
+  const last = page.getByRole("button", { name: "Select Volume 099 by Large Library" });
+  await first.click();
+  await expect(first).toHaveAttribute("aria-pressed", "true");
+  const receding = page.locator('.bookshelf-stack > li[data-receding="true"]');
+  expect(await receding.count()).toBeGreaterThan(1);
+  expect(await receding.count()).toBeLessThan(12);
+  await expect(last.locator("..")).toHaveCSS("transform", "none");
+  await page.keyboard.press("Escape");
+  await last.scrollIntoViewIfNeeded();
+  await last.click();
+  await expect(last).toHaveAttribute("aria-pressed", "true");
+  await expect(first.locator("..")).toHaveCSS("transform", "none");
+  expect(await receding.count()).toBeLessThan(12);
+  await page.locator(".bookshelf").evaluate((shelf) => {
+    shelf.scrollTop = 0;
+  });
+  await expect(last).toHaveAttribute("aria-pressed", "false");
+  await expect(receding).toHaveCount(0);
 });
 
 test("selection turns the cover left, recedes the stack, and reverses with Escape or a stack click", async ({
@@ -262,7 +257,7 @@ test("selection turns the cover left, recedes the stack, and reverses with Escap
   const original = (await other.boundingBox())!;
   await book.click();
   await expect(book).toHaveAttribute("aria-pressed", "true");
-  await expect(page).toHaveURL(/\/bookshelf$/);
+  await expect(page).toHaveURL(/\/library$/);
   const cover = book.locator(".bookshelf-top");
   await expect
     .poll(async () => {
@@ -287,9 +282,9 @@ test("selection turns the cover left, recedes the stack, and reverses with Escap
   await expect(book).toHaveAttribute("aria-pressed", "false");
   await expect(other).toHaveAttribute("aria-pressed", "false");
   await book.click();
-  await page.getByRole("searchbox").fill("Ada");
+  await page.getByRole("textbox", { name: "Search books" }).fill("Ada");
   await expect(page.locator(".bookshelf-stack")).toHaveAttribute("data-selection", "false");
-  await page.getByRole("searchbox").fill("");
+  await page.getByRole("textbox", { name: "Search books" }).fill("");
   await expect(book).toHaveAttribute("aria-pressed", "false");
 });
 
@@ -297,30 +292,28 @@ test("pointer dismissal does not add a focus ring, while Escape restores keyboar
   page,
 }) => {
   await seedShelf(page);
-  for (const route of ["/bookshelf", "/library"]) {
-    await page.goto(route);
-    const book = page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" });
-    const other = page.getByRole("button", { name: "Select Remote reading copy by Ada Adams" });
-    // Safari leaves the search field focused when a book is clicked.
-    await page.getByRole(route === "/bookshelf" ? "searchbox" : "textbox").focus();
-    await book.click();
-    await expect(book).toHaveAttribute("aria-pressed", "true");
-    await other.click();
-    await expect(book).toHaveAttribute("aria-pressed", "false");
-    await expect(book).not.toBeFocused();
-    await expect(book).toHaveCSS("outline-style", "none");
+  await page.goto("/library");
+  const book = page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" });
+  const other = page.getByRole("button", { name: "Select Remote reading copy by Ada Adams" });
+  // Safari leaves the search field focused when a book is clicked.
+  await page.getByRole("textbox").focus();
+  await book.click();
+  await expect(book).toHaveAttribute("aria-pressed", "true");
+  await other.click();
+  await expect(book).toHaveAttribute("aria-pressed", "false");
+  await expect(book).not.toBeFocused();
+  await expect(book).toHaveCSS("outline-style", "none");
 
-    await book.focus();
-    await page.keyboard.press("Enter");
-    await expect(book).toHaveAttribute("aria-pressed", "true");
-    await page.getByRole("link", { name: "Read A Field Guide by Zora Zenith" }).focus();
-    await page.keyboard.press("Escape");
-    await expect(book).toHaveAttribute("aria-pressed", "false");
-    await expect(book).toBeFocused();
-    await expect(book).toHaveCSS("outline-style", "none");
-    await expect(book.locator(".bookshelf-book-title")).toHaveCSS("text-decoration-line", "none");
-    await expect(book.locator(".bookshelf-top")).toHaveCSS("outline-style", "none");
-  }
+  await book.focus();
+  await page.keyboard.press("Enter");
+  await expect(book).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("link", { name: "Read A Field Guide by Zora Zenith" }).focus();
+  await page.keyboard.press("Escape");
+  await expect(book).toHaveAttribute("aria-pressed", "false");
+  await expect(book).toBeFocused();
+  await expect(book).toHaveCSS("outline-style", "none");
+  await expect(book.locator(".bookshelf-book-title")).toHaveCSS("text-decoration-line", "none");
+  await expect(book.locator(".bookshelf-top")).toHaveCSS("outline-style", "none");
 });
 
 test("mobile selection stays inline and reserves room for the upright cover", async ({ page }) => {

@@ -1,5 +1,4 @@
 .bookshelf {
-  --shelf-muted: var(--muted-foreground);
   height: 100%;
   overflow: auto;
   color: var(--foreground);
@@ -16,55 +15,6 @@
   width: min(680px, calc(100% - 64px));
   margin: 0 auto;
   padding-top: 32px;
-}
-.bookshelf-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 0;
-}
-.bookshelf-search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  color: var(--shelf-muted);
-}
-.bookshelf-search input {
-  width: 100%;
-  min-width: 0;
-  background: transparent;
-  color: var(--foreground);
-  font-size: 12px;
-  padding: 5px 0;
-}
-.bookshelf-search input::placeholder {
-  color: var(--shelf-muted);
-}
-.bookshelf-search input::-webkit-search-cancel-button {
-  display: none;
-}
-.bookshelf-search button {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
-}
-.bookshelf-sort select {
-  background: transparent;
-  color: var(--shelf-muted);
-  transition: color 150ms ease;
-  font-size: 12px;
-  padding: 6px 2px;
-  cursor: pointer;
-}
-.bookshelf-sort select:is(:hover, :focus-visible) {
-  color: var(--foreground);
-}
-.bookshelf-sort option {
-  background: var(--background);
 }
 .bookshelf-stack {
   padding: 64px 8px 48px;
@@ -276,18 +226,6 @@
 }
 .bookshelf-cover-fallback small {
   font-size: 18px;
-}
-.bookshelf-error {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  padding: 48px 0;
-  color: var(--shelf-muted);
-  font-size: 12px;
-}
-.bookshelf-error button {
-  text-decoration: underline;
-  cursor: pointer;
 }
 @keyframes bookshelf-drop {
   from {

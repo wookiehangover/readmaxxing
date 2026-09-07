@@ -341,6 +341,15 @@ test.describe("Workspace route", () => {
       )
       .toBe(3);
     await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(() => frame.evaluate(() => document.documentElement.clientWidth)).toBe(390);
+    await expect
+      .poll(() =>
+        frame.evaluate(() => {
+          const style = getComputedStyle(document.body);
+          return Number.parseFloat(style.columnWidth) + Number.parseFloat(style.columnGap);
+        }),
+      )
+      .toBe(390);
     await expect
       .poll(() =>
         frame.evaluate(() => {
@@ -404,14 +413,20 @@ test.describe("Workspace route", () => {
     };
 
     await turnNext(100, pageStride);
-    const middle = await markerBox("middle");
+    // Wait for the visible page to settle before starting another gesture.
+    await expect
+      .poll(async () => {
+        const middle = await markerBox("middle");
+        return Math.max(Math.abs(middle.left - first.left), Math.abs(middle.right - first.right));
+      })
+      .toBeLessThanOrEqual(1);
     await turnNext(600, pageStride * 2);
-    const final = await markerBox("final");
-
-    expect(Math.abs(middle.left - first.left)).toBeLessThanOrEqual(1);
-    expect(Math.abs(middle.right - first.right)).toBeLessThanOrEqual(1);
-    expect(Math.abs(final.left - first.left)).toBeLessThanOrEqual(1);
-    expect(Math.abs(final.right - first.right)).toBeLessThanOrEqual(1);
+    await expect
+      .poll(async () => {
+        const final = await markerBox("final");
+        return Math.max(Math.abs(final.left - first.left), Math.abs(final.right - first.right));
+      })
+      .toBeLessThanOrEqual(1);
   });
 
   test("reader has navigation buttons", async ({ page }) => {

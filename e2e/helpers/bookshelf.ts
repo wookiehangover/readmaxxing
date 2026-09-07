@@ -90,7 +90,7 @@ export async function seedShelf(page: Page, extraBooks = 0) {
     },
     { data: epub, extraBooks },
   );
-  await page.goto("/bookshelf");
-  await expect(page.getByRole("main", { name: "Bookshelf", exact: true })).toBeVisible();
+  await page.goto("/library");
+  await expect(page.locator(".bookshelf")).toBeVisible();
   await expect(page.locator('.bookshelf-stack > li[data-active="true"]').first()).toBeVisible();
 }
