@@ -20,7 +20,7 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
   } | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const layout = books.map((book) => book.id).join("\0");
-  const { stackRef, visibleIds } = useBookshelfVisibility(layout);
+  const { stackRef, visibleIds, entranceIds } = useBookshelfVisibility(layout);
   const selectedId = selection?.open && selection.layout === layout ? selection.id : null;
 
   function close() {
@@ -123,6 +123,7 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
           key={book.id}
           data-book-id={book.id}
           data-active={visibleIds.has(book.id) || selectedId === book.id}
+          data-entrance={entranceIds.has(book.id)}
           data-selected={selectedId === book.id}
           data-receding={Boolean(selectedId && selection?.recedingIds.includes(book.id))}
           style={selection?.id === book.id ? selection.style : undefined}

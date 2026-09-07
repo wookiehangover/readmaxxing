@@ -345,9 +345,13 @@
   padding-top: 0;
 }
 
+/* Only the initial viewport gets an entrance; revealing resources must not replay it. */
+.bookshelf-stack > li[data-entrance="false"] .bookshelf-book {
+  animation: none;
+}
+
 /* Offscreen rows retain their spine layout without images or compositor layers. */
 .bookshelf-stack > li[data-active="false"] .bookshelf-book {
-  animation: none;
   perspective: none;
   transform-style: flat;
 }

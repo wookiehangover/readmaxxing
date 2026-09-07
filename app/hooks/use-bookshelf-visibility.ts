@@ -3,23 +3,36 @@ import { useEffect, useRef, useState } from "react";
 /** Keep cover images and 3D surfaces alive only near the shelf's scroll viewport. */
 export function useBookshelfVisibility(layout: string) {
   const stackRef = useRef<HTMLOListElement>(null);
-  const [visibleIds, setVisibleIds] = useState<ReadonlySet<string>>(() => new Set());
+  const initialized = useRef(false);
+  const [visibility, setVisibility] = useState(() => ({
+    visibleIds: new Set<string>(),
+    entranceIds: new Set<string>(),
+  }));
 
   useEffect(() => {
     const stack = stackRef.current;
-    if (!stack) return;
-    setVisibleIds(new Set());
+    if (!stack || stack.children.length === 0) return;
+    setVisibility({ visibleIds: new Set(), entranceIds: new Set() });
     const observer = new IntersectionObserver(
       (entries) => {
-        setVisibleIds((current) => {
-          const next = new Set(current);
+        const initialDelivery = !initialized.current;
+        initialized.current = true;
+        setVisibility((current) => {
+          const visibleIds = new Set(current.visibleIds);
+          const entranceIds = new Set(current.entranceIds);
           for (const entry of entries) {
             const id = entry.target.getAttribute("data-book-id");
             if (!id) continue;
-            if (entry.isIntersecting) next.add(id);
-            else next.delete(id);
+            if (entry.isIntersecting) {
+              visibleIds.add(id);
+              if (initialDelivery) entranceIds.add(id);
+            } else {
+              visibleIds.delete(id);
+              // Leaving the viewport also retires an unfinished entrance animation.
+              entranceIds.delete(id);
+            }
           }
-          return next;
+          return { visibleIds, entranceIds };
         });
       },
       { root: stack.closest(".bookshelf"), rootMargin: "400px 0px" },
@@ -29,5 +42,5 @@ export function useBookshelfVisibility(layout: string) {
     return () => observer.disconnect();
   }, [layout]);
 
-  return { stackRef, visibleIds };
+  return { stackRef, ...visibility };
 }
