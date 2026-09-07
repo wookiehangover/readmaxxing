@@ -21,9 +21,13 @@ export function BookshelfBook({
   book,
   index,
   onOpenBook,
+  selected,
+  onSelect,
 }: {
   book: BookMeta;
   index: number;
+  selected: boolean;
+  onSelect: (button: HTMLButtonElement) => void;
   onOpenBook?: (book: BookMeta) => void | Promise<void>;
 }) {
   const [coverColors, setCoverColors] = useState<CoverColors | null>(null);
@@ -38,51 +42,65 @@ export function BookshelfBook({
   const ink = hasCover && coverColors ? coverColors.ink : fallbackInk;
 
   return (
-    <Link
-      to={getBookReadingPath(book.id)}
-      className="bookshelf-book"
-      aria-label={`Read ${book.title}${book.author ? ` by ${book.author}` : ""}`}
-      onClick={(event) => {
-        if (
-          !onOpenBook ||
-          event.button !== 0 ||
-          event.metaKey ||
-          event.ctrlKey ||
-          event.shiftKey ||
-          event.altKey
-        )
-          return;
-        event.preventDefault();
-        void onOpenBook(book);
-      }}
-      style={{ "--book-cloth": cloth, "--book-ink": ink, "--book-order": index } as CSSProperties}
-    >
-      <span className="bookshelf-volume">
-        <span className="bookshelf-top" aria-hidden="true">
-          <span className="bookshelf-cover">
-            {hasCover ? (
-              <CoverImage
-                coverImage={book.coverImage}
-                remoteCoverUrl={book.remoteCoverUrl}
-                bookId={book.id}
-                updatedAt={book.updatedAt}
-                alt=""
-                crossOrigin="anonymous"
-                onLoad={(event) => setCoverColors(readCoverColors(event.currentTarget))}
-              />
-            ) : (
-              <span className="bookshelf-cover-fallback">
-                <span>{book.title}</span>
-                <small>{book.author}</small>
-              </span>
-            )}
+    <>
+      <button
+        type="button"
+        className="bookshelf-book"
+        aria-label={`Select ${book.title}${book.author ? ` by ${book.author}` : ""}`}
+        aria-pressed={selected}
+        onClick={(event) => onSelect(event.currentTarget)}
+        style={{ "--book-cloth": cloth, "--book-ink": ink, "--book-order": index } as CSSProperties}
+      >
+        <span className="bookshelf-volume">
+          <span className="bookshelf-top" aria-hidden="true">
+            <span className="bookshelf-cover">
+              {hasCover ? (
+                <CoverImage
+                  coverImage={book.coverImage}
+                  remoteCoverUrl={book.remoteCoverUrl}
+                  bookId={book.id}
+                  updatedAt={book.updatedAt}
+                  alt=""
+                  crossOrigin="anonymous"
+                  onLoad={(event) => setCoverColors(readCoverColors(event.currentTarget))}
+                />
+              ) : (
+                <span className="bookshelf-cover-fallback">
+                  <span>{book.title}</span>
+                  <small>{book.author}</small>
+                </span>
+              )}
+            </span>
+          </span>
+          <span className="bookshelf-pages" aria-hidden="true" />
+          <span className="bookshelf-spine">
+            <span className="bookshelf-author">{book.author || "Unknown author"}</span>
+            <span className="bookshelf-book-title">{book.title}</span>
           </span>
         </span>
-        <span className="bookshelf-spine">
-          <span className="bookshelf-author">{book.author || "Unknown author"}</span>
-          <span className="bookshelf-book-title">{book.title}</span>
-        </span>
-      </span>
-    </Link>
+      </button>
+      <Link
+        to={getBookReadingPath(book.id)}
+        className="bookshelf-read"
+        aria-label={`Read ${book.title}${book.author ? ` by ${book.author}` : ""}`}
+        aria-hidden={!selected}
+        tabIndex={selected ? 0 : -1}
+        onClick={(event) => {
+          if (
+            !onOpenBook ||
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+          )
+            return;
+          event.preventDefault();
+          void onOpenBook(book);
+        }}
+      >
+        Read book
+      </Link>
+    </>
   );
 }
