@@ -1,0 +1,88 @@
+import { useState, type CSSProperties } from "react";
+import { Link } from "react-router";
+import { CoverImage } from "~/components/book-grid/cover-image";
+import { getBookReadingPath } from "~/lib/reading-route";
+import type { BookMeta } from "~/lib/stores/book-store";
+import { readCoverColors, type CoverColors } from "~/components/bookshelf/cover-color";
+
+// Paired cloth and ink colors keep every generated spine readable, including books without covers.
+const CLOTH_COLORS = [
+  ["#c8b77e", "#29281e"],
+  ["#344b50", "#eee7cd"],
+  ["#954c3b", "#fff0d6"],
+  ["#ded4b8", "#38382d"],
+  ["#425943", "#f0e9cf"],
+  ["#b98355", "#241e18"],
+  ["#343b56", "#eee4d1"],
+  ["#77516a", "#f9ecd9"],
+] as const;
+
+export function BookshelfBook({
+  book,
+  index,
+  onOpenBook,
+}: {
+  book: BookMeta;
+  index: number;
+  onOpenBook?: (book: BookMeta) => void | Promise<void>;
+}) {
+  const [coverColors, setCoverColors] = useState<CoverColors | null>(null);
+  const colorIndex =
+    Array.from(book.id).reduce(
+      (hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0,
+      0,
+    ) % CLOTH_COLORS.length;
+  const hasCover = Boolean(book.coverImage || book.remoteCoverUrl);
+  const [fallbackCloth, fallbackInk] = CLOTH_COLORS[colorIndex];
+  const cloth = hasCover && coverColors ? coverColors.cloth : fallbackCloth;
+  const ink = hasCover && coverColors ? coverColors.ink : fallbackInk;
+
+  return (
+    <Link
+      to={getBookReadingPath(book.id)}
+      className="bookshelf-book"
+      aria-label={`Read ${book.title}${book.author ? ` by ${book.author}` : ""}`}
+      onClick={(event) => {
+        if (
+          !onOpenBook ||
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        )
+          return;
+        event.preventDefault();
+        void onOpenBook(book);
+      }}
+      style={{ "--book-cloth": cloth, "--book-ink": ink, "--book-order": index } as CSSProperties}
+    >
+      <span className="bookshelf-volume">
+        <span className="bookshelf-top" aria-hidden="true">
+          <span className="bookshelf-cover">
+            {hasCover ? (
+              <CoverImage
+                coverImage={book.coverImage}
+                remoteCoverUrl={book.remoteCoverUrl}
+                bookId={book.id}
+                updatedAt={book.updatedAt}
+                alt=""
+                crossOrigin="anonymous"
+                onLoad={(event) => setCoverColors(readCoverColors(event.currentTarget))}
+              />
+            ) : (
+              <span className="bookshelf-cover-fallback">
+                <span>{book.title}</span>
+                <small>{book.author}</small>
+              </span>
+            )}
+          </span>
+        </span>
+        <span className="bookshelf-spine">
+          <span className="bookshelf-author">{book.author || "Unknown author"}</span>
+          <span className="bookshelf-book-title">{book.title}</span>
+        </span>
+      </span>
+    </Link>
+  );
+}

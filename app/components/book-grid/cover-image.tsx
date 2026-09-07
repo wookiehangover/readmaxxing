@@ -10,6 +10,8 @@ export function CoverImage({
   bookId,
   updatedAt,
   needsDownload,
+  onLoad,
+  crossOrigin,
 }: {
   coverImage: Blob | null;
   alt: string;
@@ -17,6 +19,8 @@ export function CoverImage({
   bookId?: string;
   updatedAt?: number;
   needsDownload?: boolean;
+  onLoad?: ImgHTMLAttributes<HTMLImageElement>["onLoad"];
+  crossOrigin?: ImgHTMLAttributes<HTMLImageElement>["crossOrigin"];
 }) {
   const directUrl = remoteCoverUrl && isPublicBlobUrl(remoteCoverUrl) ? remoteCoverUrl : null;
   const cacheKey = coverCacheKey({ remoteCoverUrl, updatedAt });
@@ -34,11 +38,14 @@ export function CoverImage({
 
   return (
     <img
+      crossOrigin={crossOrigin}
       src={url}
       alt={alt}
+      onLoad={onLoad}
       className={cn("aspect-2/3 w-full object-cover book-cover-image", {
         "grayscale opacity-50": needsDownload,
       })}
     />
   );
 }
+import type { ImgHTMLAttributes } from "react";

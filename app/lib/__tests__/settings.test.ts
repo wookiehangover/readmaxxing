@@ -45,6 +45,16 @@ beforeEach(() => {
 });
 
 describe("getSettings", () => {
+  it("persists stack as a local library layout", () => {
+    saveSettings({ ...getSettings(), libraryView: "stack" });
+    expect(getSettings().libraryView).toBe("stack");
+    expect(JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!)).toMatchObject({
+      libraryView: "stack",
+    });
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(recordChange).not.toHaveBeenCalled();
+  });
+
   it("returns default settings when localStorage is empty", () => {
     expect(getSettings()).toEqual(defaultSettings);
   });
