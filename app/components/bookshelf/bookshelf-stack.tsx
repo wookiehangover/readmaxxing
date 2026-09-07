@@ -23,7 +23,6 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
 
   function close() {
     setSelection((current) => current && { ...current, open: false });
-    trigger.current?.focus({ preventScroll: true });
   }
 
   useEffect(() => {
@@ -32,6 +31,8 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
       if (event.key === "Escape" && !event.defaultPrevented) {
         event.preventDefault();
         close();
+        // Pointer dismissal must not manufacture a keyboard focus ring in Safari.
+        trigger.current?.focus({ preventScroll: true });
       }
     }
     // The placement is measured in viewport coordinates; return before that viewport changes.

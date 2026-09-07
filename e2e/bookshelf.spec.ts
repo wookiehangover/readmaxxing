@@ -372,6 +372,39 @@ test("selection turns the cover left, recedes the stack, and reverses with Escap
   await expect(book).toHaveAttribute("aria-pressed", "false");
 });
 
+test("pointer dismissal does not add a focus ring, while Escape restores keyboard focus", async ({
+  page,
+}) => {
+  await seedShelf(page);
+  for (const route of ["/bookshelf", "/library"]) {
+    await page.goto(route);
+    const book = page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" });
+    const other = page.getByRole("button", { name: "Select Remote reading copy by Ada Adams" });
+    // Safari leaves the search field focused when a book is clicked.
+    await page.getByRole(route === "/bookshelf" ? "searchbox" : "textbox").focus();
+    await book.click();
+    await expect(book).toHaveAttribute("aria-pressed", "true");
+    await other.click();
+    await expect(book).toHaveAttribute("aria-pressed", "false");
+    await expect(book).not.toBeFocused();
+    await expect(book).toHaveCSS("outline-style", "none");
+
+    await book.focus();
+    await page.keyboard.press("Enter");
+    await expect(book).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("link", { name: "Read A Field Guide by Zora Zenith" }).focus();
+    await page.keyboard.press("Escape");
+    await expect(book).toHaveAttribute("aria-pressed", "false");
+    await expect(book).toBeFocused();
+    await expect(book).toHaveCSS("outline-style", "none");
+    await expect(book.locator(".bookshelf-book-title")).toHaveCSS(
+      "text-decoration-line",
+      "underline",
+    );
+    await expect(book.locator(".bookshelf-top")).toHaveCSS("outline-style", "none");
+  }
+});
+
 test("mobile selection stays inline and reserves room for the upright cover", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });

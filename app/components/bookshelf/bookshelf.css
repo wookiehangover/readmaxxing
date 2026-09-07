@@ -189,9 +189,16 @@
 .bookshelf-top::before {
   z-index: 1;
 }
-.bookshelf-book:focus-visible {
+.bookshelf .bookshelf-book:focus-visible {
+  /* The button includes empty space above the projected cover. */
+  outline: none;
   --book-pull: 64px;
   --book-light: 0.18;
+}
+.bookshelf-book:focus-visible .bookshelf-book-title {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
 }
 .bookshelf-stack li:has(.bookshelf-book:is(:hover, :focus-visible)) {
   z-index: 1;
