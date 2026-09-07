@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { BookshelfBook } from "~/components/bookshelf/bookshelf-book";
+import { useBookshelfVisibility } from "~/hooks/use-bookshelf-visibility";
 import type { BookMeta } from "~/lib/stores/book-store";
 import "~/components/bookshelf/bookshelf.css";
 import "~/components/bookshelf/bookshelf-selection.css";
@@ -19,6 +20,7 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
   } | null>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const layout = books.map((book) => book.id).join("\0");
+  const { stackRef, visibleIds, entranceIds } = useBookshelfVisibility(layout);
   const selectedId = selection?.open && selection.layout === layout ? selection.id : null;
 
   function close() {
@@ -108,6 +110,7 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
 
   return (
     <ol
+      ref={stackRef}
       className="bookshelf-stack"
       aria-label="Your books"
       data-selection={Boolean(selectedId)}
@@ -118,6 +121,9 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
       {books.map((book, index) => (
         <li
           key={book.id}
+          data-book-id={book.id}
+          data-active={visibleIds.has(book.id) || selectedId === book.id}
+          data-entrance={entranceIds.has(book.id)}
           data-selected={selectedId === book.id}
           data-receding={Boolean(selectedId && selection?.recedingIds.includes(book.id))}
           style={selection?.id === book.id ? selection.style : undefined}
@@ -126,6 +132,7 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
             book={book}
             index={index}
             selected={selectedId === book.id}
+            active={visibleIds.has(book.id) || selectedId === book.id}
             onSelect={(button) => select(book, button)}
             onOpenBook={onOpenBook}
           />
