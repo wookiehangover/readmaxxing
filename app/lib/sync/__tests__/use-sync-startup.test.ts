@@ -5,7 +5,7 @@ import { clear, get, set } from "idb-keyval";
 import * as stores from "../stores";
 import * as initialSync from "../initial-sync";
 import * as syncEngine from "../sync-engine";
-import { getUnsyncedChanges } from "../change-log";
+import { getUnsyncedChanges, recordChange } from "../change-log";
 import { useSync } from "../use-sync";
 import { AppStoreProvider, useAppStore } from "~/lib/themis/provider";
 import type { AppStore } from "~/lib/themis/store";
@@ -60,50 +60,127 @@ function renderHarness() {
   );
 }
 
-it("pulls existing cloud books through actual auth and startup while adoption push stays unresolved", async () => {
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
+it.each([true, false])(
+  "pulls existing cloud books through actual auth while adoption push stays unresolved (seeded conversation: %s)",
+  async (hasSeededConversation) => {
+    if (!hasSeededConversation) {
+      await set(
+        DEMO_BOOK_ID,
+        [{ ...DEMO_CHAT_SESSION, id: "user-session", title: "My conversation" }],
+        stores.getChatSessionStore(),
+      );
+      await set(DEMO_BOOK_ID, DEMO_CHAT_SESSION.id, stores.getActiveSessionStore());
+    }
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const paths: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url) => {
+        paths.push(String(url));
+        if (String(url).startsWith("/api/sync/pull"))
+          return Response.json({
+            changes: [
+              {
+                entity: "book",
+                records: [{ id: "cloud", title: "Existing cloud", updatedAt: 300 }],
+                cursor: new Date().toISOString(),
+              },
+            ],
+          });
+        await gate;
+        return new Response(null, { status: 503 });
+      }),
+    );
+    const root = createRoot(document.createElement("div"));
+    try {
+      await act(async () => {
+        root.render(renderHarness());
+      });
+      await vi.waitFor(() => expect(paths).toContain("/api/sync/push"));
+      await vi.waitFor(async () =>
+        expect(await get("cloud", stores.getBookStore())).toMatchObject({
+          title: "Existing cloud",
+        }),
+      );
+      expect(paths[0]).toMatch(/^\/api\/sync\/pull/);
+      const pending = await getUnsyncedChanges();
+      expect(pending.some((change) => change.entity === "book" && !change.synced)).toBe(true);
+      expect(await get("demo-adoption", stores.getSyncFlagsStore())).toMatchObject({
+        ownerId: "reader",
+      });
+      if (!hasSeededConversation) {
+        const intent = await get<{ bookId: string }>("demo-adoption", stores.getSyncFlagsStore());
+        expect(await get(intent!.bookId, stores.getActiveSessionStore())).toBe("user-session");
+        expect(await get(intent!.bookId, stores.getChatSessionStore())).toEqual([
+          {
+            ...DEMO_CHAT_SESSION,
+            id: "user-session",
+            title: "My conversation",
+            bookId: intent!.bookId,
+          },
+        ]);
+      }
+    } finally {
+      await act(async () => {
+        root.unmount();
+      });
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  },
+);
+
+it("keeps authenticated cloud startup and reserved local evidence when optional adoption has no conversations", async () => {
+  await set(DEMO_BOOK_ID, [], stores.getChatSessionStore());
+  const pending = await recordChange({
+    entity: "book",
+    entityId: DEMO_BOOK_ID,
+    operation: "put",
+    data: await get(DEMO_BOOK_ID, stores.getBookStore()),
+    timestamp: 100,
   });
-  const paths: string[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url) => {
-      paths.push(String(url));
-      if (String(url).startsWith("/api/sync/pull"))
-        return Response.json({
-          changes: [
-            {
-              entity: "book",
-              records: [{ id: "cloud", title: "Existing cloud", updatedAt: 300 }],
-              cursor: new Date().toISOString(),
-            },
-          ],
-        });
-      await gate;
-      return new Response(null, { status: 503 });
-    }),
-  );
+  const fetch = vi.fn(async (url) => {
+    expect(String(url)).toMatch(/^\/api\/sync\/pull/);
+    return Response.json({
+      changes: [
+        {
+          entity: "book",
+          records: [{ id: "cloud", title: "Existing cloud", updatedAt: 300 }],
+          cursor: new Date().toISOString(),
+        },
+      ],
+    });
+  });
+  vi.stubGlobal("fetch", fetch);
   const root = createRoot(document.createElement("div"));
   try {
     await act(async () => {
       root.render(renderHarness());
     });
-    await vi.waitFor(() => expect(paths).toContain("/api/sync/push"));
     await vi.waitFor(async () =>
       expect(await get("cloud", stores.getBookStore())).toMatchObject({ title: "Existing cloud" }),
     );
-    expect(paths[0]).toMatch(/^\/api\/sync\/pull/);
-    const pending = await getUnsyncedChanges();
-    expect(pending.some((change) => change.entity === "book" && !change.synced)).toBe(true);
-    expect(await get("demo-adoption", stores.getSyncFlagsStore())).toMatchObject({
-      ownerId: "reader",
+    expect(currentStore.authSessionSelectors.selectIsAuthenticated.select(currentStore.state)).toBe(
+      true,
+    );
+    expect(currentStore.authSessionSelectors.selectAuthError.select(currentStore.state)).toBeNull();
+    expect(await get("demo-adoption", stores.getSyncFlagsStore())).toBeUndefined();
+    expect(await get(DEMO_BOOK_ID, stores.getBookStore())).toMatchObject({
+      id: DEMO_BOOK_ID,
+      title: "Gatsby",
+      updatedAt: 100,
     });
+    expect(await get(DEMO_BOOK_ID, stores.getBookDataStore())).toEqual(
+      new Uint8Array([1, 2, 3]).buffer,
+    );
+    expect(await getUnsyncedChanges()).toContainEqual(pending);
   } finally {
     await act(async () => {
       root.unmount();
     });
-    release();
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 });
