@@ -54,33 +54,36 @@ export function BookshelfBook({
         onClick={(event) => onSelect(event.currentTarget)}
         style={{ "--book-cloth": cloth, "--book-ink": ink, "--book-order": index } as CSSProperties}
       >
-        <span className="bookshelf-volume">
-          {active && (
-            <span className="bookshelf-top" aria-hidden="true">
-              <span className="bookshelf-cover">
-                {hasCover ? (
-                  <CoverImage
-                    coverImage={book.coverImage}
-                    remoteCoverUrl={book.remoteCoverUrl}
-                    bookId={book.id}
-                    updatedAt={book.updatedAt}
-                    alt=""
-                    crossOrigin="anonymous"
-                    onLoad={(event) => setCoverColors(readCoverColors(event.currentTarget))}
-                  />
-                ) : (
-                  <span className="bookshelf-cover-fallback">
-                    <span>{book.title}</span>
-                    <small>{book.author}</small>
-                  </span>
-                )}
+        {/* Rebuild the perspective root with its faces; WebKit flattens faces added later. */}
+        <span className="bookshelf-scene" data-active={active} key={active ? "active" : "inactive"}>
+          <span className="bookshelf-volume">
+            {active && (
+              <span className="bookshelf-top" aria-hidden="true">
+                <span className="bookshelf-cover">
+                  {hasCover ? (
+                    <CoverImage
+                      coverImage={book.coverImage}
+                      remoteCoverUrl={book.remoteCoverUrl}
+                      bookId={book.id}
+                      updatedAt={book.updatedAt}
+                      alt=""
+                      crossOrigin="anonymous"
+                      onLoad={(event) => setCoverColors(readCoverColors(event.currentTarget))}
+                    />
+                  ) : (
+                    <span className="bookshelf-cover-fallback">
+                      <span>{book.title}</span>
+                      <small>{book.author}</small>
+                    </span>
+                  )}
+                </span>
               </span>
+            )}
+            {active && <span className="bookshelf-pages" aria-hidden="true" />}
+            <span className="bookshelf-spine">
+              <span className="bookshelf-author">{book.author || "Unknown author"}</span>
+              <span className="bookshelf-book-title">{book.title}</span>
             </span>
-          )}
-          {active && <span className="bookshelf-pages" aria-hidden="true" />}
-          <span className="bookshelf-spine">
-            <span className="bookshelf-author">{book.author || "Unknown author"}</span>
-            <span className="bookshelf-book-title">{book.title}</span>
           </span>
         </span>
       </button>

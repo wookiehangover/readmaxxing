@@ -15,6 +15,7 @@ for (const width of [390, 1280]) {
       const first = page.locator('[data-book-id="stress-0"] .bookshelf-book');
       const last = page.locator('[data-book-id="stress-79"] .bookshelf-book');
       await expect(first).toHaveCSS("animation-name", "bookshelf-drop");
+      await first.focus();
       // Leaving even partway through the initial drop must permanently retire it.
       await first.evaluate((book) => {
         const animation = book.getAnimations()[0];
@@ -25,6 +26,7 @@ for (const width of [390, 1280]) {
       await last.scrollIntoViewIfNeeded();
       await expect(last.locator(".bookshelf-top")).toBeAttached();
       await expect(first.locator(".bookshelf-top")).toHaveCount(0);
+      await expect(first).toBeFocused();
       await expect(last).toHaveCSS("animation-name", "none");
       await expect(last).toHaveCSS("transform", "none");
       await expect(last).toHaveCSS("opacity", "1");
@@ -34,6 +36,7 @@ for (const width of [390, 1280]) {
       await expect(first).toHaveCSS("animation-name", "none");
       await expect(first).toHaveCSS("transform", "none");
       await expect(first).toHaveCSS("opacity", "1");
+      await expect(first).toBeFocused();
 
       await page.getByRole(route === "/bookshelf" ? "searchbox" : "textbox").fill("Stress volume");
       await expect(first.locator(".bookshelf-top")).toBeAttached();
