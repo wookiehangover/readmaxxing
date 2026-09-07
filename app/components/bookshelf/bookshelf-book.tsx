@@ -84,7 +84,14 @@ export function BookshelfBook({
                 </span>
               </span>
             )}
-            {active && <span className="bookshelf-pages" aria-hidden="true" />}
+            {active && (
+              <>
+                <span className="bookshelf-back" aria-hidden="true" />
+                <span className="bookshelf-pages" aria-hidden="true" />
+                <span className="bookshelf-page-end bookshelf-page-end-start" aria-hidden="true" />
+                <span className="bookshelf-page-end bookshelf-page-end-finish" aria-hidden="true" />
+              </>
+            )}
             <span className="bookshelf-spine">
               <span className="bookshelf-author">{book.author || "Unknown author"}</span>
               <span className="bookshelf-book-title">{book.title}</span>

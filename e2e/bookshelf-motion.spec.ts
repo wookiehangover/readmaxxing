@@ -100,3 +100,74 @@ test("the selected cover follows the pointer and settles when it leaves", async 
   await expect(book).toHaveAttribute("aria-pressed", "false");
   await expect(volume).toHaveCSS("rotate", "0deg");
 });
+
+test("the selected book keeps six joined faces and an opaque back cover", async ({ page }) => {
+  await seedShelf(page);
+  const book = page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" });
+  await book.click();
+  await page.mouse.move(0, 0);
+  const volume = book.locator(".bookshelf-volume");
+  await volume.evaluate(async (element) => {
+    await Promise.allSettled(element.getAnimations().map((animation) => animation.finished));
+  });
+  const faces = book.locator(
+    ".bookshelf-top, .bookshelf-back, .bookshelf-spine, .bookshelf-pages, .bookshelf-page-end",
+  );
+  await expect(faces).toHaveCount(6);
+  const corners = await faces.evaluateAll((elements) =>
+    elements.flatMap((element) => {
+      const style = getComputedStyle(element);
+      const width = parseFloat(style.width);
+      const height = parseFloat(style.height);
+      const [originX, originY] = style.transformOrigin.split(" ").map(parseFloat);
+      const matrix = new DOMMatrix(style.transform);
+      return [
+        [0, 0],
+        [width, 0],
+        [0, height],
+        [width, height],
+      ].map(([x, y]) => {
+        const point = new DOMPoint(x - originX, y - originY, 0).matrixTransform(matrix);
+        return [
+          point.x + originX + (element as HTMLElement).offsetLeft,
+          point.y + originY + (element as HTMLElement).offsetTop,
+          point.z,
+        ];
+      });
+    }),
+  );
+  // A closed cuboid has eight corners, each shared by exactly three faces.
+  const vertices: { point: number[]; count: number }[] = [];
+  for (const point of corners) {
+    const match = vertices.find((vertex) =>
+      vertex.point.every((value, axis) => Math.abs(value - point[axis]) < 1),
+    );
+    if (match) match.count++;
+    else vertices.push({ point, count: 1 });
+  }
+  expect(vertices).toHaveLength(8);
+  expect(vertices.map((vertex) => vertex.count)).toEqual(Array(8).fill(3));
+  const spine = book.locator(".bookshelf-spine");
+  expect((await spine.boundingBox())!.width).toBeGreaterThan(10);
+  expect(
+    await spine.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return element.contains(
+        document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2),
+      );
+    }),
+  ).toBe(true);
+  // Inspect the reverse of the same object: the front must not show through it.
+  await volume.evaluate((element) => {
+    element.style.transition = "none";
+    element.style.rotate = "y 180deg";
+  });
+  expect(
+    await book.locator(".bookshelf-back").evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return (
+        document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === element
+      );
+    }),
+  ).toBe(true);
+});
