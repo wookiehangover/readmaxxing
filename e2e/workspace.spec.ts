@@ -311,15 +311,11 @@ test.describe("Workspace route", () => {
 
     await frame.evaluate(() => {
       const body = document.body;
-      const style = getComputedStyle(body);
-      const pageHeight =
-        document.documentElement.clientHeight -
-        Number.parseFloat(style.paddingTop) -
-        Number.parseFloat(style.paddingBottom);
       body.replaceChildren(
         ...["first", "middle", "final"].map((name) => {
           const page = document.createElement("div");
-          page.style.height = `${pageHeight}px`;
+          // Explicit breaks keep this fixture at three pages across asynchronous resizes.
+          page.style.breakBefore = name === "first" ? "auto" : "column";
           const marker = document.createElement("div");
           marker.dataset.pageMarker = name;
           marker.textContent = name;
