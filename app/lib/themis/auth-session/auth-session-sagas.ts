@@ -1,6 +1,6 @@
 import { actionChannel, call, fork, put, take, takeEvery } from "typed-redux-saga";
 
-import { authService, type AuthUser } from "~/lib/auth-service";
+import { authService, type AuthSession } from "~/lib/auth-service";
 import { toTaggedError } from "~/lib/errors";
 import { hasUnadoptedDemoBook } from "~/lib/onboarding/adopt-demo";
 import {
@@ -44,27 +44,30 @@ function createAuthSessionRefreshRequest() {
 
 export function* refreshAuthSessionSaga(action: ReturnType<typeof refreshAuthSessionRequested>) {
   const [onCompleted, onFailed] = action.payload;
-  let authenticatedUser: AuthUser | null = null;
+  let session: AuthSession;
   try {
-    const session = yield* call(authService.getSession);
-    authenticatedUser = session.user;
-    if (session.user && (yield* call(hasUnadoptedDemoBook))) {
-      const adoption = createDemoAdoptionRequest(session.user.id);
-      yield* put(adoption.action);
-      yield* call(() => adoption.completion);
-    }
-    yield* put(authSessionResolved(session.user));
-    if (onCompleted) yield* call(onCompleted);
+    session = yield* call(authService.getSession);
   } catch (cause) {
-    const error = toTaggedError(cause);
-    if (authenticatedUser) {
-      yield* put(authSessionResolved(authenticatedUser));
-      yield* put(authOperationFailed(error));
-    } else {
-      yield* put(authSessionFailed(error));
-    }
+    yield* put(authSessionFailed(toTaggedError(cause)));
     if (onFailed) yield* call(onFailed, cause);
+    return;
   }
+
+  if (session.user) {
+    try {
+      if (yield* call(hasUnadoptedDemoBook)) {
+        const adoption = createDemoAdoptionRequest(session.user.id);
+        yield* put(adoption.action);
+        yield* call(() => adoption.completion);
+      }
+    } catch (cause) {
+      // Local onboarding is optional once the server has confirmed the session.
+      // Keep its failure from rejecting a successful sign-in or registration.
+      console.warn("Signed in, but demo content could not be adopted:", cause);
+    }
+  }
+  yield* put(authSessionResolved(session.user));
+  if (onCompleted) yield* call(onCompleted);
 }
 
 function* watchAuthSessionRefreshes() {

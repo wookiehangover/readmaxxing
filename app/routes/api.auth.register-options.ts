@@ -31,7 +31,7 @@ export async function loader() {
     excludeCredentials,
     authenticatorSelection: {
       residentKey: "preferred",
-      userVerification: "preferred",
+      userVerification: "required",
     },
   });
 
