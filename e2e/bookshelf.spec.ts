@@ -314,6 +314,19 @@ test("pointer dismissal does not add a focus ring, while Escape restores keyboar
   await expect(book).toHaveCSS("outline-style", "none");
   await expect(book.locator(".bookshelf-book-title")).toHaveCSS("text-decoration-line", "none");
   await expect(book.locator(".bookshelf-top")).toHaveCSS("outline-style", "none");
+  // Escape retains focus on the trigger; reselecting must not outline the 3D cover.
+  await book.click();
+  await expect(book).toHaveAttribute("aria-pressed", "true");
+  await expect(book.locator(".bookshelf-top")).toHaveCSS("outline-style", "none");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Enter");
+  await expect(book).toHaveAttribute("aria-pressed", "true");
+  await expect(book.locator(".bookshelf-top")).toHaveCSS("outline-style", "none");
+  const readLink = page.getByRole("link", { name: "Read A Field Guide by Zora Zenith" });
+  await expect(readLink).toBeVisible();
+  await page.keyboard.press("Tab");
+  await expect(readLink).toBeFocused();
+  await expect(readLink).toHaveCSS("outline-style", "solid");
 });
 
 test("mobile selection stays inline and reserves room for the upright cover", async ({ page }) => {

@@ -122,11 +122,6 @@
   opacity: 0;
 }
 
-.bookshelf-stack li[data-selected="true"] .bookshelf-book:focus-visible .bookshelf-top {
-  outline: 2px solid var(--ring);
-  outline-offset: 6px;
-}
-
 .bookshelf-actions {
   display: flex;
   align-items: center;
