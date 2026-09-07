@@ -13,6 +13,7 @@ import {
 } from "~/lib/stores/annotations-store";
 import { annotationsSaga } from "~/lib/themis/annotations/annotations-sagas";
 import {
+  appendHighlightToNotebookRequested,
   hydrateAnnotationsRequested,
   updateNotebookRequested,
 } from "~/lib/themis/annotations/annotations-slice";
@@ -151,6 +152,47 @@ afterEach(async () => {
 });
 
 describe("notebook book ownership through the workspace panel", () => {
+  it("loads a fallback B highlight while flushing pending A edits through a switch", async () => {
+    await seed("a", "Private notes for A");
+    await hydrate("a");
+    await renderBook("a");
+    const pendingA = await edit(" Pending A");
+    const loadGate = deferred<void>();
+    const saveGate = deferred<void>();
+    vi.mocked(AnnotationService.getNotebook).mockImplementation(async (bookId) => {
+      if (bookId === "b") await loadGate.promise;
+      return service.getNotebook(bookId);
+    });
+    vi.mocked(AnnotationService.saveNotebook).mockImplementation(async (notebook) => {
+      if (notebook.bookId === "a") await saveGate.promise;
+      return service.saveNotebook(notebook);
+    });
+    await renderBook("b");
+    expect(container.querySelector(".tiptap")).toBeNull();
+    expect(context.notebookCallbackMap.current.has("b")).toBe(false);
+    expect(context.notebookEditorCallbackMap.current.has("b")).toBe(false);
+    const attrs = { highlightId: "h-b", cfiRange: "epubcfi(/6/4)", text: "Passage B" };
+    store.dispatch(appendHighlightToNotebookRequested("b", attrs));
+    loadGate.resolve();
+    await settle(async () => {
+      expect(editor().getJSON().content).toContainEqual({ type: "highlightReference", attrs });
+      expect((await service.getNotebook("b"))?.content).toEqual(editor().getJSON());
+      expect(context.notebookCallbackMap.current.has("b")).toBe(true);
+    });
+    const pendingB = await edit(" Only B edit");
+    saveGate.resolve();
+    await settle(async () => {
+      expect((await service.getNotebook("a"))?.content).toEqual(pendingA);
+      expect(editor().getJSON()).toEqual(pendingB);
+    });
+    await act(async () => root.unmount());
+    await settle(async () => {
+      expect((await service.getNotebook("a"))?.content).toEqual(pendingA);
+      expect((await service.getNotebook("b"))?.content).toEqual(pendingB);
+    });
+    expect(JSON.stringify(pendingB)).not.toContain("Private notes for A");
+  });
+
   it.each([false, true])(
     "isolates edits when switching to a hydrated B (nonempty: %s)",
     async (nonempty) => {
