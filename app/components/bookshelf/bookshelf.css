@@ -66,7 +66,8 @@
   padding: 64px 8px 48px;
   margin: 0 -8px;
   list-style: none;
-  overflow: clip;
+  /* Let the soft shadows extend past the stack's narrow content gutters. */
+  overflow: visible;
 }
 .bookshelf-stack li {
   position: relative;
@@ -110,6 +111,10 @@
 .bookshelf-volume {
   display: block;
   position: relative;
+  border-radius: 2px 3px 4px 2px;
+  box-shadow:
+    0 2px 3px #0003,
+    0 12px 24px -8px #0005;
   perspective: 2400px;
   perspective-origin: 50% 0;
   transform-style: preserve-3d;
@@ -137,10 +142,7 @@
     linear-gradient(0deg, #00000026, transparent 12%, #ffffff0d 85%, #ffffff30), var(--book-cloth);
   border-radius: 2px 3px 4px 2px;
   border-block: 1px solid #ffffff25;
-  box-shadow:
-    0 2px 1px #0006,
-    0 14px 22px -8px #0009,
-    inset 0 -3px 3px #0002;
+  box-shadow: inset 0 -3px 3px #0002;
 }
 .bookshelf-spine::after {
   content: "";
@@ -166,6 +168,7 @@
 }
 .bookshelf-top {
   position: absolute;
+  overflow: hidden;
   bottom: 100%;
   left: 0;
   width: 100%;
@@ -197,8 +200,10 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  box-shadow: inset 0 -3px 3px #fff4;
-  background: linear-gradient(0deg, #0002, transparent 25%);
+  box-shadow:
+    inset 0 0 0 2px #0003,
+    inset 0 -3px 3px #fff4;
+  background: linear-gradient(0deg, #0002, #00000008 25%, #0000000a);
 }
 .bookshelf-cover-fallback {
   display: flex;
