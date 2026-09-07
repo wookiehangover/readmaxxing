@@ -54,10 +54,14 @@
 }
 .bookshelf-sort select {
   background: transparent;
-  color: var(--foreground);
+  color: var(--shelf-muted);
+  transition: color 150ms ease;
   font-size: 12px;
   padding: 6px 2px;
   cursor: pointer;
+}
+.bookshelf-sort select:is(:hover, :focus-visible) {
+  color: var(--foreground);
 }
 .bookshelf-sort option {
   background: var(--background);
@@ -82,8 +86,9 @@
   padding-top: 46px;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
-  animation: bookshelf-drop 1100ms both;
-  animation-delay: calc(min(var(--book-order), 12) * 70ms);
+  transform-origin: 50% 0;
+  animation: bookshelf-drop 1300ms both;
+  animation-delay: calc(min(var(--book-order), 8) * 35ms);
   /* Samples of a damped spring (damping ratio .68, angular frequency 14). */
   animation-timing-function: linear(
     0,
@@ -269,10 +274,16 @@
 }
 @keyframes bookshelf-drop {
   from {
-    transform: translate3d(0, -75vh, 0);
+    /* Begin with a compact, distant stack, then spread into the final spacing. */
+    transform: translate3d(0, calc(-72px - min(var(--book-order), 8) * 64px), 0) scale(0.82);
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
   }
   to {
-    transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
   }
 }
 @media (max-width: 600px) {

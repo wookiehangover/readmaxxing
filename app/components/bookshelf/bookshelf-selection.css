@@ -69,7 +69,10 @@
   outline-offset: 6px;
 }
 
-.bookshelf-read {
+.bookshelf-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   position: absolute;
   left: var(--read-x, 50%);
   top: var(--read-y, 100%);
@@ -80,14 +83,12 @@
   white-space: nowrap;
   color: var(--foreground);
   font-size: 14px;
-  text-decoration: underline;
-  text-underline-offset: 4px;
   transition:
     opacity 180ms ease,
     visibility 180ms;
 }
 
-li[data-selected="true"] .bookshelf-read {
+li[data-selected="true"] .bookshelf-actions {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
@@ -107,7 +108,12 @@ li[data-selected="true"] .bookshelf-read {
 @media (prefers-reduced-motion: reduce) {
   .bookshelf-stack li,
   .bookshelf-volume,
-  .bookshelf-read {
+  .bookshelf-actions {
     transition: none;
   }
+}
+
+.bookshelf-read {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }

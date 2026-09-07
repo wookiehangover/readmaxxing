@@ -34,7 +34,8 @@ export function LibraryViewToggle() {
           render={
             <Button
               size="icon-sm"
-              variant={settings.libraryView === value ? "secondary" : "ghost"}
+              variant="ghost"
+              className="text-muted-foreground hover:text-foreground focus-visible:text-foreground aria-pressed:bg-muted/50"
             />
           }
         >

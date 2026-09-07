@@ -211,14 +211,18 @@ test("books spring in from above, pull forward on hover, and respect reduced mot
     animation.pause();
     const timing = animation.effect!.getComputedTiming();
     const duration = Number(timing.duration);
-    return [0, 300, duration].map((time) => {
-      animation.currentTime = (timing.delay ?? 0) + time;
-      return element.getBoundingClientRect().top;
+    return Array.from({ length: 21 }, (_, index) => {
+      animation.currentTime = (timing.delay ?? 0) + (duration * index) / 20;
+      const rect = element.getBoundingClientRect();
+      return { top: rect.top, width: rect.width };
     });
   });
-  const [start, overshoot, settled] = positions;
-  expect(start).toBeLessThan(settled - 100);
-  expect(overshoot).toBeGreaterThan(settled + 5);
+  const start = positions[0];
+  const settled = positions.at(-1)!;
+  expect(start.top).toBeLessThan(settled.top - 100);
+  expect(start.top).toBeGreaterThan(settled.top - 250);
+  expect(start.width).toBeCloseTo(settled.width * 0.82, 0);
+  expect(Math.max(...positions.map((position) => position.top))).toBeGreaterThan(settled.top + 5);
   const volume = book.locator(".bookshelf-volume");
   const restingBounds = (await volume.boundingBox())!;
   const restingShadow = await volume.evaluate((element) => getComputedStyle(element).boxShadow);
@@ -311,4 +315,62 @@ test("mobile selection stays inline and reserves room for the upright cover", as
   await page.mouse.click(cover.x + cover.width / 2, cover.y + cover.height / 2);
   await expect(book).toHaveAttribute("aria-pressed", "false");
   await expect.poll(async () => (await next.boundingBox())!.y).toBeCloseTo(before.y, 0);
+});
+
+test("selected book actions stay open independently and navigate to the notebook", async ({
+  page,
+}) => {
+  await seedShelf(page);
+  const book = page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" });
+  await book.click();
+  const menu = page.getByRole("button", { name: "More actions for A Field Guide" });
+  await menu.click();
+  await expect(page.getByRole("menuitem", { name: "Edit", exact: true })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Delete", exact: true })).toBeVisible();
+  await expect(book).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toBeHidden();
+  await expect(book).toHaveAttribute("aria-pressed", "true");
+  await menu.click();
+  await page.getByRole("menuitem", { name: "Open notebook" }).click();
+  await expect(page).toHaveURL(/\/books\/shelf-local$/);
+  await expect(page.getByTestId("reading-shell")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Notes", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("layout and sort controls are muted in both themes and brighten on hover", async ({
+  page,
+}) => {
+  await seedShelf(page);
+  await page.goto("/library");
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expect
+      .poll(() => page.locator("html").evaluate((e) => e.classList.contains("dark")))
+      .toBe(colorScheme === "dark");
+    for (const control of [
+      page.getByRole("button", { name: "Stack view" }),
+      page.getByRole("button", { name: "Sort library by Author" }),
+    ]) {
+      await page.mouse.move(0, 0);
+      await expect
+        .poll(() =>
+          control.evaluate(
+            (e) => getComputedStyle(e).color !== getComputedStyle(document.body).color,
+          ),
+        )
+        .toBe(true);
+      await control.hover();
+      await expect
+        .poll(() =>
+          control.evaluate(
+            (e) => getComputedStyle(e).color === getComputedStyle(document.body).color,
+          ),
+        )
+        .toBe(true);
+    }
+  }
 });

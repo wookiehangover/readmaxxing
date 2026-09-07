@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from "react";
+import { BookshelfMenu } from "~/components/bookshelf/bookshelf-menu";
 import { Link } from "react-router";
 import { CoverImage } from "~/components/book-grid/cover-image";
 import { getBookReadingPath } from "~/lib/reading-route";
@@ -79,28 +80,36 @@ export function BookshelfBook({
           </span>
         </span>
       </button>
-      <Link
-        to={getBookReadingPath(book.id)}
-        className="bookshelf-read"
-        aria-label={`Read ${book.title}${book.author ? ` by ${book.author}` : ""}`}
+      <div
+        className="bookshelf-actions"
         aria-hidden={!selected}
-        tabIndex={selected ? 0 : -1}
-        onClick={(event) => {
-          if (
-            !onOpenBook ||
-            event.button !== 0 ||
-            event.metaKey ||
-            event.ctrlKey ||
-            event.shiftKey ||
-            event.altKey
-          )
-            return;
-          event.preventDefault();
-          void onOpenBook(book);
-        }}
+        inert={!selected}
+        onClick={(event) => event.stopPropagation()}
       >
-        Read book
-      </Link>
+        <Link
+          to={getBookReadingPath(book.id)}
+          className="bookshelf-read"
+          aria-label={`Read ${book.title}${book.author ? ` by ${book.author}` : ""}`}
+          aria-hidden={!selected}
+          tabIndex={selected ? 0 : -1}
+          onClick={(event) => {
+            if (
+              !onOpenBook ||
+              event.button !== 0 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            )
+              return;
+            event.preventDefault();
+            void onOpenBook(book);
+          }}
+        >
+          Read book
+        </Link>
+        {selected && <BookshelfMenu book={book} />}
+      </div>
     </>
   );
 }
