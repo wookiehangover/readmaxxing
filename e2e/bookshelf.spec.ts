@@ -1,89 +1,10 @@
-import { test, expect, type Page } from "@playwright/test";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-
-const TEST_EPUB = resolve("e2e/fixtures/test-book.epub");
+import { test, expect } from "@playwright/test";
+import { seedShelf, TEST_EPUB } from "./helpers/bookshelf";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
   await page.route("**/api/chapter-questions", (route) => route.fulfill({ json: [] }));
 });
-
-async function seedShelf(page: Page) {
-  // A remote cover also works in WebKit test contexts that cannot persist blobs.
-  await page.route("https://bookshelf.public.blob.vercel-storage.com/cover.svg", (route) =>
-    route.fulfill({
-      contentType: "image/svg+xml",
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300"><rect width="200" height="300" fill="#42645d"/><circle cx="100" cy="110" r="55" fill="#dfc785"/></svg>',
-    }),
-  );
-  await page.goto("/favicon.svg");
-  const epub = (await readFile(TEST_EPUB)).toString("base64");
-  await page.evaluate(async (data) => {
-    const openStore = (name: string, storeName: string) =>
-      new Promise<IDBDatabase>((resolveDb, reject) => {
-        const request = indexedDB.open(name, 1);
-        request.onupgradeneeded = () => request.result.createObjectStore(storeName);
-        request.onsuccess = () => resolveDb(request.result);
-        request.onerror = () => reject(request.error);
-      });
-    const metadata = await openStore("ebook-reader-db", "books");
-    const files = await openStore("ebook-reader-book-data", "book-data");
-    const records = [
-      {
-        id: "shelf-local",
-        title: "A Field Guide",
-        author: "Zora Zenith",
-        coverImage: null,
-        remoteCoverUrl: "https://bookshelf.public.blob.vercel-storage.com/cover.svg",
-        hasLocalFile: true,
-      },
-      {
-        id: "shelf-remote",
-        title: "Remote reading copy",
-        author: "Ada Adams",
-        coverImage: null,
-        hasLocalFile: false,
-        remoteFileUrl: "https://example.com/test.epub",
-      },
-      {
-        id: "shelf-long",
-        title: "An unusually long book title about everything a curious reader might want to know",
-        author: "An Author With A Very Long Name",
-        coverImage: null,
-        hasLocalFile: true,
-      },
-      {
-        id: "shelf-deleted",
-        title: "Deleted book",
-        author: "Deleted Author",
-        coverImage: null,
-        hasLocalFile: true,
-        deletedAt: 1,
-      },
-    ];
-    await new Promise<void>((done, reject) => {
-      const transaction = metadata.transaction("books", "readwrite");
-      for (const record of records)
-        transaction.objectStore("books").put({ ...record, format: "epub" }, record.id);
-      transaction.oncomplete = () => done();
-      transaction.onerror = () => reject(transaction.error);
-    });
-    await new Promise<void>((done, reject) => {
-      const transaction = files.transaction("book-data", "readwrite");
-      const bytes = Uint8Array.from(atob(data), (character) => character.charCodeAt(0)).buffer;
-      transaction.objectStore("book-data").put(bytes, "shelf-local");
-      transaction.objectStore("book-data").put(bytes, "shelf-long");
-      transaction.oncomplete = () => done();
-      transaction.onerror = () => reject(transaction.error);
-    });
-    metadata.close();
-    files.close();
-  }, epub);
-  await page.goto("/bookshelf");
-  await expect(page.getByRole("main", { name: "Bookshelf", exact: true })).toBeVisible();
-}
 
 test("shows the library, filters and sorts, and opens a local book", async ({ page }) => {
   await seedShelf(page);
@@ -397,10 +318,7 @@ test("pointer dismissal does not add a focus ring, while Escape restores keyboar
     await expect(book).toHaveAttribute("aria-pressed", "false");
     await expect(book).toBeFocused();
     await expect(book).toHaveCSS("outline-style", "none");
-    await expect(book.locator(".bookshelf-book-title")).toHaveCSS(
-      "text-decoration-line",
-      "underline",
-    );
+    await expect(book.locator(".bookshelf-book-title")).toHaveCSS("text-decoration-line", "none");
     await expect(book.locator(".bookshelf-top")).toHaveCSS("outline-style", "none");
   }
 });

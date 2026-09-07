@@ -195,11 +195,6 @@
   --book-pull: 64px;
   --book-light: 0.18;
 }
-.bookshelf-book:focus-visible .bookshelf-book-title {
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 4px;
-}
 .bookshelf-stack li:has(.bookshelf-book:is(:hover, :focus-visible)) {
   z-index: 1;
 }
@@ -348,4 +343,17 @@
 
 .bookshelf-library .bookshelf-content {
   padding-top: 0;
+}
+
+/* Offscreen rows retain their spine layout without images or compositor layers. */
+.bookshelf-stack > li[data-active="false"] .bookshelf-book {
+  animation: none;
+  perspective: none;
+  transform-style: flat;
+}
+.bookshelf-stack > li[data-active="false"] .bookshelf-volume {
+  transform: none;
+  translate: none;
+  transform-style: flat;
+  transition: none;
 }
