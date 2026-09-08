@@ -24,17 +24,21 @@ export function useBookshelfCamera(
 
     let frame = 0;
     let viewportHeight = 0;
-    let scenes: { element: HTMLElement; top: number; inset: number; maxOffset: number }[] = [];
+    let scenes: {
+      element: HTMLElement;
+      top: number;
+      inset: number;
+      maxOffset: number;
+      depthScale: number;
+    }[] = [];
 
     function update() {
       frame = 0;
-      const camera = shelf!.scrollTop + viewportHeight / 2;
-      for (const { element, top, inset, maxOffset } of scenes) {
+      const camera = shelf!.scrollTop + viewportHeight * 0.15;
+      for (const { element, top, inset, maxOffset, depthScale } of scenes) {
         const distance = top + inset - camera;
         const origin =
-          distance > 0
-            ? inset - maxOffset * Math.tanh(distance / (viewportHeight / 2))
-            : camera - top;
+          distance > 0 ? inset - Math.min(maxOffset, distance * depthScale) : camera - top;
         element.style.setProperty("--shelf-camera-y", `${origin}px`);
       }
     }
@@ -49,11 +53,13 @@ export function useBookshelfCamera(
           const inset = parseFloat(style.paddingTop);
           const depth = element.clientWidth * (2 / 3);
           const perspective = parseFloat(style.perspective);
+          const rowGap = parseFloat(getComputedStyle(element.closest("li")!).marginBottom);
           return {
             element,
             top: layoutTop(element) - shelfTop,
             inset,
-            maxOffset: (inset * (perspective + depth)) / depth,
+            maxOffset: (Math.max(0, inset + rowGap - 22) * (perspective + depth)) / depth,
+            depthScale: (element.clientWidth * 1.38) / viewportHeight,
           };
         },
       );

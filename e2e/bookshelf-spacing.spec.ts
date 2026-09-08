@@ -44,16 +44,66 @@ async function projectedBooks(stack: Locator) {
         bottom: Math.max(...visible.map((point) => point.y)),
         spineTop: spine.top,
         spineBottom: spine.bottom,
+        spineWidth: spine.width,
         inViewport: spine.bottom > shelf.top && spine.top < shelf.bottom,
       };
     });
   });
 }
 
+test("matches the measured Stripe reference proportions and cover progression", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1878, height: 1344 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
+  await page.route("**/api/chapter-questions", (route) => route.fulfill({ json: [] }));
+  await seedShelf(page, 80);
+  await page.mouse.move(0, 0);
+  const stack = page.locator(".bookshelf-stack");
+  await expect
+    .poll(async () => (await projectedBooks(stack)).filter((row) => row.inViewport).length)
+    .toBeGreaterThanOrEqual(6);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  const books = (await projectedBooks(stack)).filter((row) => row.spineTop >= 72).slice(0, 6);
+  expect(books[0].spineTop).toBeGreaterThanOrEqual(80);
+  expect(books[0].spineTop).toBeLessThanOrEqual(100);
+  const expectedDepths = [0, 0.04, 0.22, 0.38, 0.53, 0.68];
+  for (const [index, current] of books.entries()) {
+    const spineHeight = current.spineBottom - current.spineTop;
+    expect(current.spineWidth / 1878).toBeGreaterThan(0.49);
+    expect(current.spineWidth / 1878).toBeLessThan(0.51);
+    expect(spineHeight / current.spineWidth).toBeGreaterThan(0.13);
+    expect(spineHeight / current.spineWidth).toBeLessThan(0.14);
+    const depth = (current.spineTop - current.top) / spineHeight;
+    expect(Math.abs(depth - expectedDepths[index])).toBeLessThan(0.04);
+    if (index > 0) {
+      const previous = books[index - 1];
+      const pitch = (current.spineTop - previous.spineTop) / current.spineWidth;
+      expect(pitch).toBeGreaterThan(0.245);
+      expect(pitch).toBeLessThan(0.26);
+      expect(current.top - previous.bottom).toBeGreaterThan(18);
+    }
+  }
+  const middle = books[2];
+  const lower = books[4];
+  const middleDepth = middle.spineTop - middle.top;
+  const slope = (lower.spineTop - lower.top - middleDepth) / (lower.spineTop - middle.spineTop);
+  const horizon = middle.spineTop - middleDepth / slope;
+  expect(horizon / 1344).toBeGreaterThan(0.18);
+  expect(horizon / 1344).toBeLessThan(0.23);
+});
+
 for (const [width, height] of [
   [390, 500],
   [390, 844],
   [1280, 844],
+  [1878, 1344],
   [1535, 1663],
   [390, 1663],
   [768, 1663],
@@ -74,7 +124,7 @@ for (const [width, height] of [
       await book.scrollIntoViewIfNeeded();
       await expect(book.locator(".bookshelf-top")).toBeAttached();
 
-      for (const fraction of [0.2, 0.5, 0.8, 0.95]) {
+      for (const fraction of [0.1, 0.4, 0.7, 0.95]) {
         await book.evaluate((element, position) => {
           const shelf = element.closest(".bookshelf")!;
           const spine = element.querySelector(".bookshelf-spine")!.getBoundingClientRect();
@@ -105,7 +155,7 @@ for (const [width, height] of [
         for (const [index, current] of books.entries()) {
           if (!current.inViewport) continue;
           expect(current.faces).toHaveLength(6);
-          expect(current.spineTop - current.top).toBeLessThanOrEqual(18.1);
+          expect(current.spineTop - current.top).toBeLessThanOrEqual(current.spineWidth * 0.103);
           const vertices: { point: { x: number; y: number }; count: number }[] = [];
           for (const point of current.faces.flatMap((face) => face.corners)) {
             const match = vertices.find(
@@ -119,13 +169,18 @@ for (const [width, height] of [
           if (previous) {
             const gap = current.top - previous.bottom;
             expect(gap, `${previous.id} to ${current.id}`).toBeGreaterThanOrEqual(14);
-            expect(gap).toBeLessThanOrEqual(37);
+            expect(gap).toBeLessThanOrEqual(Math.max(58, current.spineWidth * 0.122));
           }
         }
         const target = books.find((candidate) => candidate.id === "stress-30")!;
-        if (fraction <= 0.5) {
+        if (fraction <= 0.1) {
           expect(target.faces.find((face) => face.name === "bookshelf-top")!.facingCamera).toBe(
             false,
+          );
+        }
+        if (fraction >= 0.7) {
+          expect((target.spineTop - target.top) / target.spineWidth).toBeGreaterThan(
+            fraction === 0.95 ? 0.075 : 0.045,
           );
         }
       }

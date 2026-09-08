@@ -24,6 +24,7 @@ async function faces(book: Locator) {
     const topBounds = top.getBoundingClientRect();
     const backBounds = back.getBoundingClientRect();
     return {
+      width: spine.width,
       coverDepth: spine.top - topBounds.top,
       backDepth: backBounds.bottom - spine.bottom,
       topBackface: getComputedStyle(top).backfaceVisibility,
@@ -51,19 +52,19 @@ for (const width of [390, 1280]) {
       async function checkCamera() {
         await placeBook(book, 0.8);
         const lower = await faces(book);
-        expect(lower.coverDepth).toBeGreaterThan(6);
-        expect(lower.coverDepth).toBeLessThan(18);
+        expect(lower.coverDepth / lower.width).toBeGreaterThan(0.055);
+        expect(lower.coverDepth / lower.width).toBeLessThan(0.09);
         expect(lower.topBackface).toBe("hidden");
         expect(lower.backBackface).toBe("hidden");
-        await placeBook(book, 0.65);
+        await placeBook(book, 0.55);
         const nearer = await faces(book);
         expect(nearer.coverDepth).toBeGreaterThan(0);
-        expect(nearer.coverDepth).toBeLessThan(lower.coverDepth - 3);
-        await placeBook(book, 0.5);
+        expect(nearer.coverDepth).toBeLessThan(lower.coverDepth - lower.width * 0.025);
+        await placeBook(book, 0.15);
         const central = await faces(book);
         expect(central.coverDepth).toBeCloseTo(0, 0);
         expect(central.backDepth).toBeCloseTo(0, 0);
-        await placeBook(book, 0.2);
+        await placeBook(book, 0.05);
         const upper = await faces(book);
         expect(upper.coverDepth).toBeCloseTo(0, 0);
         expect(upper.backDepth).toBeLessThan(8);
