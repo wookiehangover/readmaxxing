@@ -115,7 +115,20 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
       aria-label="Your books"
       data-selection={Boolean(selectedId)}
       onClick={(event) => {
-        if (selectedId && !(event.target as Element).closest("a")) close();
+        if (!selectedId || (event.target as Element).closest("a")) return;
+        // A projected 3D cover can paint outside the button's hit region on mobile.
+        const cover = trigger.current?.querySelector(".bookshelf-top")?.getBoundingClientRect();
+        if (
+          cover &&
+          event.clientX >= cover.left &&
+          event.clientX <= cover.right &&
+          event.clientY >= cover.top &&
+          event.clientY <= cover.bottom
+        ) {
+          trigger.current?.click();
+          return;
+        }
+        close();
       }}
     >
       {books.map((book, index) => (

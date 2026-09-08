@@ -102,9 +102,26 @@ test("downloads a remote book through the existing reader", async ({ page }) => 
     response.url().includes("bookId=shelf-remote&type=file"),
   );
   await page.getByRole("button", { name: "Select Remote reading copy by Ada Adams" }).click();
-  await page.getByRole("link", { name: "Read Remote reading copy by Ada Adams" }).click();
+  await page
+    .getByRole("button", { name: "Select Remote reading copy by Ada Adams" })
+    .press("Enter");
   expect((await download).ok()).toBe(true);
   await expect(page.getByRole("button", { name: "Next page", exact: true }).first()).toBeVisible();
+});
+
+test("a second cover click opens the book", async ({ page }) => {
+  await seedShelf(page);
+  const book = page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" });
+  await book.click();
+  await expect(book).toHaveAttribute("aria-pressed", "true");
+  // Hit the projected cover, as a reader does, rather than the spine's layout box.
+  await book.locator(".bookshelf-volume").evaluate((element) => {
+    element.getAnimations().forEach((animation) => animation.finish());
+  });
+  const cover = (await book.locator(".bookshelf-top").boundingBox())!;
+  await page.mouse.click(cover.x + cover.width / 2, cover.y + cover.height / 2);
+  await expect(page).toHaveURL(/\/books\/shelf-local$/);
+  await expect(page.getByTestId("reading-shell")).toBeVisible();
 });
 
 test("fits long titles on mobile and supports an empty library", async ({ page }) => {
@@ -348,9 +365,12 @@ test("mobile selection stays inline and reserves room for the upright cover", as
   expect(cover.x + cover.width).toBeLessThan(390);
   expect(cover.y + cover.height).toBeLessThan(after.y);
   // Hit the visible projected cover, rather than the untransformed CSS face.
+  await page.route("**/api/sync/files/download?bookId=shelf-remote&type=file", (route) =>
+    route.fulfill({ path: TEST_EPUB, contentType: "application/epub+zip" }),
+  );
   await page.mouse.click(cover.x + cover.width / 2, cover.y + cover.height / 2);
-  await expect(book).toHaveAttribute("aria-pressed", "false");
-  await expect.poll(async () => (await next.boundingBox())!.y).toBeCloseTo(before.y, 0);
+  await expect(page).toHaveURL(/\/books\/shelf-remote$/);
+  await expect(page.getByRole("tabpanel", { name: "Read", exact: true })).toBeVisible();
 });
 
 test("selected book actions stay open independently and navigate to the notebook", async ({

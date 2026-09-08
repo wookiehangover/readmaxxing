@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import { BookshelfMenu } from "~/components/bookshelf/bookshelf-menu";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { CoverImage } from "~/components/book-grid/cover-image";
 import { getBookReadingPath } from "~/lib/reading-route";
 import type { BookMeta } from "~/lib/stores/book-store";
@@ -35,7 +35,12 @@ export function BookshelfBook({
   onOpenBook?: (book: BookMeta) => void | Promise<void>;
 }) {
   const [coverColors, setCoverColors] = useState<CoverColors | null>(null);
+  const navigate = useNavigate();
   const { resetTilt, ...tiltEvents } = useBookTilt(selected);
+  function openBook() {
+    if (onOpenBook) void onOpenBook(book);
+    else void navigate(getBookReadingPath(book.id));
+  }
   const colorIndex =
     Array.from(book.id).reduce(
       (hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0,
@@ -53,9 +58,12 @@ export function BookshelfBook({
         className="bookshelf-book"
         aria-label={`Select ${book.title}${book.author ? ` by ${book.author}` : ""}`}
         aria-pressed={selected}
+        aria-description={selected ? "Activate again to open this book" : undefined}
         onClick={(event) => {
+          event.stopPropagation();
           resetTilt(event.currentTarget.querySelector(".bookshelf-volume")!);
-          onSelect(event.currentTarget);
+          if (selected) openBook();
+          else onSelect(event.currentTarget);
         }}
         style={{ "--book-cloth": cloth, "--book-ink": ink, "--book-order": index } as CSSProperties}
       >
