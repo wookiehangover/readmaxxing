@@ -24,7 +24,7 @@ export function useBookTilt(selected: boolean) {
     const rect = bounds.current;
     const x = Math.max(-1, Math.min(1, ((event.clientX - rect.left) / rect.width) * 2 - 1));
     const y = Math.max(-1, Math.min(1, ((event.clientY - rect.top) / rect.height) * 2 - 1));
-    const angle = Math.hypot(x, y) * 8;
+    const angle = Math.min(1, Math.hypot(x, y)) * 4;
     volume.style.setProperty("--book-tilt", `${-y} ${x} 0 ${angle}deg`);
     volume.style.setProperty("--book-glare-x", `${(x + 1) * 50}%`);
     volume.style.setProperty("--book-glare-y", `${(y + 1) * 50}%`);

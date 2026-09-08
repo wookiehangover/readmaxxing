@@ -281,7 +281,7 @@ test("selection turns the cover left, recedes the stack, and reverses with Escap
       const b = (await cover.boundingBox())!;
       return b.height / b.width;
     })
-    .toBeGreaterThan(1.35);
+    .toBeGreaterThan(1.25);
   await expect.poll(async () => (await other.boundingBox())!.x).toBeGreaterThan(original.x + 100);
   await expect
     .poll(async () => (await other.boundingBox())!.width)
@@ -360,7 +360,7 @@ test("mobile selection stays inline and reserves room for the upright cover", as
   expect(after.width).toBeCloseTo(before.width, 0);
   expect(after.y).toBeGreaterThan(before.y + 150);
   const cover = (await book.locator(".bookshelf-top").boundingBox())!;
-  expect(cover.height).toBeGreaterThan(cover.width * 1.35);
+  expect(cover.height).toBeGreaterThan(cover.width * 1.25);
   expect(cover.x).toBeGreaterThan(0);
   expect(cover.x + cover.width).toBeLessThan(390);
   expect(cover.y + cover.height).toBeLessThan(after.y);

@@ -46,7 +46,7 @@ for (const viewport of [
             const bounds = (await cover.boundingBox())!;
             return bounds.height / bounds.width;
           })
-          .toBeGreaterThan(1.35);
+          .toBeGreaterThan(1.25);
         await expect.poll(() => page.locator(".bookshelf-cover img").count()).toBeLessThan(18);
         // Dismiss through the row gutter; the tilted face has different layout bounds.
         await book.locator("..").tap({ position: { x: 1, y: 1 } });

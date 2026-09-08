@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { BookshelfBook } from "~/components/bookshelf/bookshelf-book";
+import { useBookshelfCamera } from "~/hooks/use-bookshelf-camera";
 import { useBookshelfVisibility } from "~/hooks/use-bookshelf-visibility";
 import type { BookMeta } from "~/lib/stores/book-store";
 import "~/components/bookshelf/bookshelf.css";
@@ -22,6 +23,7 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
   const layout = books.map((book) => book.id).join("\0");
   const { stackRef, visibleIds, entranceIds } = useBookshelfVisibility(layout);
   const selectedId = selection?.open && selection.layout === layout ? selection.id : null;
+  useBookshelfCamera(stackRef, visibleIds, selectedId);
 
   function close() {
     setSelection((current) => current && { ...current, open: false });
@@ -74,10 +76,18 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
     const shelf = button.closest(".bookshelf")!.getBoundingClientRect();
     const width = volume.offsetWidth;
     const mobile = window.matchMedia("(max-width: 767px)").matches;
-    const scale = mobile ? 0.85 : Math.min(480, shelf.height * 0.58, shelf.width * 0.48) / width;
+    const scale = mobile
+      ? Math.min(0.85, (shelf.height - 112) / width)
+      : Math.min(480, shelf.height * 0.58, shelf.width * 0.48) / width;
     const centerX = mobile ? rect.left + width / 2 : shelf.left + shelf.width * 0.27;
     const centerY = mobile
-      ? rect.top + volume.offsetTop + (width * scale) / 2
+      ? Math.max(
+          shelf.top + (width * scale) / 2 + 20,
+          Math.min(
+            rect.top + volume.offsetTop + (width * scale) / 2,
+            shelf.bottom - (width * scale) / 2 - 76,
+          ),
+        )
       : shelf.top + shelf.height * 0.48;
     const x = centerX - rect.left - width / 2 - (width / 3) * scale * Math.cos(Math.PI / 30);
     const y = centerY - rect.top - volume.offsetTop;
@@ -100,6 +110,7 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
       style: {
         "--selected-x": `${x}px`,
         "--selected-y": `${y}px`,
+        "--selected-center-y": `${centerY - rect.top}px`,
         "--selected-scale": scale,
         "--selected-space": `${Math.max(0, width * scale - volume.offsetHeight + 76)}px`,
         "--read-x": `${centerX - rect.left}px`,

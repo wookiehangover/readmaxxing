@@ -72,6 +72,7 @@
   position: relative;
   padding-top: 46px;
   perspective: 1800px;
+  perspective-origin: 50% min(var(--shelf-camera-y, 50%), calc(100% + 24px));
   transform-style: preserve-3d;
 }
 .bookshelf-volume {
@@ -81,7 +82,7 @@
   box-shadow:
     0 2px 3px #0003,
     0 12px 24px -8px #0005;
-  transform: translate3d(0, calc(var(--book-pull) * -0.04), var(--book-pull)) rotateX(-6deg);
+  transform: translate3d(0, calc(var(--book-pull) * -0.04), var(--book-pull));
   transition: transform 650ms cubic-bezier(0.22, 0.8, 0.25, 1.1);
   transform-style: preserve-3d;
 }
