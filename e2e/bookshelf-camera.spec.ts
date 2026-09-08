@@ -51,13 +51,14 @@ for (const width of [390, 1280]) {
       async function checkCamera() {
         await placeBook(book, 0.8);
         const lower = await faces(book);
-        expect(lower.coverDepth).toBeGreaterThan(10);
+        expect(lower.coverDepth).toBeGreaterThan(6);
+        expect(lower.coverDepth).toBeLessThan(18);
         expect(lower.topBackface).toBe("hidden");
         expect(lower.backBackface).toBe("hidden");
         await placeBook(book, 0.65);
         const nearer = await faces(book);
         expect(nearer.coverDepth).toBeGreaterThan(0);
-        expect(nearer.coverDepth).toBeLessThan(lower.coverDepth - 5);
+        expect(nearer.coverDepth).toBeLessThan(lower.coverDepth - 3);
         await placeBook(book, 0.5);
         const central = await faces(book);
         expect(central.coverDepth).toBeCloseTo(0, 0);

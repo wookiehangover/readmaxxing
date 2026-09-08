@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { seedShelf } from "./helpers/bookshelf";
+import { projectedCoverCenter, tapBookGutter } from "./helpers/bookshelf-hit-targets";
 
 test.use({ isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
 
@@ -48,9 +49,9 @@ for (const viewport of [
           })
           .toBeGreaterThan(1.25);
         await expect.poll(() => page.locator(".bookshelf-cover img").count()).toBeLessThan(18);
-        // Dismiss through the row gutter; the tilted face has different layout bounds.
-        await book.locator("..").tap({ position: { x: 1, y: 1 } });
+        await tapBookGutter(page, book);
         await expect(book).toHaveAttribute("aria-pressed", "false");
+        await expect(page).toHaveURL(/\/library$/);
         await expect(book.locator(".bookshelf-book-title")).toHaveCSS(
           "text-decoration-line",
           "none",
@@ -59,6 +60,19 @@ for (const viewport of [
       }
     }
     await expect(last.locator(".bookshelf-top")).toHaveCount(0);
+    for (const book of [first, last, first]) {
+      await book.scrollIntoViewIfNeeded();
+      await book.tap();
+      await expect(book).toHaveAttribute("aria-pressed", "true");
+      const id = await book.locator("..").getAttribute("data-book-id");
+      const center = await projectedCoverCenter(book);
+      expect(center.hitsCover).toBe(true);
+      await page.touchscreen.tap(center.x, center.y);
+      await expect(page).toHaveURL(new RegExp(`/books/${id}$`));
+      await page.goBack();
+      await expect(page).toHaveURL(/\/library$/);
+      await expect(page.locator(".bookshelf-book")).toHaveCount(153);
+    }
     expect(errors).toEqual([]);
   });
 }

@@ -24,13 +24,18 @@ export function useBookshelfCamera(
 
     let frame = 0;
     let viewportHeight = 0;
-    let scenes: { element: HTMLElement; top: number }[] = [];
+    let scenes: { element: HTMLElement; top: number; inset: number; maxOffset: number }[] = [];
 
     function update() {
       frame = 0;
       const camera = shelf!.scrollTop + viewportHeight / 2;
-      for (const { element, top } of scenes) {
-        element.style.setProperty("--shelf-camera-y", `${camera - top}px`);
+      for (const { element, top, inset, maxOffset } of scenes) {
+        const distance = top + inset - camera;
+        const origin =
+          distance > 0
+            ? inset - maxOffset * Math.tanh(distance / (viewportHeight / 2))
+            : camera - top;
+        element.style.setProperty("--shelf-camera-y", `${origin}px`);
       }
     }
 
@@ -39,7 +44,18 @@ export function useBookshelfCamera(
       viewportHeight = shelf!.clientHeight;
       scenes = Array.from(
         stack!.querySelectorAll<HTMLElement>('.bookshelf-scene[data-active="true"]'),
-        (element) => ({ element, top: layoutTop(element) - shelfTop }),
+        (element) => {
+          const style = getComputedStyle(element);
+          const inset = parseFloat(style.paddingTop);
+          const depth = element.clientWidth * (2 / 3);
+          const perspective = parseFloat(style.perspective);
+          return {
+            element,
+            top: layoutTop(element) - shelfTop,
+            inset,
+            maxOffset: (inset * (perspective + depth)) / depth,
+          };
+        },
       );
       cancelAnimationFrame(frame);
       update();

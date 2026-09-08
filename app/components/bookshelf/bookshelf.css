@@ -25,7 +25,7 @@
 }
 .bookshelf-stack li {
   position: relative;
-  margin-bottom: 28px;
+  margin-bottom: 18px;
 }
 .bookshelf-book {
   container-type: inline-size;
@@ -70,8 +70,8 @@
 .bookshelf-scene {
   display: block;
   position: relative;
-  padding-top: 46px;
-  perspective: 1800px;
+  padding-top: 18px;
+  perspective: 3600px;
   perspective-origin: 50% min(var(--shelf-camera-y, 50%), calc(100% + 24px));
   transform-style: preserve-3d;
 }
@@ -252,12 +252,6 @@
   }
   .bookshelf-stack {
     padding-top: 40px;
-  }
-  .bookshelf-stack li {
-    margin-bottom: 24px;
-  }
-  .bookshelf-scene {
-    padding-top: 26px;
   }
   .bookshelf-spine {
     grid-template-columns: minmax(0, 1fr);

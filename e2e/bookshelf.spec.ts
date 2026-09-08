@@ -176,7 +176,7 @@ test("books spring in from above, pull forward on hover, and respect reduced mot
   await book.hover();
   await expect
     .poll(async () => (await volume.boundingBox())!.width)
-    .toBeGreaterThan(restingBounds.width + 15);
+    .toBeGreaterThan(restingBounds.width + 10);
   await expect
     .poll(() => volume.evaluate((element) => getComputedStyle(element, "::after").opacity))
     .toBe("1");
@@ -195,7 +195,7 @@ test("books spring in from above, pull forward on hover, and respect reduced mot
   await book.focus();
   await expect
     .poll(async () => (await volume.boundingBox())!.width)
-    .toBeGreaterThan(restingBounds.width + 15);
+    .toBeGreaterThan(restingBounds.width + 10);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(book).toHaveCSS("animation-name", "none");
   await expect(volume).toHaveCSS("transform", "none");
