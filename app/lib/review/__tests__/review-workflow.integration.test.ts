@@ -243,22 +243,43 @@ it("keeps an oversized draft reloadable after rejecting its submission", async (
   );
   await loadReviewCache("00000000-0000-4000-8000-000000000001", "book-a");
   store.dispose();
+  const reloadQuestion = holdNextResponse("question");
   const restored = await open();
   expect(restored.state.reviews.localStatus).toBe("ready");
   expect(
     restored.reviewsSelectors.selectReviewAnswerText.select(restored.state, "book-a"),
   ).toHaveLength(1_000_001);
-  await vi.waitFor(() => expect(restored.state.reviews.requests.question.token).toBeNull());
+  expect((await reloadQuestion.processed).status).toBe(200);
+  const reloadConfirmation = holdNextResponse("progress");
+  reloadQuestion.release();
+  expect((await reloadConfirmation.processed).status).toBe(200);
+  expect(restored.state.reviews.requests.question.token).toBeNull();
   edit(
     restored,
     "The repaired answer relates the narrator's changing perspective to the chapter's evidence.",
   );
+  expect(restored.reviewsSelectors.selectReviewCanSubmit.select(restored.state, "book-a")).toBe(
+    false,
+  );
+  expect(restored.reviewsSelectors.selectReviewLocked.select(restored.state, "book-a")).toBe(true);
+  restored.dispatch(submitReviewAnswer("book-a"));
+  expect(restored.state.reviews.requests.submit.token).toBeNull();
+  reloadConfirmation.release();
+  await vi.waitFor(() =>
+    expect(restored.reviewsSelectors.selectReviewCanSubmit.select(restored.state, "book-a")).toBe(
+      true,
+    ),
+  );
+  expect(await count("review_attempt")).toBe(0);
+  expect(restored.reviewsSelectors.selectReviewPassed.select(restored.state, "book-a")).toBe(false);
   restored.dispatch(submitReviewAnswer("book-a"));
   await vi.waitFor(() =>
     expect(restored.reviewsSelectors.selectReviewPassed.select(restored.state, "book-a")).toBe(
       true,
     ),
   );
+  expect(await count("review_attempt")).toBe(1);
+  expect(restored.reviewsSelectors.selectReviewLocked.select(restored.state, "book-a")).toBe(false);
 });
 
 it.each([false, true])(
@@ -294,11 +315,20 @@ it.each([false, true])(
     );
     edit(store, "A corrected answer long enough to submit with chapter evidence.");
     expect(store.reviewsSelectors.selectReviewCanSubmit.select(store.state, "book-a")).toBe(true);
+    const correctedConfirmation = holdNextResponse("progress");
     store.dispatch(submitReviewAnswer("book-a"));
+    expect((await correctedConfirmation.processed).status).toBe(200);
     await vi.waitFor(() =>
       expect(store.state.reviews.cache!.attempts.ids).toHaveLength(previouslyPassed ? 2 : 1),
     );
+    expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-a")).toBe(false);
+    expect(store.reviewsSelectors.selectReviewLocked.select(store.state, "book-a")).toBe(true);
+    correctedConfirmation.release();
+    await vi.waitFor(() =>
+      expect(store.state.reviews.requests.progress).toEqual({ token: null, error: null }),
+    );
     expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-a")).toBe(true);
+    expect(store.reviewsSelectors.selectReviewLocked.select(store.state, "book-a")).toBe(false);
     expect(responses.filter((response) => response.url.endsWith("/question"))).toHaveLength(
       questionRequests,
     );
