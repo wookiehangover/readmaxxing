@@ -16,48 +16,42 @@ for (const reducedMotion of ["reduce", "no-preference"] as const) {
     await page.mouse.move(bounds.x + 10, bounds.y + bounds.height / 2);
 
     for (const delta of [120, -120]) {
-      const [samples] = await Promise.all([
-        book.evaluate(async (element) => {
-          const viewport = element.closest(".bookshelf")!;
-          const read = () => ({
-            scroll: viewport.scrollTop,
-            origin: parseFloat(
-              element
-                .querySelector<HTMLElement>(".bookshelf-scene")!
-                .style.getPropertyValue("--shelf-camera-y"),
-            ),
-          });
-          const samples = [read()];
-          await new Promise<void>((resolve) =>
-            viewport.addEventListener("scroll", () => resolve(), { once: true }),
-          );
-          const end = performance.now() + 700;
-          while (performance.now() < end) {
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-            samples.push(read());
-          }
-          return samples;
-        }),
-        page.mouse.wheel(0, delta),
-      ]);
-      const first = samples[0];
-      const last = samples.at(-1)!;
-      expect(last.scroll - first.scroll).toBeCloseTo(delta, 0);
-      expect(Math.abs(last.origin - first.origin)).toBeGreaterThan(10);
-      const direction = Math.sign(last.origin - first.origin);
-      for (const [index, sample] of samples.slice(1).entries()) {
-        expect((sample.origin - samples[index].origin) * direction).toBeGreaterThanOrEqual(-0.01);
-      }
-      const settlingFrames = samples.slice(1).filter((sample, index) => {
-        const previous = samples[index];
-        return sample.scroll === previous.scroll && Math.abs(sample.origin - previous.origin) > 0.1;
+      const scene = book.locator(".bookshelf-scene");
+      const origin = () =>
+        scene.evaluate((element) =>
+          parseFloat((element as HTMLElement).style.getPropertyValue("--shelf-camera-y")),
+        );
+      const initialOrigin = await origin();
+      const initialScroll = await shelf.evaluate((element) => element.scrollTop);
+      const wheel = await shelf.evaluateHandle((element) => {
+        const result = { canceled: null as boolean | null };
+        element.addEventListener(
+          "wheel",
+          (event) =>
+            queueMicrotask(() => {
+              result.canceled = event.defaultPrevented;
+            }),
+          { once: true, passive: true },
+        );
+        return result;
       });
-      if (reducedMotion === "no-preference") {
-        expect(settlingFrames.length).toBeGreaterThan(2);
-      } else {
-        expect(settlingFrames.length).toBeLessThanOrEqual(1);
+      try {
+        await page.mouse.wheel(0, delta);
+        await expect.poll(() => wheel.evaluate((result) => result.canceled)).toBe(false);
+      } finally {
+        await wheel.dispose();
       }
-      expect(last.origin).toBe(samples.at(-2)!.origin);
+      await expect
+        .poll(() => shelf.evaluate((element) => element.scrollTop))
+        .toBeCloseTo(initialScroll + delta, 0);
+      await settleBookshelfCamera(book);
+      const finalOrigin = await origin();
+      expect((finalOrigin - initialOrigin) * Math.sign(delta)).toBeGreaterThan(10);
+      if (reducedMotion === "no-preference") {
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await expect.poll(origin).toBeCloseTo(finalOrigin, 0);
+        await page.emulateMedia({ reducedMotion });
+      }
     }
   });
 }
