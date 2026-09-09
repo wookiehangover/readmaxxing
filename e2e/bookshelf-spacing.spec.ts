@@ -1,5 +1,6 @@
 import { test, expect, type Locator } from "@playwright/test";
 import { seedShelf } from "./helpers/bookshelf";
+import { settleBookshelfCamera } from "./helpers/bookshelf-camera";
 
 async function projectedBooks(stack: Locator) {
   return stack.evaluate((element) => {
@@ -125,6 +126,7 @@ for (const [width, height] of [
       await expect(book.locator(".bookshelf-top")).toBeAttached();
 
       for (const fraction of [0.1, 0.4, 0.7, 0.95]) {
+        await settleBookshelfCamera(book);
         await book.evaluate((element, position) => {
           const shelf = element.closest(".bookshelf")!;
           const spine = element.querySelector(".bookshelf-spine")!.getBoundingClientRect();
@@ -140,17 +142,12 @@ for (const [width, height] of [
             return books.length;
           })
           .toBeGreaterThan(2);
-        await page.evaluate(
-          () =>
-            new Promise<void>((resolve) => {
-              requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-            }),
-        );
         await stack.evaluate(async (element) => {
           await Promise.allSettled(
             element.getAnimations({ subtree: true }).map((animation) => animation.finished),
           );
         });
+        await settleBookshelfCamera(book);
         const books = await projectedBooks(stack);
         for (const [index, current] of books.entries()) {
           if (!current.inViewport) continue;

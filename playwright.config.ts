@@ -31,7 +31,7 @@ export default defineConfig({
     },
     {
       name: "webkit",
-      testMatch: "bookshelf-camera-origin.spec.ts",
+      testMatch: ["bookshelf-camera-origin.spec.ts", "bookshelf-wheel.spec.ts"],
       use: { ...devices["Desktop Safari"] },
     },
   ],
