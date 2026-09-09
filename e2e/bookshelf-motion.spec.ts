@@ -84,12 +84,14 @@ test("the selected cover follows the pointer and settles when it leaves", async 
   expect(samples[0][1]).toBeLessThan(0);
   expect(samples[1][0]).toBeLessThan(0);
   expect(samples[1][1]).toBeGreaterThan(0);
+  for (const sample of samples) expect(sample[3]).toBeLessThanOrEqual(4);
   const glare = book.locator(".bookshelf-cover");
   await expect
     .poll(() => glare.evaluate((element) => getComputedStyle(element, "::after").opacity))
     .toBe("0.2");
   await page.mouse.move(0, 0);
   await expect(volume).toHaveCSS("rotate", "0deg");
+  await expect(volume).toHaveCSS("transform", baseTransform);
   await expect
     .poll(() => glare.evaluate((element) => getComputedStyle(element, "::after").opacity))
     .toBe("0");
@@ -147,11 +149,6 @@ test("the selected book keeps six joined faces and an opaque back cover", async 
   }
   expect(vertices).toHaveLength(8);
   expect(vertices.map((vertex) => vertex.count)).toEqual(Array(8).fill(3));
-  // The resting cover is face-on; turning the same volume reveals its spine.
-  await volume.evaluate((element) => {
-    element.style.transition = "none";
-    element.style.rotate = "y 45deg";
-  });
   const spine = book.locator(".bookshelf-spine");
   expect((await spine.boundingBox())!.width).toBeGreaterThan(10);
   expect(
