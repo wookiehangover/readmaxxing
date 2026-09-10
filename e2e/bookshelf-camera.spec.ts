@@ -1,19 +1,16 @@
 import { test, expect, type Locator } from "@playwright/test";
 import { seedShelf } from "./helpers/bookshelf";
+import { settleBookshelfCamera } from "./helpers/bookshelf-camera";
 
 async function placeBook(book: Locator, fraction: number) {
+  await settleBookshelfCamera(book);
   await book.evaluate((element, position) => {
     const shelf = element.closest(".bookshelf")!;
     const spine = element.querySelector(".bookshelf-spine")!.getBoundingClientRect();
     const viewport = shelf.getBoundingClientRect();
     shelf.scrollTop += spine.top + spine.height / 2 - viewport.top - shelf.clientHeight * position;
   }, fraction);
-  await book.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      }),
-  );
+  await settleBookshelfCamera(book);
 }
 
 async function faces(book: Locator) {
