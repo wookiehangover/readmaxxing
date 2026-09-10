@@ -69,11 +69,12 @@
   );
 }
 .bookshelf-scene {
+  --shelf-camera-origin: 50% min(var(--shelf-camera-y, 50%), calc(100% + 24px));
   display: block;
   position: relative;
   padding-top: 8cqw;
   perspective: 700cqw;
-  perspective-origin: 50% min(var(--shelf-camera-y, 50%), calc(100% + 24px));
+  perspective-origin: var(--shelf-camera-origin);
   transform-style: preserve-3d;
 }
 .bookshelf-stack > li:first-child .bookshelf-scene {

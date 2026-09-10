@@ -29,6 +29,11 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    {
+      name: "webkit",
+      testMatch: ["bookshelf-camera-origin.spec.ts", "bookshelf-wheel.spec.ts"],
+      use: { ...devices["Desktop Safari"] },
+    },
   ],
   webServer: {
     command: process.env.CI
