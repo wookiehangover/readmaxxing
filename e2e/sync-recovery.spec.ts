@@ -349,6 +349,7 @@ test("file recovery reviews the canonical book and does not claim success for pa
   await expect(
     page.frameLocator('iframe[title="Original and current content"]').locator("body"),
   ).toContainText("Reviewed destination title");
+  await expect(page.getByRole("combobox", { name: "Book for file recovery" })).toBeDisabled();
   await page.getByRole("button", { name: "Upload original book file", exact: true }).click();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   expect(uploads).toBe(0);

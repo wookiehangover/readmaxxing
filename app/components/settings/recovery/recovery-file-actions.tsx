@@ -32,7 +32,11 @@ export function RecoveryFileActions() {
     <div className="flex flex-col gap-3 rounded-md border p-3">
       <p className="text-sm">Recover original files to a current book on your account.</p>
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={targetId} onValueChange={(value) => setTargetId(value ?? "")}>
+        <Select
+          value={targetId}
+          disabled={!!view.fileTarget}
+          onValueChange={(value) => setTargetId(value ?? "")}
+        >
           <SelectTrigger aria-label="Book for file recovery">
             <SelectValue placeholder="Choose a book" />
           </SelectTrigger>
@@ -65,7 +69,8 @@ export function RecoveryFileActions() {
         <>
           <p className="text-xs text-muted-foreground">
             The current destination is shown in the inspection above. Each action replaces only its
-            selected file or cover. Other retained versions stay available.
+            selected file or cover. Refresh inspection to choose another destination. Other retained
+            versions stay available.
           </p>
           <div className="flex flex-wrap gap-2">
             {view.localFiles.map((kind) => (
