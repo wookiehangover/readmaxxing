@@ -163,6 +163,15 @@ export async function resolveRecovery(account: string, id: string, request: Reco
       if (!received) throw new RecoveryConflict("Mutation not received");
       const target = await canonicalSnapshot(client, received);
       const original = await canonicalSnapshot(client, row);
+      if (change.entity === "notebook" && !target.exists) {
+        const parent = await canonicalSnapshot(client, {
+          accountId: account,
+          targetEntityId: null,
+          originalSnapshot: { entity: "book", entityId: change.entityId },
+        });
+        if (parent.status !== "present")
+          throw new RecoveryConflict("Notebook creation requires a live owned parent book");
+      }
       if (
         (request.action === "restore_copy" &&
           (target.exists || target.entityId === original.entityId)) ||
