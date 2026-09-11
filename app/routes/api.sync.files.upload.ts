@@ -184,35 +184,42 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "Blob storage is not configured" }, { status: 500 });
   }
 
-  let userId: string;
-  try {
-    ({ userId } = await requireAuth(request));
-  } catch {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const negotiating = request.headers.get("X-Readmax-Storage-Backend") === "negotiate";
+  const isJSON = request.headers.get("Content-Type")?.startsWith("application/json");
+  let body: HandleUploadBody | undefined;
+  if (!localStorage && !negotiating && isJSON) {
+    try {
+      body = (await request.json()) as HandleUploadBody;
+    } catch {
+      return Response.json({ error: "Invalid upload request" }, { status: 400 });
+    }
   }
-  if (request.headers.has("X-Recovery-Owner") || request.headers.has("X-Recovery-Version")) {
-    const ownerError = recoveryOwnerError(request, userId);
-    if (ownerError) return ownerError;
+  // Completion is a service request: the SDK verifies its signature before invoking
+  // onUploadCompleted. Browser token issuance and local uploads still require a session.
+  const completion = body?.type === "blob.upload-completed";
+  let userId: string | undefined;
+  if (!completion) {
+    try {
+      ({ userId } = await requireAuth(request));
+    } catch {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (request.headers.has("X-Recovery-Owner") || request.headers.has("X-Recovery-Version")) {
+      const ownerError = recoveryOwnerError(request, userId);
+      if (ownerError) return ownerError;
+    }
+    if (negotiating) return Response.json({ backend: localStorage ? "local" : "vercel" });
+    if (localStorage) return uploadLocalFile(request, userId);
+    if (!isJSON) return Response.json({ backend: "vercel" }, { status: 409 });
   }
-
-  if (request.headers.get("X-Readmax-Storage-Backend") === "negotiate") {
-    return Response.json({ backend: localStorage ? "local" : "vercel" });
-  }
-
-  if (localStorage) return uploadLocalFile(request, userId);
-
-  if (!request.headers.get("Content-Type")?.startsWith("application/json")) {
-    return Response.json({ backend: "vercel" }, { status: 409 });
-  }
-
-  const body = (await request.json()) as HandleUploadBody;
 
   try {
     const jsonResponse = await handleUpload({
       token,
       request,
-      body,
+      body: body!,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
+        if (!userId) throw new Error("Authentication required");
         const { bookId, type, recovery } = parseClientPayload(clientPayload);
         if (recovery && recovery.ownerId !== userId)
           throw new RecoveryConflict("Recovery account changed");
@@ -245,7 +252,6 @@ export async function action({ request }: { request: Request }) {
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
         const { bookId, type, userId: tokenOwner, recovery } = parseTokenPayload(tokenPayload);
-        if (tokenOwner !== userId) throw new Error("Invalid token owner");
         const book = await getBookByIdForUser(bookId, tokenOwner);
         if (!book || book.deletedAt || book.canonicalId)
           throw new Error("Book no longer available for upload");
