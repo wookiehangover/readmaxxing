@@ -1,3 +1,5 @@
+import { custodySession } from "./custody-session";
+import { recoverBookAliases } from "./alias-recovery";
 import { ENTITY_MERGERS, mergeBookRecord } from "./entity-mergers";
 import { repairAdoptedDemoSessions } from "~/lib/onboarding/adopt-demo-local";
 import { resumeBookRemaps } from "./remap-journal";
@@ -25,9 +27,20 @@ export interface PullContext {
 }
 
 export async function pullChanges(ctx: PullContext): Promise<void> {
-  return withSyncIdentityLock(async () => {
+  const session = custodySession(ctx.userId);
+  // Network recovery shares this pull trigger, but cannot hold the identity lock
+  // while an alias endpoint is slow. Healthy cloud reads and pushes continue.
+  const recovery =
+    ctx.userId && !ctx.isStopped()
+      ? recoverBookAliases({ ...ctx, userId: ctx.userId }).then(
+          () => undefined,
+          (error) => error,
+        )
+      : Promise.resolve(undefined);
+  let recoveryError: unknown;
+  await withSyncIdentityLock(async () => {
+    session.checkActive();
     if (ctx.isStopped()) return;
-    if (ctx.userId) await resumeBookRemaps(ctx.userId, { isStopped: ctx.isStopped });
 
     // Send a per-entity cursor map so one entity's lag does not force the
     // others to re-scan. Wire format: `cursors` is a URL-encoded JSON array
@@ -68,6 +81,7 @@ export async function pullChanges(ctx: PullContext): Promise<void> {
       }
 
       const result: SyncPullResponse = await res.json();
+      session.checkActive();
       if (ctx.isStopped()) return;
       const chatSessionsHaveMore = result.changes.some(
         (group) => group.entity === "chat_session" && group.hasMore,
@@ -90,13 +104,28 @@ export async function pullChanges(ctx: PullContext): Promise<void> {
         }
 
         for (const record of group.records) {
+          session.checkActive();
+          if (
+            ctx.userId &&
+            record &&
+            typeof record === "object" &&
+            "userId" in record &&
+            record.userId !== ctx.userId
+          )
+            throw new Error("Pull response owner mismatch");
           if (ctx.isStopped()) return;
           if (group.entity === "book")
             await mergeBookRecord(record as Record<string, unknown>, ctx);
           else await merger(record as Record<string, unknown>);
         }
 
-        if (ctx.userId) await resumeBookRemaps(ctx.userId, { isStopped: ctx.isStopped });
+        if (ctx.userId) {
+          try {
+            await resumeBookRemaps(ctx.userId, { isStopped: ctx.isStopped });
+          } catch (error) {
+            recoveryError = error;
+          }
+        }
         if (ctx.isStopped()) return;
 
         // Opaque keyset cursors do not need timestamp overlap. Legacy ISO-only
@@ -105,6 +134,7 @@ export async function pullChanges(ctx: PullContext): Promise<void> {
         const persistedCursor = group.cursor.trimStart().startsWith("{")
           ? group.cursor
           : rewindCursor(group.cursor);
+        session.checkActive();
         await setCursor(group.entity, persistedCursor);
         cursorsByEntity.set(group.entity, group.cursor);
 
@@ -126,4 +156,6 @@ export async function pullChanges(ctx: PullContext): Promise<void> {
     }
     if (ctx.userId && !ctx.isStopped()) await repairAdoptedDemoSessions(ctx.userId, ctx.isStopped);
   });
+  recoveryError ??= await recovery;
+  if (recoveryError && !ctx.isStopped()) throw recoveryError;
 }

@@ -5,7 +5,11 @@ import { clear, createStore, get, set } from "idb-keyval";
 import { uploadFile, uploadPendingFiles } from "../file-uploads";
 
 vi.mock("@vercel/blob/client", () => ({ upload: vi.fn() }));
-vi.mock("../change-log", () => ({ recordChange: vi.fn(async () => undefined) }));
+vi.mock("../change-log", () => ({
+  recordChange: vi.fn(async (_entry, persist) => {
+    await persist?.();
+  }),
+}));
 
 const uploadMock = vi.mocked(upload);
 const originalBlob = globalThis.Blob;

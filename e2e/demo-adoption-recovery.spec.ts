@@ -128,6 +128,8 @@ test("one Gatsby survives failed saves, repeated refresh, and existing-account p
       body = { user: signedIn ? user : null };
     } else if (path === "/api/auth/logout") {
       signedIn = false;
+    } else if (path === "/api/sync/book-aliases") {
+      body = { ownerId: user.id, aliases: [], cursor: "0", hasMore: false };
     } else if (path === "/api/sync/pull") {
       pullCount++;
       body = {

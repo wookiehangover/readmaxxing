@@ -107,6 +107,7 @@ export interface RemapOptions {
     entry: Pick<ChangeEntry, "entity" | "entityId" | "operation" | "data" | "timestamp">,
   ) => Promise<void>;
   checkActive?: () => void;
+  ownerId?: string;
 }
 
 /** Idempotent per-database moves. Production callers first persist an owned journal intent. */
@@ -127,7 +128,10 @@ export async function remapBookId(
         entityId,
         data,
         operation: data.deletedAt != null ? "delete" : "put",
-        timestamp: Number(data.updatedAt ?? data.createdAt ?? 0),
+        timestamp:
+          typeof (data.updatedAt ?? data.createdAt) === "number"
+            ? ((data.updatedAt ?? data.createdAt) as number)
+            : NaN,
       }));
   const move = async <T>(
     store: UseStore,
@@ -139,6 +143,7 @@ export async function remapBookId(
     changed =
       (await moveRemapRecord(store, from, to, merge, {
         checkActive: options.checkActive,
+        ownerId: options.ownerId,
         ...extra,
       })) || changed;
   };

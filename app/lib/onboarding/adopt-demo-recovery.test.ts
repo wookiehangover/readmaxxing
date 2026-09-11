@@ -71,6 +71,8 @@ describe("demo adoption with real durable sync", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url) => {
+        if (String(url).includes("/api/sync/book-aliases"))
+          return Response.json({ ownerId: owner, aliases: [], cursor: "0", hasMore: false });
         if (String(url).startsWith("/api/sync/pull"))
           return Response.json({
             changes: [

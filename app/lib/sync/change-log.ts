@@ -1,7 +1,16 @@
-import { set, entries, promisifyRequest } from "idb-keyval";
+import { custodySession } from "./custody-session";
+import {
+  retainCustody,
+  validateCustodyOwner,
+  factsKey,
+  type CustodyFacts,
+} from "./custody-journal";
+import { custodyUpdate, custodyDelete } from "./custody-write";
+import { equalRaw, inLiveTransaction, liveTransactionBoundary } from "./raw-snapshot";
+import { set, update, entries, promisifyRequest } from "idb-keyval";
 import { ulid } from "ulid";
 import { isWellFormedEntry } from "./idb-entry";
-import { getChangeLogStore } from "./stores";
+import { getChangeLogStore, getCustodyStore } from "./stores";
 import {
   remapChange,
   sameChangeSnapshot,
@@ -33,12 +42,32 @@ function isUnsyncedChangeEntry(entry: unknown): entry is ChangeEntry {
  */
 export async function recordChange(
   entry: Omit<ChangeEntry, "id" | "synced" | "failure">,
+  persist?: () => Promise<unknown>,
 ): Promise<ChangeEntry> {
+  const session = custodySession(entry.ownerId);
   const change: ChangeEntry = {
-    ...entry,
+    ...structuredClone(entry),
+    ...(session.ownerId ? { ownerId: session.ownerId } : {}),
     id: ulid(),
     synced: false,
   };
+  const custodyId = await retainCustody({
+    source: "changelog",
+    key: change.id,
+    raw: change,
+    role: "transport",
+    ownerId: change.ownerId,
+  });
+  session.checkActive();
+  if (persist && (await persist()) === false) {
+    await update<CustodyFacts>(
+      factsKey(custodyId),
+      (facts) => ({ ...facts, acknowledged: true }),
+      getCustodyStore(),
+    );
+    return change;
+  }
+  session.checkActive();
   await set(change.id, change, getChangeLogStore());
   // Signal the sync engine to push rather than waiting for the next interval.
   // Non-position events are deferred to a microtask to avoid triggering React
@@ -66,12 +95,23 @@ export async function recordChange(
  */
 export async function getUnsyncedChanges(ownerId?: string): Promise<ChangeEntry[]> {
   const all = await entries<string, ChangeEntry>(getChangeLogStore());
-  return all
+  const pending = all
     .filter(isWellFormedEntry)
     .map(([, value]) => value)
     .filter(isUnsyncedChangeEntry)
     .filter((change) => !ownerId || !change.ownerId || change.ownerId === ownerId)
     .sort((a, b) => a.id.localeCompare(b.id));
+  if (!ownerId) return pending;
+  const owned: ChangeEntry[] = [];
+  for (const change of pending) {
+    try {
+      await validateCustodyOwner(ownerId, change);
+      owned.push(change);
+    } catch {
+      /* Known foreign rows stay intact for their owner. */
+    }
+  }
+  return owned;
 }
 
 /**
@@ -80,16 +120,20 @@ export async function getUnsyncedChanges(ownerId?: string): Promise<ChangeEntry[
 export async function markSynced(ids: string[], snapshots?: ChangeEntry[]): Promise<void> {
   const sent = snapshots && new Map(snapshots.map((change) => [change.id, change]));
   await getChangeLogStore()("readwrite", (store) => {
-    for (const id of ids) {
-      const request = store.get(id);
-      request.onsuccess = () => {
-        const entry = request.result as ChangeEntry | undefined;
-        if (entry && (!sent || (sent.has(id) && sameChangeSnapshot(entry, sent.get(id)!)))) {
+    const done = promisifyRequest(store.transaction);
+    const work = inLiveTransaction(store, async () => {
+      for (const id of ids) {
+        const entry = await promisifyRequest<ChangeEntry | undefined>(store.get(id));
+        if (
+          entry &&
+          (!sent || (sent.has(id) && (await sameChangeSnapshot(entry, sent.get(id)!))))
+        ) {
+          await liveTransactionBoundary(store);
           store.put({ ...entry, synced: true }, id);
         }
-      };
-    }
-    return promisifyRequest(store.transaction);
+      }
+    });
+    return Promise.all([done, work]).then(() => {});
   });
 }
 
@@ -97,21 +141,32 @@ export async function markSynced(ids: string[], snapshots?: ChangeEntry[]): Prom
  * Remove all synced changes from the store to reclaim space.
  * Call this periodically or after confirming server persistence.
  */
-export async function clearSyncedChanges(): Promise<number> {
+export async function clearSyncedChanges(
+  ownerId?: string,
+  receivedSnapshots: ChangeEntry[] = [],
+): Promise<number> {
   let cleared = 0;
-  await getChangeLogStore()("readwrite", (store) => {
-    const request = store.openCursor();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) return;
-      if (cursor.value?.synced === true) {
-        cursor.delete();
-        cleared++;
-      }
-      cursor.continue();
-    };
-    return promisifyRequest(store.transaction);
-  });
+  for (const [id, entry] of (await entries<string, ChangeEntry>(getChangeLogStore())).filter(
+    isWellFormedEntry,
+  )) {
+    if (entry?.synced !== true || (ownerId && entry.ownerId && ownerId !== entry.ownerId)) continue;
+    const receipt = receivedSnapshots.find((snapshot) => snapshot.id === id);
+    const covered =
+      receipt &&
+      (await equalRaw(receipt.data, JSON.parse(JSON.stringify(receipt)).data)) &&
+      Object.is(receipt.timestamp, JSON.parse(JSON.stringify(receipt)).timestamp)
+        ? { ...receipt, synced: true }
+        : undefined;
+    // Deletion itself revalidates the preimage after private retention.
+    await custodyDelete(
+      id,
+      getChangeLogStore(),
+      (current) =>
+        !!current && typeof current === "object" && "synced" in current && current.synced === true,
+      covered,
+    );
+    cleared++;
+  }
   return cleared;
 }
 
@@ -130,13 +185,17 @@ export async function recordPushFailures(
 ): Promise<void> {
   const sent = snapshots && new Map(snapshots.map((change) => [change.id, change]));
   await getChangeLogStore()("readwrite", (store) => {
-    for (const failure of failures) {
-      const request = store.get(failure.id);
-      request.onsuccess = () => {
-        const entry = request.result as ChangeEntry | undefined;
-        if (!entry || entry.synced) return;
-        if (sent && (!sent.has(entry.id) || !sameChangeSnapshot(entry, sent.get(entry.id)!)))
-          return;
+    const done = promisifyRequest(store.transaction);
+    const work = inLiveTransaction(store, async () => {
+      for (const failure of failures) {
+        const entry = await promisifyRequest<ChangeEntry | undefined>(store.get(failure.id));
+        if (!entry || entry.synced) continue;
+        if (
+          sent &&
+          (!sent.has(entry.id) || !(await sameChangeSnapshot(entry, sent.get(entry.id)!)))
+        )
+          continue;
+        await liveTransactionBoundary(store);
         const attempts = (entry.failure?.attempts ?? 0) + 1;
         const retryable = failure.retryable !== false;
         // Start at the normal push interval; cap delay at 30 minutes, never attempts.
@@ -154,68 +213,52 @@ export async function recordPushFailures(
           },
           failure.id,
         );
-      };
-    }
-    return promisifyRequest(store.transaction);
+      }
+    });
+    return Promise.all([done, work]).then(() => {});
   });
 }
 
 /** Rewrite even blocked entries in one transaction. A sent old revision cannot acknowledge this one. */
 export async function remapQueuedChanges(ownerId: string, remaps: BookIdRemap[]): Promise<boolean> {
   let changed = false;
-  await getChangeLogStore()("readwrite", (store) => {
-    const request = store.openCursor();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) return;
-      const entry = cursor.value as ChangeEntry;
-      if (isUnsyncedChangeEntry(entry) && (!entry.ownerId || entry.ownerId === ownerId)) {
-        const rewritten = remaps.reduce(remapChange, entry);
-        if (rewritten !== entry) {
-          cursor.update({ ...rewritten, ownerId, revision: (entry.revision ?? 0) + 1 });
-          changed = true;
-        }
-      }
-      cursor.continue();
-    };
-    return promisifyRequest(store.transaction);
-  });
+  for (const entry of await getUnsyncedChanges(ownerId)) {
+    await custodyUpdate<ChangeEntry>(
+      entry.id,
+      (current) => {
+        if (!current || current.synced || (current.ownerId && current.ownerId !== ownerId))
+          return current;
+        const rewritten = remaps.reduce(remapChange, current);
+        if (rewritten === current) return current;
+        changed = true;
+        return { ...rewritten, ownerId, revision: (current.revision ?? 0) + 1 };
+      },
+      getChangeLogStore(),
+      { ownerId },
+    );
+  }
   return changed;
 }
 
-/** A late unowned producer still belongs to the account owning its explicit alias. */
+/** Alias authority can first-bind late unowned legacy mutations, never a foreign one. */
 export async function assignRemapOwners(
   remaps: Array<BookIdRemap & { ownerId: string }>,
 ): Promise<void> {
   if (!remaps.length) return;
-  let ambiguous = false;
-  try {
-    await getChangeLogStore()("readwrite", (store) => {
-      const request = store.openCursor();
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor) return;
-        const entry = cursor.value as ChangeEntry;
-        if (isUnsyncedChangeEntry(entry) && !entry.ownerId) {
-          const owners = new Set(
-            remaps
-              .filter((remap) => referencesRemappedBook(entry, remap))
-              .map((remap) => remap.ownerId),
-          );
-          if (owners.size > 1) {
-            ambiguous = true;
-            store.transaction.abort();
-            return;
-          }
-          if (owners.size === 1) cursor.update({ ...entry, ownerId: [...owners][0] });
-        }
-        cursor.continue();
-      };
-      return promisifyRequest(store.transaction);
-    });
-  } catch (error) {
-    if (ambiguous) throw new Error("Ambiguous remap owner; outgoing changes retained");
-    throw error;
+  for (const entry of await getUnsyncedChanges()) {
+    if (entry.ownerId) continue;
+    const owners = new Set(
+      remaps.filter((remap) => referencesRemappedBook(entry, remap)).map((remap) => remap.ownerId),
+    );
+    if (owners.size > 1) throw new Error("Ambiguous remap owner; outgoing changes retained");
+    const ownerId = [...owners][0];
+    if (!ownerId) continue;
+    await custodyUpdate<ChangeEntry>(
+      entry.id,
+      (current) => (current && !current.ownerId ? { ...current, ownerId } : current),
+      getChangeLogStore(),
+      { ownerId },
+    );
   }
 }
 
@@ -240,40 +283,45 @@ const replayFields: Partial<Record<ChangeEntry["entity"], string[]>> = {
   chat_session: ["id", "bookId", "title", "createdAt", "deletedAt"],
 };
 
-function replayContent(change: ChangeEntry): string | undefined {
+function replayContent(change: ChangeEntry): unknown {
   const fields = replayFields[change.entity];
   const data = change.data as Record<string, unknown> | null;
-  return JSON.stringify(fields && data ? fields.map((field) => data[field]) : data);
+  return fields && data ? fields.map((field) => data[field]) : data;
 }
 
-/** Preserve a surviving local snapshot before its old storage key is removed. */
+/** Preserve raw input even when it cannot be replayed with a valid clock. */
 export async function retainRemapReplay(
   ownerId: string,
   remap: BookIdRemap,
   input: Pick<ChangeEntry, "entity" | "entityId" | "operation" | "data" | "timestamp">,
 ): Promise<void> {
-  // A legacy record with no source clock must not acquire a fresh winning clock.
+  await retainCustody({
+    source: "remap-replay",
+    key: input.entityId,
+    raw: input,
+    role: "before",
+    ownerId,
+  });
   if (!Number.isFinite(input.timestamp)) return;
   const candidate = remapChange({ ...input, id: ulid(), synced: false, ownerId }, remap);
-  await getChangeLogStore()("readwrite", (store) => {
-    const request = store.getAll();
-    request.onsuccess = () => {
-      const exists = (request.result as ChangeEntry[]).some((entry) => {
-        if (!isUnsyncedChangeEntry(entry) || (entry.ownerId && entry.ownerId !== ownerId))
-          return false;
-        const rewritten = remapChange(entry, remap);
-        // Preserve the delivery state of equivalent payloads. A distinct local
-        // payload at the same clock must survive as an ambiguous conflict too.
-        return (
-          rewritten.entity === candidate.entity &&
-          rewritten.entityId === candidate.entityId &&
-          rewritten.timestamp === candidate.timestamp &&
-          rewritten.operation === candidate.operation &&
-          replayContent(rewritten) === replayContent(candidate)
-        );
-      });
-      if (!exists) store.put(candidate, candidate.id);
-    };
-    return promisifyRequest(store.transaction);
+  // Shared projection equality is an optimization only; private custody exists first.
+  for (const entry of await getUnsyncedChanges(ownerId)) {
+    const rewritten = remapChange(entry, remap);
+    if (
+      rewritten.entity === candidate.entity &&
+      rewritten.entityId === candidate.entityId &&
+      rewritten.operation === candidate.operation &&
+      Object.is(rewritten.timestamp, candidate.timestamp) &&
+      (await equalRaw(replayContent(rewritten), replayContent(candidate)))
+    )
+      return;
+  }
+  await retainCustody({
+    source: "changelog",
+    key: candidate.id,
+    raw: candidate,
+    role: "transport",
+    ownerId,
   });
+  await set(candidate.id, candidate, getChangeLogStore());
 }

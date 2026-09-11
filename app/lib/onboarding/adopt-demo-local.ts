@@ -1,4 +1,5 @@
-import { get, set, update, promisifyRequest } from "idb-keyval";
+import { custodyUpdate } from "~/lib/sync/custody-write";
+import { get, set, update } from "idb-keyval";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "./demo-content";
 import type { BookMeta } from "~/lib/stores/book-store";
 import type { ChatSession } from "~/lib/stores/chat-store";
@@ -61,48 +62,48 @@ export async function rewriteReservedDemoChanges(userId: string): Promise<void> 
   const intent = await get<DemoAdoptionIntent>(ADOPTION_KEY, getSyncFlagsStore());
   if (!intent || intent.ownerId !== userId) return;
   await assertAdoptionOwner(userId, intent);
-  await getChangeLogStore()("readwrite", (store) => {
-    const request = store.openCursor();
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) return;
-      const change = cursor.value as ChangeEntry;
-      if (
-        change &&
-        change.synced === false &&
-        (!change.ownerId || change.ownerId === intent.ownerId)
-      ) {
-        let entityId = change.entityId;
-        let data = change.data;
-        if (change.entity === "book" && entityId === DEMO_BOOK_ID) {
-          const book = data as LocalBook | undefined;
-          if (!book?.canonicalId) {
-            entityId = intent.bookId;
-            if (book) data = { ...book, id: entityId };
+  for (const pending of await getUnsyncedChanges(userId)) {
+    await custodyUpdate<ChangeEntry>(
+      pending.id,
+      (change) => {
+        if (
+          change &&
+          change.synced === false &&
+          (!change.ownerId || change.ownerId === intent.ownerId)
+        ) {
+          let entityId = change.entityId;
+          let data = change.data;
+          if (change.entity === "book" && entityId === DEMO_BOOK_ID) {
+            const book = data as LocalBook | undefined;
+            if (!book?.canonicalId) {
+              entityId = intent.bookId;
+              if (book) data = { ...book, id: entityId };
+            }
+          }
+          if (change.entity === "chat_session" && entityId === DEMO_CHAT_SESSION.id)
+            entityId = intent.sessionId;
+          if (data && typeof data === "object" && change.entity !== "settings") {
+            const record = data as Record<string, unknown>;
+            if (record.id === DEMO_CHAT_SESSION.id) data = { ...record, id: intent.sessionId };
+            if (record.sessionId === DEMO_CHAT_SESSION.id)
+              data = { ...(data as object), sessionId: intent.sessionId };
+          }
+          if (data !== change.data || entityId !== change.entityId) {
+            return {
+              ...change,
+              entityId,
+              data,
+              ownerId: intent.ownerId,
+              revision: (change.revision ?? 0) + 1,
+            };
           }
         }
-        if (change.entity === "chat_session" && entityId === DEMO_CHAT_SESSION.id)
-          entityId = intent.sessionId;
-        if (data && typeof data === "object" && change.entity !== "settings") {
-          const record = data as Record<string, unknown>;
-          if (record.id === DEMO_CHAT_SESSION.id) data = { ...record, id: intent.sessionId };
-          if (record.sessionId === DEMO_CHAT_SESSION.id)
-            data = { ...(data as object), sessionId: intent.sessionId };
-        }
-        if (data !== change.data || entityId !== change.entityId) {
-          cursor.update({
-            ...change,
-            entityId,
-            data,
-            ownerId: intent.ownerId,
-            revision: (change.revision ?? 0) + 1,
-          });
-        }
-      }
-      cursor.continue();
-    };
-    return promisifyRequest(store.transaction);
-  });
+        return change;
+      },
+      getChangeLogStore(),
+      { ownerId: userId },
+    );
+  }
 }
 
 export async function resolveAdoptedDemo(userId: string): Promise<AdoptedDemo> {

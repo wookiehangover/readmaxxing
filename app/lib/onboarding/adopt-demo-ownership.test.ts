@@ -65,29 +65,31 @@ it("repairs canonical sessions only after their messages merge during the same p
   await persistBookRemap("reader", adopted.bookId, "canonical");
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () =>
-      Response.json({
-        changes: [
-          {
-            entity: "chat_session",
-            records: [{ ...DEMO_CHAT_SESSION, bookId: "canonical" }],
-            cursor: new Date().toISOString(),
-          },
-          {
-            entity: "chat_message",
-            records: [
+    vi.fn(async (url) =>
+      String(url).includes("book-aliases")
+        ? Response.json({ ownerId: "reader", aliases: [], cursor: "0", hasMore: false })
+        : Response.json({
+            changes: [
               {
-                id: "pulled-message",
-                sessionId: DEMO_CHAT_SESSION.id,
-                content: "Keep this incoming message too",
-                role: "user",
-                createdAt: 170,
+                entity: "chat_session",
+                records: [{ ...DEMO_CHAT_SESSION, bookId: "canonical" }],
+                cursor: new Date().toISOString(),
+              },
+              {
+                entity: "chat_message",
+                records: [
+                  {
+                    id: "pulled-message",
+                    sessionId: DEMO_CHAT_SESSION.id,
+                    content: "Keep this incoming message too",
+                    role: "user",
+                    createdAt: 170,
+                  },
+                ],
+                cursor: new Date().toISOString(),
               },
             ],
-            cursor: new Date().toISOString(),
-          },
-        ],
-      }),
+          }),
     ),
   );
   await pullChanges({ userId: "reader", isStopped: () => false });

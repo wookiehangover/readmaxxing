@@ -30,6 +30,9 @@ function makeChange(overrides: Partial<ChangeEntry> = {}): ChangeEntry {
 describe("change-log entry guards", () => {
   beforeEach(async () => {
     entriesMock.mockReset();
+    entriesMock.mockImplementation(
+      (await vi.importActual<typeof import("idb-keyval")>("idb-keyval")).entries,
+    );
     await clear(getChangeLogStore());
   });
 

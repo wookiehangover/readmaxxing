@@ -1,6 +1,9 @@
 import { get, promisifyRequest, type UseStore } from "idb-keyval";
+import { retainCustody, storeIdentity, validateCustodyOwner } from "./custody-journal";
+import { custodySession } from "./custody-session";
+import { equalRaw, inLiveTransaction, liveTransactionBoundary } from "./raw-snapshot";
 
-/** Each database move is atomic; its cross-database replay is durable first. */
+/** Source, target and intended revisions have custody before a conditional atomic move. */
 export async function moveRemapRecord<T>(
   useStore: UseStore,
   fromKey: string,
@@ -11,39 +14,61 @@ export async function moveRemapRecord<T>(
     prepare?: (source: T) => Promise<void>;
     keepSource?: (source: T) => T;
     checkActive?: () => void;
+    ownerId?: string;
   } = {},
 ): Promise<boolean> {
-  for (;;) {
+  const session = custodySession(options.ownerId);
+  const source = await storeIdentity(useStore);
+  const operationId = crypto.randomUUID();
+  const check = () => {
+    session.checkActive();
     options.checkActive?.();
+  };
+  for (;;) {
+    check();
     const snapshot = await get<T>(fromKey, useStore);
     if (snapshot === undefined || (options.matches && !options.matches(snapshot))) return false;
+    const target = await get<T>(toKey, useStore);
+    await validateCustodyOwner(session.ownerId, snapshot, source, fromKey);
+    await validateCustodyOwner(session.ownerId, target, source, toKey);
+    const merged = merge(structuredClone(snapshot), structuredClone(target));
+    const kept = options.keepSource?.(structuredClone(snapshot));
+    for (const [key, raw, role] of [
+      [fromKey, snapshot, "before"],
+      [toKey, target, "before"],
+      [toKey, merged, "intended"],
+      [fromKey, kept, "intended"],
+    ] as const) {
+      if (raw !== undefined)
+        await retainCustody({ source, key, raw, role, operationId, ownerId: session.ownerId });
+    }
+    if (
+      !(await equalRaw(snapshot, structuredClone(snapshot))) ||
+      !(await equalRaw(target, structuredClone(target)))
+    )
+      throw new Error("Unsupported raw kind retained before remap");
     await options.prepare?.(snapshot);
-    options.checkActive?.();
+    check();
     let retry = false;
-    let changed = false;
     await useStore("readwrite", (store) => {
-      const sourceRequest = store.get(fromKey);
-      const targetRequest = store.get(toKey);
-      targetRequest.onsuccess = () => {
-        const source = sourceRequest.result as T | undefined;
-        if (source === undefined || (options.matches && !options.matches(source))) return;
-        // A producer edited the source during replay preparation. Preserve that
-        // version too before moving it; never delete a snapshot we did not retain.
-        if (options.prepare && JSON.stringify(source) !== JSON.stringify(snapshot)) {
+      const done = promisifyRequest(store.transaction);
+      const work = inLiveTransaction(store, async () => {
+        const current = await promisifyRequest<T | undefined>(store.get(fromKey));
+        const currentTarget = await promisifyRequest<T | undefined>(store.get(toKey));
+        if (!(await equalRaw(current, snapshot)) || !(await equalRaw(currentTarget, target))) {
           retry = true;
           return;
         }
-        const target = targetRequest.result as T | undefined;
-        const merged = merge(source, target);
+        await liveTransactionBoundary(store);
+        check();
         if (merged !== undefined) store.put(merged, toKey);
         if (fromKey !== toKey) {
-          if (options.keepSource) store.put(options.keepSource(source), fromKey);
+          if (kept !== undefined) store.put(kept, fromKey);
           else store.delete(fromKey);
         }
-        changed = true;
-      };
-      return promisifyRequest(store.transaction);
+      });
+      return Promise.all([done, work]).then(() => {});
     });
-    if (!retry) return changed;
+    if (!retry) return true;
   }
 }

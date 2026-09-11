@@ -105,7 +105,9 @@ it.each([true, false])(
           title: "Existing cloud",
         }),
       );
-      expect(paths[0]).toMatch(/^\/api\/sync\/pull/);
+      expect(paths.find((path) => !path.startsWith("/api/sync/book-aliases"))).toMatch(
+        /^\/api\/sync\/pull/,
+      );
       const pending = await getUnsyncedChanges();
       expect(pending.some((change) => change.entity === "book" && !change.synced)).toBe(true);
       expect(await get("demo-adoption", stores.getSyncFlagsStore())).toMatchObject({
@@ -253,6 +255,8 @@ it("keeps a replaced account's late initialization and auth-expiry callback from
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url) => {
+      if (String(url).startsWith("/api/sync/book-aliases"))
+        return new Response(null, { status: 503 });
       expect(String(url)).toMatch(/^\/api\/sync\/pull/);
       pulls++;
       return Response.json({ changes: [] });

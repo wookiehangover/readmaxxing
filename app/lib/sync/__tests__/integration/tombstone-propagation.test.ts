@@ -75,6 +75,10 @@ describe("integration: cross-device tombstone propagation", () => {
     // Route fetch based on URL so one test can exercise push and pull.
     const fetchMock = vi.fn((url: string | URL, init?: RequestInit) => {
       const u = String(url);
+      if (u.includes("/api/sync/book-aliases"))
+        return Promise.resolve(
+          Response.json({ ownerId: "user-test", aliases: [], cursor: "0", hasMore: false }),
+        );
       if (u.includes("/api/sync/push")) return relay.push(u, init);
       if (u.includes("/api/sync/pull")) return relay.pull();
       throw new Error(`unexpected fetch url: ${u}`);

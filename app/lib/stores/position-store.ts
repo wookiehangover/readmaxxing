@@ -1,4 +1,5 @@
-import { get, set } from "idb-keyval";
+import { get } from "idb-keyval";
+import { custodySet as set } from "~/lib/sync/custody-write";
 import type { UseStore } from "idb-keyval";
 import { PositionError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
@@ -69,14 +70,21 @@ export function makePositionService(stores: PositionServiceStores) {
   const { positionStore } = stores;
   const pendingLocalOnlyChanges = new Map<string, PositionRecord>();
 
-  const enqueuePositionChange = (bookId: string, record: PositionRecord) => {
-    recordChange({
-      entity: "position",
-      entityId: bookId,
-      operation: "put",
-      data: record,
-      timestamp: record.updatedAt,
-    }).catch(console.error);
+  const enqueuePositionChange = async (
+    bookId: string,
+    record: PositionRecord,
+    persist?: () => Promise<unknown>,
+  ) => {
+    await recordChange(
+      {
+        entity: "position",
+        entityId: bookId,
+        operation: "put",
+        data: record,
+        timestamp: record.updatedAt,
+      },
+      persist,
+    );
   };
 
   return {
@@ -115,7 +123,7 @@ export function makePositionService(stores: PositionServiceStores) {
           }
           if (shouldRecordChange && pending?.cfi === cfi) {
             pendingLocalOnlyChanges.delete(bookId);
-            enqueuePositionChange(bookId, record);
+            await enqueuePositionChange(bookId, record);
           }
           return;
         }
@@ -126,11 +134,11 @@ export function makePositionService(stores: PositionServiceStores) {
           ...(localProgression !== undefined ? { localProgression } : {}),
           ...(spineIndex !== undefined ? { spineIndex } : {}),
         };
-        await set(bookId, record, positionStore);
         if (shouldRecordChange) {
+          await enqueuePositionChange(bookId, record, () => set(bookId, record, positionStore));
           pendingLocalOnlyChanges.delete(bookId);
-          enqueuePositionChange(bookId, record);
         } else {
+          await set(bookId, record, positionStore);
           pendingLocalOnlyChanges.set(bookId, record);
         }
       } catch (cause) {

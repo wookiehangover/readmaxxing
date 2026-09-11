@@ -56,6 +56,13 @@ function makeServer(options: { rejectFirstBookPush?: boolean } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
 
+    if (url.startsWith("/api/sync/book-aliases?"))
+      return Response.json({
+        ownerId: "user-after-login",
+        aliases: [],
+        cursor: "0",
+        hasMore: false,
+      });
     if (url.startsWith("/api/sync/pull?")) {
       requests.push({ url, status: 200 });
       return Response.json({ changes: [], serverTimestamp: new Date().toISOString() });
@@ -384,7 +391,9 @@ describe("integration: signed-out book import and authenticated sync startup", (
         .slice(0, pushRequestIndexes[acceptedRetryIndex])
         .some((request) => request.url === "/api/sync/files/upload"),
     ).toBe(false);
-    expect(server.requests).toContainEqual({ url: "/api/sync/files/upload", status: 200 });
+    await vi.waitFor(() =>
+      expect(server.requests).toContainEqual({ url: "/api/sync/files/upload", status: 200 }),
+    );
     expect(
       (await getUnsyncedChanges()).some((change) => rejectedChangeIds.includes(change.id)),
     ).toBe(false);
@@ -412,7 +421,9 @@ describe("integration: signed-out book import and authenticated sync startup", (
     expect(reconciledPush?.body.changes).toContainEqual(
       expect.objectContaining({ entity: "book", entityId: book.id, operation: "put" }),
     );
-    expect(server.requests).toContainEqual({ url: "/api/sync/files/upload", status: 200 });
+    await vi.waitFor(() =>
+      expect(server.requests).toContainEqual({ url: "/api/sync/files/upload", status: 200 }),
+    );
     expect(server.requests.findIndex((request) => request.url === "/api/sync/push")).toBeLessThan(
       server.requests.findIndex((request) => request.url === "/api/sync/files/upload"),
     );

@@ -53,12 +53,15 @@ describe("integration: cursor advance rewinds 1ms", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
-        async () =>
+        async (url: string) =>
           ({
             ok: true,
             status: 200,
             statusText: "OK",
-            json: async () => response,
+            json: async () =>
+              url.includes("book-aliases")
+                ? { ownerId: "user-test", aliases: [], cursor: "0", hasMore: false }
+                : response,
           }) as unknown as Response,
       ),
     );

@@ -6,7 +6,9 @@ const Effect = { runPromise: <A>(promise: Promise<A>) => promise };
 // Mock the sync changelog so we can assert on recordChange invocations
 // without touching the real changelog IDB store.
 vi.mock("~/lib/sync/change-log", () => ({
-  recordChange: vi.fn().mockResolvedValue(undefined),
+  recordChange: vi.fn(async (_entry, persist) => {
+    await persist?.();
+  }),
 }));
 
 import { recordChange } from "~/lib/sync/change-log";
@@ -113,7 +115,7 @@ describe("savePosition", () => {
     await Effect.runPromise(service.savePosition("book-7", "epubcfi(/6/7)"));
 
     expect(recordChange).toHaveBeenCalledTimes(1);
-    expect(recordChange).toHaveBeenCalledWith(
+    expect(vi.mocked(recordChange).mock.calls[0][0]).toEqual(
       expect.objectContaining({
         entity: "position",
         entityId: "book-7",
@@ -208,7 +210,7 @@ describe("savePosition", () => {
     await Effect.runPromise(service.savePosition("book-11", debouncedCfi));
 
     expect(recordChange).toHaveBeenCalledTimes(1);
-    expect(recordChange).toHaveBeenCalledWith(
+    expect(vi.mocked(recordChange).mock.calls[0][0]).toEqual(
       expect.objectContaining({
         entity: "position",
         entityId: "book-11",

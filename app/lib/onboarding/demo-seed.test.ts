@@ -29,7 +29,9 @@ import {
 } from "~/lib/sync/stores";
 
 vi.mock("~/lib/sync/change-log", () => ({
-  recordChange: vi.fn().mockResolvedValue(undefined),
+  recordChange: vi.fn(async (_entry, persist) => {
+    await persist?.();
+  }),
 }));
 
 const OTHER_BOOK_ID = "onboarding-test-other-book";

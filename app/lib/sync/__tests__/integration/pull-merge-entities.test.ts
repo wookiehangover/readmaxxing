@@ -125,6 +125,8 @@ describe("integration: pull merge applies mergers for every entity group", () =>
     };
 
     const fetchMock = vi.fn(async (url: string | URL) => {
+      if (String(url).includes("book-aliases"))
+        return Response.json({ ownerId: "user-test", aliases: [], cursor: "0", hasMore: false });
       expect(String(url)).toContain("/api/sync/pull");
       return {
         ok: true,
@@ -248,8 +250,12 @@ describe("integration: pull merge applies mergers for every entity group", () =>
       },
     ];
 
+    let pullCount = 0;
     const fetchMock = vi.fn(async (input: string | URL) => {
-      if (fetchMock.mock.calls.length === 2) {
+      if (String(input).includes("book-aliases"))
+        return Response.json({ ownerId: "user-test", aliases: [], cursor: "0", hasMore: false });
+      pullCount++;
+      if (pullCount === 2) {
         const url = new URL(String(input), "https://readmax.test");
         expect(url.searchParams.get("entityType")).toBe("chat_session,chat_message");
         expect(JSON.parse(url.searchParams.get("cursors") ?? "[]")).toEqual([
@@ -257,7 +263,7 @@ describe("integration: pull merge applies mergers for every entity group", () =>
         ]);
       }
 
-      const response = responses[fetchMock.mock.calls.length - 1];
+      const response = responses[pullCount - 1];
       return {
         ok: true,
         status: 200,
@@ -270,7 +276,7 @@ describe("integration: pull merge applies mergers for every entity group", () =>
     const engine = makeSyncEngine({ userId: "user-test" });
     await engine.pullChanges();
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(pullCount).toBe(2);
     const sessions = await get<
       Array<{ id: string; messages: Array<{ id: string; content: string }> }>
     >("book-1", chatSessionStore);

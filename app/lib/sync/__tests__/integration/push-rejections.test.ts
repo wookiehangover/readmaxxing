@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clear, entries } from "idb-keyval";
 import { getUnsyncedChanges, recordChange, recordPushFailures } from "../../change-log";
 import { pushChangesWithResult, PUSH_BATCH_SIZE, type PushContext } from "../../push";
-import { getBookStore, getChangeLogStore } from "../../stores";
+import {
+  getBookStore,
+  getChangeLogStore,
+  getCustodyStore,
+  getBookRemapStore,
+  getAliasProgressStore,
+} from "../../stores";
 import { makeSyncEngine } from "../../sync-engine";
 import type { ChangeEntry, SyncPushRequest } from "../../types";
 
@@ -36,7 +42,13 @@ function serverResponse(
 }
 
 beforeEach(async () => {
-  await Promise.all([clear(getChangeLogStore()), clear(getBookStore())]);
+  await Promise.all([
+    clear(getChangeLogStore()),
+    clear(getBookStore()),
+    clear(getCustodyStore()),
+    clear(getBookRemapStore()),
+    clear(getAliasProgressStore()),
+  ]);
   now = Date.now();
   vi.spyOn(Date, "now").mockImplementation(() => now);
   vi.spyOn(console, "warn").mockImplementation(() => {});

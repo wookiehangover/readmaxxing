@@ -32,6 +32,10 @@ afterEach(() => {
 describe("integration: installed Vercel Blob client upload handshakes", () => {
   it("bounds real missing-owner HTTP 400 handshakes without expiring auth or stopping sync", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/api/sync/book-aliases"))
+        return Promise.resolve(
+          Response.json({ ownerId: "user-after-login", aliases: [], cursor: "0", hasMore: false }),
+        );
       if (String(input).startsWith("/api/sync/pull?")) {
         return Response.json({ changes: [], serverTimestamp: new Date().toISOString() });
       }

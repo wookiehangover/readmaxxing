@@ -1,3 +1,4 @@
+import { equalRaw } from "./raw-snapshot";
 import type { ChangeEntry } from "./types";
 
 export interface BookIdRemap {
@@ -60,15 +61,15 @@ export function remapChange(change: ChangeEntry, remap: BookIdRemap): ChangeEntr
 }
 
 /** Failure bookkeeping can change while a request is in flight; its sent snapshot cannot. */
-export function sameChangeSnapshot(a: ChangeEntry, b: ChangeEntry): boolean {
+export async function sameChangeSnapshot(a: ChangeEntry, b: ChangeEntry): Promise<boolean> {
   return (
     a.id === b.id &&
     a.entity === b.entity &&
     a.entityId === b.entityId &&
     a.operation === b.operation &&
-    a.timestamp === b.timestamp &&
+    Object.is(a.timestamp, b.timestamp) &&
     (a.revision ?? 0) === (b.revision ?? 0) &&
     a.ownerId === b.ownerId &&
-    JSON.stringify(a.data) === JSON.stringify(b.data)
+    (await equalRaw(a.data, b.data))
   );
 }

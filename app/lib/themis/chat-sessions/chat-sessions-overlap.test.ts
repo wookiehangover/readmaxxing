@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/sync/change-log", () => ({
-  recordChange: vi.fn().mockResolvedValue(undefined),
+  recordChange: vi.fn(async (_entry, persist) => {
+    await persist?.();
+  }),
 }));
 
 import { ChatService } from "~/lib/stores/chat-store";

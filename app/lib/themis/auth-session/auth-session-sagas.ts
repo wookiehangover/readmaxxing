@@ -1,3 +1,4 @@
+import { setCustodyAccount } from "~/lib/sync/custody-session";
 import { actionChannel, call, fork, put, take, takeEvery } from "typed-redux-saga";
 
 import { authService, type AuthSession } from "~/lib/auth-service";
@@ -53,6 +54,7 @@ export function* refreshAuthSessionSaga(action: ReturnType<typeof refreshAuthSes
     return;
   }
 
+  yield* call(setCustodyAccount, session.user?.id);
   if (session.user) {
     try {
       if (yield* call(hasUnadoptedDemoBook)) {
@@ -86,6 +88,7 @@ export function* logoutSaga(action: ReturnType<typeof logoutRequested>) {
   const [onCompleted, onFailed] = action.payload;
   try {
     yield* call(authService.logout);
+    yield* call(setCustodyAccount, undefined);
     yield* put(authSessionCleared());
     yield* call(onCompleted);
   } catch (cause) {
@@ -181,7 +184,16 @@ export function* removePasskeySaga(action: ReturnType<typeof removePasskeyReques
   }
 }
 
+function* custodySessionResolvedSaga(action: ReturnType<typeof authSessionResolved>) {
+  yield* call(setCustodyAccount, action.payload[0]?.id);
+}
+function* custodySessionClearedSaga() {
+  yield* call(setCustodyAccount, undefined);
+}
+
 export function* authSessionSaga() {
+  yield* takeEvery(authSessionResolved, custodySessionResolvedSaga);
+  yield* takeEvery([authSessionCleared, authSessionFailed], custodySessionClearedSaga);
   yield* fork(watchAuthSessionRefreshes);
   yield* takeEvery(logoutRequested, logoutSaga);
   yield* takeEvery(registerRequested, registerSaga);

@@ -125,3 +125,17 @@ export function getBookRemapStore(): UseStore {
   if (!_bookRemapStore) _bookRemapStore = createStore("ebook-reader-book-remaps", "remaps");
   return _bookRemapStore;
 }
+
+let _custodyStore: UseStore | null = null;
+/** Private immutable snapshots and separate binding/receipt facts, unknown to old clients. */
+export function getCustodyStore(): UseStore {
+  if (!_custodyStore) _custodyStore = createStore("readmax-sync-custody-v1", "custody");
+  return _custodyStore;
+}
+
+let _aliasProgressStore: UseStore | null = null;
+export function getAliasProgressStore(): UseStore {
+  if (!_aliasProgressStore)
+    _aliasProgressStore = createStore("readmax-alias-progress-v1", "progress");
+  return _aliasProgressStore;
+}

@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/sync/change-log", () => ({
-  recordChange: vi.fn().mockResolvedValue(undefined),
+  recordChange: vi.fn(async (_entry, persist) => {
+    await persist?.();
+  }),
 }));
 
 import { recordChange } from "~/lib/sync/change-log";
@@ -45,8 +47,8 @@ beforeEach(() => {
 });
 
 describe("getSettings", () => {
-  it("persists grid as a local library layout", () => {
-    saveSettings({ ...getSettings(), libraryView: "grid" });
+  it("persists grid as a local library layout", async () => {
+    await saveSettings({ ...getSettings(), libraryView: "grid" });
     expect(getSettings().libraryView).toBe("grid");
     expect(JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!)).toMatchObject({
       libraryView: "grid",
@@ -87,7 +89,7 @@ describe("getSettings", () => {
 });
 
 describe("legacy migration", () => {
-  it("moves UI fields from legacy blob to local bucket on first read", () => {
+  it("reads legacy UI fields and migrates them after durable save", async () => {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -100,6 +102,7 @@ describe("legacy migration", () => {
       }),
     );
     const result = getSettings();
+    await saveSettings(getSettings());
     expect(result.theme).toBe("dark");
     expect(result.fontSize).toBe(120);
     expect(result.sidebarCollapsed).toBe(true);
@@ -121,7 +124,7 @@ describe("legacy migration", () => {
     expect(localRaw.libraryView).toBe("table");
   });
 
-  it("removes updatedAt timestamp during migration to prevent LWW conflicts", () => {
+  it("removes updatedAt timestamp during migration to prevent LWW conflicts", async () => {
     // Simulate legacy case: fontSize change bumped updatedAt to 5000
     localStorage.setItem(
       STORAGE_KEY,
@@ -135,6 +138,7 @@ describe("legacy migration", () => {
     );
 
     getSettings();
+    await saveSettings(getSettings());
 
     const syncedRaw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
     // After migration, updatedAt should be removed so remote synced settings
@@ -147,14 +151,16 @@ describe("legacy migration", () => {
     expect(syncedRaw.lineHeight).toBeUndefined();
   });
 
-  it("is idempotent when run twice", () => {
+  it("is idempotent when run twice", async () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ theme: "dark", sidebarCollapsed: true }));
     getSettings();
+    await saveSettings(getSettings());
     const after1 = {
       synced: localStorage.getItem(STORAGE_KEY),
       local: localStorage.getItem(LOCAL_UI_STORAGE_KEY),
     };
     getSettings();
+    await saveSettings(getSettings());
     const after2 = {
       synced: localStorage.getItem(STORAGE_KEY),
       local: localStorage.getItem(LOCAL_UI_STORAGE_KEY),
@@ -162,13 +168,14 @@ describe("legacy migration", () => {
     expect(after1).toEqual(after2);
   });
 
-  it("prefers existing local bucket values over legacy UI fields", () => {
+  it("prefers existing local bucket values over legacy UI fields", async () => {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ theme: "dark", sidebarCollapsed: true, libraryView: "table" }),
     );
     localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify({ sidebarCollapsed: false }));
     getSettings();
+    await saveSettings(getSettings());
     const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(localRaw.sidebarCollapsed).toBe(false);
     expect(localRaw.libraryView).toBe("table");
@@ -211,8 +218,8 @@ describe("normalizeLegacyFontSize (via getSettings)", () => {
 });
 
 describe("saveSettings", () => {
-  it("writes synced fields to the synced bucket and records a change", () => {
-    saveSettings({ ...defaultSettings, theme: "dark" });
+  it("writes synced fields to the synced bucket and records a change", async () => {
+    await saveSettings({ ...defaultSettings, theme: "dark" });
     const synced = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
     expect(synced.theme).toBe("dark");
     expect(synced.updatedAt).toEqual(expect.any(Number));
@@ -220,13 +227,13 @@ describe("saveSettings", () => {
       expect(synced).not.toHaveProperty(k);
     }
     expect(recordChange).toHaveBeenCalledTimes(1);
-    expect(recordChange).toHaveBeenCalledWith(
+    expect(vi.mocked(recordChange).mock.calls[0][0]).toEqual(
       expect.objectContaining({ entity: "settings", entityId: "user-settings" }),
     );
   });
 
-  it("writes local UI fields to the local bucket without recording a change", () => {
-    saveSettings({
+  it("writes local UI fields to the local bucket without recording a change", async () => {
+    await saveSettings({
       ...defaultSettings,
       sidebarCollapsed: true,
       libraryView: "table",
@@ -243,26 +250,26 @@ describe("saveSettings", () => {
     expect(recordChange).not.toHaveBeenCalled();
   });
 
-  it("records only once for a mixed synced+local update", () => {
-    saveSettings({ ...defaultSettings, theme: "dark", sidebarCollapsed: true });
+  it("records only once for a mixed synced+local update", async () => {
+    await saveSettings({ ...defaultSettings, theme: "dark", sidebarCollapsed: true });
     expect(recordChange).toHaveBeenCalledTimes(1);
     const syncedArg = vi.mocked(recordChange).mock.calls[0][0].data as Record<string, unknown>;
     expect(syncedArg).not.toHaveProperty("sidebarCollapsed");
     expect(syncedArg.theme).toBe("dark");
   });
 
-  it("does not stamp updatedAt when only local fields change", () => {
-    saveSettings({ ...defaultSettings, theme: "dark" });
+  it("does not stamp updatedAt when only local fields change", async () => {
+    await saveSettings({ ...defaultSettings, theme: "dark" });
     const stampedFirst = JSON.parse(localStorage.getItem(STORAGE_KEY)!).updatedAt;
     vi.mocked(recordChange).mockClear();
-    saveSettings({ ...defaultSettings, theme: "dark", sidebarCollapsed: true });
+    await saveSettings({ ...defaultSettings, theme: "dark", sidebarCollapsed: true });
     const stampedSecond = JSON.parse(localStorage.getItem(STORAGE_KEY)!).updatedAt;
     expect(stampedSecond).toBe(stampedFirst);
     expect(recordChange).not.toHaveBeenCalled();
   });
 
-  it("saves formatting preferences locally without syncing", () => {
-    saveSettings({
+  it("saves formatting preferences locally without syncing", async () => {
+    await saveSettings({
       ...defaultSettings,
       fontSize: 120,
       fontFamily: "Georgia",
@@ -285,8 +292,8 @@ describe("saveSettings", () => {
     expect(recordChange).not.toHaveBeenCalled();
   });
 
-  it("round-trips merged settings through getSettings", () => {
-    saveSettings({
+  it("round-trips merged settings through getSettings", async () => {
+    await saveSettings({
       ...defaultSettings,
       theme: "light",
       fontFamily: "Merriweather",
@@ -326,8 +333,8 @@ describe("standardEbooksView", () => {
     expect(settings.standardEbooksView).toBe("grid");
   });
 
-  it("persists separately from libraryView", () => {
-    saveSettings({
+  it("persists separately from libraryView", async () => {
+    await saveSettings({
       ...defaultSettings,
       libraryView: "grid",
       standardEbooksView: "table",
@@ -403,22 +410,22 @@ describe("focusedSplitRatio", () => {
     expect(getSettings().focusedSplitRatio).toBe(FOCUSED_SPLIT_RATIO_MAX);
   });
 
-  it("persists to the local bucket without recording a sync change", () => {
-    saveSettings({ ...defaultSettings, focusedSplitRatio: 0.65 });
+  it("persists to the local bucket without recording a sync change", async () => {
+    await saveSettings({ ...defaultSettings, focusedSplitRatio: 0.65 });
     const local = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(local.focusedSplitRatio).toBe(0.65);
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     expect(recordChange).not.toHaveBeenCalled();
   });
 
-  it("clamps an out-of-range value on write", () => {
-    saveSettings({ ...defaultSettings, focusedSplitRatio: 0.99 });
+  it("clamps an out-of-range value on write", async () => {
+    await saveSettings({ ...defaultSettings, focusedSplitRatio: 0.99 });
     const local = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(local.focusedSplitRatio).toBe(FOCUSED_SPLIT_RATIO_MAX);
   });
 
-  it("round-trips a valid value through saveSettings → getSettings", () => {
-    saveSettings({ ...defaultSettings, focusedSplitRatio: 0.6 });
+  it("round-trips a valid value through saveSettings → getSettings", async () => {
+    await saveSettings({ ...defaultSettings, focusedSplitRatio: 0.6 });
     expect(getSettings().focusedSplitRatio).toBe(0.6);
   });
 });

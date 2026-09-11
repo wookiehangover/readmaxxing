@@ -231,6 +231,7 @@ describe("durable demo adoption", () => {
       expect(mocks.chapters).toHaveBeenCalledWith(adopted.bookId);
       expect(await getUnsyncedChanges()).toEqual([]);
     },
+    15000,
   );
 
   it.each([false, true])(

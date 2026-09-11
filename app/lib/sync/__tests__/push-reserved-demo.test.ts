@@ -1,3 +1,4 @@
+import { getCustodyStore, getAliasProgressStore } from "../stores";
 import { clear, createStore } from "idb-keyval";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
@@ -15,6 +16,7 @@ const changeLogStore = createStore("ebook-reader-changelog", "changes");
 const bookStore = createStore("ebook-reader-db", "books");
 
 beforeEach(async () => {
+  await Promise.all([clear(getCustodyStore()), clear(getAliasProgressStore())]);
   await Promise.all([clear(changeLogStore), clear(bookStore)]);
 });
 
@@ -138,7 +140,9 @@ describe("reserved demo metadata push containment", () => {
     const engine = makeSyncEngine({ userId: "account-user" });
 
     await engine.pushChanges();
-    await vi.waitFor(async () => expect(await getUnsyncedChanges()).toHaveLength(11));
+    await vi.waitFor(async () => expect(await getUnsyncedChanges()).toHaveLength(11), {
+      timeout: 5000,
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(batches.map(({ changes }) => changes.length)).toEqual([

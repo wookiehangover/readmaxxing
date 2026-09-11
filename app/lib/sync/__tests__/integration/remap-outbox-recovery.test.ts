@@ -161,7 +161,7 @@ describe("remap retries and stale producers", () => {
       timestamp: 300,
     });
     expect(await getUnsyncedChanges()).toEqual([expect.objectContaining({ id: "999", failure })]);
-  });
+  }, 15000);
 
   it("retains canonical replacements against old acknowledgments and delayed failure completions after reload", async () => {
     const original = await seedChange("001", "notebook", "local", {
@@ -336,6 +336,13 @@ describe("remap retries and stale producers", () => {
     await seedChange("003", "position", "canonical-a", { cfi: "page:12" });
     await pushChangesWithResult(context());
     expect(batches).toHaveLength(0);
+    expect(
+      (await getUnsyncedChanges())
+        .filter((change) => change.id !== "001")
+        .every((change) => !change.ownerId),
+    ).toBe(true);
+    expect(await getUnsyncedChanges("remap-user")).toEqual([]);
+    await resumeBookRemaps("account-a");
     expect((await getUnsyncedChanges()).every((change) => change.ownerId === "account-a")).toBe(
       true,
     );

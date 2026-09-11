@@ -1,4 +1,5 @@
-import { get, set, entries } from "idb-keyval";
+import { get, entries } from "idb-keyval";
+import { custodyLocalStorageSet, custodySet as set } from "~/lib/sync/custody-write";
 import { isFurtherAlong } from "~/lib/position-compare";
 import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
 import { removeSessionLocally } from "~/lib/stores/chat-store";
@@ -353,7 +354,7 @@ export async function mergeSettingsRecord(record: Record<string, unknown>): Prom
 
   if (remoteUpdatedAt > localUpdatedAt) {
     const merged = { ...filteredRemote, updatedAt: remoteUpdatedAt };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+    await custodyLocalStorageSet(STORAGE_KEY, JSON.stringify(merged));
     queueMicrotask(() => {
       window.dispatchEvent(new CustomEvent("settings-changed"));
     });

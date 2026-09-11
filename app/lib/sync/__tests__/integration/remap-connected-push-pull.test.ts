@@ -4,10 +4,12 @@ import { clear, get, set, type UseStore } from "idb-keyval";
 import type { SQLQuery } from "pg-sql";
 import { BASE, USER, db, mocks, push, routeFetch, ctx } from "./push-route-harness";
 import { makeAnnotationService } from "~/lib/stores/annotations-store";
+import { loader as aliasLoader } from "~/routes/api.sync.book-aliases";
 import { action } from "~/routes/api.sync.push";
 import { loader } from "~/routes/api.sync.pull";
 import { pushChangesWithResult } from "../../push";
 import { pullChanges } from "../../pull";
+import { processDeliveries } from "~/lib/database/sync-delivery/worker";
 import { getUnsyncedChanges } from "../../change-log";
 import { getBookRemaps } from "../../remap-journal";
 import { clearAllCursors } from "../../sync-cursors";
@@ -42,6 +44,7 @@ function connectedFetch() {
   vi.stubGlobal("window", { dispatchEvent: vi.fn() });
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     const request = new Request(new URL(url, "https://test"), init);
+    if (url.startsWith("/api/sync/book-aliases")) return aliasLoader({ request });
     return url.startsWith("/api/sync/pull") ? loader({ request }) : action({ request });
   });
 }
@@ -141,7 +144,12 @@ describe("connected remap, retry, notebook and fresh pull", () => {
       return execute(query);
     });
     connectedFetch();
-    await expect(pushChangesWithResult(ctx())).rejects.toThrow("retained");
+    const received = await pushChangesWithResult(ctx());
+    expect(received?.rejected).toEqual([
+      expect.objectContaining({
+        deliveries: [expect.objectContaining({ state: "retry_pending" })],
+      }),
+    ]);
     expect(failed).toBe(true);
     expect((await getUnsyncedChanges()).some((change) => change.entity === "chat_message")).toBe(
       false,
@@ -149,12 +157,22 @@ describe("connected remap, retry, notebook and fresh pull", () => {
     expect(await get("canonical", stores.getChatSessionStore())).toMatchObject([
       { id: "session", messages: [{ id: "cached" }] },
     ]);
-    const rejected = (await getUnsyncedChanges()).find((change) => change.entity === "notebook")!;
-    expect(rejected).toMatchObject({
-      entityId: "canonical",
-      timestamp: BASE + 200,
-      failure: { retryable: true },
-    });
+    expect(await getUnsyncedChanges()).toHaveLength(5);
+    expect((await getUnsyncedChanges()).every((change) => change.revision === 1)).toBe(true);
+    const retained = (
+      await db.query(
+        "SELECT original_snapshot, state FROM readmax.sync_delivery_receipt WHERE entity = 'notebook'",
+      )
+    ).rows;
+    expect(retained).toEqual([
+      expect.objectContaining({
+        state: "retry_pending",
+        original_snapshot: expect.objectContaining({
+          timestamp: BASE + 200,
+          data: expect.objectContaining({ content: doc("pending notebook") }),
+        }),
+      }),
+    ]);
     expect((await db.query("SELECT * FROM readmax.notebook")).rows).toEqual([]);
     expect((await db.query("SELECT book_id FROM readmax.highlight")).rows).toEqual([
       { book_id: "canonical" },
@@ -172,13 +190,12 @@ describe("connected remap, retry, notebook and fresh pull", () => {
         true,
       ),
     );
-    await expect(pushChangesWithResult(ctx())).rejects.toThrow("retained");
-    expect(await getUnsyncedChanges()).toEqual([
-      expect.objectContaining({ id: rejected.id, timestamp: BASE + 200 }),
-    ]);
-    vi.spyOn(Date, "now").mockReturnValue(rejected.failure!.nextAttemptAt! + 1000);
     await pushChangesWithResult(ctx());
     expect(await getUnsyncedChanges()).toEqual([]);
+    await db.exec(
+      "UPDATE readmax.sync_delivery_receipt SET next_attempt_at = clock_timestamp() WHERE state = 'retry_pending'",
+    );
+    await processDeliveries(USER);
     const persisted = (
       await db.query<{ book_id: string; content: unknown; mutation_at: Date }>(
         "SELECT book_id, content, mutation_at FROM readmax.notebook",

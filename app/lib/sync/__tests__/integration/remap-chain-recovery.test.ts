@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clear, entries, get, set } from "idb-keyval";
 import { BASE, USER, OTHER_USER, db, push, routeFetch, ctx } from "./push-route-harness";
+import { loader as aliasLoader } from "~/routes/api.sync.book-aliases";
 import { action } from "~/routes/api.sync.push";
 import { loader } from "~/routes/api.sync.pull";
 import { getUnsyncedChanges } from "../../change-log";
@@ -220,6 +221,7 @@ describe("authoritative remap chain recovery", () => {
       vi.stubGlobal("window", { dispatchEvent: vi.fn() });
       vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
         const request = new Request(new URL(url, "https://test"), init);
+        if (url.startsWith("/api/sync/book-aliases")) return aliasLoader({ request });
         if (!url.startsWith("/api/sync/pull")) return action({ request });
         const response = await loader({ request });
         const body = (await response.json()) as SyncPullResponse;

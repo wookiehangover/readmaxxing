@@ -1,3 +1,4 @@
+import { getCustodyStore, getAliasProgressStore } from "../stores";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createStore, clear } from "idb-keyval";
 import { recordChange, getUnsyncedChanges } from "../change-log";
@@ -14,6 +15,7 @@ const changeLogStore = createStore("ebook-reader-changelog", "changes");
 const bookStore = createStore("ebook-reader-db", "books");
 
 beforeEach(async () => {
+  await Promise.all([clear(getCustodyStore()), clear(getAliasProgressStore())]);
   await Promise.all([clear(changeLogStore), clear(bookStore)]);
 });
 
@@ -60,11 +62,7 @@ describe("pushChanges batching", () => {
 
     // Follow-up pushes are scheduled via queueMicrotask. Poll until the
     // changelog drains, bounded so a bug can't hang the suite.
-    for (let i = 0; i < 50; i++) {
-      const remaining = await getUnsyncedChanges();
-      if (remaining.length === 0) break;
-      await new Promise((r) => setTimeout(r, 5));
-    }
+    await vi.waitFor(async () => expect(await getUnsyncedChanges()).toEqual([]), { timeout: 5000 });
 
     expect(batches).toHaveLength(3);
     expect(batches[0].changes).toHaveLength(50);

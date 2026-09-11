@@ -123,7 +123,7 @@ export async function resumeBookRemaps(
   };
   checkActive();
   const allIntents = await getBookRemaps();
-  await assignRemapOwners(allIntents);
+  await assignRemapOwners(allIntents.filter((intent) => intent.ownerId === ownerId));
   const intents = allIntents.filter((intent) => intent.ownerId === ownerId);
   if (!intents.length) return;
   const remaps = resolveRemaps(intents);
@@ -138,7 +138,11 @@ export async function resumeBookRemaps(
         remap.fromId,
         remap.toId,
         options.stores ?? getDefaultRemapStores(),
-        { checkActive, retainReplay: (change) => retainRemapReplay(ownerId, remap, change) },
+        {
+          ownerId,
+          checkActive,
+          retainReplay: (change) => retainRemapReplay(ownerId, remap, change),
+        },
       );
       // A stale producer may have written a source key we already visited.
       const passQueued = await remapQueuedChanges(ownerId, remaps);

@@ -2,6 +2,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { clear, get, set } from "idb-keyval";
 import { BASE, USER, db, push, pull, routeFetch } from "./push-route-harness";
+import { processDeliveries } from "~/lib/database/sync-delivery/worker";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
 import { persistAdoptedDemoContent } from "~/lib/onboarding/adopt-demo";
 import { getUnsyncedChanges } from "../../change-log";
@@ -82,18 +83,39 @@ it("adopts through the real route and SQL, preserves newer canonical notes, and 
   expect((await persistAdoptedDemoContent(USER)).bookId).toBe("canonical");
 });
 
-it("retains the original adoption when a disposable database lacks the mutation column", async () => {
+it("retains received adoption durably when application schema is temporarily unavailable", async () => {
   await db.exec("ALTER TABLE readmax.book RENAME COLUMN mutation_at TO unavailable_mutation_at");
+  let bookId = "";
   try {
-    await expect(persistAdoptedDemoContent(USER)).rejects.toThrow();
-    const pending = await getUnsyncedChanges();
-    const root = pending.find((change) => change.entity === "book")!;
-    expect(root.failure?.retryable).toBe(true);
-    expect(root.timestamp).toBe(BASE);
-    await expect(persistAdoptedDemoContent(USER)).rejects.toThrow();
-    expect(await getUnsyncedChanges()).toEqual(pending);
-    expect(await get(root.entityId, stores.getBookDataStore())).toBeInstanceOf(ArrayBuffer);
+    const adopted = await persistAdoptedDemoContent(USER);
+    bookId = adopted.bookId;
+    expect(await getUnsyncedChanges()).toEqual([]);
+    const rows = (
+      await db.query(
+        "SELECT original_snapshot, state FROM readmax.sync_delivery_receipt WHERE entity = 'book'",
+      )
+    ).rows;
+    expect(rows).toEqual([
+      expect.objectContaining({
+        state: "retry_pending",
+        original_snapshot: expect.objectContaining({
+          entityId: bookId,
+          timestamp: BASE,
+          data: expect.objectContaining({ title: "The Great Gatsby" }),
+        }),
+      }),
+    ]);
+    expect((await persistAdoptedDemoContent(USER)).bookId).toBe(bookId);
+    expect(await get(bookId, stores.getBookDataStore())).toBeInstanceOf(ArrayBuffer);
   } finally {
     await db.exec("ALTER TABLE readmax.book RENAME COLUMN unavailable_mutation_at TO mutation_at");
   }
+  await db.exec(
+    "UPDATE readmax.sync_delivery_receipt SET next_attempt_at = clock_timestamp() WHERE state = 'retry_pending'",
+  );
+  await processDeliveries(USER);
+  expect(
+    (await db.query("SELECT id, title, mutation_at FROM readmax.book WHERE id = $1", [bookId]))
+      .rows,
+  ).toEqual([{ id: bookId, title: "The Great Gatsby", mutation_at: new Date(BASE) }]);
 });
