@@ -70,6 +70,7 @@ export interface CustodyFacts {
   receiptId?: string;
   conflict?: boolean;
   retired?: boolean;
+  discarded?: boolean;
   acknowledged?: boolean;
   projectionId?: string;
 }
@@ -325,7 +326,16 @@ export async function getCustodyAccess(id: string, ownerId?: string) {
     ) {
       throw new Error("Local recovery item unavailable");
     }
-    return { item: metadata, facts: { ...facts, ownerId: facts.ownerId ?? groupOwner } };
+    return {
+      item: metadata,
+      facts: { ...facts, ownerId: facts.ownerId ?? groupOwner },
+      authorization: {
+        facts,
+        groupOwner,
+        partition,
+        bindings: bindingKeys.map((key, index) => [key, bindings[index]]),
+      },
+    };
   });
 }
 

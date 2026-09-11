@@ -37,6 +37,20 @@ function isUnsyncedChangeEntry(entry: unknown): entry is ChangeEntry {
 // Public API
 // ---------------------------------------------------------------------------
 
+/** The mutation owner assigns identity; recovery drafts use it without entering blind push. */
+export function createChangeEntry(
+  entry: Omit<ChangeEntry, "id" | "synced" | "failure">,
+): ChangeEntry {
+  const session = custodySession(entry.ownerId);
+  session.checkActive();
+  return {
+    ...structuredClone(entry),
+    ...(session.ownerId ? { ownerId: session.ownerId } : {}),
+    id: ulid(),
+    synced: false,
+  };
+}
+
 /**
  * Record a new change in the local change log.
  * Automatically generates a ULID and marks the entry as unsynced.
@@ -46,12 +60,7 @@ export async function recordChange(
   persist?: () => Promise<unknown>,
 ): Promise<ChangeEntry> {
   const session = custodySession(entry.ownerId);
-  const change: ChangeEntry = {
-    ...structuredClone(entry),
-    ...(session.ownerId ? { ownerId: session.ownerId } : {}),
-    id: ulid(),
-    synced: false,
-  };
+  const change = createChangeEntry(entry);
   const custodyId = await retainCustody({
     source: "changelog",
     key: change.id,

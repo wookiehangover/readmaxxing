@@ -40,8 +40,24 @@ try {
       await page.evaluate(async () => {
         window.journal = await import("/app/lib/sync/custody-journal.ts");
         window.recovery = await import("/app/lib/sync/custody-export.ts");
+        window.discard = await import("/app/lib/sync/custody-discard.ts");
         window.session = await import("/app/lib/sync/custody-session.ts");
       });
+    }
+    if (binding === "item") {
+      const removed = await a.evaluate(async () => {
+        const id = await window.journal.retainCustody({
+          source: "files",
+          key: "signed-out-discard",
+          raw: new Blob(["explicit local discard"]),
+          role: "intended",
+        });
+        const { version } = await window.recovery.localRecoveryDetail(id);
+        await window.discard.discardLocalRecovery({ id, expectedVersion: version });
+        return !(await window.recovery.localRecoverySummaries()).some((item) => item.id === id);
+      });
+      assert.equal(removed, true);
+      console.log("PASS signed-out exact Blob discard");
     }
     const ids = await a.evaluate(async (binding) => {
       const id = await window.journal.retainCustody({
@@ -62,7 +78,13 @@ try {
               role: "intended",
             });
       const unbound = await window.recovery.exportLocalRecovery(id);
-      return { id, claimId, unbound: new TextDecoder().decode(unbound.attachments[0].bytes) };
+      const { version } = await window.recovery.localRecoveryDetail(id);
+      return {
+        id,
+        claimId,
+        version,
+        unbound: new TextDecoder().decode(unbound.attachments[0].bytes),
+      };
     }, binding);
     assert.equal(ids.unbound, "account-bound unique bytes");
     await a.evaluate(() => window.session.setCustodyAccount("A"));
@@ -115,6 +137,24 @@ try {
     });
     console.log(
       `PASS ${binding} binding race: losing export rejected, same-owner raw/detail/export intact`,
+    );
+    const rejectedDiscard = await b.evaluate(async ({ id, version }) => {
+      try {
+        await window.discard.discardLocalRecovery({ id, expectedVersion: version, ownerId: "B" });
+        return false;
+      } catch {
+        return true;
+      }
+    }, ids);
+    assert.equal(rejectedDiscard, true);
+    const discarded = await a.evaluate(async (id) => {
+      const { version } = await window.recovery.localRecoveryDetail(id, "A");
+      await window.discard.discardLocalRecovery({ id, expectedVersion: version, ownerId: "A" });
+      return !(await window.recovery.localRecoverySummaries("A")).some((item) => item.id === id);
+    }, ids.id);
+    assert.equal(discarded, true);
+    console.log(
+      `PASS ${binding} discard: stale foreign review rejected, exact owner Blob snapshot removed`,
     );
     await context.close();
   }
