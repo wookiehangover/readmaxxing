@@ -1,3 +1,6 @@
+// Root runtime owns recovery saga startup after Store.init.
+// eslint-disable-next-line themis/react-forbidden-component-import
+import { createSyncRecoverySaga } from "./sync-recovery/sagas/sync-recovery-saga";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { annotationsSaga } from "~/lib/themis/annotations/annotations-sagas";
@@ -37,6 +40,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     const cancelReadingPositionsSaga = store.runSaga(readingPositionsSaga);
     const cancelReadingRailSaga = store.runSaga(readingRailSaga);
     const cancelReviewsSaga = store.runSaga(createReviewsSaga(store));
+    const cancelSyncRecoverySaga = store.runSaga(createSyncRecoverySaga(store));
     const cancelWorkspaceRestoreSaga = store.runSaga(workspaceRestoreSaga);
     store.dispatch(refreshAuthSessionRequested());
     store.dispatch(hydrateBooks());
@@ -44,6 +48,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setStoreStarted(true);
 
     return () => {
+      cancelSyncRecoverySaga();
       cancelWorkspaceRestoreSaga();
       cancelReviewsSaga();
       cancelReadingRailSaga();

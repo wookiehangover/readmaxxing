@@ -1,3 +1,6 @@
+import { RecoverySection } from "~/components/settings/recovery/recovery-section";
+import { useAppStore } from "~/lib/themis/provider";
+import { refreshRecovery, selectRecovery } from "~/lib/themis/sync-recovery/sync-recovery-slice";
 import { useState } from "react";
 import { Info, LogOut, MoreHorizontal } from "lucide-react";
 import { Link } from "react-router";
@@ -38,7 +41,14 @@ export function HydrateFallback() {
   );
 }
 
-type SettingsSectionId = "account" | "appearance" | "reading" | "bug-reports" | "updates" | "data";
+type SettingsSectionId =
+  | "account"
+  | "appearance"
+  | "reading"
+  | "bug-reports"
+  | "updates"
+  | "data"
+  | "recovery";
 
 const sections: { id: SettingsSectionId; label: string }[] = [
   { id: "appearance", label: "Appearance" },
@@ -47,6 +57,7 @@ const sections: { id: SettingsSectionId; label: string }[] = [
   { id: "bug-reports", label: "Bug reports" },
   { id: "updates", label: "Updates" },
   { id: "data", label: "Data" },
+  { id: "recovery", label: "Recovery" },
 ];
 
 function renderSection(section: SettingsSectionId) {
@@ -61,12 +72,15 @@ function renderSection(section: SettingsSectionId) {
       return <BugReportsSection />;
     case "updates":
       return <UpdatesSection />;
+    case "recovery":
+      return <RecoverySection />;
     case "data":
       return <DataSection />;
   }
 }
 
 export default function SettingsPage() {
+  const store = useAppStore();
   const { isAuthenticated, isLoading: isAuthLoading, logout } = useAuth();
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("appearance");
   const activeSectionLabel =
@@ -111,7 +125,11 @@ export default function SettingsPage() {
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setActiveSection(item.id)}
+                onClick={() => {
+                  setActiveSection(item.id);
+                  store.dispatch(selectRecovery(null));
+                  if (item.id === "recovery") store.dispatch(refreshRecovery(true));
+                }}
                 aria-pressed={activeSection === item.id}
                 className={cn("text-left text-sm leading-5 transition-colors", {
                   "text-foreground": activeSection === item.id,
