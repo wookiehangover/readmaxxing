@@ -1,4 +1,4 @@
-import { get, promisifyRequest, type UseStore } from "idb-keyval";
+import { promisifyRequest, type UseStore } from "idb-keyval";
 import { retainCustody, storeIdentity, validateCustodyOwner } from "./custody-journal";
 import { custodySession } from "./custody-session";
 import { equalRaw, inLiveTransaction, liveTransactionBoundary } from "./raw-snapshot";
@@ -26,20 +26,26 @@ export async function moveRemapRecord<T>(
   };
   for (;;) {
     check();
-    const snapshot = await get<T>(fromKey, useStore);
+    const [snapshot, sourcePresent, target, targetPresent] = await useStore("readonly", (store) =>
+      Promise.all([
+        promisifyRequest<T | undefined>(store.get(fromKey)),
+        promisifyRequest(store.count(fromKey)),
+        promisifyRequest<T | undefined>(store.get(toKey)),
+        promisifyRequest(store.count(toKey)),
+      ]),
+    );
     if (snapshot === undefined || (options.matches && !options.matches(snapshot))) return false;
-    const target = await get<T>(toKey, useStore);
     await validateCustodyOwner(session.ownerId, snapshot, source, fromKey);
     await validateCustodyOwner(session.ownerId, target, source, toKey);
     const merged = merge(structuredClone(snapshot), structuredClone(target));
     const kept = options.keepSource?.(structuredClone(snapshot));
-    for (const [key, raw, role] of [
-      [fromKey, snapshot, "before"],
-      [toKey, target, "before"],
-      [toKey, merged, "intended"],
-      [fromKey, kept, "intended"],
+    for (const [key, raw, role, present] of [
+      [fromKey, snapshot, "before", sourcePresent],
+      [toKey, target, "before", targetPresent],
+      [toKey, merged, "intended", merged !== undefined],
+      [fromKey, kept, "intended", kept !== undefined],
     ] as const) {
-      if (raw !== undefined)
+      if (present)
         await retainCustody({ source, key, raw, role, operationId, ownerId: session.ownerId });
     }
     if (
@@ -55,7 +61,14 @@ export async function moveRemapRecord<T>(
       const work = inLiveTransaction(store, async () => {
         const current = await promisifyRequest<T | undefined>(store.get(fromKey));
         const currentTarget = await promisifyRequest<T | undefined>(store.get(toKey));
-        if (!(await equalRaw(current, snapshot)) || !(await equalRaw(currentTarget, target))) {
+        const currentSourcePresent = await promisifyRequest(store.count(fromKey));
+        const currentTargetPresent = await promisifyRequest(store.count(toKey));
+        if (
+          currentSourcePresent !== sourcePresent ||
+          currentTargetPresent !== targetPresent ||
+          !(await equalRaw(current, snapshot)) ||
+          !(await equalRaw(currentTarget, target))
+        ) {
           retry = true;
           return;
         }
