@@ -13,6 +13,8 @@ test-results/
 .vercel
 .env*.local
 .pnpm-store
+packages/cli/dist/
+packages/cli/*.tgz
 
 data/
 tmp/

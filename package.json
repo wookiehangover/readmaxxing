@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "cli": "pnpm --silent --filter @readmaxxing/cli build && node packages/cli/bin/readmaxxing.mjs",
     "build": "react-router build && node ./scripts/patch-sw-index-html-revision.mjs",
     "dev": "react-router dev",
     "knip": "knip --workspace . --include files,dependencies,unlisted,unresolved",
