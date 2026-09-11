@@ -216,6 +216,7 @@ export async function insertTombstonedBook(
 export async function updateBookBlobUrls(
   bookId: string,
   urls: { fileBlobUrl?: string; coverBlobUrl?: string },
+  userId: string,
 ): Promise<BookRow | null> {
   const pool = getPool();
   const result = await pool.query<BookRow>(sql`
@@ -223,7 +224,8 @@ export async function updateBookBlobUrls(
     SET file_blob_url = COALESCE(${urls.fileBlobUrl ?? null}, file_blob_url),
         cover_blob_url = COALESCE(${urls.coverBlobUrl ?? null}, cover_blob_url),
         updated_at = GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond')
-    WHERE id = ${bookId}
+    WHERE id = ${bookId} AND user_id = ${userId}
+      AND deleted_at IS NULL AND canonical_id IS NULL
     RETURNING ${BOOK_COLUMNS}
   `);
 

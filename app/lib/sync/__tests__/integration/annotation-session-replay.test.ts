@@ -102,15 +102,18 @@ it.each(["highlight", "chat_session"] as const)(
       data: { ...(original.data as object), note: "unsaved note", title: "unsaved title" },
     });
     routeFetch();
-    await expect(pushChangesWithResult(ctx())).rejects.toThrow("share a mutation timestamp");
-    const [retained] = await getUnsyncedChanges();
-    expect(retained).toMatchObject({
-      id: conflicting.id,
-      data: conflicting.data,
-      failure: { retryable: true },
-    });
+    await pushChangesWithResult(ctx());
+    expect(await getUnsyncedChanges()).toEqual([]);
+    expect(
+      (
+        await db.query(
+          "SELECT original_snapshot->'data' AS data,state FROM readmax.sync_delivery_receipt WHERE change_id=$1",
+          [conflicting.id],
+        )
+      ).rows,
+    ).toEqual([{ data: conflicting.data, state: "needs_resolution" }]);
     expect(await row(entity)).toEqual(saved);
-    expect((await push([conflicting])).status).toBe(503);
+    expect((await push([conflicting])).status).toBe(200);
     expect(await row(entity)).toEqual(saved);
   },
 );
@@ -189,12 +192,16 @@ it("ambiguous legacy position collisions remain durable while exact replays are 
   const { id: _id, synced: _synced, ...input } = initial;
   const conflicting = await recordChange({ ...input, data: { cfi: "legacy-location-two" } });
   routeFetch();
-  await expect(pushChangesWithResult(ctx())).rejects.toThrow("share a mutation timestamp");
-  expect((await getUnsyncedChanges())[0]).toMatchObject({
-    id: conflicting.id,
-    data: conflicting.data,
-    failure: { retryable: true },
-  });
+  await pushChangesWithResult(ctx());
+  expect(await getUnsyncedChanges()).toEqual([]);
+  expect(
+    (
+      await db.query(
+        "SELECT original_snapshot->'data' AS data,state FROM readmax.sync_delivery_receipt WHERE change_id=$1",
+        [conflicting.id],
+      )
+    ).rows,
+  ).toEqual([{ data: conflicting.data, state: "needs_resolution" }]);
   expect(await row("position")).toEqual(saved);
 });
 

@@ -62,10 +62,10 @@ for (const kind of ["future", "invalid"] as const) {
     original.data = { ...(original.data as object), createdAt: metadataTime };
     failNotebookOnce();
     const first = await push([original, failing]);
-    expect(first.status).toBe(503);
+    expect(first.status).toBe(200);
     expect(first.body.accepted).toContainEqual({ id: original.id });
     const saved = await row("highlight");
-    clock.mockReturnValue(BASE + 1000);
+    clock.mockReturnValue(BASE + 180_000);
     const replay = await push([original, failing]);
     expect(replay.status).toBe(200);
     expect(replay.body.accepted).toEqual([{ id: original.id }, { id: failing.id }]);
@@ -78,8 +78,8 @@ for (const kind of ["future", "invalid"] as const) {
     };
     const conflict = await push([different], true);
     expect(conflict.body.accepted).toEqual([]);
-    expect(conflict.body.rejected).toMatchObject([{ id: different.id, retryable: true }]);
-    expect((await push([different])).status).toBe(503);
+    expect(conflict.body.rejected).toMatchObject([{ id: different.id, retryable: false }]);
+    expect((await push([different])).status).toBe(200);
     expect(await row("highlight")).toEqual(saved);
   });
 }

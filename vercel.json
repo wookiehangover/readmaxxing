@@ -4,5 +4,14 @@
       "VERCEL_CLI_VERSION": "vercel@53.3.2"
     }
   },
-  "crons": [{ "path": "/api/cron/reading-ingest", "schedule": "* * * * *" }]
+  "crons": [
+    {
+      "path": "/api/cron/reading-ingest",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/sync-delivery",
+      "schedule": "* * * * *"
+    }
+  ]
 }

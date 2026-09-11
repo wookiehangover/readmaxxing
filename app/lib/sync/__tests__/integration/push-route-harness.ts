@@ -100,6 +100,10 @@ export async function row(entity: (typeof ENTITIES)[number]) {
   ).rows[0];
 }
 async function execute(query: SQLQuery | string) {
+  if (typeof query !== "string" && query.text.includes("pg_try_advisory_lock"))
+    return { rows: [{ locked: true }], rowCount: 1 };
+  if (typeof query !== "string" && query.text.includes("pg_advisory_unlock"))
+    return { rows: [], rowCount: 1 };
   // PGlite is single-connection here; advisory-lock scheduling is covered by the DAL unit tests.
   if (typeof query !== "string" && query.text.includes("pg_advisory_xact_lock"))
     return { rows: [], rowCount: 1 };
@@ -152,6 +156,7 @@ beforeAll(async () => {
     "database/migrations/009-bookmark-display-page.sql",
     "database/migrations/021-sync-mutation-ordering.sql",
     "database/migrations/022-book-canonical-alias.sql",
+    "database/migrations/023-sync-delivery-custody.sql",
   ]) {
     await db.exec(await readFile(path, "utf8"));
   }
@@ -163,7 +168,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await db.exec(
-    "TRUNCATE readmax.book, readmax.highlight, readmax.bookmark, readmax.chat_session, readmax.notebook, readmax.reading_position, readmax.user_settings CASCADE",
+    "TRUNCATE readmax.sync_delivery_receipt, readmax.sync_resource_binding, readmax.sync_alias_event, readmax.sync_alias_revision, readmax.sync_delivery_scheduler, readmax.book, readmax.highlight, readmax.bookmark, readmax.chat_session, readmax.notebook, readmax.reading_position, readmax.user_settings CASCADE",
   );
   await clear(getChangeLogStore());
   vi.stubEnv("DATABASE_URL", "postgres://unused");

@@ -20,6 +20,7 @@ interface ClientPayload {
 }
 
 interface TokenPayload {
+  userId: string;
   bookId: string;
   type: LocalFileKind;
 }
@@ -54,7 +55,7 @@ async function uploadLocalFile(request: Request, userId: string): Promise<Respon
   }
 
   const book = await getBookByIdForUser(bookId, userId);
-  if (!book) {
+  if (!book || book.deletedAt || book.canonicalId) {
     return Response.json({ error: "Book not found" }, { status: 404 });
   }
 
@@ -65,10 +66,12 @@ async function uploadLocalFile(request: Request, userId: string): Promise<Respon
 
   try {
     const result = await writeLocalFile({ userId, bookId, type, data, contentType });
-    await updateBookBlobUrls(
+    const updated = await updateBookBlobUrls(
       bookId,
       type === "cover" ? { coverBlobUrl: result.url } : { fileBlobUrl: result.url },
+      userId,
     );
+    if (!updated) throw new Error("Book no longer available for upload");
     return Response.json(result);
   } catch (error) {
     return Response.json(
@@ -105,14 +108,15 @@ function parseTokenPayload(raw: string | null | undefined): TokenPayload {
   if (!raw) {
     throw new Error("Missing tokenPayload");
   }
-  const parsed = JSON.parse(raw) as { bookId?: unknown; type?: unknown };
+  const parsed = JSON.parse(raw) as { bookId?: unknown; type?: unknown; userId?: unknown };
+  if (typeof parsed.userId !== "string" || !parsed.userId) throw new Error("Invalid token owner");
   if (typeof parsed.bookId !== "string" || parsed.bookId.length === 0) {
     throw new Error("Invalid tokenPayload: bookId");
   }
   if (parsed.type !== "file" && parsed.type !== "cover") {
     throw new Error("Invalid tokenPayload: type");
   }
-  return { bookId: parsed.bookId, type: parsed.type };
+  return { bookId: parsed.bookId, type: parsed.type, userId: parsed.userId };
 }
 
 /**
@@ -169,7 +173,7 @@ export async function action({ request }: { request: Request }) {
         }
 
         const book = await getBookByIdForUser(bookId, userId);
-        if (!book) {
+        if (!book || book.deletedAt || book.canonicalId) {
           throw new Error("Book not found or not owned by user");
         }
 
@@ -179,16 +183,21 @@ export async function action({ request }: { request: Request }) {
           addRandomSuffix: false,
           allowOverwrite: true,
           ...(type === "cover" ? { cacheControlMaxAge: COVER_CACHE_CONTROL_MAX_AGE } : {}),
-          tokenPayload: JSON.stringify({ bookId, type } satisfies TokenPayload),
+          tokenPayload: JSON.stringify({ bookId, type, userId } satisfies TokenPayload),
         };
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
-        const { bookId, type } = parseTokenPayload(tokenPayload);
-        if (type === "cover") {
-          await updateBookBlobUrls(bookId, { coverBlobUrl: blob.url });
-        } else {
-          await updateBookBlobUrls(bookId, { fileBlobUrl: blob.url });
-        }
+        const { bookId, type, userId: tokenOwner } = parseTokenPayload(tokenPayload);
+        if (tokenOwner !== userId) throw new Error("Invalid token owner");
+        const book = await getBookByIdForUser(bookId, tokenOwner);
+        if (!book || book.deletedAt || book.canonicalId)
+          throw new Error("Book no longer available for upload");
+        const updated = await updateBookBlobUrls(
+          bookId,
+          type === "cover" ? { coverBlobUrl: blob.url } : { fileBlobUrl: blob.url },
+          tokenOwner,
+        );
+        if (!updated) throw new Error("Book no longer available for upload");
       },
     });
 

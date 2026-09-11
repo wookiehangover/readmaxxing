@@ -14,7 +14,9 @@ interface AliasBook {
   fileHash: string | null;
   mutationAt: Date;
 }
-interface WriteResult {
+export interface WriteResult {
+  outcome?: "applied" | "covered" | "alias";
+  targetEntityId?: string;
   accepted: boolean;
   reason?: string;
   retryable?: boolean;
@@ -152,25 +154,29 @@ export async function withCanonicalBookWrite(
   userId: string,
   entry: ChangeEntry,
   write: (entry: ChangeEntry, client?: PoolClient) => Promise<WriteResult>,
+  sharedClient?: PoolClient,
 ): Promise<WriteResult> {
-  if (
-    !["book", "position", "notebook", "highlight", "bookmark", "chat_session"].includes(
+  const execute = async (client: PoolClient) => {
+    if (entry.entity === "book") {
+      const canonicalId = await deduplicateBook(client, userId, entry);
+      if (canonicalId)
+        return {
+          accepted: true,
+          canonicalId,
+          outcome: "alias" as const,
+          targetEntityId: canonicalId,
+        };
+    }
+    const normalized = ["position", "notebook", "highlight", "bookmark", "chat_session"].includes(
       entry.entity,
     )
-  )
-    return write(entry);
-  return withBookOwnerTransaction(
-    userId,
-    async (client) => {
-      if (entry.entity === "book") {
-        const canonicalId = await deduplicateBook(client, userId, entry);
-        // Root alias snapshots never become canonical metadata writes.
-        return canonicalId ? { accepted: true, canonicalId } : write(entry, client);
-      }
-      return write(await normalizeDependent(client, userId, entry), client);
-    },
-    (result) => result.accepted,
-  );
+      ? await normalizeDependent(client, userId, entry)
+      : entry;
+    const result = await write(normalized, client);
+    return { ...result, targetEntityId: normalized.entityId };
+  };
+  if (sharedClient) return execute(sharedClient);
+  return withBookOwnerTransaction(userId, execute, (result) => result.accepted);
 }
 
 /** Shared by sync and current server producers, including active chat tools. */
@@ -182,6 +188,7 @@ export async function withBookOwnerTransaction<T>(
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    await client.query(sql`SELECT pg_advisory_xact_lock(hashtext('sync-resource-binding'))`);
     await client.query(
       sql`SELECT pg_advisory_xact_lock(hashtext(${userId}), hashtext('sync-book-alias'))`,
     );

@@ -183,12 +183,15 @@ it("preserves canonical content through actual client pull and replay after a la
   expect((await tools.append_to_notes.execute({ text: "late addition" })).appended).toBe(true);
   const { action: syncAction } = await import("~/routes/api.sync.push");
   const { loader: syncPull } = await import("~/routes/api.sync.pull");
+  const { loader: aliases } = await import("~/routes/api.sync.book-aliases");
   await Promise.all(Object.values(stores).map((getStore) => clear(getStore())));
   vi.stubGlobal("window", { dispatchEvent: () => {} });
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) =>
-    url.startsWith("/api/sync/pull")
-      ? syncPull({ request: new Request(new URL(url, "https://test"), init) })
-      : syncAction({ request: new Request("https://test/api/sync/push", init) }),
+    url.startsWith("/api/sync/book-aliases")
+      ? aliases({ request: new Request(`https://test${url}`) })
+      : url.startsWith("/api/sync/pull")
+        ? syncPull({ request: new Request(new URL(url, "https://test"), init) })
+        : syncAction({ request: new Request("https://test/api/sync/push", init) }),
   );
   await pullChanges({ userId: USER, isStopped: () => false });
   await pushChangesWithResult(ctx());
@@ -333,7 +336,12 @@ it.each(["deleted", "foreign"])(
     await remapAndSeedCanonicalNotes();
     if (state === "deleted")
       await push([{ ...book("c", "target", 30), operation: "delete" }], true);
-    else await db.query("UPDATE readmax.book SET user_id=$1 WHERE id='c'", [OTHER_USER]);
+    else {
+      await db.query("INSERT INTO readmax.book(id,user_id) VALUES('foreign-target',$1)", [
+        OTHER_USER,
+      ]);
+      await db.query("UPDATE readmax.book SET canonical_id='foreign-target' WHERE id='c'");
+    }
     const before = (await db.query("SELECT * FROM readmax.notebook")).rows;
     expect((await tools.append_to_notes.execute({ text: "late" })).appended).toBe(false);
     expect((await tools.edit_notes.execute({ code: 'notebook.append("late");' })).executed).toBe(

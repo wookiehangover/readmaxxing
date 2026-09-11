@@ -34,7 +34,7 @@ vi.mock("~/lib/database/settings/user-settings", () => ({ upsertSettings: vi.fn(
 vi.mock("~/lib/database/user/user", () => ({ upsertUser: vi.fn() }));
 
 import { withCanonicalBookWrite } from "~/lib/database/book/canonical-book-write";
-import { processEntry } from "~/routes/api.sync.push";
+import { processEntry } from "~/lib/database/sync-delivery/apply";
 import { upsertBook, updateBookBlobUrls } from "~/lib/database/book/book";
 import { upsertMessage } from "~/lib/database/chat/chat-session";
 import { upsertBookmark, softDeleteBookmark } from "~/lib/database/bookmark/bookmark";
@@ -88,7 +88,12 @@ describe("processEntry book transaction contract", () => {
       accepted: true,
       canonicalId: "book-canonical",
     });
-    expect(withCanonicalBookWrite).toHaveBeenCalledWith("u1", entry, expect.any(Function));
+    expect(withCanonicalBookWrite).toHaveBeenCalledWith(
+      "u1",
+      entry,
+      expect.any(Function),
+      undefined,
+    );
     expect(upsertBookMock).not.toHaveBeenCalled();
   });
 
@@ -135,7 +140,7 @@ describe("processEntry position branch", () => {
       synced: false,
     });
 
-    expect(result).toEqual({ accepted: true });
+    expect(result).toMatchObject({ accepted: true });
     expect(upsertPositionMock).toHaveBeenCalledWith(
       "u1",
       "book-1",
@@ -161,7 +166,7 @@ describe("processEntry book blob URLs", () => {
 
     const result = await processEntry("u1", entry);
 
-    expect(result).toEqual({ accepted: true });
+    expect(result).toMatchObject({ accepted: true });
     expect(upsertBookMock).toHaveBeenCalled();
     expect(upsertBookMock).toHaveBeenCalledWith(
       "u1",
@@ -240,7 +245,7 @@ describe("processEntry bookmark branch", () => {
       synced: false,
     });
 
-    expect(result).toEqual({ accepted: true });
+    expect(result).toMatchObject({ accepted: true });
     expect(upsertBookmarkMock).toHaveBeenCalledWith(
       "u1",
       {
@@ -269,7 +274,7 @@ describe("processEntry bookmark branch", () => {
       synced: false,
     });
 
-    expect(result).toEqual({ accepted: true });
+    expect(result).toMatchObject({ accepted: true });
     expect(softDeleteBookmarkMock).toHaveBeenCalledWith(
       "u1",
       "bookmark-1",

@@ -27,7 +27,7 @@ it.each(ENTITIES)(
     failNotebookOnce();
     const original = mutation(entity);
     const first = await push([original, failing]);
-    expect(first.status).toBe(503);
+    expect(first.status).toBe(200);
     expect(first.body.accepted).toContainEqual({ id: original.id });
     expect((await push([mutation(entity, 1)])).status).toBe(200);
     const newer = await row(entity);
@@ -52,7 +52,7 @@ it.each(DELETABLE)(
   async (entity) => {
     failNotebookOnce();
     const original = mutation(entity);
-    expect((await push([original, failing])).status).toBe(503);
+    expect((await push([original, failing])).status).toBe(200);
     expect((await push([{ ...mutation(entity, 1), operation: "delete" }])).status).toBe(200);
     const tombstone = await row(entity);
     expect(tombstone.deleted_at).not.toBeNull();
@@ -76,8 +76,12 @@ it.each(["book", "chat_session"] as const)(
 );
 
 it.each(DELETABLE)("%s snapshot mutations preserve the existing owner's row", async (entity) => {
-  await push([mutation(entity)]);
-  await db.query(`UPDATE readmax.${TABLES[entity]} SET user_id = $1`, [OTHER_USER]);
+  // Seed a preexisting foreign row instead of violating the new immutable binding.
+  const columns = entity === "book" ? "id,user_id" : "id,user_id,book_id";
+  const values = entity === "book" ? "'entity',$1" : "'entity',$1,'foreign-parent'";
+  await db.query(`INSERT INTO readmax.${TABLES[entity]}(${columns}) VALUES(${values})`, [
+    OTHER_USER,
+  ]);
   const owned = await row(entity);
   await push([mutation(entity, 1)]);
   expect(await row(entity)).toEqual(owned);
@@ -125,7 +129,7 @@ it.each(["highlight", "chat_session"] as const)(
     const change = await recordChange(input);
     mocks.query.mockRejectedValueOnce(new Error("temporary outage"));
     routeFetch();
-    await expect(pushChangesWithResult(ctx())).rejects.toThrow("Push incomplete");
+    await expect(pushChangesWithResult(ctx())).rejects.toThrow("Push failed: 503");
     const { id: _newId, synced: _newSynced, ...newer } = mutation(entity, 1);
     await recordChange(newer);
     await expect(pushChangesWithResult(ctx())).rejects.toThrow("Push incomplete");
@@ -145,7 +149,7 @@ it.each(DELETABLE)("retained %s retry cannot undo a healthy newer deletion", asy
   const change = await recordChange(input);
   mocks.query.mockRejectedValueOnce(new Error("temporary outage"));
   routeFetch();
-  await expect(pushChangesWithResult(ctx())).rejects.toThrow("Push incomplete");
+  await expect(pushChangesWithResult(ctx())).rejects.toThrow("Push failed: 503");
   await recordChange({ ...input, operation: "delete", timestamp: BASE + 1000 });
   await expect(pushChangesWithResult(ctx())).rejects.toThrow("Push incomplete");
   const tombstone = await row(entity);
@@ -220,9 +224,9 @@ it.each(ENTITIES)(
   },
 );
 
-it("rejects invalid future mutation clocks without poisoning the durable ordering clock", async () => {
+it("retains recoverable future mutation clocks without poisoning the durable ordering clock", async () => {
   const bad = { ...mutation("highlight"), timestamp: Date.now() + 3_600_000 };
   const result = await push([bad], true);
-  expect(result.body.rejected).toMatchObject([{ id: bad.id, retryable: false }]);
+  expect(result.body.rejected).toMatchObject([{ id: bad.id, retryable: true }]);
   expect(await row("highlight")).toBeUndefined();
 });

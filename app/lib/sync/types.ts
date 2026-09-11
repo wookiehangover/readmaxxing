@@ -1,3 +1,4 @@
+import type { DeliveryReference } from "./delivery-types";
 /**
  * Sync Protocol Types
  *
@@ -73,6 +74,7 @@ export interface SyncPushRequest {
   changes: ChangeEntry[];
   /** Client retains rejected mutations and understands per-entry retryability. */
   supportsRetryableRejections?: boolean;
+  supportsDurableReceipts?: 1;
 }
 
 /** Server response after processing a push batch. */
@@ -87,6 +89,7 @@ export interface SyncPushResponse {
   accepted: Array<{
     id: string;
     canonicalId?: string;
+    deliveries?: DeliveryReference[];
   }>;
   /** IDs of changes the server rejected (e.g. conflict). */
   rejected: Array<{
@@ -94,7 +97,9 @@ export interface SyncPushResponse {
     reason: string;
     /** Omitted by older servers: clients must conservatively retry. */
     retryable?: boolean;
+    deliveries?: DeliveryReference[];
   }>;
+  notReceived?: Array<{ id: string; code: "not_received" }>;
   /** Server timestamp at the time of processing (ISO 8601). */
   serverTimestamp: string;
 }

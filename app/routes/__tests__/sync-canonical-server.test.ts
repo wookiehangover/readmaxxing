@@ -76,6 +76,9 @@ it("resolves later stale-client requests and duplicate retries after a lost resp
   await push([change("book", "canonical"), change("book", "loser")]);
   const changes = dependents.map((entity) => change(entity, "loser"));
   for (let retry = 0; retry < 2; retry++) {
+    await db.query(
+      "UPDATE readmax.sync_delivery_receipt SET next_attempt_at=NOW() WHERE next_attempt_at IS NOT NULL",
+    );
     expect((await push(changes, true)).body.rejected).toEqual([]);
     await expectCanonicalDependents();
   }
@@ -199,7 +202,7 @@ it("retains an ambiguous equal-clock position conflict and rolls back the alias 
   const result = await push([change("book", "loser")], true);
   expect(result.body.accepted).toEqual([]);
   expect(result.body.rejected).toEqual([
-    expect.objectContaining({ id: "book-loser-0", retryable: true }),
+    expect.objectContaining({ id: "book-loser-0", retryable: false }),
   ]);
   expect(await rows("notebook")).toEqual(notebooks);
   expect(await rows("reading_position")).toEqual(positions);
@@ -272,7 +275,10 @@ it.each(["cycle", "missing", "other-owner"])(
     const before = await rows("notebook");
     const result = await push([change("notebook", "loser", 2)], true);
     expect(result.body.accepted).toEqual([]);
-    expect(result.body.rejected[0].retryable).toBe(true);
+    if (kind === "other-owner") {
+      expect(result.body.rejected).toEqual([]);
+      expect(result.body.notReceived).toHaveLength(1);
+    } else expect(result.body.rejected[0].retryable).toBe(false);
     expect(await rows("notebook")).toEqual(before);
   },
 );
@@ -283,17 +289,21 @@ it("does not deduplicate an ID or write a dependent owned by another authenticat
   const before = (await db.query("SELECT * FROM readmax.book ORDER BY id")).rows;
   const result = await push([change("book", "loser"), change("notebook", "loser")], true);
   expect(result.body.accepted).toEqual([]);
-  expect(result.body.rejected).toHaveLength(2);
+  expect(result.body.rejected).toEqual([]);
+  expect(result.body.notReceived).toHaveLength(2);
   expect((await db.query("SELECT * FROM readmax.book ORDER BY id")).rows).toEqual(before);
   expect(await rows("notebook")).toEqual([]);
 });
 
 it("relocates only the authenticated user's dependents", async () => {
   await push([change("book", "canonical"), change("notebook", "loser")]);
+  // Historical inconsistent rows predate the new first-binding admission trigger.
+  await db.query("ALTER TABLE readmax.notebook DISABLE TRIGGER enforce_sync_scoped_parent_binding");
   await db.query(
     "INSERT INTO readmax.notebook (user_id, book_id, content) VALUES ($1, 'loser', '{}'::jsonb)",
     [OTHER_USER],
   );
+  await db.query("ALTER TABLE readmax.notebook ENABLE TRIGGER enforce_sync_scoped_parent_binding");
   const before = (await db.query("SELECT * FROM readmax.notebook WHERE user_id = $1", [OTHER_USER]))
     .rows;
   await push([change("book", "loser")]);
@@ -365,7 +375,7 @@ it("normalizes independently remapped bookmark keys and embedded references whil
   expect((await rows("bookmark")).every((row) => row.book_id === "canonical")).toBe(true);
 });
 
-it("keeps equal-clock highlight and chat conflicts retryable after identity normalization", async () => {
+it("retains equal-clock highlight and chat conflicts for resolution after identity normalization", async () => {
   await push([
     change("book", "canonical"),
     change("book", "loser"),
@@ -380,7 +390,7 @@ it("keeps equal-clock highlight and chat conflicts retryable after identity norm
       true,
     );
     expect(result.body.accepted).toEqual([]);
-    expect(result.body.rejected[0].retryable).toBe(true);
+    expect(result.body.rejected[0].retryable).toBe(false);
     expect(await rows(entity)).toEqual(before);
   }
 });
@@ -406,6 +416,9 @@ it("rolls back a failed remap and retains dependent-before-book changes for retr
   expect(failed.body.rejected.every((entry) => entry.retryable)).toBe(true);
   expect(await rows("notebook")).toEqual(before);
   expect((await rows("book")).map((book) => book.id)).toEqual(["canonical"]);
+  await db.query(
+    "UPDATE readmax.sync_delivery_receipt SET next_attempt_at=NOW() WHERE next_attempt_at IS NOT NULL",
+  );
   expect((await push(changes, true)).body.rejected).toEqual([]);
   expect(await rows("notebook")).toEqual([
     expect.objectContaining({ book_id: "canonical", content: { text: "notes-2" } }),

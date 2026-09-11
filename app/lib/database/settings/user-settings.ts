@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { sql } from "pg-sql";
 import { getPool } from "../pool";
 
@@ -18,8 +19,9 @@ export async function upsertSettings(
   userId: string,
   settings: unknown,
   updatedAt: Date,
+  client?: PoolClient,
 ): Promise<UserSettingsRow | null> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const mutationAt = updatedAt.toISOString();
   const result = await pool.query<UserSettingsRow>(sql`
     INSERT INTO readmax.user_settings (user_id, settings, updated_at, mutation_at)
