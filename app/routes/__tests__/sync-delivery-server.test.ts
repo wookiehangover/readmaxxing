@@ -401,6 +401,9 @@ it("alias enumeration refuses foreign target evidence without returning it to th
   await expect(listBookAliases(USER, null)).rejects.toThrow("unavailable");
 });
 it("successful version-checked recovery edit links new custody and retains the original invalid source", async () => {
+  await db.query("INSERT INTO readmax.book(id,user_id,title) VALUES('entity',$1,'Owned parent')", [
+    USER,
+  ]);
   await send([{ ...mutation("notebook"), timestamp: null }]);
   const id = String((await receipts())[0].receipt_id);
   const detail = (await getRecovery(USER, id))!;
