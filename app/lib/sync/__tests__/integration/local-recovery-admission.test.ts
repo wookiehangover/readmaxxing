@@ -193,3 +193,120 @@ it("rejects a response for different received JSON without binding or retiring t
   expect(await get(factsKey(id), getCustodyStore())).not.toHaveProperty("ownerId", USER);
   expect(await get(id, getCustodyStore())).toBeDefined();
 });
+
+it.each([false, true])(
+  "creates a reviewed missing notebook and rejects concurrent creation (%s)",
+  async (competingCreation) => {
+    await push([mutation("book")]);
+    const id = await source(NaN);
+    setCustodyAccount(USER);
+    const original = await localRecoveryDetail(id, USER);
+    const submissionId = await prepareLocalRecoveryAdmission({
+      ownerId: USER,
+      id,
+      expectedVersion: original.version,
+    });
+    const detail = await submitLocalRecoveryAdmission({ ownerId: USER, submissionId });
+    expect(detail.canonical.status).toBe("missing");
+    expect((await db.query("SELECT * FROM readmax.notebook")).rows).toEqual([]);
+    const edit = await prepareRecoveryResolution({
+      ownerId: USER,
+      detail,
+      action: "submit_edit",
+      data: detail.originalSnapshot.data as Record<string, unknown>,
+    });
+    const prepared = (await localRecoveryDetail(edit, USER)).item.raw as {
+      request: {
+        newMutation: {
+          id: string;
+          entityId: string;
+          timestamp: number;
+          data: { bookId: string; updatedAt: number };
+        };
+      };
+    };
+    expect(prepared.request.newMutation.id).not.toBe(detail.originalSnapshot.id);
+    expect(prepared.request.newMutation.entityId).toBe(detail.canonical.entityId);
+    expect(prepared.request.newMutation.data.bookId).toBe(detail.canonical.entityId);
+    expect(Number.isSafeInteger(prepared.request.newMutation.timestamp)).toBe(true);
+    expect(prepared.request.newMutation.data.updatedAt).toBe(
+      prepared.request.newMutation.timestamp,
+    );
+    if (competingCreation) await push([mutation("notebook")]);
+    if (competingCreation) {
+      await expect(submitRecoveryResolution({ ownerId: USER, submissionId: edit })).rejects.toThrow(
+        "review again",
+      );
+      expect(
+        (await db.query<{ content: unknown }>("SELECT content FROM readmax.notebook")).rows,
+      ).toEqual([{ content: (mutation("notebook").data as { content: unknown }).content }]);
+    } else {
+      expect((await submitRecoveryResolution({ ownerId: USER, submissionId: edit })).state).toBe(
+        "resolved",
+      );
+      expect((await db.query("SELECT content FROM readmax.notebook")).rows).toEqual([
+        { content: "only local original" },
+      ]);
+    }
+    expect((await get<CustodyItem>(id, getCustodyStore()))?.raw).toEqual(original.item.raw);
+    expect(await get(factsKey(id), getCustodyStore())).not.toHaveProperty("retired", true);
+  },
+);
+
+it("rejects creating a reviewed missing notebook after its parent is deleted", async () => {
+  await push([mutation("book")]);
+  const id = await source(NaN);
+  setCustodyAccount(USER);
+  const original = await localRecoveryDetail(id, USER);
+  const submissionId = await prepareLocalRecoveryAdmission({
+    ownerId: USER,
+    id,
+    expectedVersion: original.version,
+  });
+  const detail = await submitLocalRecoveryAdmission({ ownerId: USER, submissionId });
+  const edit = await prepareRecoveryResolution({
+    ownerId: USER,
+    detail,
+    action: "submit_edit",
+    data: detail.originalSnapshot.data as Record<string, unknown>,
+  });
+  await push([{ ...mutation("book", 1), operation: "delete" }]);
+  await expect(submitRecoveryResolution({ ownerId: USER, submissionId: edit })).rejects.toThrow();
+  expect((await db.query("SELECT * FROM readmax.notebook")).rows).toEqual([]);
+  expect((await get<CustodyItem>(id, getCustodyStore()))?.raw).toEqual(original.item.raw);
+});
+
+it("keeps missing creation restricted to notebooks and rejects deleted or unavailable notebook targets", async () => {
+  await push([mutation("book")]);
+  const id = await source(NaN);
+  setCustodyAccount(USER);
+  const { version } = await localRecoveryDetail(id, USER);
+  const submissionId = await prepareLocalRecoveryAdmission({
+    ownerId: USER,
+    id,
+    expectedVersion: version,
+  });
+  const detail = await submitLocalRecoveryAdmission({ ownerId: USER, submissionId });
+  for (const entity of ["book", "position", "highlight", "bookmark", "chat_session", "settings"]) {
+    await expect(
+      prepareRecoveryResolution({
+        ownerId: USER,
+        detail: { ...detail, canonical: { ...detail.canonical, entity } },
+        action: "submit_edit",
+        data: { content: "retained" },
+      }),
+    ).rejects.toThrow("current editable canonical target");
+  }
+  for (const status of ["deleted", "unavailable"] as const) {
+    await expect(
+      prepareRecoveryResolution({
+        ownerId: USER,
+        detail: { ...detail, canonical: { ...detail.canonical, status } },
+        action: "submit_edit",
+        data: { content: "retained" },
+      }),
+    ).rejects.toThrow("current editable canonical target");
+  }
+  expect((await db.query("SELECT * FROM readmax.notebook")).rows).toEqual([]);
+  expect(await get(id, getCustodyStore())).toBeDefined();
+});

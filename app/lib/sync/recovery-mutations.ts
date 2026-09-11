@@ -51,7 +51,8 @@ export async function prepareRecoveryResolution(input: {
       !canonical.entityId ||
       !input.data ||
       (input.action === "submit_edit"
-        ? canonical.status !== "present"
+        ? canonical.status !== "present" &&
+          !(canonical.status === "missing" && canonical.entity === "notebook")
         : !["present", "missing", "deleted"].includes(canonical.status))
     )
       throw new Error("A current editable canonical target is required");
