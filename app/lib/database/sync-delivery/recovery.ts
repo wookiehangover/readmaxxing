@@ -143,11 +143,18 @@ export async function resolveRecovery(account: string, id: string, request: Reco
         throw new RecoveryConflict("Recovery target does not match the requested action");
       await applyReceipt(client, received);
       const applied = (
-        await client.query<{ state: string }>(
-          sql`SELECT state FROM readmax.sync_delivery_receipt WHERE receipt_id=${received.receiptId}`,
+        await client.query<ReceiptRow>(
+          sql`SELECT ${RECEIPT_COLUMNS} FROM readmax.sync_delivery_receipt WHERE receipt_id=${received.receiptId}`,
         )
       ).rows[0];
-      if (!["applied", "covered"].includes(applied.state))
+      const actualTarget = await canonicalSnapshot(client, applied);
+      // Explicit edits/copies need a performed write at the requested target.
+      // Ordinary replay coverage and deduplication are still valid push outcomes.
+      if (
+        applied.state !== "applied" ||
+        !actualTarget.exists ||
+        actualTarget.entityId !== target.entityId
+      )
         throw new RecoveryConflict("New edit cannot safely apply");
       await decide(client, row, "resolved", request.action, null, {
         resolutionId: request.resolutionId,
