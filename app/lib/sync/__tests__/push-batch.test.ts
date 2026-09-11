@@ -4,7 +4,8 @@ import { createStore, clear } from "idb-keyval";
 import { recordChange, getUnsyncedChanges } from "../change-log";
 import * as fileUploads from "../file-uploads";
 import { pushChangesWithResult } from "../push";
-import { makeSyncEngine, PUSH_BATCH_SIZE } from "../sync-engine";
+import { makeSyncEngine, PUSH_BATCH_SIZE, type SyncEngine } from "../sync-engine";
+import { withSyncIdentityLock } from "../sync-lock";
 import type { SyncPushRequest } from "../types";
 
 vi.mock("@vercel/blob/client", () => ({
@@ -13,13 +14,26 @@ vi.mock("@vercel/blob/client", () => ({
 
 const changeLogStore = createStore("ebook-reader-changelog", "changes");
 const bookStore = createStore("ebook-reader-db", "books");
+const engines: SyncEngine[] = [];
+
+function createEngine() {
+  const engine = makeSyncEngine({ userId: "user-test" });
+  engines.push(engine);
+  return engine;
+}
 
 beforeEach(async () => {
   await Promise.all([clear(getCustodyStore()), clear(getAliasProgressStore())]);
   await Promise.all([clear(changeLogStore), clear(bookStore)]);
 });
 
-afterEach(() => {
+afterEach(async () => {
+  for (const engine of engines) engine.stopSync();
+  engines.length = 0;
+  // Empty outbox does not imply the final push has finished custody cleanup.
+  // Stop follow-ups and let the active identity transaction finish before the
+  // next test clears its databases or replaces the fetch mock.
+  await withSyncIdentityLock(async () => {});
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -57,7 +71,7 @@ describe("pushChanges batching", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const engine = makeSyncEngine({ userId: "user-test" });
+    const engine = createEngine();
     await engine.pushChanges();
 
     // Follow-up pushes are scheduled via queueMicrotask. Poll until the
@@ -112,7 +126,7 @@ describe("pushChanges batching", () => {
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const engine = makeSyncEngine({ userId: "user-test" });
+    const engine = createEngine();
     await engine.pushChanges();
 
     const retained = await getUnsyncedChanges();
@@ -178,7 +192,7 @@ describe("pushChanges batching", () => {
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const uploadSpy = vi.spyOn(fileUploads, "uploadPendingFiles").mockResolvedValue(undefined);
-    const engine = makeSyncEngine({ userId: "user-test" });
+    const engine = createEngine();
 
     await engine.pushChanges();
 
@@ -241,7 +255,7 @@ describe("pushChanges batching", () => {
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const uploadSpy = vi.spyOn(fileUploads, "uploadPendingFiles").mockResolvedValue(undefined);
-    const engine = makeSyncEngine({ userId: "user-test" });
+    const engine = createEngine();
 
     await engine.pushChanges();
     expect(await getUnsyncedChanges()).toEqual([expect.objectContaining({ id: bookChange.id })]);
@@ -349,7 +363,7 @@ describe("pushChanges batching", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const uploadSpy = vi.spyOn(fileUploads, "uploadPendingFiles").mockResolvedValue(undefined);
-    const engine = makeSyncEngine({ userId: "user-test" });
+    const engine = createEngine();
 
     await engine.pushChanges();
 
@@ -388,7 +402,7 @@ describe("pushChanges batching", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const engine = makeSyncEngine({ userId: "user-test" });
+    const engine = createEngine();
     await engine.pushChanges();
 
     // Give any (incorrectly) scheduled follow-ups a chance to fire.
