@@ -1,3 +1,4 @@
+import { recoveryOwnerError } from "~/lib/database/sync-delivery/recovery-owner";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { resolveRecovery, RecoveryConflict } from "~/lib/database/sync-delivery/recovery";
 import type { RecoveryResolution } from "~/lib/sync/delivery-types";
@@ -11,6 +12,8 @@ export async function action({
 }) {
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
   const { userId } = await requireAuth(request);
+  const ownerError = recoveryOwnerError(request, userId);
+  if (ownerError) return ownerError;
   if (!/^[0-9a-f-]{36}$/i.test(params.receiptId ?? ""))
     return Response.json({ error: "Not found" }, { status: 404 });
   try {

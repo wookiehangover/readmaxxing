@@ -17,6 +17,7 @@ export interface DeliveryReference {
   decisionVersion: number;
 }
 export interface DeliverySummary extends DeliveryReference {
+  ownerId: string;
   changeId: string;
   entity: string;
   entityId: string;
@@ -28,6 +29,7 @@ export interface DeliverySummary extends DeliveryReference {
   attachments: Array<{ kind: "file" | "cover"; state: "not_received" }>;
 }
 export interface RecoveryPage {
+  ownerId: string;
   receipts: DeliverySummary[];
   cursor: string;
   hasMore: boolean;

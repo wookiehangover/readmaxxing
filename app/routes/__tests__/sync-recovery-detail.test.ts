@@ -161,6 +161,7 @@ it("foreign receipt or authoritative alias ownership returns generic404 for deta
   const resolved = await resolve({
     request: new Request("https://test", {
       method: "POST",
+      headers: { "X-Recovery-Owner": USER },
       body: JSON.stringify({
         resolutionId: "foreign",
         action: "keep_canonical",

@@ -20,6 +20,7 @@ import type {
 export function summary(row: ReceiptRow): DeliverySummary {
   return {
     ...deliveryReference(row),
+    ownerId: row.accountId,
     changeId: row.changeId,
     entity: row.entity,
     entityId: row.entityId,
@@ -97,6 +98,7 @@ export async function listRecovery(
   ).rows;
   const page = rows.slice(0, limit);
   return {
+    ownerId: account,
     receipts: page.map(summary),
     hasMore: rows.length > limit,
     cursor: Buffer.from(
@@ -110,14 +112,15 @@ export async function resolveRecovery(account: string, id: string, request: Reco
     const prior = (
       await client.query<{
         request: unknown;
-        result: unknown;
+        result: DeliverySummary;
       }>(sql`SELECT request,result FROM readmax.sync_delivery_resolution
       WHERE account_id=${account} AND resolution_id=${request.resolutionId}`)
     ).rows[0];
     if (prior) {
       if (canonicalJSON(prior.request) !== canonicalJSON({ receiptId: id, ...request }))
         throw new RecoveryConflict("Resolution identity reused");
-      return prior.result;
+      // Older persisted decisions predate the response account echo.
+      return { ...prior.result, ownerId: account };
     }
     const row = (
       await client.query<ReceiptRow>(sql`SELECT ${RECEIPT_COLUMNS} FROM readmax.sync_delivery_receipt

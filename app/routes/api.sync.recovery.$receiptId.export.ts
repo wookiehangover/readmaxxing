@@ -1,3 +1,4 @@
+import { recoveryOwnerError } from "~/lib/database/sync-delivery/recovery-owner";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getRecovery } from "~/lib/database/sync-delivery/recovery";
 export async function loader({
@@ -8,6 +9,8 @@ export async function loader({
   params: { receiptId?: string };
 }) {
   const { userId } = await requireAuth(request);
+  const ownerError = recoveryOwnerError(request, userId);
+  if (ownerError) return ownerError;
   const detail = await getRecovery(userId, params.receiptId ?? "");
   return detail
     ? Response.json(
