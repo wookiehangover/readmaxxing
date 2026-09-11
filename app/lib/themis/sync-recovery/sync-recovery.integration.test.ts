@@ -215,53 +215,63 @@ it("account changes clear visible handles and reject late detail publication", a
   store.dispatch(authSessionCleared());
 });
 
-it("admits local-only invalid-clock text for comparison, then explicitly edits without retiring raw", async () => {
-  await push([mutation("book"), mutation("notebook")]);
-  const raw = {
-    bookId: "entity",
-    content: { type: "doc", content: [{ type: "text", text: "Local surviving text" }] },
-    updatedAt: NaN,
-    optional: undefined,
-  };
-  const id = await retainCustody({
-    source: "ebook-reader-notebooks/notebooks",
-    key: "entity",
-    role: "intended",
-    raw,
-  });
-  start();
-  await loaded();
-  const originalView = await inspect(`device:${id}`);
-  expect(originalView.localText).toBe(true);
-  store.dispatch(runRecoveryCommand("admit", originalView.token));
-  await vi.waitFor(() =>
-    expect(store.state.syncRecovery.notice).toContain("Content received for review"),
-  );
-  const reviewed = store.state.syncRecovery.view!;
-  expect(reviewed.token).not.toBe(originalView.token);
-  expect(reviewed.resolution?.state).toBe("needs_resolution");
-  expect(await bodyByUrl.get(reviewed.url)!.text()).toContain("Local surviving text");
-  expect(await bodyByUrl.get(reviewed.url)!.text()).toContain('"old"');
-  expect(
-    (
+it.each(["present", "missing"] as const)(
+  "admits local-only invalid-clock text with %s canonical notebook, then explicitly edits without retiring raw",
+  async (canonicalStatus) => {
+    await push(
+      canonicalStatus === "present" ? [mutation("book"), mutation("notebook")] : [mutation("book")],
+    );
+    const raw = {
+      bookId: "entity",
+      content: { type: "doc", content: [{ type: "text", text: "Local surviving text" }] },
+      updatedAt: NaN,
+      optional: undefined,
+    };
+    const id = await retainCustody({
+      source: "ebook-reader-notebooks/notebooks",
+      key: "entity",
+      role: "intended",
+      raw,
+    });
+    start();
+    await loaded();
+    const originalView = await inspect(`device:${id}`);
+    expect(originalView.localText).toBe(true);
+    store.dispatch(runRecoveryCommand("admit", originalView.token));
+    await vi.waitFor(() =>
+      expect(store.state.syncRecovery.notice).toContain("Content received for review"),
+    );
+    const reviewed = store.state.syncRecovery.view!;
+    expect(reviewed.token).not.toBe(originalView.token);
+    expect(reviewed.resolution?.state).toBe("needs_resolution");
+    expect(await bodyByUrl.get(reviewed.url)!.text()).toContain("Local surviving text");
+    expect(reviewed.resolution?.canonicalStatus).toBe(canonicalStatus);
+    const before = (
       await db.query<{ content: unknown }>(
         "SELECT content FROM readmax.notebook WHERE user_id=$1",
         [USER],
       )
-    ).rows[0].content,
-  ).toMatchObject({ content: [{ text: "old" }] });
-  expect(JSON.stringify(store.state.syncRecovery)).not.toContain("Local surviving text");
-  store.dispatch(runRecoveryCommand("submit_edit", reviewed.token));
-  await vi.waitFor(() => expect(store.state.syncRecovery.notice).toContain("Decision saved"));
-  expect(
-    (
-      await db.query<{ content: unknown }>(
-        "SELECT content FROM readmax.notebook WHERE user_id=$1",
-        [USER],
-      )
-    ).rows[0].content,
-  ).toMatchObject({ content: [{ text: "Local surviving text" }] });
-  const retained = await get(id, idbStores.getCustodyStore());
-  expect(retained.raw.updatedAt).toBeNaN();
-  expect(Object.hasOwn(retained.raw, "optional")).toBe(true);
-});
+    ).rows;
+    if (canonicalStatus === "present") {
+      expect(await bodyByUrl.get(reviewed.url)!.text()).toContain('"old"');
+      expect(before[0].content).toMatchObject({ content: [{ text: "old" }] });
+    } else {
+      expect(await bodyByUrl.get(reviewed.url)!.text()).toContain('"missing"');
+      expect(before).toEqual([]);
+    }
+    expect(JSON.stringify(store.state.syncRecovery)).not.toContain("Local surviving text");
+    store.dispatch(runRecoveryCommand("submit_edit", reviewed.token));
+    await vi.waitFor(() => expect(store.state.syncRecovery.notice).toContain("Decision saved"));
+    expect(
+      (
+        await db.query<{ content: unknown }>(
+          "SELECT content FROM readmax.notebook WHERE user_id=$1",
+          [USER],
+        )
+      ).rows[0].content,
+    ).toMatchObject({ content: [{ text: "Local surviving text" }] });
+    const retained = await get(id, idbStores.getCustodyStore());
+    expect(retained.raw.updatedAt).toBeNaN();
+    expect(Object.hasOwn(retained.raw, "optional")).toBe(true);
+  },
+);

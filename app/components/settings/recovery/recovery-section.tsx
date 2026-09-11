@@ -77,9 +77,14 @@ export function RecoverySection() {
           }
         : confirmation?.command === "submit_edit"
           ? {
-              title: "Use this original content?",
+              title:
+                view?.resolution?.canonicalStatus === "missing"
+                  ? "Create this missing notebook?"
+                  : "Use this original content?",
               description:
-                "This creates a new edit using the original content, replacing the current saved version you inspected. Both versions are shown above. If the saved version changed, the action stops for another review. The original snapshot stays retained.",
+                view?.resolution?.canonicalStatus === "missing"
+                  ? "This creates the currently missing notebook using the original content you inspected. If someone saves this notebook first, the action stops for another review. Its book must still belong to your account and be available. The original snapshot stays retained."
+                  : "This creates a new edit using the original content, replacing the current saved version you inspected. Both versions are shown above. If the saved version changed, the action stops for another review. The original snapshot stays retained.",
               button: "Confirm use original",
             }
           : confirmation?.command === "restore_copy"
@@ -257,7 +262,9 @@ export function RecoverySection() {
                       "chat_session",
                       "settings",
                     ].includes(view.resolution.entity) &&
-                      view.resolution.canonicalStatus === "present" && (
+                      (view.resolution.canonicalStatus === "present" ||
+                        (view.resolution.entity === "notebook" &&
+                          view.resolution.canonicalStatus === "missing")) && (
                         <Button
                           disabled={state.busy}
                           onClick={() =>

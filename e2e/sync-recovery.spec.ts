@@ -370,98 +370,130 @@ test("file recovery reviews the canonical book and does not claim success for pa
   );
 });
 
-test("local text enters review before any explicit account edit and keeps its invalid-clock original", async ({
-  page,
-}) => {
-  let admissions = 0;
-  let resolutions = 0;
-  let snapshot: Record<string, unknown> = {};
-  const summary = () => ({
-    ownerId,
-    receiptId,
-    entity: "notebook",
-    entityId: "retained-notebook",
-    changeId: "local:device-text",
-    state: "needs_resolution",
-    reasonCode: "local_recovery",
-    decisionVersion: 1,
-    receivedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    attachments: [],
-    fingerprintVersion: 1,
-    payloadFingerprint: "local-proof",
-    sourceClock: null,
-    targetEntityId: "retained-notebook",
-    nextAttemptAt: null,
-  });
-  const detail = () => ({
-    ...summary(),
-    originalSnapshot: snapshot,
-    originalReferences: {},
-    decisionEvidence: {},
-    canonicalVersion: "review-v1",
-    canonical: {
+for (const canonicalStatus of ["present", "missing"] as const) {
+  test(`local text reviews ${canonicalStatus} notebook before explicit edit and keeps its invalid-clock original`, async ({
+    page,
+  }) => {
+    let admissions = 0;
+    let resolutions = 0;
+    let state = "needs_resolution";
+    let snapshot: Record<string, unknown> = {};
+    const summary = () => ({
+      ownerId,
+      receiptId,
       entity: "notebook",
       entityId: "retained-notebook",
-      status: "present",
-      version: "review-v1",
-      data: { bookId: "retained-notebook", content: "Current server notebook" },
-    },
-  });
-  await page.route("**/api/**", async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    if (url.pathname === "/api/auth/session")
-      return route.fulfill({ json: { user: { id: ownerId, displayName: "Reader" } } });
-    if (url.pathname === "/api/sync/recovery" && request.method() === "POST") {
-      expect(request.headers()["x-recovery-owner"]).toBe(ownerId);
-      snapshot = request.postDataJSON().snapshot;
-      admissions++;
-      expect(snapshot.recoveryProjection).toBeDefined();
-      return route.fulfill({ json: detail() });
+      changeId: "local:device-text",
+      state,
+      reasonCode: "local_recovery",
+      decisionVersion: 1,
+      receivedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      attachments: [],
+      fingerprintVersion: 1,
+      payloadFingerprint: "local-proof",
+      sourceClock: null,
+      targetEntityId: "retained-notebook",
+      nextAttemptAt: null,
+    });
+    const detail = () => ({
+      ...summary(),
+      originalSnapshot: snapshot,
+      originalReferences: {},
+      decisionEvidence: {},
+      canonicalVersion: "review-v1",
+      canonical: {
+        entity: "notebook",
+        entityId: "retained-notebook",
+        status: canonicalStatus,
+        version: "review-v1",
+        data:
+          canonicalStatus === "present"
+            ? { bookId: "retained-notebook", content: "Current server notebook" }
+            : null,
+      },
+    });
+    await page.route("**/api/**", async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (url.pathname === "/api/auth/session")
+        return route.fulfill({ json: { user: { id: ownerId, displayName: "Reader" } } });
+      if (url.pathname === "/api/sync/recovery" && request.method() === "POST") {
+        expect(request.headers()["x-recovery-owner"]).toBe(ownerId);
+        snapshot = request.postDataJSON().snapshot;
+        admissions++;
+        expect(snapshot.recoveryProjection).toBeDefined();
+        return route.fulfill({ json: detail() });
+      }
+      if (url.pathname.endsWith("/resolve")) {
+        resolutions++;
+        expect(request.postDataJSON().expectedCanonicalVersion).toBe("review-v1");
+        if (canonicalStatus === "present")
+          return route.fulfill({ status: 409, json: { error: "Recovery state changed" } });
+        const edit = request.postDataJSON().newMutation;
+        expect(edit.entityId).toBe("retained-notebook");
+        expect(edit.data.bookId).toBe("retained-notebook");
+        expect(edit.data.content).toBe("Only surviving notebook text");
+        expect(edit.timestamp).toBeGreaterThan(Date.now() - 60000);
+        state = "resolved";
+        return route.fulfill({ json: { ...summary(), decisionVersion: 2 } });
+      }
+      if (url.pathname === "/api/sync/recovery")
+        return route.fulfill({
+          json: {
+            ownerId,
+            receipts: admissions ? [summary()] : [],
+            cursor: "done",
+            hasMore: false,
+          },
+        });
+      if (url.pathname === "/api/sync/book-aliases")
+        return route.fulfill({ json: { ownerId, aliases: [], cursor: "0", hasMore: false } });
+      if (url.pathname === "/api/sync/pull")
+        return route.fulfill({ json: { changes: [], serverTimestamp: new Date().toISOString() } });
+      if (url.pathname === "/api/sync/push")
+        return route.fulfill({ json: { accepted: [], rejected: [] } });
+      return route.fulfill({ json: {} });
+    });
+    await openRecovery(page);
+    await seedDevice(page);
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await page
+      .getByRole("listitem")
+      .filter({ hasText: "retained-notebook" })
+      .getByRole("button", { name: "Inspect" })
+      .click();
+    await page.getByRole("button", { name: "Review content with account", exact: true }).click();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(admissions).toBe(0);
+    await page.getByRole("button", { name: "Review content with account", exact: true }).click();
+    await page.getByRole("button", { name: "Send for review", exact: true }).click();
+    await expect(
+      page.frameLocator('iframe[title="Original and current content"]').locator("body"),
+    ).toContainText(canonicalStatus === "present" ? "Current server notebook" : '"missing"');
+    expect(admissions).toBe(1);
+    expect(resolutions).toBe(0);
+    await page.getByRole("button", { name: "Use original content", exact: true }).click();
+    if (canonicalStatus === "missing")
+      await expect(
+        page.getByRole("dialog", { name: "Create this missing notebook?", exact: true }),
+      ).toContainText("Its book must still belong to your account");
+    await page.getByRole("button", { name: "Confirm use original", exact: true }).click();
+    if (canonicalStatus === "present")
+      await expect(page.getByRole("alert")).toContainText("changed");
+    else {
+      await expect(page.getByRole("status")).toContainText("Decision saved");
+      await page
+        .getByRole("listitem")
+        .filter({ hasText: "ebook-reader-notebooks/notebooks" })
+        .getByRole("button", { name: "Inspect" })
+        .click();
     }
-    if (url.pathname.endsWith("/resolve")) {
-      resolutions++;
-      expect(request.postDataJSON().expectedCanonicalVersion).toBe("review-v1");
-      return route.fulfill({ status: 409, json: { error: "Recovery state changed" } });
-    }
-    if (url.pathname === "/api/sync/recovery")
-      return route.fulfill({
-        json: { ownerId, receipts: admissions ? [summary()] : [], cursor: "done", hasMore: false },
-      });
-    if (url.pathname === "/api/sync/book-aliases")
-      return route.fulfill({ json: { ownerId, aliases: [], cursor: "0", hasMore: false } });
-    if (url.pathname === "/api/sync/pull")
-      return route.fulfill({ json: { changes: [], serverTimestamp: new Date().toISOString() } });
-    if (url.pathname === "/api/sync/push")
-      return route.fulfill({ json: { accepted: [], rejected: [] } });
-    return route.fulfill({ json: {} });
+    expect(resolutions).toBe(1);
+    expect(await custodyIds(page)).toContain("device-text");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export original", exact: true }).click();
+    const archive = unzipSync(await readFile((await (await download).path())!));
+    expect(strFromU8(archive["manifest.json"])).toContain('"value": "NaN"');
   });
-  await openRecovery(page);
-  await seedDevice(page);
-  await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  await page
-    .getByRole("listitem")
-    .filter({ hasText: "retained-notebook" })
-    .getByRole("button", { name: "Inspect" })
-    .click();
-  await page.getByRole("button", { name: "Review content with account", exact: true }).click();
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  expect(admissions).toBe(0);
-  await page.getByRole("button", { name: "Review content with account", exact: true }).click();
-  await page.getByRole("button", { name: "Send for review", exact: true }).click();
-  await expect(
-    page.frameLocator('iframe[title="Original and current content"]').locator("body"),
-  ).toContainText("Current server notebook");
-  expect(admissions).toBe(1);
-  expect(resolutions).toBe(0);
-  await page.getByRole("button", { name: "Use original content", exact: true }).click();
-  await page.getByRole("button", { name: "Confirm use original", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("changed");
-  expect(resolutions).toBe(1);
-  expect(await custodyIds(page)).toContain("device-text");
-  const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export original", exact: true }).click();
-  const archive = unzipSync(await readFile((await (await download).path())!));
-  expect(strFromU8(archive["manifest.json"])).toContain('"value": "NaN"');
-});
+}
