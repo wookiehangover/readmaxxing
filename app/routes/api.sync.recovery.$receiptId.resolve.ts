@@ -1,6 +1,7 @@
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { resolveRecovery, RecoveryConflict } from "~/lib/database/sync-delivery/recovery";
 import type { RecoveryResolution } from "~/lib/sync/delivery-types";
+import { CanonicalOwnershipConflict } from "~/lib/database/sync-delivery/canonical-version";
 export async function action({
   request,
   params,
@@ -25,6 +26,8 @@ export async function action({
     const result = await resolveRecovery(userId, params.receiptId!, body);
     return result ? Response.json(result) : Response.json({ error: "Not found" }, { status: 404 });
   } catch (error) {
+    if (error instanceof CanonicalOwnershipConflict)
+      return Response.json({ error: "Not found" }, { status: 404 });
     if (error instanceof RecoveryConflict)
       return Response.json({ error: error.message }, { status: 409 });
     if (error instanceof TypeError || error instanceof SyntaxError)

@@ -1,4 +1,4 @@
-import { canonicalSnapshot } from "./canonical-version";
+import { canonicalSnapshot, CanonicalOwnershipConflict } from "./canonical-version";
 import { sql } from "pg-sql";
 import { getPool } from "../pool";
 import { withBookOwnerTransaction } from "../book/canonical-book-write";
@@ -39,21 +39,40 @@ export function summary(row: ReceiptRow): DeliverySummary {
 }
 export async function getRecovery(account: string, id: string): Promise<RecoveryDetail | null> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  return withBookOwnerTransaction(account, async (client) => {
-    const row = (
-      await client.query<ReceiptRow>(
-        sql`SELECT ${RECEIPT_COLUMNS} FROM readmax.sync_delivery_receipt WHERE account_id=${account} AND receipt_id=${id}`,
-      )
-    ).rows[0];
-    if (!row) return null;
-    return {
-      ...summary(row),
-      originalSnapshot: row.originalSnapshot,
-      originalReferences: row.originalReferences,
-      decisionEvidence: row.decisionEvidence,
-      canonicalVersion: (await canonicalSnapshot(client, row)).version,
-    };
-  });
+  return withBookOwnerTransaction(
+    account,
+    async (client) => {
+      const row = (
+        await client.query<ReceiptRow>(
+          sql`SELECT ${RECEIPT_COLUMNS} FROM readmax.sync_delivery_receipt WHERE account_id=${account} AND receipt_id=${id}`,
+        )
+      ).rows[0];
+      if (!row) return null;
+      let canonical;
+      try {
+        const { exists: _exists, ...snapshot } = await canonicalSnapshot(client, row, false);
+        canonical = {
+          ...snapshot,
+          entityId: ["unavailable", "unsupported"].includes(snapshot.status)
+            ? null
+            : snapshot.entityId,
+        };
+      } catch (error) {
+        if (error instanceof CanonicalOwnershipConflict) return null;
+        throw error;
+      }
+      return {
+        ...summary(row),
+        originalSnapshot: row.originalSnapshot,
+        originalReferences: row.originalReferences,
+        decisionEvidence: row.decisionEvidence,
+        canonicalVersion: canonical.version,
+        canonical,
+      };
+    },
+    undefined,
+    "repeatable read",
+  );
 }
 export async function listRecovery(
   account: string,

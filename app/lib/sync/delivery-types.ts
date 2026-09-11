@@ -37,6 +37,16 @@ export interface RecoveryDetail extends DeliverySummary {
   originalReferences: Record<string, unknown>;
   decisionEvidence: unknown;
   canonicalVersion: string;
+  canonical: CanonicalRecoverySnapshot;
+}
+/** Account-owned comparison data, read consistently with its resolution precondition. */
+export interface CanonicalRecoverySnapshot {
+  entity: string;
+  entityId: string | null;
+  status: "present" | "deleted" | "missing" | "unavailable" | "unsupported";
+  /** Mutation-facing fields; timestamps are milliseconds. URLs do not prove byte custody. */
+  data: Record<string, unknown> | null;
+  version: string;
 }
 export interface RecoveryResolution {
   resolutionId: string;

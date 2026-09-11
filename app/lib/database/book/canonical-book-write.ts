@@ -184,10 +184,13 @@ export async function withBookOwnerTransaction<T>(
   userId: string,
   execute: (client: PoolClient) => Promise<T>,
   shouldCommit: (result: T) => boolean = () => true,
+  isolation?: "repeatable read",
 ): Promise<T> {
   const client = await getPool().connect();
   try {
-    await client.query("BEGIN");
+    await client.query(
+      isolation === "repeatable read" ? "BEGIN ISOLATION LEVEL REPEATABLE READ" : "BEGIN",
+    );
     await client.query(sql`SELECT pg_advisory_xact_lock(hashtext('sync-resource-binding'))`);
     await client.query(
       sql`SELECT pg_advisory_xact_lock(hashtext(${userId}), hashtext('sync-book-alias'))`,
