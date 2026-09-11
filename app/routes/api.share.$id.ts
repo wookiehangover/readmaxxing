@@ -28,10 +28,13 @@ async function streamSharedFile(shareLink: ShareLinkRow, book: BookRow) {
   }
 
   if (useLocalFileStorage()) {
+    const revision =
+      new URL(book.fileBlobUrl, "http://local").searchParams.get("revision") ?? undefined;
     const file = await readLocalFile({
       userId: shareLink.userId,
       bookId: shareLink.bookId,
       type: "file",
+      ...(revision ? { revision } : {}),
     });
     if (!file) {
       return Response.json({ error: "No file uploaded for this book" }, { status: 404 });

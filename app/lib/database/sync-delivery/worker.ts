@@ -63,6 +63,10 @@ function classification(error: unknown, attempts: number) {
 /** Shared by scheduled delivery and version-checked user resolution. Caller owns transaction. */
 export async function applyReceipt(client: PoolClient, row: ReceiptRow) {
   const source = row.originalSnapshot;
+  if ((source.recoveryProjection as { requiresNewEdit?: unknown } | undefined)?.requiresNewEdit) {
+    await decide(client, row, "needs_resolution", "local_projection_requires_edit", null);
+    return;
+  }
   const clock = source.timestamp;
   if (
     typeof clock !== "number" ||

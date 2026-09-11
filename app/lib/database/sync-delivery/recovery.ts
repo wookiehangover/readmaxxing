@@ -136,8 +136,14 @@ export async function resolveRecovery(account: string, id: string, request: Reco
       await decide(client, row, "resolved", "kept_canonical", null, {
         resolutionId: request.resolutionId,
       });
-    else if (request.action === "retry") await applyReceipt(client, row);
-    else if (request.action === "restore_copy" || request.action === "submit_edit") {
+    else if (request.action === "retry") {
+      const projection = row.originalSnapshot.recoveryProjection as
+        | { requiresNewEdit?: unknown }
+        | undefined;
+      if (projection?.requiresNewEdit)
+        throw new RecoveryConflict("Projected local content requires a new reviewed edit");
+      await applyReceipt(client, row);
+    } else if (request.action === "restore_copy" || request.action === "submit_edit") {
       const change = request.newMutation;
       if (
         !isEnvelope(change) ||

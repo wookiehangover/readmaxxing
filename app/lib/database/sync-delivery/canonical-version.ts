@@ -21,7 +21,7 @@ export class CanonicalOwnershipConflict extends Error {}
 /** Read-only version and target identity used by both receipt decisions and user preconditions. */
 export async function canonicalSnapshot(
   client: PoolClient,
-  row: ReceiptRow,
+  row: Pick<ReceiptRow, "originalSnapshot" | "targetEntityId" | "accountId">,
   lock = true,
 ): Promise<CanonicalRecoverySnapshot & { entityId: string; exists: boolean }> {
   const source = row.originalSnapshot,

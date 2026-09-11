@@ -57,6 +57,20 @@ export interface RecoveryResolution {
   action: "retry" | "keep_canonical" | "restore_copy" | "submit_edit";
   newMutation?: import("./types").ChangeEntry;
 }
+/** Custody of the received JSON only; the source raw value and bytes remain on the device. */
+export interface RecoveryAdmission {
+  admissionId: string;
+  source: { installation: string; itemId: string; version: string };
+  snapshot: Record<string, unknown>;
+}
+export interface RecoveryBookTarget {
+  ownerId: string;
+  canonical: CanonicalRecoverySnapshot;
+}
+export interface RecoveryUploadGuard {
+  ownerId: string;
+  expectedCanonicalVersion: string;
+}
 export interface BookAliasPage {
   ownerId: string;
   aliases: Array<{ fromId: string; toId: string; version: string }>;

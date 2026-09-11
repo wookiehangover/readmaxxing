@@ -217,8 +217,9 @@ export async function updateBookBlobUrls(
   bookId: string,
   urls: { fileBlobUrl?: string; coverBlobUrl?: string },
   userId: string,
+  client?: import("pg").PoolClient,
 ): Promise<BookRow | null> {
-  const pool = getPool();
+  const pool = client ?? getPool();
   const result = await pool.query<BookRow>(sql`
     UPDATE readmax.book
     SET file_blob_url = COALESCE(${urls.fileBlobUrl ?? null}, file_blob_url),
