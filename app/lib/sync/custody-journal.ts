@@ -99,10 +99,13 @@ export async function validateCustodyOwner(
   raw: unknown,
   source?: string,
   key?: IDBValidKey,
+  bindingKeys?: IDBValidKey[],
 ): Promise<string | undefined> {
   const owners = new Set(explicitOwners(raw));
   if (source && source !== "localStorage" && key !== undefined) {
-    const binding = await get<string>(["resource", source, key], getCustodyStore());
+    const bindingKey = ["resource", source, key];
+    bindingKeys?.push(bindingKey);
+    const binding = await get<string>(bindingKey, getCustodyStore());
     if (binding) owners.add(binding);
   }
   const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -131,10 +134,9 @@ export async function validateCustodyOwner(
         : undefined;
   if (typeof bookId === "string") resources.push([getBookStore(), bookId]);
   for (const [store, resourceId] of resources) {
-    const binding = await get<string>(
-      ["resource", await storeIdentity(store), resourceId],
-      getCustodyStore(),
-    );
+    const bindingKey = ["resource", await storeIdentity(store), resourceId];
+    bindingKeys?.push(bindingKey);
+    const binding = await get<string>(bindingKey, getCustodyStore());
     if (binding) owners.add(binding);
   }
   const aliases = (
@@ -278,6 +280,53 @@ function sameUnboundProfile(candidate: string, current: string): boolean {
     !!parts[2] &&
     parts[1] === currentParts[1]
   );
+}
+
+/** Revalidate durable ownership after asynchronous detail/export preparation. */
+export async function getCustodyAccess(id: string, ownerId?: string) {
+  const session = custodySession(ownerId);
+  const metadata = await get<CustodyMetadata>(`meta:${id}`, getCustodyStore());
+  if (!metadata) throw new Error("Local recovery item unavailable");
+  const bindingKeys: IDBValidKey[] = [];
+  try {
+    const knownOwner = await validateCustodyOwner(
+      ownerId,
+      metadata.ownership,
+      metadata.source,
+      metadata.key,
+      bindingKeys,
+    );
+    if (knownOwner && knownOwner !== ownerId) throw new Error("Local recovery item unavailable");
+  } catch {
+    throw new Error("Local recovery item unavailable");
+  }
+  await unboundPartition();
+  // One readonly transaction observes item, group and resource claims together.
+  // There is no Blob/hash work after this publication authorization boundary.
+  return getCustodyStore()("readonly", async (store) => {
+    const [facts, groupOwner, partition, present, bindings] = await Promise.all([
+      promisifyRequest<CustodyFacts | undefined>(store.get(factsKey(id))),
+      promisifyRequest<string | undefined>(
+        store.get(["binding", metadata.partition, metadata.operationId]),
+      ),
+      promisifyRequest<string | undefined>(store.get("profile-unbound-epoch")),
+      promisifyRequest(store.count(id)),
+      Promise.all(bindingKeys.map((key) => promisifyRequest<string | undefined>(store.get(key)))),
+    ]);
+    session.checkActive();
+    const claims = [facts?.ownerId, groupOwner, ...bindings].filter(Boolean);
+    if (
+      !present ||
+      !facts ||
+      facts.retired ||
+      facts.conflict ||
+      claims.some((claim) => claim !== ownerId) ||
+      (!claims.length && (!partition || !sameUnboundProfile(metadata.partition, partition)))
+    ) {
+      throw new Error("Local recovery item unavailable");
+    }
+    return { item: metadata, facts: { ...facts, ownerId: facts.ownerId ?? groupOwner } };
+  });
 }
 
 /** Metadata-only enumeration excludes foreign bindings before any raw snapshot read. */

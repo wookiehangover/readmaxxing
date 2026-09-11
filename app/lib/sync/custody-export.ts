@@ -1,6 +1,6 @@
 import { get } from "idb-keyval";
 import { getCustodyStore } from "./stores";
-import { listCustodyMetadata, type CustodyItem } from "./custody-journal";
+import { getCustodyAccess, listCustodyMetadata, type CustodyItem } from "./custody-journal";
 import { custodySession } from "./custody-session";
 
 export async function localRecoverySummaries(ownerId?: string) {
@@ -25,18 +25,18 @@ export async function localRecoverySummaries(ownerId?: string) {
 
 export async function localRecoveryDetail(id: string, ownerId?: string) {
   const session = custodySession(ownerId);
-  const found = (await listCustodyMetadata(ownerId)).find(({ item }) => item.id === id);
-  if (!found) throw new Error("Local recovery item unavailable");
+  await getCustodyAccess(id, ownerId);
   const item = await get<CustodyItem>(id, getCustodyStore());
-  session.checkActive();
   if (!item) throw new Error("Local recovery item unavailable");
-  return { item, facts: found.facts };
+  const access = await getCustodyAccess(id, ownerId);
+  session.checkActive();
+  return { item, facts: access.facts };
 }
 
 /** Versioned graph representation; attachments remain exact bytes, never JSON placeholders. */
 export async function exportLocalRecovery(id: string, ownerId?: string) {
   const session = custodySession(ownerId);
-  const { item, facts } = await localRecoveryDetail(id, ownerId);
+  const { item } = await localRecoveryDetail(id, ownerId);
   const seen = new Map<object, number>();
   const nodes: unknown[] = [];
   const attachments: Array<{
@@ -100,6 +100,7 @@ export async function exportLocalRecovery(id: string, ownerId?: string) {
     return { ref: node };
   }
   const root = await encode(item.raw);
+  const { facts } = await getCustodyAccess(id, ownerId);
   session.checkActive();
   return {
     manifest: {
