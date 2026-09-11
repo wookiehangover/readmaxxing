@@ -2,6 +2,11 @@
   "name": "@readmaxxing/cli",
   "version": "0.1.0",
   "description": "Upload and export your Readmaxxing library from the terminal",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wookiehangover/readmaxxing.git",
+    "directory": "packages/cli"
+  },
   "bin": {
     "readmaxxing": "bin/readmaxxing.mjs"
   },
@@ -10,9 +15,13 @@
     "dist"
   ],
   "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "prepack": "pnpm build"
+    "prepack": "node --run build"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.0",
