@@ -266,6 +266,20 @@ export async function bindCustody(id: string, ownerId: string): Promise<boolean>
   return bound;
 }
 
+function sameUnboundProfile(candidate: string, current: string): boolean {
+  const parts = candidate.split(":");
+  const currentParts = current.split(":");
+  return (
+    parts.length === 3 &&
+    currentParts.length === 3 &&
+    parts[0] === "unbound" &&
+    currentParts[0] === "unbound" &&
+    !!parts[1] &&
+    !!parts[2] &&
+    parts[1] === currentParts[1]
+  );
+}
+
 /** Metadata-only enumeration excludes foreign bindings before any raw snapshot read. */
 export async function listCustodyMetadata(
   ownerId?: string,
@@ -283,10 +297,21 @@ export async function listCustodyMetadata(
       getCustodyStore(),
     );
     const fact = { ...storedFacts, ownerId: storedFacts.ownerId ?? groupOwner };
-    if (fact.retired || (fact.ownerId ? fact.ownerId !== ownerId : item.partition !== partition))
+    if (
+      fact.retired ||
+      (fact.ownerId ? fact.ownerId !== ownerId : !sameUnboundProfile(item.partition, partition))
+    )
       continue;
     try {
-      await validateCustodyOwner(ownerId, item.ownership, item.source, item.key);
+      const resourceOwner = await validateCustodyOwner(
+        ownerId,
+        item.ownership,
+        item.source,
+        item.key,
+      );
+      // A different operation may have bound this resource after its snapshot
+      // was captured. Such evidence must also hide it while signed out.
+      if (resourceOwner && resourceOwner !== ownerId) continue;
     } catch {
       continue;
     }
