@@ -292,3 +292,58 @@ it("keeps a replaced account's late initialization and auth-expiry callback from
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 });
+
+it("refreshes stored canonical content through the same engine only for the active recovery owner", async () => {
+  await Promise.all(Object.values(stores).map((store) => clear(store())));
+  await set("initial-sync-complete", true, stores.getSyncFlagsStore());
+  let revision = 1;
+  let pulls = 0;
+  vi.stubGlobal("fetch", async (url: string) => {
+    if (url.startsWith("/api/sync/book-aliases")) return new Response(null, { status: 503 });
+    if (url.startsWith("/api/sync/pull")) {
+      pulls++;
+      return Response.json({
+        changes: [
+          {
+            entity: "book",
+            records: [{ id: "cloud", title: `Revision ${revision}`, updatedAt: revision * 1000 }],
+            cursor: new Date(revision * 1000).toISOString(),
+          },
+        ],
+      });
+    }
+    return new Response(null, { status: 503 });
+  });
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => {
+      root.render(renderHarness());
+    });
+    await vi.waitFor(async () =>
+      expect(await get("cloud", stores.getBookStore())).toMatchObject({ title: "Revision 1" }),
+    );
+    const initialPulls = pulls;
+    revision = 2;
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("sync:recovery-applied", { detail: { ownerId: "foreign" } }),
+      );
+    });
+    expect(pulls).toBe(initialPulls);
+    expect(await get("cloud", stores.getBookStore())).toMatchObject({ title: "Revision 1" });
+    const { requestRecoveryPull } = await import("../recovery-refresh");
+    await act(async () => {
+      requestRecoveryPull("reader");
+    });
+    await vi.waitFor(async () =>
+      expect(await get("cloud", stores.getBookStore())).toMatchObject({ title: "Revision 2" }),
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+  const finalPulls = pulls;
+  window.dispatchEvent(new CustomEvent("sync:recovery-applied", { detail: { ownerId: "reader" } }));
+  expect(pulls).toBe(finalPulls);
+});

@@ -10,6 +10,7 @@ import { localRecoveryDetail } from "./custody-export";
 import { custodySession } from "./custody-session";
 import { equalRaw } from "./raw-snapshot";
 import { getCustodyStore } from "./stores";
+import { requestRecoveryPull } from "./recovery-refresh";
 import type { RecoveryDetail, RecoveryResolution, DeliverySummary } from "./delivery-types";
 import type { EntityType } from "./types";
 
@@ -132,6 +133,7 @@ export async function submitRecoveryResolution(input: {
     if (previous.ownerId !== input.ownerId) throw new Error("Recovery response account changed");
     await getCustodyAccess(input.submissionId, input.ownerId);
     session.checkActive();
+    if (raw.request.action !== "keep_canonical") requestRecoveryPull(input.ownerId);
     return previous;
   }
   let body: string;
@@ -168,5 +170,6 @@ export async function submitRecoveryResolution(input: {
   // This proof belongs to the resolution, not to byte coverage of any source.
   await set(["recovery-result", input.submissionId], result, getCustodyStore());
   session.checkActive();
+  if (raw.request.action !== "keep_canonical") requestRecoveryPull(input.ownerId);
   return result;
 }

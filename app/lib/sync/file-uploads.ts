@@ -1,3 +1,4 @@
+import type { RecoveryUploadGuard } from "./delivery-types";
 import { validateCustodyOwner, storeIdentity } from "./custody-journal";
 import { custodySession } from "./custody-session";
 import { upload } from "@vercel/blob/client";
@@ -57,8 +58,19 @@ export async function uploadFile(
   data: ArrayBuffer | Blob,
   type: "file" | "cover",
   preferredContentType?: string,
+  recovery?: RecoveryUploadGuard,
 ): Promise<string | null> {
   if (bookId === DEMO_BOOK_ID) return null;
+  const recoverySession = recovery ? custodySession(ctx.userId) : undefined;
+  recoverySession?.checkActive();
+  if (recovery && recovery.ownerId !== ctx.userId)
+    throw new Error("Recovery upload account changed");
+  const recoveryHeaders: Record<string, string> = recovery
+    ? {
+        "X-Recovery-Owner": recovery.ownerId,
+        "X-Recovery-Version": recovery.expectedCanonicalVersion,
+      }
+    : {};
 
   const folder = type === "cover" ? "covers" : "books";
   const contentType =
@@ -83,7 +95,8 @@ export async function uploadFile(
     upload(pathname, blob, {
       access: "private",
       handleUploadUrl: "/api/sync/files/upload",
-      clientPayload: JSON.stringify({ bookId, type }),
+      clientPayload: JSON.stringify({ bookId, type, ...(recovery ? { recovery } : {}) }),
+      ...(recovery ? { headers: recoveryHeaders } : {}),
       contentType,
     });
 
@@ -99,13 +112,14 @@ export async function uploadFile(
   };
 
   const performUpload = async () => {
+    recoverySession?.checkActive();
     if (import.meta.env.MODE !== "development") {
       if (import.meta.env.MODE === "test") return uploadToVercel();
 
       const response = await fetch("/api/sync/files/upload", {
         method: "POST",
         credentials: "include",
-        headers: { "X-Readmax-Storage-Backend": "negotiate" },
+        headers: { "X-Readmax-Storage-Backend": "negotiate", ...recoveryHeaders },
       });
       const result = (await response.json()) as { backend?: unknown; error?: unknown };
 
@@ -119,7 +133,7 @@ export async function uploadFile(
       {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": contentType },
+        headers: { "Content-Type": contentType, ...recoveryHeaders },
         body: blob,
       },
     );
@@ -155,6 +169,7 @@ export async function uploadFile(
     },
   });
 
+  recoverySession?.checkActive();
   return result?.url ?? null;
 }
 

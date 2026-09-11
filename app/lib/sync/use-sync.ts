@@ -246,10 +246,20 @@ export function useSync(): SyncActions {
       engineRef.current?.triggerPush();
     }
 
+    function handleRecoveryApplied(event: Event) {
+      if (
+        !disposed &&
+        (event as CustomEvent<{ ownerId: string }>).detail?.ownerId === userId &&
+        engineRef.current === engine
+      )
+        engine.triggerPull();
+    }
+
     window.addEventListener("focus", handleFocus);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     window.addEventListener("sync:push-needed", handlePushNeeded);
+    window.addEventListener("sync:recovery-applied", handleRecoveryApplied);
 
     return () => {
       disposed = true;
@@ -259,6 +269,7 @@ export function useSync(): SyncActions {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("sync:push-needed", handlePushNeeded);
+      window.removeEventListener("sync:recovery-applied", handleRecoveryApplied);
     };
   }, [isAuthenticated, userId]);
 

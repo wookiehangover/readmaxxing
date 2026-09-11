@@ -158,6 +158,91 @@ try {
     );
     await context.close();
   }
+  for (const switchAccount of [false, true]) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(origin);
+    let remoteFileUrl = null;
+    const uploaded = [];
+    await page.route("**/api/sync/recovery?targetBookId=*", (route) =>
+      route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          ownerId: "A",
+          canonical: {
+            entity: "book",
+            entityId: "entity",
+            status: "present",
+            version: remoteFileUrl ? "published" : "reviewed",
+            data: { id: "entity", format: "epub", remoteFileUrl },
+          },
+        }),
+      }),
+    );
+    await page.route("**/api/sync/files/upload?*", async (route) => {
+      const request = route.request();
+      assert.equal(request.headers()["x-recovery-owner"], "A");
+      assert.equal(request.headers()["x-recovery-version"], "reviewed");
+      uploaded.push([...request.postDataBuffer()]);
+      remoteFileUrl = "https://blob.test/selected-revision";
+      if (switchAccount) await page.evaluate(() => window.session.setCustodyAccount("B"));
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ url: remoteFileUrl }),
+      });
+    });
+    const result = await page.evaluate(async () => {
+      const journal = await import("/app/lib/sync/custody-journal.ts");
+      const recovery = await import("/app/lib/sync/custody-export.ts");
+      const files = await import("/app/lib/sync/local-recovery-files.ts");
+      window.session = await import("/app/lib/sync/custody-session.ts");
+      window.session.setCustodyAccount("A");
+      const bytes = new Uint8Array([99, 8, 0, 255, 77]);
+      const id = await journal.retainCustody({
+        source: "files",
+        key: "entity",
+        raw: bytes.subarray(1, 4),
+        role: "intended",
+        ownerId: "A",
+      });
+      const { version } = await recovery.localRecoveryDetail(id, "A");
+      const target = await files.getRecoveryBookTarget("A", "entity");
+      const submissionId = await files.prepareLocalFileRecovery({
+        ownerId: "A",
+        id,
+        expectedVersion: version,
+        targetBookId: "entity",
+        expectedCanonicalVersion: target.canonical.version,
+        type: "file",
+      });
+      let success = false,
+        error;
+      try {
+        await files.submitLocalFileRecovery({ ownerId: "A", submissionId });
+        success = true;
+      } catch (cause) {
+        error = String(cause);
+      }
+      const { getCustodyStore } = await import("/app/lib/sync/stores.ts");
+      const present = await getCustodyStore()(
+        "readonly",
+        (store) =>
+          new Promise((resolve) => {
+            const request = store.count(id);
+            request.onsuccess = () => resolve(request.result);
+          }),
+      );
+      return { success, error, present };
+    });
+    assert.deepEqual(uploaded, [[8, 0, 255]]);
+    assert.equal(result.present, 1);
+    assert.equal(result.success, !switchAccount);
+    if (switchAccount) assert.match(result.error, /Account changed/);
+    console.log(
+      `PASS selected native file bytes and ${switchAccount ? "account-switch rejection" : "publication confirmation"}`,
+    );
+    await context.close();
+  }
 } finally {
   await browser?.close();
   await server?.close();
