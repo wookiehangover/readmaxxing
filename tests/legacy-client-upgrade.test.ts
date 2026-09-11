@@ -11,6 +11,7 @@ import {
 import { action } from "../app/routes/api.sync.push";
 import { loader as pullRoute } from "../app/routes/api.sync.pull";
 import { loader as aliasesRoute } from "../app/routes/api.sync.book-aliases";
+import { recordChange } from "../app/lib/sync/change-log";
 import { pushChangesWithResult } from "../app/lib/sync/push";
 import { pullChanges } from "../app/lib/sync/pull";
 import { runInitialSyncIfNeeded } from "../app/lib/sync/initial-sync";
@@ -142,6 +143,49 @@ for (const client of clients) {
     expect(
       (await get<{ cursor: string }>(["aliases", 1, USER], stores.getAliasProgressStore()))?.cursor,
     ).not.toBe(first?.cursor);
+  });
+
+  it(`${client.name}: an old push cannot erase raw envelope fields lost by receipt JSON`, async () => {
+    await push([root("book")]);
+    const input = {
+      entity: "notebook" as const,
+      entityId: "book",
+      operation: "put" as const,
+      timestamp: BASE + 1,
+      data: { bookId: "book", content: doc("valid document") },
+      recoveryOriginal: new Blob(["unique envelope attachment"]),
+      revision: NaN,
+    };
+    const change = await recordChange(input);
+    await pushChangesWithResult(ctx());
+    await client.push(ctx());
+    expect(await get(change.id, stores.getChangeLogStore())).toBeUndefined();
+    const rows = (
+      await db.query<{ original_snapshot: Record<string, unknown> }>(
+        "SELECT original_snapshot FROM readmax.sync_delivery_receipt WHERE change_id = $1",
+        [change.id],
+      )
+    ).rows;
+    expect(rows).toEqual([
+      expect.objectContaining({
+        original_snapshot: expect.objectContaining({
+          recoveryOriginal: {},
+          revision: null,
+          data: input.data,
+        }),
+      }),
+    ]);
+    const retained = (await listCustody(USER)).find(({ item }) => {
+      const raw = item.raw as typeof input & { id?: string };
+      return (
+        raw?.id === change.id && raw.recoveryOriginal instanceof Blob && Number.isNaN(raw.revision)
+      );
+    });
+    expect(retained).toBeDefined();
+    expect(await (retained!.item.raw as typeof input).recoveryOriginal.text()).toBe(
+      "unique envelope attachment",
+    );
+    expect(retained!.facts.receiptId).toBeTruthy();
   });
 
   it(`${client.name}: real old response deletes a shared revised ID but private revision reaches SQL`, async () => {

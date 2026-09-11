@@ -1,6 +1,6 @@
 import { getBookRemaps } from "./remap-journal";
 import { remapChange } from "./remap-references";
-import { deliveryFingerprint } from "./delivery-fingerprint";
+import { deliveryFingerprint, equalDeliveredEnvelope } from "./delivery-fingerprint";
 import { get, promisifyRequest, update } from "idb-keyval";
 import { ulid } from "ulid";
 import {
@@ -150,7 +150,7 @@ export async function receiveJournalRevision(
     if (!(await bindCustody(item.id, ownerId))) continue;
     // JSON strips undefined, invalid clocks and bytes; those original revisions stay local.
     const exact = transport
-      ? (await equalRaw(raw.data, wire.data)) && Object.is(raw.timestamp, wire.timestamp)
+      ? await equalDeliveredEnvelope(raw, wire)
       : await equalRaw(raw, wire.data);
     session.checkActive();
     await getCustodyStore()("readwrite", (store) => {

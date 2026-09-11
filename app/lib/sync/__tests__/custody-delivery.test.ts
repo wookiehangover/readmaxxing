@@ -184,3 +184,32 @@ it("retains non-JSON raw locally while draining healthy outgoing records", async
   expect(data.self).toBe(data);
   expect(retained.facts.receiptId).toBeUndefined();
 });
+
+it("preserves complete lossy envelopes both at receipt retirement and synced-row cleanup", async () => {
+  const input = {
+    entity: "notebook" as const,
+    entityId: "book",
+    operation: "put" as const,
+    timestamp: 1,
+    data: { bookId: "book", content: "valid JSON" },
+    revision: NaN,
+    recoveryOriginal: new Blob(["envelope bytes"]),
+    absent: undefined,
+  };
+  const change = await recordChange(input);
+  const fingerprint = await deliveryFingerprint(change);
+  await receiveJournalRevision("A", change, receipt(fingerprint), fingerprint);
+  const raw = (await listCustody("A"))[0].item.raw as typeof input;
+  expect(Number.isNaN(raw.revision)).toBe(true);
+  expect(await raw.recoveryOriginal.text()).toBe("envelope bytes");
+  expect(Object.hasOwn(raw, "absent")).toBe(true);
+  const { markSynced, clearSyncedChanges } = await import("../change-log");
+  await markSynced([change.id]);
+  await clearSyncedChanges("A", [change]);
+  expect(await get(change.id, stores.getChangeLogStore())).toBeUndefined();
+  const before = (await listCustody("A")).find(({ item }) => item.role === "before")!.item
+    .raw as typeof input;
+  expect(Number.isNaN(before.revision)).toBe(true);
+  expect(await before.recoveryOriginal.text()).toBe("envelope bytes");
+  expect(Object.hasOwn(before, "absent")).toBe(true);
+});

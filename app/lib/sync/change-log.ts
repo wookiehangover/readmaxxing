@@ -1,3 +1,4 @@
+import { equalDeliveredEnvelope } from "./delivery-fingerprint";
 import { custodySession } from "./custody-session";
 import {
   retainCustody,
@@ -152,9 +153,7 @@ export async function clearSyncedChanges(
     if (entry?.synced !== true || (ownerId && entry.ownerId && ownerId !== entry.ownerId)) continue;
     const receipt = receivedSnapshots.find((snapshot) => snapshot.id === id);
     const covered =
-      receipt &&
-      (await equalRaw(receipt.data, JSON.parse(JSON.stringify(receipt)).data)) &&
-      Object.is(receipt.timestamp, JSON.parse(JSON.stringify(receipt)).timestamp)
+      receipt && (await equalDeliveredEnvelope(receipt, JSON.parse(JSON.stringify(receipt))))
         ? { ...receipt, synced: true }
         : undefined;
     // Deletion itself revalidates the preimage after private retention.

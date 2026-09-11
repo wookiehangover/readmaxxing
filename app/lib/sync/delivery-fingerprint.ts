@@ -1,3 +1,5 @@
+import { equalRaw } from "./raw-snapshot";
+
 /** Canonicalization is for received JSON only; never use it for local raw custody. */
 export async function deliveryFingerprint(change: unknown): Promise<string> {
   const wire = JSON.parse(JSON.stringify(change)) as Record<string, unknown>;
@@ -28,4 +30,15 @@ export async function deliveryFingerprint(change: unknown): Promise<string> {
   }
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(output.join("")));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** Receipt coverage includes every raw envelope field except delivery bookkeeping. */
+export function equalDeliveredEnvelope(raw: object, received: object): Promise<boolean> {
+  const original = { ...raw } as Record<string, unknown>;
+  const wire = { ...received } as Record<string, unknown>;
+  for (const key of ["synced", "failure"]) {
+    delete original[key];
+    delete wire[key];
+  }
+  return equalRaw(original, wire);
 }
