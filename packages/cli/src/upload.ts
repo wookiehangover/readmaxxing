@@ -4,6 +4,7 @@ import { basename, extname, posix } from "node:path";
 import { unzipSync, strFromU8 } from "fflate";
 import { DOMParser } from "linkedom";
 import { put } from "@vercel/blob/client";
+import type { ProgressUpdate } from "./terminal.js";
 import { Client, type Book } from "./client.js";
 
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
@@ -113,16 +114,37 @@ async function uploadFile(
   type: "file" | "cover",
   contentType: string,
   extension: string,
+  progress?: (update: ProgressUpdate) => void,
 ): Promise<string> {
   const { backend } = await client.json<{ backend: string }>("/api/sync/files/upload", {
     method: "POST",
     headers: { "X-Readmax-Storage-Backend": "negotiate" },
   });
+  const label = type === "file" ? "Uploading book" : "Uploading cover";
+  progress?.({ label, loaded: 0, total: bytes.length });
   const body = new Blob([Uint8Array.from(bytes)], { type: contentType });
   if (backend === "local") {
+    let loaded = 0;
+    const stream = progress
+      ? new ReadableStream<Uint8Array>({
+          pull(controller) {
+            const end = Math.min(loaded + 64 * 1024, bytes.length);
+            controller.enqueue(bytes.subarray(loaded, end));
+            loaded = end;
+            progress({ label, loaded, total: bytes.length });
+            if (loaded === bytes.length) controller.close();
+          },
+        })
+      : body;
+    const init: RequestInit & { duplex?: "half" } = {
+      method: "POST",
+      headers: { "Content-Type": contentType, "Content-Length": String(bytes.length) },
+      body: stream,
+      ...(progress ? { duplex: "half" as const } : {}),
+    };
     const result = await client.json<{ url: string }>(
       `/api/sync/files/upload?${new URLSearchParams({ bookId, type })}`,
-      { method: "POST", headers: { "Content-Type": contentType }, body },
+      init,
     );
     return result.url;
   }
@@ -143,6 +165,12 @@ async function uploadFile(
       token: clientToken,
       contentType,
       multipart: true,
+      ...(progress
+        ? {
+            onUploadProgress: ({ loaded, total }: { loaded: number; total: number }) =>
+              progress({ label, loaded, total }),
+          }
+        : {}),
     })
   ).url;
 }
@@ -151,6 +179,7 @@ export async function uploadBook(
   client: Client,
   path: string,
   overrides: { title?: string; author?: string },
+  progress?: (update: ProgressUpdate) => void,
 ): Promise<Book> {
   const format = extname(path).slice(1).toLowerCase();
   if (format !== "epub" && format !== "pdf")
@@ -163,6 +192,7 @@ export async function uploadBook(
   if (format === "pdf" && !bytes.subarray(0, 1024).includes(Buffer.from("%PDF-")))
     throw new Error("Invalid PDF file.");
   const metadata = format === "epub" ? epubMetadata(bytes) : undefined;
+  progress?.({ label: "Checking library" });
   const { user } = await client.json<{ user: { id: string } }>("/api/auth/session");
   const id = randomUUID();
   const data = {
@@ -184,9 +214,11 @@ export async function uploadBook(
       "file",
       format === "epub" ? "application/epub+zip" : "application/pdf",
       format,
+      progress,
     );
     // Preserve an existing canonical book's metadata while repairing a missing file.
     const canonicalData = existing ? { id: canonicalId } : { ...data, id: canonicalId };
+    progress?.({ label: "Saving book" });
     await pushBook(client, canonicalId, { ...canonicalData, remoteFileUrl });
     if (metadata?.cover) {
       const cover = metadata.cover;
@@ -199,10 +231,14 @@ export async function uploadBook(
           "cover",
           cover.contentType,
           cover.extension,
+          progress,
         );
+        progress?.({ label: "Saving cover" });
         await pushBook(client, canonicalId, { ...canonicalData, remoteCoverUrl });
       } catch {
-        process.stderr.write("Book uploaded, but the optional cover could not be uploaded.\n");
+        if (progress)
+          progress({ label: "Book saved", warning: "Cover upload failed; book saved." });
+        else process.stderr.write("Cover upload failed; book saved.\n");
       }
     }
     return { ...(existing ?? data), id: canonicalId, fileBlobUrl: remoteFileUrl };

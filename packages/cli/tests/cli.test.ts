@@ -106,7 +106,14 @@ describe("downloads and exports", () => {
   it("writes exact bytes and protects existing files", async () => {
     const path = join(directory, "book.epub");
     const bytes = new Uint8Array([0, 255, 10, 128]);
-    await writeOutput(new Response(bytes), path);
+    const progress = vi.fn();
+    await writeOutput(
+      new Response(bytes, { headers: { "content-length": String(bytes.length) } }),
+      path,
+      false,
+      progress,
+    );
+    expect(progress).toHaveBeenLastCalledWith(bytes.length, bytes.length);
     expect(await readFile(path)).toEqual(Buffer.from(bytes));
     await expect(writeOutput(new Response("replacement"), path)).rejects.toThrow("File exists");
     expect(await readFile(path)).toEqual(Buffer.from(bytes));
@@ -167,11 +174,21 @@ describe("uploads", () => {
       }
       if (new Headers(init?.headers).has("X-Readmax-Storage-Backend"))
         return Response.json({ backend: "local" });
-      const body = init?.body as Blob;
-      expect(Buffer.from(await body.arrayBuffer())).toEqual(bytes);
+      expect(init).toMatchObject({ duplex: "half" });
+      expect(new Headers(init?.headers).get("content-length")).toBe(String(bytes.length));
+      expect(Buffer.from(await new Response(init?.body as ReadableStream).arrayBuffer())).toEqual(
+        bytes,
+      );
       return Response.json({ url: "local://book.pdf" });
     });
-    const result = await uploadBook(new Client(config), path, { author: "Writer" });
+    const progress = vi.fn();
+    const result = await uploadBook(new Client(config), path, { author: "Writer" }, progress);
+    expect(progress).toHaveBeenCalledWith({
+      label: "Uploading book",
+      loaded: bytes.length,
+      total: bytes.length,
+    });
+    expect(progress).toHaveBeenLastCalledWith({ label: "Saving book" });
     expect(result).toMatchObject({ title: "Example", author: "Writer", format: "pdf" });
     expect(pushed[0].fileHash).toMatch(/^[a-f0-9]{64}$/);
     expect(pushed[1]).toMatchObject({ remoteFileUrl: "local://book.pdf" });
@@ -226,7 +243,14 @@ describe("uploads", () => {
       expect(JSON.parse(payload.payload.clientPayload)).toMatchObject({ type: "file" });
       return Response.json({ clientToken: "scoped-blob-token" });
     });
-    const result = await uploadBook(new Client(config), path, {});
+    const progress = vi.fn();
+    vi.mocked(put).mockImplementationOnce(async (_path, body, options) => {
+      const total = (body as Blob).size;
+      options.onUploadProgress?.({ loaded: total, total, percentage: 100 });
+      return { url: remoteFileUrl } as Awaited<ReturnType<typeof put>>;
+    });
+    const result = await uploadBook(new Client(config), path, {}, progress);
+    expect(progress).toHaveBeenCalledWith({ label: "Uploading book", loaded: 16, total: 16 });
     expect(result.fileBlobUrl).toBe(remoteFileUrl);
     expect(persisted).toBe(true);
     expect(put).toHaveBeenCalledWith(expect.any(String), expect.any(Blob), {
@@ -234,6 +258,7 @@ describe("uploads", () => {
       token: "scoped-blob-token",
       contentType: "application/pdf",
       multipart: true,
+      onUploadProgress: expect.any(Function),
     });
   });
 });

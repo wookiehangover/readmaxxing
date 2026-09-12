@@ -1,40 +1,13 @@
-import { parseArgs, stripVTControlCharacters } from "node:util";
+import { parseArgs } from "node:util";
 import { rm } from "node:fs/promises";
 import { Client, type Book, type ChatSession } from "./client.js";
-import { DEFAULT_URL, configPath, loginUrl, readConfig } from "./config.js";
+import { configPath, loginUrl, readConfig } from "./config.js";
 import { safeFilename, writeOutput } from "./output.js";
 import { uploadBook } from "./upload.js";
 import { login } from "./login.js";
 
-const HELP = `Readmaxxing CLI
-
-Usage:
-  readmaxxing login [--url <origin>] [--token-stdin] [--no-browser]
-  readmaxxing logout [--url <origin>]
-  readmaxxing books [--json]
-  readmaxxing upload <file.epub|file.pdf> [--title <title>] [--author <author>] [--json]
-  readmaxxing download <book-id> [-o <file|->] [--force]
-  readmaxxing chats [--book <book-id>] [--json]
-  readmaxxing export <notes|outline|chat> <book-id> [-o <file|->] [--force]
-  readmaxxing export chat --session <session-id> [-o <file|->] [--force]
-
-The default server is ${DEFAULT_URL}. Sign in with readmaxxing login.
-Login connects automatically through a temporary localhost callback. If it fails,
-press Enter in the terminal and paste the token shown in the browser.
---no-browser prints the login link; --token-stdin accepts a token without a callback.
-All commands accept --url. Exports default to stdout; downloads default to
-<title>.<epub|pdf>. Existing files require --force. Book IDs come from books.
-Chat exports saved conversations; --session selects one conversation.
-
-Environment: READMAXXING_URL, READMAXXING_TOKEN, READMAXXING_CONFIG.
-Credentials default to ~/.config/readmaxxing/config.json (or XDG_CONFIG_HOME).
-Only synced data is available. Sync browser edits before exporting.
-EPUB title, author, and cover are extracted; PDFs use their filename by default.
-`;
-
-function clean(value: string | null): string {
-  return stripVTControlCharacters(value ?? "").replace(/[\p{Cc}\p{Cf}]/gu, " ");
-}
+import { help } from "./help.js";
+import { Activity, clean, listing, success, tone } from "./terminal.js";
 
 export async function run(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -56,7 +29,7 @@ export async function run(args: string[]): Promise<void> {
   });
   const [command, ...rest] = positionals;
   if (values.help || !command || command === "help") {
-    process.stdout.write(HELP);
+    process.stdout.write(help(command === "help" ? rest[0] : command));
     return;
   }
   const allowed: Record<string, string[]> = {
@@ -82,7 +55,7 @@ export async function run(args: string[]): Promise<void> {
           : 2
         : 0;
   if (rest.length !== expected || rest.some((value) => !value.trim()))
-    throw new Error(`Invalid arguments for ${command}. Run readmaxxing --help.`);
+    throw new Error(`Invalid arguments for ${command}. Run readmaxxing ${command} --help.`);
   if (
     command === "export" &&
     (!["notes", "outline", "chat"].includes(rest[0]) || (values.session && rest[0] !== "chat"))
@@ -96,7 +69,9 @@ export async function run(args: string[]): Promise<void> {
   const client = new Client(config);
   switch (command) {
     case "logout": {
-      await client.request("/api/auth/logout", { method: "POST" });
+      await new Activity("Signing out").during(() =>
+        client.request("/api/auth/logout", { method: "POST" }),
+      );
       // An environment credential can differ from the locally saved session.
       const { readFile } = await import("node:fs/promises");
       try {
@@ -106,66 +81,78 @@ export async function run(args: string[]): Promise<void> {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
-      process.stderr.write("CLI session revoked. Clear READMAXXING_TOKEN if you set it.\n");
+      success("Signed out");
+      if (process.env.READMAXXING_TOKEN)
+        process.stderr.write("Unset READMAXXING_TOKEN to clear your environment token.\n");
       break;
     }
     case "books": {
-      const books = await client.pull<Book>("book");
+      const books = await new Activity("Loading books").during(() => client.pull<Book>("book"));
       if (values.json) process.stdout.write(`${JSON.stringify(books, null, 2)}\n`);
       else
-        process.stdout.write(
-          [
-            "ID\tTITLE\tAUTHOR\tFORMAT",
-            ...books.map((book) =>
-              [book.id, book.title, book.author, book.format].map(clean).join("\t"),
-            ),
-          ].join("\n") + "\n",
+        listing(
+          ["ID", "TITLE", "AUTHOR", "FORMAT"],
+          books.map((book) => [book.id, book.title, book.author, book.format]),
+          "No books yet. Add one with readmaxxing upload <file>.",
         );
       break;
     }
     case "chats": {
-      const sessions = (await client.pull<ChatSession>("chat_session")).filter(
-        (session) => !values.book || session.bookId === values.book,
-      );
+      const sessions = (
+        await new Activity("Loading chats").during(() => client.pull<ChatSession>("chat_session"))
+      ).filter((session) => !values.book || session.bookId === values.book);
       if (values.json) process.stdout.write(`${JSON.stringify(sessions, null, 2)}\n`);
       else
-        process.stdout.write(
-          [
-            "ID\tTITLE\tBOOK",
-            ...sessions.map((session) =>
-              [session.id, session.title, session.bookId].map(clean).join("\t"),
-            ),
-          ].join("\n") + "\n",
+        listing(
+          ["ID", "TITLE", "BOOK"],
+          sessions.map((session) => [session.id, session.title, session.bookId]),
+          "No conversations found.",
         );
       break;
     }
     case "upload": {
-      const book = await uploadBook(client, rest[0], {
-        title: values.title,
-        author: values.author,
-      });
+      const activity = new Activity("Reading book");
+      const book = await activity.during(() =>
+        uploadBook(
+          client,
+          rest[0],
+          {
+            title: values.title,
+            author: values.author,
+          },
+          activity.update,
+        ),
+      );
       process.stdout.write(
         values.json
           ? `${JSON.stringify(book, null, 2)}\n`
-          : `${clean(book.id)}\t${clean(book.title)}\n`,
+          : process.stdout.isTTY
+            ? `${tone("✓", 32)} ${tone(clean(book.title), 1)}\n${tone(`  ${clean(book.id)}`, 2)}\n`
+            : `${clean(book.id)}\t${clean(book.title)}\n`,
       );
       break;
     }
     case "download": {
-      const book = await client.book(rest[0]);
-      const output =
-        values.output ??
-        `${safeFilename(book.title ?? book.id)}.${book.format === "pdf" ? "pdf" : "epub"}`;
-      if (output === "-" && process.stdout.isTTY)
-        throw new Error("Redirect binary output to a file or pipe.");
-      await writeOutput(
-        await client.request(
-          `/api/sync/files/download?${new URLSearchParams({ bookId: book.id, type: "file" })}`,
-        ),
-        output,
-        values.force,
-      );
-      if (output !== "-") process.stderr.write(`Saved ${output}\n`);
+      const activity = new Activity("Finding book");
+      await activity.during(async () => {
+        const book = await client.book(rest[0]);
+        const output =
+          values.output ??
+          `${safeFilename(book.title ?? book.id)}.${book.format === "pdf" ? "pdf" : "epub"}`;
+        if (output === "-" && process.stdout.isTTY)
+          throw new Error("Redirect binary output to a file or pipe.");
+        activity.update({ label: "Downloading" });
+        await writeOutput(
+          await client.request(
+            `/api/sync/files/download?${new URLSearchParams({ bookId: book.id, type: "file" })}`,
+          ),
+          output,
+          values.force,
+          (loaded, total) => activity.update({ label: "Downloading", loaded, total }),
+        );
+        activity.stop();
+        if (output !== "-") success(`Saved ${output}`);
+      });
       break;
     }
     case "export": {
@@ -173,9 +160,12 @@ export async function run(args: string[]): Promise<void> {
         kind: rest[0],
         ...(values.session ? { sessionId: values.session } : { bookId: rest[1] }),
       });
-      const response = await client.request(`/api/cli/export?${query}`);
-      await writeOutput(response, values.output ?? "-", values.force);
-      if (values.output && values.output !== "-") process.stderr.write(`Saved ${values.output}\n`);
+      const activity = new Activity("Exporting Markdown");
+      await activity.during(async () => {
+        const response = await client.request(`/api/cli/export?${query}`);
+        await writeOutput(response, values.output ?? "-", values.force);
+      });
+      if (values.output && values.output !== "-") success(`Saved ${values.output}`);
       break;
     }
   }

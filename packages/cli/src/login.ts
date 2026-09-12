@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
-import { stripVTControlCharacters } from "node:util";
 import { Client } from "./client.js";
-import { saveConfig, validateToken } from "./config.js";
+import { Activity, clean, success } from "./terminal.js";
+import { DEFAULT_URL, saveConfig, validateToken } from "./config.js";
 import { startLoginCallback, type LoginCallback } from "./login-callback.js";
 
 async function connect(url: string, token: string, signal?: AbortSignal) {
@@ -14,11 +14,10 @@ async function connect(url: string, token: string, signal?: AbortSignal) {
   );
   signal?.throwIfAborted();
   await saveConfig(config);
-  const name = stripVTControlCharacters(user.displayName).replace(/[\p{Cc}\p{Cf}]/gu, " ");
-  process.stderr.write(`Signed in as ${name} on ${url}.\n`);
+  return `Signed in as ${clean(user.displayName)}${url === DEFAULT_URL ? "" : ` · ${url}`}`;
 }
 
-function openBrowser(target: string) {
+function openBrowser(target: string, onFailure: () => void) {
   const command =
     process.platform === "darwin"
       ? "open"
@@ -26,11 +25,14 @@ function openBrowser(target: string) {
         ? "explorer.exe"
         : "xdg-open";
   const child = spawn(command, [target], { stdio: "ignore", detached: true, shell: false });
-  child.on("error", () =>
-    process.stderr.write("Open the link above in your browser to continue.\n"),
-  );
+  let reported = false;
+  const failed = () => {
+    if (!reported) onFailure();
+    reported = true;
+  };
+  child.on("error", failed);
   child.on("exit", (code) => {
-    if (code) process.stderr.write("Open the link above in your browser to continue.\n");
+    if (code) failed();
   });
   child.unref();
 }
@@ -42,7 +44,7 @@ export async function login(url: string, tokenStdin: boolean, noBrowser: boolean
       input += chunk;
       if (input.length > 1024) throw new Error("Invalid token input.");
     }
-    await connect(url, input.trim());
+    success(await new Activity("Signing in").during(() => connect(url, input.trim())));
     return;
   }
   if (!process.stdin.isTTY) throw new Error("Use --token-stdin for non-interactive login.");
@@ -67,13 +69,22 @@ export async function login(url: string, tokenStdin: boolean, noBrowser: boolean
   reader.on("SIGINT", cancel);
   reader.on("close", cancel);
   let callback: LoginCallback | undefined;
+  let activity: Activity | undefined;
   try {
     try {
-      callback = await startLoginCallback(url, (token, signal) =>
-        connect(url, token, AbortSignal.any([signal, cancelled.signal])),
-      );
+      callback = await startLoginCallback(url, async (token, signal) => {
+        activity?.update({ label: "Signing in" });
+        try {
+          const message = await connect(url, token, AbortSignal.any([signal, cancelled.signal]));
+          activity?.stop();
+          success(message);
+        } catch (error) {
+          activity?.update({ label: "Waiting for browser" });
+          throw error;
+        }
+      });
     } catch {
-      process.stderr.write("Automatic sign-in unavailable. Use the token shown in your browser.\n");
+      process.stderr.write("Automatic login unavailable. Paste a browser token.\n");
     }
     if (cancelled.signal.aborted) throw new Error("Login cancelled.");
     const target = new URL("/cli", url);
@@ -81,14 +92,19 @@ export async function login(url: string, tokenStdin: boolean, noBrowser: boolean
       target.searchParams.set("callback", callback.url);
       target.searchParams.set("state", callback.state);
     }
-    process.stderr.write(`Open ${target.href}\n`);
-    if (!noBrowser) openBrowser(target.href);
+    if (noBrowser) process.stderr.write(`Open ${target.href}\n`);
+    else
+      openBrowser(target.href, () => {
+        if (cancelled.signal.aborted) return;
+        if (activity)
+          activity.update({ label: "Waiting for browser", warning: `Open ${target.href}` });
+        else process.stderr.write(`\nOpen ${target.href}\n`);
+      });
 
     process.stderr.write(
-      callback
-        ? "Waiting for browser sign-in. Press Enter to paste a token instead.\n"
-        : "CLI token (hidden): ",
+      callback ? "Finish in your browser · Enter to paste a token\n" : "Token (hidden): ",
     );
+    if (callback) activity = new Activity("Waiting for browser");
     const input = () =>
       reader.question("", { signal: cancelled.signal }).then((token) => ({ token: token.trim() }));
     const firstInput = input();
@@ -100,13 +116,12 @@ export async function login(url: string, tokenStdin: boolean, noBrowser: boolean
     if (first === "cancelled") throw new Error("Login cancelled.");
     if (first === "connected") return;
 
+    activity?.stop();
     await callback?.close();
     if (callback && (await callback.result) === "connected") return;
     let token: string;
     if (first === "closed") {
-      process.stderr.write(
-        "Automatic sign-in timed out. Paste the token from your browser (hidden): ",
-      );
+      process.stderr.write("Timed out. Token (hidden): ");
       const fallback = await Promise.race([firstInput, cancellation]);
       if (fallback === "cancelled") throw new Error("Login cancelled.");
       token = fallback.token;
@@ -114,15 +129,17 @@ export async function login(url: string, tokenStdin: boolean, noBrowser: boolean
       token = first.token;
     }
     if (!token) {
-      process.stderr.write("CLI token (hidden): ");
+      process.stderr.write("Token (hidden): ");
       const fallback = await Promise.race([input(), cancellation]);
       if (fallback === "cancelled") throw new Error("Login cancelled.");
       token = fallback.token;
     }
-    await connect(url, token, cancelled.signal);
+    process.stderr.write("\n");
+    success(await new Activity("Signing in").during(() => connect(url, token, cancelled.signal)));
   } finally {
     cancelled.abort();
     reader.close();
+    activity?.stop();
     await callback?.close();
     process.removeListener("SIGINT", cancel);
     process.removeListener("SIGTERM", cancel);
