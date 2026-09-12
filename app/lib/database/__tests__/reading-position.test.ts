@@ -41,15 +41,16 @@ describe("upsertPosition", () => {
     const serverNow = new Date("2026-01-03T00:00:00.000Z");
     vi.spyOn(Date, "now").mockReturnValue(serverNow.getTime());
     const existing = positionRow(earlier, new Date("2026-01-02T00:00:00.000Z"));
-    const replacement = positionRow(further, serverNow);
+    const replacement = positionRow(further, existing.updatedAt);
     const client = createClient(existing, replacement);
 
     await expect(
       upsertPosition("user-1", "book-1", further, new Date("2026-01-01T00:00:00.000Z")),
     ).resolves.toEqual(replacement);
-    const writeQuery = client.query.mock.calls[3]?.[0] as { values?: unknown[] };
-    expect(writeQuery.values).toContain(serverNow.toISOString());
-    expect(replacement.updatedAt.getTime()).toBeGreaterThan(existing.updatedAt.getTime());
+    const writeQuery = client.query.mock.calls[3]?.[0] as { values?: unknown[]; text: string };
+    expect(writeQuery.values).toContain("2026-01-01T00:00:00.000Z");
+    expect(writeQuery.text).toContain("clock_timestamp()");
+    expect(replacement.cfi).toBe(further);
     expect(client.query).toHaveBeenCalledTimes(5);
     expect(client.release).toHaveBeenCalledOnce();
   });

@@ -214,8 +214,18 @@ describe("authenticated local filesystem upload and download integration", () =>
       remoteFileUrl: fileUrl,
       remoteCoverUrl: coverUrl,
     });
-    expect(updateBookUrlsMock).toHaveBeenNthCalledWith(1, book.id, { fileBlobUrl: fileUrl });
-    expect(updateBookUrlsMock).toHaveBeenNthCalledWith(2, book.id, { coverBlobUrl: coverUrl });
+    expect(updateBookUrlsMock).toHaveBeenNthCalledWith(
+      1,
+      book.id,
+      { fileBlobUrl: fileUrl },
+      authenticatedUser,
+    );
+    expect(updateBookUrlsMock).toHaveBeenNthCalledWith(
+      2,
+      book.id,
+      { coverBlobUrl: coverUrl },
+      authenticatedUser,
+    );
     expect(await (await fetch(fileUrl)).text()).toBe("pdf document");
     expect(await (await fetch(coverUrl)).text()).toBe("cover image");
   });

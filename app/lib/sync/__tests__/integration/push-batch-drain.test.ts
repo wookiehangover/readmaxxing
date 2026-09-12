@@ -58,11 +58,9 @@ describe("integration: push batch drain", () => {
     await engine.pushChanges();
 
     // Follow-ups are scheduled via queueMicrotask; poll until drained.
-    for (let i = 0; i < 100; i++) {
-      const remaining = await getUnsyncedChanges();
-      if (remaining.length === 0) break;
-      await new Promise((r) => setTimeout(r, 5));
-    }
+    await vi.waitFor(async () => expect(await getUnsyncedChanges()).toHaveLength(0), {
+      timeout: 5000,
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(Math.ceil(TOTAL / PUSH_BATCH_SIZE));
     expect(batchSizes.length).toBeGreaterThanOrEqual(2);

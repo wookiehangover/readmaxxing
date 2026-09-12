@@ -7,11 +7,12 @@ interface LocalFileLocation {
   userId: string;
   bookId: string;
   type: LocalFileKind;
+  revision?: string;
 }
 
 const SAFE_IDENTIFIER = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
 
-function localFilePaths({ userId, bookId, type }: LocalFileLocation) {
+function localFilePaths({ userId, bookId, type, revision }: LocalFileLocation) {
   if (!SAFE_IDENTIFIER.test(userId) || !SAFE_IDENTIFIER.test(bookId)) {
     throw new Error("Invalid local file storage identifier");
   }
@@ -19,12 +20,13 @@ function localFilePaths({ userId, bookId, type }: LocalFileLocation) {
   if (type !== "file" && type !== "cover") {
     throw new Error("Invalid local file storage type");
   }
+  if (revision && !SAFE_IDENTIFIER.test(revision)) throw new Error("Invalid file revision");
 
   const directory = join(process.cwd(), "data", "blob", userId, bookId);
   return {
     directory,
-    dataPath: join(directory, type),
-    metadataPath: join(directory, `${type}.json`),
+    dataPath: join(directory, revision ? `${type}-${revision}` : type),
+    metadataPath: join(directory, revision ? `${type}-${revision}.json` : `${type}.json`),
   };
 }
 
@@ -44,12 +46,15 @@ export async function writeLocalFile(
   const { directory, dataPath, metadataPath } = localFilePaths(input);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await Promise.all([
-    writeFile(dataPath, input.data, { mode: 0o600 }),
-    writeFile(metadataPath, JSON.stringify({ contentType: input.contentType }), { mode: 0o600 }),
+    writeFile(dataPath, input.data, { mode: 0o600, flag: input.revision ? "wx" : "w" }),
+    writeFile(metadataPath, JSON.stringify({ contentType: input.contentType }), {
+      mode: 0o600,
+      flag: input.revision ? "wx" : "w",
+    }),
   ]);
 
   return {
-    url: `/api/sync/files/download?bookId=${encodeURIComponent(input.bookId)}&type=${input.type}`,
+    url: `/api/sync/files/download?bookId=${encodeURIComponent(input.bookId)}&type=${input.type}${input.revision ? `&revision=${encodeURIComponent(input.revision)}` : ""}`,
   };
 }
 

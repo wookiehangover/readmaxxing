@@ -54,7 +54,13 @@ export async function loader({ request }: { request: Request }) {
   }
 
   if (localStorage) {
-    const localFile = await readLocalFile({ userId, bookId, type });
+    const revision = new URL(blobUrl, request.url).searchParams.get("revision") ?? undefined;
+    const localFile = await readLocalFile({
+      userId,
+      bookId,
+      type,
+      ...(revision ? { revision } : {}),
+    });
     if (!localFile) {
       return Response.json({ error: `No ${type} uploaded for this book` }, { status: 404 });
     }

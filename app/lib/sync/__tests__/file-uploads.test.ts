@@ -17,7 +17,9 @@ vi.mock("@vercel/blob/client", () => ({
 }));
 
 vi.mock("../change-log", () => ({
-  recordChange: vi.fn(async () => undefined),
+  recordChange: vi.fn(async (_entry, persist) => {
+    await persist?.();
+  }),
 }));
 
 const uploadMock = vi.mocked(upload);

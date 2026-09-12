@@ -1,5 +1,9 @@
+import type { RecoveryUploadGuard } from "./delivery-types";
+import { validateCustodyOwner, storeIdentity } from "./custody-journal";
+import { custodySession } from "./custody-session";
 import { upload } from "@vercel/blob/client";
-import { get, set, entries } from "idb-keyval";
+import { get, entries } from "idb-keyval";
+import { custodySet as set } from "~/lib/sync/custody-write";
 import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 import { recordChange } from "./change-log";
 import { getBookStore, getBookDataStore } from "./stores";
@@ -54,8 +58,19 @@ export async function uploadFile(
   data: ArrayBuffer | Blob,
   type: "file" | "cover",
   preferredContentType?: string,
+  recovery?: RecoveryUploadGuard,
 ): Promise<string | null> {
   if (bookId === DEMO_BOOK_ID) return null;
+  const recoverySession = recovery ? custodySession(ctx.userId) : undefined;
+  recoverySession?.checkActive();
+  if (recovery && recovery.ownerId !== ctx.userId)
+    throw new Error("Recovery upload account changed");
+  const recoveryHeaders: Record<string, string> = recovery
+    ? {
+        "X-Recovery-Owner": recovery.ownerId,
+        "X-Recovery-Version": recovery.expectedCanonicalVersion,
+      }
+    : {};
 
   const folder = type === "cover" ? "covers" : "books";
   const contentType =
@@ -80,7 +95,8 @@ export async function uploadFile(
     upload(pathname, blob, {
       access: "private",
       handleUploadUrl: "/api/sync/files/upload",
-      clientPayload: JSON.stringify({ bookId, type }),
+      clientPayload: JSON.stringify({ bookId, type, ...(recovery ? { recovery } : {}) }),
+      ...(recovery ? { headers: recoveryHeaders } : {}),
       contentType,
     });
 
@@ -96,13 +112,14 @@ export async function uploadFile(
   };
 
   const performUpload = async () => {
+    recoverySession?.checkActive();
     if (import.meta.env.MODE !== "development") {
       if (import.meta.env.MODE === "test") return uploadToVercel();
 
       const response = await fetch("/api/sync/files/upload", {
         method: "POST",
         credentials: "include",
-        headers: { "X-Readmax-Storage-Backend": "negotiate" },
+        headers: { "X-Readmax-Storage-Backend": "negotiate", ...recoveryHeaders },
       });
       const result = (await response.json()) as { backend?: unknown; error?: unknown };
 
@@ -116,7 +133,7 @@ export async function uploadFile(
       {
         method: "POST",
         credentials: "include",
-        headers: { "Content-Type": contentType },
+        headers: { "Content-Type": contentType, ...recoveryHeaders },
         body: blob,
       },
     );
@@ -152,6 +169,7 @@ export async function uploadFile(
     },
   });
 
+  recoverySession?.checkActive();
   return result?.url ?? null;
 }
 
@@ -221,14 +239,18 @@ async function stampUploadedUrl(
     hasLocalFile: true,
     updatedAt: Date.now(),
   };
-  await set(bookId, stamped, bookStore);
-  await recordChange({
-    entity: "book",
-    entityId: bookId,
-    operation: "put",
-    data: stamped,
-    timestamp: stamped.updatedAt,
-  });
+  await recordChange(
+    {
+      entity: "book",
+      entityId: bookId,
+      operation: "put",
+      data: stamped,
+      timestamp: stamped.updatedAt,
+    },
+    async () => {
+      await set(bookId, stamped, bookStore);
+    },
+  );
   return stamped;
 }
 
@@ -240,6 +262,8 @@ async function uploadLocalCopy(
   type: FileUploadType,
   options?: { resetBackoff?: boolean },
 ): Promise<Record<string, unknown> | null> {
+  const session = custodySession(ctx.userId);
+  session.checkActive();
   if (options?.resetBackoff) {
     clearUploadRetry(ctx.uploadRetryState, uploadRetryKey(bookId, type));
   }
@@ -251,6 +275,7 @@ async function uploadLocalCopy(
         : undefined;
   const url = await uploadFileWithBackoff(ctx, bookId, data, type, contentType);
   if (!url) return null;
+  session.checkActive();
   return stampUploadedUrl(bookId, meta, url, type);
 }
 
@@ -263,6 +288,8 @@ export async function uploadPendingFiles(
   ctx: FileUploadContext,
   options?: UploadPendingFilesOptions,
 ): Promise<void> {
+  const session = custodySession(ctx.userId);
+  session.checkActive();
   if (options?.isStopped?.()) return;
   // Safety: never attempt uploads before userId is known.
   if (!ctx.userId) return;
@@ -274,6 +301,8 @@ export async function uploadPendingFiles(
   syncDebugLog("upload-pending-start", { bookCount: allBooks.length });
 
   for (const entry of allBooks) {
+    session.checkActive();
+    if (options?.isStopped?.()) return;
     if (!Array.isArray(entry) || entry.length < 2) continue;
     const bookId = entry[0];
     if (bookId === DEMO_BOOK_ID) continue;
@@ -281,6 +310,9 @@ export async function uploadPendingFiles(
     if (!meta || typeof meta !== "object" || meta.deletedAt) continue;
 
     try {
+      await validateCustodyOwner(ctx.userId, meta, await storeIdentity(bookStore), bookId);
+      await validateCustodyOwner(ctx.userId, undefined, await storeIdentity(dataStore), bookId);
+      session.checkActive();
       // Upload epub file if missing remoteFileUrl, or repair a stale remote URL
       // when the startup recovery pass finds that the server download is gone.
       const existingFileUrl =
@@ -342,6 +374,8 @@ export async function uploadPendingFiles(
  * scoped to one book).
  */
 export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): Promise<void> {
+  const session = custodySession(ctx.userId);
+  session.checkActive();
   if (!ctx.userId || bookId === DEMO_BOOK_ID) return;
 
   const bookStore = getBookStore();
@@ -349,6 +383,9 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
 
   const rawMeta = await get<Record<string, unknown>>(bookId, bookStore);
   if (!rawMeta || typeof rawMeta !== "object" || rawMeta.deletedAt) return;
+  await validateCustodyOwner(ctx.userId, rawMeta, await storeIdentity(bookStore), bookId);
+  await validateCustodyOwner(ctx.userId, undefined, await storeIdentity(dataStore), bookId);
+  session.checkActive();
 
   syncDebugLog("reload-start", { bookId });
 
@@ -364,6 +401,7 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
       );
       if (res.ok) {
         const buf = await res.arrayBuffer();
+        session.checkActive();
         await set(bookId, buf, dataStore);
         if (!meta.hasLocalFile) {
           meta = { ...meta, hasLocalFile: true };
@@ -439,6 +477,7 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
   }
 
   if (metaChanged) {
+    session.checkActive();
     await set(bookId, meta, bookStore);
   }
 

@@ -1,4 +1,5 @@
-import { createStore, get, set } from "idb-keyval";
+import { createStore, get } from "idb-keyval";
+import { custodySet as set } from "~/lib/sync/custody-write";
 import type { FontWeight } from "~/lib/settings";
 
 export interface BookPreferences {

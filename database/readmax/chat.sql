@@ -9,6 +9,7 @@ CREATE TABLE readmax.chat_session (
     title TEXT,
     active_stream_id TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    mutation_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ
 );

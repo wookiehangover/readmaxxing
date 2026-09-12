@@ -70,6 +70,7 @@ beforeEach(() => {
     fileBlobUrl: "/api/sync/files/download?bookId=book-1&type=file",
     coverBlobUrl: "/api/sync/files/download?bookId=book-1&type=cover",
   } as Awaited<ReturnType<typeof getBookByIdForUser>>);
+  updateUrlsMock.mockImplementation(async () => getBookMock("book-1", "user-1"));
   writeLocalMock.mockImplementation(async ({ bookId, type }) => ({
     url: `/api/sync/files/download?bookId=${encodeURIComponent(bookId)}&type=${type}`,
   }));
@@ -82,6 +83,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("local authenticated file uploads", () => {
+  it("does not acknowledge an upload when canonical publication loses its ownership or live-row fence", async () => {
+    updateUrlsMock.mockResolvedValue(null);
+    const response = await action({ request: uploadRequest() });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Book no longer available for upload" });
+  });
   it.each([
     [true, "local"],
     [false, "vercel"],
@@ -129,9 +136,13 @@ describe("local authenticated file uploads", () => {
       data: new TextEncoder().encode("book bytes"),
       contentType: "application/epub+zip",
     });
-    expect(updateUrlsMock).toHaveBeenCalledWith("book-1", {
-      fileBlobUrl: "/api/sync/files/download?bookId=book-1&type=file",
-    });
+    expect(updateUrlsMock).toHaveBeenCalledWith(
+      "book-1",
+      {
+        fileBlobUrl: "/api/sync/files/download?bookId=book-1&type=file",
+      },
+      "user-1",
+    );
     expect(handleUploadMock).not.toHaveBeenCalled();
   });
 
@@ -144,9 +155,13 @@ describe("local authenticated file uploads", () => {
 
     expect(response.status).toBe(200);
     expect(writeLocalMock).toHaveBeenCalledWith(expect.objectContaining({ type, contentType }));
-    expect(updateUrlsMock).toHaveBeenCalledWith("book-1", {
-      [field]: `/api/sync/files/download?bookId=book-1&type=${type}`,
-    });
+    expect(updateUrlsMock).toHaveBeenCalledWith(
+      "book-1",
+      {
+        [field]: `/api/sync/files/download?bookId=book-1&type=${type}`,
+      },
+      "user-1",
+    );
   });
 
   it("rejects unauthenticated uploads", async () => {
@@ -336,5 +351,30 @@ describe("local authenticated file downloads", () => {
       token: "vercel-token",
     });
     expect(readLocalMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("delivery custody upload boundaries", () => {
+  it.each([{ deletedAt: new Date() }, { canonicalId: "canonical-book" }])(
+    "refuses legacy local upload to a tombstone or alias %j",
+    async (fields) => {
+      getBookMock.mockResolvedValue({ id: "book-1", userId: "user-1", ...fields } as Awaited<
+        ReturnType<typeof getBookByIdForUser>
+      >);
+      expect((await action({ request: uploadRequest() })).status).toBe(404);
+      expect(writeLocalMock).not.toHaveBeenCalled();
+      expect(updateUrlsMock).not.toHaveBeenCalled();
+    },
+  );
+  it("a metadata-only receipt cannot authorize original file upload", async () => {
+    getBookMock.mockResolvedValue(null);
+    expect(
+      (
+        await action({
+          request: uploadRequest("file", "application/epub+zip", { bookId: "retained-only" }),
+        })
+      ).status,
+    ).toBe(404);
+    expect(writeLocalMock).not.toHaveBeenCalled();
   });
 });

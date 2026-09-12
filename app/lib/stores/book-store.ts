@@ -1,4 +1,5 @@
-import { get, set, entries } from "idb-keyval";
+import { get, entries } from "idb-keyval";
+import { custodySet as set } from "~/lib/sync/custody-write";
 import type { UseStore } from "idb-keyval";
 import { StorageError, BookNotFoundError, DecodeError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
@@ -128,30 +129,39 @@ export function makeBookService(stores: BookServiceStores) {
     async saveBook(meta: BookMeta, data: ArrayBuffer) {
       return storage("saveBook", async () => {
         const stamped = { ...meta, hasLocalFile: true, updatedAt: meta.updatedAt ?? Date.now() };
-        await set(meta.id, stamped, bookStore);
-        await set(meta.id, data, bookDataStore);
-        recordChange({
-          entity: "book",
-          entityId: meta.id,
-          operation: "put",
-          data: stamped,
-          timestamp: stamped.updatedAt,
-        }).catch(console.error);
+        await recordChange(
+          {
+            entity: "book",
+            entityId: meta.id,
+            operation: "put",
+            data: stamped,
+            timestamp: stamped.updatedAt,
+          },
+          async () => {
+            await set(meta.id, stamped, bookStore);
+            await set(meta.id, data, bookDataStore);
+          },
+        );
         return stamped;
       });
     },
 
     async updateBookMeta(meta: BookMeta) {
       return storage("updateBookMeta", async () => {
-        const stamped = { ...meta, updatedAt: Date.now() };
-        await set(meta.id, stamped, bookStore);
-        recordChange({
-          entity: "book",
-          entityId: meta.id,
-          operation: "put",
-          data: stamped,
-          timestamp: stamped.updatedAt,
-        }).catch(console.error);
+        // A restore must sort after its tombstone even within the same millisecond.
+        const stamped = { ...meta, updatedAt: Math.max(Date.now(), (meta.updatedAt ?? 0) + 1) };
+        await recordChange(
+          {
+            entity: "book",
+            entityId: meta.id,
+            operation: "put",
+            data: stamped,
+            timestamp: stamped.updatedAt,
+          },
+          async () => {
+            await set(meta.id, stamped, bookStore);
+          },
+        );
         return stamped;
       });
     },
@@ -175,15 +185,19 @@ export function makeBookService(stores: BookServiceStores) {
       };
 
       await storage("replaceBookFile.write", async () => {
-        await set(id, data, bookDataStore);
-        await set(id, stamped, bookStore);
-        recordChange({
-          entity: "book",
-          entityId: id,
-          operation: "put",
-          data: stamped,
-          timestamp: stamped.updatedAt,
-        }).catch(console.error);
+        await recordChange(
+          {
+            entity: "book",
+            entityId: id,
+            operation: "put",
+            data: stamped,
+            timestamp: stamped.updatedAt,
+          },
+          async () => {
+            await set(id, data, bookDataStore);
+            await set(id, stamped, bookStore);
+          },
+        );
       });
     },
 
@@ -310,16 +324,18 @@ export function makeBookService(stores: BookServiceStores) {
       if (raw) {
         // Soft-delete: set deletedAt timestamp, keep data for sync
         const existing = decode("deleteBook.decode", raw);
-        const now = Date.now();
+        const now = Math.max(Date.now(), (existing.updatedAt ?? 0) + 1);
         const tombstone = { ...existing, deletedAt: now, updatedAt: now };
-        await storage("deleteBook.write", () => set(id, tombstone, bookStore));
-        recordChange({
-          entity: "book",
-          entityId: id,
-          operation: "delete",
-          data: tombstone,
-          timestamp: now,
-        }).catch(console.error);
+        await recordChange(
+          {
+            entity: "book",
+            entityId: id,
+            operation: "delete",
+            data: tombstone,
+            timestamp: now,
+          },
+          () => storage("deleteBook.write", () => set(id, tombstone, bookStore)),
+        );
       }
     },
   };

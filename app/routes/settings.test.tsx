@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("~/lib/themis/provider", () => ({ useAppStore: () => ({ dispatch: vi.fn() }) }));
+vi.mock("~/components/settings/recovery/recovery-section", () => ({
+  RecoverySection: () => <div data-testid="recovery-section">Recovery content</div>,
+}));
 vi.mock("~/components/settings/account-section", () => ({
   AccountSection: () => <div data-testid="account-section">Account content</div>,
 }));
@@ -168,6 +172,7 @@ describe("SettingsPage", () => {
       "Bug reports",
       "Updates",
       "Data",
+      "Recovery",
     ]);
     expect(container.querySelector("h1")?.textContent).toBe("Appearance");
     expect(container.querySelector('[data-testid="appearance-section"]')).not.toBeNull();

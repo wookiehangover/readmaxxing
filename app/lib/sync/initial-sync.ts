@@ -1,3 +1,4 @@
+import { retainCustody } from "./custody-journal";
 import { get, set, entries } from "idb-keyval";
 import { DEMO_BOOK_ID, DEMO_CHAT_SESSION } from "~/lib/onboarding/demo-content";
 import { SYNCED_SETTINGS_KEYS } from "~/lib/settings";
@@ -53,7 +54,7 @@ async function queueStrandedBooks(): Promise<void> {
       entityId: id,
       operation: "put",
       data,
-      timestamp: typeof book.updatedAt === "number" ? book.updatedAt : Date.now(),
+      timestamp: typeof book.updatedAt === "number" ? book.updatedAt : NaN,
     });
     pendingBookIds.add(id);
   }
@@ -86,7 +87,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
       entityId: id as string,
       operation: "put",
       data,
-      timestamp: ((data as Record<string, unknown>)?.updatedAt as number) ?? Date.now(),
+      timestamp: ((data as Record<string, unknown>)?.updatedAt as number) ?? NaN,
     });
   }
 
@@ -103,7 +104,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
       entityId: bookId as string,
       operation: "put",
       data,
-      timestamp: ((data as Record<string, unknown>)?.updatedAt as number) ?? Date.now(),
+      timestamp: ((data as Record<string, unknown>)?.updatedAt as number) ?? NaN,
     });
   }
 
@@ -122,7 +123,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
       entityId: id as string,
       operation: "put",
       data,
-      timestamp: (rec?.updatedAt as number) ?? Date.now(),
+      timestamp: (rec?.updatedAt as number) ?? NaN,
     });
   }
 
@@ -141,7 +142,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
       entityId: id as string,
       operation: "put",
       data,
-      timestamp: (rec?.updatedAt as number) ?? Date.now(),
+      timestamp: (rec?.updatedAt as number) ?? NaN,
     });
   }
 
@@ -158,7 +159,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
       entityId: bookId as string,
       operation: "put",
       data,
-      timestamp: ((data as Record<string, unknown>)?.updatedAt as number) ?? Date.now(),
+      timestamp: ((data as Record<string, unknown>)?.updatedAt as number) ?? NaN,
     });
   }
 
@@ -182,7 +183,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
         entityId: session.id,
         operation: "put",
         data: metadata,
-        timestamp: session.updatedAt ?? Date.now(),
+        timestamp: session.updatedAt ?? NaN,
       });
     }
   }
@@ -194,6 +195,12 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
   try {
     const settingsRaw = localStorage.getItem("app-settings");
     if (settingsRaw) {
+      await retainCustody({
+        source: "localStorage",
+        key: "app-settings",
+        raw: settingsRaw,
+        role: "before",
+      });
       const settings = JSON.parse(settingsRaw) as Record<string, unknown>;
       const synced: Record<string, unknown> = {};
       for (const key of SYNCED_SETTINGS_KEYS) {
@@ -202,7 +209,7 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
       // Skip recording when the legacy blob carried no synced fields (e.g.
       // it only ever had UI/layout entries that have since been migrated).
       if (Object.keys(synced).length > 0) {
-        const updatedAt = typeof settings.updatedAt === "number" ? settings.updatedAt : Date.now();
+        const updatedAt = typeof settings.updatedAt === "number" ? settings.updatedAt : NaN;
         synced.updatedAt = updatedAt;
         await recordChange({
           entity: "settings",

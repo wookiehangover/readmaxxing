@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { recordChange, getUnsyncedChanges, markSynced, clearSyncedChanges } from "../change-log";
+import {
+  recordChange,
+  getUnsyncedChanges,
+  markSynced,
+  clearSyncedChanges,
+  recordPushFailures,
+  isChangeReadyToPush,
+} from "../change-log";
 
 // fake-indexeddb is auto-loaded via vitest setupFiles
 
@@ -123,5 +130,68 @@ describe("markSynced + clearSyncedChanges", () => {
 
     const remaining = await getUnsyncedChanges();
     expect(remaining).toEqual([]);
+  });
+});
+
+describe("durable delivery state", () => {
+  it("retains permanent and legacy failures separately from acknowledgments", async () => {
+    const permanent = await recordChange({
+      entity: "notebook",
+      entityId: "a",
+      operation: "put",
+      data: { content: "saved" },
+      timestamp: 1,
+    });
+    const legacy = await recordChange({
+      entity: "highlight",
+      entityId: "b",
+      operation: "put",
+      data: { text: "highlight" },
+      timestamp: 2,
+    });
+    await recordPushFailures(
+      [
+        { id: permanent.id, reason: "unsupported", retryable: false },
+        { id: legacy.id, reason: "unknown" },
+      ],
+      100,
+    );
+    await clearSyncedChanges();
+    const retained = await getUnsyncedChanges();
+    const blocked = retained.find((change) => change.id === permanent.id)!;
+    const delayed = retained.find((change) => change.id === legacy.id)!;
+    expect(blocked.data).toEqual(permanent.data);
+    expect(blocked.failure).toEqual({
+      reason: "unsupported",
+      retryable: false,
+      attempts: 1,
+      lastAttemptAt: 100,
+    });
+    expect(isChangeReadyToPush(blocked, Number.MAX_SAFE_INTEGER)).toBe(false);
+    expect(isChangeReadyToPush(delayed, 30_099)).toBe(false);
+    expect(isChangeReadyToPush(delayed, 30_100)).toBe(true);
+    expect(retained).toHaveLength(2);
+  });
+
+  it("does not let a late failed request resurrect acknowledged changes or overwrite new edits", async () => {
+    const original = await recordChange({
+      entity: "notebook",
+      entityId: "book",
+      operation: "put",
+      data: "original",
+      timestamp: 1,
+    });
+    await markSynced([original.id]);
+    await recordPushFailures([{ id: original.id, reason: "late failure" }]);
+    await clearSyncedChanges();
+    const newer = await recordChange({
+      entity: "notebook",
+      entityId: "book",
+      operation: "put",
+      data: "newer",
+      timestamp: 2,
+    });
+    await recordPushFailures([{ id: original.id, reason: "even later failure" }]);
+    expect(await getUnsyncedChanges()).toEqual([newer]);
   });
 });

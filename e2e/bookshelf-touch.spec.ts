@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { seedShelf } from "./helpers/bookshelf";
-import { projectedCoverCenter, tapBookGutter } from "./helpers/bookshelf-hit-targets";
+import { projectedCoverCenter, settleBook, tapBookGutter } from "./helpers/bookshelf-hit-targets";
 
 test.use({ isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
 
@@ -31,14 +31,13 @@ for (const viewport of [
     await expect(last.locator(".bookshelf-volume")).toHaveCSS("transform-style", "flat");
 
     for (const book of [first, last, first]) {
+      const outsideBook = book
+        .locator("xpath=../preceding-sibling::li[1]")
+        .locator(".bookshelf-book");
       await book.scrollIntoViewIfNeeded();
       await expect(book.locator(".bookshelf-cover img")).toBeAttached();
       for (let attempt = 0; attempt < 3; attempt++) {
-        await book.locator("..").evaluate(async (row) => {
-          await Promise.allSettled(
-            row.getAnimations({ subtree: true }).map((animation) => animation.finished),
-          );
-        });
+        await settleBook(book);
         await book.tap();
         await expect(book).toHaveAttribute("aria-pressed", "true");
         const cover = book.locator(".bookshelf-top");
@@ -49,8 +48,33 @@ for (const viewport of [
           })
           .toBeGreaterThan(1.25);
         await expect.poll(() => page.locator(".bookshelf-cover img").count()).toBeLessThan(18);
-        await tapBookGutter(page, book);
+        if (attempt !== 1) {
+          await tapBookGutter(page, book);
+        } else {
+          await settleBook(book);
+          const outsideSpine = outsideBook.locator(".bookshelf-spine");
+          await expect(outsideSpine).toBeInViewport();
+          const outsideBounds = (await outsideSpine.boundingBox())!;
+          const outsideX =
+            (Math.max(0, outsideBounds.x) +
+              Math.min(viewport.width, outsideBounds.x + outsideBounds.width)) /
+            2;
+          const outsideY =
+            (Math.max(0, outsideBounds.y) +
+              Math.min(viewport.height, outsideBounds.y + outsideBounds.height)) /
+            2;
+          expect(
+            await outsideBook.evaluate(
+              (button, point) =>
+                document.elementFromPoint(point.x, point.y)?.closest(".bookshelf-book") === button,
+              { x: outsideX, y: outsideY },
+            ),
+          ).toBe(true);
+          await expect(book).toHaveAttribute("aria-pressed", "true");
+          await page.touchscreen.tap(outsideX, outsideY);
+        }
         await expect(book).toHaveAttribute("aria-pressed", "false");
+        await expect(outsideBook).toHaveAttribute("aria-pressed", "false");
         await expect(page).toHaveURL(/\/library$/);
         await expect(book.locator(".bookshelf-book-title")).toHaveCSS(
           "text-decoration-line",
@@ -74,5 +98,25 @@ for (const viewport of [
       await expect(page.locator(".bookshelf-book")).toHaveCount(153);
     }
     expect(errors).toEqual([]);
+  });
+
+  test(`a second touch activation opens the selected cover at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await seedShelf(page);
+    const book = page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" });
+    await book.tap();
+    await expect(book).toHaveAttribute("aria-pressed", "true");
+    await expect(page).toHaveURL(/\/library$/);
+    const center = await projectedCoverCenter(book);
+    expect(center.hitsCover).toBe(true);
+    await page.touchscreen.tap(center.x, center.y);
+    await expect(page).toHaveURL(/\/books\/shelf-local$/);
+    const reader =
+      viewport.width < 768
+        ? page.getByRole("tabpanel", { name: "Read", exact: true })
+        : page.getByRole("main", { name: "Book surface", exact: true });
+    await expect(reader.locator("iframe")).toBeVisible();
   });
 }

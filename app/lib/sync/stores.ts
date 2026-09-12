@@ -20,6 +20,8 @@ let _chatMessagesStore: UseStore | null = null;
 let _syncFlagsStore: UseStore | null = null;
 let _chapterQuestionsStore: UseStore | null = null;
 let _reviewsStore: UseStore | null = null;
+let _changeLogStore: UseStore | null = null;
+let _bookRemapStore: UseStore | null = null;
 
 /** Book metadata (BookMeta records, key = bookId). */
 export function getBookStore(): UseStore {
@@ -110,4 +112,30 @@ export function getChapterQuestionsStore(): UseStore {
 export function getReviewsStore(): UseStore {
   if (!_reviewsStore) _reviewsStore = createStore("ebook-reader-reviews", "reviews");
   return _reviewsStore;
+}
+
+/** Durable outgoing mutations and their delivery state. */
+export function getChangeLogStore(): UseStore {
+  if (!_changeLogStore) _changeLogStore = createStore("ebook-reader-changelog", "changes");
+  return _changeLogStore;
+}
+
+/** Account-owned canonical book aliases, retained for crash recovery and stale producers. */
+export function getBookRemapStore(): UseStore {
+  if (!_bookRemapStore) _bookRemapStore = createStore("ebook-reader-book-remaps", "remaps");
+  return _bookRemapStore;
+}
+
+let _custodyStore: UseStore | null = null;
+/** Private immutable snapshots and separate binding/receipt facts, unknown to old clients. */
+export function getCustodyStore(): UseStore {
+  if (!_custodyStore) _custodyStore = createStore("readmax-sync-custody-v1", "custody");
+  return _custodyStore;
+}
+
+let _aliasProgressStore: UseStore | null = null;
+export function getAliasProgressStore(): UseStore {
+  if (!_aliasProgressStore)
+    _aliasProgressStore = createStore("readmax-alias-progress-v1", "progress");
+  return _aliasProgressStore;
 }

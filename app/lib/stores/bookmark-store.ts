@@ -1,4 +1,5 @@
-import { get, set, entries } from "idb-keyval";
+import { get, entries } from "idb-keyval";
+import { custodySet as set } from "~/lib/sync/custody-write";
 import type { UseStore } from "idb-keyval";
 import { BookmarkError, DecodeError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
@@ -81,14 +82,18 @@ export function makeBookmarkService(stores: BookmarkServiceStores) {
     async saveBookmark(bookmark: Bookmark) {
       try {
         const stamped = { ...bookmark, updatedAt: bookmark.updatedAt ?? Date.now() };
-        await set(bookmark.id, stamped, bookmarkStore);
-        recordChange({
-          entity: "bookmark",
-          entityId: bookmark.id,
-          operation: "put",
-          data: stamped,
-          timestamp: stamped.updatedAt,
-        }).catch(console.error);
+        await recordChange(
+          {
+            entity: "bookmark",
+            entityId: bookmark.id,
+            operation: "put",
+            data: stamped,
+            timestamp: stamped.updatedAt,
+          },
+          async () => {
+            await set(bookmark.id, stamped, bookmarkStore);
+          },
+        );
         return stamped;
       } catch (cause) {
         throw new BookmarkError({ operation: "saveBookmark", bookmarkId: bookmark.id, cause });
@@ -111,18 +116,16 @@ export function makeBookmarkService(stores: BookmarkServiceStores) {
       }
       const now = Date.now();
       const tombstone = { ...existing, deletedAt: now, updatedAt: now };
-      try {
-        await set(id, tombstone, bookmarkStore);
-      } catch (cause) {
-        throw new BookmarkError({ operation: "deleteBookmark.write", bookmarkId: id, cause });
-      }
-      recordChange({
-        entity: "bookmark",
-        entityId: id,
-        operation: "delete",
-        data: tombstone,
-        timestamp: now,
-      }).catch(console.error);
+      await recordChange(
+        {
+          entity: "bookmark",
+          entityId: id,
+          operation: "delete",
+          data: tombstone,
+          timestamp: now,
+        },
+        () => set(id, tombstone, bookmarkStore),
+      );
     },
 
     async isBookmarked(bookId: string, cfi: string) {

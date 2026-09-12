@@ -1,3 +1,4 @@
+import { custodyLocalStorageSet } from "~/lib/sync/custody-write";
 import { useState, useCallback, useEffect, useSyncExternalStore } from "react";
 import { z } from "zod";
 import { recordChange } from "~/lib/sync/change-log";
@@ -149,7 +150,7 @@ function readRaw(key: string): Record<string, unknown> | null {
  * (bumped by a font change under the old schema) from causing LWW merges to
  * ignore newer remote theme/colorTheme updates.
  */
-function migrateLegacySettings(): void {
+async function migrateLegacySettings(): Promise<void> {
   const legacy = readRaw(STORAGE_KEY);
   if (!legacy) return;
   const hasUIFields = LOCAL_UI_SETTINGS_KEYS.some((k) => k in legacy);
@@ -161,7 +162,7 @@ function migrateLegacySettings(): void {
     if (k in existingLocal) continue;
     if (k in legacy) promoted[k] = legacy[k];
   }
-  localStorage.setItem(LOCAL_UI_STORAGE_KEY, JSON.stringify(promoted));
+  await custodyLocalStorageSet(LOCAL_UI_STORAGE_KEY, JSON.stringify(promoted));
 
   const localKeySet = new Set<string>(LOCAL_UI_SETTINGS_KEYS);
   const pruned: Record<string, unknown> = {};
@@ -173,7 +174,7 @@ function migrateLegacySettings(): void {
   // setting updates. The next remote pull will establish a fresh baseline.
   delete pruned.updatedAt;
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned));
+  await custodyLocalStorageSet(STORAGE_KEY, JSON.stringify(pruned));
 }
 
 function readSynced(): SyncedSettings {
@@ -202,7 +203,14 @@ function readLocalUI(): LocalUISettings {
 export function getSettings(): Settings {
   if (typeof window === "undefined") return defaultSettings;
   try {
-    migrateLegacySettings();
+    const legacy = readRaw(STORAGE_KEY);
+    if (legacy && LOCAL_UI_SETTINGS_KEYS.some((key) => key in legacy)) {
+      const existing = readRaw(LOCAL_UI_STORAGE_KEY) ?? {};
+      return {
+        ...decodeSynced({ ...legacy, updatedAt: undefined }),
+        ...decodeLocalUI({ ...legacy, ...existing }),
+      };
+    }
     return { ...readSynced(), ...readLocalUI() };
   } catch {
     return defaultSettings;
@@ -230,9 +238,9 @@ function equalByKeys<T extends Record<string, unknown>>(
   return true;
 }
 
-export function saveSettings(settings: Settings): void {
+export async function saveSettings(settings: Settings): Promise<void> {
   if (typeof window === "undefined") return;
-  migrateLegacySettings();
+  await migrateLegacySettings();
   const currentSynced = readSynced();
   const currentLocal = readLocalUI();
 
@@ -266,14 +274,18 @@ export function saveSettings(settings: Settings): void {
 
   if (syncedChanged) {
     const stamped: SyncedSettings = { ...mergedSynced, updatedAt: Date.now() };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(stamped));
-    recordChange({
-      entity: "settings",
-      entityId: "user-settings",
-      operation: "put",
-      data: stamped,
-      timestamp: stamped.updatedAt!,
-    }).catch(console.error);
+    await recordChange(
+      {
+        entity: "settings",
+        entityId: "user-settings",
+        operation: "put",
+        data: stamped,
+        timestamp: stamped.updatedAt!,
+      },
+      async () => {
+        await custodyLocalStorageSet(STORAGE_KEY, JSON.stringify(stamped));
+      },
+    );
     shouldEmit = true;
   }
 
@@ -311,7 +323,7 @@ export function useSettings(): [Settings, (update: Partial<Settings>) => void] {
   const updateSettings = useCallback((update: Partial<Settings>) => {
     setSettings((prev) => {
       const next = { ...prev, ...update };
-      saveSettings(next);
+      saveSettings(next).catch(console.error);
       return next;
     });
   }, []);

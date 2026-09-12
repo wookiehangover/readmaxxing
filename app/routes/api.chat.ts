@@ -21,26 +21,18 @@ import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { getBookChaptersForUser } from "~/lib/database/book/book-chapters";
 import {
-  getHighlightsByUser,
-  softDeleteHighlight,
-  upsertHighlight,
-} from "~/lib/database/annotation/highlight";
-import {
-  getNotebookForUser,
-  getNotebookMarkdownForUser,
-  upsertNotebook,
-} from "~/lib/database/annotation/notebook";
-import { runEditNotesInSandbox } from "~/lib/editor/notebook-sdk-server";
-import { markdownToTiptapJsonServer } from "~/lib/editor/markdown-to-tiptap-server";
+  resolveChatBookTarget,
+  appendChatNotes,
+  editChatNotes,
+  readChatNotes,
+  createChatHighlight,
+  listChatHighlights,
+  attachChatHighlight,
+  deleteChatHighlight,
+} from "~/lib/chat/book-tools.server";
 import { resolveCreateHighlightAnchor } from "~/lib/chat/create-highlight-anchor";
 import { readChapterWindow } from "~/lib/chat/read-chapter-window";
-import {
-  appendHighlightReferenceToContent,
-  getNotebookHighlightIds,
-  listLiveHighlightsForBook,
-  normalizeCfiRange,
-} from "~/lib/chat/highlight-tools";
-import type { JSONContent } from "@tiptap/react";
+import { normalizeCfiRange } from "~/lib/chat/highlight-tools";
 import {
   getMessagesBySession,
   getSessionByIdForUser,
@@ -447,8 +439,15 @@ export async function action({ request }: Route.ActionArgs) {
    * primary book; an unknown id also falls back to primary so a model mistake
    * never fails the tool call.
    */
-  const resolveTargetBook = (requestedId?: string): LoadedBook =>
-    (requestedId && booksById.get(requestedId)) || primary;
+  const resolveTargetBook = async (requestedId?: string): Promise<LoadedBook> => {
+    if (!requestedId) return primary;
+    const selected = booksById.get(requestedId);
+    if (selected) return selected;
+    // A prior tool may have returned the canonical ID of a secondary book.
+    // Keep subsequent calls on that context instead of falling back to primary.
+    const sourceId = await resolveChatBookTarget(userId, requestedId, [...booksById.keys()]);
+    return (sourceId && booksById.get(sourceId)) || primary;
+  };
 
   const systemPromptContext: SystemPromptContext = {
     books: loadedBooks,
@@ -489,7 +488,7 @@ export async function action({ request }: Route.ActionArgs) {
               bookId: bookIdArgSchema,
             }),
             execute: async ({ query, bookId: targetBookId }) => {
-              const target = resolveTargetBook(targetBookId);
+              const target = await resolveTargetBook(targetBookId);
               return { bookId: target.bookId, results: searchBook(target.bookIndex, query) };
             },
           }),
@@ -501,9 +500,8 @@ export async function action({ request }: Route.ActionArgs) {
               bookId: bookIdArgSchema,
             }),
             execute: async ({ bookId: targetBookId }) => {
-              const target = resolveTargetBook(targetBookId);
-              const content = await getNotebookMarkdownForUser(userId, target.bookId);
-              return { bookId: target.bookId, content: content || "(No notes yet)" };
+              const target = await resolveTargetBook(targetBookId);
+              return readChatNotes(userId, target.bookId);
             },
           }),
           append_to_notes: tool({
@@ -515,78 +513,8 @@ export async function action({ request }: Route.ActionArgs) {
               bookId: bookIdArgSchema,
             }),
             execute: async ({ text, bookId: targetBookId }) => {
-              const target = resolveTargetBook(targetBookId);
-              const parsed = markdownToTiptapJsonServer(text);
-              const appendedNodes = (parsed.content ?? []) as JSONContent[];
-
-              if (appendedNodes.length === 0) {
-                return { bookId: target.bookId, appended: false, text, appendedNodes: [] };
-              }
-
-              const existing = await getNotebookForUser(userId, target.bookId);
-              const existingDoc = (existing?.content as JSONContent | null | undefined) ?? null;
-              const existingNodes = existingDoc?.content ?? [];
-
-              const updatedContent: JSONContent = {
-                type: "doc",
-                content: [...existingNodes, ...appendedNodes],
-              };
-
-              const now = new Date();
-              let row: Awaited<ReturnType<typeof upsertNotebook>>;
-              try {
-                row = await upsertNotebook(userId, target.bookId, updatedContent, now);
-              } catch (err) {
-                console.error("append_to_notes: failed to persist notebook:", err);
-                return {
-                  bookId: target.bookId,
-                  appended: false,
-                  text,
-                  appendedNodes: [],
-                  ...(existing
-                    ? {
-                        updatedContent: existing.content as JSONContent,
-                        updatedAt: existing.updatedAt.getTime(),
-                      }
-                    : {}),
-                  error: err instanceof Error ? err.message : String(err),
-                };
-              }
-
-              if (!row) {
-                let authoritative = existing;
-                try {
-                  authoritative =
-                    (await getNotebookForUser(userId, target.bookId)) ?? authoritative;
-                } catch (err) {
-                  console.error(
-                    "append_to_notes: failed to reload authoritative notebook after conflict:",
-                    err,
-                  );
-                }
-                return {
-                  bookId: target.bookId,
-                  appended: false,
-                  text,
-                  appendedNodes: [],
-                  ...(authoritative
-                    ? {
-                        updatedContent: authoritative.content as JSONContent,
-                        updatedAt: authoritative.updatedAt.getTime(),
-                      }
-                    : {}),
-                  error: "append_to_notes: server already has a newer notebook; ignoring this edit",
-                };
-              }
-
-              return {
-                bookId: target.bookId,
-                appended: true,
-                text,
-                appendedNodes,
-                updatedContent,
-                updatedAt: row.updatedAt.getTime(),
-              };
+              const target = await resolveTargetBook(targetBookId);
+              return appendChatNotes(userId, target.bookId, text);
             },
           }),
           edit_notes: tool({
@@ -619,51 +547,7 @@ export async function action({ request }: Route.ActionArgs) {
                 ),
             }),
             execute: async ({ code }) => {
-              const existing = await getNotebookForUser(userId, primaryId);
-              const currentContent: JSONContent = (existing?.content as
-                | JSONContent
-                | null
-                | undefined) ?? {
-                type: "doc",
-                content: [],
-              };
-
-              const result = await runEditNotesInSandbox(currentContent, code, {
-                timeoutMs: 1500,
-              });
-              if (!result.ok) {
-                return { executed: false, error: result.error };
-              }
-
-              let row: Awaited<ReturnType<typeof upsertNotebook>>;
-              try {
-                row = await upsertNotebook(userId, primaryId, result.updatedContent, new Date());
-              } catch (err) {
-                console.error("edit_notes: failed to persist updated notebook:", err);
-                return {
-                  executed: false,
-                  error: err instanceof Error ? err.message : String(err),
-                };
-              }
-
-              // LWW-filtered: server already has a newer notebook row. Do NOT
-              // fabricate a timestamp — mirror the server-authoritative model
-              // and surface the conflict so the client skips its cache write.
-              if (!row) {
-                console.warn(
-                  "edit_notes: upsertNotebook returned null (LWW filtered); skipping client cache update",
-                );
-                return {
-                  executed: false,
-                  error: "edit_notes: server already has a newer notebook; ignoring this edit",
-                };
-              }
-
-              return {
-                executed: true,
-                updatedContent: result.updatedContent,
-                updatedAt: row.updatedAt.getTime(),
-              };
+              return editChatNotes(userId, primaryId, code);
             },
           }),
           create_highlight: tool({
@@ -710,7 +594,7 @@ export async function action({ request }: Route.ActionArgs) {
               endOffset,
               bookId: targetBookId,
             }) => {
-              const target = resolveTargetBook(targetBookId);
+              const target = await resolveTargetBook(targetBookId);
               // PDF is not supported server-side yet — client falls back to
               // its own PDF search + persist path on unsupported responses.
               if (target.format === "pdf") {
@@ -776,8 +660,9 @@ export async function action({ request }: Route.ActionArgs) {
                   note: note ?? null,
                 };
               }
+              let savedBookId: string;
               try {
-                await upsertHighlight(userId, {
+                const saved = await createChatHighlight(userId, {
                   id,
                   bookId: target.bookId,
                   cfiRange,
@@ -787,6 +672,7 @@ export async function action({ request }: Route.ActionArgs) {
                   note: note ?? null,
                   createdAt,
                 });
+                savedBookId = saved.bookId;
               } catch (err) {
                 console.error("create_highlight: failed to persist:", err);
                 return {
@@ -802,14 +688,14 @@ export async function action({ request }: Route.ActionArgs) {
                 target.chapters.find((chapter) => chapter.index === resolvedAnchor.chapterIndex)
                   ?.title ?? null;
               return {
-                bookId: target.bookId,
+                bookId: savedBookId,
                 created: true,
                 matchQuality: resolvedAnchor.matchQuality,
                 chapterIndex: resolvedAnchor.chapterIndex,
                 chapterTitle,
                 highlight: {
                   id,
-                  bookId: target.bookId,
+                  bookId: savedBookId,
                   text,
                   note: note ?? null,
                   color,
@@ -826,16 +712,8 @@ export async function action({ request }: Route.ActionArgs) {
               multiBookToolHint,
             inputSchema: z.object({ bookId: bookIdArgSchema }),
             execute: async ({ bookId: targetBookId }) => {
-              const target = resolveTargetBook(targetBookId);
-              const [highlights, notebook] = await Promise.all([
-                getHighlightsByUser(userId),
-                getNotebookForUser(userId, target.bookId),
-              ]);
-              const notebookIds = getNotebookHighlightIds(notebook?.content);
-              return {
-                bookId: target.bookId,
-                highlights: listLiveHighlightsForBook(highlights, target.bookId, notebookIds),
-              };
+              const target = await resolveTargetBook(targetBookId);
+              return listChatHighlights(userId, target.bookId);
             },
           }),
           attach_highlight: tool({
@@ -845,52 +723,7 @@ export async function action({ request }: Route.ActionArgs) {
               highlightId: z.string().describe("The existing highlight id from list_highlights"),
             }),
             execute: async ({ highlightId }) => {
-              const highlights = await getHighlightsByUser(userId);
-              const highlight = highlights.find(
-                (candidate) => candidate.id === highlightId && candidate.deletedAt === null,
-              );
-              if (!highlight) {
-                return { attached: false, reason: "highlight not found or deleted" };
-              }
-              if (!normalizeCfiRange(highlight.cfiRange)) {
-                return { attached: false, reason: "highlight has no resolvable CFI" };
-              }
-
-              const notebook = await getNotebookForUser(userId, highlight.bookId);
-              if (getNotebookHighlightIds(notebook?.content).has(highlightId)) {
-                return { attached: false, alreadyPresent: true };
-              }
-
-              const updatedContent = appendHighlightReferenceToContent(
-                notebook?.content,
-                highlight,
-              );
-              if (!updatedContent) {
-                return { attached: false, reason: "highlight has no resolvable CFI" };
-              }
-              let row: Awaited<ReturnType<typeof upsertNotebook>>;
-              try {
-                row = await upsertNotebook(userId, highlight.bookId, updatedContent, new Date());
-              } catch (err) {
-                console.error("attach_highlight: failed to persist updated notebook:", err);
-                return {
-                  attached: false,
-                  error: err instanceof Error ? err.message : String(err),
-                };
-              }
-
-              if (!row) {
-                console.warn(
-                  "attach_highlight: upsertNotebook returned null (LWW filtered); skipping attachment",
-                );
-                return {
-                  attached: false,
-                  error:
-                    "attach_highlight: server already has a newer notebook; ignoring this edit",
-                };
-              }
-
-              return { attached: true, updatedAt: row.updatedAt.getTime() };
+              return attachChatHighlight(userId, highlightId);
             },
           }),
           delete_highlight: tool({
@@ -900,14 +733,7 @@ export async function action({ request }: Route.ActionArgs) {
               highlightId: z.string().describe("The highlight id returned by list_highlights"),
             }),
             execute: async ({ highlightId }) => {
-              const highlights = await getHighlightsByUser(userId);
-              const highlight = highlights.find((candidate) => candidate.id === highlightId);
-              const notebook = highlight
-                ? await getNotebookForUser(userId, highlight.bookId)
-                : null;
-              const inNotebook = getNotebookHighlightIds(notebook?.content).has(highlightId);
-              const deleted = await softDeleteHighlight(userId, highlightId);
-              return { deleted, inNotebook };
+              return deleteChatHighlight(userId, highlightId);
             },
           }),
           read_chapter: tool({
@@ -951,7 +777,7 @@ export async function action({ request }: Route.ActionArgs) {
               radius,
               bookId: targetBookId,
             }) => {
-              const target = resolveTargetBook(targetBookId);
+              const target = await resolveTargetBook(targetBookId);
               let chapter: BookChapter | undefined;
               if (chapterIndex != null) {
                 chapter = target.chapters.find((c) => c.index === chapterIndex);

@@ -109,7 +109,10 @@ it("applies the first persisted notebook after an empty editor becomes ready", (
   editorState.ready = true;
   const render = () => act(() => root?.render(<WorkspaceNotebook bookId="book-1" chromeless />));
   render();
-  expect(editorState.setContent).not.toHaveBeenCalled();
+  expect(editorState.setContent).toHaveBeenCalledExactlyOnceWith({
+    type: "doc",
+    content: [{ type: "paragraph" }],
+  });
   editorState.content = {
     type: "doc",
     content: [
@@ -124,9 +127,9 @@ it("applies the first persisted notebook after an empty editor becomes ready", (
     ],
   };
   render();
-  expect(editorState.setContent).toHaveBeenCalledWith(editorState.content);
+  expect(editorState.setContent).toHaveBeenNthCalledWith(2, editorState.content);
   render();
-  expect(editorState.setContent).toHaveBeenCalledTimes(1);
+  expect(editorState.setContent).toHaveBeenCalledTimes(2);
 });
 
 it("registers highlight insertion only after the editor is ready", () => {

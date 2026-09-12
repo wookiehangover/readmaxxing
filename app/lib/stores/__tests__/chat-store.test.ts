@@ -4,7 +4,9 @@ import { createStore, set } from "idb-keyval";
 // Mock the sync changelog so we can assert on recordChange invocations
 // without touching the real changelog IDB store.
 vi.mock("~/lib/sync/change-log", () => ({
-  recordChange: vi.fn().mockResolvedValue(undefined),
+  recordChange: vi.fn(async (_entry, persist) => {
+    await persist?.();
+  }),
 }));
 
 import { recordChange } from "~/lib/sync/change-log";

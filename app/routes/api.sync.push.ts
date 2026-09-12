@@ -1,312 +1,78 @@
 import { requireAuth } from "~/lib/database/auth-middleware";
-import { upsertHighlight, softDeleteHighlight } from "~/lib/database/annotation/highlight";
-import { upsertNotebook } from "~/lib/database/annotation/notebook";
-import { upsertBookmark, softDeleteBookmark } from "~/lib/database/bookmark/bookmark";
 import {
-  upsertBook,
-  softDeleteBook,
-  findBookByUserAndHash,
-  insertTombstonedBook,
-  getBookByIdForUser,
-  updateBookBlobUrls,
-} from "~/lib/database/book/book";
-import { upsertPosition } from "~/lib/database/book/reading-position";
-import { upsertSession, softDeleteSession } from "~/lib/database/chat/chat-session";
-import { upsertSettings } from "~/lib/database/settings/user-settings";
-import { upsertUser } from "~/lib/database/user/user";
-import type { SyncPushRequest, SyncPushResponse, ChangeEntry } from "~/lib/sync/types";
-
-export async function processEntry(
-  userId: string,
-  entry: ChangeEntry,
-): Promise<{ accepted: boolean; reason?: string; canonicalId?: string }> {
-  switch (entry.entity) {
-    case "book": {
-      if (entry.operation === "put") {
-        const data = entry.data as {
-          id: string;
-          title?: string | null;
-          author?: string | null;
-          format?: string | null;
-          fileHash?: string | null;
-          remoteCoverUrl?: string | null;
-          remoteFileUrl?: string | null;
-          updatedAt?: number | null;
-          deletedAt?: number | null;
-        };
-
-        // Cross-device dedup: if another non-deleted book for this user
-        // already has the same file_hash, converge to that canonical id.
-        if (data.fileHash) {
-          const canonical = await findBookByUserAndHash(userId, data.fileHash);
-          if (canonical && canonical.id !== entry.entityId) {
-            // Only tombstone the incoming id if it is not already the
-            // canonical (or already tombstoned) — keeps the operation
-            // idempotent across retries.
-            const existing = await getBookByIdForUser(entry.entityId, userId);
-            if (!existing || existing.deletedAt == null) {
-              await insertTombstonedBook(userId, {
-                id: entry.entityId,
-                fileHash: data.fileHash,
-                createdAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-              });
-            }
-            return { accepted: true, canonicalId: canonical.id };
-          }
-        }
-
-        const bookData = {
-          id: entry.entityId,
-          title: data.title,
-          author: data.author,
-          format: data.format,
-          fileHash: data.fileHash,
-          updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-          deletedAt: data.deletedAt != null ? new Date(data.deletedAt) : null,
-        };
-        await upsertBook(userId, bookData);
-
-        // Persist blob URLs if the client carried them. Additive to the
-        // onUploadCompleted webhook in api.sync.files.upload.ts (the webhook
-        // is still a fast path but no longer the only way a URL reaches the
-        // DB). COALESCE inside updateBookBlobUrls prevents a nullish value
-        // on one side from clobbering an existing non-null column.
-        if (data.remoteCoverUrl || data.remoteFileUrl) {
-          await updateBookBlobUrls(entry.entityId, {
-            coverBlobUrl: data.remoteCoverUrl ?? undefined,
-            fileBlobUrl: data.remoteFileUrl ?? undefined,
-          });
-        }
-      } else {
-        await softDeleteBook(userId, entry.entityId);
-      }
-      return { accepted: true };
-    }
-
-    case "position": {
-      if (entry.operation === "put") {
-        const data = entry.data as { bookId: string; cfi: string | null };
-        await upsertPosition(
-          userId,
-          data.bookId ?? entry.entityId,
-          data.cfi ?? null,
-          new Date(entry.timestamp),
-        );
-      }
-      // delete is a no-op for positions
-      return { accepted: true };
-    }
-
-    case "highlight": {
-      if (entry.operation === "put") {
-        const data = entry.data as {
-          id: string;
-          bookId: string;
-          cfiRange?: string | null;
-          text?: string | null;
-          color?: string | null;
-          pageNumber?: number | null;
-          textOffset?: number | null;
-          textLength?: number | null;
-          textAnchor?: {
-            chapterIndex: number;
-            snippet: string;
-            offset?: number;
-          } | null;
-          note?: string | null;
-          createdAt?: number | null;
-          deletedAt?: number | null;
-        };
-        await upsertHighlight(userId, {
-          id: entry.entityId,
-          bookId: data.bookId,
-          cfiRange: data.cfiRange,
-          text: data.text,
-          color: data.color,
-          pageNumber: data.pageNumber,
-          textOffset: data.textOffset,
-          textLength: data.textLength,
-          textAnchor: data.textAnchor ?? null,
-          note: data.note ?? null,
-          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
-          deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
-        });
-      } else {
-        await softDeleteHighlight(userId, entry.entityId);
-      }
-      return { accepted: true };
-    }
-
-    case "bookmark": {
-      if (entry.operation === "put") {
-        const data = entry.data as {
-          id: string;
-          bookId: string;
-          cfi?: string | null;
-          label?: string | null;
-          pageNumber?: number | null;
-          displayPage?: number | null;
-          createdAt?: number | null;
-          updatedAt?: number | null;
-          deletedAt?: number | null;
-        };
-        await upsertBookmark(userId, {
-          id: entry.entityId,
-          bookId: data.bookId,
-          cfi: data.cfi ?? null,
-          label: data.label ?? null,
-          pageNumber: data.pageNumber ?? null,
-          displayPage: data.displayPage ?? null,
-          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
-          updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-          deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
-        });
-      } else {
-        await softDeleteBookmark(userId, entry.entityId);
-      }
-      return { accepted: true };
-    }
-
-    case "notebook": {
-      if (entry.operation === "put") {
-        const data = entry.data as {
-          bookId: string;
-          content: unknown;
-          updatedAt?: number | null;
-        };
-        await upsertNotebook(
-          userId,
-          data.bookId ?? entry.entityId,
-          data.content,
-          data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-        );
-      }
-      // delete is a no-op for notebooks
-      return { accepted: true };
-    }
-
-    case "chat_session": {
-      if (entry.operation === "put") {
-        const data = entry.data as {
-          id: string;
-          bookId?: string | null;
-          title?: string | null;
-          createdAt?: number | null;
-          updatedAt?: number | null;
-          deletedAt?: number | null;
-        };
-        await upsertSession(userId, {
-          id: entry.entityId,
-          bookId: data.bookId,
-          title: data.title,
-          createdAt: data.createdAt ? new Date(data.createdAt) : new Date(entry.timestamp),
-          updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
-          deletedAt: data.deletedAt ? new Date(data.deletedAt) : null,
-        });
-      } else {
-        await softDeleteSession(userId, entry.entityId);
-      }
-      return { accepted: true };
-    }
-
-    case "chat_message": {
-      // Chat messages are server-authoritative: only /api/chat writes them
-      // (see AGENTS.md "Chat architecture"). Wave 1 audit flagged that this
-      // branch still accepted an unclamped client `createdAt`, leaving a
-      // latent vector for clock-skewed clients to poison message ordering.
-      // After Task B, the client no longer pushes chat_message entries; this
-      // endpoint now rejects any that slip through rather than trusting them.
-      return {
-        accepted: false,
-        reason: "chat_message entries are not accepted via /api/sync/push",
-      };
-    }
-
-    case "settings": {
-      if (entry.operation === "put") {
-        await upsertSettings(userId, entry.data, new Date(entry.timestamp));
-      }
-      // delete is a no-op for settings
-      return { accepted: true };
-    }
-
-    default: {
-      console.warn(`[sync/push] Skipping unsupported entity type: ${entry.entity}`);
-      return { accepted: false, reason: `Unsupported entity type: ${entry.entity}` };
-    }
-  }
-}
+  receiveBatch,
+  deliveryReference,
+  type ReceiptRow,
+} from "~/lib/database/sync-delivery/intake";
+import { processDeliveries, readReceipts } from "~/lib/database/sync-delivery/worker";
+import type { SyncPushRequest, SyncPushResponse } from "~/lib/sync/types";
 
 export async function action({ request }: { request: Request }) {
-  if (!process.env.DATABASE_URL) {
+  if (!process.env.DATABASE_URL)
     return Response.json({ error: "Sync not configured" }, { status: 503 });
-  }
-
-  if (request.method !== "POST") {
-    return new Response("Method not allowed", { status: 405 });
-  }
-
+  if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
   const { userId } = await requireAuth(request);
-
   let body: SyncPushRequest;
   try {
     body = await request.json();
   } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
-
-  if (!body.changes || !Array.isArray(body.changes)) {
-    return Response.json({ error: "Missing or invalid 'changes' array" }, { status: 400 });
-  }
-
-  // Sort changes so parent entities (book) are processed before dependents (position).
-  // This prevents FK violations when a position references a book in the same push batch.
-  const entityOrder: Record<string, number> = {
-    book: 0,
-    position: 1,
-    highlight: 2,
-    bookmark: 3,
-    notebook: 4,
-    chat_session: 5,
-    chat_message: 6,
-    settings: 7,
-  };
-  const sortedChanges = [...body.changes].sort(
-    (a, b) => (entityOrder[a.entity] ?? 99) - (entityOrder[b.entity] ?? 99),
-  );
-
-  const accepted: SyncPushResponse["accepted"] = [];
-  const rejected: SyncPushResponse["rejected"] = [];
-
-  for (const entry of sortedChanges) {
+  if (!body || !Array.isArray(body.changes))
+    return Response.json({ error: "Invalid changes" }, { status: 400 });
+  try {
+    const intake = await receiveBatch(userId, body.changes);
+    // Intake has committed. A failed application/decision cannot erase custody.
     try {
-      const result = await processEntry(userId, entry);
-      if (result.accepted) {
-        accepted.push(
-          result.canonicalId ? { id: entry.id, canonicalId: result.canonicalId } : { id: entry.id },
-        );
-      } else {
-        rejected.push({ id: entry.id, reason: result.reason ?? "Unknown error" });
-      }
-    } catch (err) {
-      console.error(`[sync/push] Error processing entry ${entry.id}:`, err);
-      rejected.push({
-        id: entry.id,
-        reason: err instanceof Error ? err.message : "Internal error",
-      });
+      await processDeliveries(userId);
+    } catch (error) {
+      console.error("Sync application deferred", error);
     }
+    const rows = await readReceipts(
+      userId,
+      intake.received.map((row) => row.receiptId),
+    );
+    const groups = new Map<string, ReceiptRow[]>();
+    for (const row of rows) groups.set(row.changeId, [...(groups.get(row.changeId) ?? []), row]);
+    const response: SyncPushResponse = {
+      accepted: [],
+      rejected: [],
+      notReceived: intake.notReceived.map((id) => ({ id, code: "not_received" })),
+      serverTimestamp: new Date().toISOString(),
+    };
+    for (const [id, versions] of [...groups].sort(
+      ([a], [b]) =>
+        body.changes.findIndex((entry) => entry.id === a) -
+        body.changes.findIndex((entry) => entry.id === b),
+    )) {
+      const deliveryFields =
+        body.supportsDurableReceipts === 1 ? { deliveries: versions.map(deliveryReference) } : {};
+      const aliases = new Set(
+        versions.map(
+          (row) => (row.decisionEvidence as { canonicalId?: string } | null)?.canonicalId,
+        ),
+      );
+      const complete =
+        versions.every((row) => ["applied", "covered"].includes(row.state)) && aliases.size === 1;
+      if (complete) {
+        const canonicalId = aliases.values().next().value;
+        response.accepted.push({ id, ...(canonicalId ? { canonicalId } : {}), ...deliveryFields });
+      } else
+        response.rejected.push({
+          id,
+          reason: "Durably retained; not applied",
+          retryable: versions.some((row) => !["needs_resolution", "resolved"].includes(row.state)),
+          ...deliveryFields,
+        });
+    }
+    const noProgress =
+      body.changes.length > 0 && !response.accepted.length && !response.rejected.length;
+    return Response.json(response, { status: noProgress ? 503 : 200 });
+  } catch (error) {
+    console.error("Sync custody intake failed", error);
+    return Response.json(
+      { error: "Mutations not received" },
+      { status: error instanceof TypeError ? 400 : 503 },
+    );
   }
-
-  // Update user's last_sync_at
-  if (accepted.length > 0) {
-    await upsertUser(userId);
-  }
-
-  const response: SyncPushResponse = {
-    accepted,
-    rejected,
-    serverTimestamp: new Date().toISOString(),
-  };
-
-  return Response.json(response);
 }

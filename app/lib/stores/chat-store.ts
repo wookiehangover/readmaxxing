@@ -1,4 +1,5 @@
-import { get, set, del } from "idb-keyval";
+import { get } from "idb-keyval";
+import { custodySet as set, custodyDelete as del } from "~/lib/sync/custody-write";
 import { ChatError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
 import {
@@ -56,16 +57,23 @@ function generateSessionId(): string {
   return crypto.randomUUID();
 }
 
-/** Fire-and-forget: record a session change in the sync change log. */
-function trackSessionChange(session: ChatSession, operation: "put" | "delete" = "put"): void {
+/** Publish a session revision only after durable storage custody. */
+async function trackSessionChange(
+  session: ChatSession,
+  operation: "put" | "delete" = "put",
+  persist?: () => Promise<unknown>,
+): Promise<void> {
   const { messages: _msgs, ...metadata } = session;
-  recordChange({
-    entity: "chat_session",
-    entityId: session.id,
-    operation,
-    data: metadata,
-    timestamp: session.updatedAt,
-  }).catch(console.error);
+  await recordChange(
+    {
+      entity: "chat_session",
+      entityId: session.id,
+      operation,
+      data: metadata,
+      timestamp: session.updatedAt,
+    },
+    persist,
+  );
 }
 
 /**
@@ -126,7 +134,7 @@ async function migrateOldMessages(bookId: string): Promise<ChatSession[]> {
   await set(bookId, session.id, getActiveSessionStore());
   // Enqueue a sync change so the migrated session is pushed to the server on
   // its own, without waiting for runInitialSyncIfNeeded to scan everything.
-  trackSessionChange(session);
+  await trackSessionChange(session);
 
   return [session];
 }
@@ -172,9 +180,10 @@ export const ChatService = {
       };
       const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
       sessions.push(session);
-      await set(bookId, sessions, getSessionStore());
-      await set(bookId, session.id, getActiveSessionStore());
-      trackSessionChange(session);
+      await trackSessionChange(session, "put", async () => {
+        await set(bookId, sessions, getSessionStore());
+        await set(bookId, session.id, getActiveSessionStore());
+      });
       return session;
     }),
 
@@ -212,10 +221,12 @@ export const ChatService = {
       const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
       const deleted = sessions.find((s) => s.id === sessionId);
       const filtered = sessions.filter((s) => s.id !== sessionId);
-      await set(bookId, filtered, getSessionStore());
-
       if (deleted) {
-        trackSessionChange({ ...deleted, updatedAt: Date.now() }, "delete");
+        await trackSessionChange(
+          { ...deleted, updatedAt: Math.max(Date.now(), deleted.updatedAt + 1) },
+          "delete",
+          () => set(bookId, filtered, getSessionStore()),
+        );
       }
 
       // If the deleted session was active, clear or reset active
@@ -244,9 +255,14 @@ export const ChatService = {
       const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
       const idx = sessions.findIndex((s) => s.id === sessionId);
       if (idx >= 0) {
-        sessions[idx] = { ...sessions[idx], title, updatedAt: Date.now() };
-        await set(bookId, sessions, getSessionStore());
-        trackSessionChange(sessions[idx]);
+        sessions[idx] = {
+          ...sessions[idx],
+          title,
+          updatedAt: Math.max(Date.now(), sessions[idx].updatedAt + 1),
+        };
+        await trackSessionChange(sessions[idx], "put", () =>
+          set(bookId, sessions, getSessionStore()),
+        );
       }
     }),
 };

@@ -20,7 +20,12 @@ vi.mock("~/lib/auth-service", () => ({
 }));
 vi.mock("~/lib/onboarding/adopt-demo", () => ({
   hasUnadoptedDemoBook: mocks.hasUnadoptedDemoBook,
-  persistAdoptedDemoContent: mocks.persistAdoptedDemoContent,
+  persistAdoptedDemoContent: vi.fn(() => {
+    throw new Error("Auth refresh must not wait for network adoption");
+  }),
+}));
+vi.mock("~/lib/onboarding/adopt-demo-local", () => ({
+  prepareAdoptedDemoContent: mocks.persistAdoptedDemoContent,
 }));
 vi.mock("~/lib/stores/book-store", async (importOriginal) => {
   const actual = await importOriginal<typeof import("~/lib/stores/book-store")>();

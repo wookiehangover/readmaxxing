@@ -1,4 +1,13 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { randomUUID } from "node:crypto";
+import { recoveryOwnerError } from "~/lib/database/sync-delivery/recovery-owner";
+import { parseRecoveryUploadGuard } from "~/lib/database/sync-delivery/recovery-book";
+import {
+  validateRecoveryUpload,
+  publishRecoveryUpload,
+} from "~/lib/database/sync-delivery/recovery-upload";
+import { RecoveryConflict } from "~/lib/database/sync-delivery/recovery";
+import type { RecoveryUploadGuard } from "~/lib/sync/delivery-types";
 import { requireAuth } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser, updateBookBlobUrls } from "~/lib/database/book/book";
 import {
@@ -17,11 +26,14 @@ const COVER_CACHE_CONTROL_MAX_AGE = 31_536_000; // 1 year
 interface ClientPayload {
   bookId: string;
   type: LocalFileKind;
+  recovery?: RecoveryUploadGuard;
 }
 
 interface TokenPayload {
+  userId: string;
   bookId: string;
   type: LocalFileKind;
+  recovery?: RecoveryUploadGuard;
 }
 
 async function uploadLocalFile(request: Request, userId: string): Promise<Response> {
@@ -54,7 +66,7 @@ async function uploadLocalFile(request: Request, userId: string): Promise<Respon
   }
 
   const book = await getBookByIdForUser(bookId, userId);
-  if (!book) {
+  if (!book || book.deletedAt || book.canonicalId) {
     return Response.json({ error: "Book not found" }, { status: 404 });
   }
 
@@ -64,16 +76,38 @@ async function uploadLocalFile(request: Request, userId: string): Promise<Respon
   }
 
   try {
-    const result = await writeLocalFile({ userId, bookId, type, data, contentType });
-    await updateBookBlobUrls(
+    const expectedVersion = request.headers.get("X-Recovery-Version");
+    if (request.headers.has("X-Recovery-Owner") && expectedVersion === null)
+      throw new TypeError("Recovery version required");
+    const recovery =
+      expectedVersion === null
+        ? undefined
+        : parseRecoveryUploadGuard({
+            ownerId: request.headers.get("X-Recovery-Owner"),
+            expectedCanonicalVersion: expectedVersion,
+          });
+    if (recovery) await validateRecoveryUpload(userId, bookId, recovery);
+    const result = await writeLocalFile({
+      userId,
       bookId,
-      type === "cover" ? { coverBlobUrl: result.url } : { fileBlobUrl: result.url },
-    );
+      type,
+      data,
+      contentType,
+      ...(recovery ? { revision: randomUUID() } : {}),
+    });
+    const updated = recovery
+      ? await publishRecoveryUpload(userId, bookId, type, result.url, recovery)
+      : await updateBookBlobUrls(
+          bookId,
+          type === "cover" ? { coverBlobUrl: result.url } : { fileBlobUrl: result.url },
+          userId,
+        );
+    if (!updated) throw new Error("Book no longer available for upload");
     return Response.json(result);
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Upload failed" },
-      { status: 400 },
+      { status: error instanceof RecoveryConflict ? 409 : 400 },
     );
   }
 }
@@ -91,28 +125,43 @@ function parseClientPayload(raw: string | null): ClientPayload {
   if (!parsed || typeof parsed !== "object") {
     throw new Error("Invalid clientPayload");
   }
-  const { bookId, type } = parsed as { bookId?: unknown; type?: unknown };
+  const { bookId, type, recovery } = parsed as {
+    bookId?: unknown;
+    type?: unknown;
+    recovery?: unknown;
+  };
   if (typeof bookId !== "string" || bookId.length === 0) {
     throw new Error("Invalid clientPayload: bookId");
   }
   if (type !== "file" && type !== "cover") {
     throw new Error("Invalid clientPayload: type");
   }
-  return { bookId, type };
+  return { bookId, type, recovery: parseRecoveryUploadGuard(recovery) };
 }
 
 function parseTokenPayload(raw: string | null | undefined): TokenPayload {
   if (!raw) {
     throw new Error("Missing tokenPayload");
   }
-  const parsed = JSON.parse(raw) as { bookId?: unknown; type?: unknown };
+  const parsed = JSON.parse(raw) as {
+    bookId?: unknown;
+    type?: unknown;
+    userId?: unknown;
+    recovery?: unknown;
+  };
+  if (typeof parsed.userId !== "string" || !parsed.userId) throw new Error("Invalid token owner");
   if (typeof parsed.bookId !== "string" || parsed.bookId.length === 0) {
     throw new Error("Invalid tokenPayload: bookId");
   }
   if (parsed.type !== "file" && parsed.type !== "cover") {
     throw new Error("Invalid tokenPayload: type");
   }
-  return { bookId: parsed.bookId, type: parsed.type };
+  return {
+    bookId: parsed.bookId,
+    type: parsed.type,
+    userId: parsed.userId,
+    recovery: parseRecoveryUploadGuard(parsed.recovery),
+  };
 }
 
 /**
@@ -135,32 +184,45 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "Blob storage is not configured" }, { status: 500 });
   }
 
-  let userId: string;
-  try {
-    ({ userId } = await requireAuth(request));
-  } catch {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const negotiating = request.headers.get("X-Readmax-Storage-Backend") === "negotiate";
+  const isJSON = request.headers.get("Content-Type")?.startsWith("application/json");
+  let body: HandleUploadBody | undefined;
+  if (!localStorage && !negotiating && isJSON) {
+    try {
+      body = (await request.json()) as HandleUploadBody;
+    } catch {
+      return Response.json({ error: "Invalid upload request" }, { status: 400 });
+    }
   }
-
-  if (request.headers.get("X-Readmax-Storage-Backend") === "negotiate") {
-    return Response.json({ backend: localStorage ? "local" : "vercel" });
+  // Completion is a service request: the SDK verifies its signature before invoking
+  // onUploadCompleted. Browser token issuance and local uploads still require a session.
+  const completion = body?.type === "blob.upload-completed";
+  let userId: string | undefined;
+  if (!completion) {
+    try {
+      ({ userId } = await requireAuth(request));
+    } catch {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (request.headers.has("X-Recovery-Owner") || request.headers.has("X-Recovery-Version")) {
+      const ownerError = recoveryOwnerError(request, userId);
+      if (ownerError) return ownerError;
+    }
+    if (negotiating) return Response.json({ backend: localStorage ? "local" : "vercel" });
+    if (localStorage) return uploadLocalFile(request, userId);
+    if (!isJSON) return Response.json({ backend: "vercel" }, { status: 409 });
   }
-
-  if (localStorage) return uploadLocalFile(request, userId);
-
-  if (!request.headers.get("Content-Type")?.startsWith("application/json")) {
-    return Response.json({ backend: "vercel" }, { status: 409 });
-  }
-
-  const body = (await request.json()) as HandleUploadBody;
 
   try {
     const jsonResponse = await handleUpload({
       token,
       request,
-      body,
+      body: body!,
       onBeforeGenerateToken: async (pathname, clientPayload) => {
-        const { bookId, type } = parseClientPayload(clientPayload);
+        if (!userId) throw new Error("Authentication required");
+        const { bookId, type, recovery } = parseClientPayload(clientPayload);
+        if (recovery && recovery.ownerId !== userId)
+          throw new RecoveryConflict("Recovery account changed");
 
         const folder = type === "cover" ? "covers" : "books";
         const expectedPrefix = `${folder}/${userId}/${bookId}/`;
@@ -169,26 +231,38 @@ export async function action({ request }: { request: Request }) {
         }
 
         const book = await getBookByIdForUser(bookId, userId);
-        if (!book) {
+        if (!book || book.deletedAt || book.canonicalId) {
           throw new Error("Book not found or not owned by user");
         }
+        if (recovery) await validateRecoveryUpload(userId, bookId, recovery);
 
         return {
           allowedContentTypes: type === "cover" ? COVER_CONTENT_TYPES : FILE_CONTENT_TYPES,
           maximumSizeInBytes: type === "cover" ? MAX_COVER_BYTES : MAX_FILE_BYTES,
-          addRandomSuffix: false,
-          allowOverwrite: true,
+          addRandomSuffix: !!recovery,
+          allowOverwrite: !recovery,
           ...(type === "cover" ? { cacheControlMaxAge: COVER_CACHE_CONTROL_MAX_AGE } : {}),
-          tokenPayload: JSON.stringify({ bookId, type } satisfies TokenPayload),
+          tokenPayload: JSON.stringify({
+            bookId,
+            type,
+            userId,
+            ...(recovery ? { recovery } : {}),
+          } satisfies TokenPayload),
         };
       },
       onUploadCompleted: async ({ blob, tokenPayload }) => {
-        const { bookId, type } = parseTokenPayload(tokenPayload);
-        if (type === "cover") {
-          await updateBookBlobUrls(bookId, { coverBlobUrl: blob.url });
-        } else {
-          await updateBookBlobUrls(bookId, { fileBlobUrl: blob.url });
-        }
+        const { bookId, type, userId: tokenOwner, recovery } = parseTokenPayload(tokenPayload);
+        const book = await getBookByIdForUser(bookId, tokenOwner);
+        if (!book || book.deletedAt || book.canonicalId)
+          throw new Error("Book no longer available for upload");
+        const updated = recovery
+          ? await publishRecoveryUpload(tokenOwner, bookId, type, blob.url, recovery)
+          : await updateBookBlobUrls(
+              bookId,
+              type === "cover" ? { coverBlobUrl: blob.url } : { fileBlobUrl: blob.url },
+              tokenOwner,
+            );
+        if (!updated) throw new Error("Book no longer available for upload");
       },
     });
 
@@ -196,7 +270,7 @@ export async function action({ request }: { request: Request }) {
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Upload failed" },
-      { status: 400 },
+      { status: error instanceof RecoveryConflict ? 409 : 400 },
     );
   }
 }

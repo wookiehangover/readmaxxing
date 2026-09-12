@@ -1,3 +1,6 @@
+import { createSyncRecoverySelectors } from "./sync-recovery/sync-recovery-selectors";
+import { syncRecoveryReducer } from "./sync-recovery/sync-recovery-slice";
+import type { SyncRecoveryState } from "./sync-recovery/sync-recovery-types";
 import { createReadingRailSelectors } from "~/lib/themis/reading-rail/reading-rail-selectors";
 import { readingRailReducer } from "~/lib/themis/reading-rail/reading-rail-slice";
 import type { ReadingRailState } from "~/lib/themis/reading-rail/reading-rail-types";
@@ -30,6 +33,7 @@ import type { WorkspaceRestoreState } from "~/lib/themis/workspace-restore/works
 
 export type AppStoreCore = ReactStore<
   {
+    syncRecovery: SyncRecoveryState;
     annotations: AnnotationsState;
     authSession: AuthSessionState;
     bookmarks: BookmarksState;
@@ -41,6 +45,7 @@ export type AppStoreCore = ReactStore<
     workspaceRestore: WorkspaceRestoreState;
   },
   {
+    syncRecovery: typeof syncRecoveryReducer;
     annotations: typeof annotationsReducer;
     authSession: typeof authSessionReducer;
     bookmarks: typeof bookmarksReducer;
@@ -55,6 +60,7 @@ export type AppStoreCore = ReactStore<
 
 export function createAppStore() {
   const store = new ReactStore({
+    syncRecovery: syncRecoveryReducer,
     annotations: annotationsReducer,
     authSession: authSessionReducer,
     bookmarks: bookmarksReducer,
@@ -68,6 +74,7 @@ export function createAppStore() {
   const reviewsSelectors = createReviewsSelectors(store);
   return Object.assign(store, {
     readingRailSelectors: createReadingRailSelectors(store, reviewsSelectors),
+    syncRecoverySelectors: createSyncRecoverySelectors(store),
     annotationsSelectors: createAnnotationsSelectors(store),
     authSessionSelectors: createAuthSessionSelectors(store),
     bookmarksSelectors: createBookmarksSelectors(store),

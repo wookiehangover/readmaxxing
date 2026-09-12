@@ -64,6 +64,22 @@ function download(token = signDownloadToken(share.id, share.useCount)) {
 }
 
 describe("shared local book downloads", () => {
+  it("serves the published recovery revision while preserving previous bytes", async () => {
+    const location = { userId: share.userId, bookId: share.bookId, type: "file" as const };
+    await writeLocalFile({ ...location, data: Uint8Array.of(1), contentType: "application/pdf" });
+    const result = await writeLocalFile({
+      ...location,
+      revision: "recovered",
+      data: Uint8Array.of(2),
+      contentType: "application/pdf",
+    });
+    const book = (await getBookByIdForUser(share.bookId, share.userId))!;
+    vi.mocked(getBookByIdForUser).mockResolvedValue({ ...book, fileBlobUrl: result.url });
+    await writeLocalFile({ ...location, data: Uint8Array.of(9), contentType: "application/pdf" });
+    const response = await download();
+    expect(response.status).toBe(200);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(Uint8Array.of(2));
+  });
   it("serves the owner's local file with a valid token after the final allowed import", async () => {
     const data = Uint8Array.of(80, 75, 3, 4);
     await writeLocalFile({

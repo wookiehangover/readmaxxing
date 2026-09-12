@@ -1,4 +1,5 @@
-import { entries, get, set, update } from "idb-keyval";
+import { entries, get } from "idb-keyval";
+import { custodySet as set, custodyUpdate as update } from "~/lib/sync/custody-write";
 import type { UseStore } from "idb-keyval";
 import type { JSONContent } from "@tiptap/react";
 import { HighlightError, NotebookError, DecodeError } from "~/lib/errors";
@@ -97,14 +98,18 @@ export function makeAnnotationService(stores: AnnotationServiceStores) {
     async saveHighlight(highlight: Highlight) {
       try {
         const stamped = { ...highlight, updatedAt: highlight.updatedAt ?? Date.now() };
-        await set(highlight.id, stamped, highlightStore);
-        recordChange({
-          entity: "highlight",
-          entityId: highlight.id,
-          operation: "put",
-          data: stamped,
-          timestamp: stamped.updatedAt!,
-        }).catch(console.error);
+        await recordChange(
+          {
+            entity: "highlight",
+            entityId: highlight.id,
+            operation: "put",
+            data: stamped,
+            timestamp: stamped.updatedAt!,
+          },
+          async () => {
+            await set(highlight.id, stamped, highlightStore);
+          },
+        );
       } catch (cause) {
         throw new HighlightError({ operation: "saveHighlight", highlightId: highlight.id, cause });
       }
@@ -160,20 +165,18 @@ export function makeAnnotationService(stores: AnnotationServiceStores) {
       } catch (cause) {
         throw new DecodeError({ operation: "updateHighlight", cause });
       }
-      const now = Date.now();
+      const now = Math.max(Date.now(), (existing.updatedAt ?? existing.createdAt) + 1);
       const updated = { ...existing, ...updates, updatedAt: now };
-      try {
-        await set(id, updated, highlightStore);
-      } catch (cause) {
-        throw new HighlightError({ operation: "updateHighlight", highlightId: id, cause });
-      }
-      recordChange({
-        entity: "highlight",
-        entityId: id,
-        operation: "put",
-        data: updated,
-        timestamp: now,
-      }).catch(console.error);
+      await recordChange(
+        {
+          entity: "highlight",
+          entityId: id,
+          operation: "put",
+          data: updated,
+          timestamp: now,
+        },
+        () => set(id, updated, highlightStore),
+      );
     },
 
     async deleteHighlight(id: string) {
@@ -193,51 +196,49 @@ export function makeAnnotationService(stores: AnnotationServiceStores) {
         }
         const now = Date.now();
         const tombstone = { ...existing, deletedAt: now, updatedAt: now };
-        try {
-          await set(id, tombstone, highlightStore);
-        } catch (cause) {
-          throw new HighlightError({
-            operation: "deleteHighlight.write",
-            highlightId: id,
-            cause,
-          });
-        }
-        recordChange({
-          entity: "highlight",
-          entityId: id,
-          operation: "delete",
-          data: tombstone,
-          timestamp: now,
-        }).catch(console.error);
+        await recordChange(
+          {
+            entity: "highlight",
+            entityId: id,
+            operation: "delete",
+            data: tombstone,
+            timestamp: now,
+          },
+          () => set(id, tombstone, highlightStore),
+        );
       }
     },
 
     async saveNotebook(notebook: Notebook) {
       try {
         let persisted = notebook;
-        await update<unknown>(
-          notebook.bookId,
-          (raw) => {
-            if (raw !== undefined) {
-              const existing = decodeNotebook(raw);
-              if (existing.updatedAt > notebook.updatedAt) {
-                persisted = existing;
-                return existing;
-              }
-            }
-            return notebook;
+        await recordChange(
+          {
+            entity: "notebook",
+            entityId: notebook.bookId,
+            operation: "put",
+            data: notebook,
+            timestamp: notebook.updatedAt,
           },
-          notebookStore,
+          async () => {
+            await update<unknown>(
+              notebook.bookId,
+              (raw) => {
+                if (raw !== undefined) {
+                  const existing = decodeNotebook(raw);
+                  if (existing.updatedAt > notebook.updatedAt) {
+                    persisted = existing;
+                    return existing;
+                  }
+                }
+                return notebook;
+              },
+              notebookStore,
+            );
+            return persisted === notebook;
+          },
         );
-        if (persisted !== notebook) return persisted;
-        recordChange({
-          entity: "notebook",
-          entityId: notebook.bookId,
-          operation: "put",
-          data: notebook,
-          timestamp: notebook.updatedAt,
-        }).catch(console.error);
-        return notebook;
+        return persisted;
       } catch (cause) {
         throw new NotebookError({ operation: "saveNotebook", bookId: notebook.bookId, cause });
       }
