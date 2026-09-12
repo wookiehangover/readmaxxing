@@ -1,12 +1,21 @@
 // @vitest-environment node
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { IDBFactory } from "fake-indexeddb";
 import { promisifyRequest } from "idb-keyval";
 import { describe, expect, it } from "vitest";
 
-const commonJS = createRequire(import.meta.url)(
-  "fake-indexeddb",
-) as typeof import("fake-indexeddb");
+const loadPackage = createRequire(import.meta.url);
+const commonJS = loadPackage("fake-indexeddb") as typeof import("fake-indexeddb");
+const packageDirectory = dirname(loadPackage.resolve("fake-indexeddb"));
+// Use the emulator's own event class, as its upstream WPT harness does.
+const CommonJSEvent = loadPackage(join(packageDirectory, "lib/FakeEvent.js")) as new (
+  type: string,
+) => Event;
+const ESMEvent = (
+  await import(pathToFileURL(join(packageDirectory, "../esm/lib/FakeEvent.js")).href)
+).default as typeof CommonJSEvent;
 
 // Guard the dev dependency patch in both distributed entry points. This is
 // deliberately a count, not a machine-speed deadline: finished transactions
@@ -17,9 +26,9 @@ function tracked(db: IDBDatabase): IDBTransaction[] {
 }
 
 describe.each([
-  ["ESM", IDBFactory],
-  ["CommonJS", commonJS.IDBFactory],
-] as const)("IndexedDB scheduler (%s)", (_name, Factory) => {
+  ["ESM", IDBFactory, ESMEvent],
+  ["CommonJS", commonJS.IDBFactory, CommonJSEvent],
+] as const)("IndexedDB scheduler (%s)", (_name, Factory, FakeEvent) => {
   async function open(factory = new Factory(), name = "scheduler", version = 1) {
     const request = factory.open(name, version);
     request.onupgradeneeded = () => {
@@ -91,6 +100,61 @@ describe.each([
       db.close();
     }
   });
+
+  it.each(["complete", "abort"])("preserves a pending writer after synthetic %s", async (type) => {
+    const db = await open();
+    try {
+      const writer = db.transaction("a", "readwrite");
+      writer.objectStore("a").put("must remain queued", "value");
+      writer.dispatchEvent(new FakeEvent(type));
+      const remainedQueued = tracked(db).includes(writer);
+      const reader = db.transaction("a");
+      const done = promisifyRequest(reader);
+      const value = await promisifyRequest(reader.objectStore("a").get("value"));
+      await done;
+      expect(value).toBe("must remain queued");
+      expect(remainedQueued).toBe(true);
+      expect(tracked(db)).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it.each(["complete", "abort"])(
+    "preserves an active writer lock after synthetic %s",
+    async (type) => {
+      const db = await open();
+      let keepWriting = true;
+      try {
+        const writer = db.transaction("a", "readwrite");
+        const firstWrite = promisifyRequest(writer.objectStore("a").put("intermediate", "value"));
+        const pump = () => {
+          if (keepWriting) writer.objectStore("a").get("value").onsuccess = pump;
+          else writer.objectStore("a").put("committed", "value");
+        };
+        pump();
+        await firstWrite;
+        writer.dispatchEvent(new FakeEvent(type));
+        const remainedTracked = tracked(db).includes(writer);
+        // Register after the synthetic event: only the actual completion settles this wait.
+        const writerDone = promisifyRequest(writer);
+        const reader = db.transaction("a");
+        const readerDone = promisifyRequest(reader);
+        const value = promisifyRequest(reader.objectStore("a").get("value"));
+        const disjoint = db.transaction("b");
+        disjoint.objectStore("b").get("value");
+        await promisifyRequest(disjoint);
+        keepWriting = false;
+        await Promise.all([writerDone, readerDone]);
+        expect(await value).toBe("committed");
+        expect(remainedTracked).toBe(true);
+        expect(tracked(db)).toHaveLength(0);
+      } finally {
+        keepWriting = false;
+        db.close();
+      }
+    },
+  );
 
   it("retains active locks and lets readonly and disjoint transactions progress", async () => {
     const db = await open();
