@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "../src/client";
-import { normalizeUrl, readConfig, saveConfig } from "../src/config";
+import { loginUrl, normalizeUrl, readConfig, saveConfig } from "../src/config";
 import { writeOutput, safeFilename } from "../src/output";
 import { epubMetadata, uploadBook } from "../src/upload";
 import { run } from "../src/main";
@@ -32,6 +32,26 @@ afterEach(async () => {
 });
 
 describe("credentials and transport", () => {
+  it("defaults fresh installs and environment tokens to readmaxxing.app", async () => {
+    delete process.env.READMAXXING_URL;
+    expect(await loginUrl()).toBe("https://readmaxxing.app");
+    expect(await readConfig()).toEqual({ url: "https://readmaxxing.app", token });
+    delete process.env.READMAXXING_TOKEN;
+    await expect(readConfig()).rejects.toThrow(
+      "Not signed in to this server. Run readmaxxing login.",
+    );
+  });
+  it("preserves explicit, environment, and saved URL precedence over the default", async () => {
+    const saved = { url: "https://saved.example", token };
+    await saveConfig(saved);
+    expect(await loginUrl("http://localhost:3000")).toBe("http://localhost:3000");
+    expect(await loginUrl()).toBe(config.url);
+    delete process.env.READMAXXING_URL;
+    delete process.env.READMAXXING_TOKEN;
+    expect(await loginUrl()).toBe(saved.url);
+    expect(await readConfig()).toEqual(saved);
+    await expect(readConfig("https://readmaxxing.app")).rejects.toThrow("Not signed in");
+  });
   it("stores private credentials and never reuses them for a different origin", async () => {
     await saveConfig(config);
     delete process.env.READMAXXING_TOKEN;

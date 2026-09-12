@@ -4,7 +4,14 @@ import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
 import { spawn } from "node:child_process";
 import { Client, type Book, type ChatSession } from "./client.js";
-import { configPath, loginUrl, readConfig, saveConfig, validateToken } from "./config.js";
+import {
+  DEFAULT_URL,
+  configPath,
+  loginUrl,
+  readConfig,
+  saveConfig,
+  validateToken,
+} from "./config.js";
 import { safeFilename, writeOutput } from "./output.js";
 import { uploadBook } from "./upload.js";
 
@@ -20,6 +27,7 @@ Usage:
   readmaxxing export <notes|outline|chat> <book-id> [-o <file|->] [--force]
   readmaxxing export chat --session <session-id> [-o <file|->] [--force]
 
+The default server is ${DEFAULT_URL}. Sign in with readmaxxing login.
 All commands accept --url. Exports default to stdout; downloads default to
 <title>.<epub|pdf>. Existing files require --force. Book IDs come from books.
 Chat exports saved conversations; --session selects one conversation.

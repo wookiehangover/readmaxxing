@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
+export const DEFAULT_URL = "https://readmaxxing.app";
+
 export interface Config {
   url: string;
   token: string;
@@ -45,8 +47,7 @@ async function readSavedConfig(): Promise<Partial<Config>> {
 }
 
 function serverUrl(override: string | undefined, saved: Partial<Config>): string {
-  const value = override ?? process.env.READMAXXING_URL ?? saved.url;
-  if (!value) throw new Error("Provide your Readmaxxing server: readmaxxing login --url <origin>.");
+  const value = override ?? process.env.READMAXXING_URL ?? saved.url ?? DEFAULT_URL;
   return normalizeUrl(value);
 }
 
@@ -60,7 +61,9 @@ export async function readConfig(urlOverride?: string): Promise<Config> {
   // Never send a saved credential to an overridden server.
   const token = process.env.READMAXXING_TOKEN ?? (saved.url === url ? saved.token : undefined);
   if (!token)
-    throw new Error("Not signed in to this server. Run readmaxxing login --url <server>.");
+    throw new Error(
+      `Not signed in to this server. Run readmaxxing login${url === DEFAULT_URL ? "" : ` --url ${url}`}.`,
+    );
   return { url, token: validateToken(token) };
 }
 
