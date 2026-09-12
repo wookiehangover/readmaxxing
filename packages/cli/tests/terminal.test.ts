@@ -133,6 +133,69 @@ describe("terminal output", () => {
     expect(filtered).not.toContain("Unknown book");
   });
 
+  it.each(["terminal", "json", "tsv"])(
+    "excludes deleted-book chats from %s listings, including --book",
+    async (format) => {
+      const { stdout } = capture(format !== "tsv");
+      vi.stubEnv("READMAXXING_CONFIG", "/does/not/exist/config.json");
+      vi.stubEnv("READMAXXING_URL", "https://readmaxxing.app");
+      vi.stubEnv("READMAXXING_TOKEN", "12345678-1234-1234-1234-123456789abc");
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = new URL(String(input));
+        const entity = url.searchParams.get("entityType");
+        if (entity === "chat_session")
+          return Response.json({
+            changes: [
+              {
+                entity,
+                records: [
+                  { id: "keep-chat", bookId: "live", title: "Keep" },
+                  { id: "hide-chat", bookId: "deleted", title: "Hide" },
+                  { id: "unassigned-chat", bookId: null, title: "Unassigned" },
+                  { id: "removed-session", bookId: "live", deletedAt: "2026-01-01" },
+                ],
+                hasMore: false,
+              },
+            ],
+          });
+        // The deletion is on a later page, so filtering must wait for the complete book pull.
+        return Response.json({
+          changes: [
+            {
+              entity,
+              records: url.searchParams.has("cursors")
+                ? [{ id: "deleted", title: "Deleted book", deletedAt: "2026-01-01" }]
+                : [{ id: "live", title: "Live book", deletedAt: null }],
+              cursor: "next-page",
+              hasMore: !url.searchParams.has("cursors"),
+            },
+          ],
+        });
+      });
+      const options = format === "json" ? ["--json"] : [];
+      await run(["chats", ...options]);
+      const output = stdout.mock.calls.map(([value]) => value).join("");
+      expect(output).toContain("keep-chat");
+      expect(output).toContain("unassigned-chat");
+      expect(output).not.toContain("hide-chat");
+      expect(output).not.toContain("removed-session");
+      expect(output).not.toContain("Deleted book");
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+      if (format === "json")
+        expect(JSON.parse(output).map((chat: { id: string }) => chat.id)).toEqual([
+          "keep-chat",
+          "unassigned-chat",
+        ]);
+      stdout.mockClear();
+      await run(["chats", "--book", "deleted", ...options]);
+      const filtered = stdout.mock.calls.map(([value]) => value).join("");
+      expect(filtered).not.toContain("hide-chat");
+      if (format === "json") expect(JSON.parse(filtered)).toEqual([]);
+      else if (format === "terminal") expect(filtered).toBe("No conversations found.\n");
+      else expect(filtered).toBe("ID\tTITLE\tBOOK\n");
+    },
+  );
+
   it.each([
     ["books", "book"],
     ["chats", "chat_session"],

@@ -102,11 +102,19 @@ export async function run(args: string[]): Promise<void> {
         const sessions = (await client.pull<ChatSession>("chat_session")).filter(
           (session) => !values.book || session.bookId === values.book,
         );
-        const books =
-          !values.json && interactive(process.stdout) && sessions.length
-            ? await client.pull<Book>("book")
-            : [];
-        return { sessions, books };
+        // Retain book tombstones here so deleted books cannot reappear as unknown groups.
+        const books = sessions.some((session) => session.bookId != null)
+          ? await client.pull<Book>("book", { includeDeleted: true })
+          : [];
+        const deletedBookIds = new Set(
+          books.filter((book) => book.deletedAt != null).map((book) => book.id),
+        );
+        return {
+          sessions: sessions.filter(
+            (session) => session.bookId == null || !deletedBookIds.has(session.bookId),
+          ),
+          books: books.filter((book) => book.deletedAt == null),
+        };
       });
       if (values.json) process.stdout.write(`${JSON.stringify(sessions, null, 2)}\n`);
       else if (interactive(process.stdout)) chatListing(sessions, books);

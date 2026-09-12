@@ -55,7 +55,10 @@ export class Client {
     return (await this.request(path, init)).json() as Promise<T>;
   }
 
-  async pull<T extends { deletedAt?: string | null }>(entity: string): Promise<T[]> {
+  async pull<T extends { deletedAt?: string | null }>(
+    entity: string,
+    options: { includeDeleted?: boolean } = {},
+  ): Promise<T[]> {
     const records: T[] = [];
     let cursor: string | undefined;
     const seen = new Set<string>();
@@ -67,7 +70,9 @@ export class Client {
       }>(`/api/sync/pull?${query}`);
       const batch = result.changes.find((change) => change.entity === entity);
       if (!batch) break;
-      records.push(...batch.records.filter((record) => !record.deletedAt));
+      records.push(
+        ...batch.records.filter((record) => options.includeDeleted || record.deletedAt == null),
+      );
       if (!batch.hasMore) break;
       if (!batch.cursor || seen.has(batch.cursor))
         throw new Error("Server returned a non-advancing pagination cursor.");
