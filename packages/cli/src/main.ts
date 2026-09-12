@@ -1,19 +1,10 @@
 import { parseArgs, stripVTControlCharacters } from "node:util";
 import { rm } from "node:fs/promises";
-import { createInterface } from "node:readline/promises";
-import { Writable } from "node:stream";
-import { spawn } from "node:child_process";
 import { Client, type Book, type ChatSession } from "./client.js";
-import {
-  DEFAULT_URL,
-  configPath,
-  loginUrl,
-  readConfig,
-  saveConfig,
-  validateToken,
-} from "./config.js";
+import { DEFAULT_URL, configPath, loginUrl, readConfig } from "./config.js";
 import { safeFilename, writeOutput } from "./output.js";
 import { uploadBook } from "./upload.js";
+import { login } from "./login.js";
 
 const HELP = `Readmaxxing CLI
 
@@ -28,6 +19,9 @@ Usage:
   readmaxxing export chat --session <session-id> [-o <file|->] [--force]
 
 The default server is ${DEFAULT_URL}. Sign in with readmaxxing login.
+Login connects automatically through a temporary localhost callback. If it fails,
+press Enter in the terminal and paste the token shown in the browser.
+--no-browser prints the login link; --token-stdin accepts a token without a callback.
 All commands accept --url. Exports default to stdout; downloads default to
 <title>.<epub|pdf>. Existing files require --force. Book IDs come from books.
 Chat exports saved conversations; --session selects one conversation.
@@ -40,54 +34,6 @@ EPUB title, author, and cover are extracted; PDFs use their filename by default.
 
 function clean(value: string | null): string {
   return stripVTControlCharacters(value ?? "").replace(/[\p{Cc}\p{Cf}]/gu, " ");
-}
-
-async function login(url: string, tokenStdin: boolean, noBrowser: boolean) {
-  const target = `${url}/cli`;
-  let token: string;
-  if (tokenStdin) {
-    let input = "";
-    for await (const chunk of process.stdin) {
-      input += chunk;
-      if (input.length > 1024) throw new Error("Invalid token input.");
-    }
-    token = input.trim();
-  } else {
-    if (!process.stdin.isTTY) throw new Error("Use --token-stdin for non-interactive login.");
-    process.stderr.write(`Open ${target}, authorize the CLI, and paste the token here.\n`);
-    if (!noBrowser) {
-      const command =
-        process.platform === "darwin"
-          ? "open"
-          : process.platform === "win32"
-            ? "explorer.exe"
-            : "xdg-open";
-      const child = spawn(command, [target], { stdio: "ignore", detached: true, shell: false });
-      child.on("error", () =>
-        process.stderr.write(`Open ${target} in your browser to continue.\n`),
-      );
-      child.unref();
-    }
-    // Suppress terminal echo so the session credential never enters scrollback.
-    const muted = new Writable({
-      write(_chunk, _encoding, callback) {
-        callback();
-      },
-    });
-    const reader = createInterface({ input: process.stdin, output: muted, terminal: true });
-    process.stderr.write("CLI token (hidden): ");
-    try {
-      token = (await reader.question("")).trim();
-    } finally {
-      reader.close();
-      process.stderr.write("\n");
-    }
-  }
-  const config = { url, token: validateToken(token) };
-  const client = new Client(config);
-  const { user } = await client.json<{ user: { displayName: string } }>("/api/auth/session");
-  await saveConfig(config);
-  process.stderr.write(`Signed in as ${clean(user.displayName)} on ${url}.\n`);
 }
 
 export async function run(args: string[]): Promise<void> {

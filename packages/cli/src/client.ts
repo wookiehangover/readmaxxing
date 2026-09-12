@@ -31,7 +31,9 @@ export class Client {
       ...init,
       headers,
       redirect: "error",
-      signal: AbortSignal.timeout(120_000),
+      signal: init.signal
+        ? AbortSignal.any([init.signal, AbortSignal.timeout(120_000)])
+        : AbortSignal.timeout(120_000),
     });
     if (response.status === 401)
       throw new Error("Session expired or invalid. Run readmaxxing login again.");

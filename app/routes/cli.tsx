@@ -1,118 +1,117 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { Button, buttonVariants } from "~/components/ui/button";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from "~/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "~/components/ui/card";
+import { parseCliCallback, sendCliCallback } from "~/lib/cli-login-callback";
 
 export function meta() {
-  return [{ title: "Connect the CLI — Readmaxxing" }, { name: "referrer", content: "no-referrer" }];
+  return [{ title: "Connect CLI — Readmaxxing" }, { name: "referrer", content: "no-referrer" }];
 }
 
 export default function CliRoute() {
-  const [credential, setCredential] = useState<{ token: string; expiresAt: string } | null>(null);
-  const [pending, setPending] = useState(false);
+  const [params] = useSearchParams();
+  const [token, setToken] = useState<string | null>(null);
+  const [status, setStatus] = useState<
+    "ready" | "authorizing" | "connecting" | "connected" | "manual"
+  >("ready");
   const [error, setError] = useState<string | null>(null);
   const [needsLogin, setNeedsLogin] = useState(false);
   const [copied, setCopied] = useState(false);
+  const pending = status === "authorizing" || status === "connecting";
 
   async function authorize() {
-    setPending(true);
+    setStatus("authorizing");
     setError(null);
     setNeedsLogin(false);
     try {
       const response = await fetch("/api/auth/cli", { method: "POST" });
       if (response.status === 401) {
         setNeedsLogin(true);
+        setStatus("ready");
         return;
       }
-      if (!response.ok) throw new Error("Could not connect the CLI. Please try again.");
-      setCredential(await response.json());
+      if (!response.ok) throw new Error("Could not connect. Try again.");
+      const credential = await response.json();
+      if (typeof credential.token !== "string") throw new Error("Could not connect. Try again.");
+      setToken(credential.token);
+      const callback = parseCliCallback(params);
+      if (callback) {
+        setStatus("connecting");
+        try {
+          await sendCliCallback(callback, credential.token);
+          setToken(null);
+          setStatus("connected");
+          return;
+        } catch {
+          /* Show the same credential for manual login if localhost is unreachable. */
+        }
+      }
+      setStatus("manual");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not connect the CLI.");
-    } finally {
-      setPending(false);
+      setStatus("ready");
+      setError(cause instanceof Error ? cause.message : "Could not connect. Try again.");
     }
   }
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-6">
-      <Card className="w-full max-w-lg">
+      <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>
-            <h1>Connect the Readmaxxing CLI</h1>
+            <h1>{status === "connected" ? "CLI connected" : "Connect CLI"}</h1>
           </CardTitle>
           <CardDescription>
-            Upload books and download your library, notes, outlines, and conversations from your
-            terminal.
+            {status === "connected"
+              ? "You can close this tab."
+              : status === "manual"
+                ? "Paste this token into your terminal."
+                : needsLogin
+                  ? "Sign in, then return here to connect."
+                  : "Allow the CLI to access your account."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          {credential ? (
-            <>
-              <p>
-                Paste this token into the waiting <code>readmaxxing login</code> prompt. Keep it
-                private: it grants access to your account.
-              </p>
-              <code className="break-all select-all rounded-md bg-muted p-3">
-                {credential.token}
-              </code>
-              <p className="text-sm text-muted-foreground">
-                Expires {new Date(credential.expiresAt).toLocaleDateString()}. Run{" "}
-                <code>readmaxxing logout</code> to revoke it.
-              </p>
-              <Button
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(credential.token);
-                    setCopied(true);
-                  } catch {
-                    setError("Copy the token above manually.");
-                  }
-                }}
-              >
-                {copied ? "Copied" : "Copy token"}
-              </Button>
-            </>
-          ) : (
-            <>
-              <p>
-                Authorize a separate CLI session for 30 days. Your browser stays signed in when you
-                log out of the CLI.
-              </p>
-              {needsLogin && (
-                <p>Sign in in the new tab, then return here and select Authorize CLI.</p>
-              )}
-              {needsLogin && (
-                <a
-                  className={buttonVariants({ variant: "outline" })}
-                  href="/login"
-                  target="_blank"
-                  rel="noopener noreferrer"
+        {status !== "connected" && (
+          <CardContent className="flex flex-col gap-4">
+            {status === "manual" && token ? (
+              <>
+                <code className="break-all select-all rounded-md bg-muted p-3">{token}</code>
+                <Button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(token);
+                      setCopied(true);
+                    } catch {
+                      setError("Select and copy the token above.");
+                    }
+                  }}
                 >
-                  Sign in
-                </a>
-              )}
-              <Button disabled={pending} onClick={authorize}>
-                {pending ? "Authorizing…" : "Authorize CLI"}
-              </Button>
-            </>
-          )}
-          {error && (
-            <p role="alert" className="text-destructive">
-              {error}
-            </p>
-          )}
-        </CardContent>
-        <CardFooter>
-          <p className="text-sm text-muted-foreground">
-            The CLI accesses synced data. Sync browser changes before exporting.
-          </p>
-        </CardFooter>
+                  {copied ? "Copied" : "Copy token"}
+                </Button>
+              </>
+            ) : (
+              <>
+                {needsLogin && (
+                  <a
+                    className={buttonVariants({ variant: "outline" })}
+                    href="/login"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Sign in
+                  </a>
+                )}
+                <Button disabled={pending} onClick={authorize}>
+                  {pending ? "Connecting…" : "Connect"}
+                </Button>
+              </>
+            )}
+            {error && (
+              <p role="alert" className="text-destructive">
+                {error}
+              </p>
+            )}
+          </CardContent>
+        )}
       </Card>
     </main>
   );
