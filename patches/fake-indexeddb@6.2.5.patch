@@ -1,32 +1,62 @@
 diff --git a/build/cjs/FDBTransaction.js b/build/cjs/FDBTransaction.js
-index aea63bab6e8b88bcdb1aa3ff1fb5dbd24863aa67..5f8edc17330dc9d4051cd655ce266f5b88f890f7 100644
+index aea63bab6e8b88bcdb1aa3ff1fb5dbd24863aa67..741df60c535a66c6f2be8ff4ecba49fc90f63ddc 100644
 --- a/build/cjs/FDBTransaction.js
 +++ b/build/cjs/FDBTransaction.js
-@@ -41,6 +41,11 @@ class FDBTransaction extends _FakeEventTarget.default {
-       // the user uses `on*` or `addEventListener` for event listeners.
-       this.addEventListener(type, () => {
-         this._prioritizedListeners.get(type)?.();
-+        if ((type === "complete" || type === "abort") && this._state === "finished") {
-+          // Finished transactions no longer participate in scheduling. Release
-+          // them after lifecycle cleanup, including upgrade-abort bookkeeping.
+@@ -106,4 +106,10 @@ class FDBTransaction extends _FakeEventTarget.default {
+         cancelable: false
+       });
+       event.eventPath = [this.db];
+-      this.dispatchEvent(event);
++      try {
++        this.dispatchEvent(event);
++      } finally {
++        // Release only from the actual terminal lifecycle, after its callbacks.
++        // Synthetic events must not bypass pending work or upgrade-abort cleanup.
++        this.db._rawDatabase.transactions = this.db._rawDatabase.transactions.filter(transaction => transaction !== this);
++      }
+@@ -254,7 +260,13 @@ class FDBTransaction extends _FakeEventTarget.default {
+       this._state = "finished";
+       if (!this.error) {
+         const event = new _FakeEvent.default("complete");
+-        this.dispatchEvent(event);
++        try {
++          this.dispatchEvent(event);
++        } finally {
++          // Release only from the actual terminal lifecycle, after its callbacks.
++          // Synthetic events must not bypass pending work or upgrade-abort cleanup.
 +          this.db._rawDatabase.transactions = this.db._rawDatabase.transactions.filter(transaction => transaction !== this);
 +        }
-       });
+       }
      }
    }
 diff --git a/build/esm/FDBTransaction.js b/build/esm/FDBTransaction.js
-index 9c5654e963ceee0e96c3a5183598c2c3f2fafd09..0439ec6198ae9b086027fe4ffbb1ae2182ad2ba8 100644
+index 9c5654e963ceee0e96c3a5183598c2c3f2fafd09..fa45ae9723deb8f92c117ce888c70443757b4767 100644
 --- a/build/esm/FDBTransaction.js
 +++ b/build/esm/FDBTransaction.js
-@@ -34,6 +34,11 @@ class FDBTransaction extends FakeEventTarget {
-       // the user uses `on*` or `addEventListener` for event listeners.
-       this.addEventListener(type, () => {
-         this._prioritizedListeners.get(type)?.();
-+        if ((type === "complete" || type === "abort") && this._state === "finished") {
-+          // Finished transactions no longer participate in scheduling. Release
-+          // them after lifecycle cleanup, including upgrade-abort bookkeeping.
+@@ -99,4 +99,10 @@ class FDBTransaction extends FakeEventTarget {
+         cancelable: false
+       });
+       event.eventPath = [this.db];
+-      this.dispatchEvent(event);
++      try {
++        this.dispatchEvent(event);
++      } finally {
++        // Release only from the actual terminal lifecycle, after its callbacks.
++        // Synthetic events must not bypass pending work or upgrade-abort cleanup.
++        this.db._rawDatabase.transactions = this.db._rawDatabase.transactions.filter(transaction => transaction !== this);
++      }
+@@ -247,7 +253,13 @@ class FDBTransaction extends FakeEventTarget {
+       this._state = "finished";
+       if (!this.error) {
+         const event = new FakeEvent("complete");
+-        this.dispatchEvent(event);
++        try {
++          this.dispatchEvent(event);
++        } finally {
++          // Release only from the actual terminal lifecycle, after its callbacks.
++          // Synthetic events must not bypass pending work or upgrade-abort cleanup.
 +          this.db._rawDatabase.transactions = this.db._rawDatabase.transactions.filter(transaction => transaction !== this);
 +        }
-       });
+       }
      }
    }

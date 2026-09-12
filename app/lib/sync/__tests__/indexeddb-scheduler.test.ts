@@ -208,4 +208,39 @@ describe.each([
     await promisifyRequest(factory.deleteDatabase("scheduler"));
     expect(await factory.databases()).toEqual([]);
   });
+
+  it.each(["complete", "abort"])(
+    "preserves pending upgrade-abort cleanup after synthetic %s",
+    async (type) => {
+      const factory = new Factory();
+      let connection: IDBDatabase | undefined;
+      try {
+        const request = factory.open("scheduler");
+        request.onupgradeneeded = () => {
+          connection = request.result;
+          connection.createObjectStore("discarded");
+          const transaction = request.transaction!;
+          transaction.abort();
+          // abort() marks the transaction finished synchronously; its queued
+          // task still needs the transaction to remove the failed connection.
+          transaction.dispatchEvent(new FakeEvent(type));
+        };
+        await expect(promisifyRequest(request)).rejects.toMatchObject({ name: "AbortError" });
+        const deletion = factory.deleteDatabase("scheduler");
+        const outcome = await new Promise<string>((resolve, reject) => {
+          deletion.onsuccess = () => resolve("success");
+          deletion.onblocked = () => resolve("blocked");
+          deletion.onerror = () => reject(deletion.error);
+        });
+        expect(outcome).toBe("success");
+        expect(await factory.databases()).toEqual([]);
+        const reopened = await open(factory);
+        expect(Array.from(reopened.objectStoreNames)).toEqual(["a", "b"]);
+        reopened.close();
+        await promisifyRequest(factory.deleteDatabase("scheduler"));
+      } finally {
+        connection?.close();
+      }
+    },
+  );
 });
