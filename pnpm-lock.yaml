@@ -7,6 +7,11 @@ settings:
 overrides:
   '@tiptap/core': 3.30.5
 
+patchedDependencies:
+  fake-indexeddb@6.2.5:
+    hash: 811208609671bc9cd2512937ba77cfea78f9b3e8a43153a65624fbabf4115c1f
+    path: patches/fake-indexeddb@6.2.5.patch
+
 importers:
 
   .:
@@ -203,7 +208,7 @@ importers:
         version: 10.9.1(jiti@2.7.0)
       fake-indexeddb:
         specifier: ^6.2.5
-        version: 6.2.5
+        version: 6.2.5(patch_hash=811208609671bc9cd2512937ba77cfea78f9b3e8a43153a65624fbabf4115c1f)
       happy-dom:
         specifier: 20.10.6
         version: 20.10.6
@@ -9931,7 +9936,7 @@ snapshots:
 
   extend@3.0.2: {}
 
-  fake-indexeddb@6.2.5: {}
+  fake-indexeddb@6.2.5(patch_hash=811208609671bc9cd2512937ba77cfea78f9b3e8a43153a65624fbabf4115c1f): {}
 
   fast-deep-equal@3.1.3: {}
 

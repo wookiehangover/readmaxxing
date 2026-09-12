@@ -1,0 +1,32 @@
+diff --git a/build/cjs/FDBTransaction.js b/build/cjs/FDBTransaction.js
+index aea63bab6e8b88bcdb1aa3ff1fb5dbd24863aa67..078e9eb5fc44d4edc7a92e258aac7f1c5bda4d89 100644
+--- a/build/cjs/FDBTransaction.js
++++ b/build/cjs/FDBTransaction.js
+@@ -41,6 +41,11 @@ class FDBTransaction extends _FakeEventTarget.default {
+       // the user uses `on*` or `addEventListener` for event listeners.
+       this.addEventListener(type, () => {
+         this._prioritizedListeners.get(type)?.();
++        if (type === "complete" || type === "abort") {
++          // Finished transactions no longer participate in scheduling. Release
++          // them after lifecycle cleanup, including upgrade-abort bookkeeping.
++          this.db._rawDatabase.transactions = this.db._rawDatabase.transactions.filter(transaction => transaction !== this);
++        }
+       });
+     }
+   }
+diff --git a/build/esm/FDBTransaction.js b/build/esm/FDBTransaction.js
+index 9c5654e963ceee0e96c3a5183598c2c3f2fafd09..3f0ff31026af9120f732da9033faa456515969c2 100644
+--- a/build/esm/FDBTransaction.js
++++ b/build/esm/FDBTransaction.js
+@@ -34,6 +34,11 @@ class FDBTransaction extends FakeEventTarget {
+       // the user uses `on*` or `addEventListener` for event listeners.
+       this.addEventListener(type, () => {
+         this._prioritizedListeners.get(type)?.();
++        if (type === "complete" || type === "abort") {
++          // Finished transactions no longer participate in scheduling. Release
++          // them after lifecycle cleanup, including upgrade-abort bookkeeping.
++          this.db._rawDatabase.transactions = this.db._rawDatabase.transactions.filter(transaction => transaction !== this);
++        }
+       });
+     }
+   }
