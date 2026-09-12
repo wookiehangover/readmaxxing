@@ -7,7 +7,7 @@ import { uploadBook } from "./upload.js";
 import { login } from "./login.js";
 
 import { help } from "./help.js";
-import { Activity, clean, listing, success, tone } from "./terminal.js";
+import { Activity, chatListing, clean, interactive, listing, success, tone } from "./terminal.js";
 
 export async function run(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -98,10 +98,18 @@ export async function run(args: string[]): Promise<void> {
       break;
     }
     case "chats": {
-      const sessions = (
-        await new Activity("Loading chats").during(() => client.pull<ChatSession>("chat_session"))
-      ).filter((session) => !values.book || session.bookId === values.book);
+      const { sessions, books } = await new Activity("Loading chats").during(async () => {
+        const sessions = (await client.pull<ChatSession>("chat_session")).filter(
+          (session) => !values.book || session.bookId === values.book,
+        );
+        const books =
+          !values.json && interactive(process.stdout) && sessions.length
+            ? await client.pull<Book>("book")
+            : [];
+        return { sessions, books };
+      });
       if (values.json) process.stdout.write(`${JSON.stringify(sessions, null, 2)}\n`);
+      else if (interactive(process.stdout)) chatListing(sessions, books);
       else
         listing(
           ["ID", "TITLE", "BOOK"],

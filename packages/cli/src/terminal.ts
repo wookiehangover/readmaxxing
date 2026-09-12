@@ -1,10 +1,11 @@
 import { stripVTControlCharacters } from "node:util";
+import type { Book, ChatSession } from "./client.js";
 
 export function clean(value: string | null | undefined): string {
   return stripVTControlCharacters(value ?? "").replace(/[\p{Cc}\p{Cf}]/gu, " ");
 }
 
-function interactive(stream: NodeJS.WriteStream): boolean {
+export function interactive(stream: NodeJS.WriteStream): boolean {
   return !!stream.isTTY && process.env.TERM !== "dumb" && !process.env.CI;
 }
 
@@ -111,6 +112,34 @@ export function listing(headers: string[], rows: (string | null)[][], empty: str
       .map(([id, title, ...details]) => {
         const [description, format] = details;
         return `${tone(clean(title) || "Untitled", 1)}${description ? ` · ${clean(description)}` : ""}\n${tone(`  ${clean(id)}${format ? ` · ${clean(format).toUpperCase()}` : ""}`, 2)}`;
+      })
+      .join("\n\n") + "\n",
+  );
+}
+
+export function chatListing(sessions: ChatSession[], books: Book[]): void {
+  if (!sessions.length) {
+    process.stdout.write("No conversations found.\n");
+    return;
+  }
+  const bookById = new Map(books.map((book) => [book.id, book]));
+  const groups = new Map<string | null, ChatSession[]>();
+  for (const session of sessions) {
+    const group = groups.get(session.bookId) ?? [];
+    group.push(session);
+    groups.set(session.bookId, group);
+  }
+  process.stdout.write(
+    [...groups]
+      .map(([bookId, chats]) => {
+        const book = bookId ? bookById.get(bookId) : undefined;
+        const title = clean(book?.title) || (bookId ? "Unknown book" : "No book");
+        const heading = tone(title, 1) + (book?.author ? ` · ${clean(book.author)}` : "");
+        const bookLine = bookId ? `\n${tone(`  ${clean(bookId)}`, 2)}` : "";
+        const rows = chats.map(
+          (chat) => `  ${clean(chat.title) || "Untitled"}\n${tone(`    ${clean(chat.id)}`, 2)}`,
+        );
+        return `${heading}${bookLine}\n\n${rows.join("\n")}`;
       })
       .join("\n\n") + "\n",
   );

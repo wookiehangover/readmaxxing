@@ -85,17 +85,68 @@ describe("terminal output", () => {
     expect(stdout).toHaveBeenCalledWith(output);
   });
 
-  it("prints valid JSON with no terminal styles or status mixed in", async () => {
+  it("groups interleaved chats by book ID and keeps missing books visible", async () => {
+    const { stdout } = capture(true);
+    vi.stubEnv("NO_COLOR", "1");
+    vi.stubEnv("READMAXXING_CONFIG", "/does/not/exist/config.json");
+    vi.stubEnv("READMAXXING_URL", "https://readmaxxing.app");
+    vi.stubEnv("READMAXXING_TOKEN", "12345678-1234-1234-1234-123456789abc");
+    const sessions = [
+      { id: "chat-1", title: "First", bookId: "book-a" },
+      { id: "chat-2", title: "Second", bookId: "book-b" },
+      { id: "chat-3", title: "Third", bookId: "book-a" },
+      { id: "chat-4", title: "Lost", bookId: "missing" },
+      { id: "chat-5", title: null, bookId: null },
+    ];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      const entity = new URL(String(url)).searchParams.get("entityType");
+      return Response.json({
+        changes: [
+          {
+            entity,
+            records:
+              entity === "book"
+                ? [
+                    { id: "book-a", title: "Same title", author: "Author" },
+                    { id: "book-b", title: "Same title" },
+                  ]
+                : sessions,
+            hasMore: false,
+          },
+        ],
+      });
+    });
+    await run(["chats"]);
+    const output = stdout.mock.calls.map(([value]) => value).join("");
+    expect(output).toContain(
+      "Same title · Author\n  book-a\n\n  First\n    chat-1\n  Third\n    chat-3",
+    );
+    expect(output).toContain("Same title\n  book-b\n\n  Second\n    chat-2");
+    expect(output).toContain("Unknown book\n  missing\n\n  Lost\n    chat-4");
+    expect(output).toContain("No book\n\n  Untitled\n    chat-5");
+    stdout.mockClear();
+    await run(["chats", "--book", "book-a"]);
+    const filtered = stdout.mock.calls.map(([value]) => value).join("");
+    expect(filtered).toContain("chat-1");
+    expect(filtered).toContain("chat-3");
+    expect(filtered).not.toContain("chat-2");
+    expect(filtered).not.toContain("Unknown book");
+  });
+
+  it.each([
+    ["books", "book"],
+    ["chats", "chat_session"],
+  ])("prints valid %s JSON without extra metadata requests", async (command, entity) => {
     const { stdout } = capture(true);
     vi.stubEnv("READMAXXING_CONFIG", "/does/not/exist/config.json");
     vi.stubEnv("READMAXXING_URL", "https://readmaxxing.app");
     vi.stubEnv("READMAXXING_TOKEN", "12345678-1234-1234-1234-123456789abc");
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       Response.json({
-        changes: [{ entity: "book", records: [{ id: "one", title: "Book" }], hasMore: false }],
+        changes: [{ entity, records: [{ id: "one", title: "Book" }], hasMore: false }],
       }),
     );
-    await run(["books", "--json"]);
+    await run([command, "--json"]);
     expect(JSON.parse(stdout.mock.calls.map(([value]) => value).join(""))).toEqual([
       { id: "one", title: "Book" },
     ]);

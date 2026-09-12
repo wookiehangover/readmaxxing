@@ -40,7 +40,7 @@ const commands: Record<
   },
   chats: {
     usage: "chats [options]",
-    description: "List saved conversations and their session IDs.",
+    description: "List conversations grouped by book, with session IDs.",
     options: "  --book <id>           Filter by book\n  --json                Output JSON",
     example: "readmaxxing chats --book <book-id>",
   },
