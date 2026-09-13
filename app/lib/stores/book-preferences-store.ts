@@ -1,4 +1,4 @@
-import { createStore, get, set } from "idb-keyval";
+import { createStore, get, update } from "idb-keyval";
 import type { FontWeight } from "~/lib/settings";
 
 export interface BookPreferences {
@@ -23,5 +23,7 @@ export async function getBookPreferences(bookId: string): Promise<BookPreference
 }
 
 export async function saveBookPreferences(bookId: string, prefs: BookPreferences): Promise<void> {
-  return set(bookId, prefs, getStore());
+  // Merge explicit changes atomically so unrelated settings keep inheriting defaults
+  // and overlapping edits cannot overwrite each other.
+  return update<BookPreferences>(bookId, (current) => ({ ...current, ...prefs }), getStore());
 }
