@@ -20,6 +20,14 @@ let _chatMessagesStore: UseStore | null = null;
 let _syncFlagsStore: UseStore | null = null;
 let _chapterQuestionsStore: UseStore | null = null;
 let _reviewsStore: UseStore | null = null;
+let _repairBackupsStore: UseStore | null = null;
+
+/** Original book bytes retained locally before applying a repair, keyed by repair ID. */
+export function getRepairBackupsStore(): UseStore {
+  if (!_repairBackupsStore)
+    _repairBackupsStore = createStore("ebook-reader-repair-backups", "backups");
+  return _repairBackupsStore;
+}
 
 /** Book metadata (BookMeta records, key = bookId). */
 export function getBookStore(): UseStore {

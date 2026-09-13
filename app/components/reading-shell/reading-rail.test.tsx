@@ -339,6 +339,7 @@ beforeEach(() => {
   Object.assign(themis.store, {
     readingRailSelectors: railStore.readingRailSelectors,
     reviewsSelectors: railStore.reviewsSelectors,
+    repairsSelectors: railStore.repairsSelectors,
   });
   workspace.activeClusterBookIdRef.current = "book-1";
   themis.books[0].title = "The Power Broker";

@@ -5,6 +5,7 @@ export const READING_RAIL_TABS = [
   "Outline",
   "Details",
   "Review",
+  "Repair",
 ] as const;
 export type ReadingRailTab = (typeof READING_RAIL_TABS)[number];
 export interface ReadingRailState {

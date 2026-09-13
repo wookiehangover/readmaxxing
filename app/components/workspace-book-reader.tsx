@@ -113,7 +113,7 @@ export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookRe
 
   return (
     <WorkspaceBookReaderInner
-      key={book.id}
+      key={`${book.id}:${book.fileHash ?? ""}`}
       book={book}
       panelTypography={panelTypography}
       onRenditionReady={onRenditionReady}

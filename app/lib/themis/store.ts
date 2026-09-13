@@ -2,6 +2,9 @@ import { createReadingRailSelectors } from "~/lib/themis/reading-rail/reading-ra
 import { readingRailReducer } from "~/lib/themis/reading-rail/reading-rail-slice";
 import type { ReadingRailState } from "~/lib/themis/reading-rail/reading-rail-types";
 import { ReactStore } from "@augmentcode/themis/react-store";
+import { createRepairsSelectors } from "~/lib/themis/repairs/repairs-selectors";
+import { repairsReducer } from "~/lib/themis/repairs/repairs-slice";
+import type { RepairsState } from "~/lib/themis/repairs/repairs-types";
 
 import { createAnnotationsSelectors } from "~/lib/themis/annotations/annotations-selectors";
 import { annotationsReducer } from "~/lib/themis/annotations/annotations-slice";
@@ -37,6 +40,7 @@ export type AppStoreCore = ReactStore<
     chatSessions: ChatSessionsState;
     readingPositions: ReadingPositionsState;
     reviews: ReviewsState;
+    repairs: RepairsState;
     readingRail: ReadingRailState;
     workspaceRestore: WorkspaceRestoreState;
   },
@@ -48,6 +52,7 @@ export type AppStoreCore = ReactStore<
     chatSessions: typeof chatSessionsReducer;
     readingPositions: typeof readingPositionsReducer;
     reviews: typeof reviewsReducer;
+    repairs: typeof repairsReducer;
     readingRail: typeof readingRailReducer;
     workspaceRestore: typeof workspaceRestoreReducer;
   }
@@ -62,6 +67,7 @@ export function createAppStore() {
     chatSessions: chatSessionsReducer,
     readingPositions: readingPositionsReducer,
     reviews: reviewsReducer,
+    repairs: repairsReducer,
     readingRail: readingRailReducer,
     workspaceRestore: workspaceRestoreReducer,
   });
@@ -75,6 +81,7 @@ export function createAppStore() {
     chatSessionsSelectors: createChatSessionsSelectors(store),
     readingPositionsSelectors: createReadingPositionsSelectors(store),
     reviewsSelectors,
+    repairsSelectors: createRepairsSelectors(store),
     workspaceRestoreSelectors: createWorkspaceRestoreSelectors(store),
   });
 }
