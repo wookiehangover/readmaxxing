@@ -11,7 +11,7 @@ import {
 } from "~/lib/themis/annotations/annotations-slice";
 
 const HIGHLIGHT_COLOR_LIGHT = "rgba(255, 213, 79, 0.6)";
-const HIGHLIGHT_COLOR_DARK = "rgba(255, 220, 100, 0.8)";
+const HIGHLIGHT_COLOR_DARK = "rgba(128, 128, 128, 0.35)";
 
 function getHighlightColor(theme: Theme): string {
   return resolveTheme(theme) === "dark" ? HIGHLIGHT_COLOR_DARK : HIGHLIGHT_COLOR_LIGHT;
@@ -225,11 +225,14 @@ export function useHighlights({
       rendition.upsertDecoration({
         id,
         locator,
-        style: { variant: "highlight", color: "rgba(255, 213, 79, 0.4)" },
+        style: {
+          variant: "highlight",
+          color: resolveTheme(theme) === "dark" ? HIGHLIGHT_COLOR_DARK : "rgba(255, 213, 79, 0.4)",
+        },
       });
       setTimeout(() => rendition.removeDecoration(id), 3000);
     },
-    [renditionRef],
+    [renditionRef, theme],
   );
 
   return {
