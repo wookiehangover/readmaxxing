@@ -22,9 +22,10 @@ export function OutlineQualityCard({ ratings }: { ratings: OutlineBulletRating[]
       <CardHeader>
         <CardTitle>Latest bullet quality checks</CardTitle>
         <CardDescription>
-          Jev requires at least {Math.round(OUTLINE_QUALITY_THRESHOLD * 100)}% on every dimension on
-          the first attempt and {Math.round(OUTLINE_RETRY_QUALITY_THRESHOLD * 100)}% on retries.
-          Bullets that fail {OUTLINE_MAX_FAILURES} checks are omitted. Scores are model judgments.
+          Jev averages relevance, accuracy, and consistency. The required average is{" "}
+          {Math.round(OUTLINE_QUALITY_THRESHOLD * 100)}% on the first attempt and{" "}
+          {Math.round(OUTLINE_RETRY_QUALITY_THRESHOLD * 100)}% on retries. Bullets that fail{" "}
+          {OUTLINE_MAX_FAILURES} checks are omitted. Scores are model judgments.
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -207,13 +207,24 @@ describe("bullet quality control", () => {
     expect(result.usage.quality?.map((r) => r.attempt)).toEqual([1, 2, 3]);
   });
 
-  it("accepts the threshold but rejects a low individual dimension", async () => {
+  it("retries a below-threshold average and accepts 70% on retry", async () => {
     const first = evaluation([2]);
-    first.answers.bullet_0_accuracy.score = 1.49;
+    first.answers.bullet_0_accuracy.score = 0.49;
     mocks.evaluate.mockResolvedValueOnce(first).mockResolvedValueOnce(evaluation([1.4]));
     const result = await callPageIncrement(options);
     expect(mocks.generateObject).toHaveBeenCalledTimes(2);
     expect(result.usage.quality?.map((r) => r.accepted)).toEqual([false, true]);
+  });
+
+  it("accepts a passing average even when one dimension is below the cutoff", async () => {
+    const first = evaluation([2]);
+    first.answers.bullet_0_accuracy.score = 0.5;
+    mocks.evaluate.mockResolvedValueOnce(first);
+    const result = await callPageIncrement(options);
+    expect(mocks.generateObject).toHaveBeenCalledOnce();
+    expect(result.usage.quality).toMatchObject([
+      { relevance: 1, accuracy: 0.25, consistency: 1, rating: 0.75, accepted: true },
+    ]);
   });
 
   it("accepts 75% initially without regenerating", async () => {

@@ -86,11 +86,13 @@ it.each([
   "uses the acceptance threshold for attempt $attempt at score $score",
   async ({ attempt, score, accepted }) => {
     const answers = validAnswers();
-    answers.bullet_0_accuracy = {
-      type: "score",
-      score,
-      probabilities: { "0": 0, "1": 2 - score, "2": score - 1 },
-    };
+    for (const key of Object.keys(answers)) {
+      answers[key] = {
+        type: "score",
+        score,
+        probabilities: { "0": 0, "1": 2 - score, "2": score - 1 },
+      };
+    }
     doEvaluate.mockResolvedValue({
       answers,
       usage: { inputTokens: 25, outputTokens: 3 },
@@ -102,6 +104,7 @@ it.each([
       attempt,
       AbortSignal.timeout(1000),
     );
-    expect(result.ratings[0]).toMatchObject({ attempt, rating: score / 2, accepted });
+    expect(result.ratings[0]).toMatchObject({ attempt, accepted });
+    expect(result.ratings[0].rating).toBeCloseTo(score / 2, 12);
   },
 );

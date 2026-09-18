@@ -104,7 +104,8 @@ export async function evaluateOutlineBullets(
       const relevance = score(index, "relevance");
       const accuracy = score(index, "accuracy");
       const consistency = score(index, "consistency");
-      const rating = Math.min(relevance, accuracy, consistency);
+      const rating = (relevance + accuracy + consistency) / 3;
+      const threshold = attempt > 1 ? OUTLINE_RETRY_QUALITY_THRESHOLD : OUTLINE_QUALITY_THRESHOLD;
       return {
         bullet,
         bulletIndex: index,
@@ -113,8 +114,8 @@ export async function evaluateOutlineBullets(
         consistency,
         rating,
         attempt,
-        accepted:
-          rating >= (attempt > 1 ? OUTLINE_RETRY_QUALITY_THRESHOLD : OUTLINE_QUALITY_THRESHOLD),
+        // Allow only floating-point roundoff at the inclusive acceptance boundary.
+        accepted: rating >= threshold - Number.EPSILON,
       };
     }),
   };
