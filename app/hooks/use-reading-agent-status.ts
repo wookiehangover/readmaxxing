@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { OutlineBulletRating } from "~/lib/reading-agent/outline-quality";
+
 export const READING_AGENT_STATUS_POLL_MS = 2_000;
 export const READING_AGENT_STATUS_TIMEOUT_MS = 5_000;
 
@@ -31,6 +33,7 @@ export interface ReadingAgentStatus {
     lastError: string | null;
   }>;
   usage: {
+    quality?: OutlineBulletRating[];
     input: number;
     output: number;
     cacheRead: number;

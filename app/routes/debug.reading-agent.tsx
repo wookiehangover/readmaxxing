@@ -1,5 +1,6 @@
 import { Activity, ArrowLeft, CircleAlert, Clock3, Database, Inbox, Server } from "lucide-react";
 import { Link, redirect } from "react-router";
+import { OutlineQualityCard } from "~/components/reading-agent/outline-quality-card";
 import { LastIncrementCard } from "~/components/reading-agent/last-increment-card";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
@@ -126,7 +127,7 @@ function HealthCards({ status }: { status: ReadingAgentStatus }) {
           <Database className="size-5" aria-hidden="true" />
           {status.schema.ok
             ? "All required queue columns are present."
-            : "Migration 016 is incomplete."}
+            : "Reading-agent migrations are incomplete."}
         </CardContent>
       </Card>
     </div>
@@ -475,6 +476,7 @@ export default function ReadingAgentDebugPage() {
               <UsageCard usage={data.usage} />
             </div>
             <LastIncrementCard increment={data.latestIncrement} />
+            <OutlineQualityCard ratings={data.usage?.quality} />
             <UnitsCard
               units={data.units}
               canRetry={availability.canRetry}

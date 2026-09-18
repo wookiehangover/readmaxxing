@@ -31,6 +31,7 @@ function serializeUsage(usage: ReadingAgentUsageRow | null) {
     totalTokens: usage.totalTokens,
     model: usage.model,
     source: usage.source,
+    quality: usage.quality ?? [],
     createdAt: usage.createdAt,
   };
 }

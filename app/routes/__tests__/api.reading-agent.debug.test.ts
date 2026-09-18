@@ -165,6 +165,18 @@ describe("reading-agent debug API", () => {
       totalTokens: 18,
       model: "openai/gpt-5.5",
       source: "provider",
+      quality: [
+        {
+          bullet: "Mara leaves.",
+          bulletIndex: 0,
+          relevance: 1,
+          accuracy: 0.9,
+          consistency: 1,
+          rating: 0.9,
+          attempt: 1,
+          accepted: true,
+        },
+      ],
       createdAt: new Date("2026-08-16T06:00:00Z"),
     });
     mocks.increment.mockResolvedValue({
@@ -184,7 +196,11 @@ describe("reading-agent debug API", () => {
       schema: { ok: true },
       selectedModel: "openai/gpt-5.6-terra",
       lastError: "Previous attempt failed",
-      usage: { model: "openai/gpt-5.5", totalTokens: 18 },
+      usage: {
+        model: "openai/gpt-5.5",
+        totalTokens: 18,
+        quality: [expect.objectContaining({ bullet: "Mara leaves.", rating: 0.9, accepted: true })],
+      },
     });
     expect(body.latestIncrement).toEqual({
       chapterLabel: "Chapter 1",
