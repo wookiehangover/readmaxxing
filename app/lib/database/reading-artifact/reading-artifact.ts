@@ -325,8 +325,8 @@ export async function refreshReadingIngestUnit(data: {
   const result = await getPool().query<ReadingIngestUnitRow>(sql`
     UPDATE readmax.reading_ingest_unit
     SET text = ${data.text},
-        previous_page = COALESCE(${data.previousPage ?? null}, previous_page),
-        next_page = COALESCE(${data.nextPage ?? null}, next_page),
+        previous_page = ${data.previousPage ?? null},
+        next_page = ${data.nextPage ?? null},
         chapter_label = COALESCE(${data.chapterLabel ?? null}, chapter_label),
         display_page = COALESCE(${data.displayPage ?? null}, display_page),
         last_seen_at = NOW()

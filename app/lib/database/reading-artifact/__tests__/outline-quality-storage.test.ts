@@ -13,6 +13,7 @@ import {
   completeReadingIngestUnit,
   getLatestReadingAgentUsage,
   insertReadingIngestUnit,
+  refreshReadingIngestUnit,
   releaseReadingIngestUnit,
 } from "../reading-artifact";
 
@@ -65,6 +66,45 @@ beforeAll(async () => {
 afterAll(async () => {
   await db?.close();
 });
+
+it.each(["pending", "error"])(
+  "clears stale adjacent context when a %s page is refreshed",
+  async (status) => {
+    const unit = await insertReadingIngestUnit({
+      userId,
+      bookId: "refresh-book",
+      fingerprint: `refresh-${status}`,
+      unitKind: "epub-spine",
+      locator: `chapter.xhtml#page=${status}`,
+      text: "Original page text.",
+      previousPage: "Old previous page.",
+      nextPage: "Old next page.",
+    });
+    await db.query("UPDATE readmax.reading_ingest_unit SET status = $1 WHERE id = $2", [
+      status,
+      unit!.id,
+    ]);
+
+    const refreshed = await refreshReadingIngestUnit({
+      userId,
+      bookId: "refresh-book",
+      unitId: unit!.id,
+      text: "Repaginated page text.",
+      previousPage: null,
+      nextPage: null,
+    });
+    expect(refreshed).toMatchObject({
+      text: "Repaginated page text.",
+      previousPage: null,
+      nextPage: null,
+    });
+    const persisted = await db.query<{ previous_page: string | null; next_page: string | null }>(
+      "SELECT previous_page, next_page FROM readmax.reading_ingest_unit WHERE id = $1",
+      [unit!.id],
+    );
+    expect(persisted.rows[0]).toEqual({ previous_page: null, next_page: null });
+  },
+);
 
 it("persists context and rating history on completion and provider failure", async () => {
   for (const outcome of ["done", "error"]) {
