@@ -4,16 +4,18 @@ import { ListTree } from "lucide-react";
 import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { OutlineProgress } from "./outline-progress";
 import { tiptapJsonToMarkdown } from "~/lib/editor/tiptap-to-markdown";
 import { useWorkspace } from "~/lib/context/workspace-context";
 import {
   fetchReadingArtifacts,
   ReadingArtifactsError,
   saveReadingOutline,
+  type ReadingOutlinePendingPage,
 } from "~/lib/reading-agent/artifacts-client";
 import { cn } from "~/lib/utils";
 
-export const OUTLINE_POLL_MS = 15_000;
+export const OUTLINE_POLL_MS = 2_000;
 export const OUTLINE_SAVE_MS = 1_000;
 
 interface OutlinePanelParams {
@@ -26,6 +28,7 @@ type OutlineStatus = "loading" | "ready" | "empty" | "auth" | "error";
 interface OutlineState {
   readonly status: OutlineStatus;
   readonly content: string | null;
+  readonly pendingPages?: ReadingOutlinePendingPage[];
 }
 
 function isAbortError(error: unknown): boolean {
@@ -95,17 +98,26 @@ export function WorkspaceOutlinePanel({
     [clearSaveTimer, flushSave],
   );
 
-  const applyRemoteContent = useCallback((content: string | null | undefined) => {
-    if (dirtyContentRef.current !== null) return;
-    const next = outlineFromContent(content);
-    if (appliedContentRef.current === next.content) {
-      setState((current) => (current.status === "loading" ? next : current));
-      return;
-    }
-    appliedContentRef.current = next.content;
-    setState(next);
-    if (next.status === "ready" && next.content) editorRef.current?.setContent(next.content);
-  }, []);
+  const applyRemoteContent = useCallback(
+    (content: string | null | undefined, pendingPages: ReadingOutlinePendingPage[]) => {
+      if (dirtyContentRef.current !== null) {
+        setState((current) => ({ ...current, pendingPages }));
+        return;
+      }
+      const next = outlineFromContent(content);
+      if (appliedContentRef.current === next.content) {
+        setState((current) => ({
+          ...(current.status === "loading" ? next : current),
+          pendingPages,
+        }));
+        return;
+      }
+      appliedContentRef.current = next.content;
+      setState({ ...next, pendingPages });
+      if (next.status === "ready" && next.content) editorRef.current?.setContent(next.content);
+    },
+    [],
+  );
 
   const retry = useCallback(() => {
     setState({ status: "loading", content: null });
@@ -144,7 +156,7 @@ export function WorkspaceOutlinePanel({
       try {
         const response = await fetchReadingArtifacts(bookId, { signal: controller.signal });
         if (cancelled) return;
-        applyRemoteContent(response.artifacts.outline?.content);
+        applyRemoteContent(response.artifacts.outline?.content, response.pendingPages ?? []);
       } catch (error) {
         if (cancelled || isAbortError(error)) return;
         setState((current) => (silent && current.status === "ready" ? current : errorState(error)));
@@ -232,7 +244,7 @@ export function WorkspaceOutlinePanel({
                 Retry
               </Button>
             </div>
-          ) : state.status === "empty" ? (
+          ) : state.status === "empty" && !state.pendingPages?.length ? (
             <div
               className={cn("flex h-full flex-col items-center justify-center gap-3 text-center", {
                 "p-6": !chromeless,
@@ -245,14 +257,21 @@ export function WorkspaceOutlinePanel({
               </p>
             </div>
           ) : (
-            <TiptapEditor
-              ref={editorRef}
-              content={state.content ?? ""}
-              compact={chromeless}
-              onUpdate={handleUpdate}
-              onBlur={() => void flushSave()}
-              onNavigateToOutlineIncrement={handleNavigateToCfi}
-            />
+            <>
+              {state.status === "ready" && (
+                <TiptapEditor
+                  ref={editorRef}
+                  content={state.content ?? ""}
+                  compact={chromeless}
+                  onUpdate={handleUpdate}
+                  onBlur={() => void flushSave()}
+                  onNavigateToOutlineIncrement={handleNavigateToCfi}
+                />
+              )}
+              {!!state.pendingPages?.length && (
+                <OutlineProgress pages={state.pendingPages} compact={chromeless} />
+              )}
+            </>
           )}
         </div>
       </ScrollArea>

@@ -91,7 +91,7 @@ function locatorPage(locator: string): number | null {
   return value === undefined ? null : Number(value);
 }
 
-function metadataPage(metadata: OutlineIncrementMetadata): number | null {
+export function getOutlineIncrementPage(metadata: OutlineIncrementMetadata): number | null {
   return metadata.displayPage != null && Number.isFinite(metadata.displayPage)
     ? metadata.displayPage
     : locatorPage(metadata.locator);
@@ -143,7 +143,7 @@ export function mergeOutlineMarkdown(
     return appendSection(currentMarkdown, `## ${label}${eol}${eol}${increment}`, eol);
   }
 
-  const page = metadataPage(metadata);
+  const page = getOutlineIncrementPage(metadata);
   const offset = page === null ? null : insertionOffset(currentMarkdown, section, page);
   if (offset !== null) {
     return `${currentMarkdown.slice(0, offset)}${increment}${eol}${eol}${currentMarkdown.slice(offset)}`;

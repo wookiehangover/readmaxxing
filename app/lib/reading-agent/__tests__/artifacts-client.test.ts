@@ -157,3 +157,27 @@ describe("saveReadingOutline", () => {
     });
   });
 });
+
+describe("outline progress response", () => {
+  it("preserves valid pending and processing pages", () => {
+    const pendingPages = [
+      { unitId: "first", page: 12, status: "processing" },
+      { unitId: "second", page: null, status: "pending" },
+    ];
+    expect(parseReadingArtifactsResponse({ ...emptyBody, pendingPages })).toMatchObject({
+      pendingPages,
+    });
+  });
+
+  it.each([
+    null,
+    {},
+    [{ unitId: "first", page: 0, status: "pending" }],
+    [{ unitId: "first", page: 12, status: "done" }],
+    [{ unitId: "first", page: "12", status: "pending" }],
+  ])("rejects malformed progress %j", (pendingPages) => {
+    expect(() => parseReadingArtifactsResponse({ ...emptyBody, pendingPages })).toThrow(
+      /Invalid outline progress/,
+    );
+  });
+});
