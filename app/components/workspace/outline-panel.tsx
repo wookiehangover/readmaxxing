@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JSONContent } from "@tiptap/react";
-import { ListTree } from "lucide-react";
 import { TiptapEditor, type TiptapEditorHandle } from "~/components/tiptap-editor";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
@@ -245,17 +244,14 @@ export function WorkspaceOutlinePanel({
               </Button>
             </div>
           ) : state.status === "empty" && !state.pendingPages?.length ? (
-            <div
-              className={cn("flex h-full flex-col items-center justify-center gap-3 text-center", {
-                "p-6": !chromeless,
+            <p
+              className={cn("text-sm", {
+                "px-4 py-3 text-muted-foreground": !chromeless,
+                "text-muted-foreground/35": chromeless,
               })}
             >
-              <ListTree className="size-8 text-muted-foreground" />
-              <p className="text-sm font-medium">No outline yet</p>
-              <p className="text-xs text-muted-foreground">
-                Keep reading. An outline will appear here after a page has been in view long enough.
-              </p>
-            </div>
+              An outline will appear after you start reading
+            </p>
           ) : (
             <div className="pb-24">
               {state.status === "ready" && (

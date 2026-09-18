@@ -136,8 +136,8 @@ describe("OutlinePanel", () => {
     await act(async () => {});
 
     const emptyState = Array.from(container!.querySelectorAll("p")).find(
-      (element) => element.textContent === "No outline yet",
-    )?.parentElement;
+      (element) => element.textContent === "An outline will appear after you start reading",
+    );
     expect(emptyState?.className).not.toContain("p-6");
     const scrollContent = container!.querySelector(
       "[data-testid='outline-scroll-viewport']",
@@ -194,15 +194,14 @@ describe("OutlinePanel", () => {
     expect(container!.querySelector("a")?.getAttribute("href")).toBe("/login");
   });
 
-  it("shows a keep-reading empty state when the outline is missing", async () => {
+  it("shows a placeholder when the outline is missing", async () => {
     mocks.fetchReadingArtifacts.mockResolvedValue({
       bookId: "book-1",
       artifacts: { outline: null, characters: null, wiki: null },
     });
     renderPanel(true);
     await act(async () => {});
-    expect(container!.textContent).toContain("No outline yet");
-    expect(container!.textContent).toContain("Keep reading");
+    expect(container!.textContent).toContain("An outline will appear after you start reading");
   });
 
   it("retries a failed fetch from the error state", async () => {
@@ -374,7 +373,7 @@ describe("outline page progress", () => {
     expect(progress?.textContent).toContain("12");
     expect(progress?.textContent).toBe("12");
     expect(progress?.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
-    expect(container!.textContent).not.toContain("No outline yet");
+    expect(container!.textContent).not.toContain("An outline will appear after you start reading");
     expect(container!.querySelector('[data-testid="outline-editor"]')).toBeNull();
     expect(mocks.saveReadingOutline).not.toHaveBeenCalled();
   });
@@ -443,6 +442,6 @@ describe("outline page progress", () => {
     expect(container!.querySelector('[aria-label="Preparing outline"]')).not.toBeNull();
     await act(async () => vi.advanceTimersByTimeAsync(OUTLINE_POLL_MS));
     expect(container!.querySelector('[data-slot="skeleton"]')).toBeNull();
-    expect(container!.textContent).toContain("No outline yet");
+    expect(container!.textContent).toContain("An outline will appear after you start reading");
   });
 });
