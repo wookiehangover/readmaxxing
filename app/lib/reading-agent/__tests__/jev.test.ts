@@ -73,3 +73,35 @@ it("preserves normal SDK validation and normalized scores for valid provider ans
   expect(result.ratings[0]).toMatchObject({ rating: 1, accepted: true });
   expect(result.usage.totalTokens).toBe(28);
 });
+
+it.each([
+  { attempt: 1, score: 1.5, accepted: true },
+  { attempt: 1, score: 1.499, accepted: false },
+  { attempt: 1, score: 1.4, accepted: false },
+  { attempt: 2, score: 1.4, accepted: true },
+  { attempt: 2, score: 1.399, accepted: false },
+  { attempt: 3, score: 1.4, accepted: true },
+  { attempt: 3, score: 1.399, accepted: false },
+])(
+  "uses the acceptance threshold for attempt $attempt at score $score",
+  async ({ attempt, score, accepted }) => {
+    const answers = validAnswers();
+    answers.bullet_0_accuracy = {
+      type: "score",
+      score,
+      probabilities: { "0": 0, "1": 2 - score, "2": score - 1 },
+    };
+    doEvaluate.mockResolvedValue({
+      answers,
+      usage: { inputTokens: 25, outputTokens: 3 },
+      warnings: [],
+    });
+    const result = await evaluateOutlineBullets(
+      context,
+      ["Mara leaves home."],
+      attempt,
+      AbortSignal.timeout(1000),
+    );
+    expect(result.ratings[0]).toMatchObject({ attempt, rating: score / 2, accepted });
+  },
+);

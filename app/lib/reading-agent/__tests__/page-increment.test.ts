@@ -209,11 +209,29 @@ describe("bullet quality control", () => {
 
   it("accepts the threshold but rejects a low individual dimension", async () => {
     const first = evaluation([2]);
-    first.answers.bullet_0_accuracy.score = 1.59;
-    mocks.evaluate.mockResolvedValueOnce(first).mockResolvedValueOnce(evaluation([1.6]));
+    first.answers.bullet_0_accuracy.score = 1.49;
+    mocks.evaluate.mockResolvedValueOnce(first).mockResolvedValueOnce(evaluation([1.4]));
     const result = await callPageIncrement(options);
     expect(mocks.generateObject).toHaveBeenCalledTimes(2);
     expect(result.usage.quality?.map((r) => r.accepted)).toEqual([false, true]);
+  });
+
+  it("accepts 75% initially without regenerating", async () => {
+    mocks.evaluate.mockResolvedValueOnce(evaluation([1.5]));
+    const result = await callPageIncrement(options);
+    expect(mocks.generateObject).toHaveBeenCalledOnce();
+    expect(result.usage.quality).toMatchObject([{ attempt: 1, rating: 0.75, accepted: true }]);
+  });
+
+  it("keeps the 70% threshold for the final retry", async () => {
+    mocks.evaluate
+      .mockResolvedValueOnce(evaluation([1.4]))
+      .mockResolvedValueOnce(evaluation([1.39]))
+      .mockResolvedValueOnce(evaluation([1.4]));
+    const result = await callPageIncrement(options);
+    expect(mocks.generateObject).toHaveBeenCalledTimes(3);
+    expect(result.usage.quality?.map((rating) => rating.accepted)).toEqual([false, false, true]);
+    expect(result.bullets).toEqual(["A traveler leaves home."]);
   });
 
   it("can remove an unsupported bullet without evaluating an empty replacement", async () => {

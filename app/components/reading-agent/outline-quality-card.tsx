@@ -11,6 +11,7 @@ import {
 import {
   OUTLINE_MAX_FAILURES,
   OUTLINE_QUALITY_THRESHOLD,
+  OUTLINE_RETRY_QUALITY_THRESHOLD,
   type OutlineBulletRating,
 } from "~/lib/reading-agent/outline-quality";
 
@@ -21,7 +22,8 @@ export function OutlineQualityCard({ ratings }: { ratings: OutlineBulletRating[]
       <CardHeader>
         <CardTitle>Latest bullet quality checks</CardTitle>
         <CardDescription>
-          Jev requires at least {Math.round(OUTLINE_QUALITY_THRESHOLD * 100)}% on every dimension.
+          Jev requires at least {Math.round(OUTLINE_QUALITY_THRESHOLD * 100)}% on every dimension on
+          the first attempt and {Math.round(OUTLINE_RETRY_QUALITY_THRESHOLD * 100)}% on retries.
           Bullets that fail {OUTLINE_MAX_FAILURES} checks are omitted. Scores are model judgments.
         </CardDescription>
       </CardHeader>

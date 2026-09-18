@@ -1,4 +1,5 @@
-export const OUTLINE_QUALITY_THRESHOLD = 0.8;
+export const OUTLINE_QUALITY_THRESHOLD = 0.75;
+export const OUTLINE_RETRY_QUALITY_THRESHOLD = 0.7;
 export const OUTLINE_MAX_FAILURES = 3;
 
 export interface OutlineBulletRating {

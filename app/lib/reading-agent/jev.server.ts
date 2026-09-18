@@ -2,7 +2,7 @@ import { gateway } from "@ai-sdk/gateway";
 import { experimental_evaluate as evaluate } from "ai";
 import type { ReadingAgentUsage } from "~/lib/database/reading-artifact/reading-artifact";
 import type { OutlineBulletRating, OutlinePageContext } from "./outline-quality";
-import { OUTLINE_QUALITY_THRESHOLD } from "./outline-quality";
+import { OUTLINE_QUALITY_THRESHOLD, OUTLINE_RETRY_QUALITY_THRESHOLD } from "./outline-quality";
 
 export const JEV_MODEL = "typesafe-ai/jev";
 export const JEV_TIMEOUT_MS = 20_000;
@@ -113,7 +113,8 @@ export async function evaluateOutlineBullets(
         consistency,
         rating,
         attempt,
-        accepted: rating >= OUTLINE_QUALITY_THRESHOLD,
+        accepted:
+          rating >= (attempt > 1 ? OUTLINE_RETRY_QUALITY_THRESHOLD : OUTLINE_QUALITY_THRESHOLD),
       };
     }),
   };
