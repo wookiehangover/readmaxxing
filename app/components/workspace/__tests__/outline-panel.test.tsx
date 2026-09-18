@@ -372,7 +372,7 @@ describe("outline page progress", () => {
       '[role="status"][aria-label="Preparing outline for page 12"]',
     );
     expect(progress?.textContent).toContain("12");
-    expect(progress?.textContent).toContain("Outline queued");
+    expect(progress?.textContent).toBe("12");
     expect(progress?.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
     expect(container!.textContent).not.toContain("No outline yet");
     expect(container!.querySelector('[data-testid="outline-editor"]')).toBeNull();
@@ -397,12 +397,12 @@ describe("outline page progress", () => {
     renderPanel();
     await act(async () => {});
     expect(container!.textContent).toContain("Siddhartha leaves home.");
-    expect(container!.textContent).toContain("Generating outline");
+    expect(container!.querySelector('[role="status"]')?.textContent).toBe("12");
     expect(
       container!
         .querySelector('[data-testid="outline-scroll-viewport"]')
         ?.contains(container!.querySelector('[role="status"]')),
-    ).toBe(false);
+    ).toBe(true);
     await act(async () => vi.advanceTimersByTimeAsync(OUTLINE_POLL_MS));
     expect(container!.querySelector('[role="status"]')).toBeNull();
     expect(mocks.setContent).toHaveBeenCalledWith("Finished page 12 outline.");

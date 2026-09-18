@@ -11,7 +11,7 @@ export function OutlineProgress({
 }) {
   return (
     <div className={cn("flex flex-col gap-5 py-3", { "px-4": !compact })}>
-      {pages.map(({ unitId, page, status }) => (
+      {pages.map(({ unitId, page }) => (
         <div
           key={unitId}
           role="status"
@@ -20,9 +20,6 @@ export function OutlineProgress({
         >
           {page != null && <span className="pt-0.5 text-xs text-muted-foreground">{page}</span>}
           <div className="flex min-w-0 flex-1 flex-col gap-2">
-            <p className="text-xs text-muted-foreground">
-              {status === "processing" ? "Generating outline…" : "Outline queued…"}
-            </p>
             <div aria-hidden="true" className="flex flex-col gap-2">
               <Skeleton className="h-3 w-full" />
               <Skeleton className="h-3 w-5/6" />

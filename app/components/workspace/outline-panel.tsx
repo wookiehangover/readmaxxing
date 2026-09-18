@@ -257,7 +257,7 @@ export function WorkspaceOutlinePanel({
               </p>
             </div>
           ) : (
-            <>
+            <div className="pb-24">
               {state.status === "ready" && (
                 <TiptapEditor
                   ref={editorRef}
@@ -268,22 +268,13 @@ export function WorkspaceOutlinePanel({
                   onNavigateToOutlineIncrement={handleNavigateToCfi}
                 />
               )}
-              {state.status !== "ready" && !!state.pendingPages?.length && (
+              {!!state.pendingPages?.length && (
                 <OutlineProgress pages={state.pendingPages} compact={chromeless} />
               )}
-            </>
+            </div>
           )}
         </div>
       </ScrollArea>
-      {state.status === "ready" && !!state.pendingPages?.length && (
-        <div
-          className={cn("max-h-1/3 shrink-0 overflow-y-auto", {
-            "pr-6 pl-6 md:pl-0": chromeless,
-          })}
-        >
-          <OutlineProgress pages={state.pendingPages} compact={chromeless} />
-        </div>
-      )}
     </div>
   );
 }

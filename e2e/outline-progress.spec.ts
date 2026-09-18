@@ -44,10 +44,13 @@ for (const mobile of [false, true]) {
     });
     await expect(progress).toBeInViewport();
     await expect(progress).toContainText("12");
-    await expect(progress).toContainText("Outline queued");
+    await expect(progress).toHaveText("12");
     await expect(progress.locator('[data-slot="skeleton"]')).toHaveCount(3);
     status = "processing";
-    await expect(progress).toContainText("Generating outline");
+    await page.waitForResponse((response) =>
+      /\/api\/books\/[^/]+\/artifacts$/.test(response.url()),
+    );
+    await expect(progress).toHaveText("12");
     await page.screenshot({
       path: `.intent/artifacts/outline-progress-${mobile ? "mobile" : "desktop"}.png`,
       animations: "disabled",
@@ -60,7 +63,7 @@ for (const mobile of [false, true]) {
 }
 
 for (const mobile of [false, true]) {
-  test(`keeps processing visible with a long outline, ${mobile ? "mobile" : "desktop"}`, async ({
+  test(`processing follows a long outline in scroll flow, ${mobile ? "mobile" : "desktop"}`, async ({
     page,
   }) => {
     await page.setViewportSize(
@@ -100,11 +103,38 @@ for (const mobile of [false, true]) {
       name: "Preparing outline for page 12",
       exact: true,
     });
-    await expect(progress).toBeInViewport({ timeout: 8_000 });
+    await expect(progress).toHaveCount(1, { timeout: 8_000 });
+    await expect(progress).not.toBeInViewport();
     await expect(page.getByText("Earlier page fact 1.", { exact: true })).toBeInViewport();
+    const lastFact = page.getByText("Earlier page fact 70.", { exact: true });
+    const viewport = page.locator('[data-slot="scroll-area-viewport"]').filter({ has: lastFact });
+    await viewport.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(progress).toBeInViewport();
+    await expect(progress).toHaveText("12");
+    await expect(page.getByText("Earlier page fact 70.", { exact: true })).toBeInViewport();
+    const bottomSpace = await progress.evaluate((element) => {
+      const scrollViewport = element.closest('[data-slot="scroll-area-viewport"]')!;
+      return scrollViewport.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom;
+    });
+    expect(bottomSpace).toBeGreaterThanOrEqual(96);
     await page.screenshot({
       path: `.intent/artifacts/outline-progress-long-${mobile ? "mobile" : "desktop"}.png`,
       animations: "disabled",
     });
+    processing = false;
+    await expect(progress).toHaveCount(0);
+    await viewport.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    expect(
+      await lastFact.evaluate((element) => {
+        const scrollViewport = element.closest('[data-slot="scroll-area-viewport"]')!;
+        return (
+          scrollViewport.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom
+        );
+      }),
+    ).toBeGreaterThanOrEqual(96);
   });
 }
