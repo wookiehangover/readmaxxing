@@ -3,6 +3,7 @@ import { Tabs } from "@base-ui/react/tabs";
 import { TocList } from "~/components/book-list";
 import { ChatPanel } from "~/components/chat/chat-panel";
 import { ReadingDetailsPanel } from "~/components/reading-shell/reading-details-panel";
+import { RepairPanel } from "~/components/reading-shell/repair-panel";
 import { READING_RAIL_MENU_ID } from "~/components/reading-shell/reading-rail-menu-portal";
 import { useReadingRail } from "~/components/reading-shell/reading-rail-context";
 import type { ReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-types";
@@ -44,6 +45,7 @@ export function ReadingRail({
   const chapterLabel = location?.chapterLabel;
   const hasTocShortcut = Boolean(chapterLabel && toc?.length && navigateToToc);
   const reviewAvailable = Boolean(book && book.format !== "pdf");
+  const repair = store.repairsSelectors.selectBookRepair(activeBookId ?? "").value;
   const reviewLocked =
     store.reviewsSelectors.selectReviewLocked(activeBookId ?? "").value && reviewAvailable;
   const desktopTabs: ReadingRailTab[] = reviewLocked
@@ -51,6 +53,8 @@ export function ReadingRail({
     : ["Notes", "Discuss", "Outline"];
   if (activeTab === "Details" || (activeTab === "Review" && !reviewLocked && reviewAvailable))
     desktopTabs.push(activeTab);
+  if (reviewAvailable && (repair.job || repair.operation || repair.error || activeTab === "Repair"))
+    desktopTabs.push("Repair");
   const visibleMobileTabs: ReadingRailTab[] = [
     "Read",
     ...desktopTabs.filter((tab) => tab !== "Details"),
@@ -74,6 +78,11 @@ export function ReadingRail({
       <Tabs.Panel value="Details" className="min-h-0 flex-1 overflow-hidden outline-none">
         <ReadingDetailsPanel book={book} mobile={mobile} />
       </Tabs.Panel>
+      {reviewAvailable && (
+        <Tabs.Panel value="Repair" className="min-h-0 flex-1 overflow-hidden outline-none">
+          <RepairPanel bookId={book.id} />
+        </Tabs.Panel>
+      )}
       {reviewAvailable && (
         <Tabs.Panel value="Review" className="min-h-0 flex-1 overflow-hidden outline-none">
           <ReviewPanel bookId={book.id} />
@@ -135,7 +144,7 @@ export function ReadingRail({
       <div className="flex items-start gap-3 pr-6">
         <Tabs.List
           aria-label="Reading tools"
-          className="relative flex min-w-0 flex-1 items-center gap-5"
+          className="relative flex min-w-0 flex-1 items-center gap-5 overflow-x-auto"
         >
           {desktopTabs.map((tab) => (
             <Tabs.Tab

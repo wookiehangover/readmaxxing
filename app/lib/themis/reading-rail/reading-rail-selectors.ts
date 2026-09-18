@@ -24,7 +24,8 @@ export function createReadingRailSelectors(
         privateBookId !== null && reviews.selectReviewLocked.select(state, privateBookId);
       if (locked && (selected === "Discuss" || selected === "Outline" || (!selected && !mobile)))
         return "Review";
-      if (selected === "Review" && !privateBookId) return mobile ? "Read" : "Notes";
+      if ((selected === "Review" || selected === "Repair") && !privateBookId)
+        return mobile ? "Read" : "Notes";
       if (!mobile && selected === "Read") return "Notes";
       return selected ?? (mobile ? "Read" : "Notes");
     },

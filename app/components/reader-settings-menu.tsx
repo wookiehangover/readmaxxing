@@ -47,6 +47,7 @@ import { ChatBookSelectorMenu } from "~/components/chat/chat-book-selector";
 import { ChatRecentSessionsMenu } from "~/components/chat/chat-session-menu";
 import { ReaderFormattingStepper } from "~/components/reader-formatting-stepper";
 import { useReadingRail } from "~/components/reading-shell/reading-rail-context";
+import { RepairMenuItem } from "~/components/reading-shell/repair-menu-item";
 import { Button } from "./ui/button";
 
 interface ReaderFormattingMenuProps {
@@ -461,6 +462,9 @@ export function ReaderSettingsMenu(props: ReaderSettingsMenuProps) {
                 <MessageSquareText data-icon="inline-start" />
                 Review
               </DropdownMenuItem>
+            ) : null}
+            {workspace && book && book.format !== "pdf" && !props.isPdf ? (
+              <RepairMenuItem bookId={book.id} />
             ) : null}
             {book ? (
               <DropdownMenuItem onClick={() => setActiveTab("Details")}>
