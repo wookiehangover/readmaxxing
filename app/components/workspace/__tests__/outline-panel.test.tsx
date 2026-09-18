@@ -136,8 +136,8 @@ describe("OutlinePanel", () => {
     await act(async () => {});
 
     const emptyState = Array.from(container!.querySelectorAll("p")).find(
-      (element) => element.textContent === "No outline yet",
-    )?.parentElement;
+      (element) => element.textContent === "An outline will appear after you start reading",
+    );
     expect(emptyState?.className).not.toContain("p-6");
     const scrollContent = container!.querySelector(
       "[data-testid='outline-scroll-viewport']",
@@ -194,15 +194,14 @@ describe("OutlinePanel", () => {
     expect(container!.querySelector("a")?.getAttribute("href")).toBe("/login");
   });
 
-  it("shows a keep-reading empty state when the outline is missing", async () => {
+  it("shows a placeholder when the outline is missing", async () => {
     mocks.fetchReadingArtifacts.mockResolvedValue({
       bookId: "book-1",
       artifacts: { outline: null, characters: null, wiki: null },
     });
     renderPanel(true);
     await act(async () => {});
-    expect(container!.textContent).toContain("No outline yet");
-    expect(container!.textContent).toContain("Keep reading");
+    expect(container!.textContent).toContain("An outline will appear after you start reading");
   });
 
   it("retries a failed fetch from the error state", async () => {
@@ -356,5 +355,93 @@ describe("OutlinePanel", () => {
 
     act(() => editorRoot.unmount());
     editorContainer.remove();
+  });
+});
+
+describe("outline page progress", () => {
+  it("replaces the empty state with a page number and skeleton while queued", async () => {
+    mocks.fetchReadingArtifacts.mockResolvedValue({
+      ...outline,
+      artifacts: { outline: null, characters: null, wiki: null },
+      pendingPages: [{ unitId: "unit-1", page: 12, status: "pending" }],
+    });
+    renderPanel(true);
+    await act(async () => {});
+    const progress = container!.querySelector(
+      '[role="status"][aria-label="Preparing outline for page 12"]',
+    );
+    expect(progress?.textContent).toContain("12");
+    expect(progress?.textContent).toBe("12");
+    expect(progress?.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
+    expect(container!.textContent).not.toContain("An outline will appear after you start reading");
+    expect(container!.querySelector('[data-testid="outline-editor"]')).toBeNull();
+    expect(mocks.saveReadingOutline).not.toHaveBeenCalled();
+  });
+
+  it("keeps existing content and replaces processing skeletons on completion", async () => {
+    vi.useFakeTimers();
+    mocks.fetchReadingArtifacts
+      .mockResolvedValueOnce({
+        ...outline,
+        pendingPages: [{ unitId: "unit-1", page: 12, status: "processing" }],
+      })
+      .mockResolvedValue({
+        ...outline,
+        artifacts: {
+          ...outline.artifacts,
+          outline: { ...outline.artifacts.outline, content: "Finished page 12 outline." },
+        },
+        pendingPages: [],
+      });
+    renderPanel();
+    await act(async () => {});
+    expect(container!.textContent).toContain("Siddhartha leaves home.");
+    expect(container!.querySelector('[role="status"]')?.textContent).toBe("12");
+    expect(
+      container!
+        .querySelector('[data-testid="outline-scroll-viewport"]')
+        ?.contains(container!.querySelector('[role="status"]')),
+    ).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(OUTLINE_POLL_MS));
+    expect(container!.querySelector('[role="status"]')).toBeNull();
+    expect(mocks.setContent).toHaveBeenCalledWith("Finished page 12 outline.");
+    expect(mocks.saveReadingOutline).not.toHaveBeenCalled();
+  });
+
+  it("updates progress without overwriting an unsaved edit", async () => {
+    mocks.fetchReadingArtifacts.mockResolvedValueOnce(outline).mockResolvedValue({
+      ...outline,
+      pendingPages: [{ unitId: "unit-2", page: 13, status: "processing" }],
+    });
+    renderPanel();
+    await act(async () => {});
+    act(() =>
+      mocks.editorProps!.onUpdate!({
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "My edit" }] }],
+      }),
+    );
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(container!.querySelector('[aria-label="Preparing outline for page 13"]')).not.toBeNull();
+    expect(mocks.setContent).not.toHaveBeenCalled();
+    await act(async () => mocks.editorProps!.onBlur!());
+    expect(mocks.saveReadingOutline).toHaveBeenCalledWith("book-1", "My edit");
+  });
+
+  it("clears skeletons for an unsuccessful job without inventing page text", async () => {
+    vi.useFakeTimers();
+    const empty = { ...outline, artifacts: { outline: null, characters: null, wiki: null } };
+    mocks.fetchReadingArtifacts
+      .mockResolvedValueOnce({
+        ...empty,
+        pendingPages: [{ unitId: "old-unit", page: null, status: "processing" }],
+      })
+      .mockResolvedValue({ ...empty, pendingPages: [] });
+    renderPanel();
+    await act(async () => {});
+    expect(container!.querySelector('[aria-label="Preparing outline"]')).not.toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(OUTLINE_POLL_MS));
+    expect(container!.querySelector('[data-slot="skeleton"]')).toBeNull();
+    expect(container!.textContent).toContain("An outline will appear after you start reading");
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useWorkspace } from "~/lib/context/workspace-context";
-import { extractPdfPageText, extractPdfPageTextFromDoc } from "~/lib/pdf/pdf-text-extract";
+import { extractPdfPageContext, extractPdfPageContextFromDoc } from "~/lib/pdf/pdf-text-extract";
 import { selectReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-slice";
 import { useReaderDwell, type ReadingDwellUnit } from "~/hooks/use-reader-dwell";
 import { useAppStore } from "~/lib/themis/provider";
@@ -216,8 +216,8 @@ export function usePdfWorkspacePanels({
 
     if (doc) {
       // Fast path: reuse the already-loaded PDF document
-      extractPdfPageTextFromDoc(doc, currentPage)
-        .then((text) => {
+      extractPdfPageContextFromDoc(doc, currentPage)
+        .then(({ text, previousPage, nextPage }) => {
           if (cancelled) return;
           chatContextMap.current.set(book.id, {
             currentChapterIndex: currentPage - 1,
@@ -228,6 +228,8 @@ export function usePdfWorkspacePanels({
             unitKind: "pdf-page",
             locator: `page:${currentPage}`,
             text,
+            previousPage,
+            nextPage,
           });
         })
         .catch(console.error);
@@ -235,8 +237,8 @@ export function usePdfWorkspacePanels({
       // Fallback: create a new document from raw data
       const data = bookDataRef.current;
       if (!data) return;
-      extractPdfPageText(data, currentPage)
-        .then((text) => {
+      extractPdfPageContext(data, currentPage)
+        .then(({ text, previousPage, nextPage }) => {
           if (cancelled) return;
           chatContextMap.current.set(book.id, {
             currentChapterIndex: currentPage - 1,
@@ -247,6 +249,8 @@ export function usePdfWorkspacePanels({
             unitKind: "pdf-page",
             locator: `page:${currentPage}`,
             text,
+            previousPage,
+            nextPage,
           });
         })
         .catch(console.error);

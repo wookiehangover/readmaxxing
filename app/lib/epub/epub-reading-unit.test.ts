@@ -89,3 +89,18 @@ describe("buildEpubReadingUnit", () => {
     expect(chatContext.visibleText).toBe(dwellUnit?.text);
   });
 });
+
+it("carries extracted neighbors without adding them to current-page text", () => {
+  const document = documentFixture('<p id="visible">Current</p>', {
+    visible: { left: 40, top: 40 },
+  });
+  expect(
+    buildEpubReadingUnit({
+      href: "chapter.xhtml",
+      page: 2,
+      document,
+      previousPage: "Before",
+      nextPage: "After",
+    }),
+  ).toMatchObject({ text: "Current", previousPage: "Before", nextPage: "After" });
+});

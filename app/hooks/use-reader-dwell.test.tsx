@@ -141,6 +141,23 @@ describe("useReaderDwell", () => {
     });
   });
 
+  it("uses the latest adjacent context without resetting dwell", async () => {
+    const unit: ReadingDwellUnit = {
+      unitKind: "pdf-page",
+      locator: "page:2",
+      text: "Current page text",
+    };
+    const { rerender } = await render(unit);
+    await advance(5_000);
+    await rerender({ ...unit, previousPage: "Before", nextPage: "After" });
+    await advance(5_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string)).toMatchObject({
+      previousPage: "Before",
+      nextPage: "After",
+    });
+  });
+
   it("does not count hidden time toward dwell", async () => {
     await render({
       unitKind: "pdf-page",

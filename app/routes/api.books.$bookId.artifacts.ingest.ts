@@ -10,6 +10,8 @@ import {
 } from "~/lib/database/reading-artifact/reading-artifact";
 import { scheduleReadingIngestQueue } from "~/lib/reading-agent/dispatch.server";
 
+import { boundAdjacentPageText } from "~/lib/reading-agent/page-context";
+
 const MIN_READING_TEXT_LENGTH = 20;
 const FINGERPRINT_PATTERN = /^[a-f0-9]{64}$/;
 
@@ -20,6 +22,8 @@ interface IngestPayload {
   chapterLabel?: string;
   displayPage?: number;
   text: string;
+  previousPage: string | null;
+  nextPage: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,7 +71,18 @@ export function parseIngestPayload(value: unknown): IngestPayload | { error: str
     return { error: "displayPage must be a positive integer when provided" };
   }
 
+  for (const field of ["previousPage", "nextPage"] as const) {
+    if (value[field] != null && typeof value[field] !== "string") {
+      return { error: `${field} must be a string or null when provided` };
+    }
+  }
+
   return {
+    previousPage: boundAdjacentPageText(
+      value.previousPage as string | null | undefined,
+      "previous",
+    ),
+    nextPage: boundAdjacentPageText(value.nextPage as string | null | undefined, "next"),
     fingerprint: value.fingerprint,
     unitKind: value.unitKind,
     locator: value.locator.trim(),
@@ -141,6 +156,8 @@ export async function action({
             chapterLabel: payload.chapterLabel,
             displayPage: payload.displayPage,
             text: payload.text,
+            previousPage: payload.previousPage,
+            nextPage: payload.nextPage,
           })
         : null;
     if (existing.status === "pending" || existing.status === "error") {

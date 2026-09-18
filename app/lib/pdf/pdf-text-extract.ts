@@ -159,3 +159,24 @@ export async function extractPdfPageTextFromDoc(doc: any, pageNum: number): Prom
     return "";
   }
 }
+
+/** Read immediate neighbors without changing the viewer's current page. */
+export async function extractPdfPageContextFromDoc(doc: PDFDocumentProxy, pageNum: number) {
+  const [text, previousPage, nextPage] = await Promise.all([
+    extractPdfPageTextFromDoc(doc, pageNum),
+    extractPdfPageTextFromDoc(doc, pageNum - 1),
+    extractPdfPageTextFromDoc(doc, pageNum + 1),
+  ]);
+  return { text, previousPage: previousPage || null, nextPage: nextPage || null };
+}
+
+export async function extractPdfPageContext(data: ArrayBuffer, pageNum: number) {
+  await ensurePdfWorker();
+  const pdfjs = await import("pdfjs-dist");
+  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(data).slice() });
+  try {
+    return await extractPdfPageContextFromDoc(await loadingTask.promise, pageNum);
+  } finally {
+    await loadingTask.destroy().catch(() => {});
+  }
+}
