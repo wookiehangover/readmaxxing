@@ -3,6 +3,8 @@ import { useAuth } from "~/lib/context/auth-context";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 import { DEMO_BOOK_ID } from "~/lib/onboarding/demo-content";
 
+import { boundAdjacentPageText } from "~/lib/reading-agent/page-context";
+
 export const READER_DWELL_MS = 10_000;
 const READER_DWELL_RETRY_DELAYS_MS = [250, 500, 1_000] as const;
 const READER_DWELL_NOT_FOUND_RETRY_DELAY_MS = 1_000;
@@ -12,6 +14,8 @@ export interface ReadingDwellUnit {
   locator: string;
   chapterLabel?: string;
   text: string;
+  previousPage?: string | null;
+  nextPage?: string | null;
 }
 
 interface UseReaderDwellOptions {
@@ -109,9 +113,11 @@ export function useReaderDwell({
   const text = unit?.text.normalize("NFC").trim() ?? "";
   const locator = unit?.locator.trim() ?? "";
   const chapterLabel = unit?.chapterLabel?.trim() || undefined;
+  const previousPage = boundAdjacentPageText(unit?.previousPage, "previous");
+  const nextPage = boundAdjacentPageText(unit?.nextPage, "next");
   const hasText = Boolean(text);
-  const latestContentRef = useRef({ chapterLabel, displayPage, text });
-  latestContentRef.current = { chapterLabel, displayPage, text };
+  const latestContentRef = useRef({ chapterLabel, displayPage, text, previousPage, nextPage });
+  latestContentRef.current = { chapterLabel, displayPage, text, previousPage, nextPage };
 
   useEffect(() => {
     if (
@@ -169,6 +175,8 @@ export function useReaderDwell({
           chapterLabel: content.chapterLabel,
           displayPage: content.displayPage ?? undefined,
           text: content.text,
+          previousPage: content.previousPage,
+          nextPage: content.nextPage,
         }),
         { retryNotFound: unitKind === "epub-spine", signal: controller.signal },
       )

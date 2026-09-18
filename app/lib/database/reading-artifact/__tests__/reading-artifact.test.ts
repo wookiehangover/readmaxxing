@@ -477,6 +477,7 @@ describe("reading artifact persistence", () => {
       "0.00120000",
       "test-model",
       "unknown",
+      "[]",
     ]);
   });
 
@@ -535,6 +536,8 @@ describe("reading artifact persistence", () => {
     expect(extractSqlText(query)).toContain("last_seen_at = NOW()");
     expect(extractValues(query)).toEqual([
       "Jittered page text",
+      null,
+      null,
       "Chapter 1",
       12,
       "unit-1",
@@ -761,5 +764,30 @@ describe("reading artifact persistence", () => {
     expect(clientQueryMock).toHaveBeenCalledTimes(4);
     expect(clientQueryMock).toHaveBeenNthCalledWith(4, "COMMIT");
     expect(releaseMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe("adjacent page persistence", () => {
+  it("stores context and includes it in queued ingest projections", async () => {
+    const unit = { id: "unit-1", previousPage: "Before", nextPage: "After" };
+    queryMock.mockResolvedValue({ rows: [unit] });
+    await insertReadingIngestUnit({
+      userId: "user-1",
+      bookId: "book-1",
+      fingerprint: "fingerprint-1",
+      unitKind: "pdf-page",
+      locator: "page:2",
+      text: "Current",
+      previousPage: "Before",
+      nextPage: "After",
+    });
+    const inserted = queryMock.mock.calls[0][0] as SqlQuery;
+    expect(extractValues(inserted).slice(-2)).toEqual(["Before", "After"]);
+    expect(extractSqlText(inserted)).toContain('previous_page AS "previousPage"');
+    expect(extractSqlText(inserted)).toContain('next_page AS "nextPage"');
+    await expect(getNextDueReadingIngestUnit("user-1")).resolves.toBe(unit);
+    expect(extractSqlText(queryMock.mock.calls[1][0] as SqlQuery)).toContain(
+      'previous_page AS "previousPage"',
+    );
   });
 });
