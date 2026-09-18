@@ -268,13 +268,22 @@ export function WorkspaceOutlinePanel({
                   onNavigateToOutlineIncrement={handleNavigateToCfi}
                 />
               )}
-              {!!state.pendingPages?.length && (
+              {state.status !== "ready" && !!state.pendingPages?.length && (
                 <OutlineProgress pages={state.pendingPages} compact={chromeless} />
               )}
             </>
           )}
         </div>
       </ScrollArea>
+      {state.status === "ready" && !!state.pendingPages?.length && (
+        <div
+          className={cn("max-h-1/3 shrink-0 overflow-y-auto", {
+            "pr-6 pl-6 md:pl-0": chromeless,
+          })}
+        >
+          <OutlineProgress pages={state.pendingPages} compact={chromeless} />
+        </div>
+      )}
     </div>
   );
 }

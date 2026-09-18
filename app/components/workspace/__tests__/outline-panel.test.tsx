@@ -398,6 +398,11 @@ describe("outline page progress", () => {
     await act(async () => {});
     expect(container!.textContent).toContain("Siddhartha leaves home.");
     expect(container!.textContent).toContain("Generating outline");
+    expect(
+      container!
+        .querySelector('[data-testid="outline-scroll-viewport"]')
+        ?.contains(container!.querySelector('[role="status"]')),
+    ).toBe(false);
     await act(async () => vi.advanceTimersByTimeAsync(OUTLINE_POLL_MS));
     expect(container!.querySelector('[role="status"]')).toBeNull();
     expect(mocks.setContent).toHaveBeenCalledWith("Finished page 12 outline.");
