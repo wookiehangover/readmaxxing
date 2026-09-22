@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   usage: vi.fn(),
   increment: vi.fn(),
   clear: vi.fn(),
-  selectedModel: "openai/gpt-5.6-terra",
+  selectedModel: "openai/gpt-6-sol",
   getSelectedModel: vi.fn(),
   isDebugModel: vi.fn(),
   setSelectedModel: vi.fn(),
@@ -66,7 +66,7 @@ beforeEach(() => {
   mocks.usage.mockReset().mockResolvedValue(null);
   mocks.increment.mockReset().mockResolvedValue(null);
   mocks.clear.mockReset().mockResolvedValue(undefined);
-  mocks.selectedModel = "openai/gpt-5.6-terra";
+  mocks.selectedModel = "openai/gpt-6-sol";
   mocks.getSelectedModel.mockReset().mockImplementation(() => mocks.selectedModel);
   mocks.isDebugModel
     .mockReset()
@@ -74,7 +74,11 @@ beforeEach(() => {
       [
         "anthropic/claude-sonnet-4-6",
         "openai/gpt-5.5",
+        "openai/gpt-5.6-luna",
         "openai/gpt-5.6-terra",
+        "openai/gpt-5.6-sol",
+        "openai/gpt-6-luna",
+        "openai/gpt-6-sol",
         "xai/grok-4.5",
         "google/gemini-2.5-flash",
       ].includes(String(value)),
@@ -136,7 +140,7 @@ describe("reading-agent debug API", () => {
     await expect(stale.json()).resolves.toEqual({
       gatewayConfigured: true,
       schema: { ok: false, missingColumns: ["reading_agent_lease.unit_id"] },
-      selectedModel: "openai/gpt-5.6-terra",
+      selectedModel: "openai/gpt-6-sol",
       lease: null,
       units: [],
       usage: null,
@@ -194,7 +198,7 @@ describe("reading-agent debug API", () => {
     expect(body).toMatchObject({
       gatewayConfigured: true,
       schema: { ok: true },
-      selectedModel: "openai/gpt-5.6-terra",
+      selectedModel: "openai/gpt-6-sol",
       lastError: "Previous attempt failed",
       usage: {
         model: "openai/gpt-5.5",
@@ -247,19 +251,22 @@ describe("reading-agent debug API", () => {
     });
   });
 
-  it("sets a model without triggering a queue action", async () => {
-    const response = await action({
-      request: postRequest({ model: "google/gemini-2.5-flash" }),
-    });
+  it.each(["google/gemini-2.5-flash", "openai/gpt-6-sol", "openai/gpt-6-luna"])(
+    "sets %s without triggering a queue action",
+    async (model) => {
+      const response = await action({
+        request: postRequest({ model }),
+      });
 
-    expect(response.status).toBe(200);
-    expect(mocks.setSelectedModel).toHaveBeenCalledWith("google/gemini-2.5-flash");
-    expect(mocks.parseAction).not.toHaveBeenCalled();
-    expect(mocks.executeAction).not.toHaveBeenCalled();
-    await expect(response.json()).resolves.toMatchObject({
-      selectedModel: "google/gemini-2.5-flash",
-    });
-  });
+      expect(response.status).toBe(200);
+      expect(mocks.setSelectedModel).toHaveBeenCalledWith(model);
+      expect(mocks.parseAction).not.toHaveBeenCalled();
+      expect(mocks.executeAction).not.toHaveBeenCalled();
+      await expect(response.json()).resolves.toMatchObject({
+        selectedModel: model,
+      });
+    },
+  );
 
   it("rejects an invalid model without running an action or changing selection", async () => {
     const response = await action({
@@ -273,7 +280,7 @@ describe("reading-agent debug API", () => {
 
     const snapshot = await loader({ request: getRequest() });
     await expect(snapshot.json()).resolves.toMatchObject({
-      selectedModel: "openai/gpt-5.6-terra",
+      selectedModel: "openai/gpt-6-sol",
     });
   });
 

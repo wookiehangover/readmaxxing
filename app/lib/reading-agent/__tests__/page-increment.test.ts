@@ -116,24 +116,27 @@ describe("callPageIncrement", () => {
     expect(request.schema.safeParse({ bullets: ["1", "2", "3", "4"] }).success).toBe(false);
   });
 
-  it("uses the selected non-Claude model unchanged and accepts an empty increment", async () => {
-    mocks.generateObject.mockResolvedValue({
-      object: { bullets: [] },
-      usage,
-      response: { modelId: "openai/gpt-5.6-sol" },
-    });
+  it.each(["openai/gpt-5.6-sol", "openai/gpt-6-sol", "openai/gpt-6-luna"] as const)(
+    "uses %s unchanged and accepts an empty increment",
+    async (model) => {
+      mocks.generateObject.mockResolvedValue({
+        object: { bullets: [] },
+        usage,
+        response: { modelId: model },
+      });
 
-    await expect(
-      callPageIncrement({
-        model: "openai/gpt-5.6-sol",
-        chapterLabel: null,
-        existingBullets: [],
-        page: "A page without new factual information.",
-      }),
-    ).resolves.toMatchObject({ bullets: [], usage: { model: "openai/gpt-5.6-sol" } });
-    expect(mocks.gateway).toHaveBeenCalledWith("openai/gpt-5.6-sol");
-    expect(mocks.evaluate).not.toHaveBeenCalled();
-  });
+      await expect(
+        callPageIncrement({
+          model,
+          chapterLabel: null,
+          existingBullets: [],
+          page: "A page without new factual information.",
+        }),
+      ).resolves.toMatchObject({ bullets: [], usage: { model } });
+      expect(mocks.gateway).toHaveBeenCalledWith(model);
+      expect(mocks.evaluate).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("pageIncrementUsageFromError", () => {

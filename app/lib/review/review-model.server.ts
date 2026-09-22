@@ -10,7 +10,7 @@ import { reviewGradeSchema } from "./review-schemas";
 import type { ReviewDifficulty, ReviewGradingLevel } from "./review-types";
 import { reviewGenerationInstructions, reviewGradingInstructions } from "./review-prompts.server";
 
-export const REVIEW_MODEL = "openai/gpt-5.6-terra";
+export const REVIEW_MODEL = "openai/gpt-6-sol";
 export const REVIEW_MODEL_TIMEOUT_MS = 45_000;
 // Conservative UTF-8 budgets; reject oversized inputs rather than clipping a chapter/answer.
 export const REVIEW_MAX_CHAPTER_BYTES = 80_000;

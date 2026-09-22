@@ -18,7 +18,7 @@ const emptyStatus: ReadingAgentStatus = {
   units: [],
   usage: null,
   latestIncrement: null,
-  selectedModel: "openai/gpt-5.6-terra",
+  selectedModel: "openai/gpt-6-sol",
   lastError: null,
 };
 
@@ -77,7 +77,7 @@ function respond(
       return Promise.resolve(
         Response.json({
           ...status,
-          selectedModel: body?.model ?? "openai/gpt-5.6-terra",
+          selectedModel: body?.model ?? "openai/gpt-6-sol",
           lastError: null,
         }),
       );
@@ -175,7 +175,7 @@ describe("reading-agent debug page", () => {
     expect(container!.textContent).toContain("No page increment yet");
     expect(container!.textContent).toContain("No recent ingest units");
     expect(container!.textContent).toContain("AI Gateway");
-    expect(container!.textContent).toContain("openai/gpt-5.6-terra");
+    expect(container!.textContent).toContain("openai/gpt-6-sol");
     expect(container!.textContent).not.toContain("Not configured");
   });
 

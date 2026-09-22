@@ -25,6 +25,8 @@ const GATEWAY_MODELS = {
   "openai/gpt-5.6-luna": "openai/gpt-5.6-luna",
   "openai/gpt-5.6-terra": "openai/gpt-5.6-terra",
   "openai/gpt-5.6-sol": "openai/gpt-5.6-sol",
+  "openai/gpt-6-luna": "openai/gpt-6-luna",
+  "openai/gpt-6-sol": "openai/gpt-6-sol",
   "xai/grok-4.5": "xai/grok-4.5",
   "google/gemini-2.5-flash": "google/gemini-2.5-flash",
 } as const;
