@@ -64,8 +64,9 @@ describe("bounded review question generation", () => {
     expect(result).toMatchObject({
       ...generated,
       difficulty: "challenging",
-      provenance: { provider: "ai-gateway" },
+      provenance: { model: "openai/gpt-6-sol", provider: "ai-gateway" },
     });
+    expect(mocks.gateway).toHaveBeenCalledWith("openai/gpt-6-sol");
     const call = mocks.generate.mock.calls[0]![0];
     expect(JSON.parse(call.prompt)).toEqual({ chapterText: text });
     expect(call).toMatchObject({
@@ -167,8 +168,10 @@ describe("private, solution-free grading", () => {
         },
       });
       const result = await gradeReviewAnswer(options);
+      expect(mocks.gateway).toHaveBeenCalledWith("openai/gpt-6-sol");
       expect(result).toMatchObject({
         verdict,
+        provenance: { model: "openai/gpt-6-sol", provider: "ai-gateway" },
         feedback: "Your answer needs more specific support from the chapter.",
         annotations: [
           {

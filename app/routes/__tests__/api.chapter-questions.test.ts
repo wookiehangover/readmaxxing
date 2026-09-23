@@ -85,7 +85,7 @@ describe("chapter questions API", () => {
     ]);
     expect(mocks.getBook).toHaveBeenCalledWith("book-1", "user-1");
     expect(mocks.getChapters).toHaveBeenCalledWith("user-1", "book-1");
-    expect(mocks.gateway).toHaveBeenCalledWith("openai/gpt-5.6-terra");
+    expect(mocks.gateway).toHaveBeenCalledWith("openai/gpt-6-sol");
     expect(mocks.generateText).toHaveBeenCalledWith(
       expect.objectContaining({
         model: mockModel,
