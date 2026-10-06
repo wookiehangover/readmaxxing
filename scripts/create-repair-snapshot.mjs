@@ -12,7 +12,7 @@ try {
     cmd: "bash",
     args: [
       "-lc",
-      "npm install --save-exact @playwright/test@1.62.1 vite@8.2.2 fflate@0.8.3 && npx playwright install --with-deps chromium && python3 --version",
+      "npm install --save-exact @playwright/test@1.63.0 vite@8.3.2 fflate@0.8.3 && npx playwright install --with-deps chromium && python3 --version",
     ],
     cwd: "/vercel/sandbox",
   });
