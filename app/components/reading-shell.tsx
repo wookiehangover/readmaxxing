@@ -36,7 +36,7 @@ export function ReadingShell() {
     book.format === "pdf" ? (
       <WorkspacePdfReader bookId={book.id} />
     ) : (
-      <WorkspaceBookReader bookId={book.id} panelTypography={{ readerLayout: "spread" }} />
+      <WorkspaceBookReader bookId={book.id} />
     )
   ) : (
     <div className="flex h-full items-center justify-center text-muted-foreground">
