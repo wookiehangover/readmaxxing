@@ -9,7 +9,7 @@ export interface HighlightContextMenuState {
   position: { x: number; y: number };
 }
 
-/** State and delete action for the right-click menu on a rendered highlight. */
+/** State, copy, and delete actions for the right-click menu on a rendered highlight. */
 export function useHighlightContextMenu(bookId: string) {
   const store = useAppStore();
   const { notebookEditorCallbackMap } = useWorkspace();
@@ -23,6 +23,14 @@ export function useHighlightContextMenu(bookId: string) {
   );
 
   const dismissHighlightMenu = useCallback(() => setHighlightMenu(null), []);
+
+  const copyMenuHighlight = useCallback(() => {
+    if (!highlightMenu) return;
+    setHighlightMenu(null);
+    navigator.clipboard
+      .writeText(highlightMenu.highlight.text)
+      .catch((error) => console.error("Failed to copy highlight:", error));
+  }, [highlightMenu]);
 
   const deleteMenuHighlight = useCallback(() => {
     if (!highlightMenu) return;
@@ -38,5 +46,11 @@ export function useHighlightContextMenu(bookId: string) {
     );
   }, [bookId, highlightMenu, notebookEditorCallbackMap, store]);
 
-  return { highlightMenu, openHighlightMenu, dismissHighlightMenu, deleteMenuHighlight };
+  return {
+    highlightMenu,
+    openHighlightMenu,
+    dismissHighlightMenu,
+    copyMenuHighlight,
+    deleteMenuHighlight,
+  };
 }

@@ -622,7 +622,11 @@ test.describe("Workspace route", () => {
     await expect(page.locator("blockquote")).toHaveCount(0, { timeout: 10_000 });
   });
 
-  test("right-clicking a highlight in the reader deletes it", async ({ page }) => {
+  test("right-clicking a highlight in the reader copies and deletes it", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await uploadAndOpenBook(page);
 
     const iframe = page.frameLocator("iframe").first();
@@ -646,6 +650,15 @@ test.describe("Workspace route", () => {
 
     await page.getByRole("tab", { name: "Notes" }).click({ timeout: 10_000 });
     await expect(page.locator("blockquote")).toHaveCount(1, { timeout: 15_000 });
+
+    await chapterText.click({ button: "right", position: { x: 4, y: 4 } });
+    const copyItem = page.getByRole("menuitem", { name: "Copy text" });
+    await expect(copyItem).toBeVisible({ timeout: 5_000 });
+    await copyItem.click();
+    await expect(copyItem).toBeHidden();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe((await chapterText.textContent())?.trim());
 
     await chapterText.click({ button: "right", position: { x: 4, y: 4 } });
     const deleteItem = page.getByRole("menuitem", { name: "Delete highlight" });
