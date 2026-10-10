@@ -122,30 +122,19 @@ export function useBookReaderPreferences({
         }
       }
 
-      const updatedPreferences: BookPreferences = {
-        fontFamily: update.fontFamily ?? fontFamily,
-        fontSize: update.fontSize ?? fontSize,
-        fontWeight: update.fontWeight ?? fontWeight,
-        lineHeight: update.lineHeight ?? lineHeight,
-        textAlign: "textAlign" in update ? update.textAlign : textAlign,
-        readerLayout: update.readerLayout ?? readerLayout,
-      };
+      const updatedPreferences: BookPreferences = {};
+      if (update.fontFamily !== undefined) updatedPreferences.fontFamily = update.fontFamily;
+      if (update.fontSize !== undefined) updatedPreferences.fontSize = update.fontSize;
+      if (update.fontWeight !== undefined) updatedPreferences.fontWeight = update.fontWeight;
+      if (update.lineHeight !== undefined) updatedPreferences.lineHeight = update.lineHeight;
+      if ("textAlign" in update) updatedPreferences.textAlign = update.textAlign;
+      if (update.readerLayout !== undefined) updatedPreferences.readerLayout = update.readerLayout;
 
       saveBookPreferences(bookId, updatedPreferences).catch((error) =>
         console.error("Failed to save book preferences:", error),
       );
     },
-    [
-      bookId,
-      fontFamily,
-      fontSize,
-      fontWeight,
-      lineHeight,
-      navigationRef,
-      readerLayout,
-      renditionRef,
-      textAlign,
-    ],
+    [bookId, navigationRef, readerLayout, renditionRef],
   );
 
   const localSettings: Settings = {

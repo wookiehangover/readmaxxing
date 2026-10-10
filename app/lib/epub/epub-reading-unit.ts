@@ -6,6 +6,8 @@ interface BuildEpubReadingUnitOptions {
   readonly page: number;
   readonly chapterLabel?: string | null;
   readonly document?: Document | null;
+  readonly previousPage?: string | null;
+  readonly nextPage?: string | null;
 }
 
 export function buildEpubReadingUnit({
@@ -13,11 +15,15 @@ export function buildEpubReadingUnit({
   page,
   chapterLabel,
   document,
+  previousPage,
+  nextPage,
 }: BuildEpubReadingUnitOptions): ReadingDwellUnit {
   return {
     unitKind: "epub-spine",
     locator: `${href}#page=${page}`,
     chapterLabel: chapterLabel ?? undefined,
     text: document ? visibleViewportText(document) : "",
+    previousPage: previousPage ?? null,
+    nextPage: nextPage ?? null,
   };
 }

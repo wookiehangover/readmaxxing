@@ -1,5 +1,6 @@
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
+import { listPendingOutlinePages } from "~/lib/database/reading-artifact/outline-progress";
 import {
   getCurrentReadingArtifacts,
   persistReadingArtifactRevision,
@@ -44,6 +45,8 @@ export async function loader({
   const book = await getBookByIdForUser(params.bookId, session.userId);
   if (!book) return Response.json({ error: "Book not found" }, { status: 404 });
 
+  // Read progress first so completed jobs cannot disappear before their content is fetched.
+  const pendingPages = await listPendingOutlinePages(session.userId, params.bookId);
   const rows = await getCurrentReadingArtifacts(session.userId, params.bookId);
   const artifacts = Object.fromEntries(
     ARTIFACT_KINDS.map((kind) => {
@@ -52,7 +55,7 @@ export async function loader({
     }),
   );
 
-  return Response.json({ bookId: params.bookId, artifacts });
+  return Response.json({ bookId: params.bookId, artifacts, pendingPages });
 }
 
 export async function action({

@@ -4,13 +4,15 @@ export const DEBUG_READING_AGENT_MODELS = [
   "openai/gpt-5.6-luna",
   "openai/gpt-5.6-terra",
   "openai/gpt-5.6-sol",
+  "openai/gpt-6-luna",
+  "openai/gpt-6-sol",
   "xai/grok-4.5",
   "google/gemini-2.5-flash",
 ] as const;
 
 export type DebugReadingAgentModel = (typeof DEBUG_READING_AGENT_MODELS)[number];
 
-export const DEFAULT_DEBUG_READING_AGENT_MODEL: DebugReadingAgentModel = "openai/gpt-5.6-terra";
+export const DEFAULT_DEBUG_READING_AGENT_MODEL: DebugReadingAgentModel = "openai/gpt-6-sol";
 
 export function isDebugReadingAgentModel(value: unknown): value is DebugReadingAgentModel {
   return DEBUG_READING_AGENT_MODELS.some((model) => model === value);

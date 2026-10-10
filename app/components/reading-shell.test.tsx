@@ -170,12 +170,11 @@ describe("ReadingShell", () => {
     expect(document.body.querySelector("[aria-label='Reading rail']")).toBeNull();
   });
 
-  it("defaults the shell EPUB reader to a spread without dockview chrome", () => {
+  it("lets the EPUB reader inherit defaults without a shell layout override", () => {
     renderShell();
 
     expect(epubReaderProps.current).toEqual({
       bookId: "epub-book",
-      panelTypography: { readerLayout: "spread" },
     });
   });
 

@@ -11,6 +11,13 @@ export interface ReadingArtifactHead {
 export interface ReadingArtifactsResponse {
   readonly bookId: string;
   readonly artifacts: Record<ReadingArtifactKind, ReadingArtifactHead | null>;
+  readonly pendingPages?: ReadingOutlinePendingPage[];
+}
+
+export interface ReadingOutlinePendingPage {
+  readonly unitId: string;
+  readonly page: number | null;
+  readonly status: "pending" | "processing";
 }
 
 export interface ReadingOutlineSaveResponse {
@@ -79,7 +86,22 @@ export function parseReadingArtifactsResponse(value: unknown): ReadingArtifactsR
   for (const kind of ARTIFACT_KINDS) {
     artifacts[kind] = parseArtifactHead(value.artifacts[kind], kind);
   }
-  return { bookId: value.bookId, artifacts };
+  if (value.pendingPages === undefined) return { bookId: value.bookId, artifacts };
+  if (!Array.isArray(value.pendingPages)) {
+    throw new ReadingArtifactsError("invalid_response", 200, "Invalid outline progress");
+  }
+  const pendingPages = value.pendingPages.map((page): ReadingOutlinePendingPage => {
+    if (
+      !isRecord(page) ||
+      typeof page.unitId !== "string" ||
+      (page.page !== null && (!Number.isSafeInteger(page.page) || (page.page as number) < 1)) ||
+      (page.status !== "pending" && page.status !== "processing")
+    ) {
+      throw new ReadingArtifactsError("invalid_response", 200, "Invalid outline progress");
+    }
+    return { unitId: page.unitId, page: page.page as number | null, status: page.status };
+  });
+  return { bookId: value.bookId, artifacts, pendingPages };
 }
 
 export function parseReadingOutlineSaveResponse(value: unknown): ReadingOutlineSaveResponse {

@@ -41,6 +41,7 @@ import {
 } from "./content-range";
 import type { NavigatorNavigationPolicy } from "./navigation-policy";
 import { lastRenderedRange } from "./visible-text";
+import { adjacentPageText } from "./adjacent-page-text";
 
 export type {
   NavigatorFlow,
@@ -239,6 +240,13 @@ export class Navigator extends EventTarget {
 
   get contentDocument(): Document | null {
     return this.#active?.frame.contentDocument ?? null;
+  }
+
+  get adjacentPageText(): { previousPage: string | null; nextPage: string | null } {
+    const document = this.contentDocument;
+    return document
+      ? adjacentPageText(document, this.#active?.pagination)
+      : { previousPage: null, nextPage: null };
   }
 
   get currentContentRange(): NavigatorContentRange | undefined {

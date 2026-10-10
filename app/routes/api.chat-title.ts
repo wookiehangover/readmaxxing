@@ -39,7 +39,7 @@ export async function action({ request }: { request: Request }) {
     .join("\n\n");
 
   const { text } = await generateText({
-    model: gateway("google/gemini-2.5-flash"),
+    model: gateway("openai/gpt-6-luna"),
     instructions:
       "You are an expert at creating short titles for reading discussion sessions. Given the conversation, create a concise title that captures the main topic being discussed about the book. The title should be 50 characters or less. ONLY RESPOND WITH THE TITLE TEXT, no quotes, no preamble, no other text.",
     messages: [

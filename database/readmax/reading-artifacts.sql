@@ -10,6 +10,8 @@ CREATE TABLE readmax.reading_ingest_unit (
     chapter_label TEXT,
     display_page INTEGER CHECK (display_page > 0),
     text TEXT NOT NULL,
+    previous_page TEXT,
+    next_page TEXT,
     status TEXT NOT NULL DEFAULT 'pending'
         CHECK (status IN ('pending', 'processing', 'done', 'skipped', 'error')),
     first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -50,6 +52,7 @@ CREATE TABLE readmax.reading_agent_usage (
     cost_total NUMERIC(18, 8) NOT NULL DEFAULT 0 CHECK (cost_total >= 0),
     model TEXT,
     source TEXT NOT NULL,
+    quality JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

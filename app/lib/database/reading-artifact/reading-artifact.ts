@@ -1,6 +1,7 @@
 import { sql } from "pg-sql";
 import type { PoolClient } from "pg";
 import { getPool } from "../pool";
+import type { OutlineBulletRating } from "~/lib/reading-agent/outline-quality";
 
 export type ReadingUnitKind = "epub-spine" | "pdf-page";
 export type ReadingIngestStatus = "pending" | "processing" | "done" | "skipped" | "error";
@@ -17,6 +18,8 @@ export interface ReadingIngestUnitRow {
   chapterLabel: string | null;
   displayPage: number | null;
   text: string;
+  previousPage?: string | null;
+  nextPage?: string | null;
   status: ReadingIngestStatus;
   firstSeenAt: Date;
   lastSeenAt: Date;
@@ -77,6 +80,7 @@ export interface ReadingIngestUnitLease {
 }
 
 export interface ReadingAgentUsageRow {
+  quality?: OutlineBulletRating[];
   id: string;
   unitId: string;
   input: number;
@@ -91,6 +95,7 @@ export interface ReadingAgentUsageRow {
 }
 
 export interface ReadingAgentUsage {
+  quality?: OutlineBulletRating[];
   input: number;
   output: number;
   cacheRead: number;
@@ -140,9 +145,17 @@ export interface ReadingArtifactUpdate {
 const READING_AGENT_LEASE_TTL_MS = 15 * 60 * 1000;
 const READING_AGENT_MAX_ATTEMPTS = 8;
 const READING_AGENT_SCHEMA_COLUMNS = {
-  reading_ingest_unit: ["attempt_count", "claimed_at", "display_page", "next_attempt_at"],
+  reading_ingest_unit: [
+    "attempt_count",
+    "claimed_at",
+    "display_page",
+    "next_attempt_at",
+    "previous_page",
+    "next_page",
+  ],
   reading_agent_lease: ["user_id", "unit_id", "book_id", "expires_at"],
   reading_agent_usage: [
+    "quality",
     "id",
     "unit_id",
     "input",
@@ -170,6 +183,8 @@ const INGEST_UNIT_COLUMNS = sql`
   locator,
   chapter_label AS "chapterLabel",
   display_page AS "displayPage",
+  previous_page AS "previousPage",
+  next_page AS "nextPage",
   text,
   status,
   first_seen_at AS "firstSeenAt",
@@ -197,6 +212,7 @@ const USAGE_COLUMNS = sql`
   cache_write AS "cacheWrite",
   total_tokens AS "totalTokens",
   cost_total AS "costTotal",
+  quality,
   model,
   source,
   created_at AS "createdAt"
@@ -234,10 +250,12 @@ export async function insertReadingIngestUnit(data: {
   chapterLabel?: string | null;
   displayPage?: number | null;
   text: string;
+  previousPage?: string | null;
+  nextPage?: string | null;
 }): Promise<ReadingIngestUnitRow | null> {
   const result = await getPool().query<ReadingIngestUnitRow>(sql`
     INSERT INTO readmax.reading_ingest_unit (
-      user_id, book_id, fingerprint, unit_kind, locator, chapter_label, display_page, text
+      user_id, book_id, fingerprint, unit_kind, locator, chapter_label, display_page, text, previous_page, next_page
     )
     VALUES (
       ${data.userId},
@@ -247,7 +265,9 @@ export async function insertReadingIngestUnit(data: {
       ${data.locator},
       ${data.chapterLabel ?? null},
       ${data.displayPage ?? null},
-      ${data.text}
+      ${data.text},
+      ${data.previousPage ?? null},
+      ${data.nextPage ?? null}
     )
     ON CONFLICT (user_id, book_id, fingerprint) DO NOTHING
     RETURNING ${INGEST_UNIT_COLUMNS}
@@ -299,10 +319,14 @@ export async function refreshReadingIngestUnit(data: {
   chapterLabel?: string | null;
   displayPage?: number | null;
   text: string;
+  previousPage?: string | null;
+  nextPage?: string | null;
 }): Promise<ReadingIngestUnitRow | null> {
   const result = await getPool().query<ReadingIngestUnitRow>(sql`
     UPDATE readmax.reading_ingest_unit
     SET text = ${data.text},
+        previous_page = ${data.previousPage ?? null},
+        next_page = ${data.nextPage ?? null},
         chapter_label = COALESCE(${data.chapterLabel ?? null}, chapter_label),
         display_page = COALESCE(${data.displayPage ?? null}, display_page),
         last_seen_at = NOW()
@@ -402,6 +426,7 @@ export async function getLatestReadingAgentUsage(
            usage.cache_write AS "cacheWrite",
            usage.total_tokens AS "totalTokens",
            usage.cost_total AS "costTotal",
+           usage.quality,
            usage.model,
            usage.source,
            usage.created_at AS "createdAt"
@@ -533,12 +558,13 @@ export async function releaseReadingIngestUnit(
       RETURNING id
     ), recorded AS (
       INSERT INTO readmax.reading_agent_usage (
-        unit_id, input, output, cache_read, cache_write, total_tokens, cost_total, model, source
+        unit_id, input, output, cache_read, cache_write, total_tokens, cost_total, model, source, quality
       )
       SELECT ${claim.unit.id}, ${recordedUsage.input}, ${recordedUsage.output},
              ${recordedUsage.cacheRead}, ${recordedUsage.cacheWrite},
              ${recordedUsage.totalTokens}, ${recordedUsage.costTotal},
-             ${recordedUsage.model ?? null}, ${recordedUsage.source}
+             ${recordedUsage.model ?? null}, ${recordedUsage.source},
+             ${JSON.stringify(usage?.quality ?? [])}::jsonb
       WHERE ${usage !== undefined}
       RETURNING unit_id
     )
@@ -818,11 +844,11 @@ export async function insertReadingAgentUsage(
 ): Promise<ReadingAgentUsageRow | null> {
   const result = await getPool().query<ReadingAgentUsageRow>(sql`
     INSERT INTO readmax.reading_agent_usage (
-      unit_id, input, output, cache_read, cache_write, total_tokens, cost_total, model, source
+      unit_id, input, output, cache_read, cache_write, total_tokens, cost_total, model, source, quality
     )
     VALUES (
       ${data.unitId}, ${data.input}, ${data.output}, ${data.cacheRead}, ${data.cacheWrite},
-      ${data.totalTokens}, ${data.costTotal}, ${data.model ?? null}, ${data.source}
+      ${data.totalTokens}, ${data.costTotal}, ${data.model ?? null}, ${data.source}, ${JSON.stringify(data.quality ?? [])}::jsonb
     )
     RETURNING ${USAGE_COLUMNS}
   `);
@@ -877,11 +903,11 @@ async function recordReadingAgentUsage(
 ): Promise<void> {
   await client.query(sql`
     INSERT INTO readmax.reading_agent_usage (
-      unit_id, input, output, cache_read, cache_write, total_tokens, cost_total, model, source
+      unit_id, input, output, cache_read, cache_write, total_tokens, cost_total, model, source, quality
     )
     VALUES (
       ${unitId}, ${usage.input}, ${usage.output}, ${usage.cacheRead}, ${usage.cacheWrite},
-      ${usage.totalTokens}, ${usage.costTotal}, ${usage.model ?? null}, ${usage.source}
+      ${usage.totalTokens}, ${usage.costTotal}, ${usage.model ?? null}, ${usage.source}, ${JSON.stringify(usage.quality ?? [])}::jsonb
     )
   `);
 }

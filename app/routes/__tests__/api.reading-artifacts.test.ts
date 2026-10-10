@@ -17,10 +17,15 @@ vi.mock("~/lib/database/reading-artifact/reading-artifact", () => ({
   refreshReadingIngestUnit: vi.fn(),
 }));
 
+vi.mock("~/lib/database/reading-artifact/outline-progress", () => ({
+  listPendingOutlinePages: vi.fn(),
+}));
+
 vi.mock("~/lib/reading-agent/dispatch.server", () => ({
   scheduleReadingIngestQueue: vi.fn(),
 }));
 
+import { listPendingOutlinePages } from "~/lib/database/reading-artifact/outline-progress";
 import { getSessionFromRequest } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import {
@@ -108,6 +113,7 @@ beforeEach(() => {
   authMock.mockReset().mockResolvedValue({ userId: "user-1" });
   bookMock.mockReset().mockResolvedValue({ id: "book-1", userId: "user-1" });
   artifactsMock.mockReset().mockResolvedValue([]);
+  vi.mocked(listPendingOutlinePages).mockReset().mockResolvedValue([]);
   existingUnitMock.mockReset().mockResolvedValue(null);
   insertUnitMock.mockReset().mockResolvedValue(unit);
   revisionsMock.mockReset().mockResolvedValue([]);
@@ -239,6 +245,8 @@ describe("reading artifact ingest API", () => {
       chapterLabel: "Chapter 1",
       displayPage: 12,
       text,
+      previousPage: null,
+      nextPage: null,
     });
     expect(scheduleMock).toHaveBeenCalledWith("user-1");
   });
@@ -270,6 +278,7 @@ describe("reading artifact read APIs", () => {
     await expect(response.json()).resolves.toEqual({
       bookId: "book-1",
       artifacts: { outline: null, characters: null, wiki: null },
+      pendingPages: [],
     });
   });
 
@@ -347,4 +356,52 @@ describe("reading outline save API", () => {
       });
     },
   );
+});
+
+describe("adjacent page ingest context", () => {
+  it("accepts old clients and empty neighbors as null", () => {
+    expect(parseIngestPayload(ingestBody)).toMatchObject({ previousPage: null, nextPage: null });
+    expect(parseIngestPayload({ ...ingestBody, previousPage: "  ", nextPage: null })).toMatchObject(
+      { previousPage: null, nextPage: null },
+    );
+  });
+
+  it("rejects non-text context and bounds context nearest the current page", () => {
+    expect(parseIngestPayload({ ...ingestBody, previousPage: 5 })).toHaveProperty("error");
+    expect(parseIngestPayload({ ...ingestBody, nextPage: {} })).toHaveProperty("error");
+    expect(
+      parseIngestPayload({
+        ...ingestBody,
+        previousPage: "x".repeat(12_000) + "before",
+        nextPage: "after" + "x".repeat(12_000),
+      }),
+    ).toMatchObject({
+      previousPage: "x".repeat(11_994) + "before",
+      nextPage: "after" + "x".repeat(11_995),
+    });
+  });
+
+  it("passes normalized neighbors to new and pending durable units", async () => {
+    const body = { ...ingestBody, previousPage: " Before ", nextPage: " After " };
+    await ingestAction({ request: makeIngestRequest(body), params: { bookId: "book-1" } });
+    expect(insertUnitMock).toHaveBeenCalledWith(
+      expect.objectContaining({ previousPage: "Before", nextPage: "After" }),
+    );
+    existingUnitMock.mockResolvedValue(unit);
+    await ingestAction({ request: makeIngestRequest(body), params: { bookId: "book-1" } });
+    expect(refreshUnitMock).toHaveBeenCalledWith(
+      expect.objectContaining({ previousPage: "Before", nextPage: "After" }),
+    );
+  });
+});
+
+it("includes only the owned book's pending outline pages", async () => {
+  const pages = [{ unitId: "unit-1", page: 12, status: "processing" as const }];
+  vi.mocked(listPendingOutlinePages).mockResolvedValue(pages);
+  const response = await artifactsLoader({
+    request: new Request("http://localhost/api/books/book-1/artifacts"),
+    params: { bookId: "book-1" },
+  });
+  expect(listPendingOutlinePages).toHaveBeenCalledWith("user-1", "book-1");
+  expect(await response.json()).toMatchObject({ pendingPages: pages });
 });

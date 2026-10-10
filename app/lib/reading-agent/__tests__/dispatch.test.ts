@@ -124,6 +124,8 @@ describe("reading ingest dispatch", () => {
     expect(callIncrement).toHaveBeenCalledWith({
       model: "openai/gpt-5.5",
       page: "A newly read chapter page.",
+      previousPage: null,
+      nextPage: null,
       chapterLabel: "Chapter 1",
       existingBullets: ["Existing event."],
     });

@@ -12,20 +12,16 @@ import {
   type ReadingAgentUsage,
   type ReadingIngestUnitRow,
 } from "~/lib/database/reading-artifact/reading-artifact";
-import { getSelectedDebugModel, type DebugReadingAgentModel } from "./debug-model.server";
+import { getSelectedDebugModel } from "./debug-model.server";
 import { getOutlineChapterBullets, mergeOutlineMarkdown } from "./outline-merge";
 import {
   callPageIncrement,
   pageIncrementUsageFromError,
+  type PageIncrementOptions,
   type PageIncrementCallResult,
 } from "./page-increment.server";
 
-type PageIncrementCall = (options: {
-  model: DebugReadingAgentModel;
-  page: string;
-  chapterLabel: string | null;
-  existingBullets: readonly string[];
-}) => Promise<PageIncrementCallResult>;
+type PageIncrementCall = (options: PageIncrementOptions) => Promise<PageIncrementCallResult>;
 
 function currentOutline(rows: ReadingArtifactRow[]): string {
   return rows.find((row) => row.kind === "outline")?.content ?? "";
@@ -88,6 +84,8 @@ export async function dispatchReadingIngestUnit(
     const result = await dependencies.callIncrement({
       model,
       page: claimed.text,
+      previousPage: claimed.previousPage ?? null,
+      nextPage: claimed.nextPage ?? null,
       chapterLabel: claimed.chapterLabel,
       existingBullets: getOutlineChapterBullets(current, claimed.chapterLabel),
     });

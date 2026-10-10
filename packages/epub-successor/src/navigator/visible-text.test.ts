@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { adjacentPageText } from "./adjacent-page-text";
+import type { PaginatedLayoutState } from "./paginated";
 import { visibleViewportText } from "./visible-text";
 
 interface RectFixture {
@@ -102,5 +104,101 @@ describe("visibleViewportText", () => {
     expect(visibleViewportText(document, { viewportWidth: 500, viewportHeight: 200 })).toBe(
       "Geometry",
     );
+  });
+});
+
+describe("adjacentPageText", () => {
+  function layout(
+    document: Document,
+    overrides: Partial<PaginatedLayoutState> = {},
+  ): PaginatedLayoutState {
+    document.documentElement.scrollLeft = 864;
+    return {
+      viewportWidth: 800,
+      columnWidth: 800,
+      columnGap: 64,
+      columnStride: 864,
+      pagesPerSpread: 1,
+      direction: "ltr",
+      pageCount: 3,
+      maxOffset: 1728,
+      rtlScrollType: "negative",
+      scrolling: document.documentElement,
+      ...overrides,
+    };
+  }
+
+  it("extracts immediate columns without moving the document", () => {
+    const document = fixture(
+      '<p id="prev">Before</p><p id="now">Current</p><p id="next">After</p><p id="far">Far</p>',
+      {
+        prev: { left: -824, top: 40 },
+        now: { left: 40, top: 40 },
+        next: { left: 904, top: 40 },
+        far: { left: 1768, top: 40 },
+      },
+    );
+    const state = layout(document);
+    expect(adjacentPageText(document, state)).toEqual({
+      previousPage: "Before",
+      nextPage: "After",
+    });
+    expect(document.documentElement.scrollLeft).toBe(864);
+  });
+
+  it("uses RTL reading order", () => {
+    const document = fixture('<p id="prev">Before</p><p id="next">After</p>', {
+      prev: { left: 904, top: 40 },
+      next: { left: -824, top: 40 },
+    });
+    const state = layout(document, { direction: "rtl" });
+    document.documentElement.scrollLeft = -864;
+    expect(adjacentPageText(document, state)).toEqual({
+      previousPage: "Before",
+      nextPage: "After",
+    });
+    expect(document.documentElement.scrollLeft).toBe(-864);
+  });
+
+  it("uses only one column outside each side of a spread", () => {
+    const document = fixture(
+      '<p id="prev">Before</p><p id="current">Current</p><p id="next">After</p><p id="far">Far</p>',
+      {
+        prev: { left: -412, top: 40 },
+        current: { left: 452, top: 40 },
+        next: { left: 884, top: 40 },
+        far: { left: 1316, top: 40 },
+      },
+    );
+    const state = layout(document, {
+      columnWidth: 368,
+      columnStride: 432,
+      pagesPerSpread: 2,
+      pageCount: 6,
+    });
+    expect(adjacentPageText(document, state)).toEqual({
+      previousPage: "Before",
+      nextPage: "After",
+    });
+  });
+
+  it("leaves neighbors null at unmounted section boundaries", () => {
+    const document = fixture('<p id="now">Only</p>', { now: { left: 40, top: 40 } });
+    expect(adjacentPageText(document, layout(document, { pageCount: 1, maxOffset: 0 }))).toEqual({
+      previousPage: null,
+      nextPage: null,
+    });
+  });
+
+  it("extracts adjacent viewport heights for scrolled documents", () => {
+    const document = fixture(
+      '<p id="prev">Before</p><p id="now">Current</p><p id="next">After</p>',
+      {
+        prev: { left: 40, top: -100 },
+        now: { left: 40, top: 40 },
+        next: { left: 40, top: 640 },
+      },
+    );
+    expect(adjacentPageText(document)).toEqual({ previousPage: "Before", nextPage: "After" });
   });
 });

@@ -526,6 +526,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
           page,
           chapterLabel,
           document: rendition.contentDocument,
+          ...rendition.navigator.adjacentPageText,
         });
         configRef.current.chatContextMap.current.set(bookId, {
           currentChapterIndex: logicalChapterIndex(tocData, bookAdapter, relocation.spineIndex),
