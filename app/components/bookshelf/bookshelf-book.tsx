@@ -102,7 +102,8 @@ export function BookshelfBook({
             )}
             <span className="bookshelf-spine">
               <span className="bookshelf-author">{book.author || "Unknown author"}</span>
-              <span className="bookshelf-book-title">{book.title}</span>
+              {/* Like a printed spine, omit the subtitle; the button label keeps the full title. */}
+              <span className="bookshelf-book-title">{book.title.split(/:\s/)[0]}</span>
             </span>
           </span>
         </span>

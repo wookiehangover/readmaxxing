@@ -101,31 +101,38 @@ describe("useBookshelfCamera animation", () => {
     vi.unstubAllGlobals();
   });
 
-  it("interpolates wheel-sized steps monotonically in both directions and stops when settled", () => {
+  it("runs ahead of wheel-sized steps in both directions, then settles where scrolling stopped", () => {
+    smoothMotion = false;
+    const direct = renderCamera();
+    direct.scroll(80);
+    advance(16);
+    const scrolledOrigin = direct.origin();
+    smoothMotion = true;
+
     const camera = renderCamera();
     const initial = camera.origin();
     expect(Number.isFinite(initial)).toBe(true);
     expect(frames.size).toBe(0);
 
-    for (const position of [80, 0]) {
+    for (const [position, settled] of [
+      [80, scrolledOrigin],
+      [0, initial],
+    ]) {
       const start = camera.origin();
       const direction = position === 80 ? 1 : -1;
       camera.scroll(position);
       expect(camera.origin()).toBe(start);
       advance(16);
-      const intermediate = camera.origin();
-      expect((intermediate - start) * direction).toBeGreaterThan(0);
-      expect(frames.size).toBe(1);
-      let previous = intermediate;
-      for (let frame = 0; frame < 60; frame++) {
+      expect((camera.origin() - start) * direction).toBeGreaterThan(0);
+      let furthest = 0;
+      for (let frame = 0; frame < 90 && frames.size; frame++) {
         advance(16);
-        expect((camera.origin() - previous) * direction).toBeGreaterThanOrEqual(0);
-        previous = camera.origin();
+        furthest = Math.max(furthest, (camera.origin() - settled) * direction);
       }
-      expect((camera.origin() - intermediate) * direction).toBeGreaterThan(0);
+      expect(furthest).toBeGreaterThan(5);
       expect(frames.size).toBe(0);
+      expect(camera.origin()).toBeCloseTo(settled, 5);
     }
-    expect(camera.origin()).toBeCloseTo(initial, 5);
   });
 
   it("makes equal progress at equal elapsed times across refresh rates", () => {
