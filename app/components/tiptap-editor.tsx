@@ -25,6 +25,8 @@ export interface TiptapEditorHandle {
    * Used for streaming preview: truncate to `fromIndex` then append `nodes`.
    */
   replaceContentFrom: (fromIndex: number, nodes: JSONContent[]) => void;
+  /** Delete every highlightReference node for `highlightId` as a user edit (saved via onUpdate). */
+  removeHighlightReference: (highlightId: string) => void;
 }
 
 interface TiptapEditorProps {
@@ -280,6 +282,20 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
         // Delete from pos to end, then insert new nodes
         const endPos = doc.content.size;
         editor.chain().deleteRange({ from: pos, to: endPos }).insertContentAt(pos, nodes).run();
+      },
+      removeHighlightReference(highlightId: string) {
+        if (!editor) return;
+        const { state } = editor;
+        const ranges: Array<{ from: number; to: number }> = [];
+        state.doc.descendants((node, pos) => {
+          if (node.type.name === "highlightReference" && node.attrs.highlightId === highlightId) {
+            ranges.push({ from: pos, to: pos + node.nodeSize });
+          }
+        });
+        if (ranges.length === 0) return;
+        const tr = state.tr;
+        for (const { from, to } of ranges.reverse()) tr.delete(from, to);
+        editor.view.dispatch(tr);
       },
     }),
     [editor],

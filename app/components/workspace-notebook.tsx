@@ -168,6 +168,9 @@ export function WorkspaceNotebook({
       replaceContentFrom: (fromIndex, nodes) => {
         editorRef.current?.replaceContentFrom(fromIndex, nodes);
       },
+      removeHighlightReference: (highlightId) => {
+        editorRef.current?.removeHighlightReference(highlightId);
+      },
       seedLastContent: (newContent) => {
         lastContentRef.current = JSON.stringify(newContent);
       },

@@ -9,6 +9,8 @@ export interface NotebookEditorCallbacks {
   getContent: () => JSONContent;
   getTopLevelNodeCount: () => number;
   replaceContentFrom: (fromIndex: number, nodes: JSONContent[]) => void;
+  /** Remove a highlight's reference nodes as a saved user edit. */
+  removeHighlightReference: (highlightId: string) => void;
   /**
    * Seed the editor's last-known-content ref to the given content so a
    * subsequent `sync:entity-updated` {notebook} event that reads the same
