@@ -132,6 +132,12 @@ const stop = decorations.on("selection-changed", ({ locator, text }) => {
   if (locator) saveBookmark(locator, text);
 });
 
+// Click or right-click on a rendered decoration.
+decorations.on("decoration-click", ({ decoration }) => openNote(decoration.id));
+decorations.on("decoration-contextmenu", ({ decoration, clientX, clientY }) =>
+  showMenu(decoration.id, clientX, clientY),
+);
+
 // Restore a stored locator as a highlight.
 decorations.add({
   id: "hl-1",

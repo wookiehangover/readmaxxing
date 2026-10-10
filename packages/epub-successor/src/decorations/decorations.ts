@@ -51,6 +51,7 @@ export interface SelectionChangedDetail {
 
 export interface DecorationLayerEventMap {
   readonly "decoration-click": DecorationClickDetail;
+  readonly "decoration-contextmenu": DecorationClickDetail;
   readonly "selection-changed": SelectionChangedDetail;
 }
 
@@ -146,6 +147,7 @@ export class DecorationLayer extends EventTarget {
       this.#resizeObserver.observe(options.document.documentElement);
     }
     options.document.addEventListener("click", this.#handleClick, true);
+    options.document.addEventListener("contextmenu", this.#handleContextMenu, true);
     options.document.addEventListener("selectionchange", this.#handleSelectionChange);
   }
 
@@ -232,6 +234,7 @@ export class DecorationLayer extends EventTarget {
     view?.removeEventListener("resize", this.#scheduleRefresh);
     view?.removeEventListener("scroll", this.#scheduleRefresh, true);
     this.#document.removeEventListener("click", this.#handleClick, true);
+    this.#document.removeEventListener("contextmenu", this.#handleContextMenu, true);
     this.#document.removeEventListener("selectionchange", this.#handleSelectionChange);
     this.#resizeObserver?.disconnect();
     if (this.#frame !== undefined) view?.cancelAnimationFrame(this.#frame);
@@ -262,6 +265,14 @@ export class DecorationLayer extends EventTarget {
   };
 
   readonly #handleClick = (event: MouseEvent): void => {
+    this.#emitDecorationHit("decoration-click", event);
+  };
+
+  readonly #handleContextMenu = (event: MouseEvent): void => {
+    this.#emitDecorationHit("decoration-contextmenu", event);
+  };
+
+  #emitDecorationHit(type: "decoration-click" | "decoration-contextmenu", event: MouseEvent): void {
     const entries = Array.from(this.#entries.values()).reverse();
     const entry = entries.find(({ range }) =>
       range
@@ -273,12 +284,12 @@ export class DecorationLayer extends EventTarget {
     if (!entry) return;
     event.preventDefault();
     event.stopPropagation();
-    this.#emit("decoration-click", {
+    this.#emit(type, {
       decoration: entry.decoration,
       clientX: event.clientX,
       clientY: event.clientY,
     });
-  };
+  }
 
   readonly #handleSelectionChange = (): void => {
     const selection = this.#document.getSelection();

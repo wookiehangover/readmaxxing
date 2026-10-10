@@ -142,6 +142,37 @@ describe("decoration rendering", () => {
     layer.destroy();
     expect(document.querySelector("[data-epub-decoration-overlay]")).toBeNull();
   });
+
+  it("emits decoration-contextmenu only for right-clicks on a decoration", async () => {
+    const { document, section, range, decoration } = setup();
+    const rangePrototype = Object.getPrototypeOf(range) as Range;
+    vi.spyOn(rangePrototype, "getClientRects").mockReturnValue([
+      rect(10, 20, 80, 16),
+    ] as unknown as DOMRectList);
+    const layer = createDecorationLayer({ document, section, rendering: "overlay" });
+    const hits: Array<{ id: string; clientX: number }> = [];
+    layer.on("decoration-contextmenu", ({ decoration: hit, clientX }) =>
+      hits.push({ id: hit.id, clientX }),
+    );
+    layer.add(decoration);
+    const paragraph = document.querySelector("p")!;
+
+    const miss = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 200 });
+    paragraph.dispatchEvent(miss);
+    const hit = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 20,
+      clientY: 25,
+    });
+    paragraph.dispatchEvent(hit);
+    await Promise.resolve();
+
+    expect(miss.defaultPrevented).toBe(false);
+    expect(hit.defaultPrevented).toBe(true);
+    expect(hits).toEqual([{ id: "note-1", clientX: 20 }]);
+    layer.destroy();
+  });
 });
 
 describe("selection surface", () => {
