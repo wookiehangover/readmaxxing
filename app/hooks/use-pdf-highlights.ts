@@ -285,7 +285,7 @@ export function usePdfHighlights({
     if (!el) return;
 
     const handlePointerUp = (e: PointerEvent) => {
-      if (e.button !== 0) return;
+      if (e.button > 0) return;
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
 
