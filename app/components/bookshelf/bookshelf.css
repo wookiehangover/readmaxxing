@@ -106,37 +106,28 @@
   backface-visibility: hidden;
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  /* Equal outer tracks keep the title centred on the spine, as on a printed book. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
   align-items: center;
   gap: 24px;
   min-height: max(88px, 13.6cqw);
-  padding: 20px 28px;
+  padding: 20px 5.5cqw;
   color: var(--book-ink);
   background:
-    linear-gradient(
-      90deg,
-      #00000026,
-      transparent 1.5%,
-      #ffffff0f 3%,
-      transparent 7%,
-      transparent 94%,
-      #00000015 98%,
-      #00000030
-    ),
-    linear-gradient(0deg, #00000026, transparent 12%, #ffffff0d 85%, #ffffff30), var(--book-cloth);
+    linear-gradient(90deg, #0000001f, transparent 0.6%, transparent 99.4%, #0000001f),
+    linear-gradient(180deg, #ffffff2e, #ffffff0a 5%, transparent 14%, transparent 84%, #00000029),
+    var(--book-cloth);
   border-radius: 2px 3px 4px 2px;
-  border-block: 1px solid #ffffff25;
-  box-shadow: inset 0 -3px 3px #0002;
 }
 .bookshelf-spine::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.06;
+  opacity: 0.05;
   background-image:
-    repeating-linear-gradient(0deg, transparent 0 2px, #fff5 2px 3px),
-    repeating-linear-gradient(90deg, transparent 0 3px, #0005 3px 4px);
+    repeating-linear-gradient(0deg, transparent 0 1px, #fff6 1px 2px),
+    repeating-linear-gradient(90deg, transparent 0 1px, #0006 1px 2px);
 }
 .bookshelf-spine::before,
 .bookshelf-top::before {
@@ -167,17 +158,23 @@
     --book-light: 0.18;
   }
 }
+.bookshelf-author,
+.bookshelf-book-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .bookshelf-author {
-  font-size: 12px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
+  font-size: clamp(11px, 2cqw, 16px);
+  line-height: 1.4;
 }
 .bookshelf-book-title {
+  max-width: 60cqw;
   font-family: "Literata", Georgia, serif;
-  font-size: clamp(16px, 2.3vw, 21px);
-  line-height: 1.35;
-  letter-spacing: -0.025em;
-  overflow-wrap: anywhere;
+  font-size: clamp(15px, 2.6cqw, 22px);
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  text-align: center;
 }
 .bookshelf-top {
   position: absolute;
@@ -213,10 +210,8 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  box-shadow:
-    inset 0 0 0 2px #0003,
-    inset 0 -3px 3px #fff4;
-  background: linear-gradient(0deg, #0002, #00000008 25%, #0000000a);
+  /* The near edge catches light where the board rounds over onto the spine. */
+  background: linear-gradient(0deg, #ffffff26, transparent 5%, transparent 60%, #00000014);
 }
 .bookshelf-cover-fallback {
   display: flex;
@@ -257,15 +252,15 @@
   }
   .bookshelf-spine {
     grid-template-columns: minmax(0, 1fr);
+    align-content: center;
     gap: 5px;
     min-height: 92px;
     padding: 16px 20px;
   }
-  .bookshelf-author {
-    font-size: 10px;
-  }
   .bookshelf-book-title {
+    max-width: none;
     font-size: 16px;
+    text-align: left;
   }
 }
 @media (prefers-reduced-motion: reduce) {
