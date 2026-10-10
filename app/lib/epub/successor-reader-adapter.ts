@@ -664,6 +664,9 @@ export class SuccessorRenditionAdapter {
     layer.on("decoration-click", (detail: DecorationClickDetail) =>
       this.#emit("decoration-click", detail),
     );
+    layer.on("decoration-contextmenu", (detail: DecorationClickDetail) =>
+      this.#emit("decoration-contextmenu", detail),
+    );
     this.#decorationDocument = document;
     this.#decorationLayer = layer;
     this.#decorationSpineIndex = relocation.spineIndex;

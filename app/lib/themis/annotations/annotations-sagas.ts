@@ -1,6 +1,7 @@
 import { call, cancel, delay, fork, put, take, takeEvery } from "typed-redux-saga";
 
 import { appendHighlightReferenceToNotebook } from "~/lib/annotations/append-highlight-to-notebook";
+import { removeHighlightReferenceFromNotebook } from "~/lib/annotations/remove-highlight-from-notebook";
 import { toTaggedError } from "~/lib/errors";
 import { AnnotationService, type Highlight, type Notebook } from "~/lib/stores/annotations-store";
 import {
@@ -136,6 +137,8 @@ export function* deleteHighlightSaga(action: ReturnType<typeof deleteHighlightRe
   try {
     yield* call(persistHighlightDeletion, highlightId);
     yield* put(highlightDeleted(highlightId));
+    const notebook = yield* call(removeHighlightReferenceFromNotebook, bookId, highlightId);
+    if (notebook) yield* put(notebookSaved(notebook));
     yield* call(notifyDeleteCompleted, onCompleted);
   } catch (error) {
     const taggedError = toTaggedError(error);

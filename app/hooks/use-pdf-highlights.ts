@@ -28,6 +28,7 @@ interface UsePdfHighlightsOptions {
   containerRef: React.RefObject<HTMLDivElement | null>;
   theme: Theme;
   onHighlightClick?: (highlight: Highlight) => void;
+  onHighlightContextMenu?: (highlight: Highlight, position: { x: number; y: number }) => void;
 }
 
 /** Build the synthetic cfiRange string used as a key for PDF highlights. */
@@ -72,6 +73,7 @@ function renderHighlightOverlay(
   textLayerDiv: HTMLElement,
   highlight: Highlight,
   onClick: (e: MouseEvent) => void,
+  onContextMenu: (e: MouseEvent) => void,
 ): HTMLDivElement | null {
   const { textOffset, textLength } = highlight;
   if (textOffset === undefined || textLength === undefined) return null;
@@ -141,6 +143,7 @@ function renderHighlightOverlay(
     mark.style.width = `${localWidth}px`;
     mark.style.height = `${localHeight}px`;
     mark.addEventListener("click", onClick);
+    mark.addEventListener("contextmenu", onContextMenu);
     overlay.appendChild(mark);
   }
 
@@ -153,6 +156,7 @@ export function usePdfHighlights({
   containerRef,
   theme,
   onHighlightClick,
+  onHighlightContextMenu,
 }: UsePdfHighlightsOptions) {
   const highlightsRef = useRef<Map<string, Highlight>>(new Map());
   const overlaysRef = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -163,6 +167,8 @@ export function usePdfHighlights({
 
   const onHighlightClickRef = useRef(onHighlightClick);
   onHighlightClickRef.current = onHighlightClick;
+  const onHighlightContextMenuRef = useRef(onHighlightContextMenu);
+  onHighlightContextMenuRef.current = onHighlightContextMenu;
 
   const makeClickCallback = useCallback(
     (cfiRange: string) => (e: MouseEvent) => {
@@ -172,6 +178,18 @@ export function usePdfHighlights({
       if (!stored) return;
       setSelectionPopover(null);
       onHighlightClickRef.current?.(stored);
+    },
+    [],
+  );
+
+  const makeContextMenuCallback = useCallback(
+    (cfiRange: string) => (e: MouseEvent) => {
+      const stored = highlightsRef.current.get(cfiRange);
+      if (!stored || !onHighlightContextMenuRef.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setSelectionPopover(null);
+      onHighlightContextMenuRef.current(stored, { x: e.clientX, y: e.clientY });
     },
     [],
   );
@@ -201,13 +219,14 @@ export function usePdfHighlights({
           textLayer,
           highlight,
           makeClickCallback(highlight.cfiRange),
+          makeContextMenuCallback(highlight.cfiRange),
         );
         if (overlay) {
           overlaysRef.current.set(highlight.id, overlay);
         }
       }
     },
-    [containerRef, makeClickCallback],
+    [containerRef, makeClickCallback, makeContextMenuCallback],
   );
 
   const reconcileHighlights = useCallback(

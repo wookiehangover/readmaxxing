@@ -89,6 +89,7 @@ function makeEditorCallbacks(
     getContent: vi.fn().mockReturnValue({ type: "doc", content: [] }),
     getTopLevelNodeCount: vi.fn().mockReturnValue(0),
     replaceContentFrom: vi.fn(),
+    removeHighlightReference: vi.fn(),
     seedLastContent: vi.fn(),
     ...overrides,
   };

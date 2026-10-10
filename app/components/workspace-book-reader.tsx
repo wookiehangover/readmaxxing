@@ -10,6 +10,8 @@ import { useResolvedTheme, useSettings } from "~/lib/settings";
 import type { FontWeight, PdfLayout, ReaderLayout } from "~/lib/settings";
 import { SpeedreadPopout } from "~/components/speedread-popout";
 import { HighlightPopover } from "~/components/highlight-popover";
+import { HighlightContextMenu } from "~/components/highlight-context-menu";
+import { useHighlightContextMenu } from "~/hooks/use-highlight-context-menu";
 import { useHighlights } from "~/hooks/use-highlights";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useHasTouchCapability } from "~/hooks/use-touch-capability";
@@ -206,6 +208,8 @@ function WorkspaceBookReaderInner({
   }, [book.id, handleSearchOpen]);
 
   const handleOpenNotebookRef = useRef<() => void>(() => {});
+  const { highlightMenu, openHighlightMenu, dismissHighlightMenu, deleteMenuHighlight } =
+    useHighlightContextMenu(book.id);
 
   const {
     selectionPopover,
@@ -219,6 +223,7 @@ function WorkspaceBookReaderInner({
     bookId: book.id,
     renditionRef,
     onHighlightClick: () => handleOpenNotebookRef.current(),
+    onHighlightContextMenu: openHighlightMenu,
     theme: resolvedTheme,
   });
 
@@ -422,6 +427,15 @@ function WorkspaceBookReaderInner({
               onExplain={handleExplainThis}
               onSave={handleSaveHighlight}
               onDismiss={dismissPopovers}
+            />,
+            document.body,
+          )}
+        {highlightMenu &&
+          createPortal(
+            <HighlightContextMenu
+              position={highlightMenu.position}
+              onDelete={deleteMenuHighlight}
+              onDismiss={dismissHighlightMenu}
             />,
             document.body,
           )}

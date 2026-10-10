@@ -28,6 +28,8 @@ interface UseHighlightsOptions {
   renditionRef: React.RefObject<SuccessorRenditionAdapter | null>;
   /** Called when a user clicks an existing highlight in the epub */
   onHighlightClick?: (highlight: Highlight) => void;
+  /** Called when a user right-clicks an existing highlight; position is in viewport coordinates */
+  onHighlightContextMenu?: (highlight: Highlight, position: { x: number; y: number }) => void;
   /** Current theme setting — used to pick highlight color for dark/light mode */
   theme: Theme;
 }
@@ -36,6 +38,7 @@ export function useHighlights({
   bookId,
   renditionRef,
   onHighlightClick,
+  onHighlightContextMenu,
   theme,
 }: UseHighlightsOptions) {
   const highlightsRef = useRef<Map<string, Highlight>>(new Map());
@@ -46,15 +49,39 @@ export function useHighlights({
 
   const onHighlightClickRef = useRef(onHighlightClick);
   onHighlightClickRef.current = onHighlightClick;
+  const onHighlightContextMenuRef = useRef(onHighlightContextMenu);
+  onHighlightContextMenuRef.current = onHighlightContextMenu;
 
-  const handleDecorationClick = useCallback((detail: DecorationClickDetail) => {
-    const stored = Array.from(highlightsRef.current.values()).find(
-      ({ id }) => id === detail.decoration.id,
-    );
-    if (!stored) return;
-    setSelectionPopover(null);
-    onHighlightClickRef.current?.(stored);
-  }, []);
+  const findDecoratedHighlight = useCallback(
+    (detail: DecorationClickDetail) =>
+      Array.from(highlightsRef.current.values()).find(({ id }) => id === detail.decoration.id),
+    [],
+  );
+
+  const handleDecorationClick = useCallback(
+    (detail: DecorationClickDetail) => {
+      const stored = findDecoratedHighlight(detail);
+      if (!stored) return;
+      setSelectionPopover(null);
+      onHighlightClickRef.current?.(stored);
+    },
+    [findDecoratedHighlight],
+  );
+
+  const handleDecorationContextMenu = useCallback(
+    (detail: DecorationClickDetail) => {
+      const stored = findDecoratedHighlight(detail);
+      const iframe = renditionRef.current?.contentDocument?.defaultView?.frameElement;
+      if (!stored || !(iframe instanceof HTMLElement)) return;
+      const iframeRect = iframe.getBoundingClientRect();
+      setSelectionPopover(null);
+      onHighlightContextMenuRef.current?.(stored, {
+        x: iframeRect.left + detail.clientX,
+        y: iframeRect.top + detail.clientY,
+      });
+    },
+    [findDecoratedHighlight, renditionRef],
+  );
 
   /** Apply a single stored highlight through the successor decoration layer. */
   const applyHighlightToRendition = useCallback(
@@ -113,6 +140,7 @@ export function useHighlights({
   const registerSelectionHandler = useCallback(
     (rendition: SuccessorRenditionAdapter) => {
       rendition.on("decoration-click", handleDecorationClick);
+      rendition.on("decoration-contextmenu", handleDecorationContextMenu);
       rendition.on("selection-changed", (detail: SelectionChangedDetail) => {
         const { locator, text } = detail;
         const cfiRange = locator?.locations.cfi;
@@ -158,7 +186,7 @@ export function useHighlights({
       // Attach to future content (page turns load new iframe documents)
       rendition.hooks.content.register((contents) => attachDismissListener(contents.document));
     },
-    [handleDecorationClick],
+    [handleDecorationClick, handleDecorationContextMenu],
   );
 
   /** Create and persist a new highlight, apply it to the rendition. Returns the created highlight. */

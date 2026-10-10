@@ -4,6 +4,8 @@ import { BookService, type BookMeta } from "~/lib/stores/book-store";
 import { useSettings } from "~/lib/settings";
 import type { PdfLayout, Settings } from "~/lib/settings";
 import { HighlightPopover } from "~/components/highlight-popover";
+import { HighlightContextMenu } from "~/components/highlight-context-menu";
+import { useHighlightContextMenu } from "~/hooks/use-highlight-context-menu";
 import { useAppStore } from "~/lib/themis/provider";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { useHasTouchCapability } from "~/hooks/use-touch-capability";
@@ -82,6 +84,8 @@ function WorkspacePdfReaderInner({
 
   // Ref-based callback so usePdfHighlights always calls the latest handleOpenNotebook
   const handleOpenNotebookRef = useRef<() => void>(() => {});
+  const { highlightMenu, openHighlightMenu, dismissHighlightMenu, deleteMenuHighlight } =
+    useHighlightContextMenu(book.id);
 
   const {
     selectionPopover,
@@ -96,6 +100,7 @@ function WorkspacePdfReaderInner({
     containerRef,
     theme: settings.theme,
     onHighlightClick: () => handleOpenNotebookRef.current(),
+    onHighlightContextMenu: openHighlightMenu,
   });
 
   const {
@@ -345,6 +350,15 @@ function WorkspacePdfReaderInner({
             onExplain={handleExplainThis}
             onSave={handleSaveHighlight}
             onDismiss={dismissPopovers}
+          />,
+          document.body,
+        )}
+      {highlightMenu &&
+        createPortal(
+          <HighlightContextMenu
+            position={highlightMenu.position}
+            onDelete={deleteMenuHighlight}
+            onDismiss={dismissHighlightMenu}
           />,
           document.body,
         )}

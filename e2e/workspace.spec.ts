@@ -622,6 +622,45 @@ test.describe("Workspace route", () => {
     await expect(page.locator("blockquote")).toHaveCount(0, { timeout: 10_000 });
   });
 
+  test("right-clicking a highlight in the reader deletes it", async ({ page }) => {
+    await uploadAndOpenBook(page);
+
+    const iframe = page.frameLocator("iframe").first();
+    const chapterText = iframe.locator("p").first();
+    await expect(chapterText).toBeVisible({ timeout: 20_000 });
+    await page.waitForTimeout(1_000);
+
+    const iframeFrame = await (
+      await page.locator("iframe").first().elementHandle()
+    )?.contentFrame();
+    if (!iframeFrame) throw new Error("Could not get iframe content frame");
+    await iframeFrame.evaluate(() => {
+      const p = document.querySelector("p");
+      if (!p) throw new Error("No paragraph found in epub");
+      const range = document.createRange();
+      range.selectNodeContents(p);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(range);
+    });
+    await page.getByRole("button", { name: "Add to Notebook" }).click({ timeout: 10_000 });
+
+    await page.getByRole("tab", { name: "Notes" }).click({ timeout: 10_000 });
+    await expect(page.locator("blockquote")).toHaveCount(1, { timeout: 15_000 });
+
+    await chapterText.click({ button: "right", position: { x: 4, y: 4 } });
+    const deleteItem = page.getByRole("menuitem", { name: "Delete highlight" });
+    await expect(deleteItem).toBeVisible({ timeout: 5_000 });
+    await page.screenshot({ path: "test-results/highlight-context-menu.png" });
+    await deleteItem.click();
+
+    await expect(deleteItem).toBeHidden();
+    await expect(page.locator("blockquote")).toHaveCount(0, { timeout: 10_000 });
+
+    // Right-clicking the now-plain text no longer opens the highlight menu.
+    await chapterText.click({ button: "right", position: { x: 4, y: 4 } });
+    await expect(deleteItem).toBeHidden();
+  });
+
   test("reader settings menu opens", async ({ page }) => {
     await uploadAndOpenBook(page);
 

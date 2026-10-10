@@ -195,6 +195,61 @@ describe("annotationsSaga", () => {
     ).toBeUndefined();
   });
 
+  it("removes the deleted highlight's notebook references and publishes the notebook", async () => {
+    const reference = (highlightId: string) => ({
+      type: "highlightReference",
+      attrs: { highlightId, cfiRange: "epubcfi(/6/4)", text: "Passage" },
+    });
+    const notebook: Notebook = {
+      bookId: "book-1",
+      content: {
+        type: "doc",
+        content: [
+          reference("highlight-1"),
+          { type: "blockquote", content: [reference("highlight-1"), reference("keep")] },
+          { type: "paragraph" },
+        ],
+      },
+      updatedAt: 2,
+    };
+    const saveNotebook = vi.fn(async (next: Notebook) => next);
+    mocks.service = {
+      deleteHighlight: vi.fn(async () => undefined),
+      getNotebook: vi.fn(async () => notebook),
+      saveNotebook,
+    };
+    const onCompleted = vi.fn();
+    const store = startStore();
+
+    store.dispatch(deleteHighlightRequested("book-1", "highlight-1", onCompleted));
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledOnce());
+    const expected = {
+      type: "doc",
+      content: [{ type: "blockquote", content: [reference("keep")] }, { type: "paragraph" }],
+    };
+    expect(saveNotebook).toHaveBeenCalledWith(expect.objectContaining({ content: expected }));
+    expect(
+      store.annotationsSelectors.selectNotebookByBookId.select(store.state, "book-1")?.content,
+    ).toEqual(expected);
+  });
+
+  it("leaves the notebook untouched when it has no reference to the deleted highlight", async () => {
+    const saveNotebook = vi.fn();
+    mocks.service = {
+      deleteHighlight: vi.fn(async () => undefined),
+      getNotebook: vi.fn(async () => makeNotebook()),
+      saveNotebook,
+    };
+    const onCompleted = vi.fn();
+    const store = startStore();
+
+    store.dispatch(deleteHighlightRequested("book-1", "highlight-1", onCompleted));
+
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledOnce());
+    expect(saveNotebook).not.toHaveBeenCalled();
+  });
+
   it("persists immediate notebook updates and highlight appends before collection updates", async () => {
     const notebook = makeNotebook();
     const appended = {
