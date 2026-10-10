@@ -84,8 +84,13 @@ function WorkspacePdfReaderInner({
 
   // Ref-based callback so usePdfHighlights always calls the latest handleOpenNotebook
   const handleOpenNotebookRef = useRef<() => void>(() => {});
-  const { highlightMenu, openHighlightMenu, dismissHighlightMenu, deleteMenuHighlight } =
-    useHighlightContextMenu(book.id);
+  const {
+    highlightMenu,
+    openHighlightMenu,
+    dismissHighlightMenu,
+    copyMenuHighlight,
+    deleteMenuHighlight,
+  } = useHighlightContextMenu(book.id);
 
   const {
     selectionPopover,
@@ -357,6 +362,7 @@ function WorkspacePdfReaderInner({
         createPortal(
           <HighlightContextMenu
             position={highlightMenu.position}
+            onCopy={copyMenuHighlight}
             onDelete={deleteMenuHighlight}
             onDismiss={dismissHighlightMenu}
           />,

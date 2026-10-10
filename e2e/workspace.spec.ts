@@ -622,7 +622,11 @@ test.describe("Workspace route", () => {
     await expect(page.locator("blockquote")).toHaveCount(0, { timeout: 10_000 });
   });
 
-  test("right-clicking a highlight in the reader deletes it", async ({ page }) => {
+  test("right-clicking a highlight in the reader copies and deletes it", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await uploadAndOpenBook(page);
 
     const iframe = page.frameLocator("iframe").first();
@@ -646,6 +650,31 @@ test.describe("Workspace route", () => {
 
     await page.getByRole("tab", { name: "Notes" }).click({ timeout: 10_000 });
     await expect(page.locator("blockquote")).toHaveCount(1, { timeout: 15_000 });
+
+    // With another passage selected, right-clicking the highlight replaces the selection menu.
+    await iframeFrame.evaluate(() => {
+      const p = document.querySelectorAll("p")[1];
+      if (!p) throw new Error("No second paragraph found in epub");
+      const range = document.createRange();
+      range.selectNodeContents(p);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(range);
+    });
+    const addToNotebook = page.getByRole("button", { name: "Add to Notebook" });
+    await expect(addToNotebook).toBeVisible({ timeout: 10_000 });
+
+    await chapterText.click({ button: "right", position: { x: 4, y: 4 } });
+    const copyItem = page.getByRole("menuitem", { name: "Copy text" });
+    await expect(copyItem).toBeVisible({ timeout: 5_000 });
+    await expect(addToNotebook).toBeHidden();
+    expect(await iframeFrame.evaluate(() => window.getSelection()?.isCollapsed ?? true)).toBe(true);
+    await page.waitForTimeout(300);
+    await expect(addToNotebook).toBeHidden();
+    await copyItem.click();
+    await expect(copyItem).toBeHidden();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe((await chapterText.textContent())?.trim());
 
     await chapterText.click({ button: "right", position: { x: 4, y: 4 } });
     const deleteItem = page.getByRole("menuitem", { name: "Delete highlight" });

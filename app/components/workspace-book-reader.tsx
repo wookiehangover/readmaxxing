@@ -208,8 +208,13 @@ function WorkspaceBookReaderInner({
   }, [book.id, handleSearchOpen]);
 
   const handleOpenNotebookRef = useRef<() => void>(() => {});
-  const { highlightMenu, openHighlightMenu, dismissHighlightMenu, deleteMenuHighlight } =
-    useHighlightContextMenu(book.id);
+  const {
+    highlightMenu,
+    openHighlightMenu,
+    dismissHighlightMenu,
+    copyMenuHighlight,
+    deleteMenuHighlight,
+  } = useHighlightContextMenu(book.id);
 
   const {
     selectionPopover,
@@ -434,6 +439,7 @@ function WorkspaceBookReaderInner({
           createPortal(
             <HighlightContextMenu
               position={highlightMenu.position}
+              onCopy={copyMenuHighlight}
               onDelete={deleteMenuHighlight}
               onDismiss={dismissHighlightMenu}
             />,

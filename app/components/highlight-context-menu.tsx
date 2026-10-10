@@ -1,13 +1,21 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { Trash2 } from "lucide-react";
+import { Copy, Trash2 } from "lucide-react";
+import { menuItemClassName } from "~/components/highlight-popover";
+import { cn } from "~/lib/utils";
 
 interface HighlightContextMenuProps {
   position: { x: number; y: number };
+  onCopy: () => void;
   onDelete: () => void;
   onDismiss: () => void;
 }
 
-export function HighlightContextMenu({ position, onDelete, onDismiss }: HighlightContextMenuProps) {
+export function HighlightContextMenu({
+  position,
+  onCopy,
+  onDelete,
+  onDismiss,
+}: HighlightContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const itemRef = useRef<HTMLButtonElement>(null);
 
@@ -24,6 +32,15 @@ export function HighlightContextMenu({ position, onDelete, onDismiss }: Highligh
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onDismiss();
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      const items = Array.from(
+        menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
+      );
+      if (items.length === 0) return;
+      e.preventDefault();
+      const current = items.indexOf(document.activeElement as HTMLElement);
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      items[(current + step + items.length) % items.length]?.focus();
     };
     const handlePointerDown = (e: PointerEvent) => {
       if (!menuRef.current?.contains(e.target as Node)) onDismiss();
@@ -53,7 +70,19 @@ export function HighlightContextMenu({ position, onDelete, onDismiss }: Highligh
         ref={itemRef}
         type="button"
         role="menuitem"
-        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-destructive transition-colors hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none"
+        className={menuItemClassName}
+        onClick={onCopy}
+      >
+        <Copy className="size-4" />
+        <span>Copy text</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className={cn(
+          menuItemClassName,
+          "text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive",
+        )}
         onClick={onDelete}
       >
         <Trash2 className="size-4" />
