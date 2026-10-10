@@ -99,7 +99,7 @@
   pointer-events: none;
   /* Fade a fixed shadow instead of repainting its blur on every hover frame. */
   box-shadow: 0 22px 40px -8px #0005;
-  opacity: calc(var(--book-light) / 0.18);
+  opacity: calc(var(--book-light) / 0.08);
   transition: opacity 650ms ease;
 }
 .bookshelf-spine {
@@ -146,16 +146,16 @@
 .bookshelf .bookshelf-book:focus-visible {
   /* The button includes empty space above the projected cover. */
   outline: none;
-  --book-pull: 72px;
-  --book-light: 0.18;
+  --book-pull: 86px;
+  --book-light: 0.08;
 }
 .bookshelf-stack li:has(.bookshelf-book:is(:hover, :focus-visible)) {
   z-index: 1;
 }
 @media (hover: hover) and (pointer: fine) {
   .bookshelf-book:hover {
-    --book-pull: 72px;
-    --book-light: 0.18;
+    --book-pull: 86px;
+    --book-light: 0.08;
   }
 }
 .bookshelf-author,

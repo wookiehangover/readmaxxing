@@ -186,7 +186,7 @@ test("books spring in from above, pull forward on hover, and respect reduced mot
         .locator(".bookshelf-spine")
         .evaluate((element) => getComputedStyle(element, "::before").opacity),
     )
-    .toBe("0.18");
+    .toBe("0.08");
   await expect(page.locator(".bookshelf-preview")).toHaveCount(0);
   await page.mouse.move(0, 0);
   await expect
