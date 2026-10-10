@@ -5,12 +5,14 @@ import type { Components } from "streamdown";
 import { Bubble, BubbleContent } from "~/components/ui/bubble";
 import { Message, MessageContent } from "~/components/ui/message";
 import type { SEBook } from "~/lib/standard-ebooks";
-import { useWorkspace } from "~/lib/context/workspace-context";
+import { useBookRefNavigation } from "~/hooks/use-book-ref-navigation";
 import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 import { getToolInfo, joinTextParts, stripSuggestedPrompts } from "./chat-utils";
 import { SEBookCardsInChat } from "./se-book-cards";
-import { ToolStepsDetails } from "./chat-tool-steps";
+import type { OpenStep } from "./tool-steps/step-marker";
+import { StepTrail } from "./tool-steps/step-trail";
+import { segmentParts } from "./tool-steps/tool-step-model";
 
 type StreamdownHeadingProps = ComponentProps<"h1"> & { node?: unknown };
 
@@ -48,7 +50,11 @@ function ChatMessageImpl({
   isStreaming?: boolean;
 }) {
   const isUser = message.role === "user";
-  const { navigateInCluster, findTocForBook, applyTempHighlightForBook } = useWorkspace();
+  const { navigateToQuote, navigateToChapter } = useBookRefNavigation({
+    bookId,
+    bookFormat,
+    bookDataRef,
+  });
   const store = useAppStore();
   const books = store.booksSelectors.selectAllBooks.useValue();
 
@@ -67,14 +73,34 @@ function ChatMessageImpl({
   // book is in play the per-search book label can stay subtle/omitted.
   const hasMultipleBooks = books.length > 1;
 
-  const textParts =
-    message.parts?.filter((p): p is { type: "text"; text: string } => p.type === "text") ?? [];
-  const toolParts = message.parts?.filter((p: any) => getToolInfo(p) !== null) ?? [];
-  const reasoningParts = message.parts?.filter((p) => p.type === "reasoning") ?? [];
+  const parts = message.parts ?? [];
+  const toolParts = parts.filter((p: any) => getToolInfo(p) !== null);
+  const segments = useMemo(
+    () =>
+      isUser ? [] : segmentParts(parts, { resolveBookTitle, showBookLabel: hasMultipleBooks }),
+    [isUser, parts, resolveBookTitle, hasMultipleBooks],
+  );
+  const userText = isUser
+    ? joinTextParts(
+        parts
+          .filter((p): p is { type: "text"; text: string } => p.type === "text")
+          .map((p) => p.text),
+      )
+    : "";
 
-  const rawText = joinTextParts(textParts.map((p) => p.text));
-  const text = isUser ? rawText : stripSuggestedPrompts(rawText);
-  const hasProcessSteps = toolParts.length > 0 || reasoningParts.length > 0;
+  const openStep = useCallback<OpenStep>(
+    (step, hit) => {
+      if (hit) {
+        const excerpt = (hit.excerpt ?? "").replace(/^[\s.…]+|[\s.…]+$/g, "");
+        void navigateToQuote(excerpt, hit.chapterIndex);
+      } else if (step.quote && step.kind === "highlight") {
+        void navigateToQuote(step.quote, step.chapterIndex);
+      } else {
+        void navigateToChapter(step.chapterIndex);
+      }
+    },
+    [navigateToQuote, navigateToChapter],
+  );
 
   // Extract SE book results from search_standard_ebooks tool parts
   const seBooks = useMemo(() => {
@@ -112,75 +138,9 @@ function ChatMessageImpl({
           return <span>{children as React.ReactNode}</span>;
         }
 
-        const chapterStr = typeof chapter === "string" ? chapter : "";
-
-        const handleClick = async () => {
-          console.debug("[ChatPanel] handleClick", { bookId });
-          const data = bookDataRef.current;
-          if (!data) {
-            console.warn("Ref navigation: no book data available");
-            return;
-          }
-
-          try {
-            if (bookFormat === "pdf") {
-              // PDF path: search for text and navigate to page
-              const pdfjs = await import("pdfjs-dist");
-              const { searchPdf } = await import("~/lib/pdf/pdf-search");
-              const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
-              pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href;
-              const dataCopy = new Uint8Array(data).slice();
-              const loadingTask = pdfjs.getDocument({ data: dataCopy });
-              const doc = await loadingTask.promise;
-              try {
-                const results = await searchPdf(doc, queryStr);
-                if (results.length > 0) {
-                  await navigateInCluster(bookId, `page:${results[0].page}`);
-                  return;
-                }
-              } finally {
-                await loadingTask.destroy().catch(() => {});
-              }
-
-              // Fallback: navigate to chapter/page index
-              if (chapterStr) {
-                const pageNum = parseInt(chapterStr, 10);
-                if (!isNaN(pageNum)) {
-                  await navigateInCluster(bookId, `page:${pageNum + 1}`);
-                  return;
-                }
-              }
-
-              console.debug("Ref navigation (PDF): no results for query:", queryStr);
-            } else {
-              const { fuzzySearchEpubForCfi } = await import("~/lib/epub/epub-search");
-              const results = await fuzzySearchEpubForCfi(data.slice(0), queryStr);
-
-              if (results.length > 0) {
-                const cfi = results[0].cfi;
-                await navigateInCluster(bookId, cfi);
-                applyTempHighlightForBook(bookId, cfi);
-                return;
-              }
-
-              // Fallback: navigate to chapter start via TOC
-              if (chapterStr) {
-                const chapterIndex = parseInt(chapterStr, 10);
-                if (!isNaN(chapterIndex)) {
-                  const toc = findTocForBook(bookId);
-                  if (toc && toc[chapterIndex]) {
-                    console.debug("Ref navigation: falling back to chapter", chapterIndex);
-                    await navigateInCluster(bookId, toc[chapterIndex].href);
-                    return;
-                  }
-                }
-              }
-
-              console.debug("Ref navigation: no results for query:", queryStr);
-            }
-          } catch (err) {
-            console.warn("Ref navigation failed:", err);
-          }
+        const chapterIndex = typeof chapter === "string" ? parseInt(chapter, 10) : NaN;
+        const handleClick = () => {
+          void navigateToQuote(queryStr, Number.isNaN(chapterIndex) ? undefined : chapterIndex);
         };
 
         return (
@@ -199,7 +159,7 @@ function ChatMessageImpl({
         );
       },
     }),
-    [bookId, bookFormat, bookDataRef, navigateInCluster, findTocForBook, applyTempHighlightForBook],
+    [navigateToQuote],
   );
 
   return (
@@ -214,31 +174,48 @@ function ChatMessageImpl({
           })}
         >
           <BubbleContent>
-            {hasProcessSteps && (
-              <ToolStepsDetails
-                toolParts={toolParts}
-                reasoningParts={reasoningParts}
-                isStreaming={isStreaming}
-                resolveBookTitle={resolveBookTitle}
-                showBookLabel={hasMultipleBooks}
-              />
+            {isUser ? (
+              userText && <p className="whitespace-pre-wrap">{userText}</p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {segments.map((segment, index) => {
+                  const isLast = index === segments.length - 1;
+                  if (segment.type === "steps") {
+                    const hasCatalog = segment.entries.some(
+                      (e) => e.type === "step" && e.step.kind === "catalog",
+                    );
+                    return (
+                      <div key={segment.key} className="flex flex-col gap-3">
+                        <StepTrail
+                          entries={segment.entries}
+                          live={!!isStreaming && isLast}
+                          bookId={bookId}
+                          onOpen={openStep}
+                        />
+                        {hasCatalog && seBooks.length > 0 && <SEBookCardsInChat books={seBooks} />}
+                      </div>
+                    );
+                  }
+                  const text = stripSuggestedPrompts(segment.text);
+                  if (!text) return null;
+                  return (
+                    <div
+                      key={segment.key}
+                      className="typeset [--typeset-flow:0.75em] [--typeset-leading:1.6] [--typeset-size:0.875rem]"
+                    >
+                      <Streamdown
+                        caret="block"
+                        isAnimating={!!isStreaming && isLast}
+                        allowedTags={{ ref: ["chapter", "query"] }}
+                        components={streamdownComponents}
+                      >
+                        {text}
+                      </Streamdown>
+                    </div>
+                  );
+                })}
+              </div>
             )}
-            {seBooks.length > 0 && <SEBookCardsInChat books={seBooks} />}
-            {text &&
-              (isUser ? (
-                <p className="whitespace-pre-wrap">{text}</p>
-              ) : (
-                <div className="typeset [--typeset-flow:0.75em] [--typeset-leading:1.6] [--typeset-size:0.875rem]">
-                  <Streamdown
-                    caret="block"
-                    isAnimating={isStreaming}
-                    allowedTags={{ ref: ["chapter", "query"] }}
-                    components={streamdownComponents}
-                  >
-                    {text}
-                  </Streamdown>
-                </div>
-              ))}
           </BubbleContent>
         </Bubble>
       </MessageContent>
