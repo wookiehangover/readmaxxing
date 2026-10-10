@@ -1,4 +1,4 @@
-import { getToolInfo } from "../chat-utils";
+import { getToolInfo, joinTextParts } from "../chat-utils";
 
 export type ToolStepKind = "search" | "read" | "notes" | "highlight" | "catalog" | "other";
 export type ToolStepStatus = "running" | "done" | "error";
@@ -24,14 +24,11 @@ export interface ToolStep {
   meta?: string;
   /** Book title, only set when the conversation spans several books. */
   book?: string;
+  bookId?: string;
   error?: string;
   hits?: SearchHit[];
   chapterIndex?: number;
 }
-
-export type MessageSegment =
-  | { type: "text"; key: string; text: string }
-  | { type: "steps"; key: string; steps: ToolStep[]; reasoning: string[] };
 
 export interface StepContext {
   resolveBookTitle: (id: string | undefined) => string | undefined;
@@ -69,14 +66,14 @@ export function toToolStep(part: any, index: number, ctx: StepContext): ToolStep
     ? (str(output?.error) ?? str(output?.reason) ?? str(part.errorText))
     : undefined;
   const pick = (past: string, present: string) => (done ? past : present);
-  const book = ctx.showBookLabel
-    ? ctx.resolveBookTitle(str(output?.bookId) ?? str(input.bookId))
-    : undefined;
+  const bookId = str(output?.bookId) ?? str(input.bookId);
+  const book = ctx.showBookLabel ? ctx.resolveBookTitle(bookId) : undefined;
   const base = {
     id: part.toolCallId ?? `step-${index}`,
     toolName: info.toolName,
     status,
     book,
+    bookId,
     error,
   };
 
@@ -125,6 +122,7 @@ export function toToolStep(part: any, index: number, ctx: StepContext): ToolStep
         kind: "highlight",
         verb: failed ? "Couldn't highlight" : pick("Highlighted", "Highlighting"),
         quote: str(input.text),
+        chapterIndex: typeof input.chapterIndex === "number" ? input.chapterIndex : undefined,
       };
     case "list_highlights": {
       const list = Array.isArray(output?.highlights) ? output.highlights : undefined;
@@ -161,6 +159,14 @@ export function toToolStep(part: any, index: number, ctx: StepContext): ToolStep
   }
 }
 
+export type TrailEntry =
+  | { type: "step"; key: string; step: ToolStep }
+  | { type: "reasoning"; key: string; text: string };
+
+export type MessageSegment =
+  | { type: "text"; key: string; text: string }
+  | { type: "steps"; key: string; entries: TrailEntry[] };
+
 /** Split message parts into ordered text and step runs, keeping tool calls where they happened. */
 export function segmentParts(parts: readonly any[], ctx: StepContext): MessageSegment[] {
   const segments: MessageSegment[] = [];
@@ -168,86 +174,20 @@ export function segmentParts(parts: readonly any[], ctx: StepContext): MessageSe
     const last = segments.at(-1);
     if (part.type === "text") {
       if (!part.text) return;
-      if (last?.type === "text") last.text += part.text;
+      if (last?.type === "text") last.text = joinTextParts([last.text, part.text]);
       else segments.push({ type: "text", key: `t-${index}`, text: part.text });
       return;
     }
-    const isReasoning = part.type === "reasoning";
-    const step = isReasoning ? null : toToolStep(part, index, ctx);
-    if (!isReasoning && !step) return;
-    const run =
-      last?.type === "steps"
-        ? last
-        : (segments[
-            segments.push({ type: "steps", key: `s-${index}`, steps: [], reasoning: [] }) - 1
-          ] as Extract<MessageSegment, { type: "steps" }>);
-    if (step) run.steps.push(step);
-    else if (part.text) run.reasoning.push(part.text);
+    let entry: TrailEntry | null = null;
+    if (part.type === "reasoning") {
+      if (str(part.text)) entry = { type: "reasoning", key: `r-${index}`, text: part.text.trim() };
+    } else {
+      const step = toToolStep(part, index, ctx);
+      if (step) entry = { type: "step", key: step.id, step };
+    }
+    if (!entry) return;
+    if (last?.type === "steps") last.entries.push(entry);
+    else segments.push({ type: "steps", key: `s-${index}`, entries: [entry] });
   });
   return segments;
 }
-
-export function collectSteps(segments: MessageSegment[]) {
-  const steps: ToolStep[] = [];
-  const reasoning: string[] = [];
-  let text = "";
-  for (const segment of segments) {
-    if (segment.type === "text") text += (text ? "\n\n" : "") + segment.text;
-    else {
-      steps.push(...segment.steps);
-      reasoning.push(...segment.reasoning);
-    }
-  }
-  return { steps, reasoning, text };
-}
-
-/** One-line label for a single step, without the outcome. */
-export function stepLabel(step: ToolStep): string {
-  const parts = [step.verb];
-  if (step.object) parts.push(step.object);
-  if (step.quote) parts.push(step.kind === "catalog" ? `for “${step.quote}”` : `“${step.quote}”`);
-  return parts.join(" ");
-}
-
-/** Plain-language digest of several steps, e.g. "Searched 3 times, read Chapter 42". */
-export function summarizeSteps(steps: ToolStep[]): string {
-  if (steps.length === 0) return "Thought it through";
-  if (steps.length === 1) return stepLabel(steps[0]);
-  const byKind = new Map<ToolStepKind, ToolStep[]>();
-  for (const step of steps) byKind.set(step.kind, [...(byKind.get(step.kind) ?? []), step]);
-
-  const phrases: string[] = [];
-  for (const [kind, group] of byKind) {
-    const n = group.length;
-    switch (kind) {
-      case "search":
-        phrases.push(`searched ${n === 1 ? "once" : n === 2 ? "twice" : `${n} times`}`);
-        break;
-      case "read":
-        phrases.push(n === 1 ? "read a chapter" : `read ${n} chapters`);
-        break;
-      case "highlight":
-        phrases.push(
-          group.every((s) => s.toolName === "create_highlight")
-            ? `highlighted ${n === 1 ? "a passage" : `${n} passages`}`
-            : "updated highlights",
-        );
-        break;
-      case "notes":
-        phrases.push(
-          group.some((s) => s.toolName !== "read_notes") ? "updated notes" : "read notes",
-        );
-        break;
-      case "catalog":
-        phrases.push("searched Standard Ebooks");
-        break;
-      default:
-        phrases.push(...group.map((s) => s.verb.toLowerCase()));
-    }
-  }
-  const sentence = phrases.join(", ");
-  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
-}
-
-export const activeStep = (steps: ToolStep[]) => steps.findLast((s) => s.status === "running");
-export const hasStepError = (steps: ToolStep[]) => steps.some((s) => s.status === "error");
