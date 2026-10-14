@@ -216,8 +216,7 @@ function ChatMessageImpl({
           <BubbleContent>
             {hasProcessSteps && (
               <ToolStepsDetails
-                toolParts={toolParts}
-                reasoningParts={reasoningParts}
+                parts={message.parts}
                 isStreaming={isStreaming}
                 resolveBookTitle={resolveBookTitle}
                 showBookLabel={hasMultipleBooks}
