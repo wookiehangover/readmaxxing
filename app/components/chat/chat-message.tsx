@@ -10,9 +10,8 @@ import { useAppStore } from "~/lib/themis/provider";
 import { cn } from "~/lib/utils";
 import { getToolInfo, joinTextParts, stripSuggestedPrompts } from "./chat-utils";
 import { SEBookCardsInChat } from "./se-book-cards";
-import type { OpenStep } from "./tool-steps/step-marker";
-import { StepTrail } from "./tool-steps/step-trail";
-import { segmentParts } from "./tool-steps/tool-step-model";
+import { ToolStepsDetails, type OpenTraceStep } from "./chat-tool-steps";
+import { segmentParts } from "./chat-message-segments";
 
 type StreamdownHeadingProps = ComponentProps<"h1"> & { node?: unknown };
 
@@ -75,11 +74,7 @@ function ChatMessageImpl({
 
   const parts = message.parts ?? [];
   const toolParts = parts.filter((p: any) => getToolInfo(p) !== null);
-  const segments = useMemo(
-    () =>
-      isUser ? [] : segmentParts(parts, { resolveBookTitle, showBookLabel: hasMultipleBooks }),
-    [isUser, parts, resolveBookTitle, hasMultipleBooks],
-  );
+  const segments = useMemo(() => (isUser ? [] : segmentParts(parts)), [isUser, parts]);
   const userText = isUser
     ? joinTextParts(
         parts
@@ -88,13 +83,13 @@ function ChatMessageImpl({
       )
     : "";
 
-  const openStep = useCallback<OpenStep>(
+  const openStep = useCallback<OpenTraceStep>(
     (step, hit) => {
       if (hit) {
         const excerpt = (hit.excerpt ?? "").replace(/^[\s.…]+|[\s.…]+$/g, "");
         void navigateToQuote(excerpt, hit.chapterIndex);
-      } else if (step.quote && step.kind === "highlight") {
-        void navigateToQuote(step.quote, step.chapterIndex);
+      } else if (step.text && step.toolName === "create_highlight") {
+        void navigateToQuote(step.text, step.chapterIndex);
       } else {
         void navigateToChapter(step.chapterIndex);
       }
@@ -181,14 +176,16 @@ function ChatMessageImpl({
                 {segments.map((segment, index) => {
                   const isLast = index === segments.length - 1;
                   if (segment.type === "steps") {
-                    const hasCatalog = segment.entries.some(
-                      (e) => e.type === "step" && e.step.kind === "catalog",
+                    const hasCatalog = segment.parts.some(
+                      (part) => getToolInfo(part)?.toolName === "search_standard_ebooks",
                     );
                     return (
                       <div key={segment.key} className="flex flex-col gap-3">
-                        <StepTrail
-                          entries={segment.entries}
-                          live={!!isStreaming && isLast}
+                        <ToolStepsDetails
+                          parts={segment.parts}
+                          isStreaming={!!isStreaming && isLast}
+                          resolveBookTitle={resolveBookTitle}
+                          showBookLabel={hasMultipleBooks}
                           bookId={bookId}
                           onOpen={openStep}
                         />
