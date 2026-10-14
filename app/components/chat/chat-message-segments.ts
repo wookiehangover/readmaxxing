@@ -16,7 +16,8 @@ export function segmentParts(parts: UIMessage["parts"]): MessageSegment[] {
       return;
     }
     if (part.type === "reasoning") {
-      if (!part.text.trim() && part.state !== "streaming") return;
+      if (!(typeof part.text === "string" && part.text.trim()) && part.state !== "streaming")
+        return;
     } else if (!getToolInfo(part)) return;
     if (last?.type === "steps") last.parts.push(part);
     else segments.push({ type: "steps", key: `s-${index}`, parts: [part] });

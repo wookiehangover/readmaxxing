@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
+import type { UIMessage } from "@ai-sdk/react";
 import { segmentParts } from "../chat-message-segments";
 
 describe("segmentParts", () => {
+  it("tolerates reasoning records without text when reopening a conversation", () => {
+    const segments = segmentParts([
+      { type: "reasoning" },
+      { type: "text", text: "Previous answer." },
+      { type: "reasoning", state: "streaming" },
+    ] as UIMessage["parts"]);
+    expect(segments).toEqual([
+      { type: "text", key: "t-1", text: "Previous answer." },
+      { type: "steps", key: "s-2", parts: [{ type: "reasoning", state: "streaming" }] },
+    ]);
+  });
+
   it("keeps activity between answer paragraphs without changing the input parts", () => {
     const segments = segmentParts([
       { type: "step-start" },
