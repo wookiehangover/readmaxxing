@@ -10,7 +10,7 @@ interface HighlightPopoverProps {
   onDismiss: () => void;
 }
 
-const menuItemClassName =
+export const menuItemClassName =
   "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground focus-visible:outline-none";
 
 export function HighlightPopover({

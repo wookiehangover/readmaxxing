@@ -71,9 +71,11 @@ export function useHighlights({
   const handleDecorationContextMenu = useCallback(
     (detail: DecorationClickDetail) => {
       const stored = findDecoratedHighlight(detail);
-      const iframe = renditionRef.current?.contentDocument?.defaultView?.frameElement;
+      const contents = renditionRef.current?.contentDocument;
+      const iframe = contents?.defaultView?.frameElement;
       if (!stored || !(iframe instanceof HTMLElement)) return;
       const iframeRect = iframe.getBoundingClientRect();
+      contents?.getSelection()?.removeAllRanges();
       setSelectionPopover(null);
       onHighlightContextMenuRef.current?.(stored, {
         x: iframeRect.left + detail.clientX,

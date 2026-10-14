@@ -1,7 +1,7 @@
 import type { UIMessage } from "@ai-sdk/react";
 import { getToolInfo } from "./chat-utils";
 
-interface SearchHit {
+export interface SearchHit {
   chapterIndex?: number;
   chapterTitle?: string;
   excerpt?: string;
@@ -16,6 +16,9 @@ export interface ChatTraceStep {
   description?: string;
   text?: string;
   results?: SearchHit[];
+  bookId?: string;
+  chapterIndex?: number;
+  canOpen?: boolean;
 }
 
 export function buildChatTrace(
@@ -44,13 +47,14 @@ export function buildChatTrace(
     if (!info) return [];
     const { toolName, input, output, state } = info;
     const complete = state === "output-available";
-    const errorText = "errorText" in part ? part.errorText : output?.error;
+    const errorText = "errorText" in part ? part.errorText : (output?.error ?? output?.reason);
     const failed =
       state === "output-error" ||
       (complete &&
         (output?.executed === false ||
           output?.appended === false ||
           output?.created === false ||
+          output?.attached === false ||
           typeof output?.error === "string"));
     const denied =
       state === "output-denied" ||
@@ -88,11 +92,13 @@ export function buildChatTrace(
       }
       case "read_chapter": {
         const chapter =
-          typeof input?.chapterTitle === "string"
-            ? input.chapterTitle
-            : typeof input?.chapterIndex === "number"
-              ? `chapter ${input.chapterIndex}`
-              : "chapter";
+          typeof output?.title === "string"
+            ? output.title
+            : typeof input?.chapterTitle === "string"
+              ? input.chapterTitle
+              : typeof input?.chapterIndex === "number"
+                ? `chapter ${input.chapterIndex + 1}`
+                : "chapter";
         action = `read ${chapter}`;
         active = `Reading ${chapter}`;
         done = `Read ${chapter}`;
@@ -123,6 +129,24 @@ export function buildChatTrace(
         summary = "Highlighted passage";
         break;
       }
+      case "list_highlights":
+        action = "check highlights";
+        active = "Checking highlights";
+        done = summary = "Checked highlights";
+        if (Array.isArray(output?.highlights)) {
+          description = `${output.highlights.length} highlight${output.highlights.length === 1 ? "" : "s"}`;
+        }
+        break;
+      case "attach_highlight":
+        action = "attach highlight to notebook";
+        active = "Attaching highlight to notebook";
+        done = summary = "Attached highlight to notebook";
+        break;
+      case "delete_highlight":
+        action = "remove highlight";
+        active = "Removing highlight";
+        done = summary = "Removed highlight";
+        break;
       case "search_standard_ebooks":
       case "web_search": {
         const target = toolName === "web_search" ? "the web" : "Standard Ebooks";
@@ -170,6 +194,15 @@ export function buildChatTrace(
         text,
         description: complete && !failed ? description : undefined,
         results: complete && !failed ? results : undefined,
+        bookId: typeof bookId === "string" ? bookId : undefined,
+        chapterIndex:
+          typeof output?.chapterIndex === "number"
+            ? output.chapterIndex
+            : typeof input?.chapterIndex === "number"
+              ? input.chapterIndex
+              : undefined,
+        canOpen:
+          complete && !failed && (toolName === "read_chapter" || toolName === "create_highlight"),
       },
     ];
   });

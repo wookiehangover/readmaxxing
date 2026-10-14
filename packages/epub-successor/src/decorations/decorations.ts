@@ -148,6 +148,7 @@ export class DecorationLayer extends EventTarget {
     }
     options.document.addEventListener("click", this.#handleClick, true);
     options.document.addEventListener("contextmenu", this.#handleContextMenu, true);
+    options.document.addEventListener("mousedown", this.#handleMouseDown, true);
     options.document.addEventListener("selectionchange", this.#handleSelectionChange);
   }
 
@@ -235,6 +236,7 @@ export class DecorationLayer extends EventTarget {
     view?.removeEventListener("scroll", this.#scheduleRefresh, true);
     this.#document.removeEventListener("click", this.#handleClick, true);
     this.#document.removeEventListener("contextmenu", this.#handleContextMenu, true);
+    this.#document.removeEventListener("mousedown", this.#handleMouseDown, true);
     this.#document.removeEventListener("selectionchange", this.#handleSelectionChange);
     this.#resizeObserver?.disconnect();
     if (this.#frame !== undefined) view?.cancelAnimationFrame(this.#frame);
@@ -272,15 +274,25 @@ export class DecorationLayer extends EventTarget {
     this.#emitDecorationHit("decoration-contextmenu", event);
   };
 
-  #emitDecorationHit(type: "decoration-click" | "decoration-contextmenu", event: MouseEvent): void {
+  // A context-menu press on a decoration must not start a selection (Chrome selects the word).
+  readonly #handleMouseDown = (event: MouseEvent): void => {
+    const opensContextMenu = event.button === 2 || (event.button === 0 && event.ctrlKey);
+    if (opensContextMenu && this.#hitTest(event)) event.preventDefault();
+  };
+
+  #hitTest(event: MouseEvent): DecorationEntry | undefined {
     const entries = Array.from(this.#entries.values()).reverse();
-    const entry = entries.find(({ range }) =>
+    return entries.find(({ range }) =>
       range
         ? Array.from(range.getClientRects()).some((rect) =>
             containsPoint(rect, event.clientX, event.clientY),
           )
         : false,
     );
+  }
+
+  #emitDecorationHit(type: "decoration-click" | "decoration-contextmenu", event: MouseEvent): void {
+    const entry = this.#hitTest(event);
     if (!entry) return;
     event.preventDefault();
     event.stopPropagation();

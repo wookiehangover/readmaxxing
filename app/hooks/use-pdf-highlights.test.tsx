@@ -114,4 +114,18 @@ describe("usePdfHighlights touch selection", () => {
     );
     expect(latest?.selectionPopover).toBeNull();
   });
+
+  it("ignores right-button releases so a context menu does not reopen the selection popover", () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    const onSelection = vi.fn();
+    renderHook({ current: container }, onSelection);
+    selectText(container);
+
+    act(() => {
+      container.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 2 }));
+    });
+
+    expect(onSelection).not.toHaveBeenCalled();
+    expect(latest?.selectionPopover).toBeNull();
+  });
 });

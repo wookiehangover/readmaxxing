@@ -173,6 +173,28 @@ describe("decoration rendering", () => {
     expect(hits).toEqual([{ id: "note-1", clientX: 20 }]);
     layer.destroy();
   });
+
+  it("blocks selection only for context-menu presses on a decoration", () => {
+    const { document, section, range, decoration } = setup();
+    const rangePrototype = Object.getPrototypeOf(range) as Range;
+    vi.spyOn(rangePrototype, "getClientRects").mockReturnValue([
+      rect(10, 20, 80, 16),
+    ] as unknown as DOMRectList);
+    const layer = createDecorationLayer({ document, section, rendering: "overlay" });
+    layer.add(decoration);
+    const paragraph = document.querySelector("p")!;
+    const press = (init: MouseEventInit) => {
+      const event = new MouseEvent("mousedown", { bubbles: true, cancelable: true, ...init });
+      paragraph.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    expect(press({ button: 2, clientX: 20, clientY: 25 })).toBe(true);
+    expect(press({ button: 0, ctrlKey: true, clientX: 20, clientY: 25 })).toBe(true);
+    expect(press({ button: 0, clientX: 20, clientY: 25 })).toBe(false);
+    expect(press({ button: 2, clientX: 200, clientY: 25 })).toBe(false);
+    layer.destroy();
+  });
 });
 
 describe("selection surface", () => {

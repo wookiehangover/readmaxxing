@@ -86,7 +86,7 @@ export function renderTracePreview(state: TracePreviewState = "complete") {
       <Message>
         <MessageContent>
           <Bubble variant="ghost">
-            <BubbleContent>
+            <BubbleContent className="flex flex-col gap-3">
               <ToolStepsDetails
                 parts={parts}
                 isStreaming={state === "running"}

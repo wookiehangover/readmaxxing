@@ -1,7 +1,7 @@
 import React, { act } from "react";
 import type { UIMessage } from "@ai-sdk/react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToolStepsDetails } from "../chat-tool-steps";
 import { buildChatTrace, summarizeChatTrace } from "../chat-trace-model";
 
@@ -89,6 +89,11 @@ describe("chat trace state mapping", () => {
       state: "output-available",
       output: { appended: false, error: "Conflict" },
     },
+    {
+      type: "tool-attach_highlight",
+      state: "output-available",
+      output: { attached: false, reason: "Conflict" },
+    },
     { type: "dynamic-tool", toolName: "edit_notes", state: "output-error", errorText: "Conflict" },
   ])("shows a failure for $type / $state", (part) => {
     const [step] = buildChatTrace(
@@ -145,6 +150,37 @@ describe("chat trace state mapping", () => {
     );
     expect(summarizeChatTrace(steps)).toBe("Failed to edit notebook");
   });
+
+  it("uses the returned chapter location and only enables successful book actions", () => {
+    const steps = buildChatTrace(
+      [
+        {
+          type: "tool-read_chapter",
+          toolCallId: "read",
+          state: "output-available",
+          input: { chapterIndex: 3 },
+          output: { title: "Solitude", chapterIndex: 5, bookId: "walden" },
+        },
+        {
+          type: "tool-create_highlight",
+          toolCallId: "highlight",
+          state: "output-error",
+          input: { text: "alone" },
+          errorText: "Failed",
+        },
+      ],
+      false,
+      resolveBookTitle,
+      true,
+    );
+    expect(steps[0]).toMatchObject({
+      title: "Read Solitude",
+      chapterIndex: 5,
+      bookId: "walden",
+      canOpen: true,
+    });
+    expect(steps[1].canOpen).toBe(false);
+  });
 });
 
 describe("ToolStepsDetails disclosure", () => {
@@ -185,5 +221,39 @@ describe("ToolStepsDetails disclosure", () => {
       true,
     );
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("opens search passages in the current book but not another book", async () => {
+    const onOpen = vi.fn();
+    root = createRoot(document.body.appendChild(document.createElement("div")));
+    async function show(bookId: string) {
+      await act(async () =>
+        root?.render(
+          <ToolStepsDetails
+            parts={[search]}
+            resolveBookTitle={resolveBookTitle}
+            showBookLabel
+            bookId={bookId}
+            onOpen={onOpen}
+          />,
+        ),
+      );
+    }
+    await show("walden");
+    const passage = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("I love to be alone."),
+    )!;
+    expect(passage).toBeDefined();
+    await act(async () => passage.click());
+    expect(onOpen).toHaveBeenCalledWith(
+      expect.objectContaining({ bookId: "walden" }),
+      search.output.results[0],
+    );
+    await show("essays");
+    expect(
+      Array.from(document.querySelectorAll("button")).some((button) =>
+        button.textContent?.includes("I love to be alone."),
+      ),
+    ).toBe(false);
   });
 });

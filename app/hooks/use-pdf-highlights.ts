@@ -144,6 +144,10 @@ function renderHighlightOverlay(
     mark.style.height = `${localHeight}px`;
     mark.addEventListener("click", onClick);
     mark.addEventListener("contextmenu", onContextMenu);
+    mark.addEventListener("mousedown", (e) => {
+      // Keep a context-menu press on a highlight from starting a text selection.
+      if (e.button === 2 || (e.button === 0 && e.ctrlKey)) e.preventDefault();
+    });
     overlay.appendChild(mark);
   }
 
@@ -188,6 +192,7 @@ export function usePdfHighlights({
       if (!stored || !onHighlightContextMenuRef.current) return;
       e.preventDefault();
       e.stopPropagation();
+      window.getSelection()?.removeAllRanges();
       setSelectionPopover(null);
       onHighlightContextMenuRef.current(stored, { x: e.clientX, y: e.clientY });
     },
@@ -279,7 +284,8 @@ export function usePdfHighlights({
     const el = containerRef.current;
     if (!el) return;
 
-    const handlePointerUp = () => {
+    const handlePointerUp = (e: PointerEvent) => {
+      if (e.button > 0) return;
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
 
