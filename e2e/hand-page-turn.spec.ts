@@ -97,21 +97,21 @@ for (const mobile of [false, true]) {
     await expect(hand).toHaveCount(1);
     await hand.locator("img").evaluate((image) => (image as HTMLImageElement).decode());
     await expect(body).toHaveText(before!);
-    await page.screenshot({ path: `.intent/artifacts/open-hand-${size}-reach-right.png` });
+    await page.screenshot({ path: `.intent/artifacts/palm-down-${size}-reach-right.png` });
     await hand
       .locator("img")
       .evaluate((image) => image.getAnimations().forEach((animation) => animation.finish()));
     await expect(body).not.toHaveText(before!);
-    await page.screenshot({ path: `.intent/artifacts/open-hand-${size}-pull-left.png` });
+    await page.screenshot({ path: `.intent/artifacts/palm-down-${size}-pull-left.png` });
     await turn(page, "ArrowLeft");
     await expect(page.locator('[data-page-turn-hand="previous"]')).toHaveCount(1);
     await expect(hand).toHaveCount(0);
-    await page.screenshot({ path: `.intent/artifacts/open-hand-${size}-reach-left.png` });
+    await page.screenshot({ path: `.intent/artifacts/palm-down-${size}-reach-left.png` });
     await page
       .locator('[data-page-turn-hand="previous"] img')
       .evaluate((image) => image.getAnimations().forEach((animation) => animation.finish()));
     await expect(body).toHaveText(before!);
-    await page.screenshot({ path: `.intent/artifacts/open-hand-${size}-pull-right.png` });
+    await page.screenshot({ path: `.intent/artifacts/palm-down-${size}-pull-right.png` });
     await page.evaluate(() => {
       for (const animation of document.getAnimations()) {
         const target = (animation.effect as KeyframeEffect)?.target;

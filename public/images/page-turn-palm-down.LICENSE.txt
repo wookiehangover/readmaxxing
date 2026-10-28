@@ -1,0 +1,10 @@
+page-turn-palm-down.webp
+Photo: Human-Hands-Front-Back.jpg by Evan-Amos, April 2, 2012.
+Source: https://commons.wikimedia.org/wiki/File:Human-Hands-Front-Back.jpg
+Original: https://upload.wikimedia.org/wikipedia/commons/3/32/Human-Hands-Front-Back.jpg
+License: Creative Commons Attribution-ShareAlike 3.0 Unported.
+License URL: https://creativecommons.org/licenses/by-sa/3.0/
+This adapted image is distributed under the same CC BY-SA 3.0 license.
+Changes: cropped to the back of the hand, removed the background, rotated
+to a horizontal palm-down pose, extended the forearm texture, softened
+the alpha edge, resized, and converted to WebP.

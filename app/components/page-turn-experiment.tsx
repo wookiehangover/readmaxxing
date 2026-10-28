@@ -10,7 +10,7 @@ export function PageTurnExperiment({ children }: { children: ReactNode }) {
   return (
     <PageTurnExperimentContext value={{ animation, setAnimation }}>
       {animation === "hand" && (
-        <link rel="preload" as="image" href="/images/page-turn-open-hand.webp" />
+        <link rel="preload" as="image" href="/images/page-turn-palm-down.webp" />
       )}
       {children}
     </PageTurnExperimentContext>

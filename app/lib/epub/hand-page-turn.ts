@@ -8,7 +8,7 @@ export function showHandPageTurn(container: HTMLElement, direction: "next" | "pr
   const page = (container.querySelector("iframe") ?? container).getBoundingClientRect();
   const fromRight = direction === "next";
   const width = Math.min(820, Math.max(380, bounds.width * 0.8));
-  const height = width / 1.409;
+  const height = width / 2.104;
   const overlap = Math.min(140, width * 0.34);
   const edge = (fromRight ? page.right : page.left) - bounds.left;
   const contactX = fromRight ? edge - overlap : edge - width + overlap;
@@ -25,7 +25,7 @@ export function showHandPageTurn(container: HTMLElement, direction: "next" | "pr
   overlay.style.cssText =
     "position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:6;contain:layout paint;";
   const hand = document.createElement("img");
-  hand.src = "/images/page-turn-open-hand.webp";
+  hand.src = "/images/page-turn-palm-down.webp";
   hand.alt = "";
   hand.draggable = false;
   hand.style.cssText = `position:absolute;top:0;left:0;width:${width}px;height:${height}px;max-width:none;transform-origin:50% 38%;filter:drop-shadow(0 10px 10px rgb(0 0 0 / .18));`;
