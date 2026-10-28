@@ -81,7 +81,7 @@ for (const mobile of [false, true]) {
           animation.pause();
           animation.currentTime =
             this.closest<HTMLElement>("[data-page-turn-hand]")?.dataset.pageTurnPhase === "reach"
-              ? 340
+              ? 450
               : 260;
         }
         return animation;
@@ -95,23 +95,43 @@ for (const mobile of [false, true]) {
     } else await turn(page, "ArrowRight");
     const hand = page.locator('[data-page-turn-hand="next"]');
     await expect(hand).toHaveCount(1);
-    await hand.locator("img").evaluate((image) => (image as HTMLImageElement).decode());
+    const handImage = hand.locator("[data-page-turn-hand-image]");
+    await handImage.evaluate((image) => (image as HTMLImageElement).decode());
+    const reachBounds = await handImage.boundingBox();
+    const armBounds = await hand.locator("[data-page-turn-arm]").boundingBox();
+    const pageBounds = await page.locator("iframe").first().boundingBox();
+    expect(armBounds!.x).toBeCloseTo(0);
+    expect(
+      Math.abs(reachBounds!.x + reachBounds!.width - pageBounds!.x - pageBounds!.width),
+    ).toBeLessThan(16);
     await expect(body).toHaveText(before!);
-    await page.screenshot({ path: `.intent/artifacts/palm-down-${size}-reach-right.png` });
+    await page.screenshot({ path: `.intent/artifacts/sleeved-hand-${size}-reach-right.png` });
     await hand
-      .locator("img")
-      .evaluate((image) => image.getAnimations().forEach((animation) => animation.finish()));
+      .locator("[data-page-turn-arm]")
+      .evaluate((arm) => arm.getAnimations().forEach((animation) => animation.finish()));
     await expect(body).not.toHaveText(before!);
-    await page.screenshot({ path: `.intent/artifacts/palm-down-${size}-pull-left.png` });
+    const pullBounds = await handImage.boundingBox();
+    expect(pullBounds!.x).toBeLessThan(reachBounds!.x);
+    expect((await hand.locator("[data-page-turn-arm]").boundingBox())!.x).toBeCloseTo(0);
+    await page.screenshot({ path: `.intent/artifacts/sleeved-hand-${size}-pull-left.png` });
     await turn(page, "ArrowLeft");
     await expect(page.locator('[data-page-turn-hand="previous"]')).toHaveCount(1);
     await expect(hand).toHaveCount(0);
-    await page.screenshot({ path: `.intent/artifacts/palm-down-${size}-reach-left.png` });
+    const previous = page.locator('[data-page-turn-hand="previous"]');
+    const previousArmBounds = await previous.locator("[data-page-turn-arm]").boundingBox();
+    expect(previousArmBounds!.x + previousArmBounds!.width).toBeCloseTo(page.viewportSize()!.width);
+    const previousReach = await previous.locator("[data-page-turn-hand-image]").boundingBox();
+    expect(Math.abs(previousReach!.x - pageBounds!.x)).toBeLessThan(16);
+    await page.screenshot({ path: `.intent/artifacts/sleeved-hand-${size}-reach-left.png` });
     await page
-      .locator('[data-page-turn-hand="previous"] img')
-      .evaluate((image) => image.getAnimations().forEach((animation) => animation.finish()));
+      .locator('[data-page-turn-hand="previous"] [data-page-turn-arm]')
+      .evaluate((arm) => arm.getAnimations().forEach((animation) => animation.finish()));
     await expect(body).toHaveText(before!);
-    await page.screenshot({ path: `.intent/artifacts/palm-down-${size}-pull-right.png` });
+    const previousPull = await previous.locator("[data-page-turn-hand-image]").boundingBox();
+    expect(previousPull!.x).toBeGreaterThan(previousReach!.x);
+    const previousPullArm = await previous.locator("[data-page-turn-arm]").boundingBox();
+    expect(previousPullArm!.x + previousPullArm!.width).toBeCloseTo(page.viewportSize()!.width);
+    await page.screenshot({ path: `.intent/artifacts/sleeved-hand-${size}-pull-right.png` });
     await page.evaluate(() => {
       for (const animation of document.getAnimations()) {
         const target = (animation.effect as KeyframeEffect)?.target;

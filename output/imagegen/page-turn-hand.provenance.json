@@ -1,0 +1,8 @@
+{
+  "provider": "Vercel AI Gateway",
+  "model": "openai/gpt-image-2",
+  "size": "1536x1024",
+  "prompt": "Photorealistic studio cutout asset for an ebook page-turning animation. A single adult human LEFT hand with a long natural forearm entering horizontally from the LEFT frame edge, reaching toward the RIGHT. View from above and slightly oblique: the BACK OF THE HAND faces the camera, palm faces DOWN toward an invisible tabletop. Clearly show fingernails and knuckles. Exactly five anatomically correct fingers: the four fingers open, relaxed, slightly separated and gently bent downward at their tips as if about to grasp the thin edge of a book page; thumb loosely opposed below them. The gesture feels like reaching over a page to pick it up. No pointing finger, no fist, no visible palm, no handshake gesture. Neutral natural light skin, subtle skin texture, short unpainted nails, no jewelry, bare forearm. Composition: long forearm cropped flush by the LEFT edge at mid-height, hand occupying the right half, complete fingers within frame with 80 pixels of breathing room at right. Keep the arm and hand almost horizontal. Soft diffuse studio lighting and gentle self-shading. Isolate entirely against one perfectly flat bright chroma green #00FF00 background, no gradient, no cast shadow, no reflected green spill. No book, page, tabletop, objects, text, labels, watermark, borders, checkerboard or additional hands.",
+  "generatedAt": "2026-10-28T18:12:47.980Z",
+  "mimeType": "image/png"
+}
