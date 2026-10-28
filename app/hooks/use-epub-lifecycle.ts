@@ -10,6 +10,8 @@ import {
   type ZipResourceProvider,
 } from "@readmaxxing/epub-successor";
 import { toast } from "sonner";
+import { usePageTurnExperiment } from "~/components/page-turn-experiment";
+import { showHandPageTurn } from "~/lib/epub/hand-page-turn";
 import { usePositionNudge } from "~/hooks/use-position-nudge";
 import { registerEpubContentInteractions } from "~/hooks/epub-content-interactions";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
@@ -147,6 +149,7 @@ export interface UseEpubLifecycleConfig {
   onRelocated?: () => void;
   isMobile?: boolean;
   enablePageSwiping?: boolean;
+  pageTurnAnimation?: "slide" | "hand";
   onToggleToolbar?: () => void;
   panelRef?: React.RefObject<HTMLDivElement | null>;
   bookRef?: React.MutableRefObject<any | null>;
@@ -180,6 +183,7 @@ function readerPreferences(config: UseEpubLifecycleConfig): NavigatorPreferences
     spread: layout === "spread" ? "double" : "single",
     pageInlineMargin: config.isMobile && layout !== "scroll" ? MOBILE_PAGINATED_INLINE_MARGIN : 0,
     pageTurnAnimation: layout === "scroll" ? "none" : "slide",
+    pageTurnDurationMs: config.pageTurnAnimation === "hand" ? 650 : 250,
     fontFamily: config.fontFamily,
     fontSize: config.fontSize,
     lineHeight: config.lineHeight,
@@ -217,7 +221,9 @@ function mapToc(
   }));
 }
 
-export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecycleReturn {
+export function useEpubLifecycle(inputConfig: UseEpubLifecycleConfig): UseEpubLifecycleReturn {
+  const experiment = usePageTurnExperiment();
+  const config = { ...inputConfig, pageTurnAnimation: experiment?.animation ?? "slide" };
   const {
     bookId,
     containerRef,
@@ -619,6 +625,10 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
         preferences: readerPreferences(configRef.current),
         security: { resourceProvider: provider },
         navigationPolicy: review ?? undefined,
+        pageTurnEffect: (direction) => {
+          if (configRef.current.pageTurnAnimation === "hand")
+            return showHandPageTurn(container, direction);
+        },
       });
       navigatorRef.current = navigator;
       setToc(tocData);
@@ -863,6 +873,7 @@ export function useEpubLifecycle(config: UseEpubLifecycleConfig): UseEpubLifecyc
     config.fontWeight,
     config.lineHeight,
     config.readerLayout,
+    config.pageTurnAnimation,
     config.textAlign,
     config.theme,
     markLayoutChangeInProgress,

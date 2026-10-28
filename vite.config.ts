@@ -83,6 +83,7 @@ export default defineConfig({
           // across deploys while cleanupOutdatedCaches drops old hashed assets.
           "**/*.{js,css}",
           "fonts/**/*.woff2",
+          "images/**/*.webp",
           "*.svg",
           "*.png",
           "favicon-*.png",
