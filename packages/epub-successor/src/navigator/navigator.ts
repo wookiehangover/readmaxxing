@@ -71,6 +71,10 @@ export interface CreateNavigatorOptions {
   readonly security: NavigatorSecurityOptions;
   readonly settleTimeoutMs?: number;
   readonly navigationPolicy?: NavigatorNavigationPolicy;
+  /** A host decoration can prepare before movement; cancel must release ready. */
+  readonly pageTurnEffect?: (
+    direction: InteractivePageTurnDirection,
+  ) => (() => void) | { readonly ready: Promise<void>; cancel(): void } | void;
 }
 
 export interface DisplayTarget {
@@ -197,11 +201,14 @@ export class Navigator extends EventTarget {
   #overlayCount = 0;
   #containerPosition?: string;
   readonly #navigationPolicy?: NavigatorNavigationPolicy;
+  readonly #pageTurnEffect?: CreateNavigatorOptions["pageTurnEffect"];
+  #clearPageTurnEffect?: () => void;
 
   constructor(publication: Publication, options: CreateNavigatorOptions) {
     super();
     this.publication = publication;
     this.#navigationPolicy = options.navigationPolicy;
+    this.#pageTurnEffect = options.pageTurnEffect;
     this.#container = options.container;
     this.#preferences = {
       ...options.preferences,
@@ -350,12 +357,10 @@ export class Navigator extends EventTarget {
     const boundary = this.#boundaryTarget("next");
     if (boundary === false) return false;
     if (boundary) {
-      await this.display(boundary);
-      return true;
+      return this.#displayPageTurn(boundary, "next");
     }
     if (index === undefined || index + 1 >= this.publication.readingOrder.length) return false;
-    await this.display({ spineIndex: index + 1 });
-    return true;
+    return this.#displayPageTurn({ spineIndex: index + 1 }, "next");
   }
 
   async previous(): Promise<boolean> {
@@ -374,12 +379,10 @@ export class Navigator extends EventTarget {
     const boundary = this.#boundaryTarget("previous");
     if (boundary === false) return false;
     if (boundary) {
-      await this.display(boundary);
-      return true;
+      return this.#displayPageTurn(boundary, "previous");
     }
     if (index === undefined || index === 0) return false;
-    await this.#display({ spineIndex: index - 1 }, true);
-    return true;
+    return this.#displayPageTurn({ spineIndex: index - 1 }, "previous");
   }
 
   beginInteractivePageTurn(direction: InteractivePageTurnDirection): boolean {
@@ -491,8 +494,7 @@ export class Navigator extends EventTarget {
       if (commit) {
         const target = this.#boundaryTarget(turn.direction);
         if (target) {
-          await this.display(target);
-          return true;
+          return this.#displayPageTurn(target, turn.direction);
         }
       }
       return false;
@@ -501,6 +503,11 @@ export class Navigator extends EventTarget {
     if (turn.kind === "spine") return this.#endSpineInteractiveTurn(move, turn, commit);
 
     const targetPageIndex = commit ? turn.targetPageIndex : turn.originPageIndex;
+    const ready = commit ? this.#startPageTurnEffect(turn.direction) : undefined;
+    if (ready) {
+      await ready;
+      if (this.#pageMove !== move) return false;
+    }
     move.snapPageIndex = targetPageIndex;
     if (this.#shouldAnimatePageTurn()) {
       const span = Math.abs(turn.targetLogicalOffset - turn.originLogicalOffset);
@@ -1050,8 +1057,15 @@ export class Navigator extends EventTarget {
       mount.scrollScheduler?.cancelAnimationFrame(mount.scrollFrame);
       mount.scrollFrame = undefined;
     }
-    const move: ActivePageMove = { mount, snapPageIndex: pageIndex };
+    const originPage = currentSpreadIndex(mount.pagination!) * mount.pagination!.pagesPerSpread;
+    const move: ActivePageMove = { mount, snapPageIndex: originPage };
     this.#pageMove = move;
+    const ready = this.#startPageTurnEffect(pageIndex > originPage ? "next" : "previous");
+    if (ready) {
+      await ready;
+      if (this.#pageMove !== move) return;
+    }
+    move.snapPageIndex = pageIndex;
     if (this.#shouldAnimatePageTurn()) {
       move.animation = animateScrollToPage(
         mount.pagination!,
@@ -1072,6 +1086,8 @@ export class Navigator extends EventTarget {
   }
 
   #cancelPageMove(snapToTarget: boolean): void {
+    this.#clearPageTurnEffect?.();
+    this.#clearPageTurnEffect = undefined;
     const move = this.#pageMove;
     if (!move) return;
     this.#pageMove = undefined;
@@ -1098,11 +1114,43 @@ export class Navigator extends EventTarget {
     const target = this.#boundaryTarget(turn.direction);
     if (target === false) return false;
     if (target) {
-      await this.display(target);
-      return true;
+      return this.#displayPageTurn(target, turn.direction);
     }
-    await this.#display({ spineIndex: turn.targetSpineIndex }, turn.direction === "previous");
-    return true;
+    return this.#displayPageTurn({ spineIndex: turn.targetSpineIndex }, turn.direction);
+  }
+
+  #startPageTurnEffect(direction: InteractivePageTurnDirection): Promise<void> | void {
+    this.#clearPageTurnEffect?.();
+    this.#clearPageTurnEffect = undefined;
+    if (!this.#active?.pagination || !this.#shouldAnimatePageTurn()) return;
+    const effect = this.#pageTurnEffect?.(direction);
+    if (typeof effect === "function") this.#clearPageTurnEffect = effect;
+    else if (effect) {
+      this.#clearPageTurnEffect = () => effect.cancel();
+      return effect.ready;
+    }
+  }
+
+  async #displayPageTurn(target: DisplayTarget, direction: InteractivePageTurnDirection) {
+    const ready = this.#startPageTurnEffect(direction);
+    const cleanup = this.#clearPageTurnEffect;
+    if (ready) {
+      await ready;
+      if (this.#clearPageTurnEffect !== cleanup) return false;
+    }
+    this.#clearPageTurnEffect = undefined;
+    const pending = this.#display(target, direction === "previous");
+    this.#clearPageTurnEffect = cleanup;
+    try {
+      await pending;
+      return true;
+    } catch (error) {
+      if (this.#clearPageTurnEffect === cleanup) {
+        cleanup?.();
+        this.#clearPageTurnEffect = undefined;
+      }
+      throw error;
+    }
   }
 
   #boundaryTarget(direction: "next" | "previous") {

@@ -33,6 +33,7 @@ import {
 } from "~/components/workspace-book-reader/epub-reader-chrome";
 import { hydrateBookmarksRequested } from "~/lib/themis/bookmarks/bookmarks-slice";
 import { useSyncToFurthestPosition } from "~/hooks/use-sync-to-furthest-position";
+import { PageTurnExperiment } from "~/components/page-turn-experiment";
 
 /** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
@@ -114,12 +115,14 @@ export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookRe
   }
 
   return (
-    <WorkspaceBookReaderInner
-      key={book.id}
-      book={book}
-      panelTypography={panelTypography}
-      onRenditionReady={onRenditionReady}
-    />
+    <PageTurnExperiment key={book.id}>
+      <WorkspaceBookReaderInner
+        key={book.id}
+        book={book}
+        panelTypography={panelTypography}
+        onRenditionReady={onRenditionReady}
+      />
+    </PageTurnExperiment>
   );
 }
 

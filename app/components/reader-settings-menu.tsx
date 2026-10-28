@@ -46,6 +46,7 @@ import { useReadingChatMenuActions } from "~/lib/context/reading-chat-menu-conte
 import { ChatBookSelectorMenu } from "~/components/chat/chat-book-selector";
 import { ChatRecentSessionsMenu } from "~/components/chat/chat-session-menu";
 import { ReaderFormattingStepper } from "~/components/reader-formatting-stepper";
+import { usePageTurnExperiment } from "~/components/page-turn-experiment";
 import { useReadingRail } from "~/components/reading-shell/reading-rail-context";
 import { Button } from "./ui/button";
 
@@ -124,6 +125,7 @@ function ReaderFormattingMenuItems({
   onUpdateSettings,
   isPdf,
 }: ReaderFormattingMenuProps) {
+  const pageTurn = usePageTurnExperiment();
   return (
     <>
       <DropdownMenuGroup>
@@ -154,6 +156,23 @@ function ReaderFormattingMenuItems({
       </DropdownMenuGroup>
 
       {!isPdf && <DropdownMenuSeparator />}
+
+      {!isPdf && pageTurn && (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger disabled={settings.readerLayout === "scroll"}>
+            Page turn: {pageTurn.animation === "hand" ? "Hand" : "Slide"}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup
+              value={pageTurn.animation}
+              onValueChange={(value) => pageTurn.setAnimation(value as "slide" | "hand")}
+            >
+              <DropdownMenuRadioItem value="slide">Slide</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="hand">Hand (experimental)</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      )}
 
       {!isPdf && (
         <DropdownMenuSub>

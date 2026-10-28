@@ -18,6 +18,7 @@ import {
   type Settings,
 } from "~/lib/settings";
 import type { BookFormat, BookMeta } from "~/lib/stores/book-store";
+import { PageTurnExperiment } from "~/components/page-turn-experiment";
 
 interface SharedBookReaderProps {
   shareId: string;
@@ -234,6 +235,8 @@ export function SharedBookReader({ shareId, fileUrl, format, currentCfi }: Share
   return format === "pdf" ? (
     <SharedPdfReader book={book} loadData={loadData} currentCfi={currentCfi} />
   ) : (
-    <SharedEpubReader book={book} loadData={loadData} currentCfi={currentCfi} />
+    <PageTurnExperiment key={shareId}>
+      <SharedEpubReader book={book} loadData={loadData} currentCfi={currentCfi} />
+    </PageTurnExperiment>
   );
 }

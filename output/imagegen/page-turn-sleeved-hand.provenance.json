@@ -1,0 +1,10 @@
+{
+  "provider": "Vercel AI Gateway",
+  "model": "openai/gpt-image-2",
+  "mode": "edit",
+  "reference": "page-turn-hand.png",
+  "size": "1536x1024",
+  "prompt": "Edit the supplied image into a photographic page-turning hand asset. Preserve the hand exactly: same left hand, palm DOWN, back of hand and fingernails visible, five fingers with a relaxed grasping bend, same skin, scale, pose, lighting, orientation, and position. Replace ONLY the bare forearm with a tailored dark charcoal-black suit jacket sleeve and a crisp narrow white shirt cuff around the wrist, like a formal suited arm reaching across a desk. The sleeve must cover the entire arm from the LEFT image boundary all the way to the white cuff just behind the hand; no bare forearm remains. Show natural matte black wool fabric texture and subtle folds. The sleeve continues horizontally and is cropped flush at the LEFT image border, without a rounded or floating detached end. Keep the complete hand within the image. Keep every background pixel flat bright chroma green #00FF00, no gradient, background shadow or green color spill. No book, page, other objects, text, watermark or extra hands. The result must show the BACK of the hand, not the palm.",
+  "generatedAt": "2026-10-28T18:15:23.123Z",
+  "mimeType": "image/png"
+}
