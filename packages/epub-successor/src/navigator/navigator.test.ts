@@ -571,6 +571,77 @@ describe("paginated Navigator", () => {
     expect(cleanups[1]).toHaveBeenCalledOnce();
   });
 
+  it("waits for the host to reach the page before moving its contents", async () => {
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const effect = vi.fn(() => ({ ready, cancel: release }));
+    const { container, navigator } = setupPaginated(
+      { pageTurnAnimation: "slide", pageTurnDurationMs: 250 },
+      undefined,
+      effect,
+    );
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    const frame = container.querySelector("iframe")!;
+    const scrolling =
+      frame.contentDocument!.scrollingElement ?? frame.contentDocument!.documentElement;
+    const frames = mockFrameAnimationFrames(frame);
+    const turn = navigator.next();
+    expect(effect).toHaveBeenCalledWith("next");
+    expect(scrolling.scrollLeft).toBe(0);
+    release();
+    await frames.waitForPending();
+    frames.runNext(0);
+    frames.runNext(250);
+    await frames.waitForPending();
+    frames.runNext(266);
+    await expect(turn).resolves.toBe(true);
+    expect(scrolling.scrollLeft).toBeGreaterThan(0);
+    navigator.destroy();
+  });
+
+  it("keeps the current page when preferences interrupt the reaching hand", async () => {
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const cancel = vi.fn(() => release());
+    const { container, navigator } = setupPaginated(
+      { pageTurnAnimation: "slide" },
+      undefined,
+      () => ({ ready, cancel }),
+    );
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 0 }), navigator);
+    const before = navigator.currentRelocation;
+    const turn = navigator.next();
+    await navigator.setPreferences({ fontSize: 110 });
+    await turn;
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(navigator.currentRelocation).toEqual(before);
+    navigator.destroy();
+  });
+
+  it("does not load a chapter if the reaching hand is cancelled", async () => {
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const cancel = vi.fn(() => release());
+    const { container, navigator, provider } = setupPaginated(
+      { pageTurnAnimation: "slide" },
+      undefined,
+      () => ({ ready, cancel }),
+    );
+    await finishPaginatedDisplay(container, navigator.display({ spineIndex: 1 }), navigator);
+    const reads = provider.reads.length;
+    const turn = navigator.previous();
+    expect(provider.reads).toHaveLength(reads);
+    navigator.destroy();
+    await expect(turn).resolves.toBe(false);
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it("does not create host effects for reduced motion", async () => {
     vi.spyOn(window, "matchMedia").mockReturnValue({ matches: true } as MediaQueryList);
     const effect = vi.fn();

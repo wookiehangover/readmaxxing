@@ -4,65 +4,75 @@ export function showHandPageTurn(container: HTMLElement, direction: "next" | "pr
   if (!view || view.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
   const host = container.parentElement ?? container;
+  const bounds = host.getBoundingClientRect();
+  const page = (container.querySelector("iframe") ?? container).getBoundingClientRect();
+  const fromRight = direction === "next";
+  const width = Math.min(820, Math.max(380, bounds.width * 0.8));
+  const height = width / 1.409;
+  const overlap = Math.min(140, width * 0.34);
+  const edge = (fromRight ? page.right : page.left) - bounds.left;
+  const contactX = fromRight ? edge - overlap : edge - width + overlap;
+  const contactY = Math.max(0, bounds.height * 0.55 - height * 0.38);
+  const startX = fromRight ? bounds.width + 40 : -width - 40;
+  const pullX = contactX + (fromRight ? -1 : 1) * page.width * 0.75;
+  const exitX = fromRight ? -width - 40 : bounds.width + 40;
+  const transform = (x: number, y: number, angle: number, grip = 1) =>
+    `translate3d(${x}px,${y}px,0) rotate(${angle}deg) scale(${fromRight ? -grip : grip},1)`;
   const overlay = document.createElement("div");
   overlay.dataset.pageTurnHand = direction;
+  overlay.dataset.pageTurnPhase = "reach";
   overlay.setAttribute("aria-hidden", "true");
   overlay.style.cssText =
     "position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:6;contain:layout paint;";
   const hand = document.createElement("img");
-  hand.src = "/images/page-turn-hand.webp";
+  hand.src = "/images/page-turn-open-hand.webp";
   hand.alt = "";
   hand.draggable = false;
-  hand.style.cssText =
-    "position:absolute;height:min(110%,850px);width:auto;max-width:none;top:18%;left:0;transform-origin:50% 8%;filter:drop-shadow(0 14px 12px rgb(0 0 0 / .18));";
-  const mirrored = direction === "next";
-  const width = host.clientWidth;
-  const handWidth = Math.min(host.clientHeight * 1.1, 850) * 0.462;
-  const transform = (x: number, y: number, angle: number) =>
-    `translate3d(${x}px,${y}%,0) rotate(${angle}deg) scaleX(${mirrored ? -1 : 1})`;
+  hand.style.cssText = `position:absolute;top:0;left:0;width:${width}px;height:${height}px;max-width:none;transform-origin:50% 38%;filter:drop-shadow(0 10px 10px rgb(0 0 0 / .18));`;
   overlay.append(hand);
   host.append(overlay);
-  const animation = hand.animate(
+  const contact = transform(contactX, contactY, 0);
+  const grip = transform(contactX, contactY + 6, fromRight ? -3 : 3, 0.96);
+  const reach = hand.animate(
     [
       {
-        transform: transform(
-          mirrored ? width + handWidth : -handWidth * 2,
-          18,
-          mirrored ? 35 : -35,
-        ),
+        transform: transform(startX, contactY + 20, fromRight ? 8 : -8),
         offset: 0,
+        easing: "ease-out",
       },
-      {
-        transform: transform(
-          (mirrored ? width * 0.85 : width * 0.15) - handWidth / 2,
-          0,
-          mirrored ? 24 : -24,
-        ),
-        offset: 0.18,
-      },
-      {
-        transform: transform(
-          (mirrored ? width * 0.2 : width * 0.8) - handWidth / 2,
-          -4,
-          mirrored ? -12 : 12,
-        ),
-        offset: 0.64,
-      },
-      {
-        transform: transform(
-          mirrored ? -handWidth * 2 : width + handWidth,
-          60,
-          mirrored ? -35 : 35,
-        ),
-        offset: 1,
-      },
+      { transform: contact, offset: 0.72, easing: "ease-in-out" },
+      { transform: grip, offset: 1 },
     ],
-    { duration: 900, easing: "linear", fill: "both" },
+    { duration: 360, fill: "both" },
   );
-  const remove = () => {
-    animation.cancel();
+  let pull: Animation | undefined;
+  let cancelled = false;
+  const cancel = () => {
+    cancelled = true;
+    reach.cancel();
+    pull?.cancel();
     overlay.remove();
   };
-  void animation.finished.then(remove, () => overlay.remove());
-  return remove;
+  const ready = reach.finished.then(
+    () => {
+      if (cancelled) return;
+      overlay.dataset.pageTurnPhase = "pull";
+      pull = hand.animate(
+        [
+          { transform: grip, offset: 0, easing: "ease-out" },
+          {
+            transform: transform(pullX, contactY - 24, fromRight ? -12 : 12, 0.96),
+            offset: 0.75,
+            easing: "ease-in",
+          },
+          { transform: transform(exitX, contactY + 100, fromRight ? -18 : 18), offset: 1 },
+        ],
+        { duration: 870, fill: "both" },
+      );
+      reach.cancel();
+      void pull.finished.then(cancel, cancel);
+    },
+    () => {},
+  );
+  return { ready, cancel };
 }

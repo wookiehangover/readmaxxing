@@ -72,13 +72,17 @@ for (const mobile of [false, true]) {
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
+    await expect(page.locator('[role="menu"]')).toHaveCount(0);
     await page.evaluate(() => {
       const animate = Element.prototype.animate;
       Element.prototype.animate = function (...args) {
         const animation = animate.apply(this, args);
         if (this.closest("[data-page-turn-hand]")) {
           animation.pause();
-          animation.currentTime = 360;
+          animation.currentTime =
+            this.closest<HTMLElement>("[data-page-turn-hand]")?.dataset.pageTurnPhase === "reach"
+              ? 340
+              : 260;
         }
         return animation;
       };
@@ -92,13 +96,22 @@ for (const mobile of [false, true]) {
     const hand = page.locator('[data-page-turn-hand="next"]');
     await expect(hand).toHaveCount(1);
     await hand.locator("img").evaluate((image) => (image as HTMLImageElement).decode());
+    await expect(body).toHaveText(before!);
+    await page.screenshot({ path: `.intent/artifacts/open-hand-${size}-reach-right.png` });
+    await hand
+      .locator("img")
+      .evaluate((image) => image.getAnimations().forEach((animation) => animation.finish()));
     await expect(body).not.toHaveText(before!);
-    await page.screenshot({ path: `.intent/artifacts/hand-${size}-next.png` });
+    await page.screenshot({ path: `.intent/artifacts/open-hand-${size}-pull-left.png` });
     await turn(page, "ArrowLeft");
     await expect(page.locator('[data-page-turn-hand="previous"]')).toHaveCount(1);
     await expect(hand).toHaveCount(0);
+    await page.screenshot({ path: `.intent/artifacts/open-hand-${size}-reach-left.png` });
+    await page
+      .locator('[data-page-turn-hand="previous"] img')
+      .evaluate((image) => image.getAnimations().forEach((animation) => animation.finish()));
     await expect(body).toHaveText(before!);
-    await page.screenshot({ path: `.intent/artifacts/hand-${size}-previous.png` });
+    await page.screenshot({ path: `.intent/artifacts/open-hand-${size}-pull-right.png` });
     await page.evaluate(() => {
       for (const animation of document.getAnimations()) {
         const target = (animation.effect as KeyframeEffect)?.target;
