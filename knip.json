@@ -29,7 +29,6 @@
     "redis",
     "shadcn",
     "tailwindcss",
-    "tw-animate-css",
-    "use-stick-to-bottom"
+    "tw-animate-css"
   ]
 }

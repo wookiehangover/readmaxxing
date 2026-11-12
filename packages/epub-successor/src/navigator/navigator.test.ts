@@ -78,7 +78,15 @@ beforeEach(() => {
   vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
     if (!(blob instanceof Blob)) throw new TypeError("Expected a Blob");
     blobs.push(blob);
-    return `data:application/xhtml+xml,${encodeURIComponent(SECTION("target"))}`;
+    return `blob:${location.origin}/${blobs.length}`;
+  });
+  // Inline the fixture without enabling external iframe loads in Happy DOM.
+  vi.spyOn(HTMLIFrameElement.prototype, "src", "set").mockImplementation(function (
+    this: HTMLIFrameElement,
+    src: string,
+  ) {
+    this.srcdoc = SECTION("target");
+    this.setAttribute("src", src);
   });
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 });
@@ -237,12 +245,13 @@ function mockFrameAnimationFrames(frame: HTMLIFrameElement) {
 function suppressAutomaticFrameLoads(): (frame: HTMLIFrameElement) => void {
   const dispatchEvent = HTMLIFrameElement.prototype.dispatchEvent;
   let manual = false;
-  vi.spyOn(HTMLIFrameElement.prototype, "dispatchEvent").mockImplementation(
-    function (this: HTMLIFrameElement, event) {
-      if (event.type === "load" && !manual) return true;
-      return dispatchEvent.call(this, event);
-    },
-  );
+  vi.spyOn(HTMLIFrameElement.prototype, "dispatchEvent").mockImplementation(function (
+    this: HTMLIFrameElement,
+    event,
+  ) {
+    if (event.type === "load" && !manual) return true;
+    return dispatchEvent.call(this, event);
+  });
   return (frame) => {
     manual = true;
     frame.dispatchEvent(new Event("load"));

@@ -86,11 +86,11 @@ describe("useBookshelfCamera animation", () => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(600);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
     vi.spyOn(HTMLElement.prototype, "clientTop", "get").mockReturnValue(0);
-    vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(
-      function (this: HTMLElement) {
-        return this.className === "bookshelf-scene" ? 200 : 0;
-      },
-    );
+    vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.className === "bookshelf-scene" ? 200 : 0;
+    });
   });
 
   afterEach(() => {
