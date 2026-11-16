@@ -24,12 +24,12 @@
     "prepack": "node --run build"
   },
   "dependencies": {
-    "@vercel/blob": "^2.8.0",
+    "@vercel/blob": "^2.9.0",
     "fflate": "^0.8.3",
-    "linkedom": "^0.18.13"
+    "linkedom": "^0.18.15"
   },
   "devDependencies": {
-    "@types/node": "^26.4.0",
+    "@types/node": "^26.6.6",
     "typescript": "^7.0.2"
   },
   "engines": {
