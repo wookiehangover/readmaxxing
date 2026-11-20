@@ -5,12 +5,6 @@ import { remapBookId } from "./remap";
 import { syncDebugLog } from "./sync-debug";
 import type { ChangeEntry, EntityType, SyncPushRequest, SyncPushResponse } from "./types";
 
-/**
- * Maximum number of change log entries to send in a single `/api/sync/push`
- * request. The server processes entries serially with ~1-3 DB trips each,
- * so large batches can hit function timeouts on Vercel. Oversized backlogs
- * are drained across multiple requests scheduled back-to-back.
- */
 export const PUSH_BATCH_SIZE = 50;
 const MAX_REJECTED_BOOK_PUSH_ATTEMPTS = 3;
 const rejectedBookPushAttempts = new Map<string, number>();
@@ -32,11 +26,6 @@ export interface PushContext {
   fileUploadContext: FileUploadContext;
   isStopped: () => boolean;
   onAuthExpired?: () => void;
-  /**
-   * Called when the sent batch was full, signaling more pending changes may
-   * remain. The engine schedules an immediate follow-up push so backlogs
-   * drain without waiting for the interval timer.
-   */
   scheduleFollowUpPush: () => void;
 }
 
@@ -54,9 +43,6 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
     if (pending.length === 0) return null;
   }
 
-  // Cap each request at PUSH_BATCH_SIZE so the server handler stays well
-  // under Vercel's function timeout. Remaining entries drain on follow-up
-  // pushes scheduled below.
   const changes = pending.slice(0, PUSH_BATCH_SIZE);
   const hadFullBatch = changes.length >= PUSH_BATCH_SIZE;
 
@@ -122,16 +108,12 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
     rejectedBookPushAttempts.delete(id);
   }
 
-  // Keep rejected book upserts available for a bounded later retry while
-  // draining accepted and terminal entries so they cannot starve the queue.
   const syncedIds = [...acceptedIds, ...terminalRejectedIds];
   if (syncedIds.length > 0) {
     await markSynced(syncedIds);
     await clearSyncedChanges();
   }
 
-  // Apply cross-device dedup remaps for any accepted book entries that
-  // the server mapped to a canonical id.
   const affectedEntities = new Set<EntityType>();
   const bookIdRemaps: Array<{ fromId: string; toId: string }> = [];
   for (const entry of result.accepted) {
@@ -165,8 +147,6 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
     });
   }
 
-  // The upload pass scans every local book, so wait until all queued book
-  // upserts were accepted before exposing their files to the ownership check.
   const acceptedIdSet = new Set(acceptedIds);
   const hasUnacceptedBookUpsert = pending.some(
     (change) =>
@@ -178,9 +158,6 @@ export async function pushChangesWithResult(ctx: PushContext): Promise<SyncPushR
     );
   }
 
-  // If the batch was full there are (likely) more pending changes. Schedule
-  // an immediate follow-up push so a backlog drains quickly without waiting
-  // for the interval timer.
   if (hadFullBatch && !ctx.isStopped()) {
     ctx.scheduleFollowUpPush();
   }

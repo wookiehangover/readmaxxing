@@ -3,7 +3,6 @@ import { createStore, clear, get, set } from "idb-keyval";
 
 import { mergeChatMessageRecord, mergeChatSessionRecord } from "../sync-engine";
 
-// Must match the IDB db/store names used in chat-store.ts and sync-engine.ts.
 const sessionStore = createStore("ebook-reader-chat-sessions", "sessions");
 const activeSessionStore = createStore("ebook-reader-active-session", "active-session");
 
@@ -80,9 +79,6 @@ describe("mergeChatMessageRecord: session updatedAt is metadata-only", () => {
       sessionStore,
     );
 
-    // Append several messages, some of which carry createdAt values well past
-    // T + 500. Previously this would advance the session's LWW clock past the
-    // later title-change merge below and cause it to lose.
     for (let i = 0; i < 5; i++) {
       await mergeChatMessageRecord({
         id: `msg-${i}`,
@@ -97,9 +93,6 @@ describe("mergeChatMessageRecord: session updatedAt is metadata-only", () => {
     expect(midway?.[0].updatedAt).toBe(T);
     expect(midway?.[0].messages).toHaveLength(5);
 
-    // A subsequent metadata-only LWW merge (e.g. title rename) with
-    // updatedAt = T + 500 must still win: the message merges above did not
-    // poison the LWW clock.
     await mergeChatSessionRecord({
       id: sessionId,
       bookId,
@@ -112,7 +105,6 @@ describe("mergeChatMessageRecord: session updatedAt is metadata-only", () => {
     expect(after).toHaveLength(1);
     expect(after?.[0].title).toBe("Renamed");
     expect(after?.[0].updatedAt).toBe(T + 500);
-    // Local messages are preserved through the LWW metadata merge.
     expect(after?.[0].messages.map((m) => m.id)).toEqual([
       "msg-0",
       "msg-1",

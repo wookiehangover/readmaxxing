@@ -5,14 +5,6 @@ import type { NotebookEditorCallbacks } from "~/lib/context/workspace-context";
 import { markdownToTiptapJson } from "~/lib/editor/markdown-to-tiptap";
 import { getToolInfo } from "./chat-utils";
 
-/**
- * Watches chat messages for `append_to_notes` tool invocations in `input-streaming`
- * state and pushes partial content to the notebook editor in real-time.
- *
- * Each toolCallId that this hook has finalized into the editor is mapped to
- * its pre-preview content so onFinish can skip duplicate appends or roll back
- * a preview when persistence fails.
- */
 export function useStreamingAppend({
   messages,
   bookId,
@@ -24,10 +16,8 @@ export function useStreamingAppend({
   bookId: string;
   status: string;
   notebookEditorCallbackMap: React.MutableRefObject<Map<string, NotebookEditorCallbacks>>;
-  /** Shared ref — finalized preview toolCallIds and their pre-preview content. */
   streamedToolCallIdRef: React.MutableRefObject<Map<string, JSONContent>>;
 }) {
-  // Track whether we are currently streaming and the baseline node count
   const streamingRef = useRef<{
     toolCallId: string;
     baseNodeCount: number;
@@ -37,7 +27,6 @@ export function useStreamingAppend({
 
   useEffect(() => {
     if (status !== "streaming" || messages.length === 0) {
-      // Not streaming — clean up
       streamingRef.current = null;
       return;
     }
@@ -47,7 +36,6 @@ export function useStreamingAppend({
 
     const parts = lastMsg.parts ?? [];
 
-    // Find any append_to_notes tool part that is currently streaming input
     let streamingPart: { toolCallId: string; text: string } | null = null;
     let completedPart: { toolCallId: string; text: string } | null = null;
 
@@ -64,7 +52,6 @@ export function useStreamingAppend({
           streamingPart = { toolCallId, text };
         }
       } else if (info.state === "input-available" || info.state === "output-available") {
-        // Tool call completed — if we were streaming this one, mark it
         if (streamingRef.current?.toolCallId === toolCallId) {
           const text = typeof info.input?.text === "string" ? info.input.text : "";
           completedPart = { toolCallId, text };
@@ -75,9 +62,7 @@ export function useStreamingAppend({
     const editorCallbacks = notebookEditorCallbackMap.current.get(bookId);
     if (!editorCallbacks) return;
 
-    // Handle completion of a streamed tool call
     if (completedPart && streamingRef.current?.toolCallId === completedPart.toolCallId) {
-      // Do final replace with complete text
       const parsed = markdownToTiptapJson(completedPart.text);
       const newNodes = parsed.content ?? [];
       editorCallbacks.replaceContentFrom(streamingRef.current.baseNodeCount, newNodes);
@@ -90,9 +75,7 @@ export function useStreamingAppend({
       return;
     }
 
-    // Handle active streaming
     if (streamingPart) {
-      // If this is a new streaming tool call, record baseline
       if (!streamingRef.current || streamingRef.current.toolCallId !== streamingPart.toolCallId) {
         streamingRef.current = {
           toolCallId: streamingPart.toolCallId,
@@ -102,11 +85,9 @@ export function useStreamingAppend({
         };
       }
 
-      // Skip if text hasn't changed
       if (streamingPart.text === streamingRef.current.lastText) return;
       streamingRef.current.lastText = streamingPart.text;
 
-      // Parse partial markdown and replace streamed content
       const parsed = markdownToTiptapJson(streamingPart.text);
       const newNodes = parsed.content ?? [];
       editorCallbacks.replaceContentFrom(streamingRef.current.baseNodeCount, newNodes);

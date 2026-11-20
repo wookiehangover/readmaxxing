@@ -8,7 +8,6 @@ import { reviewHttpFixture, model, sessions, users } from "./review-http-fixture
 import { openReviewBook, openReviewSettings, reachReview } from "../../../../e2e/helpers/review";
 import type { ReviewQuestionResponse } from "../review-types";
 
-// Opt in against a stable production preview; all API data is isolated in a fresh PGlite instance.
 const enabled = Boolean(process.env.REVIEW_BROWSER_URL);
 let fixture: Awaited<ReturnType<typeof reviewHttpFixture>>;
 let browser: Browser;
@@ -162,13 +161,11 @@ it.skipIf(!enabled)(
     await bob.getByRole("switch", { name: "Chapter reviews" }).click();
     await browserExpect(bob.getByRole("tab", { name: "Discuss", exact: true })).toBeVisible();
 
-    // A new upload at another difficulty cannot inherit the prior question or pass.
     const other = await reader(0);
     const harder = await checkpoint(other, false, "Challenging");
     expect(harder.question.id).not.toBe(first.question.id);
     expect(harder.question.sourceFingerprint).toBe(first.question.sourceFingerprint);
     await browserExpect(other.getByRole("textbox", { name: "Your answer" })).toBeEmpty();
-    // PDF exclusion is already covered by UI unit tests; verify it on this actual reader too.
     await other.goto("/library");
     await other
       .locator('input[type="file"][accept=".epub,.pdf"]')

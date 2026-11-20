@@ -2,17 +2,6 @@ import type { JSONContent } from "@tiptap/react";
 import { AnnotationService, type Notebook } from "~/lib/stores/annotations-store";
 import type { HighlightReferenceAttrs } from "~/lib/editor/tiptap-highlight-node";
 
-/**
- * Appends a highlightReference node (and a trailing empty
- * paragraph, mirroring `TiptapEditor.appendHighlightReference`) to the book's
- * notebook document in IndexedDB, creating the document if it does not yet
- * exist. This is the fallback used when the notebook editor is not currently
- * mounted to receive an imperative append — without it, a freshly-created
- * highlight would have no notebook node and therefore no UI for deletion.
- *
- * The annotations saga uses the returned notebook to update the normalized
- * collection after persistence, including highlights created by chat tools.
- */
 export function appendHighlightReferenceToNotebook(
   bookId: string,
   attrs: HighlightReferenceAttrs,

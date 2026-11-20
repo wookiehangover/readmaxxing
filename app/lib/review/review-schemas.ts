@@ -51,7 +51,6 @@ const node: z.ZodType<ReviewRichTextNode> = z.lazy(() =>
   }),
 );
 
-/** Stable plain-text/annotation convention shared by the editor and judge. */
 export function reviewDocumentPlainText(document: ReviewRichTextNode): string {
   function inline(value: ReviewRichTextNode): string {
     if (value.type === "text") return value.text ?? "";
@@ -67,7 +66,6 @@ export function reviewDocumentPlainText(document: ReviewRichTextNode): string {
   return blocks.join("\n\n");
 }
 export function canSubmitReviewAnswer(plainText: string): boolean {
-  // PostgreSQL length() uses Unicode code points too, rather than UTF-16 units.
   return Array.from(plainText.trim()).length > 30;
 }
 export const reviewQuestionRequestSchema = z

@@ -43,9 +43,7 @@ export class Client {
       try {
         const parsed = JSON.parse(body);
         if (typeof parsed.error === "string") message = parsed.error;
-      } catch {
-        /* Avoid printing HTML error pages. */
-      }
+      } catch {}
       throw new Error(`Request failed (${response.status}): ${message}`);
     }
     return response;

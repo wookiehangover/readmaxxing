@@ -4,32 +4,16 @@ import { PositionError } from "~/lib/errors";
 import { recordChange } from "~/lib/sync/change-log";
 import { getPositionStore } from "~/lib/sync/stores";
 
-// --- Types ---
-
-/** New position record with LWW timestamp. */
 export interface PositionRecord {
   cfi: string;
   updatedAt: number;
-  /**
-   * Section-local progression [0, 1] from the navigator at save time.
-   * Used to restore the exact paginated column after refresh (CFI geometry alone
-   * is too easy to land one page early/late).
-   */
   localProgression?: number;
-  /** Spine index at save time; paired with localProgression for restore. */
   spineIndex?: number;
 }
 
-// --- idb-keyval store imported from ~/lib/sync/stores ---
-
-/**
- * Migrate a raw IDB value to PositionRecord.
- * Old format: plain string CFI. New format: { cfi, updatedAt, ... }.
- */
 function migratePosition(raw: unknown): PositionRecord | null {
   if (raw == null) return null;
   if (typeof raw === "string") {
-    // Legacy plain-string format — treat as { cfi, updatedAt: 0 }
     return { cfi: raw, updatedAt: 0 };
   }
   if (typeof raw === "object" && "cfi" in raw) {
@@ -46,15 +30,6 @@ function migratePosition(raw: unknown): PositionRecord | null {
   return null;
 }
 
-/**
- * Options for {@link ReadingPositionService.savePosition}.
- *
- * `recordChange` controls whether the write is appended to the sync changelog.
- * Defaults to `true`. Set to `false` for local-only writes such as the
- * panel-specific mirror saved by `savePositionDualKey` — panel ids are
- * device-local UUIDs that no other device can ever consume, so syncing them
- * just doubles every page-turn push for zero benefit.
- */
 export interface SavePositionOptions {
   readonly recordChange?: boolean;
   readonly localProgression?: number;
@@ -93,9 +68,6 @@ export function makePositionService(stores: PositionServiceStores) {
           options.spineIndex >= 0
             ? options.spineIndex
             : undefined;
-        // Layout metadata can be filled in by a relocation emitted during restore.
-        // Preserve the existing clock when the CFI did not move so reopening a
-        // book cannot make this device appear newer than another device.
         const existing = migratePosition(await get<unknown>(bookId, positionStore));
         if (existing?.cfi === cfi) {
           const pending = pendingLocalOnlyChanges.get(bookId);

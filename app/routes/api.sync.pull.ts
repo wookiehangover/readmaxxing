@@ -67,10 +67,6 @@ export async function loader({ request }: { request: Request }) {
   const limit = parseLimit(url.searchParams.get("limit"));
   const queryLimit = limit + 1;
 
-  // Per-entity cursors: each entity has its own `since` so one entity's lag
-  // does not force the others to re-scan. Entities missing from the payload
-  // default to epoch (pull from the beginning), preserving fresh-device
-  // behavior.
   const {
     cursorsByEntity,
     cursorTimestampsByEntity,

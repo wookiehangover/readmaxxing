@@ -23,9 +23,7 @@ function saveWpm(wpm: number): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(SPEEDREAD_WPM_STORAGE_KEY, String(wpm));
-  } catch {
-    // WPM persistence is optional when storage is unavailable.
-  }
+  } catch {}
 }
 
 function loadProgress(bookId: string): unknown {
@@ -41,9 +39,7 @@ function saveProgress(bookId: string, progress: SpeedreadProgress): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(speedreadProgressStorageKey(bookId), JSON.stringify(progress));
-  } catch {
-    // Reading progress persistence is optional when storage is unavailable.
-  }
+  } catch {}
 }
 
 export function useSpeedreadPlayback(words: readonly string[], bookId: string) {

@@ -97,7 +97,6 @@ describe("runInitialSyncIfNeeded — chat backfill", () => {
 
     expect(sessionChanges).toHaveLength(1);
     expect(sessionChanges[0].entityId).toBe("session-1");
-    // Session metadata is recorded without the `messages` array.
     expect((sessionChanges[0].data as { messages?: unknown }).messages).toBeUndefined();
 
     expect(messageChanges).toHaveLength(0);
@@ -148,8 +147,6 @@ describe("runInitialSyncIfNeeded — settings backfill", () => {
         fontFamily: "Merriweather",
         lineHeight: 1.7,
         colorTheme: "nord",
-        // UI fields that pre-split clients might still have in the legacy
-        // blob — must NOT reach the change log.
         zenMode: true,
         sidebarCollapsed: true,
         libraryView: "table",

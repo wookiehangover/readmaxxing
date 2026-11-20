@@ -25,9 +25,7 @@ import {
 import type { PublisherPageMap } from "~/lib/epub/publisher-pages";
 
 const POSITION_CACHE_KIND = "epub-successor-positions";
-/** Bumped when position sampling semantics change (empty-section skip, chars/page). */
 const POSITION_CACHE_VERSION = 3;
-/** Character samples used as page analogues when no publisher page-list exists. */
 const HEURISTIC_CHARS_PER_PAGE = 2_500;
 
 export interface SuccessorPositionCache {
@@ -81,13 +79,6 @@ function positionSpineIndex(position: PersistentLocator): number | null {
   return cfi !== undefined ? spineIndexFromCfi(cfi) : null;
 }
 
-/**
- * Maps a reading location onto character-sampled positions (1-based page index).
- *
- * Totals come from character-sampled positions (stable across layout). The current page
- * advances with `localProgression` inside the active spine section so page-turns update
- * the displayed number.
- */
 export function pageIndexFromPositions(
   positions: readonly PersistentLocator[],
   options: {
@@ -107,7 +98,6 @@ export function pageIndexFromPositions(
     }
   }
 
-  // Fall back to spine index when href matching fails (path normalization drift).
   if (sectionIndexes.length === 0) {
     const spineIndex = options.spineIndex ?? (options.cfi ? spineIndexFromCfi(options.cfi) : null);
     if (spineIndex !== null) {
@@ -129,12 +119,10 @@ export function pageIndexFromPositions(
 
   const first = sectionIndexes[0]!;
   const last = sectionIndexes[sectionIndexes.length - 1]!;
-  // Single-sample sections still need room to advance toward the next sample while paging.
   const high = last > first ? last : Math.min(positions.length - 1, first + 1);
 
   if (options.localProgression !== undefined) {
     const local = Math.max(0, Math.min(1, options.localProgression));
-    // At section start keep the first sample; only move once progression advances.
     if (local <= 0) return first + 1;
     return Math.min(positions.length, Math.round(first + local * (high - first)) + 1);
   }
@@ -246,13 +234,6 @@ function firstTextNode(root: Node): Text | null {
   return walker.nextNode() as Text | null;
 }
 
-/**
- * Resolves ascending, non-overlapping text spans to range boundaries in
- * one tree walk. Spans outside the text content resolve to null. Returns
- * static boundary objects rather than live Ranges because generateCfi
- * only reads the boundary points, and Range.setEnd on DOMParser-parsed
- * documents collapses the range in happy-dom.
- */
 function rangesAtTextSpans(
   document: Document,
   root: Node,
@@ -323,18 +304,10 @@ function firstVisibleElement(document: Document): Element | undefined {
   });
 }
 
-/**
- * Range at the start of the currently visible page/viewport. Samples several
- * content-area points (not just 1,1 which often hits page chrome/padding) and
- * falls back to the first visible element — never the first text of the whole
- * section, which would pin every save to chapter start.
- */
 function visibleRange(document: Document): Range {
   const root = document.documentElement;
   const width = Math.max(1, root.clientWidth);
   const height = Math.max(1, root.clientHeight);
-  // Prefer near top-left of the visible page, but past typical body chrome so
-  // caretRangeFromPoint does not miss into empty padding and fall back wrongly.
   const points: ReadonlyArray<readonly [number, number]> = [
     [Math.min(20, width * 0.06), Math.min(28, height * 0.08)],
     [Math.min(36, width * 0.1), Math.min(40, height * 0.1)],
@@ -343,8 +316,6 @@ function visibleRange(document: Document): Range {
   for (const [x, y] of points) {
     const range = rangeAtCaret(document, x, y);
     if (!range) continue;
-    // Reject carets that land outside the viewport (some engines snap to
-    // document-start text when the probe hits chrome/padding).
     try {
       const rect = range.getBoundingClientRect();
       if (rect.bottom >= 0 && rect.right >= 0 && rect.top <= height && rect.left <= width) {
@@ -571,7 +542,6 @@ export class SuccessorRenditionAdapter {
     if (spineIndex === null || !this.publication.readingOrder[spineIndex]) {
       throw new RangeError("CFI does not identify a publication spine item");
     }
-    // One admission and one relocation: never expose/persist a transient spine start.
     return this.navigator.display({ spineIndex, cfi, ...options });
   }
 
@@ -717,10 +687,6 @@ export function createSuccessorBookAdapter(
         if (!document) return [];
         const root = document.body ?? document.documentElement;
         const text = root.textContent ?? "";
-        // Case-insensitive matching runs on locale-lowercased copies, but
-        // only when folding preserves lengths — otherwise the offsets found
-        // in the haystack would not map back to `text` (e.g. "İ" folds to
-        // two code units). Fall back to exact matching in that case.
         let haystack = text.toLocaleLowerCase();
         let needle = query.toLocaleLowerCase();
         if (haystack.length !== text.length || needle.length !== query.length) {
@@ -736,8 +702,6 @@ export function createSuccessorBookAdapter(
         ) {
           offsets.push(offset);
         }
-        // Full-span ranges (not collapsed points) so result CFIs can be
-        // rendered as highlight decorations over the matched text.
         const ranges = rangesAtTextSpans(
           document,
           root,

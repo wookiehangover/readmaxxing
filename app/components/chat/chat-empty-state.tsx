@@ -58,10 +58,6 @@ export function SuggestedPrompts({
   );
 }
 
-/**
- * Static cross-book starter prompts shown when 2+ books are selected. Titles are
- * interpolated where natural; no LLM call.
- */
 function crossBookCategory(titles: string[]) {
   const [a, b] = titles;
   return {

@@ -315,7 +315,7 @@ describe("one review admission policy", () => {
     );
     const restored = s.policy.initialTarget({ spineIndex: 2, cfi: s.cfi(2, "final") });
     expect(restored).toMatchObject({ spineIndex: 1, cfi: s.cfi(1, "continued") });
-    expect(s.policy.resolve({ spineIndex: 0 })).toBe(false); // Same spine start is outside a later fragment.
+    expect(s.policy.resolve({ spineIndex: 0 })).toBe(false);
   });
 
   it("closes only the owning reader and denies pending/hydrating and stale readers", async () => {

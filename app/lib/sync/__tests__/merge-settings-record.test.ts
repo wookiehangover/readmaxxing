@@ -14,8 +14,6 @@ describe("mergeSettingsRecord — synced-key filtering", () => {
       settings: {
         theme: "dark",
         fontSize: 120,
-        // UI/layout fields that older clients may have written into the
-        // server blob — these must never reach localStorage.
         zenMode: true,
         sidebarCollapsed: true,
         libraryView: "table",
@@ -46,7 +44,6 @@ describe("mergeSettingsRecord — synced-key filtering", () => {
     await mergeSettingsRecord({
       settings: {
         theme: "dark",
-        // Server blob also carries stale UI fields — must be ignored.
         zenMode: false,
         sidebarCollapsed: false,
       },
@@ -106,7 +103,6 @@ describe("mergeSettingsRecord — synced-key filtering", () => {
     });
 
     const synced = JSON.parse(localStorage.getItem(SYNCED_KEY)!);
-    // Only updatedAt is written; no UI keys leak in.
     expect(synced).toEqual({ updatedAt: 1000 });
     expect(localStorage.getItem(LOCAL_UI_KEY)).toBeNull();
   });

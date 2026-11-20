@@ -16,7 +16,6 @@ export function refreshBooksCache(cache: BooksCache, books: BookMeta[]): void {
   cache.dispatch(booksHydrated(books));
 }
 
-/** @deprecated Use the Themis books cache. Kept as a compatibility mirror helper. */
 export function refreshWorkspaceBooks(workspace: WorkspaceBookListRef, books: BookMeta[]): void {
   workspace.booksRef.current = books;
   queueMicrotask(() => {

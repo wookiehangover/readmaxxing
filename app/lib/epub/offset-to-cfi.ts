@@ -143,7 +143,6 @@ function locateUniqueWhitespaceMatch(
   return { start, end, text };
 }
 
-/** Converts a chapter-level character window into a spine-qualified range CFI. */
 export async function offsetToCfi(input: OffsetToCfiInput): Promise<string | null> {
   try {
     return await withEpubServerDom(async () => {

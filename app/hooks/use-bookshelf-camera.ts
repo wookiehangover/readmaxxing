@@ -2,11 +2,9 @@ import { useLayoutEffect, useRef, type RefObject } from "react";
 
 const STEP_MS = 4;
 const FOLLOW_MS = 55;
-// The eye runs ahead of the scroll like a camera on a dolly, then springs back.
 const LEAD_MS = 300;
 const LEAD_STIFFNESS = 0.012 ** 2;
 const LEAD_DAMPING = 2 * 0.72 * 0.012;
-// At rest a cover keeps clear of the book above; in motion the stack may close up like a pile.
 const REST_GAP = 22;
 const MOTION_GAP = 4;
 
@@ -65,7 +63,6 @@ export function useBookshelfCamera(
         Object.assign(state, { position: target, lead: 0, leadVelocity: 0 });
       } else {
         const maxLead = viewportHeight * 0.45;
-        // Fixed steps keep the spring identical across refresh rates.
         for (let step = 0; step < elapsed; step += STEP_MS) {
           const dt = Math.min(STEP_MS, elapsed - step);
           const previous = state.position;

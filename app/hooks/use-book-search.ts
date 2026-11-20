@@ -16,15 +16,6 @@ interface UseBookSearchReturn {
 
 const DEBOUNCE_MS = 300;
 
-/**
- * Hook that encapsulates epub full-text search across all spine items.
- * Accepts a ref to the successor-backed book adapter.
- *
- * Usage:
- * ```ts
- * const { search, results, currentIndex, next, prev, clear } = useBookSearch(bookRef);
- * ```
- */
 export function useBookSearch(
   bookRef: React.RefObject<SuccessorBookAdapter | null>,
 ): UseBookSearchReturn {
@@ -54,7 +45,6 @@ export function useBookSearch(
         return;
       }
 
-      // Abort any previous in-flight search
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -64,7 +54,6 @@ export function useBookSearch(
           signal: controller.signal,
         });
 
-        // Only update state if this is still the latest search
         if (searchIdRef.current === searchId) {
           setResults(allResults);
           setCurrentIndex(0);
@@ -113,7 +102,6 @@ export function useBookSearch(
     );
   }, [results.length]);
 
-  // Cleanup debounce timer and abort in-flight search on unmount
   useEffect(() => {
     return () => {
       if (debounceTimer.current) {

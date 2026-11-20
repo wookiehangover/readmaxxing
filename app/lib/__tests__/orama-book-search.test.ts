@@ -96,7 +96,6 @@ describe("searchBook — exact matching", () => {
   });
 
   it("excerpt contains surrounding context with ellipsis markers for long text", () => {
-    // Build a chapter with enough text that the match won't be at the boundaries
     const prefix = "A".repeat(300);
     const suffix = "B".repeat(300);
     const longChapter = makeChapter({
@@ -108,13 +107,11 @@ describe("searchBook — exact matching", () => {
     const results = searchBook(db, "uniqueSearchTerm");
     expect(results.length).toBeGreaterThanOrEqual(1);
     expect(results[0].excerpt).toContain("uniqueSearchTerm");
-    // The excerpt should have ellipsis at start since the match is deep in the text
     expect(results[0].excerpt.startsWith("…")).toBe(true);
     expect(results[0].excerpt.endsWith("…")).toBe(true);
   });
 
   it("respects the limit parameter", () => {
-    // Create many chapters with the same searchable word
     const manyChapters = Array.from({ length: 10 }, (_, i) =>
       makeChapter({
         index: i,
@@ -139,7 +136,6 @@ describe("searchBook — fuzzy/typo-tolerant matching", () => {
 
   it("finds results with 1-character typo", () => {
     const db = buildBookIndex(chapters);
-    // "philsophy" is a typo for "philosophy"
     const results = searchBook(db, "philsophy");
     expect(results.length).toBeGreaterThanOrEqual(1);
     expect(results[0].chapterIndex).toBe(0);
@@ -149,8 +145,6 @@ describe("searchBook — fuzzy/typo-tolerant matching", () => {
     const db = buildBookIndex(chapters);
     const results = searchBook(db, "philsophy");
     expect(results.length).toBeGreaterThanOrEqual(1);
-    // The excerpt should start from the beginning of the chunk text since
-    // "philsophy" won't be found as an exact substring
     const chunkText = chapters[0].text;
     expect(results[0].excerpt).toBe(chunkText);
   });
@@ -179,8 +173,6 @@ describe("searchBook — edge cases", () => {
   it("handles queries longer than any chunk", () => {
     const chapters: BookChapter[] = [makeChapter({ index: 0, text: "Short text." })];
     const db = buildBookIndex(chapters);
-    // Orama matches on individual tokens, so a long query with no matching
-    // words should return empty results
     const longQuery = "xyzzy foobaz quuxwaldo plughthud";
     const results = searchBook(db, longQuery);
     expect(results).toEqual([]);
@@ -243,9 +235,8 @@ describe("locateTextAnchor", () => {
 
 describe("chunking behavior (tested indirectly through search)", () => {
   it("long chapters are chunked — search returns granular results", () => {
-    // Create a chapter with two distinct paragraphs, each well over 500 chars
-    const para1 = "Alpha paragraph. ".repeat(50); // ~850 chars
-    const para2 = "Beta paragraph. ".repeat(50); // ~850 chars
+    const para1 = "Alpha paragraph. ".repeat(50);
+    const para2 = "Beta paragraph. ".repeat(50);
     const longChapter = makeChapter({
       index: 0,
       title: "Long Chapter",
@@ -253,11 +244,9 @@ describe("chunking behavior (tested indirectly through search)", () => {
     });
     const db = buildBookIndex([longChapter]);
 
-    // Search for "Alpha" — should only match the first chunk, not the whole chapter
     const alphaResults = searchBook(db, "Alpha");
     expect(alphaResults.length).toBeGreaterThanOrEqual(1);
     expect(alphaResults[0].excerpt).toContain("Alpha");
-    // The excerpt should NOT contain "Beta" since it's in a different chunk
     expect(alphaResults[0].excerpt).not.toContain("Beta");
   });
 
@@ -270,7 +259,6 @@ describe("chunking behavior (tested indirectly through search)", () => {
     const db = buildBookIndex([shortChapter]);
     const results = searchBook(db, "brief");
     expect(results.length).toBe(1);
-    // The whole chapter text should be in the excerpt since it's a single chunk
     expect(results[0].excerpt).toBe("A brief chapter with just one sentence.");
   });
 });
@@ -310,7 +298,6 @@ describe("getOrBuildBookIndex — caching", () => {
     const dbB = getOrBuildBookIndex(chaptersB);
     expect(dbA).not.toBe(dbB);
 
-    // The new index should search the new content
     const results = searchBook(dbB, "different");
     expect(results.length).toBe(1);
     expect(results[0].chapterTitle).toBe("Preface");
@@ -326,7 +313,6 @@ describe("getOrBuildBookIndex — caching", () => {
     const dbA = getOrBuildBookIndex(chaptersA);
     getOrBuildBookIndex(chaptersB);
 
-    // Going back to chaptersA should produce a new instance (old one was evicted)
     const dbA2 = getOrBuildBookIndex(chaptersA);
     expect(dbA2).not.toBe(dbA);
   });

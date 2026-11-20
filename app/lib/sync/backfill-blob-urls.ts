@@ -13,22 +13,6 @@ function getBookStore(): UseStore {
   return _bookStore;
 }
 
-/**
- * One-time migration that re-enqueues a `book` change for every locally
- * stored book that already has `remoteFileUrl` or `remoteCoverUrl` set.
- *
- * Before this migration, blob URLs only reached Postgres via the
- * `onUploadCompleted` webhook in `api.sync.files.upload.ts`. That webhook
- * is unreliable (timing, silent failures, row-not-yet-inserted races), so
- * books uploaded prior to the push-carries-URLs fix have null
- * `cover_blob_url` / `file_blob_url` columns in prod. Re-pushing these
- * records on first sync after upgrade flushes the URLs through the new
- * push handler path (which calls `updateBookBlobUrls` with COALESCE).
- *
- * Gated on a localStorage flag so it runs at most once per device.
- * Tolerant of per-book errors — a failure on one book is logged and the
- * loop continues.
- */
 export async function runBlobUrlBackfillIfNeeded(): Promise<void> {
   if (typeof localStorage === "undefined") return;
   if (localStorage.getItem(BACKFILL_FLAG_KEY)) return;

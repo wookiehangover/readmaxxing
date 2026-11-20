@@ -13,7 +13,6 @@ import type {
 export interface ReviewCheckpoint extends ReviewChapterBoundary {
   chapterIndex: number;
   sourceFingerprint: string | null;
-  /** Opaque reader locator (currently an EPUB CFI), owned by navigation. */
   returnLocator: string | null;
 }
 
@@ -25,7 +24,6 @@ export interface ReviewAssignment {
 }
 
 export interface ReviewLocalDraft {
-  /** Assignment id; scope lives on the containing cache. */
   id: string;
   documentJson: string;
   revision: number;
@@ -39,7 +37,6 @@ export interface ReviewSubmission {
   grading: ReviewGradingLevel;
 }
 
-/** Immutable server snapshots; rich text is opaque JSON, annotations are normalized. */
 export interface ReviewAttempt extends Omit<ReviewAttemptDTO, "document" | "annotations"> {
   documentJson: string;
   annotations: Collection<ReviewAnnotation & { id: string }, "id">;
@@ -52,7 +49,6 @@ export interface ReviewCache {
   preferences: ReviewPreferences;
   checkpoints: Collection<ReviewCheckpoint, "key">;
   assignments: Collection<ReviewAssignment, "id">;
-  /** Server-authorized membership, separate from retained historical records. */
   currentAssignmentIds: string[];
   questions: Collection<ReviewQuestionDTO, "id">;
   attempts: Collection<ReviewAttempt, "id">;
@@ -73,7 +69,6 @@ export interface ReviewRequest {
 
 export interface ReviewsState {
   readerId: string | null;
-  /** Fingerprints observed in the active local EPUB, independent of server history. */
   localSources: Record<string, string> | null;
   bookId: string | null;
   userId: string | null;

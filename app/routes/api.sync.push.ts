@@ -35,14 +35,9 @@ export async function processEntry(
           deletedAt?: number | null;
         };
 
-        // Cross-device dedup: if another non-deleted book for this user
-        // already has the same file_hash, converge to that canonical id.
         if (data.fileHash) {
           const canonical = await findBookByUserAndHash(userId, data.fileHash);
           if (canonical && canonical.id !== entry.entityId) {
-            // Only tombstone the incoming id if it is not already the
-            // canonical (or already tombstoned) — keeps the operation
-            // idempotent across retries.
             const existing = await getBookByIdForUser(entry.entityId, userId);
             if (!existing || existing.deletedAt == null) {
               await insertTombstonedBook(userId, {
@@ -66,11 +61,6 @@ export async function processEntry(
         };
         await upsertBook(userId, bookData);
 
-        // Persist blob URLs if the client carried them. Additive to the
-        // onUploadCompleted webhook in api.sync.files.upload.ts (the webhook
-        // is still a fast path but no longer the only way a URL reaches the
-        // DB). COALESCE inside updateBookBlobUrls prevents a nullish value
-        // on one side from clobbering an existing non-null column.
         if (data.remoteCoverUrl || data.remoteFileUrl) {
           await updateBookBlobUrls(entry.entityId, {
             coverBlobUrl: data.remoteCoverUrl ?? undefined,
@@ -93,7 +83,6 @@ export async function processEntry(
           new Date(entry.timestamp),
         );
       }
-      // delete is a no-op for positions
       return { accepted: true };
     }
 
@@ -181,7 +170,6 @@ export async function processEntry(
           data.updatedAt ? new Date(data.updatedAt) : new Date(entry.timestamp),
         );
       }
-      // delete is a no-op for notebooks
       return { accepted: true };
     }
 
@@ -210,12 +198,6 @@ export async function processEntry(
     }
 
     case "chat_message": {
-      // Chat messages are server-authoritative: only /api/chat writes them
-      // (see AGENTS.md "Chat architecture"). Wave 1 audit flagged that this
-      // branch still accepted an unclamped client `createdAt`, leaving a
-      // latent vector for clock-skewed clients to poison message ordering.
-      // After Task B, the client no longer pushes chat_message entries; this
-      // endpoint now rejects any that slip through rather than trusting them.
       return {
         accepted: false,
         reason: "chat_message entries are not accepted via /api/sync/push",
@@ -226,7 +208,6 @@ export async function processEntry(
       if (entry.operation === "put") {
         await upsertSettings(userId, entry.data, new Date(entry.timestamp));
       }
-      // delete is a no-op for settings
       return { accepted: true };
     }
 
@@ -259,8 +240,6 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "Missing or invalid 'changes' array" }, { status: 400 });
   }
 
-  // Sort changes so parent entities (book) are processed before dependents (position).
-  // This prevents FK violations when a position references a book in the same push batch.
   const entityOrder: Record<string, number> = {
     book: 0,
     position: 1,
@@ -297,7 +276,6 @@ export async function action({ request }: { request: Request }) {
     }
   }
 
-  // Update user's last_sync_at
   if (accepted.length > 0) {
     await upsertUser(userId);
   }

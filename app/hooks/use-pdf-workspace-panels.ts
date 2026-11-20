@@ -52,7 +52,6 @@ export function usePdfWorkspacePanels({
     enabled: hasRestoredPosition,
   });
 
-  // Register navigation callback for PDF (accepts "page:N" format or page number string)
   const goToPageRef = useRef<(page: number) => void>(() => {});
 
   const setGoToPage = useCallback((fn: (page: number) => void) => {
@@ -77,7 +76,6 @@ export function usePdfWorkspacePanels({
     };
   }, [book.id, navigationMap]);
 
-  // Register temp highlight callback
   useEffect(() => {
     tempHighlightMap.current.set(book.id, applyTempHighlight);
     return () => {
@@ -85,7 +83,6 @@ export function usePdfWorkspacePanels({
     };
   }, [book.id, applyTempHighlight, tempHighlightMap]);
 
-  // Register highlight delete callback
   useEffect(() => {
     highlightDeleteMap.current.set(book.id, removeHighlight);
     return () => {
@@ -179,14 +176,11 @@ export function usePdfWorkspacePanels({
     window.getSelection()?.removeAllRanges();
   }, [book, dismissPopovers, selectionText, store, ws.openChatRef, ws.pendingChatPromptMap]);
 
-  // Delegate to the workspace-level openers so focused-mode cluster rules
-  // (add-tab in right group, no splitting) are applied uniformly.
   const handleOpenNotebook = useCallback(() => {
     store.dispatch(selectReadingRailTab(book.id, "Notes"));
     ws.openNotebookRef.current?.(book);
   }, [ws, book, store]);
 
-  // Keep ref in sync so usePdfHighlights click handler always calls latest version
   handleOpenNotebookRef.current = handleOpenNotebook;
 
   const handleOpenChat = useCallback(() => {
@@ -194,11 +188,8 @@ export function usePdfWorkspacePanels({
     ws.openChatRef.current?.(book);
   }, [ws, book, store]);
 
-  // Populate chatContextMap with current page text for AI chat
-  // Prefer the already-loaded pdfDocRef to avoid re-creating the document per page
   const bookDataRef = useRef<ArrayBuffer | null>(null);
   useEffect(() => {
-    // Only load book data as fallback when pdfDocRef is not available
     if (pdfDocRef) return;
     BookService.getBookData(book.id)
       .then((data) => {
@@ -215,7 +206,6 @@ export function usePdfWorkspacePanels({
     const doc = pdfDocRef?.current;
 
     if (doc) {
-      // Fast path: reuse the already-loaded PDF document
       extractPdfPageContextFromDoc(doc, currentPage)
         .then(({ text, previousPage, nextPage }) => {
           if (cancelled) return;
@@ -234,7 +224,6 @@ export function usePdfWorkspacePanels({
         })
         .catch(console.error);
     } else {
-      // Fallback: create a new document from raw data
       const data = bookDataRef.current;
       if (!data) return;
       extractPdfPageContext(data, currentPage)
@@ -261,7 +250,6 @@ export function usePdfWorkspacePanels({
     };
   }, [book.id, currentPage, chatContextMap, hasRestoredPosition, pdfDocRef]);
 
-  // Clean up chatContextMap on unmount
   useEffect(() => {
     return () => {
       chatContextMap.current.delete(book.id);

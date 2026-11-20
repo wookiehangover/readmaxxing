@@ -3,8 +3,6 @@ import { createStore, set as idbSet } from "idb-keyval";
 
 const Effect = { runPromise: <A>(promise: Promise<A>) => promise };
 
-// Mock the sync changelog so we can assert on recordChange invocations
-// without touching the real changelog IDB store.
 vi.mock("~/lib/sync/change-log", () => ({
   recordChange: vi.fn().mockResolvedValue(undefined),
 }));
@@ -13,21 +11,15 @@ import { recordChange } from "~/lib/sync/change-log";
 import { makePositionService } from "../position-store";
 import type { PositionRecord } from "../position-store";
 
-// Create a test-only store (fake-indexeddb via vitest setupFiles)
 function createTestStore() {
   const store = createStore("test-positions-" + Math.random(), "positions");
   return { store, service: makePositionService({ positionStore: store }) };
 }
 
-// ---------------------------------------------------------------------------
-// migratePosition (tested via getPosition / getPositionRecord)
-// ---------------------------------------------------------------------------
-
 describe("position migration (via service)", () => {
   it("migrates a legacy plain-string CFI to { cfi, updatedAt: 0 }", async () => {
     const { store, service } = createTestStore();
 
-    // Write a raw string directly (simulating old format)
     await idbSet("book-1", "epubcfi(/6/10)", store);
 
     const cfi = await Effect.runPromise(service.getPosition("book-1"));
@@ -69,17 +61,12 @@ describe("position migration (via service)", () => {
   it("defaults updatedAt to 0 when missing from record object", async () => {
     const { store, service } = createTestStore();
 
-    // Object with cfi but no updatedAt
     await idbSet("book-4", { cfi: "epubcfi(/6/30)" }, store);
 
     const record = await Effect.runPromise(service.getPositionRecord("book-4"));
     expect(record).toEqual({ cfi: "epubcfi(/6/30)", updatedAt: 0 });
   });
 });
-
-// ---------------------------------------------------------------------------
-// savePosition round-trip
-// ---------------------------------------------------------------------------
 
 describe("savePosition", () => {
   beforeEach(() => {
@@ -129,11 +116,9 @@ describe("savePosition", () => {
       service.savePosition("panel-xyz", "epubcfi(/6/8)", { recordChange: false }),
     );
 
-    // IDB still gets the write — local restore on refresh needs it.
     const record = await Effect.runPromise(service.getPositionRecord("panel-xyz"));
     expect(record?.cfi).toBe("epubcfi(/6/8)");
 
-    // But no sync changelog entry, so no doubled push per page turn.
     expect(recordChange).not.toHaveBeenCalled();
   });
 
@@ -144,9 +129,6 @@ describe("savePosition", () => {
     const first = await Effect.runPromise(service.getPositionRecord("book-9"));
     expect(recordChange).toHaveBeenCalledTimes(1);
 
-    // Second save with identical CFI should be a no-op: no new changelog
-    // entry, and the stored updatedAt must not change (otherwise a stuck
-    // relocated-event source can drive a 1Hz sync-push loop).
     await Effect.runPromise(service.savePosition("book-9", "epubcfi(/6/90)"));
     const second = await Effect.runPromise(service.getPositionRecord("book-9"));
 

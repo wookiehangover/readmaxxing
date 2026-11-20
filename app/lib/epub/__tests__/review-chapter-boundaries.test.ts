@@ -169,8 +169,6 @@ describe("review chapter boundaries", () => {
         xhtml(' \n<p id="first"></p><h1 id="second">Second</h1><p>Second body.</p> \n'),
         "application/xhtml+xml",
       );
-      // happy-dom cannot parse or create CDATA. Model its public CharacterData
-      // surface to exercise source offsets for the native nodeType 4 case.
       const cdata = document.createTextNode(firstText);
       Object.defineProperty(cdata, "nodeType", { value: 4 });
       document.getElementById("first")!.appendChild(cdata);

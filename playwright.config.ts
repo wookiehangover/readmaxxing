@@ -5,14 +5,11 @@ const baseURL = `http://localhost:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
-  // Enable parallel execution for better performance
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  // Use 2 workers in CI, up to 4 locally for better performance
   workers: process.env.CI ? 2 : undefined,
   reporter: process.env.CI ? "github" : "html",
-  // Global timeout settings to prevent hanging tests
   timeout: 90_000,
   expect: {
     timeout: 30_000,
@@ -20,7 +17,6 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "retain-on-failure",
-    // Reduce video/screenshot overhead
     video: "retain-on-failure",
     screenshot: "only-on-failure",
   },

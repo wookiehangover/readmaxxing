@@ -1,6 +1,5 @@
 import type { ChatMessageRow, ChatSessionRow } from "~/lib/database/chat/chat-session";
 
-/** Export visible conversation text, excluding internal reasoning and tool payloads. */
 export function chatToMarkdown(
   session: Pick<ChatSessionRow, "id" | "title" | "activeStreamId">,
   messages: ChatMessageRow[],

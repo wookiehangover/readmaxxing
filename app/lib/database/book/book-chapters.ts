@@ -6,10 +6,6 @@ export interface BookChaptersRow {
   userId: string;
   bookId: string;
   chapters: unknown;
-  /**
-   * Time of the last successful upload/persist of this chapters set.
-   * This is not guaranteed to be the original EPUB parse timestamp.
-   */
   extractedAt: Date;
   currentUploadId: string | null;
 }
@@ -119,10 +115,6 @@ export function isChapterUploadSessionMismatchError(
   );
 }
 
-/**
- * Legacy single-shot chapter upload. `extractedAt` is the last successful upload
- * time for the persisted set, not necessarily the EPUB's original parse time.
- */
 export async function upsertBookChapters(
   userId: string,
   bookId: string,

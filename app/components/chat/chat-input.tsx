@@ -44,9 +44,6 @@ export function ChatInput({
       })()
     : null;
 
-  // When gated, we passively open the onboarding dialog once on the first
-  // focus/click so the user sees the CTA, then let subsequent focus and typing
-  // flow through untouched. Submit always re-opens with the current text.
   const passiveOpenGuardRef = useRef(false);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {

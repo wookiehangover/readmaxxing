@@ -64,9 +64,6 @@ export async function upsertHighlight(
 ): Promise<HighlightRow | null> {
   const pool = getPool();
   const textAnchorJson = highlight.textAnchor != null ? JSON.stringify(highlight.textAnchor) : null;
-  // Clamp client-provided timestamps so a skewed clock cannot write
-  // far-future created_at/deleted_at values (a future deleted_at would match
-  // `deleted_at > cursor` on every subsequent pull).
   const createdAtIso = clampUpdatedAt(highlight.createdAt);
   const deletedAtIso = clampNullableTimestamp(highlight.deletedAt);
   const result = await pool.query<HighlightRow>(sql`

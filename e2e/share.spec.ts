@@ -212,7 +212,6 @@ test.describe("Share", () => {
   test.setTimeout(180_000);
 
   test.beforeEach(async ({ page, context, request }) => {
-    // Skip share tests in CI - they require Vercel Blob storage for book sync
     test.skip(!!process.env.SKIP_SHARE_TESTS, "Share tests skipped (require Vercel Blob storage)");
 
     await skipIfAuthNotConfigured(request);

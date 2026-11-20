@@ -9,7 +9,6 @@ interface UseReaderSearchOptions {
   bookRef: React.RefObject<SuccessorBookAdapter | null>;
   renditionRef: React.RefObject<SuccessorRenditionAdapter | null>;
   bookId: string;
-  /** When provided, Cmd/Ctrl+F is only intercepted if this element (or a descendant) has focus. */
   panelRef?: React.RefObject<HTMLElement | null>;
 }
 
@@ -23,14 +22,9 @@ interface UseReaderSearchReturn {
   handleSearchOpen: () => void;
   handleSearchClose: () => void;
   handleSearchQueryChange: (query: string) => void;
-  /** Pass this to useEpubLifecycle's onSearchOpen option */
   handleSearchOpenFromIframe: () => void;
 }
 
-/**
- * Shared hook that encapsulates search state management, search highlight
- * annotations, and Cmd/Ctrl+F keyboard shortcut interception for epub readers.
- */
 export function useReaderSearch({
   bookRef,
   renditionRef,
@@ -48,10 +42,8 @@ export function useReaderSearch({
     clear: clearSearch,
   } = useBookSearch(bookRef);
 
-  // Track previous search decorations so we can remove them
   const prevSearchDecorationIdsRef = useRef<string[]>([]);
 
-  // Navigate to current search result when index changes
   useEffect(() => {
     if (searchResults.length > 0 && searchResults[searchIndex]) {
       renditionRef.current?.display(searchResults[searchIndex].cfi).catch((err: unknown) => {
@@ -60,7 +52,6 @@ export function useReaderSearch({
     }
   }, [searchIndex, searchResults, renditionRef]);
 
-  // Apply/remove search highlight decorations in the epub
   useEffect(() => {
     const rendition = renditionRef.current;
     if (!rendition) return;
@@ -72,7 +63,6 @@ export function useReaderSearch({
       return;
     }
 
-    // Add highlight decorations for all results
     const decorationIds: string[] = [];
     for (let i = 0; i < searchResults.length; i++) {
       const cfi = searchResults[i].cfi;
@@ -93,7 +83,6 @@ export function useReaderSearch({
     prevSearchDecorationIdsRef.current = decorationIds;
   }, [searchResults, searchIndex, renditionRef]);
 
-  // Clear search when book changes
   useEffect(() => {
     setSearchOpen(false);
     setSearchQuery("");
@@ -122,11 +111,9 @@ export function useReaderSearch({
     setSearchOpen(true);
   }, []);
 
-  // Intercept Cmd/Ctrl+F on the parent document
   useEffect(() => {
     const handleFindShortcut = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
-        // If panelRef is provided, only intercept when focus is inside the panel
         if (panelRef) {
           const el = panelRef.current;
           if (!el?.contains(document.activeElement) && document.activeElement !== el) return;

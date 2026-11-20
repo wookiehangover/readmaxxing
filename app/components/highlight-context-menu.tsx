@@ -45,7 +45,6 @@ export function HighlightContextMenu({
     const handlePointerDown = (e: PointerEvent) => {
       if (!menuRef.current?.contains(e.target as Node)) onDismiss();
     };
-    // Clicking into a reader iframe blurs the parent window instead of firing pointerdown here.
     window.addEventListener("blur", onDismiss);
     window.addEventListener("resize", onDismiss);
     document.addEventListener("keydown", handleKey);

@@ -108,8 +108,6 @@ for (const mobile of [false, true]) {
     const frame = page.locator('[aria-label="Book surface"] iframe').first();
     const frameHandle = await frame.elementHandle();
     await page.getByRole("button", { name: "Back to chapter" }).click();
-    // The retained iframe overrides its parent's visibility while restoration runs.
-    // Wait for the review surface to close before requesting it again.
     await expect(answer).toHaveCount(0);
     await expect(frame).toBeVisible();
     expect(await frameHandle?.evaluate((element) => element.isConnected)).toBe(true);

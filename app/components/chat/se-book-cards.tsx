@@ -6,7 +6,6 @@ import { useWorkspace } from "~/lib/context/workspace-context";
 import { uploadBooksRequested } from "~/lib/themis/books/books-slice";
 import { useAppStore } from "~/lib/themis/provider";
 
-/** Inline SE book card for chat results — compact horizontal layout. */
 export function ChatSEBookCard({
   book,
   isDownloading,
@@ -76,7 +75,6 @@ export function ChatSEBookCard({
   );
 }
 
-/** Renders SE search results as a horizontally scrollable row of cards in chat. */
 export function SEBookCardsInChat({ books }: { books: SEBook[] }) {
   const { onBookAddedRef } = useWorkspace();
   const store = useAppStore();

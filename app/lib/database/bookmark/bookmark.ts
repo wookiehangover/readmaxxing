@@ -47,8 +47,6 @@ export async function upsertBookmark(
 ): Promise<BookmarkRow | null> {
   const pool = getPool();
   const updatedAtIso = clampUpdatedAt(bookmark.updatedAt ?? bookmark.createdAt);
-  // Clamp created_at/deleted_at too: a far-future deleted_at would match
-  // `deleted_at > cursor` on every subsequent pull.
   const createdAtIso = clampUpdatedAt(bookmark.createdAt);
   const deletedAtIso = clampNullableTimestamp(bookmark.deletedAt);
   const result = await pool.query<BookmarkRow>(sql`

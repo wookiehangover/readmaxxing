@@ -23,7 +23,6 @@ export const DEFAULT_DEMO_BOOK = {
     hasLocalFile: true,
   },
   epubPath: "/demo/the-great-gatsby.epub",
-  /** Chapter 1, at Nick's opening reflection on his father's advice. */
   positionCfi: "epubcfi(/6/12!/4/4/2[chapter-1]/4/1:0[,In my yo])",
   notebookContent: {
     type: "doc",

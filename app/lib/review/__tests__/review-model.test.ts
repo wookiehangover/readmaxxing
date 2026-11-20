@@ -135,7 +135,6 @@ describe("bounded review question generation", () => {
             abortSignal.addEventListener("abort", () => reject(new Error("timeout"))),
           ),
       );
-      // Node AbortSignal.timeout uses native timers; intercept only its construction for fake time.
       const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
         const controller = new AbortController();
         setTimeout(() => controller.abort(), ms);

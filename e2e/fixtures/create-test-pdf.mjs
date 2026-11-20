@@ -1,17 +1,9 @@
-/**
- * Generate a minimal valid PDF file for E2E testing.
- * Run: node e2e/fixtures/create-test-pdf.mjs
- *
- * Produces e2e/fixtures/test-document.pdf — a two-page PDF with title/author metadata.
- * This is a raw PDF 1.4 file built from scratch (no dependencies needed).
- */
 import { writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// PDF content as string segments — we track byte offsets for the xref table
 const objects = [];
 let currentOffset = 0;
 
@@ -25,29 +17,24 @@ function getOffset() {
   return currentOffset;
 }
 
-// PDF header
 addLine("%PDF-1.4");
 addLine("%\xE2\xE3\xCF\xD3");
 
-// Object 1: Catalog
 const obj1Offset = getOffset();
 addLine("1 0 obj");
 addLine("<< /Type /Catalog /Pages 2 0 R >>");
 addLine("endobj");
 
-// Object 2: Pages
 const obj2Offset = getOffset();
 addLine("2 0 obj");
 addLine("<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>");
 addLine("endobj");
 
-// Object 5: Font
 const obj5Offset = getOffset();
 addLine("5 0 obj");
 addLine("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
 addLine("endobj");
 
-// Page 1 content
 const page1Text = [
   "BT",
   "/F1 24 Tf",
@@ -74,7 +61,6 @@ addLine(page1Text);
 addLine("endstream");
 addLine("endobj");
 
-// Object 3: Page 1
 const obj3Offset = getOffset();
 addLine("3 0 obj");
 addLine(
@@ -82,7 +68,6 @@ addLine(
 );
 addLine("endobj");
 
-// Page 2 content
 const page2Text = [
   "BT",
   "/F1 18 Tf",
@@ -104,7 +89,6 @@ addLine(page2Text);
 addLine("endstream");
 addLine("endobj");
 
-// Object 4: Page 2
 const obj4Offset = getOffset();
 addLine("4 0 obj");
 addLine(
@@ -112,13 +96,11 @@ addLine(
 );
 addLine("endobj");
 
-// Object 8: Info dictionary (metadata)
 const obj8Offset = getOffset();
 addLine("8 0 obj");
 addLine("<< /Title (Test PDF for E2E) /Author (Test PDF Author) /Creator (create-test-pdf.mjs) >>");
 addLine("endobj");
 
-// Cross-reference table
 const xrefOffset = getOffset();
 addLine("xref");
 addLine("0 9");
@@ -132,7 +114,6 @@ addLine(`${String(obj6Offset).padStart(10, "0")} 00000 n `);
 addLine(`${String(obj7Offset).padStart(10, "0")} 00000 n `);
 addLine(`${String(obj8Offset).padStart(10, "0")} 00000 n `);
 
-// Trailer
 addLine("trailer");
 addLine("<< /Size 9 /Root 1 0 R /Info 8 0 R >>");
 addLine("startxref");

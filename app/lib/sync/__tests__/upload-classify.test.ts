@@ -6,9 +6,6 @@ import {
   UPLOAD_INCALL_RETRY_DELAYS_MS,
 } from "../upload-retry";
 
-// Construct an Error that mimics the name surface exposed by @vercel/blob error
-// classes. The SDK defines them as `var X = class extends BlobError {}` so
-// `err.constructor.name === "X"` while `err.name === "Error"`.
 function makeBlobError(className: string, message: string): Error {
   class Stub extends Error {}
   Object.defineProperty(Stub, "name", { value: className });
@@ -163,7 +160,6 @@ describe("runUploadWithRetry", () => {
     const onGiveUp = vi.fn();
     const onTransientRetry = vi.fn();
 
-    // delays = [10, 10] → max 3 attempts total, matching the DoD "503 × 3 → gives up" case.
     const result = await runUploadWithRetry(
       performUpload,
       { onTransientRetry, onGiveUp },

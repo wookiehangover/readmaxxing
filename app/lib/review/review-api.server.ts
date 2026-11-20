@@ -9,7 +9,6 @@ import type { ReviewApiError } from "./review-types";
 
 const privateHeaders = { "Cache-Control": "private, no-store" };
 
-/** All API successes and failures are private, including authenticated GET results. */
 export async function reviewApi(
   request: Request,
   method: "GET" | "POST",
@@ -52,7 +51,6 @@ export async function reviewApi(
 
 const MAX_REQUEST_BYTES = 4_000_000;
 
-/** Bound bytes before parsing and depth before recursive rich-text schema validation. */
 export async function readReviewRequest<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
   try {
     if (Number(request.headers.get("content-length")) > MAX_REQUEST_BYTES || !request.body)

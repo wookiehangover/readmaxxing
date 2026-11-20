@@ -31,7 +31,6 @@ export interface UsePdfLifecycleConfig {
   onCleanupToc?: () => void;
   onRelocated?: () => void;
   panelRef?: React.RefObject<HTMLDivElement | null>;
-  /** Called after pages have been rendered (e.g. to re-apply highlight overlays). */
   onAfterRender?: () => void;
 }
 
@@ -49,9 +48,7 @@ export interface UsePdfLifecycleReturn {
   preparePageForCarousel: (page: number) => Promise<boolean>;
   flushPositionSave: () => void;
   pdfDocRef: React.RefObject<any>;
-  /** Reference to the PDFViewer instance for search/highlight integration */
   viewerRef: React.RefObject<any>;
-  /** Reference to the EventBus instance for search/highlight integration */
   eventBusRef: React.RefObject<any>;
 }
 
@@ -176,15 +173,12 @@ async function pdfChapterStarts(doc: any, items: any[]): Promise<PdfChapterStart
   return starts;
 }
 
-/** Map our PdfLayout setting to PDFViewer ScrollMode */
 function layoutToScrollMode(layout: PdfLayout): number {
-  // ScrollMode values: VERTICAL=0, PAGE=3
-  if (layout === "continuous") return 0; // ScrollMode.VERTICAL
-  if (layout === "two-page") return 3; // ScrollMode.PAGE — paired with SpreadMode.EVEN
-  return 3; // ScrollMode.PAGE — single-page for all other modes
+  if (layout === "continuous") return 0;
+  if (layout === "two-page") return 3;
+  return 3;
 }
 
-/** Map our PdfLayout setting to a pdf.js named scale value */
 function layoutToScaleValue(layout: PdfLayout): string {
   switch (layout) {
     case "original":
@@ -202,9 +196,7 @@ function layoutToScaleValue(layout: PdfLayout): string {
   }
 }
 
-/** Apply layout-based scale and spread mode to a PDFViewer */
 function applyLayoutToViewer(viewer: any, layout: PdfLayout): void {
-  // SpreadMode: NONE=0, ODD=1, EVEN=2
   viewer.spreadMode = layout === "two-page" ? 2 : 0;
   viewer.scrollMode = layoutToScrollMode(layout);
   viewer.currentScaleValue = layoutToScaleValue(layout);
@@ -253,7 +245,6 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
   const configRef = useRef(config);
   configRef.current = config;
 
-  // Access workspace context to check if this book panel is active in focused mode
   const ws = useOptionalWorkspace();
   const store = useAppStore();
 
@@ -338,7 +329,6 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     navigateToPosition,
   });
 
-  // Main lifecycle effect — create PDFViewer and load document
   useEffect(() => {
     if (!enabled) return;
     const el = containerRef.current;
@@ -355,7 +345,6 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     if (persistPosition) registerActiveReader(bookId);
 
     const init = async () => {
-      // Load book data
       const bookData = loadData
         ? await loadData()
         : await new Promise<ArrayBuffer>((resolve, reject) => {
@@ -365,37 +354,29 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
           });
       if (cancelled) return;
 
-      // Setup pdfjs worker
       const pdfjs = await import("pdfjs-dist");
       const workerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url);
       pdfjs.GlobalWorkerOptions.workerSrc = workerUrl.href;
 
-      // Import viewer components
       const pdfjsViewer = await import("pdfjs-dist/web/pdf_viewer.mjs");
 
       if (cancelled) return;
 
-      // Create EventBus
       const eventBus = new pdfjsViewer.EventBus();
       eventBusRef.current = eventBus;
 
-      // Create PDFLinkService
       const linkService = new pdfjsViewer.PDFLinkService({ eventBus });
 
-      // Create PDFFindController
       const findController = new pdfjsViewer.PDFFindController({ linkService, eventBus });
 
-      // Ensure container has the required inner div
       el.innerHTML = "";
       const viewerDiv = document.createElement("div");
       viewerDiv.className = "pdfViewer";
       el.appendChild(viewerDiv);
 
-      // Determine dark mode page colors
       const isDark = resolveTheme(configRef.current.theme) === "dark";
       const pageColors = isDark ? { background: "#1a1a2e", foreground: "#e0e0e0" } : undefined;
 
-      // Create PDFViewer
       const viewer = new pdfjsViewer.PDFViewer({
         container: el,
         viewer: viewerDiv,
@@ -408,11 +389,9 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       viewerRef.current = viewer;
       linkService.setViewer(viewer);
 
-      // Set initial scroll/spread mode based on layout
       viewer.scrollMode = layoutToScrollMode(configRef.current.pdfLayout);
       viewer.spreadMode = configRef.current.pdfLayout === "two-page" ? 2 : 0;
 
-      // Listen for page changes
       eventBus.on("pagechanging", (evt: any) => {
         const pageNum = evt.pageNumber;
         const shouldSave = shouldSavePdfPageChange(
@@ -443,12 +422,10 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
         );
       });
 
-      // Listen for pages rendered (for highlight overlay re-application)
       eventBus.on("pagerendered", () => {
         configRef.current.onAfterRender?.();
       });
 
-      // Load PDF document
       const dataCopy = new Uint8Array(bookData).slice();
       const loadingTask = pdfjs.getDocument({ data: dataCopy });
       loadingTaskRef.current = loadingTask;
@@ -459,17 +436,13 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       pdfDocRef.current = doc;
       setTotalPages(doc.numPages);
 
-      // Set document on viewer
       viewer.setDocument(doc);
       linkService.setDocument(doc, null);
       findController.setDocument(doc);
 
-      // Apply initial layout-based scale
-      // Wait for first page to render before setting scale
       eventBus.on("pagesinit", () => {
         applyLayoutToViewer(viewer, configRef.current.pdfLayout);
 
-        // Restore reading position
         const resolvePosition = persistPosition
           ? new Promise<void>((resolve, reject) => {
               const positionKeys = panelId === undefined ? [bookId] : [bookId, panelId];
@@ -511,7 +484,6 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
           .catch((err) => console.error("Failed to restore PDF position:", err));
       });
 
-      // Extract TOC from PDF outline
       try {
         const outline = await doc.getOutline();
         if (outline && outline.length > 0) {
@@ -529,9 +501,7 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
           const starts = await pdfChapterStarts(doc, outline);
           if (!cancelled) setChapterStarts(starts);
         }
-      } catch {
-        // Outline extraction is non-fatal
-      }
+      } catch {}
     };
 
     init().catch((err) => {
@@ -542,16 +512,10 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       }
     });
 
-    // Keyboard navigation on the parent document
-    // Arrow keys work globally (no focus check) so users don't need to click
-    // the PDF viewer or navigation buttons first. In workspace/focused mode, we
-    // only respond when this book is the active cluster; otherwise we respond
-    // to all arrow keys. We always skip when typing in an editable element.
     const handleKeyDown = (e: KeyboardEvent) => {
       if (layoutToScrollMode(configRef.current.pdfLayout) === 0) return;
       if (isEditableElement()) return;
 
-      // In workspace focused mode, only respond if this book is the active cluster
       if (ws && ws.activeClusterBookIdRef.current !== null) {
         if (ws.activeClusterBookIdRef.current !== bookId) return;
       }
@@ -563,9 +527,6 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       }
     };
     document.addEventListener("keydown", handleKeyDown);
-    // Flush the debounced position save on refresh/close — without this a
-    // page turn within the debounce window is lost, and the server's older
-    // position wins LWW on the next pull.
     window.addEventListener("pagehide", flushPositionSave);
 
     return () => {
@@ -581,7 +542,6 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
       setHasRestoredPosition(false);
       configRef.current.onCleanupToc?.();
 
-      // Cleanup viewer
       if (viewerRef.current) {
         viewerRef.current.cleanup();
         viewerRef.current = null;
@@ -595,7 +555,6 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, bookId, flushPositionSave, initialPosition, loadData, panelId, persistPosition]);
 
-  // Update scale when fontSize changes
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || !pdfDocRef.current) return;
@@ -603,21 +562,18 @@ export function usePdfLifecycle(config: UsePdfLifecycleConfig): UsePdfLifecycleR
     viewer.currentScale = zoomScale;
   }, [fontSize]);
 
-  // Update scroll mode, spread mode, and scale when pdfLayout changes
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || !pdfDocRef.current) return;
     applyLayoutToViewer(viewer, pdfLayout);
   }, [pdfLayout]);
 
-  // Update page colors when theme changes
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || !pdfDocRef.current) return;
     const isDark = resolveTheme(config.theme) === "dark";
     const pageColors = isDark ? { background: "#1a1a2e", foreground: "#e0e0e0" } : null;
     viewer.pageColors = pageColors;
-    // Force a refresh to apply new colors
     viewer.refresh(false);
   }, [config.theme]);
 

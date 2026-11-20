@@ -117,9 +117,6 @@ export async function getBooksByUserSince(
   return result.rows;
 }
 
-/**
- * Get a single book by ID, scoped to a specific user for authorization.
- */
 export async function getBookByIdForUser(bookId: string, userId: string): Promise<BookRow | null> {
   const pool = getPool();
   const result = await pool.query<BookRow>(sql`
@@ -148,13 +145,6 @@ export async function softDeleteBook(userId: string, bookId: string): Promise<bo
   return (result.rowCount ?? 0) > 0;
 }
 
-/**
- * Find the canonical (earliest-created, non-deleted) book for a given
- * user + file_hash. Used by the push handler to dedup cross-device uploads
- * of the same content. Ties on `created_at` (e.g. bulk backfill writes
- * with identical timestamps) are broken by `id ASC` for deterministic
- * canonical selection across replicas.
- */
 export async function findBookByUserAndHash(
   userId: string,
   fileHash: string,
@@ -172,14 +162,6 @@ export async function findBookByUserAndHash(
   return result.rows[0] ?? null;
 }
 
-/**
- * Insert or update a book row as a tombstone. Used when the push handler
- * detects a duplicate fileHash and needs to propagate the soft-delete of
- * the losing id to other devices via pull.
- *
- * If the row already exists non-deleted, it is soft-deleted in place. If
- * it exists already deleted, this is a no-op. Safe to run repeatedly.
- */
 export async function insertTombstonedBook(
   userId: string,
   data: { id: string; fileHash?: string | null; createdAt?: Date },

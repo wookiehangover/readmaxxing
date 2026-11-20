@@ -32,9 +32,7 @@ async function evictFromCache(
         if (url && matches(url)) await cache.delete(request);
       }),
     );
-  } catch {
-    // Cache eviction is best-effort; stale covers should not break the replace flow.
-  }
+  } catch {}
 }
 
 function isProxyCoverForBook(url: URL, bookId: string): boolean {

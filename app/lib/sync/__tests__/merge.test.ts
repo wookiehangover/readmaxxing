@@ -1,10 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { lwwMerge, setUnionMerge, appendOnlyMerge } from "../merge";
 
-// ---------------------------------------------------------------------------
-// lwwMerge
-// ---------------------------------------------------------------------------
-
 describe("lwwMerge", () => {
   it("returns remote when remote is newer", () => {
     const local = { updatedAt: 100, value: "local" };
@@ -24,10 +20,6 @@ describe("lwwMerge", () => {
     expect(lwwMerge(local, remote)).toBe(remote);
   });
 });
-
-// ---------------------------------------------------------------------------
-// setUnionMerge
-// ---------------------------------------------------------------------------
 
 type TestItem = { id: string; deletedAt?: number | null; updatedAt?: number };
 const getId = (item: TestItem) => item.id;
@@ -89,18 +81,9 @@ describe("setUnionMerge", () => {
     const local: TestItem[] = [{ id: "a" }];
     const remote: TestItem[] = [{ id: "a" }];
     const result = setUnionMerge(local, remote, getId);
-    // Without updatedAt, local stays (no LWW fallback fires)
     expect(result).toHaveLength(1);
   });
 });
-
-// ---------------------------------------------------------------------------
-// appendOnlyMerge
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// setUnionMerge — highlight-shaped records
-// ---------------------------------------------------------------------------
 
 type HighlightItem = {
   id: string;
@@ -208,10 +191,6 @@ describe("setUnionMerge — highlights", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// lwwMerge — notebook-shaped records
-// ---------------------------------------------------------------------------
-
 type NotebookItem = {
   bookId: string;
   content: Record<string, unknown>;
@@ -251,10 +230,6 @@ describe("lwwMerge — notebooks", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// appendOnlyMerge
-// ---------------------------------------------------------------------------
-
 describe("appendOnlyMerge", () => {
   it("unions disjoint sets", () => {
     const local = [{ id: "1", text: "a" }];
@@ -288,10 +263,6 @@ describe("appendOnlyMerge", () => {
     expect(result.find((r) => r.id === "2")).toBeDefined();
   });
 });
-
-// ---------------------------------------------------------------------------
-// lwwMerge — chat session–shaped records
-// ---------------------------------------------------------------------------
 
 type ChatSessionItem = {
   id: string;
@@ -333,10 +304,6 @@ describe("lwwMerge — chat sessions", () => {
     expect(result).toBe(remote);
   });
 });
-
-// ---------------------------------------------------------------------------
-// appendOnlyMerge — chat message–shaped records
-// ---------------------------------------------------------------------------
 
 type ChatMessageItem = {
   id: string;
@@ -392,7 +359,6 @@ describe("appendOnlyMerge — chat messages", () => {
     expect(result).toHaveLength(3);
     expect(result.find((r) => r.id === "m1")).toBeDefined();
     expect(result.find((r) => r.id === "m3")).toBeDefined();
-    // Remote copy preferred for m2
     expect(result.find((r) => r.id === "m2")!.content).toBe("Second-updated");
   });
 
@@ -413,10 +379,6 @@ describe("appendOnlyMerge — chat messages", () => {
     expect(result).toHaveLength(2);
   });
 });
-
-// ---------------------------------------------------------------------------
-// lwwMerge — settings-shaped records
-// ---------------------------------------------------------------------------
 
 type SettingsItem = {
   theme: string;

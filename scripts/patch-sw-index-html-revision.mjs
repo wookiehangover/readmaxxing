@@ -1,13 +1,3 @@
-/**
- * Workbox treats `{ url, revision: null }` as "URL is already uniquely versioned"
- * and will never re-fetch it on SW updates. `/index.html` is not hashed, so a null
- * revision means every new SW reuses the previous deploy's shell HTML while
- * cleanupOutdatedCaches drops the old hashed assets → soft-refresh 404s.
- *
- * VitePWA emits the entry with revision:null; this script runs after the full
- * client build and stamps a content hash so the shell stays consistent with its
- * assets for each deploy.
- */
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";

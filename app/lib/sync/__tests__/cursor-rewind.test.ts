@@ -8,7 +8,6 @@ vi.mock("../remap", () => ({
 import { rewindCursor } from "../sync-cursors";
 import { mergeBookRecord, mergeChatSessionRecord } from "../sync-engine";
 
-// Must match the IDB db/store names used in sync-engine.ts / chat-store.ts.
 const bookStore = createStore("ebook-reader-db", "books");
 const chatSessionStore = createStore("ebook-reader-chat-sessions", "sessions");
 
@@ -16,10 +15,6 @@ beforeEach(async () => {
   await Promise.all([clear(bookStore), clear(chatSessionStore)]);
   localStorage.clear();
 });
-
-// ---------------------------------------------------------------------------
-// rewindCursor
-// ---------------------------------------------------------------------------
 
 describe("rewindCursor", () => {
   it("rewinds an ISO cursor by 1 millisecond", () => {
@@ -42,11 +37,6 @@ describe("rewindCursor", () => {
     expect(Date.parse(input) - Date.parse(rewound)).toBe(1);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Merger idempotency — a row delivered twice must yield the same stored
-// record as a single delivery. This is what makes the 1ms overlap safe.
-// ---------------------------------------------------------------------------
 
 describe("merger idempotency (covers overlap re-delivery)", () => {
   it("mergeBookRecord: applying the same record twice yields identical storage", async () => {
@@ -99,7 +89,6 @@ describe("merger idempotency (covers overlap re-delivery)", () => {
       deletedAt: "2026-04-22T12:00:01.000Z",
     };
 
-    // No local copy exists — both calls should leave storage empty.
     await mergeChatSessionRecord(tombstone);
     const afterFirst = await get<unknown[]>("book-2", chatSessionStore);
 
@@ -110,14 +99,6 @@ describe("merger idempotency (covers overlap re-delivery)", () => {
     expect(afterSecond).toBeUndefined();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Scenario test: two rows share the same updatedAt millisecond. Without
-// rewind, the second pull would skip any row with that exact timestamp
-// (server uses `>`). With rewind, the cursor lands on `ts - 1ms`, so the
-// overlap query re-delivers row A and merger idempotency keeps storage
-// identical to the single-delivery case.
-// ---------------------------------------------------------------------------
 
 describe("overlap-window scenario", () => {
   it("cursor stored after a pull is strictly before the last row's updatedAt", () => {
@@ -136,11 +117,9 @@ describe("overlap-window scenario", () => {
       updatedAt: "2026-04-22T12:00:00.000Z",
     };
 
-    // First pull delivers A; cursor stored = rowA.updatedAt - 1ms.
     await mergeBookRecord(rowA);
     const afterFirstPull = await get<Record<string, unknown>>("book-a", bookStore);
 
-    // Second pull uses `> (rowA.updatedAt - 1ms)`, so server re-delivers A.
     await mergeBookRecord(rowA);
     const afterSecondPull = await get<Record<string, unknown>>("book-a", bookStore);
 

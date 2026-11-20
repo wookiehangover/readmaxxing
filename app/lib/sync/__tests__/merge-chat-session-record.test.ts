@@ -3,7 +3,6 @@ import { createStore, clear, get, set } from "idb-keyval";
 
 import { mergeChatSessionRecord } from "../sync-engine";
 
-// Must match the IDB db/store names used in chat-store.ts and sync-engine.ts.
 const sessionStore = createStore("ebook-reader-chat-sessions", "sessions");
 const activeSessionStore = createStore("ebook-reader-active-session", "active-session");
 
@@ -95,7 +94,6 @@ describe("mergeChatSessionRecord tombstone handling", () => {
     expect(after).toHaveLength(1);
     expect(after?.[0].id).toBe("session-b");
 
-    // active pointer falls back to the remaining session
     const activeAfter = await get<string>(bookId, activeSessionStore);
     expect(activeAfter).toBe("session-b");
   });

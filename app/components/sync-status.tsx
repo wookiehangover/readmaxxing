@@ -18,7 +18,6 @@ function formatLastSynced(iso: string | null): string {
   return date.toLocaleDateString();
 }
 
-/** Force a re-render every 30s so relative timestamps stay fresh. */
 function useTimeTick(intervalMs = 30_000): number {
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -28,21 +27,15 @@ function useTimeTick(intervalMs = 30_000): number {
   return tick;
 }
 
-/**
- * Keep error visible for at least `minMs` so it doesn't flicker
- * between error → syncing → error on consecutive failed cycles.
- */
 function useStickyError(syncError: Error | null, minMs = 3000): Error | null {
   const [displayError, setDisplayError] = useState<Error | null>(syncError);
   const errorTimestampRef = useRef<number>(0);
 
   useEffect(() => {
     if (syncError) {
-      // New error — show immediately and record the timestamp
       setDisplayError(syncError);
       errorTimestampRef.current = Date.now();
     } else if (displayError) {
-      // Error cleared — keep it visible for at least `minMs`
       const elapsed = Date.now() - errorTimestampRef.current;
       const remaining = Math.max(0, minMs - elapsed);
       const timer = setTimeout(() => {
@@ -55,16 +48,11 @@ function useStickyError(syncError: Error | null, minMs = 3000): Error | null {
   return displayError;
 }
 
-/**
- * Minimal sync status indicator for the sidebar footer.
- * Hidden when not authenticated (isActive=false).
- */
 export function SyncStatus({ collapsed }: { collapsed: boolean }) {
   const { isSyncing, hasPendingChanges, lastSyncedAt, syncError, isOnline, isActive } =
     useSyncStatus();
   const stickyError = useStickyError(syncError);
 
-  // Keep relative timestamp ("2m ago") updating live
   useTimeTick();
 
   if (!isActive) return null;
@@ -73,8 +61,6 @@ export function SyncStatus({ collapsed }: { collapsed: boolean }) {
   let label: string;
   let shortLabel: string;
 
-  // Priority: offline > error > syncing > pending > synced
-  // Use stickyError so the error stays visible long enough to be noticed
   if (!isOnline) {
     icon = <CloudOff className="size-3.5" />;
     label = "Offline";

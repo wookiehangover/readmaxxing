@@ -266,7 +266,6 @@ describe("BookService", () => {
       const bookStore = createStore(`book-db-${suffix}`, "books");
       const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
 
-      // Write an old-format record with inline data directly to bookStore
       const oldRecord = {
         id: "old-book",
         title: "Old Book",
@@ -280,17 +279,14 @@ describe("BookService", () => {
       const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
         Effect.runPromise(Effect.provide(e, bookLayer));
 
-      // getBookData should find the inline data and migrate it
       const data = await run(BookService.pipe(Effect.andThen((s) => s.getBookData("old-book"))));
       expect(data).toBeInstanceOf(ArrayBuffer);
       expect(data.byteLength).toBe(16);
 
-      // After migration, data should be in bookDataStore
       const migratedData = await get<ArrayBuffer>("old-book", bookDataStore);
       expect(migratedData).toBeInstanceOf(ArrayBuffer);
       expect(migratedData!.byteLength).toBe(16);
 
-      // And the bookStore record should no longer have inline data
       const metaRecord = await get<Record<string, unknown>>("old-book", bookStore);
       expect(metaRecord).toBeDefined();
       expect(metaRecord!.data).toBeUndefined();
@@ -316,9 +312,7 @@ describe("BookService", () => {
       const run = <A, E>(e: Effect.Effect<A, E, BookService>) =>
         Effect.runPromise(Effect.provide(e, bookLayer));
 
-      // First call triggers migration
       await run(BookService.pipe(Effect.andThen((s) => s.getBookData("old-book-2"))));
-      // Second call should work from bookDataStore
       const data = await run(BookService.pipe(Effect.andThen((s) => s.getBookData("old-book-2"))));
       expect(data).toBeInstanceOf(ArrayBuffer);
       expect(data.byteLength).toBe(8);
@@ -355,8 +349,6 @@ describe("BookService", () => {
       const bookStore = createStore(`book-db-${suffix}`, "books");
       const bookDataStore = createStore(`book-data-db-${suffix}`, "book-data");
 
-      // Seed a valid record alongside several malformed shapes that have
-      // caused `Cannot read properties of undefined (reading '0')` in prod.
       const valid = makeBook({ id: "valid-book", title: "Valid" });
       await set("valid-book", { ...valid }, bookStore);
       await set("undef-book", undefined as unknown as object, bookStore);
@@ -379,7 +371,6 @@ describe("BookService", () => {
 
       const valid = makeBook({ id: "good-book", title: "Good" });
       await set("good-book", { ...valid }, bookStore);
-      // Missing required fields — decodeBookMeta will throw for this record.
       await set("broken-book", { id: "broken-book" }, bookStore);
 
       const bookLayer = Layer.succeed(BookService, makeBookService({ bookStore, bookDataStore }));

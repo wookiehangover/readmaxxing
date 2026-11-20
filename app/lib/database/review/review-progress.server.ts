@@ -4,7 +4,6 @@ import type { ReviewProgressDTO } from "~/lib/review/review-types";
 import { getOwnedReviewChapter } from "./review-source.server";
 import { getReviewQuestionById } from "./review-questions.server";
 
-// Passing/latest are projections of immutable attempts, not independently writable grades.
 const progressColumns = sql`
   p.user_id AS "userId", p.book_id AS "bookId", p.chapter_key AS "chapterKey",
   p.source_fingerprint AS "sourceFingerprint", p.question_id AS "questionId",
@@ -50,7 +49,6 @@ export async function getReviewProgress(
   );
 }
 
-/** A checkpoint keeps its first assigned question, even if a later request changes difficulty. */
 export async function startReviewProgress(
   userId: string,
   bookId: string,

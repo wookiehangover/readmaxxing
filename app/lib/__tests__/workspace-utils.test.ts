@@ -85,12 +85,10 @@ describe("sortBooks", () => {
     const map = new Map<string, number>([["2", 100]]);
     const result = sortBooks([bookA, bookB, bookC], "recent", map);
     expect(result[0].id).toBe("2");
-    // bookA and bookC both have 0, so order among them is stable
   });
 
   it("handles undefined lastOpenedMap for recent sort", () => {
     const result = sortBooks([bookA, bookB, bookC], "recent", undefined);
-    // All have timestamp 0, so order is stable (unchanged)
     expect(result).toHaveLength(3);
   });
 
@@ -164,7 +162,6 @@ describe("sortBooksForTable", () => {
       ["3", 200],
     ]);
     const asc = sortBooksForTable([bookA, bookB, bookC, bookD], "lastOpened", "asc", map);
-    // asc: 100, 200, 300, never (bookD sinks to bottom)
     expect(asc.map((b) => b.id)).toEqual(["1", "3", "2", "4"]);
   });
 
@@ -175,7 +172,6 @@ describe("sortBooksForTable", () => {
 
   it("sorts by updated asc with missing updatedAt at bottom", () => {
     const asc = sortBooksForTable([bookA, bookB, bookC, bookD], "updated", "asc", undefined);
-    // asc: 100, 200, 300, then missing
     expect(asc.map((b) => b.id)).toEqual(["2", "3", "1", "4"]);
   });
 

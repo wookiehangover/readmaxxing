@@ -188,17 +188,10 @@ describe("AnnotationService", () => {
     });
 
     it("persists appended content immediately without requiring a debounce flush", async () => {
-      // Regression test: append_to_notes must survive panel close/unmount.
-      // Previously, when the notebook editor was open, appends only triggered a
-      // debounced save. If the panel unmounted before the debounce fired, the
-      // appended content was lost. The fix ensures saveNotebook is called
-      // immediately after append, so a getNotebook right after returns the
-      // updated content.
       const layer = makeTestLayer();
       const run = <A, E>(e: Effect.Effect<A, E, AnnotationService>) =>
         Effect.runPromise(Effect.provide(e, layer));
 
-      // Simulate existing notebook content
       const initial = makeNotebook({
         content: {
           type: "doc",
@@ -207,7 +200,6 @@ describe("AnnotationService", () => {
       });
       await run(AnnotationService.pipe(Effect.andThen((s) => s.saveNotebook(initial))));
 
-      // Simulate what append_to_notes does: read, merge, save immediately
       await run(
         (async () => {
           const notebook = await currentService.getNotebook("book-1");
@@ -229,7 +221,6 @@ describe("AnnotationService", () => {
         })(),
       );
 
-      // Immediately read back — no debounce delay, simulating unmount right after
       const result = await run(
         AnnotationService.pipe(Effect.andThen((s) => s.getNotebook("book-1"))),
       );
@@ -239,15 +230,10 @@ describe("AnnotationService", () => {
     });
 
     it("append_to_notes falls back to IndexedDB when editor is not ready (loading window)", async () => {
-      // When the notebook panel is mounted but the Tiptap editor hasn't
-      // initialised yet, notebookEditorCallbackMap has no entry for the book.
-      // The tool handler must fall back to the IndexedDB read-merge-write path
-      // and produce the correct merged content.
       const layer = makeTestLayer();
       const run = <A, E>(e: Effect.Effect<A, E, AnnotationService>) =>
         Effect.runPromise(Effect.provide(e, layer));
 
-      // Pre-existing notebook content saved from an earlier session
       const initial = makeNotebook({
         content: {
           type: "doc",
@@ -256,8 +242,6 @@ describe("AnnotationService", () => {
       });
       await run(AnnotationService.pipe(Effect.andThen((s) => s.saveNotebook(initial))));
 
-      // Simulate append_to_notes fallback: no editor callbacks available,
-      // so we read from IndexedDB, merge, and write back
       await run(
         (async () => {
           const notebook = await currentService.getNotebook("book-1");
@@ -286,7 +270,6 @@ describe("AnnotationService", () => {
         AnnotationService.pipe(Effect.andThen((s) => s.getNotebook("book-1"))),
       );
       expect(result).not.toBeNull();
-      // Original 1 node + 2 new nodes = 3
       expect(result!.content.content).toHaveLength(3);
       expect((result!.content as any).content[0].content[0].text).toBe("prior notes");
       expect((result!.content as any).content[1].content[0].text).toBe("New Section");
@@ -294,15 +277,10 @@ describe("AnnotationService", () => {
     });
 
     it("cacheNotebook writes to IndexedDB without recording a sync change", async () => {
-      // When the server is authoritative (e.g. edit_notes tool output), the
-      // client should seed its warm-start cache without emitting a sync
-      // change that would echo the same value back on the next push.
       const layer = makeTestLayer();
       const run = <A, E>(e: Effect.Effect<A, E, AnnotationService>) =>
         Effect.runPromise(Effect.provide(e, layer));
 
-      // Flush any pre-existing unsynced changes from other tests so we can
-      // assert on the delta produced by cacheNotebook alone.
       const pre = await getUnsyncedChanges();
       if (pre.length > 0) {
         await markSynced(pre.map((c) => c.id));
@@ -317,7 +295,6 @@ describe("AnnotationService", () => {
       });
       const cached = await run(AnnotationService.pipe(Effect.andThen((s) => s.cacheNotebook(nb))));
 
-      // IDB should have the notebook row so warm-start matches server state.
       const stored = await run(
         AnnotationService.pipe(Effect.andThen((s) => s.getNotebook("book-1"))),
       );
@@ -325,8 +302,6 @@ describe("AnnotationService", () => {
       expect(stored).not.toBeNull();
       expect((stored!.content as any).content[0].content[0].text).toBe("server truth");
 
-      // Crucially, the change log must NOT have a new notebook entry for this
-      // bookId — otherwise the sync engine would echo it back to the server.
       const unsynced = await getUnsyncedChanges();
       const echoed = unsynced.filter((c) => c.entity === "notebook" && c.entityId === "book-1");
       expect(echoed).toHaveLength(0);
@@ -367,9 +342,6 @@ describe("AnnotationService", () => {
     });
 
     it("edit_notes reads real content from IndexedDB when editor is not ready", async () => {
-      // During the loading window, edit_notes must read the actual notebook
-      // content from IndexedDB (not an empty placeholder) so that SDK
-      // mutations operate on real data.
       const layer = makeTestLayer();
       const run = <A, E>(e: Effect.Effect<A, E, AnnotationService>) =>
         Effect.runPromise(Effect.provide(e, layer));
@@ -389,14 +361,11 @@ describe("AnnotationService", () => {
       });
       await run(AnnotationService.pipe(Effect.andThen((s) => s.saveNotebook(initial))));
 
-      // Simulate edit_notes fallback: read from IndexedDB since editor
-      // is not ready (no callbacks in map)
       const notebook = await run(
         AnnotationService.pipe(Effect.andThen((s) => s.getNotebook("book-1"))),
       );
       const currentContent = notebook?.content ?? { type: "doc" as const, content: [] };
 
-      // The content should be the real notebook, not an empty doc
       expect(currentContent.content).toHaveLength(2);
       expect((currentContent as any).content[0].content[0].text).toBe("My Book Notes");
       expect((currentContent as any).content[1].content[0].text).toBe("Important insight");

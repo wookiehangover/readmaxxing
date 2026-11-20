@@ -35,7 +35,6 @@ import { hydrateBookmarksRequested } from "~/lib/themis/bookmarks/bookmarks-slic
 import { useSyncToFurthestPosition } from "~/hooks/use-sync-to-furthest-position";
 import { PageTurnExperiment } from "~/components/page-turn-experiment";
 
-/** Typography overrides restored from dockview panel params */
 export interface PanelTypographyParams {
   fontFamily?: string;
   fontSize?: number;
@@ -48,20 +47,14 @@ export interface PanelTypographyParams {
 
 interface WorkspaceBookReaderProps {
   bookId: string;
-  /** Initial typography overrides from restored panel params */
   panelTypography?: PanelTypographyParams;
 }
 
 export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookReaderProps) {
   const { navigationMap } = useWorkspace();
-  // Ref holding the real navigateToCfi from the inner component once it mounts.
-  // Before that, the placeholder callback queues CFIs into pendingCfiRef.
   const realNavRef = useRef<((cfi: string) => void) | null>(null);
   const pendingCfiRef = useRef<string | null>(null);
 
-  // Stable placeholder callback registered immediately so the navigation map
-  // has an entry even while book metadata is still loading.
-  // When the rendition isn't ready yet, queue the CFI until initialization completes.
   const placeholderNav = useCallback((cfi: string) => {
     if (realNavRef.current) {
       realNavRef.current(cfi);
@@ -70,7 +63,6 @@ export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookRe
     }
   }, []);
 
-  // Register the placeholder immediately — no waiting for book data.
   useEffect(() => {
     realNavRef.current = null;
     navigationMap.current.set(bookId, placeholderNav);
@@ -81,10 +73,8 @@ export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookRe
     };
   }, [bookId, placeholderNav, navigationMap]);
 
-  // Called by WorkspaceBookReaderInner once its rendition is ready
   const onRenditionReady = useCallback((nav: (cfi: string) => void) => {
     realNavRef.current = nav;
-    // Drain any CFI that arrived while loading
     const pending = pendingCfiRef.current;
     if (pending) {
       pendingCfiRef.current = null;
@@ -92,8 +82,6 @@ export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookRe
     }
   }, []);
 
-  // Look up book metadata from the Themis books collection. Populated at app
-  // startup by the books hydrate saga, so this is a synchronous read.
   const store = useAppStore();
   const booksLoading = store.booksSelectors.selectBooksLoading.useValue();
   const book = store.booksSelectors.selectBookById.useValue(bookId);
@@ -126,10 +114,6 @@ export function WorkspaceBookReader({ bookId, panelTypography }: WorkspaceBookRe
   );
 }
 
-/**
- * Inner component that renders once we have book data.
- * Manages its own epub lifecycle, TOC state, and keyboard navigation.
- */
 function WorkspaceBookReaderInner({
   book,
   panelTypography,
@@ -137,7 +121,6 @@ function WorkspaceBookReaderInner({
 }: {
   book: BookMeta;
   panelTypography?: PanelTypographyParams;
-  /** Called once the rendition is ready so the outer component can connect the real navigate callback */
   onRenditionReady?: (navigateToCfi: (cfi: string) => void) => void;
 }) {
   useSignals();
@@ -304,8 +287,6 @@ function WorkspaceBookReaderInner({
   const reviewVisible = store.reviewsSelectors.selectReviewVisible(book.id);
   const reviewLocked = store.reviewsSelectors.selectReviewLocked(book.id);
   useEffect(() => {
-    // A pre-existing popout may contain a full-spine snapshot. Opening it again
-    // reads the navigator's newly bounded chapter after the preference change.
     setSpeedreadOpen(false);
   }, [reviewsEnabled.value.enabled]);
 
@@ -425,7 +406,6 @@ function WorkspaceBookReaderInner({
           isBookmarked={Boolean(currentBookmark)}
           bookmarksLoaded={bookmarksLoaded}
         />
-        {/* Portal popovers to document.body so position:fixed is viewport-relative. */}
         {selectionPopover &&
           createPortal(
             <HighlightPopover

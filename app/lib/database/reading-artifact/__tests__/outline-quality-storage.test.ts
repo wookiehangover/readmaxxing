@@ -50,7 +50,6 @@ beforeAll(async () => {
   );
   await db.exec("CREATE SCHEMA readmax; CREATE TABLE readmax.user (id UUID PRIMARY KEY)");
   await db.exec(await readFile("database/readmax/reading-artifacts.sql", "utf8"));
-  // Exercise migration from the old schema, then its idempotent replay.
   await db.exec(
     "ALTER TABLE readmax.reading_agent_usage DROP COLUMN quality; ALTER TABLE readmax.reading_ingest_unit DROP COLUMN previous_page, DROP COLUMN next_page",
   );

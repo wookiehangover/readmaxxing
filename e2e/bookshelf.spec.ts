@@ -114,7 +114,6 @@ test("a second cover click opens the book", async ({ page }) => {
   const book = page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" });
   await book.click();
   await expect(book).toHaveAttribute("aria-pressed", "true");
-  // Hit the projected cover, as a reader does, rather than the spine's layout box.
   await book.locator(".bookshelf-volume").evaluate((element) => {
     element.getAnimations().forEach((animation) => animation.finish());
   });
@@ -287,7 +286,6 @@ test("selection turns the cover left, recedes the stack, and reverses with Escap
     .poll(async () => (await other.boundingBox())!.width)
     .toBeLessThan(original.width * 0.9);
   await expect(page.getByRole("link", { name: "Read A Field Guide by Zora Zenith" })).toBeVisible();
-  // A queued scroll event from bringing the book into view must not dismiss it.
   await page.locator(".bookshelf").dispatchEvent("scroll");
   await expect(book).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("Escape");
@@ -312,7 +310,6 @@ test("pointer dismissal does not add a focus ring, while Escape restores keyboar
   await page.goto("/library");
   const book = page.getByRole("button", { name: "Select A Field Guide by Zora Zenith" });
   const other = page.getByRole("button", { name: "Select Remote reading copy by Ada Adams" });
-  // Safari leaves the search field focused when a book is clicked.
   await page.getByRole("textbox").focus();
   await book.click();
   await expect(book).toHaveAttribute("aria-pressed", "true");
@@ -331,7 +328,6 @@ test("pointer dismissal does not add a focus ring, while Escape restores keyboar
   await expect(book).toHaveCSS("outline-style", "none");
   await expect(book.locator(".bookshelf-book-title")).toHaveCSS("text-decoration-line", "none");
   await expect(book.locator(".bookshelf-top")).toHaveCSS("outline-style", "none");
-  // Escape retains focus on the trigger; reselecting must not outline the 3D cover.
   await book.click();
   await expect(book).toHaveAttribute("aria-pressed", "true");
   await expect(book.locator(".bookshelf-top")).toHaveCSS("outline-style", "none");
@@ -364,7 +360,6 @@ test("mobile selection stays inline and reserves room for the upright cover", as
   expect(cover.x).toBeGreaterThan(0);
   expect(cover.x + cover.width).toBeLessThan(390);
   expect(cover.y + cover.height).toBeLessThan(after.y);
-  // Hit the visible projected cover, rather than the untransformed CSS face.
   await page.route("**/api/sync/files/download?bookId=shelf-remote&type=file", (route) =>
     route.fulfill({ path: TEST_EPUB, contentType: "application/epub+zip" }),
   );

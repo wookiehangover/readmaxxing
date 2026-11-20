@@ -20,7 +20,6 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
   }, [dragCounter]);
 
   const handleDragEnter = useCallback((e: DragEvent) => {
-    // Only activate for file drags from the OS, not internal DOM drags.
     if (e.dataTransfer?.types.includes("Files")) {
       e.preventDefault();
       e.stopPropagation();
@@ -45,7 +44,6 @@ export function DropZone({ onBookAdded, children }: DropZoneProps) {
 
   const handleDrop = useCallback(
     (e: DragEvent) => {
-      // Only handle file drops, not internal DOM drags.
       if (!e.dataTransfer?.types.includes("Files")) return;
 
       e.preventDefault();

@@ -212,7 +212,6 @@ for (const flow of ["scrolled", "single", "double"] as const) {
       await navigator.display({ spineIndex: 0, cfi: savedCfi });
       const afterReflow =
         navigator.contentDocument!.getElementById("b")!.getClientRects().length === 0;
-      // An interactive turn at the final endpoint reaches the same host policy.
       if (mode !== "scrolled") {
         navigator.restoreProgression(1);
         navigator.beginInteractivePageTurn("next");

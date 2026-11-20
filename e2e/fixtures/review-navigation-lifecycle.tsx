@@ -6,7 +6,6 @@ import type { AppStore } from "~/lib/themis/store";
 import { useEpubLifecycle } from "~/hooks/use-epub-lifecycle";
 import { openReviewBook } from "~/lib/themis/reviews/reviews-slice";
 
-/** Real parent-provider/child-hook cleanup order, including a live book switch. */
 export async function exerciseReviewTeardown() {
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
@@ -16,7 +15,6 @@ export async function exerciseReviewTeardown() {
     useEpubLifecycle({
       bookId,
       reviewContext: true,
-      // No mounted engine is needed to exercise review ownership teardown.
       containerRef: useRef(null),
       readerLayout: "single",
       fontFamily: "serif",
@@ -52,7 +50,6 @@ export async function exerciseReviewTeardown() {
   render();
   const newerOwnerRetained = store.state.reviews.bookId === "new-owner";
   render("last");
-  // Parent passive cleanup disposes Store before the child's passive cleanup.
   root.unmount();
   host.remove();
   return { opened, switched, closed, newerOwnerRetained };

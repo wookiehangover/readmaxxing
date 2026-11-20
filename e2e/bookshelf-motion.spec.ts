@@ -15,7 +15,6 @@ for (const width of [390, 1280]) {
     const last = page.locator('[data-book-id="stress-79"] .bookshelf-book');
     await expect(first).toHaveCSS("animation-name", "bookshelf-drop");
     await first.focus();
-    // Leaving even partway through the initial drop must permanently retire it.
     await first.evaluate((book) => {
       const animation = book.getAnimations()[0];
       animation.pause();
@@ -79,7 +78,6 @@ test("the selected cover follows the pointer and settles when it leaves", async 
     await expect(volume).toHaveCSS("transform", baseTransform);
     await expect(book).toHaveAttribute("aria-pressed", "true");
   }
-  // Opposite corners tilt on both axes; the selection transform remains unchanged.
   expect(samples[0][0]).toBeGreaterThan(0);
   expect(samples[0][1]).toBeLessThan(0);
   expect(samples[1][0]).toBeLessThan(0);
@@ -138,7 +136,6 @@ test("the selected book keeps six joined faces and an opaque back cover", async 
       });
     }),
   );
-  // A closed cuboid has eight corners, each shared by exactly three faces.
   const vertices: { point: number[]; count: number }[] = [];
   for (const point of corners) {
     const match = vertices.find((vertex) =>
@@ -159,7 +156,6 @@ test("the selected book keeps six joined faces and an opaque back cover", async 
       );
     }),
   ).toBe(true);
-  // Inspect the reverse of the same object: the front must not show through it.
   await volume.evaluate((element) => {
     element.style.transition = "none";
     element.style.rotate = "y 180deg";

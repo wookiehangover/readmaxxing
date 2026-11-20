@@ -32,7 +32,6 @@ function bulletList(...items: string[]): JSONContent {
   };
 }
 
-/** Create a listItem with text and a nested bulletList */
 function listItemWithNested(text: string, ...subItems: string[]): JSONContent {
   return {
     type: "listItem",
@@ -49,7 +48,6 @@ function listItemWithNested(text: string, ...subItems: string[]): JSONContent {
   };
 }
 
-/** Create a bulletList with arbitrary listItem nodes (supports nesting) */
 function nestedBulletList(...items: JSONContent[]): JSONContent {
   return { type: "bulletList", content: items };
 }
@@ -472,11 +470,9 @@ describe("createNotebookSDK", () => {
     it("find matches a list item without false positives from concatenated text", () => {
       const { sdk } = setup(doc(bulletList("one", "two", "three")));
       const results = sdk.find("one");
-      // Matches both the bulletList (text contains "one") and the listItem "one"
       expect(results).toHaveLength(2);
       expect(results[0].type).toBe("bulletList");
       expect(results[1].type).toBe("listItem");
-      // Should NOT match on concatenated "onetwothree"
       const noMatch = sdk.find("onetwothree");
       expect(noMatch).toHaveLength(0);
     });
@@ -521,7 +517,6 @@ describe("createNotebookSDK", () => {
     it("getBlocks emits listItem blocks after their parent list", () => {
       const { sdk } = setup(doc(bulletList("alpha", "beta", "gamma")));
       const blocks = sdk.getBlocks();
-      // Should have 1 bulletList + 3 listItems = 4 blocks
       expect(blocks).toHaveLength(4);
       expect(blocks[0].type).toBe("bulletList");
       expect(blocks[1]).toMatchObject({ type: "listItem", text: "alpha", parentIndex: 0 });
@@ -642,11 +637,9 @@ describe("createNotebookSDK", () => {
     it("find → replace → find → replace works correctly", () => {
       const { sdk } = setup(doc(p("AAA"), p("BBB"), p("CCC")));
 
-      // First mutation
       const first = sdk.find("AAA")[0];
       sdk.replace(first, "XXX");
 
-      // Second mutation (must re-find)
       const second = sdk.find("BBB")[0];
       sdk.replace(second, "YYY");
 
@@ -662,13 +655,10 @@ describe("createNotebookSDK", () => {
     it("stale block is re-found by text match", () => {
       const { sdk } = setup(doc(p("First"), p("Target"), p("Last")));
 
-      // Get block reference
       const target = sdk.find("Target")[0];
 
-      // Mutate the doc (makes target stale)
       sdk.prepend("# New Title");
 
-      // Using the stale block should still work via re-find
       const result = sdk.replace(target, "Replaced");
       expect(result).toBe(true);
       const blocks = sdk.getBlocks();
@@ -724,8 +714,6 @@ describe("createNotebookSDK", () => {
     });
   });
 });
-
-// ─── Comprehensive edge-case tests ───────────────────────────────────────────
 
 describe("complex document structures", () => {
   it("handles multiple lists interspersed with paragraphs and headings", () => {
@@ -792,7 +780,6 @@ describe("complex document structures", () => {
       }),
     );
     const blocks = sdk.getBlocks();
-    // Inline text segments within the same paragraph must NOT be separated by newlines
     expect(blocks[0].text).toBe("Hello world today");
   });
 
@@ -823,15 +810,12 @@ describe("complex document structures", () => {
     }
     const { sdk } = setup(doc(...nodes));
 
-    // Replace first
     let target = sdk.find("Item 0")[0];
     sdk.replace(target, "Replaced first");
 
-    // Replace middle
     target = sdk.find("Item 10")[0];
     sdk.replace(target, "Replaced middle");
 
-    // Replace last
     target = sdk.find("Item 19")[0];
     sdk.replace(target, "Replaced last");
 
@@ -842,7 +826,6 @@ describe("complex document structures", () => {
     expect(texts).not.toContain("Item 0");
     expect(texts).not.toContain("Item 10");
     expect(texts).not.toContain("Item 19");
-    // Others intact
     expect(texts).toContain("Item 5");
     expect(texts).toContain("Item 15");
   });
@@ -947,13 +930,11 @@ describe("replace edge cases", () => {
 
   it("replace a block when same text appears in multiple blocks", () => {
     const { sdk } = setup(doc(p("Duplicate"), p("Middle"), p("Duplicate")));
-    // find returns both, replace the first one
     const results = sdk.find("Duplicate");
     expect(results).toHaveLength(2);
     sdk.replace(results[0], "Replaced first");
     const texts = sdk.getBlocks().map((b) => b.text);
     expect(texts).toContain("Replaced first");
-    // Second "Duplicate" should still exist
     expect(texts).toContain("Duplicate");
     expect(texts).toContain("Middle");
   });
@@ -999,7 +980,6 @@ describe("remove edge cases", () => {
     sdk.remove(target);
 
     const blocks = sdk.getBlocks();
-    // After removing all, tiptap should have at least an empty paragraph
     expect(blocks.length).toBeLessThanOrEqual(1);
   });
 
@@ -1051,7 +1031,6 @@ describe("listItem operations", () => {
     const target = sdk.find({ type: "listItem", text: "target" })[0];
     sdk.replace(target, "**bold text**");
     const items = sdk.find({ type: "listItem" });
-    // The replaced item should contain "bold text"
     expect(items.some((i) => i.text.includes("bold text"))).toBe(true);
     expect(items.map((i) => i.text)).toContain("plain");
     expect(items.map((i) => i.text)).toContain("other");
@@ -1119,7 +1098,6 @@ describe("listItem operations", () => {
     sdk.replace(target, "replaced");
     const items = sdk.find({ type: "listItem" });
     expect(items.map((i) => i.text)).toEqual(["alpha", "replaced", "gamma"]);
-    // List type should still be orderedList
     const blocks = sdk.getBlocks();
     expect(blocks[0].type).toBe("orderedList");
   });
@@ -1144,7 +1122,6 @@ describe("listItem operations", () => {
 
   it("two separate lists — target items in the second list", () => {
     const { sdk } = setup(doc(bulletList("a1", "a2"), p("separator"), bulletList("b1", "b2")));
-    // Find b1 which is in the second list
     const items = sdk.find({ type: "listItem", text: "b1" });
     expect(items).toHaveLength(1);
     sdk.replace(items[0], "replaced-b1");
@@ -1168,7 +1145,6 @@ describe("find edge cases", () => {
   it("find with empty string matches all blocks with text", () => {
     const { sdk } = setup(doc(p("Hello"), p("World")));
     const results = sdk.find("");
-    // Empty string is included in every string, so all blocks should match
     expect(results.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -1189,7 +1165,6 @@ describe("find edge cases", () => {
   it("find text that exists in both a paragraph and a list item", () => {
     const { sdk } = setup(doc(p("shared text"), bulletList("shared text", "other")));
     const results = sdk.find("shared text");
-    // Should match: the paragraph, the bulletList (contains "shared text"), and the listItem
     expect(results.length).toBeGreaterThanOrEqual(2);
     const types = results.map((r) => r.type);
     expect(types).toContain("paragraph");
@@ -1201,7 +1176,6 @@ describe("find edge cases", () => {
       doc(heading(1, "Main Title"), heading(2, "Subtitle"), heading(1, "Another Title")),
     );
     const h1s = sdk.find({ type: "heading", text: "Title" });
-    // "Main Title" and "Another Title" both contain "Title"
     expect(h1s).toHaveLength(2);
   });
 
@@ -1220,8 +1194,6 @@ describe("find edge cases", () => {
 
   it("find with global regex does not skip matches due to lastIndex", () => {
     const { sdk } = setup(doc(p("abc 123"), p("def 456"), p("ghi 789")));
-    // Using the g flag: without resetting lastIndex, .test() would advance
-    // and skip every other match
     const results = sdk.find({ text: /[0-9]+/g });
     expect(results).toHaveLength(3);
   });
@@ -1270,11 +1242,9 @@ describe("sequential mutation scenarios (simulating AI usage)", () => {
       ),
     );
 
-    // Find Section A heading and replace with reorganized content
     const sectionA = sdk.find({ type: "heading", text: "Section A" })[0];
     sdk.replace(sectionA, "## Reorganized A");
 
-    // Find old content and replace
     const contentA = sdk.find("Content A")[0];
     sdk.replace(contentA, "New content for section A with more detail");
 
@@ -1288,14 +1258,12 @@ describe("sequential mutation scenarios (simulating AI usage)", () => {
   it("find all list items → remove specific ones → add new ones → verify order", () => {
     const { sdk } = setup(doc(bulletList("todo1", "done1", "todo2", "done2", "todo3")));
 
-    // Remove "done" items
     let items = sdk.find({ type: "listItem", text: "done1" });
     sdk.remove(items[0]);
 
     items = sdk.find({ type: "listItem", text: "done2" });
     sdk.remove(items[0]);
 
-    // Add a new item after todo2
     const todo2 = sdk.find({ type: "listItem", text: "todo2" })[0];
     sdk.insertAfter(todo2, "new-todo");
 
@@ -1335,7 +1303,6 @@ describe("sequential mutation scenarios (simulating AI usage)", () => {
       ),
     );
 
-    // Surgical edit - replace status
     const status = sdk.find("All good")[0];
     sdk.replace(status, "Needs review");
 
@@ -1359,7 +1326,6 @@ describe("sequential mutation scenarios (simulating AI usage)", () => {
     expect(texts).toContain("Entry 1");
     expect(texts).toContain("Entry 2");
     expect(texts).toContain("Entry 3");
-    // Verify order
     expect(texts.indexOf("Entry 1")).toBeLessThan(texts.indexOf("Entry 2"));
     expect(texts.indexOf("Entry 2")).toBeLessThan(texts.indexOf("Entry 3"));
   });
@@ -1390,11 +1356,9 @@ describe("sequential mutation scenarios (simulating AI usage)", () => {
       doc(heading(1, "Doc"), bulletList("keep", "remove-me", "also-keep"), p("Footer")),
     );
 
-    // Remove a list item
     const removeTarget = sdk.find({ type: "listItem", text: "remove-me" })[0];
     sdk.remove(removeTarget);
 
-    // Append new content
     sdk.append("## Appendix\n\nExtra info");
 
     const blocks = sdk.getBlocks();
@@ -1439,7 +1403,6 @@ describe("nested list handling", () => {
     const items = sdk.find({ type: "listItem" });
     const parent = items.find((i) => i.text === "parent text");
     expect(parent).toBeDefined();
-    // parent text should NOT contain "child text"
     expect(parent!.text).toBe("parent text");
     expect(parent!.text).not.toContain("child text");
   });
@@ -1496,7 +1459,6 @@ describe("nested list handling", () => {
     const items = sdk.find({ type: "listItem" });
     expect(items).toHaveLength(1);
     expect(items[0].text).toBe("parent");
-    // Parent should no longer have nested list
     expect(items[0].depth).toBe(0);
   });
 
@@ -1560,7 +1522,6 @@ describe("invalid AI-generated edit code (regression)", () => {
   it("throws when AI code has a syntax error", () => {
     const { sdk, destroy } = createNotebookSDK(doc(p("Hello")));
     try {
-      // Simulate what onToolCall does: create a Function from AI-generated code
       expect(() => {
         const fn = new Function("notebook", "notebook.find({{invalid syntax}})");
         fn(sdk);
@@ -1597,7 +1558,6 @@ describe("invalid AI-generated edit code (regression)", () => {
   it("does not modify content when AI code fails mid-execution", () => {
     const { sdk, getResult, destroy } = createNotebookSDK(doc(p("Original")));
     try {
-      // Code that does a valid mutation then throws
       expect(() => {
         const fn = new Function(
           "notebook",
@@ -1609,9 +1569,6 @@ describe("invalid AI-generated edit code (regression)", () => {
         fn(sdk);
       }).toThrow("oops");
 
-      // Despite the error, getResult still returns the editor state
-      // (the append happened before the throw — this is expected behavior;
-      // the caller should NOT call getResult/save when an error occurs)
       const result = getResult();
       expect(result.type).toBe("doc");
     } finally {

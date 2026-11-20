@@ -16,43 +16,20 @@ import {
 import { pullChanges as pullChangesImpl } from "./pull";
 import type { UploadRetryEntry } from "./upload-retry";
 
-// Re-export for existing test imports that reach into sync-engine directly.
 export { mergeBookRecord, mergeChatMessageRecord, mergeChatSessionRecord, PUSH_BATCH_SIZE };
 
-// ---------------------------------------------------------------------------
-// SyncEngine interface
-// ---------------------------------------------------------------------------
-
 export interface SyncEngine {
-  /** Push all unsynced local changes to the server. */
   pushChanges(): Promise<void>;
-  /** Pull remote changes for all entity types and merge into local IDB. */
   pullChanges(): Promise<void>;
-  /** Start periodic push/pull intervals and do an immediate pull. */
   startSync(): void;
-  /** Stop all periodic sync intervals. */
   stopSync(): void;
-  /** Trigger an immediate push (e.g. after a local write). */
   triggerPush(): void;
-  /** Trigger an awaitable manual push, including file upload recovery. */
   triggerManualPush(): Promise<void>;
-  /** Trigger an immediate pull (e.g. on window focus). */
   triggerPull(): void;
-  /**
-   * Re-download the book file and cover from the server, overwriting local
-   * copies. If the book is missing a remote URL, upload the local file /
-   * cover to blob storage instead so the DB row gets populated. Also
-   * re-extract and re-upload chapter text when local book data is available.
-   */
   reloadBookFiles(bookId: string): Promise<void>;
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
 export interface SyncEngineConfig {
-  /** Authenticated user ID. Required for file uploads (used in the blob pathname). */
   userId: string;
   onSyncStart?: () => void;
   onSyncEnd?: (result: { success: boolean }) => void;
@@ -63,13 +40,6 @@ export interface SyncEngineConfig {
 const PUSH_INTERVAL_MS = 30_000;
 const PULL_INTERVAL_MS = 60_000;
 
-/**
- * Normalize any caught value from a sync cycle into a real {@link Error}
- * with a non-empty message. Prevents the UI from rendering literals like
- * `"null"` or `"undefined"` when something somewhere rejects with a nullish
- * value. The raw cause is logged to the console for diagnostics whenever
- * the thrown value isn't already an Error.
- */
 export function normalizeSyncError(err: unknown): Error {
   if (err instanceof Error) {
     if (!err.message || err.message.trim() === "") {
@@ -80,8 +50,6 @@ export function normalizeSyncError(err: unknown): Error {
     return err;
   }
 
-  // Not an Error — log the raw cause so the next occurrence is diagnosable,
-  // then coerce to a sensible Error.
   console.error("[sync] non-Error thrown during sync cycle:", err);
 
   if (err == null) {
@@ -110,13 +78,8 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
   let pullTimer: ReturnType<typeof setInterval> | null = null;
   let stopped = false;
 
-  // Per-book upload retry state. In-memory only: resets on reload / new engine
-  // instance. Prevents the sync loop from hammering the blob endpoint when a
-  // particular book's upload keeps failing (e.g. Vercel Blob returning 503).
   const uploadRetryState = new Map<string, UploadRetryEntry>();
 
-  // Shared context threaded into the file-uploads module so all helpers see
-  // the same retry Map and auth callback.
   const fileUploadContext: FileUploadContext = {
     userId: config.userId,
     uploadRetryState,
@@ -184,7 +147,6 @@ export function makeSyncEngine(config: SyncEngineConfig): SyncEngine {
 
     startSync() {
       stopped = false;
-      // Immediate pull on start
       runCycle(doPull);
       runCycle(doRecoverFiles);
       pushTimer = setInterval(() => runCycle(doPush), PUSH_INTERVAL_MS);

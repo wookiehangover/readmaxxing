@@ -35,7 +35,6 @@ export function ReviewPage({
   const attempt = selectors.selectLatestReviewAttempt(bookId).value;
   const editor = useRef<TiptapEditorHandle>(null);
   const heading = useRef<HTMLHeadingElement>(null);
-  // Only synchronize external widget content; Redux remains the draft owner.
   useEffect(() => {
     if (editor.current && JSON.stringify(editor.current.getContent()) !== JSON.stringify(document))
       editor.current.setContent(document);

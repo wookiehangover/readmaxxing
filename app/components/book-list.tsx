@@ -125,8 +125,6 @@ function TocPopoverItem({
   const suppressHoverUntil = useRef(0);
 
   const handleOpenChange = useCallback((nextOpen: boolean, details: { reason: string }) => {
-    // After an explicit dismiss (outside click or escape), suppress hover
-    // re-opens for a short window so the popover stays closed.
     if (!nextOpen && (details.reason === "outside-press" || details.reason === "escape-key")) {
       suppressHoverUntil.current = Date.now() + 400;
       setOpen(false);
@@ -135,7 +133,7 @@ function TocPopoverItem({
 
     if (nextOpen && details.reason === "trigger-hover") {
       if (Date.now() < suppressHoverUntil.current) {
-        return; // suppress
+        return;
       }
     }
 

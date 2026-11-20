@@ -7,9 +7,6 @@ import {
   getChatSessionStore,
 } from "~/lib/sync/stores";
 
-// --- Types ---
-
-/** Serializable representation of a UIMessage part for IndexedDB persistence. */
 export type SerializedPart =
   | { type: "text"; text: string }
   | { type: "step-start" }
@@ -27,7 +24,6 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   createdAt: number;
-  /** Full parts array from AI SDK UIMessage, preserved for tool call display on reload. */
   parts?: SerializedPart[];
 }
 
@@ -40,23 +36,13 @@ export interface ChatSession {
   updatedAt: number;
 }
 
-// --- idb-keyval stores imported from ~/lib/sync/stores ---
-//
-// Legacy migration reads go through `getChatMessagesStore()`
-// (ebook-reader-chats/chats). Session metadata uses `getChatSessionStore()`
-// and active-session pointers use `getActiveSessionStore()`.
-
-// Local alias used internally; the central module exposes `getChatMessagesStore`.
 const getChatStore = getChatMessagesStore;
 const getSessionStore = getChatSessionStore;
-
-// --- Helpers ---
 
 function generateSessionId(): string {
   return crypto.randomUUID();
 }
 
-/** Fire-and-forget: record a session change in the sync change log. */
 function trackSessionChange(session: ChatSession, operation: "put" | "delete" = "put"): void {
   const { messages: _msgs, ...metadata } = session;
   recordChange({
@@ -68,16 +54,6 @@ function trackSessionChange(session: ChatSession, operation: "put" | "delete" = 
   }).catch(console.error);
 }
 
-/**
- * Tombstone-merge path used by the sync pull merger. Removes a session (and
- * its cached messages, which live inside the per-bookId session array value)
- * from IDB, and clears the active-session pointer if it still points at the
- * removed session.
- *
- * Does NOT enqueue a sync change: the caller is reconciling a server-side
- * tombstone that the server already knows about. Enqueuing a delete here
- * would echo the same tombstone back on the next push.
- */
 export async function removeSessionLocally(bookId: string, sessionId: string): Promise<void> {
   const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
   const filtered = sessions.filter((s) => s.id !== sessionId);
@@ -95,12 +71,6 @@ export async function removeSessionLocally(bookId: string, sessionId: string): P
   }
 }
 
-// --- Migration helper ---
-
-/**
- * When getSessionsByBook finds no sessions but old-format messages exist
- * for the bookId, automatically create a "default" session from them.
- */
 async function migrateOldMessages(bookId: string): Promise<ChatSession[]> {
   const oldMessages = await get<ChatMessage[]>(bookId, getChatStore());
   if (!oldMessages || oldMessages.length === 0) return [];
@@ -120,12 +90,8 @@ async function migrateOldMessages(bookId: string): Promise<ChatSession[]> {
     updatedAt: now,
   };
 
-  // Persist the migrated session
   await set(bookId, [session], getSessionStore());
-  // Set as active
   await set(bookId, session.id, getActiveSessionStore());
-  // Enqueue a sync change so the migrated session is pushed to the server on
-  // its own, without waiting for runInitialSyncIfNeeded to scan everything.
   trackSessionChange(session);
 
   return [session];
@@ -140,8 +106,6 @@ async function chatOperation<T>(operation: string, work: () => Promise<T>): Prom
 }
 
 export const ChatService = {
-  // --- Warm-start read path ---
-
   getMessages: (bookId: string) =>
     chatOperation("getMessages", async () => {
       let sessions = await get<ChatSession[]>(bookId, getSessionStore());
@@ -156,8 +120,6 @@ export const ChatService = {
         : sessions[sessions.length - 1];
       return active?.messages ?? [];
     }),
-
-  // --- Session CRUD ---
 
   createSession: (bookId: string, title?: string) =>
     chatOperation("createSession", async () => {
@@ -198,11 +160,6 @@ export const ChatService = {
       const sessions = (await get<ChatSession[]>(bookId, getSessionStore())) ?? [];
       const idx = sessions.findIndex((s) => s.id === sessionId);
       if (idx < 0) return;
-      // Server is authoritative for chat messages, so this is a warm-start
-      // cache update only. Do NOT bump updatedAt — it is the LWW clock for
-      // session metadata (title, bookId), and bumping it on every message
-      // hydration would silently overwrite legitimate metadata edits from
-      // other devices on the next sync pull.
       sessions[idx] = { ...sessions[idx], messages };
       await set(bookId, sessions, getSessionStore());
     }),
@@ -218,7 +175,6 @@ export const ChatService = {
         trackSessionChange({ ...deleted, updatedAt: Date.now() }, "delete");
       }
 
-      // If the deleted session was active, clear or reset active
       const activeId = await get<string>(bookId, getActiveSessionStore());
       if (activeId === sessionId) {
         if (filtered.length > 0) {
@@ -228,8 +184,6 @@ export const ChatService = {
         }
       }
     }),
-
-  // --- Active session tracking ---
 
   getActiveSessionId: (bookId: string) =>
     chatOperation("getActiveSessionId", async () => {

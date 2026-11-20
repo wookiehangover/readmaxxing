@@ -36,8 +36,6 @@ export function shouldRevalidate() {
   return false;
 }
 
-// Build a minimal JSON blob of non-default theme CSS variables for the FOUC script.
-// This is serialized at build/SSR time and embedded in the inline script.
 const colorThemeVarsJson = JSON.stringify(
   Object.fromEntries(
     Object.entries(COLOR_THEMES)
@@ -46,8 +44,6 @@ const colorThemeVarsJson = JSON.stringify(
   ),
 );
 
-// Inline script to set the theme class and color theme variables before React hydrates,
-// preventing FOUC. This must be self-contained (no imports).
 const themeScript = `
 (function() {
   try {
@@ -75,9 +71,6 @@ const themeScript = `
 })();
 `;
 
-// One-shot recovery when a stale service-worker shell references hashed assets that
-// no longer exist after a deploy. Soft-refresh keeps the SW; hard-refresh bypasses it.
-// If entry chunks 404, React never boots and the normal update toast cannot appear.
 const staleAssetRecoveryScript = `
 (function() {
   var key = 'readmax-stale-asset-recover';
@@ -158,7 +151,6 @@ function startSWUpdatePolling(registration: ServiceWorkerRegistration) {
     SW_UPDATE_CHECK_INTERVAL_MS,
   );
 
-  // Catch deploys sooner than the hourly poll when the user returns to the tab.
   if (!window.__readmaxSWVisibilityHandler) {
     window.__readmaxSWVisibilityHandler = () => {
       if (document.visibilityState === "visible") {
@@ -228,8 +220,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 function SyncProvider({ children }: { children: React.ReactNode }) {
-  // Actions only — isSyncing/pending live on an external store so status flips
-  // do not re-render the workspace tree under this provider.
   const syncActions = useSync();
   return <SyncContext.Provider value={syncActions}>{children}</SyncContext.Provider>;
 }

@@ -9,7 +9,6 @@ import { reviewBoundarySchema } from "~/lib/review/review-schemas";
 import type { ReviewChapterDTO } from "~/lib/review/review-types";
 
 export interface OwnedReviewChapter extends ReviewChapterDTO {
-  /** Complete normalized slice, never a preview or truncated chat window. */
   text: string;
 }
 
@@ -28,7 +27,6 @@ const chapterSchema = z.object({
   reviewBoundaries: z.array(reviewBoundarySchema),
 });
 
-/** null covers unavailable, deleted, non-EPUB, unowned and legacy/unresolved sources. */
 export async function getOwnedReviewChapter(
   userId: string,
   bookId: string,

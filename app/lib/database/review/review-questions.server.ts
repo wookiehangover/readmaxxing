@@ -46,7 +46,6 @@ const generatedSchema = z.object({
 });
 export type GeneratedReviewQuestion = z.infer<typeof generatedSchema>;
 
-/** First writer wins under the unique reuse key. Losers return the persisted winner. */
 export async function saveReviewQuestion(
   chapterText: string,
   generated: GeneratedReviewQuestion,

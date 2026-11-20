@@ -4,7 +4,6 @@ import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
 import { cn } from "~/lib/utils";
 
 type ScrollAreaProps = ScrollAreaPrimitive.Root.Props & {
-  /** When true, omits custom scrollbars; the viewport still scrolls (wheel, trackpad, touch). */
   hideScrollbar?: boolean;
 };
 

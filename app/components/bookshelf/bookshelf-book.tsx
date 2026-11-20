@@ -7,7 +7,6 @@ import type { BookMeta } from "~/lib/stores/book-store";
 import { readCoverColors, type CoverColors } from "~/components/bookshelf/cover-color";
 import { useBookTilt } from "~/hooks/use-book-tilt";
 
-// Paired cloth and ink colors keep every generated spine readable, including books without covers.
 const CLOTH_COLORS = [
   ["#c8b77e", "#29281e"],
   ["#344b50", "#eee7cd"],
@@ -67,7 +66,6 @@ export function BookshelfBook({
         }}
         style={{ "--book-cloth": cloth, "--book-ink": ink, "--book-order": index } as CSSProperties}
       >
-        {/* Rebuild the perspective root with its faces; WebKit flattens faces added later. */}
         <span className="bookshelf-scene" data-active={active} key={active ? "active" : "inactive"}>
           <span className="bookshelf-volume" {...tiltEvents}>
             {active && (
@@ -102,7 +100,6 @@ export function BookshelfBook({
             )}
             <span className="bookshelf-spine">
               <span className="bookshelf-author">{book.author || "Unknown author"}</span>
-              {/* Like a printed spine, omit the subtitle; the button label keeps the full title. */}
               <span className="bookshelf-book-title">{book.title.split(/:\s/)[0]}</span>
             </span>
           </span>

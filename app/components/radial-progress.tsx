@@ -1,7 +1,7 @@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "~/components/ui/tooltip";
 
 interface RadialProgressProps {
-  value: number; // 0-100
+  value: number;
   label?: string;
 }
 

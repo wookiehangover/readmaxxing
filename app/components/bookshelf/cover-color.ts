@@ -3,7 +3,6 @@ export interface CoverColors {
   ink: string;
 }
 
-/** Group nearby pixel colors so small differences in texture do not split the dominant color. */
 export function dominantCoverColors(pixels: Uint8ClampedArray): CoverColors | null {
   const groups = new Map<number, { count: number; red: number; green: number; blue: number }>();
   for (let offset = 0; offset + 3 < pixels.length; offset += 4) {
@@ -34,7 +33,6 @@ export function dominantCoverColors(pixels: Uint8ClampedArray): CoverColors | nu
   };
 }
 
-/** Sample the decoded cover already displayed in the DOM; no additional image download is needed. */
 export function readCoverColors(image: HTMLImageElement): CoverColors | null {
   const canvas = document.createElement("canvas");
   canvas.width = 48;
@@ -45,7 +43,6 @@ export function readCoverColors(image: HTMLImageElement): CoverColors | null {
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     return dominantCoverColors(context.getImageData(0, 0, canvas.width, canvas.height).data);
   } catch {
-    // An unreadable or cross-origin cover keeps the fallback spine colors.
     return null;
   }
 }

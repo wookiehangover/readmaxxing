@@ -30,8 +30,6 @@ export default function WorkspaceLibraryRoute() {
 
   useEffect(
     () => () => {
-      // Preserve the intended /library → /books/:id handoff; otherwise abort the pending open
-      // when leaving the library route.
       if (getReadingBookId(window.location.pathname) === null) {
         pendingOpenControllerRef.current?.abort();
       }

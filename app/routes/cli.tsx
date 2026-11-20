@@ -42,9 +42,7 @@ export default function CliRoute() {
           setToken(null);
           setStatus("connected");
           return;
-        } catch {
-          /* Show the same credential for manual login if localhost is unreachable. */
-        }
+        } catch {}
       }
       setStatus("manual");
     } catch (cause) {

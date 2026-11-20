@@ -36,7 +36,6 @@ export function unitLastSpine(unit: ReviewNavigationUnit, spineCount: number): n
   return end ? end.spineIndex - (end.textOffset === 0 ? 1 : 0) : spineCount - 1;
 }
 
-/** Source fingerprints use full extracted text; navigation compares DOM anchors, never normalized offsets. */
 export async function loadReviewNavigationSource(
   data: ArrayBuffer,
   publication: Publication,
@@ -65,8 +64,6 @@ export async function loadReviewNavigationSource(
         await provider.readText(link.href),
         "application/xhtml+xml",
       );
-      // Match the mounted tree, including sanitization and an inserted missing
-      // head: even a structural repair changes the body's CFI element index.
       assembleSectionDocument(document, { context: { sectionHref: link.href, spineIndex } });
       return document;
     }),
@@ -106,10 +103,6 @@ export class ReviewNavigationSource {
         spineIndex <= unitLastSpine(unit, this.documents.length),
     );
     const fragment = target.fragment ?? target.href?.split("#")[1];
-    // A bare spine target means its first readable interval, not body DOM
-    // offset zero: trimmed source offsets can omit whitespace before a heading.
-    // Keep the interval's fragment bounds so clipping and later-chapter locks
-    // still use the same strict range as explicitly anchored navigation.
     if (!target.cfi && !fragment) return units[0];
     let point: Range | null;
     if (target.cfi) point = resolveCfi(target.cfi, document, { spineIndex });

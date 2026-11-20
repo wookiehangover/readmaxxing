@@ -3,8 +3,6 @@ import { clear, createStore, get } from "idb-keyval";
 import { makeSyncEngine } from "../../sync-engine";
 import type { SyncPullResponse } from "../../types";
 
-// IDB store coordinates mirrored from app/lib/sync/stores.ts. If the db/store
-// names ever change in production, this harness must be updated to match.
 const bookStore = createStore("ebook-reader-db", "books");
 const positionStore = createStore("ebook-reader-positions", "positions");
 const remotePositionStore = createStore("ebook-reader-remote-positions", "positions");
@@ -32,7 +30,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Scenario 2: pull merge applies mergers for every entity group.
 describe("integration: pull merge applies mergers for every entity group", () => {
   it("writes one record per entity type (book, position, highlight, notebook, chat_session, chat_message, settings) using ENTITY_MERGERS", async () => {
     const T = "2026-04-22T12:00:00.000Z";
@@ -63,8 +60,6 @@ describe("integration: pull merge applies mergers for every entity group", () =>
           cursor: T,
           hasMore: false,
         },
-        // chat_session must arrive before chat_message so the message merger
-        // can find the parent session.
         {
           entity: "chat_session",
           records: [
@@ -138,7 +133,6 @@ describe("integration: pull merge applies mergers for every entity group", () =>
     const engine = makeSyncEngine({ userId: "user-test" });
     await engine.pullChanges();
 
-    // book merger (LWW, server-to-local transform)
     const book = await get<Record<string, unknown>>("book-1", bookStore);
     expect(book).toMatchObject({
       id: "book-1",
@@ -149,13 +143,11 @@ describe("integration: pull merge applies mergers for every entity group", () =>
       remoteCoverUrl: "https://example.test/cover.jpg",
     });
 
-    // position merger writes pulled positions to the remote store only.
     const pos = await get<Record<string, unknown>>("book-1", positionStore);
     expect(pos).toBeUndefined();
     const remotePos = await get<Record<string, unknown>>("book-1", remotePositionStore);
     expect(remotePos).toMatchObject({ cfi: "epubcfi(/6/2)" });
 
-    // highlight merger (set-union)
     const hl = await get<Record<string, unknown>>("hl-1", highlightStore);
     expect(hl).toMatchObject({
       id: "hl-1",
@@ -164,11 +156,9 @@ describe("integration: pull merge applies mergers for every entity group", () =>
       color: "yellow",
     });
 
-    // notebook merger (LWW)
     const nb = await get<Record<string, unknown>>("book-1", notebookStore);
     expect(nb).toMatchObject({ bookId: "book-1" });
 
-    // chat_session metadata + chat_message append-only into same per-bookId array
     const sessions = await get<
       Array<{ id: string; messages: Array<{ id: string; content: string }> }>
     >("book-1", chatSessionStore);
@@ -176,7 +166,6 @@ describe("integration: pull merge applies mergers for every entity group", () =>
     expect(sessions?.[0].id).toBe("sess-1");
     expect(sessions?.[0].messages.map((m) => m.id)).toEqual(["msg-1"]);
 
-    // settings merger writes through to localStorage
     const rawSettings = localStorage.getItem("app-settings");
     expect(rawSettings).not.toBeNull();
     const parsed = JSON.parse(rawSettings as string);

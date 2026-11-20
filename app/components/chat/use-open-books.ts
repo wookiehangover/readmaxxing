@@ -3,7 +3,6 @@ import type { BookMeta } from "~/lib/stores/book-store";
 import { useOptionalWorkspace } from "~/lib/context/workspace-context";
 import { useAppStore } from "~/lib/themis/provider";
 
-/** Derives currently-open books from the workspace's authoritative open-book set. */
 export function useOpenBooks(workspace: ReturnType<typeof useOptionalWorkspace>): BookMeta[] {
   const store = useAppStore();
   const books = store.booksSelectors.selectAllBooks.useValue();

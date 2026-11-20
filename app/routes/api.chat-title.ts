@@ -7,7 +7,6 @@ interface ChatTitleRequestBody {
 }
 
 export async function action({ request }: { request: Request }) {
-  // Require authentication before generating titles
   const session = await getSessionFromRequest(request);
   if (!session) {
     return Response.json({ error: "auth_required" }, { status: 401 });
@@ -20,7 +19,6 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "Missing or invalid messages" }, { status: 400 });
   }
 
-  // Only generate titles for early conversations
   if (messages.length > 10) {
     return Response.json({ error: "Too many messages for title generation" }, { status: 400 });
   }

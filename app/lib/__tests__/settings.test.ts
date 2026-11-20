@@ -111,7 +111,6 @@ describe("legacy migration", () => {
       expect(syncedRaw).not.toHaveProperty(k);
     }
     expect(syncedRaw.theme).toBe("dark");
-    // updatedAt is removed to prevent legacy timestamps from blocking LWW merges
     expect(syncedRaw.updatedAt).toBeUndefined();
 
     const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
@@ -122,7 +121,6 @@ describe("legacy migration", () => {
   });
 
   it("removes updatedAt timestamp during migration to prevent LWW conflicts", () => {
-    // Simulate legacy case: fontSize change bumped updatedAt to 5000
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -137,12 +135,9 @@ describe("legacy migration", () => {
     getSettings();
 
     const syncedRaw = JSON.parse(localStorage.getItem(STORAGE_KEY)!);
-    // After migration, updatedAt should be removed so remote synced settings
-    // can be applied even if they have older timestamps
     expect(syncedRaw.updatedAt).toBeUndefined();
     expect(syncedRaw.theme).toBe("light");
     expect(syncedRaw.colorTheme).toBe("default");
-    // UI fields should be in local bucket
     expect(syncedRaw.fontSize).toBeUndefined();
     expect(syncedRaw.lineHeight).toBeUndefined();
   });
@@ -270,18 +265,15 @@ describe("saveSettings", () => {
       lineHeight: 1.8,
     });
 
-    // Verify they're stored in local bucket
     const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(localRaw.fontSize).toBe(120);
     expect(localRaw.fontFamily).toBe("Georgia");
     expect(localRaw.fontWeight).toBe(600);
     expect(localRaw.lineHeight).toBe(1.8);
 
-    // Verify they're NOT in synced bucket
     const syncedRaw = localStorage.getItem(STORAGE_KEY);
     expect(syncedRaw).toBeNull();
 
-    // Verify no sync was triggered
     expect(recordChange).not.toHaveBeenCalled();
   });
 
@@ -303,7 +295,6 @@ describe("saveSettings", () => {
     expect(result.sidebarCollapsed).toBe(true);
     expect(result.libraryView).toBe("table");
 
-    // Verify formatting preferences are stored locally, not synced
     const localRaw = JSON.parse(localStorage.getItem(LOCAL_UI_STORAGE_KEY)!);
     expect(localRaw.fontFamily).toBe("Merriweather");
     expect(localRaw.fontSize).toBe(110);

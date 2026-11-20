@@ -11,9 +11,7 @@ import { mergeBookRecord } from "../sync-engine";
 
 const remapSpy = remapBookId as unknown as ReturnType<typeof vi.fn>;
 
-// Must match the IDB db/store names used in sync-engine.ts.
 const bookStore = createStore("ebook-reader-db", "books");
-// Must match getBookDataStore() in stores.ts.
 const bookDataStore = createStore("ebook-reader-book-data", "book-data");
 
 beforeEach(async () => {
@@ -50,12 +48,10 @@ describe("mergeBookRecord pull-path dedup", () => {
     expect(remapSpy).toHaveBeenCalledTimes(1);
     expect(remapSpy).toHaveBeenCalledWith("local-1", "remote-2");
 
-    // Local record still present (real remap, which would tombstone it, is mocked).
     const localAfter = await get<Record<string, unknown>>("local-1", bookStore);
     expect(localAfter).toBeDefined();
     expect(localAfter?.fileHash).toBe("abc-hash");
 
-    // The canonical (incoming) record is now stored under the remote id.
     const canonical = await get<Record<string, unknown>>("remote-2", bookStore);
     expect(canonical).toBeDefined();
     expect(canonical?.fileHash).toBe("abc-hash");
@@ -164,9 +160,6 @@ describe("mergeBookRecord preserves local blob URLs on server-wins merge", () =>
       bookStore,
     );
 
-    // Server record wins LWW (newer updatedAt) but has no blob URLs.
-    // Simulates another device that created the row but hasn't uploaded
-    // yet, or this device's upload push not yet landing on the server.
     await mergeBookRecord({
       id: "book-1",
       title: "Remote",
@@ -281,9 +274,6 @@ describe("mergeBookRecord preserves local blob URLs on server-wins merge", () =>
       const before = await get<Record<string, unknown>>("book-4", bookStore);
       expect(before?.coverImage).toBeInstanceOf(Blob);
 
-      // Server record wins LWW with no blob URLs — its row genuinely lost
-      // them. We hold local bytes, so the stale local URLs must be cleared
-      // so uploadPendingFiles re-uploads.
       await mergeBookRecord({
         id: "book-4",
         title: "Remote",
@@ -305,7 +295,6 @@ describe("mergeBookRecord preserves local blob URLs on server-wins merge", () =>
   });
 
   it("preserves local URLs when the server URL is nullish but there are no local source bytes", async () => {
-    // No entry in bookDataStore for book-5 and no Blob coverImage.
     await set(
       "book-5",
       {

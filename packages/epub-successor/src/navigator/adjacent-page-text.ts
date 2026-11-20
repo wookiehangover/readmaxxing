@@ -1,7 +1,6 @@
 import { currentSpreadIndex, type PaginatedLayoutState } from "./paginated";
 import { visibleViewportText } from "./visible-text";
 
-/** Unmounted spine neighbors are unavailable; never substitute a previously visited page. */
 export function adjacentPageText(document: Document, pagination?: PaginatedLayoutState) {
   const width = document.documentElement.clientWidth;
   const height = document.documentElement.clientHeight;

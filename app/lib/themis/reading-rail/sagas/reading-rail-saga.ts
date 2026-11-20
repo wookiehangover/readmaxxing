@@ -17,19 +17,14 @@ function restore() {
       if (value !== "Details" && READING_RAIL_TABS.includes(value as ReadingRailTab))
         selections[key.slice(prefix.length)] = value as ReadingRailTab;
     }
-  } catch {
-    /* Tab memory is optional when browser storage is unavailable. */
-  }
+  } catch {}
   return selections;
 }
 function persist(scope: string, tab: ReadingRailTab) {
-  // Details is transient; retain the last reading section across reloads.
   if (tab === "Details") return;
   try {
     window.sessionStorage.setItem(`${prefix}${scope}`, tab);
-  } catch {
-    /* Keep in-memory selection usable. */
-  }
+  } catch {}
 }
 export function* readingRailSaga() {
   yield* put(readingRailRestored(yield* call(restore)));

@@ -28,7 +28,6 @@ function collection<T extends z.ZodType, K extends string>(item: T, idField: K) 
         ),
     );
 }
-// Local drafts may exceed the grading payload limit and must remain editable.
 const documentJson = z.string().refine((value) => {
   try {
     return reviewSubmitRequestSchema.shape.document.safeParse(JSON.parse(value)).success;
@@ -118,7 +117,6 @@ function cacheKey(userId: string, bookId: string) {
 }
 
 export async function loadReviewCache(userId: string, bookId: string): Promise<ReviewCache | null> {
-  // Reopening a book may race the previous scope's final draft write.
   await writes.get(cacheKey(userId, bookId))?.catch(() => {});
   const raw = await get<unknown>(cacheKey(userId, bookId), getReviewsStore());
   if (raw === undefined) return null;
@@ -132,8 +130,6 @@ export async function loadReviewCache(userId: string, bookId: string): Promise<R
   ) {
     throw new Error("Review cache belongs to a different account or book");
   }
-  // Older caches predate explicit server membership; their checkpoint references
-  // were the last known assignments. The next complete refresh reconciles them.
   const currentAssignmentIds =
     cache.currentAssignmentIds ??
     cache.checkpoints.ids.flatMap((key) => {
@@ -144,8 +140,6 @@ export async function loadReviewCache(userId: string, bookId: string): Promise<R
   return { ...cache, currentAssignmentIds };
 }
 
-// Transport queues only, never a second owner of review data. Serialize writes so
-// an older IDB transaction cannot overwrite a newer draft or persisted retry id.
 const writes = new Map<string, Promise<void>>();
 export function saveReviewCache(cache: ReviewCache): Promise<void> {
   const key = cacheKey(cache.userId, cache.bookId);

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-/** Keep cover images and 3D surfaces alive only near the shelf's scroll viewport. */
 export function useBookshelfVisibility(layout: string) {
   const stackRef = useRef<HTMLOListElement>(null);
   const initialized = useRef(false);
@@ -28,7 +27,6 @@ export function useBookshelfVisibility(layout: string) {
               if (initialDelivery) entranceIds.add(id);
             } else {
               visibleIds.delete(id);
-              // Leaving the viewport also retires an unfinished entrance animation.
               entranceIds.delete(id);
             }
           }
@@ -37,7 +35,6 @@ export function useBookshelfVisibility(layout: string) {
       },
       { root: stack.closest(".bookshelf"), rootMargin: "400px 0px" },
     );
-    // Observe stable rows, not the faces transformed during selection.
     for (const row of stack.children) observer.observe(row);
     return () => observer.disconnect();
   }, [layout]);

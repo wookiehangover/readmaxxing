@@ -44,7 +44,6 @@ export function normalizeReviewAttempt({
   };
 }
 
-/** Wire latest/pass/updatedAt projections are intentionally discarded. */
 export function mergeReviewProgress(
   cache: ReviewCache,
   response: ReviewProgressResponse,

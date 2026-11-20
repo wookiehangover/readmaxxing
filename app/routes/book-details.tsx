@@ -122,7 +122,6 @@ export default function BookDetailsRoute({ loaderData }: Route.ComponentProps) {
     store.dispatch(hydrateAnnotationsRequested(book.id));
   }, [book.id, notebookSyncVersion, store]);
 
-  // Debounced notebook save
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

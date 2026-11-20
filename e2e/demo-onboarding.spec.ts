@@ -109,8 +109,6 @@ async function prepareExistingAccount(page: Page) {
   expect(session.ok()).toBe(true);
   expect((await session.json()).user?.id).toBe(registration.userId);
 
-  // Setup needs a real passkey/account, independent of the subsequent library render.
-  // Leave the app before logging out so its pending navigation/sync cannot race cleanup.
   await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
   const logout = await page.request.post("/api/auth/logout");
   expect(logout.ok()).toBe(true);

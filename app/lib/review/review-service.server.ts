@@ -99,7 +99,6 @@ export async function reviewQuestion(
   }
   if (!progress || progress.sourceFingerprint !== source.sourceFingerprint)
     throw new ReviewSourceMismatchError();
-  // A concurrent request may have assigned a different difficulty. Always return its winner.
   const question = await getReviewQuestionById(progress.questionId);
   if (!question || question.sourceFingerprint !== source.sourceFingerprint)
     throw new ReviewSourceMismatchError();
@@ -140,7 +139,6 @@ export async function submitReview(
     grading: request.grading,
   });
   await recheckSource(userId, source);
-  // The persistence layer rechecks assignment/source and arbitrates concurrent attempt IDs.
   const response = await recordReviewAttempt(userId, request, judgment);
   await recheckSource(userId, source);
   return response;
@@ -156,7 +154,6 @@ export async function reviewProgress(
     listReviewAttempts(userId, bookId),
   ]);
   const current = new Map<string, string>();
-  // Historical attempts stay durable, but cannot restore a pass against replaced chapter text.
   for (const chapterKey of new Set(progress.map((item) => item.chapterKey))) {
     const source = await getOwnedReviewChapter(userId, bookId, chapterKey);
     if (source) current.set(chapterKey, source.sourceFingerprint);

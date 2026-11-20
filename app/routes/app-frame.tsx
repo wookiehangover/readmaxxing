@@ -95,7 +95,6 @@ function AppFrameContent() {
     }
     activateReadingRoute({
       bookId: readingBookId,
-      // Route changes can run before throttled render selectors publish hydrated or added books.
       books: store.booksSelectors.selectAllBooks.select(store.state),
       activeBookId: ws.activeClusterBookIdRef.current,
       openBook,
@@ -103,8 +102,6 @@ function AppFrameContent() {
     });
   }, [books, navigate, openBook, readingBookId, store, ws]);
 
-  // Deprecated compatibility mirror for out-of-scope chat consumers.
-  // The slice remains the source of truth for migrated book UI.
   ws.booksRef.current = books;
 
   useEffect(() => {

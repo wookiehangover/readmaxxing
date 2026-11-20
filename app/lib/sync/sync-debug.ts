@@ -1,16 +1,3 @@
-// ---------------------------------------------------------------------------
-// Opt-in sync diagnostic logging
-// ---------------------------------------------------------------------------
-//
-// Verbose sync logs are silent by default. To enable them in a running tab:
-//
-//   localStorage.setItem("sync_debug", "1")
-//
-// Warnings and errors in the sync pipeline are always logged — this flag only
-// gates additional structured diagnostics (upload attempts, push/pull cycle
-// summaries, backoff skips). Only metadata is logged (ids, types, sizes); no
-// file contents or other PII are included.
-
 const STORAGE_KEY = "sync_debug";
 
 export function isSyncDebugEnabled(): boolean {

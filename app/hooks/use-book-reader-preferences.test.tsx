@@ -21,7 +21,6 @@ function Harness() {
 
 async function renderPreferences() {
   await act(async () => root.render(<Harness />));
-  // Wait for the reader's IndexedDB load, then flush its resulting state updates.
   await act(async () => {
     await preferencesStore.getBookPreferences(bookId);
   });

@@ -148,8 +148,6 @@ describe("logicalChapterIndex", () => {
   ];
 
   it("counts only leaf chapters, matching extractBookChapters indexes", () => {
-    // "Part" containers must not consume chapter indexes: the chapter uploads
-    // use leaf entries, so counting parts here reports chapters ahead.
     expect(logicalChapterIndex(partsToc, partsBook, 2)).toBe(0);
     expect(logicalChapterIndex(partsToc, partsBook, 3)).toBe(1);
     expect(logicalChapterIndex(partsToc, partsBook, 5)).toBe(2);
@@ -375,7 +373,6 @@ describe("successor position compatibility", () => {
       },
     ];
 
-    // First chapter start is page 2 (after short front matter), not ~40% of total.
     expect(
       pageIndexFromPositions(positions, {
         href: "OPS/chapter-1.xhtml",
@@ -384,7 +381,6 @@ describe("successor position compatibility", () => {
       }),
     ).toBe(2);
 
-    // Mid-section progression advances the page within the section's samples.
     expect(
       pageIndexFromPositions(positions, {
         href: "OPS/chapter-1.xhtml",
@@ -392,7 +388,6 @@ describe("successor position compatibility", () => {
       }),
     ).toBe(3);
 
-    // Page-turns within a section must move the displayed page.
     expect(
       pageIndexFromPositions(positions, {
         href: "OPS/chapter-1.xhtml",
@@ -454,8 +449,6 @@ describe("successor position compatibility", () => {
       const book = createSuccessorBookAdapter(opened.publication!, provider);
       const directResults = await book.spine.get(1)!.find("elephant");
       expect(directResults[0]?.excerpt).toContain("elephant");
-      // Range CFIs (base,start,end) — not collapsed points — so search
-      // results render as highlight decorations over the matched text.
       expect(directResults[0]?.cfi).toMatch(/^epubcfi\(.*,.*,.*\)$/);
 
       const repeated = await book.spine.get(1)!.find("the");
@@ -464,8 +457,6 @@ describe("successor position compatibility", () => {
         expect(result.cfi).toMatch(/^epubcfi\(.*,.*,.*\)$/);
       }
 
-      // Queries whose locale case-folding changes length (İ → i̇) fall back
-      // to exact matching instead of producing misaligned offsets.
       const folded = await book.spine.get(1)!.find("İelephant");
       expect(folded).toEqual([]);
       const mixedCase = await book.spine.get(1)!.find("Elephant");

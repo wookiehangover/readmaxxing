@@ -1,4 +1,3 @@
-/** A DOM interval within one spine item. Fragment endpoints retain the original CFI tree. */
 export interface NavigatorContentRange {
   readonly key: string;
   readonly start?: string;
@@ -9,9 +8,7 @@ export function fragmentElement(document: Document, fragment: string): Element |
   let id = fragment.replace(/^#/, "");
   try {
     id = decodeURIComponent(id);
-  } catch {
-    /* Treat malformed escapes literally. */
-  }
+  } catch {}
   return document.getElementById(id) ?? document.getElementsByName(id)[0] ?? null;
 }
 
@@ -34,7 +31,6 @@ export function contentRange(document: Document, bounds: NavigatorContentRange):
 }
 
 export function rangeContainsRange(bounds: Range, target: Range): boolean {
-  // The end belongs to the next unit, including collapsed navigation anchors.
   return (
     compareRangePoints(bounds, true, target, true) <= 0 &&
     compareRangePoints(bounds, false, target, true) > 0 &&
@@ -50,11 +46,6 @@ function compareRangePoints(left: Range, leftStart: boolean, right: Range, right
   return a.compareBoundaryPoints(Range.START_TO_START, b);
 }
 
-/**
- * Remove out-of-range content from layout without removing/reparenting any node.
- * Element/text sibling indexes (and CFIs in the readable interval) stay intact.
- * Direct text siblings have no style, so blank their data while retaining the node.
- */
 export function applyContentRange(document: Document, bounds?: NavigatorContentRange): () => void {
   if (!bounds) return () => {};
   const allowed = contentRange(document, bounds);

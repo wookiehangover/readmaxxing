@@ -58,7 +58,6 @@ export async function loginUrl(override?: string): Promise<string> {
 export async function readConfig(urlOverride?: string): Promise<Config> {
   const saved = await readSavedConfig();
   const url = serverUrl(urlOverride, saved);
-  // Never send a saved credential to an overridden server.
   const token = process.env.READMAXXING_TOKEN ?? (saved.url === url ? saved.token : undefined);
   if (!token)
     throw new Error(

@@ -20,7 +20,6 @@ test("existing-account sign-in reaches the library despite an incomplete local d
 
   await context.clearCookies();
   await page.goto("/login");
-  // Simulate a browser where onboarding saved book metadata but not the EPUB/chat.
   await page.evaluate(async (bookId) => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open("ebook-reader-db");

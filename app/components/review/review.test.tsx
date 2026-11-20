@@ -240,7 +240,6 @@ describe("Review UI with canonical Redux and real TipTap", () => {
     assign();
     draft("An existing thoughtful answer for source confirmation.");
     const generation = store.state.reviews.generation;
-    // Successful progress excluding the assignment leaves the historical draft.
     store.dispatch(reviewRequestStarted(generation, "progress", "changed"));
     store.dispatch(reviewProgressReceived(generation, "changed", { progress: [], attempts: [] }));
     store.dispatch(reviewRequestStarted(generation, "progress", "retry"));

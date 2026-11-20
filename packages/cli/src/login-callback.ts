@@ -9,7 +9,6 @@ export interface LoginCallback {
   close(): Promise<void>;
 }
 
-/** A single login attempt, reachable only through the loopback interface. */
 export async function startLoginCallback(
   origin: string,
   connect: (token: string, signal: AbortSignal) => Promise<void>,
@@ -79,7 +78,6 @@ export async function startLoginCallback(
         return;
       }
       const token = validateToken(payload.token);
-      // Recheck after reading the body: two callbacks can arrive together.
       if (closed || connected || pending) {
         response.writeHead(409).end();
         return;
@@ -89,7 +87,6 @@ export async function startLoginCallback(
         await pending;
         connected = true;
         response.setHeader("Content-Type", "application/json");
-        // A browser timeout must not strand a CLI whose session was already saved.
         if (response.destroyed) settle("connected");
         else {
           response.once("close", () => settle("connected"));

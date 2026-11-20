@@ -54,9 +54,7 @@ function cloneRenderedPage(viewer: any, pageNumber: number): HTMLElement | null 
     cloneCanvas.height = sourceCanvas.height;
     try {
       cloneCanvas.getContext("2d")?.drawImage(sourceCanvas, 0, 0);
-    } catch {
-      // A page may use a protected or detached canvas; never substitute another page.
-    }
+    } catch {}
   });
   clone.style.margin = "0";
   return clone;

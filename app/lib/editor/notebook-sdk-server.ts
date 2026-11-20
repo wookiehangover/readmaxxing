@@ -2,12 +2,6 @@ import vm from "node:vm";
 import type { JSONContent } from "@tiptap/react";
 import { parseHTML } from "linkedom";
 
-/**
- * TipTap's Editor class needs a DOM to construct its ProseMirror view, even
- * when used headlessly. On the server we install a minimal linkedom-based
- * shim on `globalThis` the first time this module is used. The shim is
- * idempotent and safe to call in every request.
- */
 let domInstalled = false;
 function ensureServerDom(): void {
   if (domInstalled) return;
@@ -27,9 +21,7 @@ function ensureServerDom(): void {
   g.Text = (window as any).Text;
   try {
     g.navigator = (window as any).navigator;
-  } catch {
-    // navigator may be a read-only getter in some runtimes; ignore.
-  }
+  } catch {}
   g.innerHeight = 800;
   g.innerWidth = 1200;
   const fakeSelection = {
@@ -57,15 +49,6 @@ export interface RunEditNotesErr {
 
 export type RunEditNotesResult = RunEditNotesOk | RunEditNotesErr;
 
-/**
- * Guard against accidental whole-document wipes. If the input had at least
- * MIN_INPUT_BLOCKS top-level nodes and the result shrunk to less than
- * SHRINK_FLOOR of that count, reject the edit. This catches the common
- * failure mode where an AI-generated script reassembles the whole notebook
- * and drops most of it, while still allowing legitimate bulk removals
- * (e.g. delete 2 of 3 paragraphs — 3 → 1 is blocked only if the rule fires,
- * but 3 → 1 passes SHRINK_FLOOR=0.25 * 3 = 0.75 → 1 ≥ 0.75, so OK).
- */
 const MIN_INPUT_BLOCKS_FOR_GUARD = 3;
 const SHRINK_FLOOR = 0.25;
 
@@ -73,14 +56,6 @@ function topLevelBlockCount(content: JSONContent): number {
   return content.content?.length ?? 0;
 }
 
-/**
- * Runs AI-supplied `code` against a `notebook` SDK bound to `content` inside a
- * `node:vm` context with a timeout. The code has no access to `require`,
- * network, fs, or host globals — only `notebook` and a minimal `console`.
- *
- * Returns `{ ok: true, updatedContent }` on success or `{ ok: false, error }`
- * for any thrown error or timeout.
- */
 export async function runEditNotesInSandbox(
   content: JSONContent,
   code: string,
@@ -90,7 +65,6 @@ export async function runEditNotesInSandbox(
 
   ensureServerDom();
 
-  // Dynamic import so the TipTap / DOM work only runs when a tool call hits us.
   const [{ createNotebookSDK }, { markdownToTiptapJsonServer }] = await Promise.all([
     import("./notebook-sdk"),
     import("./markdown-to-tiptap-server"),
@@ -140,8 +114,6 @@ export async function runEditNotesInSandbox(
   } finally {
     try {
       destroy();
-    } catch {
-      // Tolerate cleanup errors — the editor may already be half-destroyed.
-    }
+    } catch {}
   }
 }

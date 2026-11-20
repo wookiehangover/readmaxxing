@@ -5,7 +5,6 @@ import { resolve } from "node:path";
 export const TEST_EPUB = resolve("e2e/fixtures/test-book.epub");
 
 export async function seedShelf(page: Page, extraBooks = 0) {
-  // A remote cover also works in WebKit test contexts that cannot persist blobs.
   await page.route("https://bookshelf.public.blob.vercel-storage.com/cover.svg*", (route) =>
     route.fulfill({
       contentType: "image/svg+xml",

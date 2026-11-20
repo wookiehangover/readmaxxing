@@ -73,7 +73,6 @@ beforeEach(() => {
   );
   mocks.submit.mockImplementation(async (request: ReviewSubmitRequest) => submitResponse(request));
   mocks.progress.mockImplementation(async (bookId: string) => ({
-    // A complete snapshot includes assignments already created by question requests.
     progress: mocks.question.mock.calls
       .filter(([request]) => request.bookId === bookId)
       .map(

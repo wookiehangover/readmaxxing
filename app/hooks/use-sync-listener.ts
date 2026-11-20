@@ -15,11 +15,6 @@ export interface SyncEntityUpdateDetail {
   bookIdRemap?: { fromId: string; toId: string };
 }
 
-/**
- * Returns a version counter that increments only when the specified entity
- * types are updated via sync. Components use this to re-fetch only when
- * relevant data has changed.
- */
 export function useSyncListener(
   entities: SyncEntity[],
   onUpdate?: (detail: SyncEntityUpdateDetail) => void,

@@ -163,7 +163,6 @@ const heldResponses = new Map<
   }
 >();
 const releases = new Set<() => void>();
-/** Hold HTTP delivery only after the real route has processed its database work. */
 export function holdNextResponse(operation: "question" | "attempts" | "progress") {
   const processed = deferred<ProcessedResponse>();
   const delivery = deferred<void>();

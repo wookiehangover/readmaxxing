@@ -111,31 +111,25 @@ describe("backoff lifecycle", () => {
     const state = new Map<string, UploadRetryEntry>();
     const key = uploadRetryKey("book-1", "file");
 
-    // 1) First attempt: allowed.
     expect(shouldAttemptUpload(state, key, 0)).toEqual({ attempt: true });
 
-    // Upload fails.
     const firstFailure = recordUploadFailure(state, key, 0);
     expect(firstFailure.attempts).toBe(1);
     expect(firstFailure.nextRetryAt).toBe(UPLOAD_BACKOFF_SCHEDULE_MS[0]);
 
-    // 2) Second call inside the window is blocked.
     const blocked = shouldAttemptUpload(state, key, UPLOAD_BACKOFF_SCHEDULE_MS[0] - 1);
     expect(blocked).toEqual({ attempt: false, retryInMs: 1 });
 
-    // 3) Call after the window is allowed.
     expect(shouldAttemptUpload(state, key, UPLOAD_BACKOFF_SCHEDULE_MS[0])).toEqual({
       attempt: true,
     });
 
-    // That retry fails too — backoff advances.
     const secondFailure = recordUploadFailure(state, key, UPLOAD_BACKOFF_SCHEDULE_MS[0]);
     expect(secondFailure.attempts).toBe(2);
     expect(secondFailure.nextRetryAt).toBe(
       UPLOAD_BACKOFF_SCHEDULE_MS[0] + UPLOAD_BACKOFF_SCHEDULE_MS[1],
     );
 
-    // 4) Eventually it succeeds — state clears.
     clearUploadRetry(state, key);
     expect(state.has(key)).toBe(false);
     expect(shouldAttemptUpload(state, key, 0)).toEqual({ attempt: true });

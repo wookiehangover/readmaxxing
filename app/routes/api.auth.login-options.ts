@@ -9,13 +9,10 @@ export async function loader() {
 
   const options = await generateAuthenticationOptions({
     rpID: getRpId(),
-    // Empty allowCredentials enables discoverable credentials (passkeys)
     allowCredentials: [],
-    // Match verifyAuthenticationResponse's required user verification.
     userVerification: "required",
   });
 
-  // Persist challenge for verification step
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_SECONDS * 1000);
   const challengeRow = await saveChallenge({
     challenge: options.challenge,

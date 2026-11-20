@@ -14,7 +14,6 @@ export const reviewModelSchema = z.object({
   provider: z.string().min(1),
 });
 export type ReviewModelProvenance = z.infer<typeof reviewModelSchema>;
-/** Private server record. Never return this object directly from an endpoint. */
 export interface ReviewQuestionRecord extends ReviewQuestionDTO {
   rubric: ReviewRubric;
   schemaVersion: number;

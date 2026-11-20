@@ -8,10 +8,8 @@ import { booksSaga } from "~/lib/themis/books/books-sagas";
 import { hydrateBooks } from "~/lib/themis/books/books-slice";
 import { chatSessionsSaga } from "~/lib/themis/chat-sessions/chat-sessions-sagas";
 import { readingPositionsSaga } from "~/lib/themis/reading-positions/reading-positions-sagas";
-// Root runtime owns saga startup/teardown after store.init(), before children render.
 // eslint-disable-next-line themis/react-forbidden-component-import
 import { createReviewsSaga } from "~/lib/themis/reviews/sagas/reviews-saga";
-// Root runtime owns saga startup after Store.init.
 // eslint-disable-next-line themis/react-forbidden-component-import
 import { readingRailSaga } from "~/lib/themis/reading-rail/sagas/reading-rail-saga";
 import { createAppStore, type AppStore } from "~/lib/themis/store";
@@ -24,7 +22,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [store] = useState(() => (typeof window === "undefined" ? null : createAppStore()));
   const [storeStarted, setStoreStarted] = useState(false);
 
-  // React Router currently owns this client-only lifecycle here; moving init before render is a separate migration.
   // eslint-disable-next-line themis/react-component-lifecycle-boundary
   useEffect(() => {
     if (!store) return;

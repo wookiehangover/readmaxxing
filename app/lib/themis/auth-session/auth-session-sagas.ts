@@ -61,8 +61,6 @@ export function* refreshAuthSessionSaga(action: ReturnType<typeof refreshAuthSes
         yield* call(() => adoption.completion);
       }
     } catch (cause) {
-      // Local onboarding is optional once the server has confirmed the session.
-      // Keep its failure from rejecting a successful sign-in or registration.
       console.warn("Signed in, but demo content could not be adopted:", cause);
     }
   }

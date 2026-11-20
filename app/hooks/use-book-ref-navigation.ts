@@ -1,10 +1,6 @@
 import { useCallback } from "react";
 import { useWorkspace } from "~/lib/context/workspace-context";
 
-/**
- * Navigate the chat's book to a quoted passage, falling back to the chapter
- * (EPUB TOC entry or PDF page) when the quote cannot be found.
- */
 export function useBookRefNavigation({
   bookId,
   bookFormat,

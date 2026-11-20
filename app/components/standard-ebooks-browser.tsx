@@ -40,7 +40,6 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  // Debounce search input
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (query.trim() === "") {
@@ -57,7 +56,6 @@ export function StandardEbooksBrowser({ onBookAdded }: StandardEbooksBrowserProp
     };
   }, [query]);
 
-  // Search books or load popular books (empty query = popular)
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);

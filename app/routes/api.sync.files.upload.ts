@@ -7,12 +7,12 @@ import {
   type LocalFileKind,
 } from "~/lib/storage/local-file-storage.server";
 
-const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MiB
-const MAX_COVER_BYTES = 5 * 1024 * 1024; // 5 MiB
+const MAX_FILE_BYTES = 100 * 1024 * 1024;
+const MAX_COVER_BYTES = 5 * 1024 * 1024;
 
 const FILE_CONTENT_TYPES = ["application/epub+zip", "application/pdf"];
 const COVER_CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const COVER_CACHE_CONTROL_MAX_AGE = 31_536_000; // 1 year
+const COVER_CACHE_CONTROL_MAX_AGE = 31_536_000;
 
 interface ClientPayload {
   bookId: string;
@@ -115,15 +115,6 @@ function parseTokenPayload(raw: string | null | undefined): TokenPayload {
   return { bookId: parsed.bookId, type: parsed.type };
 }
 
-/**
- * POST /api/sync/files/upload
- *
- * Vercel Blob client-upload token handler.
- *
- * Accepts a JSON `HandleUploadBody` — either a token request from the browser
- * or an `onUploadCompleted` webhook from Vercel Blob. Returns the signed
- * client token (for the former) or `{ response: "ok" }` (for the latter).
- */
 export async function action({ request }: { request: Request }) {
   if (!process.env.DATABASE_URL) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });

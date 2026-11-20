@@ -122,7 +122,6 @@ export interface ChatContextEntry {
 }
 
 export interface UseEpubLifecycleConfig {
-  /** Only the active, private EPUB owns a review context. Public/PDF readers omit this. */
   reviewContext?: boolean;
   bookId: string;
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -188,9 +187,6 @@ function readerPreferences(config: UseEpubLifecycleConfig): NavigatorPreferences
     fontSize: config.fontSize,
     lineHeight: config.lineHeight,
     theme,
-    // Page chrome is layout geometry, not the user's typography margin setting.
-    // Mobile single-page insets live inside the full-width iframe; desktop and
-    // scroll insets remain on the host surface.
     preferenceCss: `${getTypographyCss(
       config.fontFamily,
       config.fontSize,
@@ -257,7 +253,6 @@ export function useEpubLifecycle(inputConfig: UseEpubLifecycleConfig): UseEpubLi
   const [loadError, setLoadError] = useState(false);
   const ws = useOptionalWorkspace();
   const store = useAppStore();
-  // Plain values are needed for the third-party navigator's lifecycle/dependencies.
   const reviewRequirement = store.reviewsSelectors.selectReviewRequirement.useValue(bookId);
   const reviewPreferences = store.reviewsSelectors.selectReviewPreferences.useValue(bookId);
   const reviewReady =
@@ -267,8 +262,6 @@ export function useEpubLifecycle(inputConfig: UseEpubLifecycleConfig): UseEpubLi
   useEffect(() => {
     if (!enabled || !config.reviewContext) return;
     const readerId = reviewReaderId.current;
-    // Parent cleanup can dispose the Store before this child effect cleans up.
-    // Retain this scope's Redux dispatch instead of reading the disposed getter.
     const dispatch = store.dispatch;
     dispatch(openReviewBook(bookId, readerId));
     return () => {
@@ -424,8 +417,6 @@ export function useEpubLifecycle(inputConfig: UseEpubLifecycleConfig): UseEpubLi
     }
 
     const saveRelocation = (cfi: string, relocation: Relocation) => {
-      // A chapter-clipped percentage is not a full-spine percentage. Its exact
-      // return-page geometry belongs only in the review's opaque locator.
       const localProgression = rendition?.navigator.currentContentRange
         ? undefined
         : relocation.localProgression;
@@ -467,7 +458,6 @@ export function useEpubLifecycle(inputConfig: UseEpubLifecycleConfig): UseEpubLi
             navigator.restoreProgression(localProgression);
             return;
           } catch {
-            // Fall through to a CFI display if resize settling has not completed.
           } finally {
             suppressPositionSaveRef.current = false;
           }
@@ -489,12 +479,8 @@ export function useEpubLifecycle(inputConfig: UseEpubLifecycleConfig): UseEpubLi
       configRef.current.onRelocated?.();
       const navigationInProgress = navigationInProgressRef.current;
       clearNavigationInProgress();
-      // Prefer the adapter location (set on the same relocation event). Fall back to a
-      // spine-only CFI so page UI still updates if the adapter has not stamped location yet.
       const location = rendition.location?.start;
       const cfi = location?.cfi ?? `epubcfi(/6/${(relocation.spineIndex + 1) * 2}!/4)`;
-      // Prefer publisher Real Page Numbers (nav/NCX page-list) when present; otherwise
-      // fall back to character-sampled locations (epub.js-style heuristic).
       const publisher = publisherPages
         ? resolvePublisherPage(publisherPages, {
             href: relocation.href,
@@ -542,9 +528,6 @@ export function useEpubLifecycle(inputConfig: UseEpubLifecycleConfig): UseEpubLi
         if (!suppressPositionSaveRef.current)
           configRef.current.onReadingUnitChange?.(latestReadingUnit);
       }
-      // During restore, skip both the in-memory and IDB updates. Mounting the
-      // spine emits a section-start CFI first; writing that would clobber the
-      // real position and reopen at chapter start on the next refresh.
       if (suppressPositionSaveRef.current) return;
       const currentPosition = latestCfiRef.current
         ? {
@@ -634,7 +617,6 @@ export function useEpubLifecycle(inputConfig: UseEpubLifecycleConfig): UseEpubLi
       setToc(tocData);
       configRef.current.onTocExtracted?.(tocData);
 
-      // Heuristic locations are only needed when there is no publisher page-list.
       if (!publisherPages) {
         if (persistPosition) {
           await new Promise<void>((resolve) => {
@@ -768,8 +750,6 @@ export function useEpubLifecycle(inputConfig: UseEpubLifecycleConfig): UseEpubLi
           await displayCfiWithFallback(rendition, startPosition.cfi, {
             localProgression: startPosition.localProgression,
           });
-          // Keep the known-good stored position; do not replace it with
-          // transient section-start CFIs emitted while mounting the spine.
           latestCfiRef.current = startPosition.cfi;
           latestLayoutRef.current = {
             localProgression: startPosition.localProgression,

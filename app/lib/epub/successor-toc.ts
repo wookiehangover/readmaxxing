@@ -125,11 +125,6 @@ export function resolveCurrentChapterLabel(
   );
 }
 
-/**
- * Flatten a TOC to the leaf entries a reader treats as chapters, mirroring
- * `flattenTocToUsefulEntries` in epub-text-extract.ts: "Part" containers with
- * nested children are skipped in favor of their leaves.
- */
 function flattenTocToLeafEntries(entries: TocEntry[]): TocEntry[] {
   return entries.flatMap((entry) => {
     const children = (entry.subitems ?? []).filter((child) => child.label.trim() || child.href);
@@ -140,13 +135,6 @@ function flattenTocToLeafEntries(entries: TocEntry[]): TocEntry[] {
   });
 }
 
-/**
- * Chapter index for the given spine position, aligned with the indexes
- * produced by `extractBookChapters` (epub-text-extract.ts). Both count only
- * titled leaf TOC entries that resolve to a spine item, deduped by spine
- * start — the chat prompt resolves chapters by this index, so any divergence
- * makes the model report the wrong chapter.
- */
 export function logicalChapterIndex(
   toc: TocEntry[],
   book: ReaderBookLike,

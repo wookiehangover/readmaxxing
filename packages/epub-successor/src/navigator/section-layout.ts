@@ -128,8 +128,6 @@ export async function settleSection(
   const document = options.frame.contentDocument;
   const view = options.frame.contentWindow;
   if (!document || !view) throw new Error("Publication section document is inaccessible");
-  // Keep host-owned layout callbacks outside the publication sandbox. Current
-  // Safari may refuse to execute rAF callbacks in that window.
   const scheduler = options.container.ownerDocument.defaultView ?? view;
   applyPreferences(document, options.preferences);
   const target =
@@ -188,8 +186,6 @@ export async function settleSection(
       await nextAnimationFrame(scheduler, options.signal);
     }
     const pagination = measurePaginatedLayout(document, geometry, options.direction);
-    // Fragment/element anchors: column-align to the element. Otherwise snap the
-    // current scroll to a spread boundary (live paging / resize).
     if (options.anchor) alignPaginationToElement(pagination, options.anchor);
     else snapToSpread(pagination);
     await nextAnimationFrame(scheduler, options.signal);

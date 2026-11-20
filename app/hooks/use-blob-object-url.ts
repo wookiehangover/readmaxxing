@@ -10,18 +10,6 @@ function revokeAfterDelay(url: string, pendingRevocations: Map<number, string>) 
   pendingRevocations.set(timer, url);
 }
 
-/**
- * Creates an object URL for a Blob and revokes it lazily.
- *
- * - `key` is a stable identifier for the underlying cover (e.g. bookId).
- *   When `key` does not change, the hook keeps the existing URL even if the
- *   `blob` reference changes — important because IndexedDB returns fresh
- *   Blob instances on every read and sync re-fetches the whole book list.
- * - When `key` changes, a new URL is created and the previous URL is revoked
- *   after a short delay, so Safari can finish decoding the new <img src>
- *   before the old URL is torn down.
- * - On unmount, any live URL is revoked.
- */
 export function useBlobObjectUrl(
   blob: Blob | null,
   key: string | number | null | undefined,
