@@ -252,7 +252,7 @@
 
 **Consequences.** Sorting still works; the choice is just not persisted.
 
-**Code.** `app/components/workspace/library-browse-content.tsx#saveLibrarySort`
+**Code.** `app/components/workspace/library-browse-content.tsx#saveLibrarySortBy`
 
 ## Blob object URLs are keyed by a stable id and revoked late
 

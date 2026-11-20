@@ -82,4 +82,4 @@
 
 **Consequences.** The /library -> /books/:id handoff completes; other navigations cancel the open.
 
-**Code.** `app/routes/workspace-library.tsx#WorkspaceLibrary`
+**Code.** `app/routes/workspace-library.tsx#WorkspaceLibraryRoute`

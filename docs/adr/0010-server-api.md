@@ -152,4 +152,4 @@
 
 **Consequences.** Depends on Standard Ebooks markup; a markup change could let placeholders through.
 
-**Code.** `app/routes/api.standard-ebooks.search.ts#parseResults`
+**Code.** `app/routes/api.standard-ebooks.search.ts#parseSearchHtml`

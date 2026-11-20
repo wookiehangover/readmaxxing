@@ -9,7 +9,7 @@ export const DUMP_ENV = "COMMENT_BASELINE_DUMP";
 export const DUMP_PREFIX = "comment-baseline:";
 
 const DIRECTIVE =
-  /^(eslint|oxlint)(-disable|-enable|-env|\s)|^@ts-(expect-error|ignore|nocheck|check)\b|^@vitest-environment\b|^@vite-ignore\b|^[#@]__(PURE|NO_SIDE_EFFECTS)__|^webpack[A-Z]|^istanbul\s|^c8\s|^global\s/;
+  /^(eslint|oxlint)(-disable|-enable|-env|\s)|^@ts-(expect-error|ignore|nocheck|check)\b|^@vitest-environment\b|^@vite-ignore\b|^[#@]__(PURE|NO_SIDE_EFFECTS)__|^webpack[A-Z]|^(istanbul|c8|v8)\s|^global\s|^(prettier|oxfmt)-ignore\b|^@jsx(ImportSource|Runtime|Frag)?\b/;
 
 export function isAllowedComment(comment) {
   if (comment.type === "Shebang") return true;
