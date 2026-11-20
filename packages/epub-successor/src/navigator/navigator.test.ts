@@ -447,7 +447,6 @@ describe("scrolling Navigator", () => {
     expect(relocation.spineIndex).toBe(0);
     expect(container.querySelector("iframe")).toBe(frame);
     expect(container.querySelectorAll("iframe")).toHaveLength(1);
-    // No new section resource read / blob for an in-place redisplay.
     expect(provider.reads.length).toBe(readsBefore);
     expect(blobs).toHaveLength(1);
     navigator.destroy();
@@ -478,7 +477,6 @@ describe("paginated Navigator", () => {
     const frame = container.querySelector("iframe")!;
     const doubleCss =
       frame.contentDocument!.getElementById("epub-successor-pagination-style")?.textContent ?? "";
-    // Full-width columns, 64px spread gap, vertical body padding only.
     expect(doubleCss).toContain("column-width:368px");
     expect(doubleCss).toContain("column-gap:64px");
     expect(doubleCss).toContain("padding:24px 0");
@@ -503,7 +501,6 @@ describe("paginated Navigator", () => {
     expect(preferenceCss).toContain('font-family:"Literata"');
     expect(preferenceCss).toContain("font-size:110%");
     expect(preferenceCss).toContain("background:#f4ecd8");
-    // Pagination chrome keeps horizontal padding at 0 (margins preference ignored for sides).
     const singleCss =
       frame.contentDocument!.getElementById("epub-successor-pagination-style")?.textContent ?? "";
     expect(singleCss).toContain("column-width:800px");

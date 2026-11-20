@@ -174,8 +174,6 @@ for (const { direction, fixture, position } of [
       };
     }, direction);
 
-    // Publisher margins narrow the containing block below the column width.
-    // The image must stay within both edges rather than spilling into the gutter.
     expect(alignment.imageWidth).toBeGreaterThan(alignment.imageHeight);
     expect(alignment.imageLeft).toBeGreaterThanOrEqual(alignment.containerLeft - 0.5);
     expect(alignment.imageRight).toBeLessThanOrEqual(alignment.containerRight + 0.5);

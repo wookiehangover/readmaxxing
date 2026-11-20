@@ -59,11 +59,8 @@ export function WorkspaceNotebook({
   const displayTitle = book?.title ?? bookTitle;
   const displayAuthor = book?.author;
 
-  // Track the last known serialized content to detect actual changes from sync
   const lastContentRef = useRef<string | null>(null);
-  // Flag to suppress handleUpdate saves when content is set from a sync pull
   const fromSyncRef = useRef(false);
-  // Track the latest unsaved content so it can be flushed on unmount.
   const pendingContentRef = useRef<JSONContent | null>(null);
   const bookIdRef = useRef(bookId);
   bookIdRef.current = bookId;
@@ -73,7 +70,6 @@ export function WorkspaceNotebook({
     store.dispatch(hydrateAnnotationsRequested(bookId));
   }, [bookId, notebookSyncVersion, store]);
 
-  // Reconcile authoritative collection changes into the mounted editor.
   useEffect(() => {
     if (!content || !editorReady) return;
     const newContentStr = JSON.stringify(content);
@@ -99,17 +95,14 @@ export function WorkspaceNotebook({
 
   const handleUpdate = useCallback(
     (newContent: JSONContent) => {
-      // Skip saving when content was set from a sync pull (not a user edit)
       if (fromSyncRef.current) return;
 
-      // Notify chat panel of content changes so read_notes sees current content
       const changeCallback = notebookContentChangeMap.current.get(bookId);
       if (changeCallback) {
         const markdown = tiptapJsonToMarkdown(newContent);
         changeCallback(markdown);
       }
 
-      // Track pending content for flush-on-unmount
       pendingContentRef.current = newContent;
       store.dispatch(
         updateNotebookRequested(
@@ -127,14 +120,12 @@ export function WorkspaceNotebook({
     [bookId, notebookContentChangeMap, store],
   );
 
-  // Flush any pending debounced save on unmount
   useEffect(() => {
     return () => {
       flushSave();
     };
   }, [flushSave]);
 
-  // Register only after the editor can receive highlights; otherwise callers persist via the saga.
   useEffect(() => {
     if (!editorReady) return;
     const appendFn = (attrs: HighlightReferenceAttrs) => {
@@ -146,10 +137,6 @@ export function WorkspaceNotebook({
     };
   }, [bookId, editorReady, onRegisterAppendHighlight, onUnregisterAppendHighlight]);
 
-  // Register editor callbacks for live-sync from chat tool handlers.
-  // Only register once the Tiptap editor is ready so that tool handlers
-  // fall back to IndexedDB during the loading window instead of silently
-  // dropping content via the not-yet-functional imperative ref.
   useEffect(() => {
     if (!editorReady) return;
     notebookEditorCallbackMap.current.set(bookId, {

@@ -64,9 +64,7 @@ export function epubMetadata(bytes: Uint8Array) {
         posix.join(posix.dirname(packagePath), decodeURIComponent(coverItem.getAttribute("href")!)),
       );
       cover = { bytes: zipEntry(bytes, path, 5 * 1024 * 1024), contentType, extension };
-    } catch {
-      /* A missing/oversized cover must not prevent importing the book. */
-    }
+    } catch {}
   }
   return { title, author, cover };
 }
@@ -150,7 +148,6 @@ async function uploadFile(
   }
   if (backend !== "vercel") throw new Error("Unknown file storage backend.");
   const pathname = `${type === "file" ? "books" : "covers"}/${userId}/${bookId}/${type === "file" ? "book" : "cover"}.${extension}`;
-  // Acquire a scoped token through our redirect-safe authenticated client.
   const { clientToken } = await client.json<{ clientToken: string }>("/api/sync/files/upload", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -216,7 +213,6 @@ export async function uploadBook(
       format,
       progress,
     );
-    // Preserve an existing canonical book's metadata while repairing a missing file.
     const canonicalData = existing ? { id: canonicalId } : { ...data, id: canonicalId };
     progress?.({ label: "Saving book" });
     await pushBook(client, canonicalId, { ...canonicalData, remoteFileUrl });

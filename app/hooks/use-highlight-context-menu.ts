@@ -9,7 +9,6 @@ export interface HighlightContextMenuState {
   position: { x: number; y: number };
 }
 
-/** State, copy, and delete actions for the right-click menu on a rendered highlight. */
 export function useHighlightContextMenu(bookId: string) {
   const store = useAppStore();
   const { notebookEditorCallbackMap } = useWorkspace();
@@ -35,7 +34,6 @@ export function useHighlightContextMenu(bookId: string) {
   const deleteMenuHighlight = useCallback(() => {
     if (!highlightMenu) return;
     setHighlightMenu(null);
-    // An open notebook saves on a debounce, so edit it directly or its next save restores the node.
     notebookEditorCallbackMap.current
       .get(bookId)
       ?.removeHighlightReference(highlightMenu.highlight.id);

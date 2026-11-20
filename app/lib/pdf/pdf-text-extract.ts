@@ -5,9 +5,6 @@ import type {
 } from "pdfjs-dist/types/src/display/api";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
 
-/**
- * Configure the pdfjs worker. Reuses the same pattern as pdf-service.ts.
- */
 let workerConfigured = false;
 
 async function ensurePdfWorker() {
@@ -18,14 +15,6 @@ async function ensurePdfWorker() {
   workerConfigured = true;
 }
 
-/**
- * Extract structured page-based text from a PDF ArrayBuffer.
- * Each page becomes a "chapter" with title "Page N".
- * Client-side only — pdfjs requires browser APIs.
- *
- * @param data - The PDF file as an ArrayBuffer
- * @returns Array of chapters (one per page) with index, title, and text
- */
 export async function extractPdfChapters(data: ArrayBuffer): Promise<BookChapter[]> {
   const chapters: BookChapter[] = [];
   let doc: PDFDocumentProxy | null = null;
@@ -38,7 +27,6 @@ export async function extractPdfChapters(data: ArrayBuffer): Promise<BookChapter
     await ensurePdfWorker();
     const pdfjs = await import("pdfjs-dist");
 
-    // Clone data so pdfjs doesn't detach the caller's ArrayBuffer
     const dataCopy = new Uint8Array(data).slice();
     loadingTask = pdfjs.getDocument({ data: dataCopy });
     doc = await loadingTask.promise;
@@ -73,7 +61,6 @@ export async function extractPdfChapters(data: ArrayBuffer): Promise<BookChapter
       }
     }
   } catch (err) {
-    // Worker init / getDocument / unexpected crash — return whatever we have
     console.warn("PDF chapter extraction aborted early:", err);
   } finally {
     if (loadingTask) {
@@ -95,14 +82,6 @@ export async function extractPdfChapters(data: ArrayBuffer): Promise<BookChapter
   return chapters;
 }
 
-/**
- * Extract text from a single PDF page.
- * Useful for getting the currently visible page text for chat context.
- *
- * @param data - The PDF file as an ArrayBuffer
- * @param pageNum - 1-based page number
- * @returns The text content of the page, or empty string on failure
- */
 export async function extractPdfPageText(data: ArrayBuffer, pageNum: number): Promise<string> {
   await ensurePdfWorker();
   const pdfjs = await import("pdfjs-dist");
@@ -132,14 +111,6 @@ export async function extractPdfPageText(data: ArrayBuffer, pageNum: number): Pr
   }
 }
 
-/**
- * Extract text from a single page of an already-loaded pdfjs document.
- * Avoids re-creating the document on every page navigation.
- *
- * @param doc - An already-loaded pdfjs PDFDocumentProxy
- * @param pageNum - 1-based page number
- * @returns The text content of the page, or empty string on failure
- */
 export async function extractPdfPageTextFromDoc(doc: any, pageNum: number): Promise<string> {
   try {
     if (pageNum < 1 || pageNum > doc.numPages) return "";
@@ -160,7 +131,6 @@ export async function extractPdfPageTextFromDoc(doc: any, pageNum: number): Prom
   }
 }
 
-/** Read immediate neighbors without changing the viewer's current page. */
 export async function extractPdfPageContextFromDoc(doc: PDFDocumentProxy, pageNum: number) {
   const [text, previousPage, nextPage] = await Promise.all([
     extractPdfPageTextFromDoc(doc, pageNum),

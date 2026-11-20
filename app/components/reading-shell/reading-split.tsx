@@ -27,9 +27,7 @@ type DragState = {
 function persistRailWidth(width: number) {
   try {
     window.sessionStorage.setItem(RAIL_WIDTH_STORAGE_KEY, String(width));
-  } catch {
-    // Storage can be unavailable in privacy-restricted browser contexts.
-  }
+  } catch {}
 }
 
 export function ReadingSplit({ book, rail }: { book: ReactNode; rail: ReactNode }) {
@@ -67,9 +65,7 @@ export function ReadingSplit({ book, rail }: { book: ReactNode; rail: ReactNode 
       if (Number.isFinite(storedWidth) && storedWidth > 0) {
         setRailWidth(clampRailWidth(storedWidth));
       }
-    } catch {
-      // Keep the default width when storage is unavailable.
-    }
+    } catch {}
 
     const handleResize = () => {
       setRailWidth((currentWidth) => {

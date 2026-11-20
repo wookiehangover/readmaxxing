@@ -20,9 +20,7 @@ export interface BookChapter {
   text: string;
   spineStart: number;
   spineEnd: number;
-  /** Absent on chapters extracted before per-spine bookkeeping was added. */
   segments?: BookChapterSegment[];
-  /** Missing: old extraction. Empty: incomplete source or unresolved TOC anchors. */
   reviewBoundaries?: ReviewChapterBoundary[];
 }
 
@@ -48,7 +46,6 @@ export function joinSpineTextSegments(spineTexts: readonly Omit<SpineTextItem, "
   for (const item of spineTexts) {
     if (!item.text) continue;
 
-    // Separators are gaps between segments and belong to neither spine item.
     if (text) text += "\n\n";
     const start = text.length;
     text += item.text;
@@ -97,11 +94,6 @@ function flattenTocToUsefulEntries(entries: readonly TocEntry[]): readonly TocEn
   return entries.flatMap((entry) => {
     const children = entry.children.filter((child) => child.title.trim() || child.href);
 
-    // EPUB TOCs often use top-level entries for "Part" containers and nested
-    // entries for the actual readable chapters. The chat model needs the same
-    // logical chapter units a reader sees, so prefer leaf entries. Preserve the
-    // legacy chat grouping by spine start; reviewBoundaries separately subdivide
-    // that text at fragment anchors without renumbering existing chat locations.
     if (children.length > 0) {
       return flattenTocToUsefulEntries(children);
     }
@@ -165,13 +157,6 @@ function buildFallbackChapters(spineTexts: SpineTextItem[]): BookChapter[] {
     });
 }
 
-/**
- * Extract structured chapter data from an epub ArrayBuffer.
- * Client-side only because chapter extraction uses DOMParser.
- *
- * @param data - The epub file as an ArrayBuffer
- * @returns Array of logical chapters with index, title, text, and spine range
- */
 export async function extractBookChapters(data: ArrayBuffer): Promise<BookChapter[]> {
   const provider = await openZipResourceProvider(data);
 
@@ -219,10 +204,6 @@ export async function extractBookChapters(data: ArrayBuffer): Promise<BookChapte
       return withReviewBoundaries(buildFallbackChapters(spineTexts));
     }
 
-    // Keep the tocStarts position as the chapter index even when empty-text
-    // chapters are dropped: logicalChapterIndex (successor-toc.ts) derives the
-    // reader's current chapter from the same TOC start list, so compacting
-    // indexes here would report chapters ahead of the reader's position.
     const chapters = tocStarts
       .map((start, index): BookChapter | null => {
         const spineEnd = tocStarts[index + 1]?.spineStart ?? spineItems.length;

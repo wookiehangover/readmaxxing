@@ -3,18 +3,6 @@ import { requireAuth } from "~/lib/database/auth-middleware";
 import { getBookByIdForUser } from "~/lib/database/book/book";
 import { readLocalFile, useLocalFileStorage } from "~/lib/storage/local-file-storage.server";
 
-/**
- * GET /api/sync/files/download?bookId=...&type=file|cover
- *
- * Downloads a book file or cover image from Vercel Blob storage.
- *
- * Query params:
- *   - bookId: string (required)
- *   - type: "file" (default) | "cover"
- *
- * Private blobs require authenticated access via get(), which returns
- * a stream that we proxy to the client.
- */
 export async function loader({ request }: { request: Request }) {
   if (!process.env.DATABASE_URL) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
@@ -67,7 +55,6 @@ export async function loader({ request }: { request: Request }) {
     return new Response(new Uint8Array(localFile.data), { headers });
   }
 
-  // Private blobs: use get() to fetch via authenticated token and stream to client
   const result = await get(blobUrl, { access: "private", token });
 
   if (!result || result.statusCode !== 200 || !result.stream) {

@@ -12,7 +12,6 @@ import { reviewGenerationInstructions, reviewGradingInstructions } from "./revie
 
 export const REVIEW_MODEL = "openai/gpt-6-sol";
 export const REVIEW_MODEL_TIMEOUT_MS = 45_000;
-// Conservative UTF-8 budgets; reject oversized inputs rather than clipping a chapter/answer.
 export const REVIEW_MAX_CHAPTER_BYTES = 80_000;
 export const REVIEW_MAX_PROMPT_BYTES = 160_000;
 const provenance = { model: REVIEW_MODEL, provider: "ai-gateway" };
@@ -175,8 +174,6 @@ export async function gradeReviewAnswer(options: {
         end > options.plainText.length ||
         options.plainText.slice(start, end) !== annotation.quote
       ) {
-        // Models can quote the answer correctly but miscount UTF-16 offsets. Repair only an
-        // exact, unique quote; ambiguous/missing optional annotations must not discard a grade.
         start = options.plainText.indexOf(annotation.quote);
         if (start < 0 || options.plainText.indexOf(annotation.quote, start + 1) >= 0) return [];
         end = start + annotation.quote.length;

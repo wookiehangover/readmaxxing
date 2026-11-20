@@ -183,9 +183,7 @@ export function PdfReaderView({
             try {
               const destination = JSON.parse(href);
               if (typeof destination === "number") goToPage(destination + 1);
-            } catch {
-              // Ignore malformed PDF destinations.
-            }
+            } catch {}
           }}
         />
       </ReadingRailMenuPortal>
@@ -322,9 +320,7 @@ export function PdfReaderView({
                       try {
                         const destination = JSON.parse(href);
                         if (typeof destination === "number") goToPage(destination + 1);
-                      } catch {
-                        // Ignore malformed PDF destinations.
-                      }
+                      } catch {}
                       setTocOpen(false);
                     }}
                   />

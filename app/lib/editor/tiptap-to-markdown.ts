@@ -1,10 +1,5 @@
 import type { JSONContent } from "@tiptap/react";
 
-/**
- * Converts a tiptap JSONContent document to a markdown string.
- * Handles: headings, paragraphs, bullet/ordered lists, blockquotes,
- * bold/italic/code marks, and custom highlightReference nodes.
- */
 export function tiptapJsonToMarkdown(doc: JSONContent): string {
   if (!doc.content) return "";
   return doc.content.map((node) => serializeNode(node, "")).join("\n\n");
@@ -39,7 +34,6 @@ function serializeNode(node: JSONContent, prefix: string): string {
       );
 
     case "listItem":
-      // Normally handled by bulletList/orderedList, but just in case
       return serializeListItem(node, "- ", "  ");
 
     case "blockquote":
@@ -69,7 +63,6 @@ function serializeNode(node: JSONContent, prefix: string): string {
     }
 
     default:
-      // Fallback: try to serialize content if present
       if (node.content) {
         return node.content.map((child) => serializeNode(child, prefix)).join("\n");
       }
@@ -97,8 +90,6 @@ function serializeInlineContent(content?: JSONContent[]): string {
       if (node.type === "hardBreak") {
         return "\n";
       }
-      // Inline nodes like highlightReference shouldn't appear here,
-      // but handle gracefully
       return serializeNode(node, "");
     })
     .join("");

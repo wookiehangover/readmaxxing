@@ -28,13 +28,11 @@ export async function action({ request }: { request: Request }) {
     return Response.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  // Look up the challenge
   const challengeRow = await getChallenge(challengeId);
   if (!challengeRow) {
     return Response.json({ error: "Challenge not found or expired" }, { status: 400 });
   }
 
-  // Clean up the challenge (single-use)
   await deleteChallenge(challengeId);
 
   let verification;
@@ -55,7 +53,6 @@ export async function action({ request }: { request: Request }) {
 
   const { credential } = verification.registrationInfo;
 
-  // Persist the passkey
   await savePasskey({
     id: credential.id,
     userId,
@@ -67,7 +64,6 @@ export async function action({ request }: { request: Request }) {
     transports: credential.transports?.join(",") ?? null,
   });
 
-  // Create a server session
   const expiresAt = new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000);
   const session = await createSession(userId, expiresAt);
   if (!session) {

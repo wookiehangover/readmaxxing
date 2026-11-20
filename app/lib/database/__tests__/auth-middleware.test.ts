@@ -1,20 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 
-// Mock auth-config to avoid requireEnv throwing at import time
 vi.mock("~/lib/auth-config", () => ({
   SESSION_MAX_AGE_SECONDS: 2592000,
 }));
 
-// Mock the session DB module (needed for module to load, but we test pure functions)
 vi.mock("~/lib/database/auth/session", () => ({
   getSession: vi.fn(),
 }));
 
 import { setSessionCookie, clearSessionCookie, parseCookieValue } from "../auth-middleware";
-
-// ---------------------------------------------------------------------------
-// setSessionCookie
-// ---------------------------------------------------------------------------
 
 describe("setSessionCookie", () => {
   it("sets a cookie with the session ID and expected attributes", () => {
@@ -37,10 +31,6 @@ describe("setSessionCookie", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// clearSessionCookie
-// ---------------------------------------------------------------------------
-
 describe("clearSessionCookie", () => {
   it("sets a cookie with empty value and Max-Age=0", () => {
     const headers = new Headers();
@@ -52,10 +42,6 @@ describe("clearSessionCookie", () => {
     expect(cookie).toContain("HttpOnly");
   });
 });
-
-// ---------------------------------------------------------------------------
-// parseCookieValue
-// ---------------------------------------------------------------------------
 
 describe("parseCookieValue", () => {
   it("extracts value from a single-cookie header", () => {

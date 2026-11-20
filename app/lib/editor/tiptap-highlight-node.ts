@@ -66,14 +66,12 @@ export const HighlightReference = Node.create<
   },
 
   addNodeView() {
-    // The component is set via extension options to avoid circular imports
     const component = this.options.component as ComponentType<any>;
     if (!component) {
       throw new Error("HighlightReference: component option is required");
     }
     return ReactNodeViewRenderer(component, {
       stopEvent: ({ event }) => {
-        // Let click/mouse events pass through to the React component
         return event.type === "click" || event.type === "mousedown" || event.type === "mouseup";
       },
     });

@@ -77,10 +77,6 @@ export default defineConfig({
       strategies: "generateSW",
       workbox: {
         globPatterns: [
-          // HTML is handled via additionalManifestEntries. A content-hash
-          // revision is stamped post-build (scripts/patch-sw-index-html-revision.mjs).
-          // Leaving /index.html at revision:null makes Workbox reuse a stale shell
-          // across deploys while cleanupOutdatedCaches drops old hashed assets.
           "**/*.{js,css}",
           "fonts/**/*.woff2",
           "images/**/*.webp",
@@ -91,7 +87,6 @@ export default defineConfig({
           "og-image.png",
         ],
         cleanupOutdatedCaches: true,
-        // revision is stamped post-build by scripts/patch-sw-index-html-revision.mjs
         additionalManifestEntries: [{ url: "/index.html", revision: null }],
         navigateFallback: null,
         runtimeCaching: [
@@ -113,8 +108,6 @@ export default defineConfig({
               },
               plugins: [
                 {
-                  // React Router interprets an empty 204 as no server loader data,
-                  // allowing clientLoaders to continue with IndexedDB offline.
                   handlerDidError: async () => new Response(null, { status: 204 }),
                 },
               ],
@@ -134,7 +127,6 @@ export default defineConfig({
               cacheableResponse: {
                 statuses: [0, 200],
               },
-              // Use the workspace shell only when both network and runtime cache miss.
               precacheFallback: {
                 fallbackURL: "/index.html",
               },

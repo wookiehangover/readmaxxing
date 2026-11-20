@@ -23,7 +23,5 @@ export async function getBookPreferences(bookId: string): Promise<BookPreference
 }
 
 export async function saveBookPreferences(bookId: string, prefs: BookPreferences): Promise<void> {
-  // Merge explicit changes atomically so unrelated settings keep inheriting defaults
-  // and overlapping edits cannot overwrite each other.
   return update<BookPreferences>(bookId, (current) => ({ ...current, ...prefs }), getStore());
 }

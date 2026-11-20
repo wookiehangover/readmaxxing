@@ -53,7 +53,6 @@ async function saveDemoChat(bookId: string) {
     const session = { ...DEMO_CHAT_SESSION, bookId };
 
     if (!sessions.some((existing) => existing.id === session.id)) {
-      // Direct IDB writes intentionally avoid a sync change while the visitor is signed out.
       await set(bookId, [...sessions, session], sessionStore);
     }
     if (!(await get<string>(bookId, activeSessionStore))) {

@@ -13,18 +13,9 @@ import {
   type UploadRetryEntry,
 } from "./upload-retry";
 
-/**
- * Shared state + callbacks required by the file-upload helpers. The retry
- * Map is owned by the sync engine (one per engine instance) and threaded
- * through so a given book's backoff survives across `uploadPendingFiles`
- * and `reloadBookFiles` invocations.
- */
 export interface FileUploadContext {
-  /** Authenticated user ID. Used in the blob pathname. */
   readonly userId: string;
-  /** Per-book exponential-backoff state, keyed by `${bookId}:${type}`. */
   readonly uploadRetryState: Map<string, UploadRetryEntry>;
-  /** Invoked when the upload handshake returns 401. */
   readonly onAuthExpired?: () => void;
 }
 
@@ -155,12 +146,6 @@ export async function uploadFile(
   return result?.url ?? null;
 }
 
-/**
- * Wrapper around {@link uploadFile} that enforces the per-book exponential
- * backoff. On success the retry state for this book+type is cleared; on
- * failure (null return) the next-attempt timestamp is pushed forward along
- * the `UPLOAD_BACKOFF_SCHEDULE_MS` schedule.
- */
 export async function uploadFileWithBackoff(
   ctx: FileUploadContext,
   bookId: string,
@@ -254,17 +239,11 @@ async function uploadLocalCopy(
   return stampUploadedUrl(bookId, meta, url, type);
 }
 
-/**
- * Scan all books in IDB and upload any that have local file data or cover
- * images but are missing their remote URLs. Runs asynchronously after
- * metadata push — failures are logged but don't block the sync cycle.
- */
 export async function uploadPendingFiles(
   ctx: FileUploadContext,
   options?: UploadPendingFilesOptions,
 ): Promise<void> {
   if (options?.isStopped?.()) return;
-  // Safety: never attempt uploads before userId is known.
   if (!ctx.userId) return;
 
   const bookStore = getBookStore();
@@ -281,8 +260,6 @@ export async function uploadPendingFiles(
     if (!meta || typeof meta !== "object" || meta.deletedAt) continue;
 
     try {
-      // Upload epub file if missing remoteFileUrl, or repair a stale remote URL
-      // when the startup recovery pass finds that the server download is gone.
       const existingFileUrl =
         typeof meta.remoteFileUrl === "string" ? meta.remoteFileUrl : undefined;
       if (!existingFileUrl || options?.verifyExistingRemoteUrls) {
@@ -302,9 +279,6 @@ export async function uploadPendingFiles(
         }
       }
 
-      // Upload cover image if missing remoteCoverUrl. Once any remote URL
-      // is recorded, the cover is not re-uploaded on subsequent sync cycles;
-      // private covers are served via the proxy fallback.
       const existingCoverUrl =
         typeof meta.remoteCoverUrl === "string" ? meta.remoteCoverUrl : undefined;
       const coverImage = meta.coverImage;
@@ -326,7 +300,6 @@ export async function uploadPendingFiles(
     }
   }
 
-  // Notify UI so book list re-renders without stale cloud icons
   if (typeof window !== "undefined") {
     queueMicrotask(() => {
       window.dispatchEvent(new CustomEvent("sync:entity-updated", { detail: { entity: "book" } }));
@@ -334,13 +307,6 @@ export async function uploadPendingFiles(
   }
 }
 
-/**
- * Re-download file + cover for a single book from the server, overwriting
- * the locally cached copies. If the book is missing `remoteFileUrl` or
- * `remoteCoverUrl`, upload the local file / cover to blob storage so the
- * DB row gets populated (same logic as {@link uploadPendingFiles}, but
- * scoped to one book).
- */
 export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): Promise<void> {
   if (!ctx.userId || bookId === DEMO_BOOK_ID) return;
 
@@ -355,7 +321,6 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
   let meta: Record<string, unknown> = { ...rawMeta };
   let metaChanged = false;
 
-  // --- File ---
   if (meta.remoteFileUrl) {
     try {
       const res = await fetch(
@@ -396,11 +361,6 @@ export async function reloadBookFiles(ctx: FileUploadContext, bookId: string): P
     }
   }
 
-  // --- Cover ---
-  // Re-upload covers that are missing a remote URL, provided we have the
-  // local blob to source from. Otherwise fall back to downloading the
-  // existing remote copy (the proxy handles private URLs for users
-  // without a local blob).
   const existingCoverUrl =
     typeof meta.remoteCoverUrl === "string" ? meta.remoteCoverUrl : undefined;
   const coverImage = meta.coverImage;

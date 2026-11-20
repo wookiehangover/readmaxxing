@@ -16,11 +16,6 @@ import type { ChatSession } from "~/lib/stores/chat-store";
 
 const INITIAL_SYNC_KEY = "initial-sync-complete";
 
-/**
- * Returns `[key, value]` for a well-formed IDB entry, or `null` for anything
- * malformed (non-tuple, missing slots, null/undefined value). Skipping rather
- * than throwing lets a single corrupt record not kill the whole sync scan.
- */
 function safeEntry(entry: unknown): [IDBValidKey, unknown] | null {
   if (!Array.isArray(entry) || entry.length < 2) return null;
   if (entry[1] == null) return null;
@@ -59,11 +54,6 @@ async function queueStrandedBooks(): Promise<void> {
   }
 }
 
-/**
- * One-time scan of all IDB stores to create change-log entries for
- * existing data. This ensures users who had data before the sync
- * feature was added get their data pushed to the server on first sync.
- */
 export async function runInitialSyncIfNeeded(): Promise<void> {
   const done = await get(INITIAL_SYNC_KEY, getSyncFlagsStore());
   if (done) {
@@ -73,7 +63,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
 
   console.log("[sync] Running initial sync push for existing data...");
 
-  // 1. Books (key = bookId, value = BookMeta)
   const bookStore = getBookStore();
   const books = await entries(bookStore);
   for (const entry of books) {
@@ -90,7 +79,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     });
   }
 
-  // 2. Reading positions (key = bookId, value = PositionRecord)
   const posStore = getPositionStore();
   const positions = await entries(posStore);
   for (const entry of positions) {
@@ -107,7 +95,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     });
   }
 
-  // 3. Highlights (key = highlightId, value = Highlight)
   const hlStore = getHighlightStore();
   const highlights = await entries(hlStore);
   for (const entry of highlights) {
@@ -115,7 +102,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     if (!tuple) continue;
     const [id, data] = tuple;
     const rec = data as Record<string, unknown>;
-    // Skip soft-deleted highlights
     if (rec?.deletedAt || rec?.bookId === DEMO_BOOK_ID) continue;
     await recordChange({
       entity: "highlight",
@@ -126,7 +112,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     });
   }
 
-  // 4. Bookmarks (key = bookmarkId, value = Bookmark)
   const bookmarkStore = getBookmarkStore();
   const bookmarks = await entries(bookmarkStore);
   for (const entry of bookmarks) {
@@ -134,7 +119,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     if (!tuple) continue;
     const [id, data] = tuple;
     const rec = data as Record<string, unknown>;
-    // Skip soft-deleted bookmarks
     if (rec?.deletedAt || rec?.bookId === DEMO_BOOK_ID) continue;
     await recordChange({
       entity: "bookmark",
@@ -145,7 +129,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     });
   }
 
-  // 5. Notebooks (key = bookId, value = Notebook)
   const nbStore = getNotebookStore();
   const notebooks = await entries(nbStore);
   for (const entry of notebooks) {
@@ -162,7 +145,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     });
   }
 
-  // 6. Chat sessions (key = bookId, value = ChatSession[])
   const chatStore = getChatSessionStore();
   const sessions = await entries(chatStore);
   for (const entry of sessions) {
@@ -174,8 +156,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     for (const session of sessionList) {
       if (!session || typeof session !== "object") continue;
       if (session.bookId === DEMO_BOOK_ID || session.id === DEMO_CHAT_SESSION.id) continue;
-      // Record session metadata only. Chat messages are server-authoritative
-      // and persisted by /api/chat — they must not be pushed from clients.
       const { messages: _messages, ...metadata } = session;
       await recordChange({
         entity: "chat_session",
@@ -187,10 +167,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
     }
   }
 
-  // 6. Settings (from localStorage). Only the synced subset of fields is
-  // enqueued — local-only UI fields live in a separate localStorage key and
-  // must never reach the server, even on first-time backfill of legacy data
-  // that still has them in `app-settings`.
   try {
     const settingsRaw = localStorage.getItem("app-settings");
     if (settingsRaw) {
@@ -199,8 +175,6 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
       for (const key of SYNCED_SETTINGS_KEYS) {
         if (key in settings) synced[key] = settings[key];
       }
-      // Skip recording when the legacy blob carried no synced fields (e.g.
-      // it only ever had UI/layout entries that have since been migrated).
       if (Object.keys(synced).length > 0) {
         const updatedAt = typeof settings.updatedAt === "number" ? settings.updatedAt : Date.now();
         synced.updatedAt = updatedAt;
@@ -213,11 +187,8 @@ export async function runInitialSyncIfNeeded(): Promise<void> {
         });
       }
     }
-  } catch {
-    // Settings sync is best-effort
-  }
+  } catch {}
 
-  // Mark initial sync as done
   await set(INITIAL_SYNC_KEY, true, getSyncFlagsStore());
   console.log("[sync] Initial sync push complete — changes queued for push");
 }

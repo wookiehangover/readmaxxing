@@ -3,7 +3,6 @@ import type { NotebookEditorCallbacks } from "~/lib/context/workspace-context";
 import type { JSONContent } from "@tiptap/react";
 import type { UIMessage } from "@ai-sdk/react";
 
-// Mock useWorkspace to return controllable refs
 const mockNotebookEditorCallbackMap = { current: new Map<string, NotebookEditorCallbacks>() };
 const mockNotebookContentChangeMap = {
   current: new Map<string, (markdown: string) => void>(),
@@ -45,7 +44,6 @@ vi.mock("~/lib/themis/provider", () => ({
 const fuzzySearchEpubForCfi = vi.fn();
 vi.mock("~/lib/epub/epub-search", () => ({ fuzzySearchEpubForCfi }));
 
-// Must import AFTER mocks are set up
 const { useChatToolHandlers } = await import("../use-chat-tool-handlers");
 import { renderHookSimple } from "./render-hook-simple";
 
@@ -60,7 +58,6 @@ function makeAppendOutputMessage(
     role: "assistant",
     parts: [
       {
-        // AI SDK encodes static tool calls as `tool-<name>`.
         type: "tool-append_to_notes",
         toolCallId,
         state: "output-available",
@@ -176,7 +173,6 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
       message: makeAppendOutputMessage("tc-1", "for book 2", appendedNodes, { bookId: "book-2" }),
     });
 
-    // Routed to the secondary book's editor, not the bound primary.
     expect(secondarySpy).toHaveBeenCalledWith(appendedNodes);
     expect(primarySpy).not.toHaveBeenCalled();
   });
@@ -196,7 +192,6 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
     onFinish({ message: makeAppendOutputMessage("tc-1", "noted", appendedNodes) });
 
     expect(appendContentSpy).not.toHaveBeenCalled();
-    // Entry is consumed so the set doesn't grow across messages.
     expect(streamedToolCallIdRef.current.has("tc-1")).toBe(false);
   });
 
@@ -205,7 +200,6 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
       { type: "paragraph", content: [{ type: "text", text: "jot" }] },
     ];
     const onFinish = getOnFinish();
-    // No editor registered in notebookEditorCallbackMap.
     expect(() =>
       onFinish({ message: makeAppendOutputMessage("tc-1", "jot", appendedNodes) }),
     ).not.toThrow();
@@ -359,13 +353,10 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
         }),
       });
 
-      // Editor was updated in-memory.
       expect(appendContentSpy).toHaveBeenCalledWith(appendedNodes);
-      // lastContentRef was seeded before the event dispatched.
       expect(seedSpy).toHaveBeenCalledWith(updatedContent);
       expect(serviceMocks.cacheNotebook).toHaveBeenCalledTimes(1);
 
-      // Wait a macrotask so the .then() + queueMicrotask dispatches run.
       await waitForMicrotasks();
 
       expect(events).toHaveLength(1);
@@ -402,9 +393,7 @@ describe("useChatToolHandlers – append_to_notes (server-authoritative)", () =>
         }),
       });
 
-      // Editor was NOT re-appended (streaming preview already handled it).
       expect(appendContentSpy).not.toHaveBeenCalled();
-      // IDB cache still happens.
       expect(seedSpy).toHaveBeenCalledWith(updatedContent);
       expect(serviceMocks.cacheNotebook).toHaveBeenCalledTimes(1);
 
@@ -577,9 +566,6 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
     const listener = (e: Event) => events.push(e as CustomEvent);
     window.addEventListener("sync:entity-updated", listener);
 
-    // Spy on Date.now to guard against the pre-fix behavior of caching with
-    // a fabricated client timestamp. The edit_notes path must not touch
-    // Date.now — updatedAt is sourced exclusively from the server output.
     const dateNowSpy = vi.spyOn(Date, "now");
 
     try {
@@ -589,7 +575,6 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
       expect(setContentSpy).toHaveBeenCalledWith(updatedContent);
       expect(seedSpy).toHaveBeenCalledWith(updatedContent);
       expect(serviceMocks.cacheNotebook).toHaveBeenCalledTimes(1);
-      // No client-side timestamp fabrication on the success path.
       expect(dateNowSpy).not.toHaveBeenCalled();
 
       await waitForMicrotasks();
@@ -623,8 +608,6 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
           toolCallId: "tc-edit-2",
           state: "output-available",
           input: { code: "notebook.append('no-ts')" },
-          // Intentionally missing updatedAt — regression guard against
-          // fabricating freshness with Date.now() on the client.
           output: { executed: true, updatedContent },
         } as unknown as UIMessage["parts"][number],
       ],
@@ -639,10 +622,8 @@ describe("useChatToolHandlers – edit_notes (server-authoritative)", () => {
       const onFinish = getOnFinish();
       onFinish({ message: msg });
 
-      // Editor still gets the authoritative content (it's in-memory only).
       expect(setContentSpy).toHaveBeenCalledWith(updatedContent);
       expect(seedSpy).toHaveBeenCalledWith(updatedContent);
-      // But NO IDB cache write and NO sync event — we don't fabricate freshness.
       expect(serviceMocks.cacheNotebook).not.toHaveBeenCalled();
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining("edit_notes: server returned executed:true without updatedAt"),

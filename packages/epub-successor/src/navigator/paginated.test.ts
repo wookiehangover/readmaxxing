@@ -85,7 +85,6 @@ describe("paginated page math", () => {
   });
 
   it("packs columns to the full viewport with no inline body padding", () => {
-    // Horizontal padding is 0 so page 1 and later pages share the same origin.
     const even = pageChromeInsets(800, 64, 2);
     expect(even.padInlineStart).toBe(0);
     expect(even.padInlineEnd).toBe(0);
@@ -167,7 +166,6 @@ describe("paginated page math", () => {
   it("aligns pagination to the floor column containing an element", () => {
     const geometry = calculateColumnGeometry(800, 32, 1);
     const scrolling = document.createElement("div");
-    // At section start (scroll 0), element lives in column 3.
     scrolling.scrollLeft = 0;
     Object.defineProperty(scrolling, "getBoundingClientRect", {
       value: () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 }),
@@ -215,7 +213,6 @@ describe("paginated page math", () => {
       scrolling,
     };
     const element = document.createElement("span");
-    // 90% into column 2 — round() would jump to column 3; floor stays on 2.
     element.getBoundingClientRect = () =>
       ({
         left: geometry.columnStride * 2 + geometry.columnStride * 0.9,
@@ -276,7 +273,6 @@ describe("paginated page math", () => {
 
   it("pads an odd column count to a full final two-page spread", () => {
     const geometry = calculateColumnGeometry(800, 64, 2);
-    // 5 columns: the last spread would start on column 4 but clamp to 3.
     const doc = measurableDocument(5 * geometry.columnStride - geometry.columnGap, 800);
 
     const state = measurePaginatedLayout(doc, geometry, "ltr");
@@ -284,8 +280,6 @@ describe("paginated page math", () => {
     expect(state.pageCount).toBe(6);
     expect(state.maxOffset).toBe(4 * geometry.columnStride);
     scrollToPage(state, lastSpreadPageIndex(state.pageCount, state.pagesPerSpread));
-    // Final turn lands exactly on the spread boundary — no clamped re-show of
-    // the second-to-last column.
     expect(state.scrolling.scrollLeft).toBe(4 * geometry.columnStride);
     expect(state.scrolling.scrollLeft % (2 * geometry.columnStride)).toBe(0);
   });
@@ -339,8 +333,6 @@ describe("paginated page math", () => {
     "restores the omitted terminal inset to the final %s page stride",
     (direction) => {
       const geometry = pageChromeInsets(390, 64, 1, 40).geometry;
-      // Three content columns end at x=1,130; Chromium omits the final 40px
-      // body inset from the natural multicol scroll extent.
       const doc = measurableDocument(3 * geometry.columnStride - 40, geometry.viewportWidth);
 
       const state = measurePaginatedLayout(doc, geometry, direction);

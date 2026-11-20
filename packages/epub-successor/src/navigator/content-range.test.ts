@@ -4,8 +4,6 @@ import { applyContentRange, contentRange, rangeContainsRange } from "./content-r
 import { generateCfi, resolveCfi } from "../locations/cfi";
 
 function fixture() {
-  // happy-dom's detached XML documents bind Range to the wrong root. Native
-  // XHTML parsing and mounted range geometry are also covered by package E2E.
   const doc = new Window().document as unknown as Document;
   doc.body.innerHTML =
     'prefix<div><h1 id="a">First</h1><p>Alpha 😀</p><h1 id="b">Second</h1><p>Beta</p></div><h1 id="c">Third</h1>suffix';

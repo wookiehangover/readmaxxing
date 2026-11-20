@@ -19,7 +19,6 @@ import {
   setReviewsEnabled,
 } from "~/lib/themis/reviews/reviews-slice";
 
-/** Runs in a native browser: no hand-authored boundaries or DOM Range mocks. */
 async function createReviewNavigationFixture(mode: "single" | "double" | "scrolled") {
   const xhtml = (body: string) =>
     `<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Whitespace fixture</title></head><body>${body}</body></html>`;
@@ -114,7 +113,6 @@ export async function exerciseSpineStart(mode: "single" | "double" | "scrolled")
       !nav.contentDocument!.body.innerText.includes("FIRST CHAPTER");
     await nav.display({ spineIndex: 1 });
     const continuation = nav.currentContentRange?.key === second.boundary.key;
-    // A newly constructed bridge uses the retained checkpoint on refresh.
     const reloaded = new ReviewNavigation(store, "fixture", "fixture-reader", source, () => mode);
     const restored = reloaded.initialTarget({ spineIndex: 0 });
     await nav.display(restored);
@@ -166,16 +164,12 @@ export async function exerciseContinuation(
     await turn("next");
     await waitFor(() => nav.currentRelocation?.spineIndex === 1);
     const forward = nav.currentRelocation?.spineIndex === 1;
-    // The continuation fits on one page: its next turn records the real return
-    // locator through the existing saga, then page back clears only visibility.
     await nav.next();
     await waitFor(() => store.reviewsSelectors.selectReviewVisible.select(store.state, "fixture"));
     await policy.backToChapter();
     nav.restoreProgression(0);
     await turn("previous");
     await waitFor(() => nav.currentRelocation?.spineIndex === 0);
-    // Let native scroll/relocation callbacks run too: programmatic arrival at
-    // the end must not immediately bounce forward to the continuation again.
     await new Promise((resolve) => setTimeout(resolve, 100));
     const backSpine = nav.currentRelocation?.spineIndex;
     const sameChapter = nav.currentContentRange?.key === second.boundary.key;
@@ -189,7 +183,6 @@ export async function exerciseContinuation(
       last.left < doc.documentElement.clientWidth;
     const firstHidden = !doc.body.innerText.includes("FIRST CHAPTER");
     const locked = store.reviewsSelectors.selectReviewLocked.select(store.state, "fixture");
-    // At the first fragment's start, another back turn must not enter First.
     nav.restoreProgression(0);
     await nav.previous();
     const earlierBlocked =

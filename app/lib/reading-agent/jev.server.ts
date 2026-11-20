@@ -60,7 +60,6 @@ export async function evaluateOutlineBullets(
       supportedQuestionTypes: model.supportedQuestionTypes,
       async doEvaluate(options) {
         const response = await model.doEvaluate(options);
-        // Capture consumed tokens before the SDK validates answers (or observes cancellation).
         providerUsage = response.usage;
         return response;
       },
@@ -95,7 +94,6 @@ export async function evaluateOutlineBullets(
     ) {
       throw new JevEvaluationError("Jev returned an invalid bullet rating", usage);
     }
-    // Jev scores interpolate zero-based rubric indices; normalize the three-rung scale.
     return answer.score / 2;
   };
   return {
@@ -114,7 +112,6 @@ export async function evaluateOutlineBullets(
         consistency,
         rating,
         attempt,
-        // Allow only floating-point roundoff at the inclusive acceptance boundary.
         accepted: rating >= threshold - Number.EPSILON,
       };
     }),

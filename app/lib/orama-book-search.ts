@@ -2,9 +2,6 @@ import { create, insertMultiple, search } from "@orama/orama";
 import type { AnyOrama } from "@orama/orama";
 import type { BookChapter } from "~/lib/epub/epub-text-extract";
 
-/**
- * Schema for paragraph-sized chunks of book content, indexed by Orama.
- */
 const bookChunkSchema = {
   chapterIndex: "number",
   chapterTitle: "string",
@@ -25,11 +22,6 @@ export interface BookSearchResult {
 
 const TARGET_CHUNK_SIZE = 500;
 
-/**
- * Split chapter text into roughly paragraph-sized chunks (~500 chars).
- * Splits on paragraph boundaries (double newline) when possible,
- * falling back to sentence boundaries.
- */
 function chunkText(text: string): string[] {
   const paragraphs = text.split(/\n\s*\n/);
   const chunks: string[] = [];
@@ -51,8 +43,6 @@ function chunkText(text: string): string[] {
     chunks.push(current.trim());
   }
 
-  // If no paragraph breaks produced useful chunks, fall back to
-  // splitting at sentence boundaries within the full text.
   if (chunks.length <= 1 && text.length > TARGET_CHUNK_SIZE) {
     chunks.length = 0;
     const sentences = text.split(/(?<=[.!?])\s+/);
@@ -73,10 +63,6 @@ function chunkText(text: string): string[] {
   return chunks.length > 0 ? chunks : [text.trim()].filter(Boolean);
 }
 
-/**
- * Compute a fingerprint for a set of chapters to use as a cache key.
- * Uses chapter count, titles, and total text length as a fast proxy.
- */
 function computeCacheKey(chapters: BookChapter[]): string {
   const parts = chapters.map(
     (ch) => `${ch.index}:${ch.spineStart}-${ch.spineEnd}:${ch.title}:${ch.text.length}`,
@@ -84,14 +70,9 @@ function computeCacheKey(chapters: BookChapter[]): string {
   return `${chapters.length}|${parts.join(";")}`;
 }
 
-/** LRU-1 cache: stores only the most recent index to bound memory. */
 let cachedKey: string | null = null;
 let cachedIndex: AnyOrama | null = null;
 
-/**
- * Return a cached Orama index if the chapters haven't changed,
- * otherwise build and cache a new one.
- */
 export function getOrBuildBookIndex(chapters: BookChapter[]): AnyOrama {
   const key = computeCacheKey(chapters);
   if (cachedKey === key && cachedIndex !== null) {
@@ -103,20 +84,11 @@ export function getOrBuildBookIndex(chapters: BookChapter[]): AnyOrama {
   return db;
 }
 
-/**
- * Clear the cached index. Exposed for testing.
- * @internal
- */
 export function clearBookIndexCache(): void {
   cachedKey = null;
   cachedIndex = null;
 }
 
-/**
- * Build an Orama full-text search index from extracted book chapters.
- * Each chapter is split into paragraph-sized chunks (~500 chars) so
- * search results are granular rather than whole chapters.
- */
 export function buildBookIndex(chapters: BookChapter[]): AnyOrama {
   const db = create({ schema: bookChunkSchema });
 
@@ -141,12 +113,6 @@ export function buildBookIndex(chapters: BookChapter[]): AnyOrama {
 
 const CONTEXT_CHARS = 250;
 
-/**
- * Search the book index and return results matching the shape used by
- * the chat `searchChapters` function: `{ chapterIndex, chapterTitle, excerpt }[]`.
- *
- * Uses Orama's `tolerance` option for typo-tolerant fuzzy matching.
- */
 export interface TextAnchor {
   chapterIndex: number;
   snippet: string;
@@ -154,10 +120,6 @@ export interface TextAnchor {
   matchQuality: "exact" | "fuzzy";
 }
 
-/**
- * Normalize text for substring matching across quote styles, dashes, and
- * whitespace differences that AI-generated quotes often have vs the source.
- */
 export function normalizeForMatch(text: string): string {
   return text
     .replace(/[\u2018\u2019\u201A]/g, "'")
@@ -171,14 +133,6 @@ export function normalizeForMatch(text: string): string {
     .trim();
 }
 
-/**
- * Locate a text passage inside the book and return a text-anchor describing
- * its chapter, a snippet suitable for client-side CFI resolution, and an
- * optional character offset within the chapter text.
- *
- * Uses the Orama result as the first candidate, then verifies normalized
- * substrings across every chapter before accepting a fuzzy fallback.
- */
 export function locateTextAnchor(
   chapters: BookChapter[],
   db: AnyOrama,
@@ -249,8 +203,6 @@ export function searchBook(db: AnyOrama, query: string, limit: number = 10): Boo
     limit,
   });
 
-  // search() can return a promise or a value in Orama v3 —
-  // our synchronous schema means it returns synchronously.
   const results = raw as Awaited<typeof raw>;
 
   return results.hits.map((hit) => {
@@ -266,7 +218,6 @@ export function searchBook(db: AnyOrama, query: string, limit: number = 10): Boo
       excerpt =
         (start > 0 ? "…" : "") + doc.text.slice(start, end) + (end < doc.text.length ? "…" : "");
     } else {
-      // Fuzzy match — no exact substring found; return the chunk trimmed to context size.
       excerpt =
         doc.text.length > CONTEXT_CHARS * 2 ? doc.text.slice(0, CONTEXT_CHARS * 2) + "…" : doc.text;
     }

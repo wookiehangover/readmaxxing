@@ -3,7 +3,6 @@ import type { ReviewAttemptDTO } from "~/lib/review/review-types";
 import { reviewGradingLabels } from "./review-options";
 
 export function ReviewFeedback({ attempt }: { attempt: ReviewAttemptDTO }) {
-  // Offsets always refer to the server's immutable, untrimmed submitted text.
   const annotations = attempt.annotations.filter(
     (item) =>
       item.start >= 0 &&

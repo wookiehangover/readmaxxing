@@ -35,7 +35,6 @@ function createChapterUploadChunks(chapters: BookChapter[]): BookChapter[][] {
   for (const chapter of chapters) {
     const singleChapterBytes = serializedJsonByteLength([chapter]);
     if (singleChapterBytes > CHAPTER_UPLOAD_CHUNK_BYTES) {
-      // TODO(spec: Add chunked chapter upload): split oversized chapters instead of skipping them.
       console.warn("Skipping oversized chapter upload chunk:", {
         chapterIndex: chapter.index,
         bytes: singleChapterBytes,
@@ -109,7 +108,6 @@ export async function uploadChapters(
       return;
     }
 
-    // 401 (signed out) / 503 (sync off) are expected — don't mark, try again next open
     if (res.status !== 401 && res.status !== 503) {
       console.error("Failed to upload chapters:", res.status, await res.text().catch(() => ""));
     }

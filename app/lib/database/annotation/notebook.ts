@@ -92,11 +92,6 @@ export async function getNotebookForUser(
   return result.rows[0] ?? null;
 }
 
-/**
- * Loads the notebook for a given user/book and returns it as a markdown string.
- * Returns an empty string if no notebook exists or the stored content is not a
- * valid TipTap document.
- */
 export async function getNotebookMarkdownForUser(userId: string, bookId: string): Promise<string> {
   const row = await getNotebookForUser(userId, bookId);
   if (!row || !row.content) return "";

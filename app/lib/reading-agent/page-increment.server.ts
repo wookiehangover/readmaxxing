@@ -123,7 +123,6 @@ export class PageIncrementError extends Error {
 export async function callPageIncrement(
   options: PageIncrementOptions,
 ): Promise<PageIncrementCallResult> {
-  // Bound the whole workflow as well as each provider call, below the queue lease TTL.
   const signal = AbortSignal.timeout(240_000);
   let usage = pageIncrementUsageFromError(null, options.model);
   const quality: OutlineBulletRating[] = [];

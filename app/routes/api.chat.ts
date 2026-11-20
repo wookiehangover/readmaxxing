@@ -61,11 +61,9 @@ interface ChatRequestBody {
   message?: UIMessage;
   visibleText?: string;
   currentChapterIndex?: number;
-  /** Optional per-book visible-text/current-chapter context, keyed by bookId. */
   bookContexts?: Record<string, PerBookContext>;
 }
 
-/** A single selected book that loaded successfully and is included in the prompt. */
 interface LoadedBook {
   bookId: string;
   title: string;
@@ -80,9 +78,7 @@ interface LoadedBook {
 }
 
 interface SystemPromptContext {
-  /** Books that loaded successfully, primary first. */
   books: LoadedBook[];
-  /** Non-fatal warnings about books that were skipped (e.g. missing chapters). */
   warnings: string[];
 }
 
@@ -257,18 +253,10 @@ function extractTextContent(message: UIMessage): string {
   );
 }
 
-/**
- * Retry an async operation with linear backoff. Used for post-stream
- * persistence: Postgres is the source of truth for chat history, so a
- * transient failure here would permanently diverge stored history from what
- * the user just watched stream in.
- */
 async function withRetries<T>(
   operation: () => Promise<T>,
   { attempts = 3, baseDelayMs = 250 }: { attempts?: number; baseDelayMs?: number } = {},
 ): Promise<T> {
-  // Guard against attempts <= 0, which would skip the loop entirely and
-  // `throw lastError` while it is still `undefined`.
   const totalAttempts = Math.max(1, attempts);
   let lastError: unknown;
   for (let attempt = 1; attempt <= totalAttempts; attempt++) {
@@ -289,7 +277,6 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Sync not configured" }, { status: 503 });
   }
 
-  // Require authentication before processing chat requests
   const authSession = await getSessionFromRequest(request);
   if (!authSession) {
     return Response.json({ error: "auth_required" }, { status: 401 });
@@ -313,10 +300,6 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "message with role='user' is required" }, { status: 400 });
   }
 
-  // Resolve the selected set of books. When `bookIds` is present, `bookIds[0]`
-  // is the primary book; otherwise fall back to the legacy single `bookId`.
-  // The primary always comes first and the set is de-duplicated. We do NOT
-  // require top-level `bookId` when `bookIds` is non-empty.
   const requestedBookIds =
     Array.isArray(bookIds) && bookIds.length > 0
       ? bookIds.filter((id): id is string => typeof id === "string")
@@ -326,7 +309,6 @@ export async function action({ request }: Route.ActionArgs) {
   if (!primaryId) {
     return Response.json({ error: "bookId is required" }, { status: 400 });
   }
-  // Fully de-duplicate while preserving order, with primaryId once at the front.
   const selectedBookIds = [...new Set([primaryId, ...requestedBookIds])];
 
   const primaryBook = await getBookByIdForUser(primaryId, userId);
@@ -334,15 +316,11 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Book not found" }, { status: 404 });
   }
 
-  // Verify the session belongs to this user before loading its history or
-  // persisting new messages to it — otherwise an authed user could leak/inject
-  // into another user's session by passing its id.
   const session = await getSessionByIdForUser(sessionId, userId);
   if (!session) {
     return Response.json({ error: "Session not found" }, { status: 404 });
   }
 
-  // Primary book: chapters are required (current strict behavior).
   const primaryChaptersRow = await getBookChaptersForUser(userId, primaryId);
   if (!primaryChaptersRow) {
     return Response.json(
@@ -366,7 +344,6 @@ export async function action({ request }: Route.ActionArgs) {
   const perBookContext = (id: string): PerBookContext | undefined => {
     const fromMap = bookContexts?.[id];
     if (fromMap) return fromMap;
-    // Back-compat: top-level visibleText/currentChapterIndex apply to the primary.
     if (id === primaryId) return { visibleText, currentChapterIndex };
     return undefined;
   };
@@ -374,9 +351,6 @@ export async function action({ request }: Route.ActionArgs) {
   const loadedBooks: LoadedBook[] = [];
   const warnings: string[] = [];
 
-  // Primary book is already validated above. Its visible-text/current-chapter
-  // context comes from bookContexts[primaryId], falling back to the legacy
-  // top-level fields via perBookContext.
   const primaryCtx = perBookContext(primaryId);
   loadedBooks.push({
     bookId: primaryId,
@@ -391,8 +365,6 @@ export async function action({ request }: Route.ActionArgs) {
     visibleText: primaryCtx?.visibleText,
   });
 
-  // Secondary books: load leniently. Skip (with a warning) on missing book,
-  // missing chapters, or stale chapter shape rather than failing the request.
   for (const id of selectedBookIds.slice(1)) {
     const secondaryBook = await getBookByIdForUser(id, userId);
     if (!secondaryBook) {
@@ -432,7 +404,6 @@ export async function action({ request }: Route.ActionArgs) {
 
   const originalMessages: UIMessage[] = [...priorMessages, message];
 
-  // Persist the user message before streaming so it survives if the stream crashes.
   await upsertMessage({
     id: message.id,
     sessionId,
@@ -442,11 +413,6 @@ export async function action({ request }: Route.ActionArgs) {
     createdAt: new Date(),
   });
 
-  /**
-   * Resolve a tool's optional `bookId` arg to a loaded book. Defaults to the
-   * primary book; an unknown id also falls back to primary so a model mistake
-   * never fails the tool call.
-   */
   const resolveTargetBook = (requestedId?: string): LoadedBook =>
     (requestedId && booksById.get(requestedId)) || primary;
 
@@ -455,9 +421,6 @@ export async function action({ request }: Route.ActionArgs) {
     warnings,
   };
 
-  // Shared, book-aware tool argument + description hint. When multiple books
-  // are loaded the model must specify which book a tool acts on; otherwise it
-  // defaults to the primary book.
   const multiBook = loadedBooks.length > 1;
   const multiBookToolHint = multiBook
     ? ` Multiple books are loaded in this conversation; pass the \`bookId\` of the book you intend to act on. Valid ids: ${loadedBooks.map((b) => `${b.bookId} ("${b.title}")`).join(", ")}. If omitted, defaults to the primary book ("${primary.title}").`
@@ -646,9 +609,6 @@ export async function action({ request }: Route.ActionArgs) {
                 };
               }
 
-              // LWW-filtered: server already has a newer notebook row. Do NOT
-              // fabricate a timestamp — mirror the server-authoritative model
-              // and surface the conflict so the client skips its cache write.
               if (!row) {
                 console.warn(
                   "edit_notes: upsertNotebook returned null (LWW filtered); skipping client cache update",
@@ -711,8 +671,6 @@ export async function action({ request }: Route.ActionArgs) {
               bookId: targetBookId,
             }) => {
               const target = resolveTargetBook(targetBookId);
-              // PDF is not supported server-side yet — client falls back to
-              // its own PDF search + persist path on unsupported responses.
               if (target.format === "pdf") {
                 return {
                   bookId: target.bookId,
@@ -1013,10 +971,6 @@ export async function action({ request }: Route.ActionArgs) {
             },
           }),
         },
-        // Some reading-companion answers legitimately need several tool rounds:
-        // book search/read, web search, recommendations, highlights, or notes.
-        // Keep a bounded cap, but force the final step to synthesize instead
-        // of spending the last slot on another tool call.
         prepareStep: ({ stepNumber }) =>
           stepNumber >= MAX_CHAT_STEPS - 1 ? { activeTools: [] } : undefined,
         stopWhen: isStepCount(MAX_CHAT_STEPS),
@@ -1026,9 +980,6 @@ export async function action({ request }: Route.ActionArgs) {
         result.toUIMessageStream<UIMessage>({
           generateMessageId: generateId,
           onEnd: async ({ responseMessage }) => {
-            // Retry: this is the only write of the assistant message, and the
-            // client has already rendered the streamed text. A dropped write
-            // here means the message silently vanishes on next reload.
             try {
               await withRetries(() =>
                 upsertMessage({
@@ -1066,15 +1017,10 @@ export async function action({ request }: Route.ActionArgs) {
       try {
         await streamContext.createNewResumableStream(streamId, () => stream);
       } catch (err) {
-        // Without a resumable stream there is nothing to record; the direct
-        // response stream still works, it just can't be resumed.
         console.error(`Failed to create resumable stream for session ${sessionId}:`, err);
         return;
       }
       try {
-        // Recorded after creation so a resume never races a not-yet-created
-        // Redis stream. Retried because a missed write here makes the stream
-        // silently unresumable even though it exists.
         await withRetries(() => updateActiveStreamId(userId, sessionId, streamId));
       } catch (err) {
         console.error(`Failed to record active_stream_id for session ${sessionId}:`, err);

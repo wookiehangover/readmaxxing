@@ -24,8 +24,6 @@ export function ReaderNavigationProvider({ children }: { children: ReactNode }) 
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [navigateToHref, setNavigateToHref] = useState<(href: string) => void>(() => () => {});
 
-  // Stable wrapper so useState doesn't treat the function as an updater.
-  // setNavigateToHref from useState is already stable, so deps can be empty.
   const stableSetNavigateToHref = useCallback(
     (fn: (href: string) => void) => setNavigateToHref(() => fn),
     [],

@@ -28,9 +28,9 @@ function signedAssertion(challenge: string, userVerified: boolean) {
   if (!jwk.x || !jwk.y) throw new Error("Missing public key coordinates");
   const coseKey = isoCBOR.encode(
     new Map<number, number | Uint8Array>([
-      [1, 2], // EC2
-      [3, -7], // ES256
-      [-1, 1], // P-256
+      [1, 2],
+      [3, -7],
+      [-1, 1],
       [-2, new Uint8Array(Buffer.from(jwk.x, "base64url"))],
       [-3, new Uint8Array(Buffer.from(jwk.y, "base64url"))],
     ]),
@@ -38,8 +38,8 @@ function signedAssertion(challenge: string, userVerified: boolean) {
   const clientData = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge, origin }));
   const authenticatorData = Buffer.concat([
     createHash("sha256").update("example.com").digest(),
-    Buffer.from([userVerified ? 0x05 : 0x01]), // User presence, plus optional verification.
-    Buffer.from([0, 0, 0, 1]), // Signature counter.
+    Buffer.from([userVerified ? 0x05 : 0x01]),
+    Buffer.from([0, 0, 0, 1]),
   ]);
   const signature = sign(
     "sha256",
@@ -85,7 +85,7 @@ describe("passkey sign-in user verification", () => {
       const query = vi
         .spyOn(getPool(), "query")
         .mockImplementationOnce(async () => ({ rows: [{ challenge }] }))
-        .mockImplementationOnce(async () => ({ rowCount: 1, rows: [] })) // Consume the challenge.
+        .mockImplementationOnce(async () => ({ rowCount: 1, rows: [] }))
         .mockImplementationOnce(async () => ({
           rows: [
             {
@@ -96,8 +96,8 @@ describe("passkey sign-in user verification", () => {
             },
           ],
         }))
-        .mockImplementationOnce(async () => ({ rowCount: 1, rows: [] })) // Update counter.
-        .mockImplementationOnce(async () => ({ rowCount: 1, rows: [] })) // Update last-used timestamp.
+        .mockImplementationOnce(async () => ({ rowCount: 1, rows: [] }))
+        .mockImplementationOnce(async () => ({ rowCount: 1, rows: [] }))
         .mockImplementationOnce(async () => ({ rows: [{ id: "session-1" }] }))
         .mockImplementationOnce(async () => ({ rows: [user] }));
 

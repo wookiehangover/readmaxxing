@@ -30,8 +30,6 @@ describe("runEditNotesInSandbox", () => {
   });
 
   it("rejects a script that wipes the notebook down to a tiny residual", async () => {
-    // Seed with 10 top-level blocks; script reassembles to ~2 blocks, which
-    // is below the 25% floor (10 * 0.25 = 2.5). The guard should reject.
     const input = doc(
       p("b1"),
       p("b2"),
@@ -90,7 +88,6 @@ describe("runEditNotesInSandbox", () => {
   });
 
   it("allows a legitimate bulk removal above the shrink floor", async () => {
-    // 5 blocks → 2 blocks is above the 25% floor (5 * 0.25 = 1.25), so fine.
     const input = doc(p("one"), p("two"), p("three"), p("four"), p("five"));
     const code = `
       const blocks = notebook.getBlocks();
@@ -103,8 +100,6 @@ describe("runEditNotesInSandbox", () => {
   });
 
   it("does not run the guard when input had fewer than 3 blocks", async () => {
-    // Input has 2 blocks → guard is disabled so we do not false-positive on
-    // small notebooks where shrinking to 1 block is a legitimate outcome.
     const input = doc(p("one"), p("two"));
     const code = `
       const blocks = notebook.getBlocks();

@@ -11,43 +11,28 @@ export type StandardEbooksView = "grid" | "table";
 export type TextAlign = "left" | "center" | "right" | "justify" | undefined;
 export type FontWeight = 300 | 400 | 500 | 600 | 700;
 
-// --- Schema ---
-
-/**
- * Font size schema with legacy migration transform.
- * Old values were pixel-based (≤40); new values are percentage-based (>40).
- */
 const LegacyFontSize = z.preprocess((val) => {
   if (typeof val !== "number" || Number.isNaN(val)) return 100;
   return val <= 40 ? Math.round(val / 0.16) : val;
 }, z.number());
 
-/** Settings that sync across devices via the "settings" entity (LWW). */
 export const SyncedSettingsSchema = z.object({
   theme: z.enum(["light", "dark", "system"]).default("system"),
   colorTheme: z
     .enum(["default", "dracula", "nord", "rose-pine", "tokyo-night", "solarized"])
     .default("default"),
-  /** Timestamp of last synced settings change. Used for LWW sync. */
   updatedAt: z.number().optional(),
 });
 
-/** Bounds for `focusedSplitRatio` so a degenerate value can't strand a panel. */
 export const FOCUSED_SPLIT_RATIO_MIN = 0.2;
 export const FOCUSED_SPLIT_RATIO_MAX = 0.8;
 export const FOCUSED_SPLIT_RATIO_DEFAULT = 0.5;
 
-/**
- * Clamp `focusedSplitRatio` to the supported bounds. Falls back to the default
- * for non-finite inputs so a corrupt localStorage entry can't permanently
- * collapse a panel.
- */
 export function clampFocusedSplitRatio(v: number): number {
   if (!Number.isFinite(v)) return FOCUSED_SPLIT_RATIO_DEFAULT;
   return Math.min(FOCUSED_SPLIT_RATIO_MAX, Math.max(FOCUSED_SPLIT_RATIO_MIN, v));
 }
 
-/** Settings that stay local to the browser/device and never sync. */
 export const LocalUISettingsSchema = z.object({
   readerLayout: z.enum(["single", "spread", "scroll"]).default("single"),
   pdfLayout: z
@@ -58,12 +43,6 @@ export const LocalUISettingsSchema = z.object({
   libraryView: z.enum(["grid", "table", "stack"]).default("stack"),
   standardEbooksView: z.enum(["grid", "table"]).default("grid"),
   workspaceSortBy: z.enum(["title", "author", "recent"]).default("recent"),
-  /**
-   * Fraction of the focused-mode workspace allocated to the book-reader group
-   * (the right-side chat/notebook group gets `1 - focusedSplitRatio`). Single
-   * global value across all clusters. Bounded on read and on write via
-   * `clampFocusedSplitRatio`.
-   */
   focusedSplitRatio: z.number().default(FOCUSED_SPLIT_RATIO_DEFAULT),
   fontFamily: z.string().default("Literata"),
   fontSize: LegacyFontSize.default(100),
@@ -74,7 +53,6 @@ export const LocalUISettingsSchema = z.object({
   textAlign: z.enum(["left", "center", "right", "justify"]).optional(),
 });
 
-/** Backward-compatible merged shape exposed to call sites. */
 export const SettingsSchema = z.object({
   ...SyncedSettingsSchema.shape,
   ...LocalUISettingsSchema.shape,
@@ -138,17 +116,6 @@ function readRaw(key: string): Record<string, unknown> | null {
   }
 }
 
-/**
- * Move any UI fields out of the legacy `app-settings` blob into the dedicated
- * local-only bucket, leaving only synced fields behind. Idempotent: if the
- * local bucket already has a key, that value wins and the legacy copy is
- * pruned.
- *
- * IMPORTANT: Also removes the `updatedAt` timestamp from the synced bucket
- * when local-only fields are migrated. This prevents a legacy timestamp
- * (bumped by a font change under the old schema) from causing LWW merges to
- * ignore newer remote theme/colorTheme updates.
- */
 function migrateLegacySettings(): void {
   const legacy = readRaw(STORAGE_KEY);
   if (!legacy) return;
@@ -169,8 +136,6 @@ function migrateLegacySettings(): void {
     if (!localKeySet.has(k)) pruned[k] = v;
   }
 
-  // Remove updatedAt to prevent legacy timestamps from blocking remote synced
-  // setting updates. The next remote pull will establish a fresh baseline.
   delete pruned.updatedAt;
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(pruned));
@@ -186,7 +151,6 @@ function readSynced(): SyncedSettings {
 
 function readLocalUI(): LocalUISettings {
   const raw = readRaw(LOCAL_UI_STORAGE_KEY) ?? {};
-  // Migrate legacy "fit" value to "fit-height"
   if (raw.pdfLayout === "fit") raw.pdfLayout = "fit-height";
   let decoded: LocalUISettings;
   try {
@@ -194,8 +158,6 @@ function readLocalUI(): LocalUISettings {
   } catch {
     decoded = decodeLocalUI({});
   }
-  // Clamp on read so a corrupt or out-of-range stored value can't strand a
-  // panel. Mirrors the clamp applied in `saveSettings`.
   return { ...decoded, focusedSplitRatio: clampFocusedSplitRatio(decoded.focusedSplitRatio) };
 }
 
@@ -238,8 +200,6 @@ export function saveSettings(settings: Settings): void {
 
   const nextSynced = pickKeys(settings as SyncedSettings, SYNCED_SETTINGS_KEYS);
   const nextLocalRaw = pickKeys(settings as LocalUISettings, LOCAL_UI_SETTINGS_KEYS);
-  // Clamp on write so callers that persist a raw computed ratio can't push an
-  // out-of-range value into localStorage. Mirrors the clamp on read.
   const nextLocal: Partial<LocalUISettings> =
     "focusedSplitRatio" in nextLocalRaw && typeof nextLocalRaw.focusedSplitRatio === "number"
       ? {
@@ -319,9 +279,6 @@ export function useSettings(): [Settings, (update: Partial<Settings>) => void] {
   return [settings, updateSettings];
 }
 
-/**
- * Resolve the effective theme based on the setting and system preference.
- */
 export function resolveTheme(theme: Theme): "light" | "dark" {
   if (theme !== "system") return theme;
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
@@ -340,7 +297,6 @@ function getSystemTheme(): "light" | "dark" {
   return window.matchMedia(SYSTEM_THEME_QUERY).matches ? "dark" : "light";
 }
 
-/** Resolve a theme setting and react when the operating-system appearance changes. */
 export function useResolvedTheme(theme: Theme): "light" | "dark" {
   const systemTheme = useSyncExternalStore(
     subscribeToSystemTheme,

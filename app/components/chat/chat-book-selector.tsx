@@ -10,12 +10,6 @@ import {
 import type { ChatBookSelection } from "~/lib/context/reading-chat-menu-context";
 import { cn } from "~/lib/utils";
 
-/**
- * A dropdown checkbox row with a CIRCULAR indicator. We use the raw Base UI
- * `MenuPrimitive.CheckboxItem` here instead of the exported
- * `DropdownMenuCheckboxItem` because the latter renders a square check
- * indicator; the spec requires a round one for the book selector.
- */
 function CircularCheckboxItem({
   checked,
   disabled,
@@ -31,7 +25,6 @@ function CircularCheckboxItem({
     <MenuPrimitive.CheckboxItem
       checked={checked}
       disabled={disabled}
-      // Keep the menu open so the user can toggle several books in one go.
       closeOnClick={false}
       onCheckedChange={onCheckedChange}
       className={cn(
@@ -55,13 +48,6 @@ function CircularCheckboxItem({
   );
 }
 
-/**
- * Reader-menu submenu for choosing which currently-open books are included in the
- * chat. Renders one circular checkbox row per open book. The chat's own book
- * (`ownBookId`) is locked-checked and cannot be toggled off. Returns null when
- * fewer than two books are open (including the standalone reader, which has no
- * open books) so it never appears when there is nothing to choose.
- */
 export function ChatBookSelectorMenu({
   openBooks,
   selectedBookIds,

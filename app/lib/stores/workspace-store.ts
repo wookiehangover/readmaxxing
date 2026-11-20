@@ -2,8 +2,6 @@ import { createStore, get, set, keys } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { WorkspaceError } from "~/lib/errors";
 
-// --- idb-keyval stores (lazy-initialized for SSR safety) ---
-
 let _lastOpenedStore: ReturnType<typeof createStore> | null = null;
 
 function getLastOpenedStore() {

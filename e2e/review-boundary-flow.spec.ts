@@ -117,7 +117,6 @@ for (const mode of ["single", "scroll"] as const) {
       const frame = page.locator('[aria-label="Book surface"] iframe').first().contentFrame();
       await expect(frame.locator("body")).toContainText("FIRST CHAPTER");
       await expect.poll(() => frame.locator("body").innerText()).not.toContain("SECOND CHAPTER");
-      // A direct TOC attempt cannot reveal the adjacent fragment during the checkpoint.
       await page.getByRole("button", { name: "Reader menu", exact: true }).click();
       await page.getByRole("menuitem", { name: "Table of Contents", exact: true }).click();
       await page.getByRole("button", { name: "Second", exact: true }).click();

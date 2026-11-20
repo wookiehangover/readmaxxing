@@ -278,8 +278,6 @@ reducer.with(editReviewDraft, (state, { payload }) => {
     requests: {
       ...state.requests,
       submit: { token: null, error: null },
-      // Editing cannot cancel confirmation of an already completed write. It
-      // still invalidates reads that could import a not-yet-accepted grade.
       progress: cache.currentAssignmentIds.includes(payload.assignmentId)
         ? { token: null, error: null }
         : state.requests.progress,
@@ -302,7 +300,6 @@ reducer.with(reviewRequestStarted, (state, { payload: [generation, operation, to
         ...state,
         requests: {
           ...state.requests,
-          // A read begun before this write cannot reconcile its newer result.
           ...(operation !== "progress" ? { progress: { token: null, error: null } } : {}),
           [operation]: { token, error: null },
         },
@@ -365,8 +362,6 @@ reducer.with(reviewQuestionReceived, (state, { payload: [generation, token, resp
   };
   return {
     ...state,
-    // HTTP delivery order cannot prove source freshness. The saga follows every
-    // successful write with a fresh snapshot before this assignment can unlock.
     cache: invalidateReviewSource(cache, chapter.chapterKey),
     requests: {
       ...state.requests,

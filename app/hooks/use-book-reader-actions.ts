@@ -197,9 +197,7 @@ export function useBookReaderActions({
     if (!location) {
       try {
         location = rendition?.currentLocation?.();
-      } catch {
-        // The reader may be torn down while navigation is settling.
-      }
+      } catch {}
     }
     return location?.start?.cfi ?? null;
   }, [latestCfiRef, renditionRef]);

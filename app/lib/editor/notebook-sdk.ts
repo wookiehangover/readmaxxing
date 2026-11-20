@@ -21,29 +21,19 @@ export interface Block {
   level?: number;
   index: number;
   attrs?: Record<string, unknown>;
-  /** For listItem blocks, the index of the parent list block */
   parentIndex?: number;
-  /** Nesting depth for listItem blocks (0 = top-level, 1 = first sub-level, etc.) */
   depth?: number;
-  /** @internal ProseMirror position of this block's start */
   _pos: number;
-  /** @internal Index into doc.content (top-level nodes only) */
   _topLevelIndex?: number;
-  /** @internal For listItem blocks: parent list's index in doc.content */
   _parentTopLevelIndex?: number;
-  /** @internal For listItem blocks: index within the parent list's content array */
   _listItemChildIndex?: number;
-  /** @internal JSON path from top-level list down to the parent list containing this item.
-   *  Empty for depth-0 items. Pairs of [listItemIdx, nestedListContentIdx] for each nesting level. */
   _jsonPath?: number[];
-  /** @internal Mutation generation when this block was created */
   _generation?: number;
 }
 
 export interface NotebookSDK {
   getMarkdown(): string;
   getBlocks(): Block[];
-  /** Callers must re-read blocks after any mutation to receive current live blocks. */
   refresh(): Block[];
   find(query: string | { type?: BlockType; text?: string | RegExp }): Block[];
 
@@ -63,13 +53,10 @@ function getTextFromNode(node: any): string {
   node.forEach((child: any) => {
     parts.push(getTextFromNode(child));
   });
-  // Only join block-level children with newlines; inline siblings (text, marks)
-  // should be concatenated without separators.
   const hasBlockChildren = node.childCount > 0 && !node.firstChild?.isInline;
   return parts.join(hasBlockChildren ? "\n" : "");
 }
 
-/** Get only the direct paragraph/text content of a listItem, excluding nested lists */
 function getDirectTextFromListItem(node: any): string {
   const parts: string[] = [];
   node.forEach((child: any) => {
@@ -80,11 +67,6 @@ function getDirectTextFromListItem(node: any): string {
   return parts.join("\n");
 }
 
-/**
- * Recursively extract listItem blocks from a list node, handling arbitrary nesting.
- * @param pathToList - pairs of [listItemIdx, nestedListContentIdx] describing
- *   the navigation from the top-level list to the current list node.
- */
 function extractListItems(
   listNode: any,
   blocks: Block[],
@@ -115,7 +97,6 @@ function extractListItems(
     const thisItemIndex = indexRef.value;
     indexRef.value++;
 
-    // Recurse into nested lists within this listItem
     listItemNode.forEach((child: any, _offset: number, contentIdx: number) => {
       if (child.type.name === "bulletList" || child.type.name === "orderedList") {
         extractListItems(
@@ -144,7 +125,7 @@ function extractBlocks(editor: Editor, generation: number): Block[] {
       type: node.type.name as BlockType,
       text: getTextFromNode(node),
       index: indexRef.value,
-      _pos: offset + 1, // +1 because doc node wraps content
+      _pos: offset + 1,
       _topLevelIndex: topLevelIndex,
       _generation: generation,
     };
@@ -163,7 +144,6 @@ function extractBlocks(editor: Editor, generation: number): Block[] {
     indexRef.value++;
     topLevelIndex++;
 
-    // Emit child listItem blocks for bullet/ordered lists (recursive)
     if (node.type.name === "bulletList" || node.type.name === "orderedList") {
       extractListItems(node, blocks, indexRef, parentIndex, parentTopLevelIndex, 0, [], generation);
     }
@@ -171,10 +151,6 @@ function extractBlocks(editor: Editor, generation: number): Block[] {
   return blocks;
 }
 
-/**
- * Navigate through the JSON tree to find and clone the path to a nested listItem's parent list.
- * Returns cloned doc content array and a reference to the (cloned) parent list node.
- */
 function navigateToListItem(
   docJson: JSONContent,
   block: Block,
@@ -187,21 +163,18 @@ function navigateToListItem(
 
   const newContent: JSONContent[] = [...docJson.content];
 
-  // Clone the top-level list
   let currentList: JSONContent = {
     ...newContent[topIdx],
     content: [...(newContent[topIdx].content ?? [])],
   };
   newContent[topIdx] = currentList;
 
-  // Navigate through path pairs [listItemIdx, nestedListContentIdx, ...]
   for (let i = 0; i < path.length; i += 2) {
     const liIdx = path[i];
     const nestedListContentIdx = path[i + 1];
 
     if (!currentList.content || liIdx >= currentList.content.length) return null;
 
-    // Clone the listItem
     const clonedLi: JSONContent = {
       ...currentList.content[liIdx],
       content: [...(currentList.content[liIdx].content ?? [])],
@@ -211,7 +184,6 @@ function navigateToListItem(
     const liContent = clonedLi.content!;
     if (nestedListContentIdx >= liContent.length) return null;
 
-    // Clone the nested list
     const clonedNestedList: JSONContent = {
       ...liContent[nestedListContentIdx],
       content: [...(liContent[nestedListContentIdx].content ?? [])],
@@ -223,16 +195,11 @@ function navigateToListItem(
   return { newContent, parentList: currentList };
 }
 
-/**
- * Remove an empty nested list from its parent listItem after the last item was removed.
- */
 function removeEmptyNestedList(newContent: JSONContent[], block: Block): void {
   const path = block._jsonPath ?? [];
   if (path.length === 0) {
-    // Top-level list is empty, remove from doc
     newContent.splice(block._parentTopLevelIndex!, 1);
   } else {
-    // Navigate through already-cloned newContent to find the parent listItem
     let container = newContent[block._parentTopLevelIndex!];
     for (let i = 0; i < path.length - 2; i += 2) {
       container = container.content![path[i]].content![path[i + 1]];
@@ -250,7 +217,6 @@ function parseMarkdownNodes(
 ): JSONContent[] {
   if (parseMarkdown) return parseMarkdown(markdown).content ?? [];
 
-  // Create fresh extension instances to avoid duplicate keyed plugin errors
   const tempEditor = new Editor({
     extensions: [StarterKit, Markdown.configure({ html: false })],
     content: markdown,
@@ -268,7 +234,6 @@ export function createNotebookSDK(
   getResult: () => JSONContent;
   destroy: () => void;
 } {
-  // For headless usage, override the node view so it doesn't require a React component
   const HeadlessHighlightReference = HighlightReference.extend({
     addNodeView() {
       return () => {
@@ -290,10 +255,6 @@ export function createNotebookSDK(
 
   let mutationGeneration = 0;
 
-  /**
-   * Resolve a block to its current position. If the block is stale (from a
-   * previous mutation generation), re-find it against the live blocks and warn.
-   */
   function resolveBlock(block: Block): Block | null {
     if (block._generation !== undefined && block._generation !== mutationGeneration) {
       console.warn(
@@ -341,7 +302,6 @@ export function createNotebookSDK(
             if (typeof query.text === "string") {
               return b.text.includes(query.text);
             }
-            // Reset lastIndex to avoid skipping matches when using g/y flags
             query.text.lastIndex = 0;
             return query.text.test(b.text);
           }
@@ -375,7 +335,6 @@ export function createNotebookSDK(
       if (!docJson.content) return false;
 
       if (resolved.type === "listItem") {
-        // JSON-splice: replace the listItem within its parent list (supports nesting)
         const childIdx = resolved._listItemChildIndex;
         if (childIdx === undefined) return false;
 
@@ -386,8 +345,6 @@ export function createNotebookSDK(
         if (!parentList.content || childIdx < 0 || childIdx >= parentList.content.length)
           return false;
 
-        // Parse replacement and wrap in listItem. If the input has no markdown
-        // structure, treat it as plain inline text for the list item.
         const parsed = parseMarkdownNodes(editor, markdown, options.parseMarkdown);
         const listItemContent =
           parsed.length > 0
@@ -401,7 +358,6 @@ export function createNotebookSDK(
         return true;
       }
 
-      // Top-level block: use _topLevelIndex
       const idx = resolved._topLevelIndex;
       if (idx === undefined || idx < 0 || idx >= docJson.content.length) return false;
       const parsed = parseMarkdownNodes(editor, markdown, options.parseMarkdown);
@@ -416,7 +372,6 @@ export function createNotebookSDK(
       const resolved = resolveBlock(block);
       if (!resolved) return false;
 
-      // bulletList / orderedList have no inline text of their own.
       if (resolved.type === "bulletList" || resolved.type === "orderedList") {
         console.warn(
           `notebook.setText(): cannot set text on a ${resolved.type}. ` +
@@ -431,8 +386,6 @@ export function createNotebookSDK(
       const textChild: JSONContent = { type: "text", text };
 
       if (resolved.type === "listItem") {
-        // JSON-splice: replace just the inline text of this listItem, preserving
-        // any nested lists and other structure the item may contain.
         const childIdx = resolved._listItemChildIndex;
         if (childIdx === undefined) return false;
 
@@ -445,8 +398,6 @@ export function createNotebookSDK(
 
         const existingItem = parentList.content[childIdx];
         const existingChildren = existingItem.content ?? [];
-        // Keep any nested lists; replace the first paragraph's text, or prepend
-        // a fresh paragraph if the item had no inline content.
         const newChildren: JSONContent[] = [];
         let replacedParagraph = false;
         for (const child of existingChildren) {
@@ -466,7 +417,6 @@ export function createNotebookSDK(
         return true;
       }
 
-      // Top-level block: build a fresh node of the same type preserving attrs.
       const idx = resolved._topLevelIndex;
       if (idx === undefined || idx < 0 || idx >= docJson.content.length) return false;
 
@@ -492,7 +442,6 @@ export function createNotebookSDK(
       if (!docJson.content) return false;
 
       if (resolved.type === "listItem") {
-        // JSON-splice: remove the listItem from its parent list (supports nesting)
         const childIdx = resolved._listItemChildIndex;
         if (childIdx === undefined) return false;
 
@@ -506,7 +455,6 @@ export function createNotebookSDK(
         parentList.content.splice(childIdx, 1);
 
         if (parentList.content.length === 0) {
-          // If list is now empty, remove it from its parent
           removeEmptyNestedList(newContent, resolved);
         }
         editor.commands.setContent({ type: "doc", content: newContent } as JSONContent);
@@ -514,7 +462,6 @@ export function createNotebookSDK(
         return true;
       }
 
-      // Top-level block: use _topLevelIndex
       const idx = resolved._topLevelIndex;
       if (idx === undefined || idx < 0 || idx >= docJson.content.length) return false;
       const newContent: JSONContent[] = [...docJson.content];
@@ -573,7 +520,6 @@ export function createNotebookSDK(
       const parsed = parseMarkdownNodes(editor, markdown, options.parseMarkdown);
 
       if (resolved.type === "listItem") {
-        // Insert after this listItem within the parent list (supports nesting)
         const childIdx = resolved._listItemChildIndex;
         if (childIdx === undefined) return;
 
@@ -582,7 +528,6 @@ export function createNotebookSDK(
         const { newContent, parentList } = nav;
         if (!parentList.content) return;
 
-        // Wrap parsed nodes as listItem(s)
         const newListItems = parsed.map((node) => {
           if (node.type === "listItem") return node;
           return { type: "listItem", content: [node] } as JSONContent;
@@ -593,7 +538,6 @@ export function createNotebookSDK(
         return;
       }
 
-      // Top-level: JSON-splice to avoid atom-to-empty-paragraph boundaries swallowing content.
       const idx = resolved._topLevelIndex;
       if (idx === undefined || idx < 0 || idx >= docJson.content.length) return;
       const newContent: JSONContent[] = [...docJson.content];
@@ -611,7 +555,6 @@ export function createNotebookSDK(
       const parsed = parseMarkdownNodes(editor, markdown, options.parseMarkdown);
 
       if (resolved.type === "listItem") {
-        // Insert before this listItem within the parent list (supports nesting)
         const childIdx = resolved._listItemChildIndex;
         if (childIdx === undefined) return;
 
@@ -630,7 +573,6 @@ export function createNotebookSDK(
         return;
       }
 
-      // Top-level: JSON-splice to avoid atom-to-empty-paragraph boundaries swallowing content.
       const idx = resolved._topLevelIndex;
       if (idx === undefined || idx < 0 || idx >= docJson.content.length) return;
       const newContent: JSONContent[] = [...docJson.content];

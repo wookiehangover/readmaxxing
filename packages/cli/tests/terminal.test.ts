@@ -158,7 +158,6 @@ describe("terminal output", () => {
               },
             ],
           });
-        // The deletion is on a later page, so filtering must wait for the complete book pull.
         return Response.json({
           changes: [
             {

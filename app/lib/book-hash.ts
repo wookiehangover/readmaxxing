@@ -1,7 +1,3 @@
-/**
- * Compute a lowercase hex SHA-256 hash of a file's bytes.
- * Used for deduplicating uploads across local and remote stores.
- */
 export async function computeFileHash(data: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", data);
   const bytes = new Uint8Array(digest);

@@ -6,11 +6,6 @@ import { recordChange } from "~/lib/sync/change-log";
 import { isWellFormedEntry } from "~/lib/sync/idb-entry";
 import { getHighlightStore, getNotebookStore } from "~/lib/sync/stores";
 
-/**
- * Text-anchor for AI-created highlights. Produced server-side when the AI
- * calls `create_highlight`, before a CFI is known. The client resolves this
- * to a CFI inside the epub iframe and updates the highlight via LWW sync.
- */
 export interface HighlightTextAnchor {
   chapterIndex: number;
   snippet: string;
@@ -24,19 +19,12 @@ export interface Highlight {
   text: string;
   color: string;
   createdAt: number;
-  /** PDF-only: page number where the highlight lives */
   pageNumber?: number;
-  /** PDF-only: character offset within the page text content */
   textOffset?: number;
-  /** PDF-only: length of highlighted text in characters */
   textLength?: number;
-  /** Server-created AI highlights carry a text-anchor until the client resolves a CFI. */
   textAnchor?: HighlightTextAnchor;
-  /** Optional explanatory note (set by AI via create_highlight). */
   note?: string;
-  /** Timestamp of last mutation. Used for LWW sync. */
   updatedAt?: number;
-  /** Soft-delete timestamp. When set, the highlight is considered deleted. */
   deletedAt?: number;
 }
 
@@ -56,11 +44,6 @@ const decodeHighlight = (raw: unknown): Highlight => {
   return value as unknown as Highlight;
 };
 
-/**
- * Notebook content is a TipTap JSONContent tree — opaque structure
- * that we validate structurally (must be a record) but don't deeply schema-check.
- */
-/** Notebook with TipTap JSONContent. The content field is validated as present but not deeply checked. */
 export interface Notebook {
   bookId: string;
   content: JSONContent;
@@ -81,10 +64,6 @@ const decodeNotebook = (raw: unknown): Notebook => {
   }
   return value as unknown as Notebook;
 };
-
-// --- idb-keyval stores imported from ~/lib/sync/stores ---
-
-// --- Factory + Live implementation ---
 
 export interface AnnotationServiceStores {
   readonly highlightStore: UseStore;
@@ -184,7 +163,6 @@ export function makeAnnotationService(stores: AnnotationServiceStores) {
         throw new HighlightError({ operation: "deleteHighlight.read", highlightId: id, cause });
       }
       if (raw) {
-        // Soft-delete: set deletedAt timestamp, keep record for sync
         let existing: Highlight;
         try {
           existing = decodeHighlight(raw);

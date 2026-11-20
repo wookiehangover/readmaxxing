@@ -34,7 +34,6 @@ export const sessions = [
   "00000000-0000-4000-8000-000000000022",
 ];
 
-/** Actual cookie auth, upload/review routes and SQL; only the pool and AI provider are doubled. */
 export async function reviewHttpFixture() {
   const db = new PGlite();
   vi.stubEnv("DATABASE_URL", "postgresql://isolated-test-pool");
@@ -100,7 +99,6 @@ export async function reviewHttpFixture() {
             : [
                 {
                   start: 0,
-                  // Simulate the offset miscount observed in the live model sample.
                   end: 3,
                   quote: submittedAnswer.slice(0, 4),
                   issue: "insufficient_evidence",
@@ -124,7 +122,6 @@ export async function reviewHttpFixture() {
       if (path.endsWith("/chapters")) {
         const bookId = path.split("/")[3];
         const owner = await getSessionFromRequest(request);
-        // Fixture seam: sync registration only. Chapter text still goes through the real upload route.
         if (owner)
           await db.query(
             "INSERT INTO readmax.book (id,user_id,format) VALUES ($1,$2,'epub') ON CONFLICT DO NOTHING",

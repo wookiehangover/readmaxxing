@@ -41,7 +41,6 @@ it.each(["attempts", "question"] as const)(
     const confirmation = holdNextResponse("progress");
     mutation.release();
     expect((await confirmation.processed).data).toEqual({ progress: [], attempts: [] });
-    // Never release navigation while the newer source authority is unresolved.
     expect(store.reviewsSelectors.selectReviewPassed.select(store.state, "book-a")).toBe(false);
     expect(store.reviewsSelectors.selectReviewLocked.select(store.state, "book-a")).toBe(true);
     expect(newer.signal?.aborted).toBe(true);

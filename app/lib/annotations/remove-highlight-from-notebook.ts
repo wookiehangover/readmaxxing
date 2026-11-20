@@ -14,10 +14,6 @@ function withoutHighlightReference(node: JSONContent, highlightId: string): JSON
   };
 }
 
-/**
- * Removes every highlightReference node for `highlightId` from the book's
- * persisted notebook. Returns the saved notebook, or null when nothing changed.
- */
 export async function removeHighlightReferenceFromNotebook(
   bookId: string,
   highlightId: string,

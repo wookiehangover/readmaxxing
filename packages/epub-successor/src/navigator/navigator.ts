@@ -71,7 +71,6 @@ export interface CreateNavigatorOptions {
   readonly security: NavigatorSecurityOptions;
   readonly settleTimeoutMs?: number;
   readonly navigationPolicy?: NavigatorNavigationPolicy;
-  /** A host decoration can prepare before movement; cancel must release ready. */
   readonly pageTurnEffect?: (
     direction: InteractivePageTurnDirection,
   ) => (() => void) | { readonly ready: Promise<void>; cancel(): void } | void;
@@ -95,7 +94,6 @@ export interface Relocation {
 }
 
 interface SectionMount {
-  /** Bumped when an in-place redisplay reuses this mount without remounting. */
   operationId: number;
   readonly href: PublicationPath;
   readonly spineIndex: number;
@@ -279,8 +277,6 @@ export class Navigator extends EventTarget {
     this.#cancelPageMove(true);
     const resolved = this.#resolveTarget(target);
 
-    // Same-section short-circuit: re-settle in the existing iframe instead of
-    // unmounting/remounting (which flashes text and rebuilds layout).
     const existing = this.#active;
     if (
       existing &&
@@ -561,11 +557,6 @@ export class Navigator extends EventTarget {
     return this.#emitRelocation(mount, anchor);
   }
 
-  /**
-   * Restore a DOM Range within the already-mounted section.
-   * Paginated mode maps the range's layout box to a column index with floor()
-   * (no scrollIntoView, no temporary markers) so restore is not off-by-one.
-   */
   async restoreRange(range: Range): Promise<Relocation> {
     this.#assertLive();
     const mount = this.#active;
@@ -588,22 +579,14 @@ export class Navigator extends EventTarget {
         : (range.startContainer.parentElement ?? undefined);
 
     if (mount.pagination) {
-      // Measure the range in the current layout (typically scroll=0 after display)
-      // and jump to that column. floor(x/stride) is the column that contains x.
       alignPaginationToRange(mount.pagination, range);
       return this.#emitRelocation(mount, anchor);
     }
 
-    // Scrolled mode: bring the range's container into view.
     anchor?.scrollIntoView({ block: "start", inline: "nearest" });
     return this.#emitRelocation(mount, anchor);
   }
 
-  /**
-   * Jump to the paginated column that matches a stored section-local progression.
-   * Inverse of paginatedProgression: pageIndex = round(local * (pageCount - 1)).
-   * Prefer this over CFI geometry when both were saved together.
-   */
   restoreProgression(localProgression: number): Relocation {
     this.#assertLive();
     const mount = this.#active;
@@ -629,9 +612,6 @@ export class Navigator extends EventTarget {
     return this.#emitRelocation(mount, captureFirstVisibleElement(mount.frame.contentDocument!));
   }
 
-  /**
-   * Emit a relocation for the current scroll position without changing it.
-   */
   reportRelocation(): Relocation {
     this.#assertLive();
     const mount = this.#active;
@@ -724,7 +704,6 @@ export class Navigator extends EventTarget {
         frame.style.minHeight = `${height}px`;
       }
     }
-    // Even the first mount must be clipped and positioned before it can paint.
     frame.style.visibility = "hidden";
     frame.src = prepared.documentLease.url;
     const mount: SectionMount = { ...prepared, operationId, frame, overlaid: overlay };
@@ -810,9 +789,6 @@ export class Navigator extends EventTarget {
     const document = mount.frame.contentDocument!;
     const scrolling = document.scrollingElement ?? document.documentElement;
     mount.scrollTop = scrolling.scrollTop;
-    // WebKit may block callbacks scheduled in a sandboxed publication frame. The
-    // listener still observes the publication window, but its coalescing frame
-    // belongs to the trusted host document.
     const scheduler = this.#container.ownerDocument.defaultView ?? view;
     mount.scrollScheduler = scheduler;
     const scroll = () => {
@@ -930,14 +906,11 @@ export class Navigator extends EventTarget {
     this.#operation?.abort();
     const controller = new AbortController();
     this.#operation = controller;
-    // Keep the same mount object but bind it to this operation for abort checks.
     mount.operationId = operationId;
     this.#setState("settling");
     try {
       const document = mount.frame.contentDocument;
       if (!document) throw new Error("Publication section document is inaccessible");
-      // Preserve position when redisplaying the same section without a fragment
-      // (e.g. CFI restore after layout). Fragments still scroll via settleSection.
       const anchor = fragment
         ? undefined
         : (mount.visibleAnchor ?? captureFirstVisibleElement(document));
@@ -1155,8 +1128,6 @@ export class Navigator extends EventTarget {
 
   #boundaryTarget(direction: "next" | "previous") {
     if (!this.#navigationPolicy) return undefined;
-    // A rapid turn may have snapped a pending animation to its destination.
-    // Capture that actual page before the host records its return locator.
     if (this.#active && this.#state === "settled") this.#emitRelocation(this.#active);
     return this.#relocation
       ? this.#navigationPolicy?.boundary(direction, this.#relocation)
@@ -1200,12 +1171,8 @@ export class Navigator extends EventTarget {
             : bounded(target.localProgression!);
       if (mount.pagination) {
         const state = mount.pagination;
-        // Measure the endpoint from the origin: the root's client rect itself
-        // shifts with horizontal scroll in some browsers.
         const page = target.position === "end" ? 0 : Math.round(local * (state.pageCount - 1));
         scrollToPage(state, Math.floor(page / state.pagesPerSpread) * state.pagesPerSpread);
-        // Browser column overflow can include an empty terminal column. An
-        // explicit end target restores the last rendered source box instead.
         const end = target.position === "end" ? lastRenderedRange(document) : undefined;
         if (end) alignPaginationToRange(state, end);
         else if (target.position === "end")
@@ -1229,8 +1196,6 @@ export class Navigator extends EventTarget {
         scrolling.scrollTop += rect.top;
       }
     }
-    // A programmatic arrival at a prior chapter/spine end is a restore, not
-    // forward scrolling. Its queued native scroll event must not advance again.
     mount.scrollTop = scrolling.scrollTop;
   }
 

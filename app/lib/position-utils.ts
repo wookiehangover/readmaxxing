@@ -1,10 +1,3 @@
-/**
- * Pure helper functions for dual-key reading position save/restore logic.
- *
- * Extracted from workspace-book-reader.tsx so the priority resolution
- * and dual-key save can be unit-tested without IndexedDB or React.
- */
-
 export interface StoredReadingPosition {
   readonly cfi: string;
   readonly localProgression?: number;
@@ -23,10 +16,6 @@ function isSectionStartCfi(cfi: string): boolean {
   return cfi.trim().endsWith("!/4)");
 }
 
-/**
- * Reject hidden-layout relocations, plus section-start and large backward
- * relocations while layout is settling. Explicit navigation remains accepted.
- */
 export function shouldAcceptReadingPosition(
   current: StoredReadingPosition | null,
   candidate: StoredReadingPosition,
@@ -57,7 +46,6 @@ export function shouldAcceptReadingPosition(
   return !isSectionStartCfi(candidate.cfi);
 }
 
-/** Return the last-good position when a layout relocation needs to be undone. */
 export function getReadingPositionRestoreTarget(
   current: StoredReadingPosition | null,
   candidate: StoredReadingPosition,
@@ -68,33 +56,19 @@ export function getReadingPositionRestoreTarget(
 }
 
 export interface ResolveStartCfiOpts {
-  /** In-memory CFI from the current session (highest priority). */
   latestCfi: string | null;
-  /** Optional reader-instance-specific key. */
   panelId: string | undefined;
-  /** Book-level key (shared across panels showing the same book). */
   bookId: string;
-  /** Callback to look up a persisted position by key. */
   getPosition: (key: string) => Promise<string | null>;
 }
 
 export interface ResolveStartPositionOpts {
-  /** In-memory position from the current session (highest priority). */
   latest: StoredReadingPosition | null;
   panelId: string | undefined;
   bookId: string;
   getPositionRecord: (key: string) => Promise<StoredReadingPosition | null>;
 }
 
-/**
- * Resolve the CFI to display when opening / re-mounting a book.
- *
- * Priority:
- *  1. `latestCfi` — kept in a ref across layout changes within the same session.
- *  2. Reader-instance position — supports legacy instance-specific restores.
- *  3. Book-level position — the "last read" fallback shared by all panels.
- *  4. `null` — no saved position; the renderer will open at the beginning.
- */
 export async function resolveStartCfi(opts: ResolveStartCfiOpts): Promise<string | null> {
   const { latestCfi, panelId, bookId, getPosition } = opts;
 
@@ -111,10 +85,6 @@ export async function resolveStartCfi(opts: ResolveStartCfiOpts): Promise<string
   return null;
 }
 
-/**
- * Like resolveStartCfi, but also returns localProgression/spineIndex when stored
- * so paginated restore can jump to the exact column.
- */
 export async function resolveStartPosition(
   opts: ResolveStartPositionOpts,
 ): Promise<StoredReadingPosition | null> {
@@ -134,23 +104,12 @@ export async function resolveStartPosition(
 }
 
 export interface SavePositionDualKeyOpts {
-  /** Reader-instance-specific key, when available. */
   panelId: string | undefined;
-  /** Book-level key. */
   bookId: string;
-  /** The CFI string to persist. */
   cfi: string;
-  /** Section-local progression [0,1] for exact paginated restore. */
   localProgression?: number;
-  /** Spine index paired with localProgression. */
   spineIndex?: number;
-  /** Whether the book-level save should emit a sync changelog entry. Defaults to true. */
   recordChange?: boolean;
-  /**
-   * Callback to persist a position by key. The optional `options` bag is
-   * forwarded to the underlying service — when `recordChange: false` the
-   * write is local-only (no sync changelog entry).
-   */
   savePosition: (
     key: string,
     cfi: string,
@@ -162,17 +121,6 @@ export interface SavePositionDualKeyOpts {
   ) => Promise<void>;
 }
 
-/**
- * Save a reading position under both the panel key and the book key.
- *
- * When `panelId` is undefined only the book-level key is written.
- *
- * By default only the book-level save emits a sync changelog entry. Pass
- * `recordChange: false` to make both writes local-only. The panel-key save is
- * always a device-local mirror (panel ids are random per-session UUIDs that no
- * other device queries) so recording a second change for it just doubles every
- * page-turn push without adding useful state for other devices.
- */
 export async function savePositionDualKey(opts: SavePositionDualKeyOpts): Promise<void> {
   const { panelId, bookId, cfi, localProgression, spineIndex, recordChange, savePosition } = opts;
 

@@ -14,36 +14,21 @@ import { runInitialSyncIfNeeded } from "./initial-sync";
 import { makeSyncEngine, type SyncEngine } from "./sync-engine";
 
 export interface SyncStatus {
-  /** Whether a sync cycle is currently running. */
   isSyncing: boolean;
-  /** Whether there are local changes not yet pushed to the server. */
   hasPendingChanges: boolean;
-  /** ISO timestamp of the last successful sync completion. */
   lastSyncedAt: string | null;
-  /** Most recent sync error, or null if last sync succeeded. */
   syncError: Error | null;
-  /** Whether the browser is online. */
   isOnline: boolean;
-  /** Whether the sync engine is active (user is authenticated). */
   isActive: boolean;
 }
 
 export interface SyncActions {
-  /** Whether the sync engine is active (user is authenticated). */
   isActive: boolean;
-  /** Manually pull and merge remote changes. */
   pullChanges: () => Promise<void>;
-  /** Manually trigger a push cycle, including file upload recovery. */
   triggerSync: () => Promise<void>;
-  /**
-   * Re-download a single book's file and cover, or upload them if the DB
-   * row is missing the blob URLs. Also re-uploads extracted chapter text.
-   * No-op when the engine is not running.
-   */
   reloadBookFiles: (bookId: string) => Promise<void>;
 }
 
-/** Combined status + actions. Prefer `useSyncStatus` / `useSyncActions` to avoid extra re-renders. */
 export type SyncState = SyncStatus & SyncActions;
 
 const defaultSyncStatus: SyncStatus = {
@@ -62,11 +47,6 @@ const defaultSyncActions: SyncActions = {
   reloadBookFiles: async () => {},
 };
 
-/**
- * External store for high-churn sync status (isSyncing, pending, errors).
- * Status flips must not re-render the whole app tree under SyncProvider —
- * only components that call useSyncStatus() subscribe.
- */
 let statusSnapshot: SyncStatus = defaultSyncStatus;
 const statusListeners = new Set<() => void>();
 
@@ -99,41 +79,27 @@ function getSyncStatusSnapshot(): SyncStatus {
 
 const SyncActionsContext = createContext<SyncActions>(defaultSyncActions);
 
-/** Subscribe to high-churn sync status (syncing spinner, pending badge). */
 export function useSyncStatus(): SyncStatus {
   return useSyncExternalStore(subscribeSyncStatus, getSyncStatusSnapshot, getSyncStatusSnapshot);
 }
 
-/** Stable actions + isActive. Does not re-render on isSyncing/pending flips. */
 export function useSyncActions(): SyncActions {
   return useContext(SyncActionsContext);
 }
 
-/**
- * Combined status + actions. Re-renders on every status flip — prefer
- * useSyncStatus() or useSyncActions() when you only need one side.
- */
 export function useSyncState(): SyncState {
   const status = useSyncStatus();
   const actions = useSyncActions();
   return { ...status, ...actions };
 }
 
-/** @deprecated Use SyncActionsContext via useSyncActions / useSyncState */
 export const SyncContext = SyncActionsContext;
 
-/**
- * React hook that manages the SyncEngine lifecycle.
- *
- * Status is published via an external store so SyncProvider re-renders only
- * when auth/actions change, not on every isSyncing flip.
- */
 export function useSync(): SyncActions {
   const { isAuthenticated, user } = useAuth();
   const engineRef = useRef<SyncEngine | null>(null);
   const userId = user?.id ?? null;
 
-  // Keep isActive on the external store in sync with auth without React state.
   useEffect(() => {
     emitSyncStatus({ isActive: isAuthenticated });
     if (!isAuthenticated) {

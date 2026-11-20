@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createStore, set } from "idb-keyval";
 
-// Mock the sync changelog so we can assert on recordChange invocations
-// without touching the real changelog IDB store.
 vi.mock("~/lib/sync/change-log", () => ({
   recordChange: vi.fn().mockResolvedValue(undefined),
 }));
@@ -26,7 +24,6 @@ describe("ChatService.cacheServerMessages", () => {
     const session = await ChatService.createSession(bookId, "Original");
     const originalUpdatedAt = session.updatedAt;
 
-    // Simulate clock advancing so a naive Date.now() bump would show up.
     await new Promise((resolve) => setTimeout(resolve, 5));
 
     await ChatService.cacheServerMessages(bookId, session.id, [
@@ -43,8 +40,6 @@ describe("ChatService.cacheServerMessages", () => {
     expect(after).not.toBeNull();
     expect(after!.messages).toHaveLength(1);
     expect(after!.messages[0].content).toBe("hello");
-    // The LWW clock must not advance: bumping it on every message
-    // hydration silently overwrites metadata edits from other devices.
     expect(after!.updatedAt).toBe(originalUpdatedAt);
   });
 
@@ -52,7 +47,6 @@ describe("ChatService.cacheServerMessages", () => {
     const bookId = uniqueBookId();
 
     const session = await ChatService.createSession(bookId);
-    // createSession enqueues one change; isolate cacheServerMessages below.
     vi.mocked(recordChange).mockClear();
 
     await ChatService.cacheServerMessages(bookId, session.id, [
@@ -79,15 +73,10 @@ describe("ChatService.cacheServerMessages", () => {
 
     const session = await ChatService.createSession(bookId, "Before");
 
-    // Simulate: another device's rename lands via sync and we record it
-    // locally by calling updateSessionTitle.
     await ChatService.updateSessionTitle(session.id, bookId, "Renamed");
     const renamed = await ChatService.getSession(session.id, bookId);
     const renamedUpdatedAt = renamed!.updatedAt;
 
-    // Now message hydration fires. Previously this would bump updatedAt
-    // past the rename's timestamp, making the rename "lose" LWW on the
-    // next pull. After the fix, the rename's timestamp must stick.
     await new Promise((resolve) => setTimeout(resolve, 5));
     await ChatService.cacheServerMessages(bookId, session.id, [
       { id: "m1", role: "user", content: "hi", createdAt: Date.now() },
@@ -107,8 +96,6 @@ describe("ChatService migrateOldMessages", () => {
   it("enqueues exactly one chat_session change per migrated session", async () => {
     const bookId = uniqueBookId();
 
-    // Seed the legacy store directly — same db/object-store name the
-    // production code uses for backward-compat reads.
     const legacyStore = createStore("ebook-reader-chats", "chats");
     await set(
       bookId,
@@ -119,7 +106,6 @@ describe("ChatService migrateOldMessages", () => {
       legacyStore,
     );
 
-    // Triggering migration via the public read path.
     const sessions = await ChatService.getSessionsByBook(bookId);
 
     expect(sessions).toHaveLength(1);
@@ -134,8 +120,6 @@ describe("ChatService migrateOldMessages", () => {
       entityId: sessions[0].id,
       operation: "put",
     });
-    // Messages must not be included in the tracked payload — chat_session is
-    // metadata-only LWW.
     const tracked = chatSessionCalls[0][0].data as Record<string, unknown>;
     expect(tracked).not.toHaveProperty("messages");
     expect(tracked).toMatchObject({ bookId, title: "" });

@@ -53,8 +53,6 @@ async function readSnapshot(bookId: string): Promise<DemoSnapshot> {
 function createAdoptedSnapshot(snapshot: DemoSnapshot, bookId: string): DemoSnapshot {
   const demo = snapshot.sessions.find((session) => session.id === DEMO_CHAT_SESSION.id);
 
-  // The adopted demo session must always receive a fresh id so it never collides
-  // with a user-created session that may have taken over `activeSessionId`.
   const adoptedDemoSessionId = crypto.randomUUID();
   const activeWasUserSession =
     snapshot.activeSessionId !== DEMO_CHAT_SESSION.id &&
@@ -193,8 +191,6 @@ async function getAdoptableChanges(): Promise<ChangeEntry[]> {
 
 export async function persistAdoptedDemoContent(userId: string): Promise<AdoptedDemo> {
   const original = await readSnapshot(DEMO_BOOK_ID);
-  // Demo IDs are fixed and database primary keys are global, so both entities
-  // must receive account-specific IDs before their first server push.
   const adoptedBookId = crypto.randomUUID();
   const adopted = createAdoptedSnapshot(original, adoptedBookId);
   await writeSnapshot(adoptedBookId, adopted);

@@ -32,7 +32,6 @@ export interface ProgressUpdate {
   warning?: string;
 }
 
-/** Transient status lives on stderr; pipes and CI never receive animation. */
 export class Activity {
   private timer?: ReturnType<typeof setInterval>;
   private frame = 0;
@@ -68,7 +67,6 @@ export class Activity {
         detail = `  ${"━".repeat(filled)}${"─".repeat(16 - filled)} ${Math.floor(fraction * 100)}%  ${bytes(loaded)} / ${bytes(total)}`;
       } else detail = `  ${bytes(loaded)}`;
     }
-    // Labels are controlled by the CLI, so clipping cannot split user metadata or escape codes.
     const line = `${frames[this.frame++ % frames.length]} ${clean(label)}${detail}`;
     const width = Math.max(1, (process.stderr.columns || 80) - 1);
     process.stderr.write(`\r\x1b[2K${tone(line.slice(0, width), 36, process.stderr)}`);

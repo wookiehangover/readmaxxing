@@ -34,7 +34,7 @@ export function sortBooks(
       sorted.sort((a, b) => {
         const ta = map.get(a.id) ?? 0;
         const tb = map.get(b.id) ?? 0;
-        return tb - ta; // most recent first; never-opened (0) sink to bottom
+        return tb - ta;
       });
       break;
     }
@@ -77,7 +77,6 @@ export function sortBooksForTable(
       sorted.sort((a, b) => {
         const ta = map.get(a.id) ?? 0;
         const tb = map.get(b.id) ?? 0;
-        // Never-opened (0) sink to bottom regardless of direction.
         if (ta === 0 && tb === 0) return 0;
         if (ta === 0) return 1;
         if (tb === 0) return -1;
@@ -89,7 +88,6 @@ export function sortBooksForTable(
       sorted.sort((a, b) => {
         const ta = a.updatedAt ?? 0;
         const tb = b.updatedAt ?? 0;
-        // Missing updatedAt (0) sink to bottom regardless of direction.
         if (ta === 0 && tb === 0) return 0;
         if (ta === 0) return 1;
         if (tb === 0) return -1;

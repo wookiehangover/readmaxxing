@@ -5,8 +5,6 @@ import { fileURLToPath } from "node:url";
 let server: ViteDevServer;
 let baseURL: string;
 
-// This integration includes the consuming app's extraction/admission bridge,
-// so serve its source tree with its alias instead of the package-only demo.
 test.beforeAll(async () => {
   const root = fileURLToPath(new URL("../../../", import.meta.url));
   server = await createServer({

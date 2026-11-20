@@ -5,12 +5,9 @@ export interface VisibleViewportGeometry {
   readonly viewportTop?: number;
 }
 
-/** Last rendered source box, excluding clipped/hidden nodes and trailing whitespace. */
 export function lastRenderedRange(document: Document): Range | undefined {
   const walker = document.createTreeWalker(document.body, 1 | 4 | 8);
-  while (walker.lastChild()) {
-    // Descend to the final source node.
-  }
+  while (walker.lastChild()) {}
   const range = document.createRange();
   let node: Node | null = walker.currentNode;
   while (node && node !== document.body) {
@@ -68,7 +65,6 @@ function rangeIntersectsViewport(
   return false;
 }
 
-/** Returns normalized text whose rendered word boxes intersect the iframe viewport. */
 export function visibleViewportText(
   document: Document,
   geometry?: VisibleViewportGeometry,

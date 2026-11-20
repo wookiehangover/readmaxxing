@@ -91,7 +91,6 @@ describe("resolvePublisherPage", () => {
       "text/html",
     );
 
-    // happy-dom documents report 0×0 client size → progression path.
     expect(
       resolvePublisherPage(map, {
         href: "OPS/b.xhtml",
@@ -127,7 +126,6 @@ describe("resolvePublisherPage", () => {
         y: 0,
         toJSON: () => ({}),
       }) as DOMRect;
-    // p4 is on the next column / below the fold — not yet reached.
     p4.getBoundingClientRect = () =>
       ({
         top: 0,

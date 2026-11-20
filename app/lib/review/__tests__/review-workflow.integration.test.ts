@@ -54,8 +54,6 @@ describe("review workflow with real client, routes, storage and ReactStore", () 
       "Revised: The narrator changes her mind as new evidence challenges her assumptions.",
     );
     store.dispatch(setReviewGrading("book-a", "elite_professor"));
-    // A verdict is available before the server confirms the current chapter source.
-    // The UI cannot resubmit until that confirmation has restored source authority.
     expect(store.reviewsSelectors.selectReviewCanSubmit.select(store.state, "book-a")).toBe(false);
     confirmation.release();
     await vi.waitFor(() =>
@@ -154,7 +152,6 @@ describe("review workflow with real client, routes, storage and ReactStore", () 
         restored.reviewsSelectors.selectReviewQuestion.select(restored.state, "book-a")?.id,
       ).not.toBe(previousQuestion),
     );
-    // The new question is visible before the progress response confirms its source.
     expect(
       restored.reviewsSelectors.selectReviewAssignmentCurrent.select(restored.state, "book-a"),
     ).toBe(false);

@@ -1,6 +1,5 @@
 import type { DisplayTarget, Relocation } from "./navigator";
 
-/** Host-owned admission; the engine owns layout and never stores review business state. */
 export interface NavigatorNavigationPolicy {
   resolve(target: DisplayTarget): DisplayTarget | false;
   allowCommit(target: DisplayTarget): boolean;

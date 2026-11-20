@@ -12,11 +12,8 @@ export async function action({ request }: { request: Request }) {
 
   const headers = new Headers();
 
-  // Try to read and delete the existing session
   const sessionInfo = await getSessionFromRequest(request);
   if (sessionInfo) {
-    // getSessionFromRequest returns { userId }, but we need the session ID
-    // to delete it. Re-parse the cookie to get the raw session ID.
     const cookieHeader = request.headers.get("Cookie");
     const sessionId = cookieHeader
       ?.split(";")

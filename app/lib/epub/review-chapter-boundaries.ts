@@ -2,7 +2,6 @@ import type { BookChapter } from "./epub-text-extract";
 import { hrefsMatch } from "./successor-toc";
 import type { ReviewChapterBoundary, ReviewChapterPoint } from "~/lib/review/review-types";
 
-/** Offsets use the same trimmed body.textContent convention as legacy extraction. */
 export function collectReviewAnchorOffsets(document: Document): Record<string, number> {
   const body = document.body;
   if (!body) return {};
@@ -12,7 +11,6 @@ export function collectReviewAnchorOffsets(document: Document): Record<string, n
   const anchors: Record<string, number> = Object.create(null);
   let offset = 0;
   function visit(node: Node) {
-    // Both text and CDATA contribute to source body.textContent in XHTML.
     if (node.nodeType === 3 || node.nodeType === 4) {
       offset += node.textContent?.length ?? 0;
       return;
@@ -52,11 +50,6 @@ function fragmentFromHref(href: string): string | null {
   }
 }
 
-/**
- * Review checkpoints subdivide legacy chapters without changing their text/index/segments.
- * A missing anchor or missing spine source makes this chapter ineligible (empty list),
- * rather than silently generating a question about an incomplete chapter.
- */
 export function buildReviewChapterBoundaries(
   chapter: BookChapter,
   tocLeaves: readonly TocStart[],
@@ -91,7 +84,6 @@ export function buildReviewChapterBoundaries(
   const unique = starts.filter(
     (start, index) => !index || start.offset !== starts[index - 1]!.offset,
   );
-  // Retain text before the first heading, as legacy extraction does.
   if (unique[0]!.offset > 0) {
     unique[0] = {
       ...unique[0]!,
@@ -115,7 +107,6 @@ export function buildReviewChapterBoundaries(
     .filter((boundary) => chapter.text.slice(boundary.startOffset, boundary.endOffset).trim());
 }
 
-/** Requires a source-body offset for fragment chapters; a spine index alone is ambiguous. */
 export function reviewBoundaryContains(
   boundary: ReviewChapterBoundary,
   point: Pick<ReviewChapterPoint, "spineIndex" | "textOffset">,

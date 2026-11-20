@@ -274,7 +274,6 @@ export class DecorationLayer extends EventTarget {
     this.#emitDecorationHit("decoration-contextmenu", event);
   };
 
-  // A context-menu press on a decoration must not start a selection (Chrome selects the word).
   readonly #handleMouseDown = (event: MouseEvent): void => {
     const opensContextMenu = event.button === 2 || (event.button === 0 && event.ctrlKey);
     if (opensContextMenu && this.#hitTest(event)) event.preventDefault();

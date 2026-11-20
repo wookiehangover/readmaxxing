@@ -93,14 +93,12 @@ function* withChapterRecovery<Args extends unknown[], Result>(
     try {
       yield* call(reuploadBookChapters, bookId);
     } catch {
-      // A failed repair does not undo the server's source-unavailable finding.
       throw cause;
     }
     return yield* call(request, ...args);
   }
 }
 
-/** Bound once to the app's configured selectors/dispatch; no module-global Store. */
 export function createReviewsSaga(store: AppStore) {
   const selectors = store.reviewsSelectors;
 
@@ -259,7 +257,6 @@ export function createReviewsSaga(store: AppStore) {
     yield* put(reviewSubmissionPrepared(generation, submission));
     const controller = new AbortController();
     try {
-      // Persist the retry identity before the server can commit an attempt.
       const prepared = yield* selectors.selectReviewCache.effect(bookId);
       if (!prepared) return;
       yield* call(saveReviewCache, prepared);
@@ -278,7 +275,6 @@ export function createReviewsSaga(store: AppStore) {
     }
   }
 
-  // Validate scope before cancelling; stale callers cannot abort another book's work.
   function* watchOperation(
     operation: ReviewOperation,
     patterns: typeof questionActions | typeof progressActions | typeof submitActions,
@@ -347,7 +343,6 @@ export function createReviewsSaga(store: AppStore) {
       yield* fork(watchOperation, "progress" as const, progressActions, progress);
       yield* fork(watchOperation, "submit" as const, submitActions, submit);
       yield* call(hydrateScope);
-      // Forked watchers keep the root alive, so cleanup runs only on cancellation.
       yield* call(() => new Promise<never>(() => {}));
     } finally {
       if (typeof window !== "undefined") {

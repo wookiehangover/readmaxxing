@@ -1,11 +1,3 @@
-// ---------------------------------------------------------------------------
-// Per-book upload retry state with exponential backoff
-// ---------------------------------------------------------------------------
-
-/**
- * Backoff schedule applied to failing blob uploads, keyed by attempt count.
- * Attempts beyond the last slot stay capped at the final value (30 min).
- */
 export const UPLOAD_BACKOFF_SCHEDULE_MS: readonly number[] = [
   30_000, 60_000, 300_000, 900_000, 1_800_000,
 ];
@@ -55,16 +47,6 @@ export function clearUploadRetry(state: Map<string, UploadRetryEntry>, key: stri
   state.delete(key);
 }
 
-// ---------------------------------------------------------------------------
-// In-call retry: classify blob SDK errors and retry transient ones
-// ---------------------------------------------------------------------------
-
-/**
- * Classification of errors thrown by `@vercel/blob/client#upload`. The SDK
- * exposes typed error classes (`BlobAccessError`, `BlobServiceNotAvailable`,
- * `BlobServiceRateLimited`, etc.) but the `/client` subpath does not re-export
- * them, so we match on `constructor.name` / `name` / message fragments.
- */
 export type BlobErrorClass = "auth" | "transient" | "permanent";
 
 export function classifyBlobError(err: unknown): BlobErrorClass {
@@ -73,7 +55,6 @@ export function classifyBlobError(err: unknown): BlobErrorClass {
   const name = err.name;
   const msg = err.message;
 
-  // Auth requires an explicit access-denied, expired-token, or 401/403 signal.
   if (
     ctor === "BlobAccessError" ||
     name === "BlobAccessError" ||
@@ -84,11 +65,8 @@ export function classifyBlobError(err: unknown): BlobErrorClass {
     return "auth";
   }
 
-  // The SDK uses this same wrapper for every failed token handshake, including
-  // missing-book 400s whose metadata may succeed before a bounded retry.
   if (/failed to\s+retrieve the client token/i.test(msg)) return "transient";
 
-  // Permanent: validation / not-found / aborted — retrying won't help.
   if (
     ctor === "BlobFileTooLargeError" ||
     name === "BlobFileTooLargeError" ||
@@ -110,7 +88,6 @@ export function classifyBlobError(err: unknown): BlobErrorClass {
     return "permanent";
   }
 
-  // Transient: service outage, rate limiting, unknown server error.
   if (
     ctor === "BlobServiceNotAvailable" ||
     name === "BlobServiceNotAvailable" ||
@@ -122,17 +99,12 @@ export function classifyBlobError(err: unknown): BlobErrorClass {
     return "transient";
   }
 
-  // Network / fetch-level failures (`TypeError: Failed to fetch` and the like).
   if (err instanceof TypeError) return "transient";
   if (/network|failed to fetch|fetch failed/i.test(msg)) return "transient";
 
   return "permanent";
 }
 
-/**
- * Delays applied between in-call retry attempts for transient upload errors.
- * Total attempts = `length + 1` (initial attempt plus one retry per slot).
- */
 export const UPLOAD_INCALL_RETRY_DELAYS_MS: readonly number[] = [500, 2_000, 5_000];
 
 export interface UploadRetryHooks {
@@ -142,12 +114,6 @@ export interface UploadRetryHooks {
   readonly onPermanentFailure?: (err: unknown) => void;
 }
 
-/**
- * Execute `performUpload` with bounded in-call retries on transient errors.
- * Auth and permanent errors short-circuit. Returns the upload result on
- * success, or `null` if all attempts were exhausted or a non-retryable error
- * was hit.
- */
 export async function runUploadWithRetry<T>(
   performUpload: () => Promise<T>,
   hooks: UploadRetryHooks = {},

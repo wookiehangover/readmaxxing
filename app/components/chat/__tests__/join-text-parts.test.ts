@@ -21,8 +21,6 @@ describe("joinTextParts", () => {
   });
 
   it("restores a space at a boundary where neither side has whitespace", () => {
-    // The bug: a sentence boundary fell exactly at a part split, so the
-    // whitespace separator was lost when the parts were joined.
     expect(joinTextParts(["end of chunk.", "Next sentence"])).toBe("end of chunk. Next sentence");
   });
 

@@ -26,9 +26,7 @@ export async function loadChapterQuestions(
   try {
     const cached = parseQuestions(await get<unknown>(key, getChapterQuestionsStore()));
     if (cached) return cached;
-  } catch {
-    // A cache read failure should not prevent a network attempt.
-  }
+  } catch {}
 
   const response = await globalThis.fetch("/api/chapter-questions", {
     method: "POST",
@@ -41,8 +39,6 @@ export async function loadChapterQuestions(
   if (!questions) throw new Error("Invalid chapter questions response");
   try {
     await set(key, questions, getChapterQuestionsStore());
-  } catch {
-    // The generated questions are still usable when local caching fails.
-  }
+  } catch {}
   return questions;
 }

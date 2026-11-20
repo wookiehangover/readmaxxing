@@ -1,20 +1,9 @@
-/**
- * Generate minimal valid EPUB 3 files for E2E testing.
- * Run: node e2e/fixtures/create-test-epub.mjs
- *
- * Produces:
- *   e2e/fixtures/test-book.epub   — primary fixture, "Test Book for E2E"
- *   e2e/fixtures/test-book-2.epub — secondary fixture used by layout-modes
- *     tests that need a second distinct book (different title + identifier,
- *     so the file hash differs and the app treats it as a separate book).
- */
 import { writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// CRC-32 lookup table
 const crcTable = new Uint32Array(256);
 for (let i = 0; i < 256; i++) {
   let c = i;
@@ -165,11 +154,6 @@ const epub = createZip(entries);
 const outPath = join(__dirname, "test-book.epub");
 writeFileSync(outPath, epub);
 console.log(`Created ${outPath} (${epub.length} bytes)`);
-
-// --- Second fixture ---------------------------------------------------------
-// Minimal sibling book with a different title + identifier so its file hash
-// does not collide with test-book.epub. Used by layout-modes.spec.ts to open
-// two distinct books and verify cluster-switching behavior.
 
 const opf2 = `<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">

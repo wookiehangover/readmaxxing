@@ -72,7 +72,6 @@ export async function run(args: string[]): Promise<void> {
       await new Activity("Signing out").during(() =>
         client.request("/api/auth/logout", { method: "POST" }),
       );
-      // An environment credential can differ from the locally saved session.
       const { readFile } = await import("node:fs/promises");
       try {
         const saved = JSON.parse(await readFile(configPath(), "utf8"));
@@ -102,7 +101,6 @@ export async function run(args: string[]): Promise<void> {
         const sessions = (await client.pull<ChatSession>("chat_session")).filter(
           (session) => !values.book || session.bookId === values.book,
         );
-        // Retain book tombstones here so deleted books cannot reappear as unknown groups.
         const books = sessions.some((session) => session.bookId != null)
           ? await client.pull<Book>("book", { includeDeleted: true })
           : [];

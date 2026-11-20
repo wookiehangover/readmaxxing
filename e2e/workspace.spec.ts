@@ -7,7 +7,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const TEST_EPUB = resolve(__dirname, "fixtures/test-book.epub");
 
-/** Upload a test epub and wait for its reading route to hydrate. */
 async function uploadTestBook(page: Page) {
   const fileInput = page.locator('input[type="file"][accept=".epub,.pdf"]').first();
   await fileInput.setInputFiles(TEST_EPUB);
@@ -21,15 +20,9 @@ async function uploadTestBook(page: Page) {
     .toBe(true);
 }
 
-/**
- * Upload a book. The first upload auto-opens the reader panel, so we just
- * wait for the reader toolbar to initialize.
- */
 async function uploadAndOpenBook(page: Page) {
   await uploadTestBook(page);
 
-  // The book auto-opens on upload (handleBookAdded -> openBook). Wait for the
-  // reader toolbar (prev/next buttons) as a signal that the reader is ready.
   await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
     timeout: 20_000,
   });
@@ -40,7 +33,6 @@ test.describe("Workspace route", () => {
     await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
     await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
 
-    // Clear IndexedDB + storage to isolate each test.
     await page.evaluate(async () => {
       const dbs = await indexedDB.databases();
       for (const db of dbs) {
@@ -49,7 +41,6 @@ test.describe("Workspace route", () => {
       localStorage.clear();
     });
 
-    // Reload after clearing storage to get a fresh state
     await page.goto("/");
     await waitForAppHydration(page);
   });
@@ -92,12 +83,10 @@ test.describe("Workspace route", () => {
     await expect(page.getByTestId("reading-shell")).toBeVisible();
     await expect(page.getByTestId("mobile-reading-tabs")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Next page" }).first()).toBeVisible();
-    // The chapter label is published after the initial EPUB relocation settles.
     await expect(
       page.getByRole("button", { name: /Open table of contents, current chapter/ }),
     ).toBeVisible();
     const iframe = page.locator("[aria-label='Book surface'] iframe").first();
-    // Columns share the same document text; chapter changes can reset scrollLeft.
     const readPageState = () =>
       iframe
         .contentFrame()
@@ -314,7 +303,6 @@ test.describe("Workspace route", () => {
       body.replaceChildren(
         ...["first", "middle", "final"].map((name) => {
           const page = document.createElement("div");
-          // Explicit breaks keep this fixture at three pages across asynchronous resizes.
           page.style.breakBefore = name === "first" ? "auto" : "column";
           const marker = document.createElement("div");
           marker.dataset.pageMarker = name;
@@ -325,7 +313,6 @@ test.describe("Workspace route", () => {
       );
     });
 
-    // Force the navigator to remeasure the synthetic three-page section.
     await page.setViewportSize({ width: 391, height: 844 });
     await expect.poll(() => frame.evaluate(() => document.documentElement.clientWidth)).toBe(391);
     await expect
@@ -409,7 +396,6 @@ test.describe("Workspace route", () => {
     };
 
     await turnNext(100, pageStride);
-    // Wait for the visible page to settle before starting another gesture.
     await expect
       .poll(async () => {
         const middle = await markerBox("middle");
@@ -434,27 +420,21 @@ test.describe("Workspace route", () => {
     await expect(prevButton.first()).toBeAttached();
     await expect(nextButton.first()).toBeAttached();
 
-    // Click next — should not throw
     await nextButton.first().click();
   });
 
   test("search bar opens, finds results, and highlights matches", async ({ page }) => {
     await uploadAndOpenBook(page);
 
-    // Open search with keyboard shortcut
     await page.getByRole("button", { name: "Previous page" }).first().focus();
     await page.keyboard.press("Meta+f");
 
-    // Verify search bar appears — it has an input with placeholder
     const searchInput = page.getByPlaceholder("Search in book…");
     await expect(searchInput).toBeVisible({ timeout: 5_000 });
 
-    // Type a search query and wait for the debounced search to resolve
     await searchInput.fill("elephant");
     await expect(page.getByText("1 of 1")).toBeVisible({ timeout: 10_000 });
 
-    // The match renders as a highlight decoration in the reader iframe —
-    // either through the CSS Custom Highlight API or overlay spans.
     await expect
       .poll(
         async () => {
@@ -479,15 +459,11 @@ test.describe("Workspace route", () => {
   test("TOC popover opens when book has table of contents", async ({ page }) => {
     await uploadAndOpenBook(page);
 
-    // Wait for the TOC button to appear (only shows when book has TOC)
     const tocButton = page.getByRole("button", { name: "Table of Contents" });
     await expect(tocButton.first()).toBeVisible({ timeout: 15_000 });
 
-    // Click the TOC button
     await tocButton.first().click();
 
-    // Verify TOC popover content — should show chapter titles
-    // Use .first() since TOC entries may appear in both sidebar and reader popovers
     await expect(
       page.getByRole("button", { name: "Chapter 1: The Beginning" }).first(),
     ).toBeVisible({ timeout: 5_000 });
@@ -497,23 +473,18 @@ test.describe("Workspace route", () => {
   test("highlight reference navigate and delete in notebook", async ({ page }) => {
     await uploadAndOpenBook(page);
 
-    // Wait for epub iframe to be ready with content
     const iframe = page.frameLocator("iframe").first();
     const chapterText = iframe.locator("p").first();
     await expect(chapterText).toBeVisible({ timeout: 20_000 });
 
-    // Open the Notes rail FIRST so the callback map is registered.
     const notebookTab = page.getByRole("tab", { name: "Notes" });
     await expect(notebookTab).toBeVisible({ timeout: 10_000 });
     await notebookTab.click();
 
-    // Wait for notebook panel to render
     await page.waitForTimeout(1_000);
 
-    // The reader stays visible beside the notebook in focused mode.
     await expect(chapterText).toBeVisible({ timeout: 15_000 });
 
-    // Programmatically select text inside the epub iframe to trigger epubjs "selected" event
     const iframeHandle = await page.locator("iframe").first().elementHandle();
     if (!iframeHandle) throw new Error("Could not get iframe element handle");
     const iframeFrame = await iframeHandle.contentFrame();
@@ -530,60 +501,44 @@ test.describe("Workspace route", () => {
       document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     });
 
-    // Wait for the highlight popover to appear (portaled to document.body)
     const highlightBtn = page.getByRole("button", { name: "Add to Notebook" });
     await expect(highlightBtn).toBeVisible({ timeout: 10_000 });
 
-    // Click "Add to Notebook" to save the highlight
     await highlightBtn.click();
 
-    // Switch to the Notes rail to see the highlight reference.
     await notebookTab.click();
 
-    // Wait for the highlight reference blockquote to appear in the notebook
     const highlightRef = page.locator("blockquote").first();
     await expect(highlightRef).toBeVisible({ timeout: 15_000 });
 
-    // Verify the blockquote contains some highlighted text
     const blockquoteText = await highlightRef.textContent();
     expect(blockquoteText?.length).toBeGreaterThan(0);
 
-    // Test navigate: click the blockquote to navigate to the highlight
     await highlightRef.click();
-    // Navigation should focus the reader panel — verify the reader is still showing
     await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
       timeout: 10_000,
     });
 
-    // Test delete: hover the blockquote and click the delete button
-    // Re-focus the notebook panel
     await notebookTab.click();
 
-    // Wait for blockquote to be visible again
     const highlightRefAgain = page.locator("blockquote").first();
     await expect(highlightRefAgain).toBeVisible({ timeout: 10_000 });
 
-    // Click the delete button (force: true since it's opacity-hidden until hover)
     const deleteBtn = page.locator('[title="Delete highlight"]').first();
     await deleteBtn.click({ force: true, timeout: 5_000 });
 
-    // Verify the highlight reference blockquote is removed from the notebook
     await expect(page.locator("blockquote")).toHaveCount(0, { timeout: 10_000 });
   });
 
   test("highlight created with notebook closed appears when notebook opens", async ({ page }) => {
     await uploadAndOpenBook(page);
 
-    // Wait for epub iframe to be ready with content
     const iframe = page.frameLocator("iframe").first();
     const chapterText = iframe.locator("p").first();
     await expect(chapterText).toBeVisible({ timeout: 20_000 });
 
-    // Highlight handlers register after persisted annotations finish loading.
     await page.waitForTimeout(1_000);
 
-    // Do NOT open the notebook first — this is the regression scenario.
-    // Select text inside the epub iframe and save a highlight.
     const iframeHandle = await page.locator("iframe").first().elementHandle();
     if (!iframeHandle) throw new Error("Could not get iframe element handle");
     const iframeFrame = await iframeHandle.contentFrame();
@@ -604,8 +559,6 @@ test.describe("Workspace route", () => {
     await expect(highlightBtn).toBeVisible({ timeout: 10_000 });
     await highlightBtn.click();
 
-    // Now open the Notes rail — the highlight reference should already be
-    // persisted in IDB via the fallback path, so the blockquote must appear.
     const notebookTab = page.getByRole("tab", { name: "Notes" });
     await expect(notebookTab).toBeVisible({ timeout: 10_000 });
     await notebookTab.click();
@@ -613,10 +566,8 @@ test.describe("Workspace route", () => {
     const highlightRef = page.locator("blockquote").first();
     await expect(highlightRef).toBeVisible({ timeout: 15_000 });
 
-    // Exactly one blockquote — no duplicates from a double-write.
     await expect(page.locator("blockquote")).toHaveCount(1);
 
-    // Delete must still work from the fallback-created node.
     const deleteBtn = page.locator('[title="Delete highlight"]').first();
     await deleteBtn.click({ force: true, timeout: 5_000 });
     await expect(page.locator("blockquote")).toHaveCount(0, { timeout: 10_000 });
@@ -651,7 +602,6 @@ test.describe("Workspace route", () => {
     await page.getByRole("tab", { name: "Notes" }).click({ timeout: 10_000 });
     await expect(page.locator("blockquote")).toHaveCount(1, { timeout: 15_000 });
 
-    // With another passage selected, right-clicking the highlight replaces the selection menu.
     await iframeFrame.evaluate(() => {
       const p = document.querySelectorAll("p")[1];
       if (!p) throw new Error("No second paragraph found in epub");
@@ -685,7 +635,6 @@ test.describe("Workspace route", () => {
     await expect(deleteItem).toBeHidden();
     await expect(page.locator("blockquote")).toHaveCount(0, { timeout: 10_000 });
 
-    // Right-clicking the now-plain text no longer opens the highlight menu.
     await chapterText.click({ button: "right", position: { x: 4, y: 4 } });
     await expect(deleteItem).toBeHidden();
   });
@@ -693,15 +642,12 @@ test.describe("Workspace route", () => {
   test("reader settings menu opens", async ({ page }) => {
     await uploadAndOpenBook(page);
 
-    // Wait for the reader formatting button
     const settingsButton = page.getByRole("button", { name: "Reader menu" });
     await expect(settingsButton.first()).toBeVisible({ timeout: 15_000 });
 
-    // Open settings dropdown
     await settingsButton.first().click();
     await page.getByRole("menuitem", { name: "Formatting" }).hover();
 
-    // Verify layout options are visible
     await expect(page.getByText("Layout")).toBeVisible({ timeout: 5_000 });
     await expect(page.getByText("Single Page")).toBeVisible();
     await expect(page.getByText("Two Page Spread")).toBeVisible();

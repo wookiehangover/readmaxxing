@@ -45,7 +45,6 @@ export async function loader({
   const book = await getBookByIdForUser(params.bookId, session.userId);
   if (!book) return Response.json({ error: "Book not found" }, { status: 404 });
 
-  // Read progress first so completed jobs cannot disappear before their content is fetched.
   const pendingPages = await listPendingOutlinePages(session.userId, params.bookId);
   const rows = await getCurrentReadingArtifacts(session.userId, params.bookId);
   const artifacts = Object.fromEntries(

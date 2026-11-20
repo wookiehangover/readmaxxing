@@ -32,8 +32,6 @@ interface WorkspacePdfReaderProps {
 }
 
 export function WorkspacePdfReader({ bookId, panelTypography }: WorkspacePdfReaderProps) {
-  // Look up book metadata from the Themis books collection. Populated at app
-  // startup by the books hydrate saga, so this is a synchronous read.
   const store = useAppStore();
   const booksLoading = store.booksSelectors.selectBooksLoading.useValue();
   const book = store.booksSelectors.selectBookById.useValue(bookId);
@@ -82,7 +80,6 @@ function WorkspacePdfReaderInner({
   const [tocOpen, setTocOpen] = useState(false);
   const { toolbarVisible, showToolbar, toggleToolbar } = useToolbarAutoHide(isMobile ?? false);
 
-  // Ref-based callback so usePdfHighlights always calls the latest handleOpenNotebook
   const handleOpenNotebookRef = useRef<() => void>(() => {});
   const {
     highlightMenu,
@@ -151,7 +148,6 @@ function WorkspacePdfReaderInner({
     store.dispatch(hydrateBookmarksRequested(book.id));
   }, [book.id, bookmarkSyncVersion, store]);
 
-  // Load highlights once after initial render
   const highlightsLoadedRef = useRef(false);
   useEffect(() => {
     if (totalPages > 0 && !highlightsLoadedRef.current) {
@@ -265,7 +261,6 @@ function WorkspacePdfReaderInner({
     );
   }, [book.id, bookmarks, bookmarksLoaded, currentPage, store]);
 
-  // Keep goToPage in sync for navigation map
   useEffect(() => {
     setGoToPage(goToPage);
   }, [goToPage, setGoToPage]);
@@ -345,7 +340,6 @@ function WorkspacePdfReaderInner({
         setTocOpen={setTocOpen}
         goToPage={goToPage}
       />
-      {/* Portal popovers to document.body so position:fixed is viewport-relative. */}
       {selectionPopover &&
         createPortal(
           <HighlightPopover

@@ -4,7 +4,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { strToU8, zipSync, type Zippable } from "fflate";
 
-// ZIP DOS timestamps are timezone-free, and fflate serializes Date's local fields.
 const FIXED_MTIME = new Date(2000, 0, 1, 0, 0, 0);
 const XHTML = "http://www.w3.org/1999/xhtml";
 const OPF = "http://www.idpf.org/2007/opf";
@@ -121,13 +120,6 @@ const ONE_PIXEL_PNG = Uint8Array.from(
   ),
 );
 
-/**
- * Builds byte-identical archives. The traversal, compression-ratio, and entry-count
- * fixtures are intentionally EPUBCheck-invalid ZIP/security probes. The scripted
- * fixture intentionally omits the EPUB `scripted` manifest property, while the
- * external-reference and meta-refresh fixtures intentionally contain content that
- * violates this library's scriptless/offline policy.
- */
 export function buildFixtureArchives(): Readonly<Record<string, Uint8Array<ArrayBuffer>>> {
   const scripted = xhtml(
     '<script>alert("script")</script><main onclick="alert(\'handler\')"><a href="javascript:alert(\'url\')">unsafe</a><svg xmlns="http://www.w3.org/2000/svg"><script>alert("svg")</script><circle cx="1" cy="1" r="1"/></svg></main>',

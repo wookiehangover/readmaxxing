@@ -22,9 +22,6 @@ async function uploadTestBook(page: Page) {
   await expect(readingShell).toBeVisible({ timeout: 20_000 });
 }
 
-// Chapter text matches e2e/fixtures/create-test-epub.mjs. Used to seed the
-// server-side chapter cache deterministically, bypassing the client-side
-// auto-upload whose timing is not under test here.
 const FIXTURE_CHAPTERS = [
   {
     index: 0,
@@ -50,7 +47,6 @@ const FIXTURE_CHAPTERS = [
 ];
 
 async function openBookAndChat(page: Page) {
-  // The book auto-opens on upload, so wait for the reader toolbar to initialize.
   await expect(page.getByRole("button", { name: "Previous page" }).first()).toBeAttached({
     timeout: 20_000,
   });
@@ -61,13 +57,7 @@ async function openBookAndChat(page: Page) {
   }
   await expect(textarea.first()).toBeVisible({ timeout: 15_000 });
 
-  // Seed the server chapter cache directly so the chat endpoint has the
-  // text it needs regardless of whether the client-side auto-upload has
-  // fired yet. The request rides the session cookie set during register.
   const bookId = await readFirstBookIdFromIdb(page);
-  // Use the browser's fetch (not page.request) so the call goes through the
-  // same Vite dev middleware chain the app uses — page.request.fetch bypasses
-  // that and hits a 404 from the static route matcher.
   const seedResult = await page.evaluate(
     async ({ bookId: id, chapters }) => {
       const r = await fetch(`/api/books/${id}/chapters`, {
@@ -86,7 +76,6 @@ async function openBookAndChat(page: Page) {
 }
 
 async function readFirstBookIdFromIdb(page: Page): Promise<string> {
-  // Retry once if the evaluate races with an HMR reload right after upload.
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await page.evaluate(
@@ -213,9 +202,7 @@ async function seedNotebook(page: Page, content: Array<Record<string, unknown>>)
       try {
         const body = JSON.parse(text) as { accepted?: Array<{ id: string }> };
         accepted = body.accepted?.some((entry) => entry.id === idOfChange) ?? false;
-      } catch {
-        // The assertions below report the HTTP response if it was not JSON.
-      }
+      } catch {}
       return { ok: response.ok, status: response.status, accepted, text: text.slice(0, 200) };
     },
     { bookId, changeId, timestamp, content },
@@ -228,18 +215,14 @@ test.describe("Chat (server-authoritative)", () => {
   test.setTimeout(180_000);
 
   test.beforeEach(async ({ page, context, request }) => {
-    // Skip AI-dependent tests in CI to avoid API costs
     test.skip(!!process.env.SKIP_AI_TESTS, "AI tests skipped (set SKIP_AI_TESTS=true)");
 
-    // Chat + auth require Postgres. When DATABASE_URL is unset (CI without a
-    // DB service) the auth endpoints respond 503 — skip the whole suite.
     await skipIfAuthNotConfigured(request);
 
     await installVirtualAuthenticator(context, page);
     await page.addInitScript(() => localStorage.setItem("demo-onboarding", "complete"));
 
     await page.goto("/favicon.svg", { waitUntil: "domcontentloaded" });
-    // Clear storage to isolate each test.
     await page.evaluate(async () => {
       const dbs = await indexedDB.databases();
       for (const db of dbs) {
@@ -262,15 +245,11 @@ test.describe("Chat (server-authoritative)", () => {
   });
 
   test("append_to_notes tool updates the notebook during the stream", async ({ page }) => {
-    // Open the notebook so its editor mounts and registers an append callback
-    // via notebookEditorCallbackMap. With renderer: "always", the notebook
-    // component stays mounted after we switch back to the chat tab.
     const notebookTab = page.getByRole("tab", { name: "Notes" });
     await notebookTab.click();
     await expect(notebookTab).toBeVisible({ timeout: 10_000 });
     await expect(page.locator(".ProseMirror")).toBeVisible({ timeout: 15_000 });
 
-    // Switch back to the chat tab so the textarea is actionable again.
     const chatTab = page.getByRole("tab", { name: "Discuss" });
     await chatTab.click();
     const textarea = page.locator('textarea[placeholder*="Ask"]');
@@ -282,32 +261,21 @@ test.describe("Chat (server-authoritative)", () => {
       `Please call the append_to_notes tool exactly once with the text "${marker}". Do not use any other tools.`,
     );
 
-    // Wait for the stream to produce some visible assistant output so the
-    // onFinish tool handler has had a chance to fire.
     await expect(page.locator(ASSISTANT_BUBBLE).first()).toBeVisible({ timeout: 30_000 });
 
-    // Switch to notebook and verify the marker landed in the editor.
     await notebookTab.click();
     await expect(page.locator(".ProseMirror")).toContainText(marker, { timeout: 60_000 });
   });
 
   test("create_highlight tool applies a highlight in the reader", async ({ page }) => {
-    // Pull a verbatim passage from the fixture so the server's text-anchor
-    // locator finds a deterministic match.
     const passage = "The quick brown fox jumps over the lazy dog.";
     await sendChatMessage(
       page,
       `Please call the create_highlight tool with this exact text as the "text" argument: "${passage}". Do not use any other tools.`,
     );
 
-    // Wait for an assistant bubble to appear — the onFinish handler then
-    // resolves the CFI and annotates the iframe.
     await expect(page.locator(ASSISTANT_BUBBLE).first()).toBeVisible({ timeout: 30_000 });
 
-    // The authoritative signal: a highlight row lands in IndexedDB with the
-    // requested text. The iframe decoration may lag (or be styled as an SVG
-    // that isn't straightforward to locate via CSS), so we assert on the
-    // persisted record which confirms the full server+client tool pipeline ran.
     await expect
       .poll(
         async () => {
@@ -489,16 +457,12 @@ test.describe("Chat (server-authoritative)", () => {
       "Write a thoughtful 4-paragraph reflection on chapter 1. Take your time.",
     );
 
-    // Wait until the assistant bubble appears (stream started), then reload.
     await expect(page.locator(ASSISTANT_BUBBLE).first()).toBeVisible({ timeout: 30_000 });
     await page.waitForTimeout(400);
 
     await page.reload();
     await waitForAppHydration(page);
 
-    // The chat panel remounts, fetches the session's messages, and reconnects
-    // to any in-flight stream via /api/chat/resume. Eventually the completed
-    // assistant message should be present with a non-trivial amount of text.
     const assistant = page.locator(ASSISTANT_BUBBLE).first();
     await expect(assistant).toBeVisible({ timeout: 30_000 });
     await expect

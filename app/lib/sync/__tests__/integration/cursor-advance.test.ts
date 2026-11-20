@@ -16,8 +16,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Scenario 3: after a pull, the stored cursor equals
-// `records[last].updatedAt - 1ms` (the overlap window from rewindCursor).
 describe("integration: cursor advance rewinds 1ms", () => {
   it("stores each entity's cursor at T - 1ms after a pull that returned T", async () => {
     const T_BOOK = "2026-04-22T12:00:00.000Z";
@@ -72,8 +70,6 @@ describe("integration: cursor advance rewinds 1ms", () => {
     expect(bookCursor).not.toBeNull();
     expect(posCursor).not.toBeNull();
 
-    // Cursor = group.cursor - 1ms so the server's `> since` filter still
-    // surfaces sibling rows landing on the same millisecond.
     expect(Date.parse(bookCursor as string)).toBe(Date.parse(T_BOOK) - 1);
     expect(Date.parse(posCursor as string)).toBe(Date.parse(T_POS) - 1);
     expect(bookCursor).toBe(new Date(Date.parse(T_BOOK) - 1).toISOString());

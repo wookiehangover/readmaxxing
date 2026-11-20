@@ -134,7 +134,6 @@ describe("resolveStartCfi", () => {
 
     expect(result).toBe("epubcfi(/6/20)");
     expect(getPosition).toHaveBeenCalledWith("panel-1");
-    // Should NOT fall through to bookId lookup
     expect(getPosition).toHaveBeenCalledTimes(1);
   });
 
@@ -183,7 +182,6 @@ describe("resolveStartCfi", () => {
     });
 
     expect(result).toBe("epubcfi(/6/40)");
-    // Only bookId lookup, no panelId lookup
     expect(getPosition).toHaveBeenCalledTimes(1);
     expect(getPosition).toHaveBeenCalledWith("book-1");
   });
@@ -238,8 +236,6 @@ describe("savePositionDualKey", () => {
       savePosition,
     });
 
-    // Regression guard: without the recordChange:false flag on the panel save,
-    // a single page turn in workspace mode produced two sync changelog entries.
     expect(recording).toEqual(["book-42"]);
   });
 

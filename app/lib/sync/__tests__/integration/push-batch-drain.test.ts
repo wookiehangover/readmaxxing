@@ -4,14 +4,10 @@ import { clearSyncedChanges, getUnsyncedChanges, recordChange } from "../../chan
 import { PUSH_BATCH_SIZE, makeSyncEngine } from "../../sync-engine";
 import type { SyncPushRequest } from "../../types";
 
-// Avoid accidentally calling the real Vercel Blob client during
-// uploadPendingFiles (fire-and-forget from push).
 vi.mock("@vercel/blob/client", () => ({
   upload: vi.fn(async () => ({ url: "blob://unused" })),
 }));
 
-// Store names must mirror production getters in app/lib/sync/stores.ts and
-// app/lib/sync/change-log.ts so the test harness clears the same IDB rows.
 const changeLogStore = createStore("ebook-reader-changelog", "changes");
 const bookStore = createStore("ebook-reader-db", "books");
 
@@ -23,7 +19,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Scenario 1: push batch ≤ 50 drains across multiple calls.
 describe("integration: push batch drain", () => {
   it("drains >50 queued changes via follow-up pushes with every batch ≤ PUSH_BATCH_SIZE", async () => {
     const TOTAL = 120;
@@ -57,7 +52,6 @@ describe("integration: push batch drain", () => {
     const engine = makeSyncEngine({ userId: "user-test" });
     await engine.pushChanges();
 
-    // Follow-ups are scheduled via queueMicrotask; poll until drained.
     for (let i = 0; i < 100; i++) {
       const remaining = await getUnsyncedChanges();
       if (remaining.length === 0) break;
@@ -70,8 +64,6 @@ describe("integration: push batch drain", () => {
     expect(batchSizes.reduce((a, b) => a + b, 0)).toBe(TOTAL);
     expect(await getUnsyncedChanges()).toHaveLength(0);
 
-    // Sweep cleared entries from the change log so cross-test state stays tidy
-    // even if vitest isolate is off.
     await clearSyncedChanges();
   });
 });

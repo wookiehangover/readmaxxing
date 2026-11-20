@@ -38,9 +38,7 @@ export async function parseEpub(data: ArrayBuffer): Promise<EpubMetadata> {
           });
         }
       }
-    } catch {
-      // Cover extraction is optional and must not prevent importing the book.
-    }
+    } catch {}
 
     return {
       title: metadata.title || "Untitled",

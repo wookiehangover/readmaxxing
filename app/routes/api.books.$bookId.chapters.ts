@@ -128,15 +128,6 @@ function chapterCount(chapters: unknown): number {
   return Array.isArray(chapters) ? chapters.length : 0;
 }
 
-/**
- * POST /api/books/:bookId/chapters
- *
- * Upserts extracted chapter text for a (userId, bookId) pair.
- * Called by the client once per book on first open, so the server can
- * reuse the cached chapters on subsequent chat requests.
- *
- * Body: { chapters, format? } or { uploadId, chunkIndex, totalChunks, totalChapters, chapters, format? }
- */
 export async function action({
   request,
   params,
@@ -159,7 +150,6 @@ export async function action({
     return Response.json({ error: "bookId is required" }, { status: 400 });
   }
 
-  // Verify the book belongs to the user
   const book = await getBookByIdForUser(bookId, userId);
   if (!book) {
     return Response.json({ error: "Book not found" }, { status: 404 });

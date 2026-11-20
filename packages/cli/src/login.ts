@@ -59,7 +59,6 @@ export async function login(url: string, tokenStdin: boolean, noBrowser: boolean
   });
   process.once("SIGINT", cancel);
   process.once("SIGTERM", cancel);
-  // Hidden input remains available if the browser cannot reach this terminal.
   const muted = new Writable({
     write(_chunk, _encoding, callback) {
       callback();

@@ -62,9 +62,7 @@ function saveLibrarySortBy(sortBy: WorkspaceSortBy): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(LIBRARY_SORT_STORAGE_KEY, sortBy);
-  } catch {
-    // Ignore storage failures and keep the in-memory selection for this session.
-  }
+  } catch {}
 }
 
 export function LibraryBrowseContent({ onOpenBook }: LibraryBrowseContentProps = {}) {
@@ -337,8 +335,6 @@ function LibraryBook({
             </div>
           )}
         </div>
-        {/*<p className="mt-2 truncate text-sm font-medium">{book.title}</p>*/}
-        {/*<p className="truncate text-xs text-muted-foreground">{book.author}</p>*/}
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger

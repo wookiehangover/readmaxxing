@@ -1,6 +1,5 @@
 import { defineConfig, type DummyRuleMap } from "oxlint";
 
-// Themis publishes its lint configuration as JavaScript without declarations.
 // @ts-expect-error The package subpath intentionally has no TypeScript declarations.
 import { react } from "@augmentcode/themis/eslint-plugins";
 
@@ -25,6 +24,10 @@ const themisOverrides = (react as ThemisFlatConfig[]).slice(1).map((config) => (
 }));
 
 export default defineConfig({
-  jsPlugins: [{ name: "themis", specifier: "./scripts/themis-oxlint-plugin.mjs" }],
+  jsPlugins: [
+    { name: "themis", specifier: "./scripts/themis-oxlint-plugin.mjs" },
+    { name: "comments", specifier: "./scripts/no-comments-oxlint-plugin.mjs" },
+  ],
+  rules: { "comments/no-comments": "error" },
   overrides: themisOverrides,
 });

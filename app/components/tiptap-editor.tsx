@@ -18,14 +18,8 @@ export interface TiptapEditorHandle {
   appendContent: (nodes: JSONContent[]) => void;
   setContent: (content: TiptapEditorContent) => void;
   getContent: () => JSONContent;
-  /** Returns the current number of top-level nodes in the document. */
   getTopLevelNodeCount: () => number;
-  /**
-   * Replace content from a given top-level node index to end of document.
-   * Used for streaming preview: truncate to `fromIndex` then append `nodes`.
-   */
   replaceContentFrom: (fromIndex: number, nodes: JSONContent[]) => void;
-  /** Delete every highlightReference node for `highlightId` as a user edit (saved via onUpdate). */
   removeHighlightReference: (highlightId: string) => void;
 }
 
@@ -40,7 +34,6 @@ interface TiptapEditorProps {
   onNavigateToHighlight?: (cfi: string) => void | Promise<void>;
   onNavigateToOutlineIncrement?: (locator: string) => void | Promise<void>;
   onDeleteHighlight?: (highlightId: string, cfiRange: string) => void;
-  /** Fires once the underlying Tiptap editor instance is created and ready. */
   onReady?: () => void;
 }
 
@@ -198,7 +191,6 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     editor?.setEditable(editable);
   }, [editable, editor]);
 
-  // Notify parent when editor becomes available
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const firedReadyRef = useRef(false);
@@ -209,7 +201,6 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     }
   }, [editor]);
 
-  // Listen for custom DOM events dispatched by HighlightReferenceView
   useEffect(() => {
     if (!editor) return;
     const dom = editor.view.dom;
@@ -241,7 +232,6 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
     };
   }, [editor, onNavigateToHighlight, onNavigateToOutlineIncrement, onDeleteHighlight]);
 
-  // Expose imperative handle for appending highlight references
   useImperativeHandle(
     ref,
     () => ({
@@ -258,9 +248,6 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       },
       setContent(content: TiptapEditorContent) {
         if (!editor) return;
-        // Programmatic content always comes from an authoritative server/sync
-        // snapshot. Do not emit onUpdate, which would enqueue a newer local
-        // autosave and could overwrite a subsequent remote change.
         editor.commands.setContent(content, { emitUpdate: false });
       },
       getContent() {
@@ -274,12 +261,10 @@ export const TiptapEditor = forwardRef<TiptapEditorHandle, TiptapEditorProps>(fu
       replaceContentFrom(fromIndex: number, nodes: JSONContent[]) {
         if (!editor) return;
         const doc = editor.state.doc;
-        // Find the position at the start of the node at fromIndex
         let pos = 0;
         for (let i = 0; i < Math.min(fromIndex, doc.childCount); i++) {
           pos += doc.child(i).nodeSize;
         }
-        // Delete from pos to end, then insert new nodes
         const endPos = doc.content.size;
         editor.chain().deleteRange({ from: pos, to: endPos }).insertContentAt(pos, nodes).run();
       },

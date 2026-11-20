@@ -11,34 +11,22 @@ export interface SearchResult {
 }
 
 export interface SearchOptions {
-  /** Optional abort signal to cancel the search early */
   signal?: AbortSignal;
 }
 
-/**
- * Normalize text for epub search — handles smart quotes, em/en dashes,
- * ellipsis characters, and excessive whitespace that AI models often produce
- * but epub source text may not contain (or vice versa).
- */
 export function normalizeSearchText(text: string): string {
   return text
-    .replace(/[\u2018\u2019\u201A]/g, "'") // smart single quotes → straight
-    .replace(/[\u201C\u201D\u201E]/g, '"') // smart double quotes → straight
-    .replace(/\u2014/g, "--") // em dash → double hyphen
-    .replace(/\u2013/g, "-") // en dash → hyphen
-    .replace(/\u2026/g, "...") // ellipsis char → three dots
-    .replace(/[\u00A0\u202F]/g, " ") // non-breaking spaces → regular space
-    .replace(/[\u200B-\u200D\uFEFF]/g, "") // strip zero-width characters
-    .replace(/\s+/g, " ") // collapse whitespace
+    .replace(/[\u2018\u2019\u201A]/g, "'")
+    .replace(/[\u201C\u201D\u201E]/g, '"')
+    .replace(/\u2014/g, "--")
+    .replace(/\u2013/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/[\u00A0\u202F]/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
-/**
- * Search a successor-backed book adapter for a query string across all spine items.
- * Returns an array of results with CFI locations, excerpts, and section labels.
- *
- * This is a standalone, testable utility extracted from the useBookSearch hook.
- */
 export async function searchBookForCfi(
   book: SuccessorBookAdapter,
   query: string,
@@ -51,7 +39,6 @@ export async function searchBookForCfi(
     return [];
   }
 
-  // Collect all spine items
   const spineItems: any[] = [];
   spine.each((item: any) => {
     spineItems.push(item);
@@ -75,36 +62,26 @@ export async function searchBookForCfi(
       }
 
       item.unload();
-    } catch {
-      // Individual section search failures are non-fatal
-    }
+    } catch {}
   }
 
   return allResults;
 }
 
-/**
- * Search with progressive fallback: tries the full query first, then
- * normalized text, then progressively shorter prefixes.
- * Designed for AI-generated text that may not match epub source exactly.
- */
 export async function fuzzySearchBookForCfi(
   book: SuccessorBookAdapter,
   query: string,
   options?: SearchOptions,
 ): Promise<SearchResult[]> {
-  // 1. Try exact query
   let results = await searchBookForCfi(book, query, options);
   if (results.length > 0) return results;
 
-  // 2. Try normalized text
   const normalized = normalizeSearchText(query);
   if (normalized !== query) {
     results = await searchBookForCfi(book, normalized, options);
     if (results.length > 0) return results;
   }
 
-  // 3. Try shorter prefixes (first 60 chars, then 30)
   for (const len of [60, 30]) {
     if (normalized.length <= len) continue;
     const short = normalized.slice(0, len).trim();

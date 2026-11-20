@@ -25,13 +25,7 @@ const PAGINATION_STYLE_ID = "epub-successor-pagination-style";
 const PAGINATION_PAD_STYLE_ID = "epub-successor-pagination-pad";
 const XHTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
 export const DEFAULT_MIN_SPREAD_WIDTH = 800;
-/** Gap between columns in a multi-page spread (middle gutter only). */
 export const DEFAULT_COLUMN_GAP = 64;
-/**
- * Vertical padding inside the section body. Horizontal chrome lives on the host
- * container — body side padding only paints at scrollLeft=0 and makes later
- * pages look offset relative to the first.
- */
 export const DEFAULT_BLOCK_PADDING = 24;
 
 function snapped(value: number, minimum = 0): number {
@@ -169,15 +163,6 @@ function padStyle(document: Document): HTMLStyleElement {
   return styleElement(document, PAGINATION_PAD_STYLE_ID);
 }
 
-/**
- * Page geometry for multi-column layout.
- *
- * By default, columns pack the full iframe width and horizontal chrome belongs
- * on the host container. A single-page inline margin instead keeps the iframe
- * full-width, narrows each column, and repeats both resting margins as the
- * inter-column gap. That lets moving text paint through the margin while every
- * settled page shares the same inset.
- */
 export function pageChromeInsets(
   viewportWidth: number,
   columnGap: number,
@@ -196,8 +181,6 @@ export function pageChromeInsets(
       : 0;
   const gap =
     margin > 0 ? margin * 2 : Math.min(snapped(columnGap), Math.max(0, width - pagesPerSpread));
-  // A single-page margin becomes the gap between adjacent columns, keeping
-  // every resting text column inset while the iframe still fills the viewport.
   const geometry = calculateColumnGeometry(width, gap, pagesPerSpread, margin * 2);
 
   return {
@@ -224,10 +207,7 @@ export function applyPaginatedLayout(
     chrome.padInlineStart === 0 && chrome.padInlineEnd === 0
       ? `${chrome.padBlock}px 0`
       : `${chrome.padBlock}px ${chrome.padInlineEnd}px ${chrome.padBlock}px ${chrome.padInlineStart}px`;
-  // Reset any spread padding from a previous layout before re-measuring.
   padStyle(document).textContent = "";
-  // Do not set background here — theme/preference CSS owns html+body paint.
-  // A configured single-page margin is part of the repeated column geometry.
   layoutStyle(document).textContent =
     `html{height:${height}px !important;width:${chrome.geometry.viewportWidth}px !important;` +
     `overflow:hidden !important;direction:${direction} !important;}` +
@@ -250,7 +230,6 @@ export function applyPaginatedLayout(
 }
 
 export function clearPaginatedLayout(document: Document): void {
-  // Scroll mode: neutral vertical padding only (host supplies horizontal chrome).
   layoutStyle(document).textContent =
     `body{box-sizing:border-box !important;margin:0 !important;` +
     `padding:${DEFAULT_BLOCK_PADDING}px 0 !important;}`;
@@ -267,10 +246,6 @@ export function measurePaginatedLayout(
   const scrolling = document.scrollingElement ?? document.documentElement;
   padStyle(document).textContent = "";
   let pageCount = calculatePageCount(scrolling.scrollWidth, geometry);
-  // A single-page inset is encoded as half of the repeated inter-column gap.
-  // Chromium's multicol scrollWidth stops at the final content edge, omitting
-  // that trailing half-gap. Count from the natural extent first, then widen the
-  // body to the last full stride so the terminal column is not clamped early.
   if (
     geometry.pagesPerSpread === 1 &&
     geometry.columnGap > 0 &&
@@ -279,11 +254,6 @@ export function measurePaginatedLayout(
     padStyle(document).textContent =
       `body{width:${pageCount * geometry.columnStride}px !important;}`;
   }
-  // Two-page spreads: widen the body to a whole number of spreads so the last
-  // spread starts on a spread boundary (trailing column stays blank). With an
-  // odd column count the final turn's target offset exceeds maxOffset, the
-  // browser clamps the scroll, and the last spread re-shows the second-to-last
-  // column in its first slot.
   if (geometry.pagesPerSpread === 2 && pageCount % 2 !== 0) {
     pageCount += 1;
     const paddedWidth = pageCount * geometry.columnStride - geometry.columnGap;
@@ -352,8 +322,6 @@ export function animateScrollToPage(
   );
   const start = state.scrolling.scrollLeft;
   const duration = Math.max(0, Number.isFinite(durationMs) ? durationMs : 0);
-  // Safari blocks script callbacks scheduled in a sandboxed publication
-  // window. Callers embedding the document pass their trusted host window.
   const view = scheduler ?? state.scrolling.ownerDocument.defaultView;
   if (!view || duration === 0 || start === target) {
     state.scrolling.scrollLeft = target;
@@ -402,19 +370,11 @@ export function snapToSpread(state: PaginatedLayoutState): void {
   scrollToPage(state, Math.floor(page / state.pagesPerSpread) * state.pagesPerSpread);
 }
 
-/**
- * Column index containing a layout box's left edge.
- * Uses floor (not round): column index is floor(x / stride). Rounding pushes
- * restore one page forward when the caret sits past mid-column.
- */
 export function pageIndexForLogicalOffset(logical: number, state: PaginatedLayoutState): number {
   if (state.columnStride <= 0 || state.pageCount <= 0) return 0;
   return Math.max(0, Math.min(state.pageCount - 1, Math.floor(logical / state.columnStride)));
 }
 
-/**
- * Document-space X of a client rect along the paginated column axis.
- */
 export function logicalOffsetForClientRect(
   state: PaginatedLayoutState,
   rect: DOMRectReadOnly,
@@ -423,10 +383,6 @@ export function logicalOffsetForClientRect(
   return currentLogicalOffset(state) + (rect.left - scrollRect.left);
 }
 
-/**
- * Scroll so the spread containing `range` is shown, using the range's live box
- * (not a parent block). Floor-based column math avoids off-by-one on restore.
- */
 export function alignPaginationToRange(state: PaginatedLayoutState, range: Range): void {
   if (state.columnStride <= 0 || state.pageCount <= 0) return;
   const rects = range.getClientRects();
@@ -435,9 +391,6 @@ export function alignPaginationToRange(state: PaginatedLayoutState, range: Range
   scrollToPage(state, Math.floor(page / state.pagesPerSpread) * state.pagesPerSpread);
 }
 
-/**
- * Scroll so the spread containing `element` is shown.
- */
 export function alignPaginationToElement(state: PaginatedLayoutState, element: Element): void {
   if (state.columnStride <= 0 || state.pageCount <= 0) return;
   const page = pageIndexForLogicalOffset(

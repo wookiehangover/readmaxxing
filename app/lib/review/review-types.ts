@@ -1,4 +1,3 @@
-/** Wire/persistence contracts only: safe to import during SSR and in the browser. */
 export const REVIEW_DIFFICULTIES = [
   "friendly",
   "challenging",
@@ -29,7 +28,6 @@ export const REVIEW_GENERATION_VERSION = "chapter-review-v1";
 export const REVIEW_SCHEMA_VERSION = 1;
 export const REVIEW_PROMPT_VERSION = 1;
 
-/** UTF-16 offset in trimmed source body.textContent, never a viewport page number. */
 export interface ReviewChapterPoint {
   spineIndex: number;
   href: string;
@@ -37,13 +35,10 @@ export interface ReviewChapterPoint {
   textOffset: number;
 }
 export interface ReviewChapterBoundary {
-  /** Book-local locator identity; unrelated to the global content fingerprint. */
   key: string;
   title: string;
   start: ReviewChapterPoint;
-  /** Exclusive. null means the end of the publication. */
   end: ReviewChapterPoint | null;
-  /** Slice of the enclosing legacy BookChapter.text; includes multi-spine separators. */
   startOffset: number;
   endOffset: number;
 }
@@ -80,7 +75,6 @@ export interface ReviewRichTextNode {
 }
 export interface ReviewAnswerSnapshot {
   document: ReviewRichTextNode;
-  /** Untrimmed canonical text of document. Annotation offsets refer to this exact string. */
   plainText: string;
 }
 export interface ReviewAnnotation {
@@ -106,14 +100,12 @@ export interface ReviewProgressDTO extends ReviewChapterRef {
   passedAttemptId: string | null;
   updatedAt: number;
 }
-/** Local-only, account-scoped draft. Never push as a graded attempt or shared question. */
 export interface ReviewDraft extends ReviewChapterRef, ReviewAnswerSnapshot {
   userId: string;
   questionId: string;
   updatedAt: number;
 }
 
-/** POST /api/reviews/question; no client-supplied text, fingerprint, rubric or model. */
 export interface ReviewQuestionRequest {
   bookId: string;
   chapterKey: string;
@@ -124,7 +116,6 @@ export interface ReviewQuestionResponse {
   question: ReviewQuestionDTO;
   progress: ReviewProgressDTO;
 }
-/** POST /api/reviews/attempts; id is an idempotency key retained across transport retries. */
 export interface ReviewSubmitRequest extends ReviewAnswerSnapshot {
   id: string;
   bookId: string;
@@ -136,7 +127,6 @@ export interface ReviewSubmitResponse {
   attempt: ReviewAttemptDTO;
   progress: ReviewProgressDTO;
 }
-/** GET /api/reviews/progress?bookId=... ; only the authenticated user's results. */
 export interface ReviewProgressResponse {
   progress: ReviewProgressDTO[];
   attempts: ReviewAttemptDTO[];

@@ -9,24 +9,10 @@ export interface NotebookEditorCallbacks {
   getContent: () => JSONContent;
   getTopLevelNodeCount: () => number;
   replaceContentFrom: (fromIndex: number, nodes: JSONContent[]) => void;
-  /** Remove a highlight's reference nodes as a saved user edit. */
   removeHighlightReference: (highlightId: string) => void;
-  /**
-   * Seed the editor's last-known-content ref to the given content so a
-   * subsequent `sync:entity-updated` {notebook} event that reads the same
-   * content from IndexedDB is treated as a no-op. Used by chat tool handlers
-   * that write-through to IDB and dispatch a sync event while the editor is
-   * open, to avoid a redundant `setContent` that would reset cursor position.
-   */
   seedLastContent: (content: JSONContent) => void;
 }
 
-/**
- * A BookCluster is the canonical grouping of panels that belong to a single
- * book: the book reader on the left and the chat/notebook tabs on the right.
- * Exactly one cluster is visible at a time; link navigation resolves "which
- * chat belongs to which book" through this grouping.
- */
 export interface BookCluster {
   readonly bookPanelId: string;
   readonly chatPanelId?: string;
@@ -40,101 +26,47 @@ export interface ReadingLocation {
 }
 
 export interface WorkspaceContextValue {
-  /** bookId -> navigateToCfi callback */
   navigationMap: React.MutableRefObject<Map<string, (cfi: string) => void>>;
-  /** bookId -> TOC entries */
   tocMap: React.MutableRefObject<Map<string, TocEntry[]>>;
-  /** bookId -> TOC navigation callback */
   tocNavigationMap: React.MutableRefObject<Map<string, (href: string) => void>>;
-  /** bookId -> appendHighlightReference callback */
   notebookCallbackMap: React.MutableRefObject<
     Map<string, (attrs: { highlightId: string; cfiRange: string; text: string }) => void>
   >;
-  /** Listener notified when tocMap changes (triggers React re-render) */
   tocChangeListener: React.MutableRefObject<(() => void) | null>;
-  /** File input element for triggering uploads */
   fileInputRef: React.MutableRefObject<HTMLInputElement | null>;
-  /**
-   * @deprecated Compatibility mirror of the Themis books slice, kept only for
-   * chat consumers (`chat-message.tsx`) that have not migrated to selectors.
-   * No migrated book UI reads this ref.
-   */
   booksRef: React.MutableRefObject<BookMeta[]>;
-  /**
-   * IDs of books represented by the current reading route. Consumers re-read
-   * this ref on `subscribeClusterChanges`.
-   */
   openBookIdsRef: React.MutableRefObject<Set<string>>;
-  /** Callback to open a book route */
   openBookRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
-  /** Callback to open the notebook rail */
   openNotebookRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
-  /** Callback to open the chat rail */
   openChatRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
-  /** Callback to open the Standard Ebooks browser */
   openStandardEbooksRef: React.MutableRefObject<(() => void) | null>;
-  /** Find the navigation callback registered for a book */
   findNavForBook: (bookId: string) => ((cfi: string) => void) | undefined;
-  /** Find the callback used by the reader's table of contents */
   findTocNavigationForBook: (bookId: string) => ((href: string) => void) | undefined;
-  /** Like findNavForBook but retries with short delays if the callback isn't registered yet */
   waitForNavForBook: (bookId: string) => Promise<((cfi: string) => void) | undefined>;
-  /** Callback ref for when a book is added (calls setBooks in workspace.tsx) */
   onBookAddedRef: React.MutableRefObject<((book: BookMeta) => void) | null>;
-  /** Callback ref for when a book is deleted (calls setBooks in workspace.tsx) */
   onBookDeletedRef: React.MutableRefObject<((bookId: string) => void) | null>;
-  /** bookId -> current chapter context for chat */
   chatContextMap: React.MutableRefObject<
     Map<string, { currentChapterIndex: number; currentSpineHref: string; visibleText: string }>
   >;
-  /** bookId -> pending highlighted text for chat input pill */
   pendingHighlightPillMap: React.MutableRefObject<Map<string, { text: string; pageLabel: string }>>;
-  /** bookId -> pending prompt to send after opening chat */
   pendingChatPromptMap: React.MutableRefObject<Map<string, string>>;
-  /** Find TOC entries registered for a book */
   findTocForBook: (bookId: string) => TocEntry[] | undefined;
-  /** bookId -> temporary highlight callback */
   tempHighlightMap: React.MutableRefObject<Map<string, (cfi: string) => void>>;
-  /** Apply a temporary highlight in the reader for a book */
   applyTempHighlightForBook: (bookId: string, cfi: string) => void;
-  /** bookId -> remove highlight annotation from rendition */
   highlightDeleteMap: React.MutableRefObject<Map<string, (cfiRange: string) => void>>;
-  /** Remove a highlight annotation from the reader rendition for a book */
   removeHighlightAnnotationForBook: (bookId: string, cfiRange: string) => void;
-  /** bookId -> notebook editor callbacks (appendContent, setContent, getContent) for live-sync */
   notebookEditorCallbackMap: React.MutableRefObject<Map<string, NotebookEditorCallbacks>>;
-  /** bookId -> callback notified when notebook content changes (user edits or programmatic) */
   notebookContentChangeMap: React.MutableRefObject<Map<string, (markdown: string) => void>>;
-  /** Current reader metadata shown in the reading rail. */
   getReadingLocation: (bookId: string | null) => ReadingLocation | null;
   setReadingLocation: (bookId: string, location: ReadingLocation) => void;
   subscribeReadingLocations: (listener: () => void) => () => void;
-  /** bookId -> BookCluster (the panels belonging to that book) */
   clustersRef: React.MutableRefObject<Map<string, BookCluster>>;
-  /** Book ID of the currently-active cluster, or null if none */
   activeClusterBookIdRef: React.MutableRefObject<string | null>;
-  /**
-   * Notify all subscribed listeners that clustersRef or activeClusterBookIdRef
-   * changed. Called by the focused-mode layout owner (workspace.tsx) whenever
-   * it changes the active reading route.
-   */
   notifyClusterChanges: () => void;
-  /** Subscribe to cluster changes. Returns an unsubscribe function. */
   subscribeClusterChanges: (listener: () => void) => () => void;
-  /** Look up the cluster for a given bookId */
   getClusterForBook: (bookId: string) => BookCluster | undefined;
-  /** Look up the cluster that owns a given panelId (returns bookId + cluster) */
   getClusterForPanel: (panelId: string) => { bookId: string; cluster: BookCluster } | undefined;
-  /** Set (or clear) the currently-active cluster and notify listeners */
   setActiveCluster: (bookId: string | null) => void;
-  /**
-   * Route a cross-panel navigation through the cluster that owns `bookId`.
-   * If `bookId` is not the active cluster, swap to it first so the book-reader
-   * panel for this book becomes the mounted/visible one.
-   *
-   * After the panel is (re)activated, the book's registered navigate callback
-   * is invoked with `target` (a CFI string for epub, `page:N` for PDF).
-   */
   navigateInCluster: (bookId: string, target: string) => Promise<void>;
 }
 
@@ -281,8 +213,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const navigateInCluster = useCallback(
     async (bookId: string, target: string): Promise<void> => {
-      // Ensure the target book is active before waiting for its reader to
-      // register the navigation callback.
       if (activeClusterBookIdRef.current !== bookId) {
         setActiveCluster(bookId);
       }

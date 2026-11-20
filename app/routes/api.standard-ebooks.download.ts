@@ -2,11 +2,6 @@ import type { Route } from "./+types/api.standard-ebooks.download";
 
 const SE_BASE = "https://standardebooks.org";
 
-/**
- * Validate that a path is a legitimate Standard Ebooks path.
- * Must start with /ebooks/ and contain only safe characters
- * (alphanumeric, hyphens, forward slashes, underscores, periods).
- */
 export function isValidEbookPath(path: string): boolean {
   return /^\/ebooks\/[a-zA-Z0-9/_-]+[a-zA-Z0-9]$/.test(path);
 }
@@ -31,7 +26,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const downloadUrl = deriveEpubDownloadUrl(path);
 
-  // Defense-in-depth: verify the constructed URL points to standardebooks.org
   const parsed = new URL(downloadUrl);
   if (parsed.hostname !== "standardebooks.org") {
     throw new Response("Invalid download URL", { status: 400 });

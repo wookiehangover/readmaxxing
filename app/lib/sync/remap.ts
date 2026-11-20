@@ -80,12 +80,6 @@ function mergeSessionArrays(a: ChatSessionLike[], b: ChatSessionLike[]): ChatSes
   return Array.from(byId.values());
 }
 
-/**
- * Remap all local references from `fromId` to `toId` when cross-device
- * dedup identifies a canonical book id. Moves book data, merges positions,
- * notebooks, highlights, bookmarks, chat sessions, the active-session pointer,
- * and the chapter-upload cache, then tombstones the losing book record locally. Idempotent.
- */
 export async function remapBookId(
   fromId: string,
   toId: string,

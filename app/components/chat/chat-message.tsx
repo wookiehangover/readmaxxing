@@ -57,9 +57,6 @@ function ChatMessageImpl({
   const store = useAppStore();
   const books = store.booksSelectors.selectAllBooks.useValue();
 
-  // Resolve a book id to its title via the workspace books list. Falls back to
-  // the chat's own/primary book when the id is absent (back-compat with the
-  // old search_book output shape) or unknown.
   const resolveBookTitle = useCallback(
     (id: string | undefined): string | undefined => {
       const targetId = id ?? bookId;
@@ -68,8 +65,6 @@ function ChatMessageImpl({
     [bookId, books],
   );
 
-  // Whether more than one book is currently in the workspace. When only one
-  // book is in play the per-search book label can stay subtle/omitted.
   const hasMultipleBooks = books.length > 1;
 
   const parts = message.parts ?? [];
@@ -97,7 +92,6 @@ function ChatMessageImpl({
     [navigateToQuote, navigateToChapter],
   );
 
-  // Extract SE book results from search_standard_ebooks tool parts
   const seBooks = useMemo(() => {
     const results: SEBook[] = [];
     for (const part of toolParts) {
@@ -220,11 +214,4 @@ function ChatMessageImpl({
   );
 }
 
-/**
- * Memoized: the chat panel re-renders on every streamed token, and without
- * memoization every historical message re-runs its text joins and re-renders
- * its Streamdown markdown tree per token. `useChat` keeps stable references
- * for messages that haven't changed (only the streaming message is replaced
- * each update), so a shallow prop compare skips all settled messages.
- */
 export const ChatMessage = memo(ChatMessageImpl);

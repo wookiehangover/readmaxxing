@@ -32,7 +32,6 @@ export interface ReviewNavigationControls {
   showQuestion(): void;
 }
 
-/** DOM/engine lifetime bridge. Every eligibility read comes from the existing reviews owner. */
 export class ReviewNavigation implements NavigatorNavigationPolicy, ReviewNavigationControls {
   rendition: SuccessorRenditionAdapter | null = null;
   #restoring: Promise<void> | null = null;
@@ -101,8 +100,6 @@ export class ReviewNavigation implements NavigatorNavigationPolicy, ReviewNaviga
         throw new RangeError("Navigation target could not be resolved to a review chapter");
       return { ...target, contentRange: undefined };
     }
-    // A full-spine percentage is not a percentage of a clipped chapter. Only
-    // validated return locators below carry progression in the current range.
     return {
       ...target,
       localProgression:
@@ -125,14 +122,10 @@ export class ReviewNavigation implements NavigatorNavigationPolicy, ReviewNaviga
     if (!this.enabled) return true;
     if (!this.rendition?.navigator.currentContentRange) {
       const current = this.rendition?.navigator.currentRelocation;
-      // Ineligible/missing TOC units retain normal navigation; an eligible
-      // spine must first acquire its bounded layout when reviews are enabled.
       return (
         !this.heldChapter && (!current || !this.source.containsReviewContent(current.spineIndex))
       );
     }
-    // Its snapshot is bounded to this chapter; outstanding reviews close the
-    // popout and reject entry through this same admission policy.
     if (direction === "speedread") return !this.locked && !this.visible;
     if (this.visible) {
       if (direction === "previous") void this.backToChapter().catch(console.warn);
@@ -227,9 +220,7 @@ export class ReviewNavigation implements NavigatorNavigationPolicy, ReviewNaviga
               : {}),
           };
       }
-    } catch {
-      /* Old, replaced or invalid locators fall back to the current boundary. */
-    }
+    } catch {}
     return this.source.target(unit);
   }
 

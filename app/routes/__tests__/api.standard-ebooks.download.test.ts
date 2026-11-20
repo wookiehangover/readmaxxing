@@ -1,10 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { isValidEbookPath } from "~/routes/api.standard-ebooks.download";
 
-// ---------------------------------------------------------------------------
-// Unit tests for isValidEbookPath — the primary SSRF mitigation
-// ---------------------------------------------------------------------------
-
 describe("isValidEbookPath", () => {
   describe("valid paths", () => {
     it.each([
@@ -66,15 +62,9 @@ describe("isValidEbookPath", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Integration tests for the loader — verifies both validation layers
-// ---------------------------------------------------------------------------
-
-// Mock global fetch so we never make real network requests
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);
 
-// The loader import must come after the fetch stub
 const { loader } = await import("~/routes/api.standard-ebooks.download");
 
 function makeRequest(path?: string): Request {

@@ -1,8 +1,3 @@
-// Pure transforms that convert server-side row shapes into the local IDB
-// record shapes used by the client stores. No side effects, no I/O — these
-// functions are safe to call from any context (including tests).
-
-/** ChatSession shape matching chat-store.ts */
 export interface LocalChatSession {
   id: string;
   bookId: string;
@@ -35,16 +30,12 @@ export function toOptionalTimestamp(value: unknown): number | undefined {
   return toTimestamp(value);
 }
 
-/**
- * Transform a server BookRow into the local BookMeta shape expected by
- * BookMetaSchema (see book-store.ts).
- */
 export function serverBookToLocal(record: Record<string, unknown>): Record<string, unknown> {
   return {
     id: record.id,
     title: (record.title as string) ?? "",
     author: (record.author as string) ?? "",
-    coverImage: null, // can't reconstruct Blob from server; null until re-downloaded
+    coverImage: null,
     format: (record.format as string) ?? "epub",
     remoteCoverUrl: (record.coverBlobUrl as string) ?? undefined,
     remoteFileUrl: (record.fileBlobUrl as string) ?? undefined,
@@ -54,10 +45,6 @@ export function serverBookToLocal(record: Record<string, unknown>): Record<strin
   };
 }
 
-/**
- * Transform a server ReadingPositionRow into the local PositionRecord shape
- * expected by position-store.ts ({ cfi, updatedAt: number }).
- */
 export function serverPositionToLocal(record: Record<string, unknown>): {
   id: string;
   cfi: string;
@@ -71,10 +58,6 @@ export function serverPositionToLocal(record: Record<string, unknown>): {
   };
 }
 
-/**
- * Transform a server HighlightRow into the local Highlight shape
- * expected by annotations-store.ts.
- */
 export function serverHighlightToLocal(record: Record<string, unknown>): Record<string, unknown> {
   return {
     id: record.id,
@@ -93,10 +76,6 @@ export function serverHighlightToLocal(record: Record<string, unknown>): Record<
   };
 }
 
-/**
- * Transform a server BookmarkRow into the local Bookmark shape expected by
- * bookmark-store.ts.
- */
 export function serverBookmarkToLocal(record: Record<string, unknown>): Record<string, unknown> {
   return {
     id: record.id,
@@ -111,10 +90,6 @@ export function serverBookmarkToLocal(record: Record<string, unknown>): Record<s
   };
 }
 
-/**
- * Transform a server NotebookRow into the local Notebook shape
- * expected by annotations-store.ts.
- */
 export function serverNotebookToLocal(record: Record<string, unknown>): Record<string, unknown> {
   return {
     bookId: (record.bookId as string) ?? "",
@@ -123,25 +98,18 @@ export function serverNotebookToLocal(record: Record<string, unknown>): Record<s
   };
 }
 
-/**
- * Transform a server ChatSessionRow into a minimal local ChatSession shape.
- * Messages are merged separately — the session transform only handles metadata.
- */
 export function serverChatSessionToLocal(record: Record<string, unknown>): LocalChatSession {
   return {
     id: (record.id as string) ?? "",
     bookId: (record.bookId as string) ?? "",
     title: (record.title as string) ?? "",
-    messages: [], // messages merged separately
+    messages: [],
     createdAt: toTimestamp(record.createdAt),
     updatedAt: toTimestamp(record.updatedAt),
     deletedAt: toOptionalTimestamp(record.deletedAt),
   };
 }
 
-/**
- * Transform a server ChatMessageRow into a local ChatMessage shape.
- */
 export function serverChatMessageToLocal(record: Record<string, unknown>): LocalChatMessage {
   return {
     id: (record.id as string) ?? "",

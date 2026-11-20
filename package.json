@@ -13,7 +13,9 @@
     "lint:themis": "oxlint app/lib/themis",
     "format": "oxfmt --write app/",
     "test": "vitest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "comments:baseline": "node scripts/comment-baseline.mjs --update",
+    "comments:check": "node scripts/comment-baseline.mjs --check"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.57",

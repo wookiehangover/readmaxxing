@@ -1,12 +1,3 @@
-/**
- * Color theme definitions for the application.
- *
- * Each theme provides CSS variable overrides for both light and dark modes,
- * plus swatch colors for the theme picker preview chips.
- *
- * CSS variables use oklch() format to match the existing app.css conventions.
- */
-
 export type ColorThemeId =
   | "default"
   | "dracula"
@@ -23,9 +14,6 @@ export interface ColorThemeDefinition {
   readonly dark: Record<string, string>;
 }
 
-/**
- * Default theme — no overrides needed, uses the app.css base variables.
- */
 const defaultTheme: ColorThemeDefinition = {
   id: "default",
   name: "Default",
@@ -34,9 +22,6 @@ const defaultTheme: ColorThemeDefinition = {
   dark: {},
 };
 
-/**
- * Dracula — https://draculatheme.com/contribute#color-palette
- */
 const draculaTheme: ColorThemeDefinition = {
   id: "dracula",
   name: "Dracula",
@@ -99,9 +84,6 @@ const draculaTheme: ColorThemeDefinition = {
   },
 };
 
-/**
- * Nord — https://www.nordtheme.com/docs/colors-and-palettes
- */
 const nordTheme: ColorThemeDefinition = {
   id: "nord",
   name: "Nord",
@@ -164,9 +146,6 @@ const nordTheme: ColorThemeDefinition = {
   },
 };
 
-/**
- * Rosé Pine — https://rosepinetheme.com/palette
- */
 const rosePineTheme: ColorThemeDefinition = {
   id: "rose-pine",
   name: "Rosé Pine",
@@ -229,9 +208,6 @@ const rosePineTheme: ColorThemeDefinition = {
   },
 };
 
-/**
- * Tokyo Night — https://github.com/enkia/tokyo-night-vscode-theme
- */
 const tokyoNightTheme: ColorThemeDefinition = {
   id: "tokyo-night",
   name: "Tokyo Night",
@@ -294,9 +270,6 @@ const tokyoNightTheme: ColorThemeDefinition = {
   },
 };
 
-/**
- * Solarized — https://ethanschoonover.com/solarized/
- */
 const solarizedTheme: ColorThemeDefinition = {
   id: "solarized",
   name: "Solarized",
@@ -359,9 +332,6 @@ const solarizedTheme: ColorThemeDefinition = {
   },
 };
 
-/**
- * All available color themes, keyed by ID.
- */
 export const COLOR_THEMES: Record<ColorThemeId, ColorThemeDefinition> = {
   default: defaultTheme,
   dracula: draculaTheme,
@@ -371,9 +341,6 @@ export const COLOR_THEMES: Record<ColorThemeId, ColorThemeDefinition> = {
   solarized: solarizedTheme,
 };
 
-/**
- * Ordered list of all theme IDs for UI iteration.
- */
 export const COLOR_THEME_IDS: readonly ColorThemeId[] = [
   "default",
   "dracula",
@@ -383,9 +350,6 @@ export const COLOR_THEME_IDS: readonly ColorThemeId[] = [
   "solarized",
 ] as const;
 
-/**
- * Look up a theme definition by ID, falling back to default.
- */
 export function getColorTheme(id: ColorThemeId): ColorThemeDefinition {
   return COLOR_THEMES[id] ?? COLOR_THEMES.default;
 }

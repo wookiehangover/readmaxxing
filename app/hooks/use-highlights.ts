@@ -26,11 +26,8 @@ export interface SelectionPopover {
 interface UseHighlightsOptions {
   bookId: string;
   renditionRef: React.RefObject<SuccessorRenditionAdapter | null>;
-  /** Called when a user clicks an existing highlight in the epub */
   onHighlightClick?: (highlight: Highlight) => void;
-  /** Called when a user right-clicks an existing highlight; position is in viewport coordinates */
   onHighlightContextMenu?: (highlight: Highlight, position: { x: number; y: number }) => void;
-  /** Current theme setting — used to pick highlight color for dark/light mode */
   theme: Theme;
 }
 
@@ -85,7 +82,6 @@ export function useHighlights({
     [findDecoratedHighlight, renditionRef],
   );
 
-  /** Apply a single stored highlight through the successor decoration layer. */
   const applyHighlightToRendition = useCallback(
     (rendition: SuccessorRenditionAdapter, hl: Highlight) => {
       const locator = rendition.locatorFromCfi(hl.cfiRange, hl.text);
@@ -130,7 +126,6 @@ export function useHighlights({
     if (rendition) reconcileHighlights(rendition, highlights);
   }, [highlights, reconcileHighlights, renditionRef]);
 
-  /** Apply the current annotations collection after the rendition becomes ready. */
   const loadAndApplyHighlights = useCallback(
     async (rendition: SuccessorRenditionAdapter) => {
       reconcileHighlights(rendition, highlights);
@@ -138,7 +133,6 @@ export function useHighlights({
     [highlights, reconcileHighlights],
   );
 
-  /** Register successor selection and decoration-click handlers. */
   const registerSelectionHandler = useCallback(
     (rendition: SuccessorRenditionAdapter) => {
       rendition.on("decoration-click", handleDecorationClick);
@@ -164,9 +158,6 @@ export function useHighlights({
         setSelectionPopover({ position: { x, y }, cfiRange, text });
       });
 
-      // Dismiss popover when user clicks inside the epub iframe without making a selection.
-      // We need to attach to both already-loaded and future content documents because
-      // this function is called after the initial content has loaded.
       const attachDismissListener = (doc: Document) => {
         doc.addEventListener("mousedown", () => {
           setTimeout(() => {
@@ -178,20 +169,15 @@ export function useHighlights({
         });
       };
 
-      // Attach to already-loaded iframe documents
       try {
         for (const content of rendition.getContents()) attachDismissListener(content.document);
-      } catch {
-        // ignore if getContents isn't available
-      }
+      } catch {}
 
-      // Attach to future content (page turns load new iframe documents)
       rendition.hooks.content.register((contents) => attachDismissListener(contents.document));
     },
     [handleDecorationClick, handleDecorationContextMenu],
   );
 
-  /** Create and persist a new highlight, apply it to the rendition. Returns the created highlight. */
   const saveHighlight = useCallback(async (): Promise<Highlight | null> => {
     const rendition = renditionRef.current;
     if (!selectionPopover || !rendition) return null;
@@ -220,7 +206,6 @@ export function useHighlights({
 
     setSelectionPopover(null);
 
-    // Clear the selection in the iframe
     rendition.getContents().forEach((content) => {
       const win = content.document?.defaultView;
       if (win) win.getSelection()?.removeAllRanges();

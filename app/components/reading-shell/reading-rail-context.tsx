@@ -3,7 +3,6 @@ import { useAppStore } from "~/lib/themis/provider";
 import { selectReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-slice";
 import type { ReadingRailTab } from "~/lib/themis/reading-rail/reading-rail-types";
 
-// Context carries rendering scope only. Selection and tab eligibility live in Redux.
 const ReadingRailContext = createContext({
   scope: "",
   owner: "",
@@ -31,7 +30,6 @@ export function ReadingRailProvider({
 export function useReadingRail() {
   const store = useAppStore();
   const context = useContext(ReadingRailContext);
-  // This scope hook preserves the plain-value contract consumed by Base UI tabs/menu.
   const activeTab = store.readingRailSelectors.selectActiveReadingRailTab.useValue(
     context.scope,
     context.mobile,

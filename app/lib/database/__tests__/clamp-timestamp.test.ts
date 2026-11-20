@@ -5,10 +5,6 @@ import {
   DEFAULT_UPDATED_AT_SKEW_MS,
 } from "../clamp-timestamp";
 
-// ---------------------------------------------------------------------------
-// clampUpdatedAt — pure function
-// ---------------------------------------------------------------------------
-
 describe("clampUpdatedAt", () => {
   const FIXED_NOW = new Date("2026-01-15T12:00:00.000Z").getTime();
 
@@ -70,10 +66,6 @@ describe("clampUpdatedAt", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// clampNullableTimestamp — pure function
-// ---------------------------------------------------------------------------
-
 describe("clampNullableTimestamp", () => {
   const FIXED_NOW = new Date("2026-01-15T12:00:00.000Z").getTime();
 
@@ -109,12 +101,6 @@ describe("clampNullableTimestamp", () => {
     expect(clampNullableTimestamp(new Date("not a date"))).toBe(new Date(FIXED_NOW).toISOString());
   });
 });
-
-// ---------------------------------------------------------------------------
-// upsertBook — verifies the clamp is actually applied end-to-end through the
-// DB helper. The pool is mocked so we can inspect the SQL parameters that
-// would be bound to Postgres.
-// ---------------------------------------------------------------------------
 
 const queryMock = vi.fn();
 vi.mock("../pool", () => ({

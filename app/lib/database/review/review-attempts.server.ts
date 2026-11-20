@@ -35,7 +35,6 @@ export interface ReviewJudgment extends ReviewGrade {
   gradingVersion: string;
 }
 
-/** Owner-scoped lookup for idempotent retries before calling the model. */
 export async function getReviewAttempt(
   userId: string,
   id: string,
@@ -78,7 +77,6 @@ export function assertSameReviewSubmission(
   }
 }
 
-/** Accept only a server-produced judgment. No client mutation can set progress/pass directly. */
 export async function recordReviewAttempt(
   userId: string,
   request: ReviewSubmitRequest,
@@ -107,8 +105,6 @@ export async function recordReviewAttempt(
   );
   if (!progress || progress.questionId !== submission.questionId)
     throw new ReviewSourceMismatchError();
-  // The FK binds the question, fingerprint and checkpoint. The unique (user,id)
-  // makes repeated/concurrent requests append once; no existing result is overwritten.
   await getPool().query(sql`
     INSERT INTO readmax.review_attempt
       (user_id, id, book_id, chapter_key, source_fingerprint, question_id, document,

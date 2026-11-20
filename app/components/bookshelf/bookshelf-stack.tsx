@@ -35,11 +35,9 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
       if (event.key === "Escape" && !event.defaultPrevented) {
         event.preventDefault();
         close();
-        // Pointer dismissal must not manufacture a keyboard focus ring in Safari.
         trigger.current?.focus({ preventScroll: true });
       }
     }
-    // The placement is measured in viewport coordinates; return before that viewport changes.
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("resize", close);
     const shelf = window.matchMedia("(min-width: 768px)").matches
@@ -48,7 +46,6 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
     const scrollTop = shelf?.scrollTop;
     const scrollLeft = shelf?.scrollLeft;
     function onScroll() {
-      // A scroll into view before selection can deliver its event after this listener mounts.
       if (shelf?.scrollTop !== scrollTop || shelf?.scrollLeft !== scrollLeft) close();
     }
     shelf?.addEventListener("scroll", onScroll, { passive: true });
@@ -91,8 +88,6 @@ export function BookshelfStack({ books, onOpenBook }: BookshelfStackProps) {
       : shelf.top + shelf.height * 0.48;
     const x = centerX - rect.left - width / 2 - (width / 3) * scale * Math.cos(Math.PI / 30);
     const y = centerY - rect.top - volume.offsetTop;
-    // Promoting every row to a new 3D layer stalls WebKit on large libraries.
-    // Include a gutter for nearby books; desktop scrolling dismisses selection.
     const recedingIds = mobile
       ? []
       : books

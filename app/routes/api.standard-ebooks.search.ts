@@ -10,8 +10,6 @@ export function parseSearchHtml(html: string, page: number): SESearchResult {
   const books: SEBook[] = [];
 
   items.forEach((li) => {
-    // Skip unreleased books (not-yet-public-domain or wanted/in-production)
-    // These have a <div class="placeholder-cover"> instead of an actual cover image
     if (li.querySelector(".placeholder-cover")) {
       return;
     }

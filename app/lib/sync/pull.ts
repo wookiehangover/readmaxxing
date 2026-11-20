@@ -3,7 +3,6 @@ import { getCursor, rewindCursor, setCursor } from "./sync-cursors";
 import { syncDebugLog } from "./sync-debug";
 import type { EntityType, SyncCursor, SyncPullResponse } from "./types";
 
-/** Entity types we actively sync (subset of all EntityType values). */
 export const SYNCABLE_ENTITIES: EntityType[] = [
   "book",
   "position",
@@ -23,11 +22,6 @@ export interface PullContext {
 export async function pullChanges(ctx: PullContext): Promise<void> {
   if (ctx.isStopped()) return;
 
-  // Send a per-entity cursor map so one entity's lag does not force the
-  // others to re-scan. Wire format: `cursors` is a URL-encoded JSON array
-  // of SyncCursor (see SyncPullRequest in types.ts). Entities without a
-  // stored cursor are omitted; the server defaults them to epoch
-  // ("pull from the beginning").
   const cursorsByEntity = new Map<EntityType, string>();
   for (const entity of SYNCABLE_ENTITIES) {
     const cursor = await getCursor(entity);
@@ -86,9 +80,6 @@ export async function pullChanges(ctx: PullContext): Promise<void> {
         await merger(record as Record<string, unknown>);
       }
 
-      // Opaque keyset cursors do not need timestamp overlap. Legacy ISO-only
-      // cursors are still rewound so older server responses preserve the
-      // existing duplicate-safe behavior.
       const persistedCursor = group.cursor.trimStart().startsWith("{")
         ? group.cursor
         : rewindCursor(group.cursor);
@@ -99,7 +90,6 @@ export async function pullChanges(ctx: PullContext): Promise<void> {
         entitiesWithMore.push(group.entity);
       }
 
-      // Dispatch granular per-entity event so only relevant components re-render
       if (group.records.length > 0) {
         queueMicrotask(() => {
           window.dispatchEvent(

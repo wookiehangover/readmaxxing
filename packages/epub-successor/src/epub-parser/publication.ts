@@ -89,7 +89,6 @@ async function loadNavigation(
         landmarks = parsed.landmarks;
         source = "nav";
       }
-      // Keep page-list even when TOC is empty or later filled from NCX.
       if (parsed.pageList.length > 0) pageList = parsed.pageList;
     }
   }

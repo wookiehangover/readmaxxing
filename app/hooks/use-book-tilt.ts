@@ -19,7 +19,6 @@ export function useBookTilt(selected: boolean) {
       return;
     }
 
-    // Keep the starting bounds stable so the moving cover cannot feed back into its own tilt.
     bounds.current ??= volume.querySelector(".bookshelf-cover")!.getBoundingClientRect();
     const rect = bounds.current;
     const x = Math.max(-1, Math.min(1, ((event.clientX - rect.left) / rect.width) * 2 - 1));

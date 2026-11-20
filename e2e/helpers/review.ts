@@ -168,7 +168,6 @@ export async function installReviewFixture(page: Page) {
 export async function openReviewBook(page: Page, file = resolve("e2e/fixtures/test-book.epub")) {
   await page.goto("/library");
   await page.locator('input[type="file"][accept=".epub,.pdf"]').first().setInputFiles(file);
-  // Uploading opens the workspace automatically; wait for that transition to finish.
   await expect(page.getByRole("button", { name: "Reader menu", exact: true })).toBeVisible();
   await openReviewSettings(page);
 }
@@ -190,9 +189,7 @@ export async function reachReview(
         : page.getByRole("button", { name: "Retry question", exact: true }).first();
   if (mobile) await page.getByRole("tab", { name: "Read", exact: true }).click();
   for (let i = 0; i < 12 && !(await target.isVisible()); i++) {
-    // The real EPUB keyboard path handles the chapter endpoint on both screen sizes.
     const frame = page.locator('[aria-label="Book surface"] iframe').first();
-    // The question can replace the chapter between the loop check and iframe readiness.
     await expect
       .poll(async () => (await target.isVisible()) || (await frame.isVisible()))
       .toBe(true);

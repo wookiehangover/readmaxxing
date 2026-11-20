@@ -34,10 +34,6 @@ export async function mergeBookRecord(record: Record<string, unknown>): Promise<
   const remoteHash = remoteRecord.fileHash as string | undefined;
   const remoteDeletedAt = remoteRecord.deletedAt as number | undefined;
 
-  // Cross-device dedup on pull: if the incoming non-deleted book matches
-  // an existing local book by fileHash under a different id, remap local
-  // references to the incoming canonical id before applying the merge so
-  // the UI does not show a duplicate entry until the next push/pull.
   if (!remoteDeletedAt && remoteHash) {
     const allBooks = await entries<string, Record<string, unknown>>(store);
     for (const entry of allBooks) {
@@ -74,21 +70,6 @@ export async function mergeBookRecord(record: Record<string, unknown>): Promise<
 
   const merged = lwwMerge(local as { updatedAt: number }, remoteRecord as { updatedAt: number });
   if (merged === remoteRecord) {
-    // Server wins — preserve client-only fields from local record.
-    // hasLocalFile and coverImage are never sent to the server, so
-    // serverBookToLocal always returns them as undefined/null.
-    //
-    // remoteCoverUrl / remoteFileUrl: the server pull cannot distinguish
-    // "row exists with a null URL" from "URL simply not carried" —
-    // serverBookToLocal maps both to undefined (see server-transforms.ts).
-    // We therefore use a heuristic gated on having local source bytes:
-    //   - If the server URL is nullish AND we hold the source bytes to
-    //     re-upload from, CLEAR the stale local URL so the existing
-    //     uploadPendingFiles pass re-uploads and re-stamps it. This
-    //     recovers books whose server row genuinely lost its blob URL.
-    //   - Otherwise (nullish server URL but no local bytes) keep the
-    //     locally-known URL. This is the common "pending upload hasn't
-    //     landed" race; clearing here would just break the download link.
     const hasLocalFileBytes = Boolean(await get<ArrayBuffer>(id, getBookDataStore()));
     const hasLocalCoverBytes = local.coverImage instanceof Blob;
 
@@ -150,10 +131,6 @@ function notifyPositionUpdated(): void {
   });
 }
 
-/**
- * Merge a single highlight record using set-union semantics.
- * If either side has deletedAt, tombstone propagates. Otherwise LWW by updatedAt.
- */
 async function mergeHighlightRecord(record: Record<string, unknown>): Promise<void> {
   const store = getHighlightStore();
   const remoteRecord = serverHighlightToLocal(record);
@@ -165,22 +142,16 @@ async function mergeHighlightRecord(record: Record<string, unknown>): Promise<vo
     return;
   }
 
-  // Use setUnionMerge for a single-item merge (handles tombstones correctly)
   const [merged] = setUnionMerge(
     [local as { deletedAt?: number | null }],
     [remoteRecord as { deletedAt?: number | null }],
     (item) => (item as Record<string, unknown>).id as string,
   );
-  // Write if the merge result differs from local
   if (merged !== local) {
     await set(id, merged, store);
   }
 }
 
-/**
- * Merge a single bookmark record using set-union semantics.
- * If either side has deletedAt, tombstone propagates. Otherwise LWW by updatedAt.
- */
 export async function mergeBookmarkRecord(record: Record<string, unknown>): Promise<void> {
   const store = getBookmarkStore();
   const remoteRecord = serverBookmarkToLocal(record);
@@ -202,9 +173,6 @@ export async function mergeBookmarkRecord(record: Record<string, unknown>): Prom
   }
 }
 
-/**
- * Merge a notebook record using LWW by updatedAt.
- */
 async function mergeNotebookRecord(record: Record<string, unknown>): Promise<void> {
   const store = getNotebookStore();
   const remoteRecord = serverNotebookToLocal(record);
@@ -222,17 +190,6 @@ async function mergeNotebookRecord(record: Record<string, unknown>): Promise<voi
   }
 }
 
-/**
- * Merge a chat session record (LWW for session metadata, tombstone-aware).
- * Chat sessions are stored per-bookId as ChatSession[] in IDB.
- *
- * When the remote row carries `deletedAt`, the session (and its cached
- * messages, which live inside the same IDB array value) is removed from
- * local storage unless the local copy's `updatedAt` is strictly newer —
- * same LWW tie-break as `mergeBookRecord`. The server is the source of
- * truth if the session is ever un-deleted, so losing the local cache is
- * safe.
- */
 export async function mergeChatSessionRecord(record: Record<string, unknown>): Promise<void> {
   const store = getChatSessionStore();
   const remote = serverChatSessionToLocal(record);
@@ -242,28 +199,22 @@ export async function mergeChatSessionRecord(record: Record<string, unknown>): P
   const sessions = (await get<LocalChatSession[]>(bookId, store)) ?? [];
   const idx = sessions.findIndex((s) => s.id === remote.id);
 
-  // Remote tombstone path: propagate the delete to this device.
   if (remote.deletedAt != null) {
-    if (idx < 0) return; // nothing to remove locally
+    if (idx < 0) return;
     const local = sessions[idx];
-    // LWW: a local edit strictly newer than the tombstone wins. Callers that
-    // just locally re-created the session at the same millisecond would also
-    // lose, but that matches the other LWW mergers in this file.
     if (local.updatedAt > remote.updatedAt) return;
     await removeSessionLocally(bookId, remote.id);
     return;
   }
 
   if (idx < 0) {
-    // New session from server — add it (preserve empty messages array)
     sessions.push(remote);
   } else {
-    // LWW merge on metadata only, preserving local messages
     const local = sessions[idx];
     if (remote.updatedAt > local.updatedAt) {
       sessions[idx] = {
         ...remote,
-        messages: local.messages, // keep local messages intact
+        messages: local.messages,
       };
     }
   }
@@ -271,19 +222,12 @@ export async function mergeChatSessionRecord(record: Record<string, unknown>): P
   await set(bookId, sessions, store);
 }
 
-/**
- * Merge a chat message record (append-only by message ID).
- * Finds the parent session in IDB and adds the message if not already present.
- */
 export async function mergeChatMessageRecord(record: Record<string, unknown>): Promise<void> {
   const store = getChatSessionStore();
   const remoteMsg = serverChatMessageToLocal(record);
   const sessionId = (record.sessionId as string) ?? "";
   if (!sessionId) return;
 
-  // We need to find which bookId this session belongs to.
-  // Scan all entries to find the session. This is suboptimal but the chat
-  // store is keyed by bookId (not sessionId).
   const allEntries = await entries<string, LocalChatSession[]>(store);
   for (const entry of allEntries) {
     if (!Array.isArray(entry) || entry.length < 2) continue;
@@ -294,35 +238,15 @@ export async function mergeChatMessageRecord(record: Record<string, unknown>): P
     if (sIdx < 0) continue;
 
     const session = sessions[sIdx];
-    // Append-only: add if not already present by ID.
-    // Messages arrive from the server in created_at ASC order, so simply
-    // appending preserves the correct sequence without needing a sort
-    // (sorting was unreliable because some messages had createdAt of 0).
     const exists = session.messages.some((m) => m.id === remoteMsg.id);
     if (!exists) {
       session.messages.push(remoteMsg);
-      // Do NOT advance session.updatedAt here. `updatedAt` is a metadata-only
-      // LWW clock for the session row (title, bookId, deletedAt); appending a
-      // message must only grow session.messages. Bumping it would poison the
-      // LWW clock and cause later server-side title/tombstone merges to lose.
       await set(bookId, sessions, store);
     }
     return;
   }
-
-  // If the session doesn't exist locally yet, the session record may arrive
-  // in the same pull batch. The pull loop processes entities in order
-  // (chat_session before chat_message), so this is unlikely but harmless.
 }
 
-/**
- * Merge a settings record (LWW).
- * Settings live in localStorage, not IDB. The synced bucket (`app-settings`)
- * is the only thing this merger writes; the local-only UI bucket
- * (`app-ui-settings`) is never read or touched here. Inbound payloads are
- * filtered to `SYNCED_SETTINGS_KEYS` so legacy server blobs that still carry
- * UI/layout fields can never overwrite or pollute local state.
- */
 export async function mergeSettingsRecord(record: Record<string, unknown>): Promise<void> {
   const remoteSettings = record.settings as Record<string, unknown> | undefined;
   const remoteUpdatedAt = toTimestamp(record.updatedAt);
@@ -338,9 +262,7 @@ export async function mergeSettingsRecord(record: Record<string, unknown>): Prom
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) local = JSON.parse(raw);
-  } catch {
-    // corrupt localStorage, overwrite
-  }
+  } catch {}
 
   const localUpdatedAt = typeof local.updatedAt === "number" ? local.updatedAt : 0;
 

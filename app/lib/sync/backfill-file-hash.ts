@@ -20,15 +20,6 @@ function getBookDataStore(): UseStore {
   return _bookDataStore;
 }
 
-/**
- * One-time migration that hashes every locally stored book file and writes the
- * resulting `fileHash` back to its meta record. Each successful update also
- * enqueues a `book` change so the server receives the hash on the next push,
- * which lets server-side dedup converge pre-existing duplicate rows.
- *
- * Gated on a localStorage flag so it runs at most once per device. Tolerant of
- * per-book errors: a failure on one book is logged and the loop continues.
- */
 export async function runFileHashBackfillIfNeeded(): Promise<void> {
   if (typeof localStorage === "undefined") return;
   if (localStorage.getItem(BACKFILL_FLAG_KEY)) return;

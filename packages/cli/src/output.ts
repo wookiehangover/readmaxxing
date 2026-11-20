@@ -14,7 +14,6 @@ export function safeFilename(value: string): string {
   );
 }
 
-/** Write beside the destination, then publish only a complete download. */
 export async function writeOutput(
   response: Response,
   path: string,

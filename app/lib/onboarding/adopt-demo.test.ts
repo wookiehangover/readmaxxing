@@ -494,8 +494,6 @@ describe("adoptDemoContent", () => {
     expect(new Set(ids).size).toBe(ids.length);
     const sessionChanges = recorded.filter((entry) => entry.entity === "chat_session");
     const changeIds = sessionChanges.map((entry) => entry.entityId);
-    // Two sessions × two push cycles (initial + canonical) = 4 change entries,
-    // and none should reuse the demo session id or collide within a cycle.
     expect(sessionChanges).toHaveLength(4);
     expect(changeIds).not.toContain(DEMO_CHAT_SESSION.id);
     const uniquePerSession = changeIds.filter((id) => id === ADOPTED_SESSION_ID);

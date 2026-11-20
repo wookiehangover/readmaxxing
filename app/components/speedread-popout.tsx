@@ -89,9 +89,7 @@ function loadLayout(): StoredLayout | null {
 function saveLayout(layout: Layout) {
   try {
     localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
-  } catch {
-    // Layout persistence is optional when storage is unavailable.
-  }
+  } catch {}
 }
 
 function clampSize(size: Size): Size {

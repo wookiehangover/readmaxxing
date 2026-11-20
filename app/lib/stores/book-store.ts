@@ -12,25 +12,16 @@ export interface BookMeta {
   author: string;
   coverImage: Blob | null;
   format: BookFormat;
-  /** Vercel Blob URL for cover image (set during sync upload). */
   remoteCoverUrl?: string;
-  /** Vercel Blob URL for epub/pdf file (set during sync upload). */
   remoteFileUrl?: string;
-  /** SHA-256 hash of the file data, used for deduplication during sync. */
   fileHash?: string;
-  /** User ID of the person who shared this book, if imported via share link. */
   sharedBy?: string;
-  /** Share link ID used to import this book, if imported via share link. */
   shareId?: string;
-  /** Timestamp of last mutation (creation or update). Used for LWW sync. */
   updatedAt?: number;
-  /** Soft-delete timestamp. When set, the book is considered deleted. */
   deletedAt?: number;
-  /** Whether this device has the epub/pdf file locally in IDB. */
   hasLocalFile?: boolean;
 }
 
-/** Returns true if the book was synced from another device and hasn't been downloaded yet. */
 export function bookNeedsDownload(book: BookMeta): boolean {
   return !!book.remoteFileUrl && !book.hasLocalFile;
 }
@@ -52,20 +43,12 @@ const decodeBookMeta = (raw: unknown): BookMeta => {
 };
 
 function isBookStoreEntry(entry: unknown): entry is [IDBValidKey, unknown] {
-  // Legacy or corrupted IndexedDB iterations can surface missing tuple entries;
-  // guard before reading entry[0]/entry[1] so signed-out local uploads still work.
   return Array.isArray(entry) && entry.length >= 2;
 }
 
-/**
- * Full book record including binary data.
- * @deprecated Prefer BookMeta for listings. Only use Book when you also need the ArrayBuffer.
- */
 export interface Book extends BookMeta {
   data: ArrayBuffer;
 }
-
-// --- idb-keyval stores imported from ~/lib/sync/stores ---
 
 let _migrated = false;
 
@@ -207,23 +190,18 @@ export function makeBookService(stores: BookServiceStores) {
 
     getBook: (id: string) => readBook(id, "getBook"),
 
-    // Same as getBook, but explicitly returns the record even when soft-deleted
-    // (deletedAt set). Used by the power-user details editor so a soft-deleted
-    // book can still be inspected and restored.
     getBookIncludingDeleted: (id: string) => readBook(id, "getBookIncludingDeleted"),
 
     async getBookData(id: string) {
       const data = await storage("getBookData", () => get<ArrayBuffer>(id, bookDataStore));
       if (data) return data;
 
-      // Lazy migration: check old-format record in bookStore for inline `data` field
       const raw = await storage("getBookData.migrate.read", () =>
         get<Record<string, unknown>>(id, bookStore),
       );
       if (raw?.data && raw.data instanceof ArrayBuffer) {
         const migratedData = raw.data as ArrayBuffer;
 
-        // Move binary data to the dedicated store and strip it from the metadata record
         await storage("getBookData.migrate.write", async () => {
           await set(id, migratedData, bookDataStore);
           const { data: _, ...metaOnly } = raw;
@@ -233,7 +211,6 @@ export function makeBookService(stores: BookServiceStores) {
         return migratedData;
       }
 
-      // On-demand download: if the book has a remote file URL, fetch and cache it
       const meta = raw ? decode("getBookData.decodeMeta", raw) : null;
 
       if (meta?.remoteFileUrl) {
@@ -248,15 +225,12 @@ export function makeBookService(stores: BookServiceStores) {
           return res.arrayBuffer();
         });
 
-        // Cache the downloaded file locally
         await storage("getBookData.cacheFile", () => set(id, downloaded, bookDataStore));
 
-        // Mark book as having local file data
         await storage("getBookData.markLocal", () =>
           set(id, { ...meta, hasLocalFile: true }, bookStore),
         );
 
-        // Also download and cache the cover image if available
         if (meta.remoteCoverUrl && !meta.coverImage) {
           try {
             const coverRes = await fetch(
@@ -268,12 +242,9 @@ export function makeBookService(stores: BookServiceStores) {
               const updated = { ...meta, coverImage: coverBlob, hasLocalFile: true };
               await set(id, updated, bookStore);
             }
-          } catch {
-            // Cover caching is best-effort.
-          }
+          } catch {}
         }
 
-        // Notify library views that a download completed
         if (typeof window !== "undefined") {
           queueMicrotask(() => {
             window.dispatchEvent(
@@ -308,7 +279,6 @@ export function makeBookService(stores: BookServiceStores) {
     async deleteBook(id: string) {
       const raw = await storage("deleteBook.read", () => get<unknown>(id, bookStore));
       if (raw) {
-        // Soft-delete: set deletedAt timestamp, keep data for sync
         const existing = decode("deleteBook.decode", raw);
         const now = Date.now();
         const tombstone = { ...existing, deletedAt: now, updatedAt: now };

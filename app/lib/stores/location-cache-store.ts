@@ -2,8 +2,6 @@ import { createStore, get, set } from "idb-keyval";
 import type { UseStore } from "idb-keyval";
 import { StorageError } from "~/lib/errors";
 
-// --- idb-keyval store (lazy-initialized for SSR safety) ---
-
 let _locationsStore: ReturnType<typeof createStore> | null = null;
 
 function getLocationsStore() {

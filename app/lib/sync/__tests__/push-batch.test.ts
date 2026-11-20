@@ -58,8 +58,6 @@ describe("pushChanges batching", () => {
     const engine = makeSyncEngine({ userId: "user-test" });
     await engine.pushChanges();
 
-    // Follow-up pushes are scheduled via queueMicrotask. Poll until the
-    // changelog drains, bounded so a bug can't hang the suite.
     for (let i = 0; i < 50; i++) {
       const remaining = await getUnsyncedChanges();
       if (remaining.length === 0) break;
@@ -71,13 +69,11 @@ describe("pushChanges batching", () => {
     expect(batches[1].changes).toHaveLength(50);
     expect(batches[2].changes).toHaveLength(50);
 
-    // Batches are sent in chronological ULID order across the whole run.
     const sentIds = batches.flatMap((b) => b.changes.map((c) => c.id));
     const sortedSentIds = [...sentIds].sort((a, b) => a.localeCompare(b));
     expect(sentIds).toEqual(sortedSentIds);
     expect(new Set(sentIds).size).toBe(150);
 
-    // Every entry is marked synced (and thus cleared) after the drain.
     expect(await getUnsyncedChanges()).toHaveLength(0);
   });
 
@@ -94,7 +90,6 @@ describe("pushChanges batching", () => {
 
     const pendingBefore = await getUnsyncedChanges();
     expect(pendingBefore).toHaveLength(5);
-    // Reject the first two entries; accept the rest.
     const rejectIds = pendingBefore.slice(0, 2).map((c) => c.id);
     const acceptIds = pendingBefore.slice(2).map((c) => c.id);
 
@@ -117,16 +112,12 @@ describe("pushChanges batching", () => {
     const engine = makeSyncEngine({ userId: "user-test" });
     await engine.pushChanges();
 
-    // Rejected entries must not re-appear on the next getUnsyncedChanges
-    // (i.e. they drained from the changelog) and must not be re-sent on a
-    // follow-up push.
     expect(await getUnsyncedChanges()).toHaveLength(0);
 
     fetchMock.mockClear();
     await engine.pushChanges();
     expect(fetchMock).not.toHaveBeenCalled();
 
-    // Each rejection was logged with its reason.
     expect(warnSpy).toHaveBeenCalledTimes(rejectIds.length);
     for (const id of rejectIds) {
       expect(warnSpy).toHaveBeenCalledWith(expect.any(String), id, "stale-entity");
@@ -380,7 +371,6 @@ describe("pushChanges batching", () => {
     const engine = makeSyncEngine({ userId: "user-test" });
     await engine.pushChanges();
 
-    // Give any (incorrectly) scheduled follow-ups a chance to fire.
     await new Promise((r) => setTimeout(r, 20));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);

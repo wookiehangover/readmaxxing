@@ -1,7 +1,5 @@
 import { AuthError } from "~/lib/errors";
 
-// --- Types ---
-
 export interface AuthUser {
   id: string;
   displayName: string | null;
@@ -57,17 +55,14 @@ export const authService = {
     runAuthOperation("register", async () => {
       const { startRegistration } = await import("@simplewebauthn/browser");
 
-      // 1. Get registration options from server
       const optionsRes = await fetch("/api/auth/register-options");
       if (!optionsRes.ok) {
         throw new Error("Failed to get registration options");
       }
       const { options, userId, challengeId } = await optionsRes.json();
 
-      // 2. Start WebAuthn registration ceremony in the browser
       const registration = await startRegistration({ optionsJSON: options });
 
-      // 3. Send registration response to server for verification
       const verifyRes = await fetch("/api/auth/register-verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -84,17 +79,14 @@ export const authService = {
     runAuthOperation("signIn", async () => {
       const { startAuthentication } = await import("@simplewebauthn/browser");
 
-      // 1. Get authentication options from server
       const optionsRes = await fetch("/api/auth/login-options");
       if (!optionsRes.ok) {
         throw new Error("Failed to get login options");
       }
       const { options, challengeId } = await optionsRes.json();
 
-      // 2. Start WebAuthn authentication ceremony in the browser
       const authentication = await startAuthentication({ optionsJSON: options });
 
-      // 3. Send authentication response to server for verification
       const verifyRes = await fetch("/api/auth/login-verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

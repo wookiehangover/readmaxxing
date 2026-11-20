@@ -7,7 +7,6 @@ import { expect, it, vi } from "vitest";
 const observations = vi.hoisted(
   () => [] as { schemaName?: string; object?: unknown; errorName?: string }[],
 );
-// Observe the real SDK result without altering it. This diagnoses model anchors rejected by production validation.
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
   return {
@@ -47,7 +46,6 @@ import {
 import type { ReviewQuestionRecord } from "~/lib/database/review/review-records.server";
 import { ReviewApiFailure } from "../review-errors.server";
 
-/** Explicit opt-in: at most two generations and six grades, no retries and no external DB. */
 it.skipIf(process.env.RUN_REVIEW_LIVE_SAMPLE !== "1")(
   "samples the production review model with a public-domain chapter",
   async () => {
