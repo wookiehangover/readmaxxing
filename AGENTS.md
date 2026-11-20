@@ -17,6 +17,7 @@ Ebook/PDF reader web app: React Router v7 (framework mode) + TypeScript, Tailwin
 | Lint                 | `pnpm oxlint`                           |
 | Lint one path        | `pnpm oxlint path/to/file.ts`           |
 | Themis lint          | `pnpm lint:themis`                      |
+| Comment ratchet      | `pnpm comments:check`                   |
 | Format               | `pnpm oxfmt .`                          |
 | E2E (all)            | `pnpm e2e`                              |
 | E2E one file         | `pnpm playwright test e2e/chat.spec.ts` |
@@ -38,10 +39,12 @@ Run `pnpm oxfmt .` and `pnpm oxlint` before committing; fix all warnings. Run `p
 | Architecture (workspace, storage, sync, chat, sharing) | `docs/architecture.md`              |
 | EPUB engine package (API, security, support matrix)    | `packages/epub-successor/README.md` |
 | E2E fixture epub                                       | `e2e/fixtures/test-book.epub`       |
+| Architecture decision records                          | `docs/adr/README.md`                |
 
 ## Key Conventions
 
 - Conventional commits (`feat:`, `fix:`); no emoji.
+- No code comments (`comments/no-comments`). Record non-obvious decisions in `docs/adr/`, file workarounds as GitHub issues. Tool directives (`eslint-disable`, `@ts-expect-error`, `@vitest-environment`) are allowed. Use `/delete-comment` to clean up.
 - Conditional Tailwind classes via `cn()` with object syntax, not inline template literals.
 - shadcn uses Base UI, not Radix — check APIs accordingly (e.g. `DropdownMenuLabel` must be inside `DropdownMenuGroup`).
 - Prefer self-hosted fonts (`public/fonts/`) over CDN when files are local.
